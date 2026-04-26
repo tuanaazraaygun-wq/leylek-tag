@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
   Image,
   Pressable,
@@ -38,6 +39,9 @@ type LeylekTripLiveRideChromeProps = {
   routeDataMissing?: boolean;
   trustStatus?: 'requested' | 'accepted' | 'declined' | null;
   trustPendingIncoming?: boolean;
+  finishMethod?: 'qr' | 'forced' | null;
+  finishScoreDelta?: number | null;
+  forcedFinishResponse?: 'accepted' | 'declined' | null;
   navigationLabel: string;
   navigationDisabled?: boolean;
   sendingLocation: boolean;
@@ -53,6 +57,8 @@ type LeylekTripLiveRideChromeProps = {
   onEndCall: () => void;
   onTrustRequest: () => void;
   onNavigate: () => void;
+  onQrFinish: () => void;
+  onForceFinish: () => void;
   onStart: () => void;
   onFinish: () => void;
   onCancel: () => void;
@@ -88,6 +94,9 @@ export default function LeylekTripLiveRideChrome({
   routeDataMissing,
   trustStatus,
   trustPendingIncoming,
+  finishMethod,
+  finishScoreDelta,
+  forcedFinishResponse,
   navigationLabel,
   navigationDisabled,
   sendingLocation,
@@ -103,16 +112,26 @@ export default function LeylekTripLiveRideChrome({
   onEndCall,
   onTrustRequest,
   onNavigate,
+  onQrFinish,
+  onForceFinish,
   onStart,
   onFinish,
   onCancel,
 }: LeylekTripLiveRideChromeProps) {
-  const matrixStatus = isDriver
-    ? `${roleTitle.toUpperCase()} - MUHABBET YOLCULUK AKTIF`
-    : 'SURUCU SIZIN ICIN HAZIR';
-  const liveHint = driverLocation
-    ? 'Sürücü konumu haritada canlı gösteriliyor'
-    : statusDetail;
+  const pulse = useRef(new Animated.Value(0.45)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 760, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.45, duration: 760, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [pulse]);
+  useEffect(() => {
+    console.log('[leylek-trip-ui] action layout rendered role=%s', isDriver ? 'driver' : 'passenger');
+  }, [isDriver]);
   const callButtonLabel =
     callState === 'incoming'
       ? 'Yanıtla'
@@ -145,6 +164,15 @@ export default function LeylekTripLiveRideChrome({
     routeDistanceKm != null && Number.isFinite(Number(routeDistanceKm))
       ? `${Number(routeDistanceKm).toFixed(1)} km${routeDurationMin != null ? ` • ${Math.max(1, Math.round(Number(routeDurationMin)))} dk` : ''}`
       : null;
+  const qrButtonLabel = isDriver ? 'QR Oku' : 'QR Göster';
+  const finishSummary =
+    finishMethod === 'qr'
+      ? `Yolculuk QR ile tamamlandı • Puan etkisi: +${finishScoreDelta ?? 3}`
+      : finishMethod === 'forced'
+        ? `Yolculuk zorla bitirildi • Puan etkisi: ${finishScoreDelta ?? -5} • Karşı taraf yanıtı: ${
+            forcedFinishResponse === 'accepted' ? 'Onayladı' : forcedFinishResponse === 'declined' ? 'Onaylamadı' : 'Kaydedilmedi'
+          }`
+        : null;
 
   return (
     <View style={styles.container}>
@@ -243,210 +271,113 @@ export default function LeylekTripLiveRideChrome({
           </LinearGradient>
         </View>
 
-        {isDriver ? (
-          <View style={styles.driverMatchMatrixRow} pointerEvents="box-none">
-            <View style={[styles.matrixContainerDriver, styles.matrixContainerDriverInRow]} pointerEvents="none">
-              <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
-            </View>
-            <View style={styles.driverMatchYgitOuter}>
-              <View pointerEvents="none" style={styles.driverMatchYgitGlowAura} />
-              <Pressable
-                onPress={canStart ? onStart : onShareLocation}
-                disabled={(canStart && actionBusy) || sendingLocation || isTerminal}
-                style={({ pressed }) => [styles.driverMatchYgitTouch, pressed && { opacity: 0.86 }]}
+        <View style={styles.routeActionRow}>
+          <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
+            <View style={styles.activeStatusDot} />
+            <Text style={styles.activeStatusText}>Yolculuk aktif</Text>
+          </Animated.View>
+          <View style={styles.routeActionCluster}>
+            <Pressable
+              onPress={canStart ? onStart : onShareLocation}
+              disabled={(canStart && actionBusy) || sendingLocation || isTerminal}
+              style={({ pressed }) => [styles.routeMiniAction, (pressed || sendingLocation || isTerminal) && { opacity: 0.78 }]}
+            >
+              <LinearGradient
+                colors={canStart ? ['#1D4ED8', '#2563EB'] : ['#F97316', '#EA580C']}
+                style={styles.routeMiniActionGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
               >
-                <LinearGradient
-                  colors={canStart ? ['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA'] : ['#F97316', '#EA580C']}
-                  style={styles.driverYolcuyaGitChip}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  {canStart && actionBusy ? (
-                    <ActivityIndicator size="small" color="#EFF6FF" />
-                  ) : (
-                    <Ionicons name={canStart ? 'play' : 'locate'} size={22} color="#EFF6FF" />
-                  )}
-                  <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
-                    {canStart ? 'Başlat' : 'Konum Paylaş'}
-                  </Text>
-                </LinearGradient>
-              </Pressable>
-            </View>
+                {canStart && actionBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={canStart ? 'play' : 'locate'} size={17} color="#FFF" />}
+                <Text style={styles.routeMiniActionText}>{canStart ? 'Başlat' : 'Konum Paylaş'}</Text>
+              </LinearGradient>
+            </Pressable>
+            <Pressable
+              onPress={onNavigate}
+              disabled={navigationDisabled || isTerminal}
+              style={({ pressed }) => [styles.routeMiniAction, (pressed || navigationDisabled || isTerminal) && { opacity: 0.78 }]}
+            >
+              <LinearGradient
+                colors={navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
+                style={styles.routeMiniActionGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Ionicons name="navigate" size={17} color="#FFF" />
+                <Text style={styles.routeMiniActionText}>{navigationLabel}</Text>
+              </LinearGradient>
+            </Pressable>
           </View>
-        ) : (
-          <>
-            <View style={styles.matrixContainerPassenger} pointerEvents="none">
-              <Text style={styles.matrixTextPassenger}>{matrixStatus}</Text>
-            </View>
-            <View style={styles.passengerLiveBlock} pointerEvents="none">
-              <Text style={styles.passengerLiveLabel}>CANLI</Text>
-              <Text style={styles.passengerLiveHint}>{liveHint}</Text>
-            </View>
-          </>
-        )}
+        </View>
       </View>
 
       <View style={styles.bottomPanel}>
         <View style={styles.bottomGradient}>
-          <View style={styles.tripActionBar} pointerEvents="box-none">
-            <View style={styles.tripActionBarCol}>
-              <Text style={isDriver ? styles.driverTripCallTitle : styles.callPromptLabelSingle} numberOfLines={1}>
-                {isDriver ? 'Yolcu durumu' : 'Sürücü durumu'}
+          {finishSummary ? (
+            <View style={[styles.finishSummary, finishMethod === 'qr' ? styles.finishSummaryQr : styles.finishSummaryForced]}>
+              <Ionicons name={finishMethod === 'qr' ? 'checkmark-circle' : 'warning'} size={16} color={finishMethod === 'qr' ? '#15803D' : '#92400E'} />
+              <Text style={[styles.finishSummaryText, finishMethod === 'qr' ? styles.finishSummaryTextQr : styles.finishSummaryTextForced]}>
+                {finishSummary}
               </Text>
-              <View style={styles.tripCallGuvenRow}>
-                <View style={styles.tripCallChatCluster}>
-                  <Pressable
-                    onPress={handleCallPress}
-                    disabled={callBusy || isTerminal}
-                    style={({ pressed }) => [
-                      styles.mapCallFabCircle,
-                      (callBusy || isTerminal) && styles.mapCallFabCircleDisabled,
-                      callState === 'active' && styles.mapCallFabCircleActive,
-                      pressed && { opacity: 0.82 },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={callButtonLabel}
-                  >
-                    {callBusy ? (
-                      <ActivityIndicator size="small" color="#FFF" />
-                    ) : (
-                      <Ionicons name={callButtonIcon} size={22} color="#FFF" />
-                    )}
-                  </Pressable>
-                  <View style={styles.tripInlineChatBtn}>
-                    <LinearGradient
-                      colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']}
-                      style={styles.tripInlineChatBtnGrad}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      <Ionicons name={callState === 'idle' ? 'navigate' : 'call'} size={18} color="#FFF" />
-                      <Text style={styles.tripInlineChatBtnText} numberOfLines={1}>
-                        {callState === 'idle' ? statusDetail : callButtonLabel}
-                      </Text>
-                    </LinearGradient>
-                  </View>
-                </View>
-                <View style={styles.tripGuvenMirrorWrap}>
-                  <Pressable
-                    onPress={onTrustRequest}
-                    disabled={trustBusy || isTerminal || trustStatus === 'accepted' || trustPendingIncoming}
-                    style={({ pressed }) => [styles.tripGuvenFabCompact, (pressed || trustBusy || isTerminal) && { opacity: 0.7 }]}
-                  >
-                    <LinearGradient
-                      colors={
-                        trustStatus === 'accepted'
-                          ? ['#16A34A', '#22C55E', '#4ADE80', '#86EFAC']
-                          : trustStatus === 'declined'
-                            ? ['#475569', '#64748B', '#94A3B8', '#CBD5E1']
-                            : ['#0D9488', '#059669', '#10B981', '#34D399']
-                      }
-                      locations={[0, 0.35, 0.7, 1]}
-                      style={styles.tripGuvenFabCompactInner}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    >
-                      {trustBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="shield-checkmark" size={20} color="#FFF" />}
-                      <Text style={styles.tripGuvenFabLabel}>
-                        {trustStatus === 'accepted' ? 'Onaylı' : trustStatus === 'declined' ? 'Müsait Değil' : 'Güven AL'}
-                      </Text>
-                    </LinearGradient>
-                  </Pressable>
-                </View>
-              </View>
-              {trustStatus === 'accepted' || trustStatus === 'declined' ? (
-                <View style={[styles.trustStateStrip, trustStatus === 'accepted' ? styles.trustStateAccepted : styles.trustStateDeclined]}>
-                  <Ionicons
-                    name={trustStatus === 'accepted' ? 'checkmark-circle' : 'information-circle-outline'}
-                    size={16}
-                    color={trustStatus === 'accepted' ? '#15803D' : '#475569'}
-                  />
-                  <Text style={[styles.trustStateText, trustStatus === 'accepted' ? styles.trustStateTextAccepted : styles.trustStateTextDeclined]}>
-                    {trustStatus === 'accepted' ? 'Sözlü güven onayı alındı' : 'Güven isteği şu an uygun değil'}
-                  </Text>
-                </View>
-              ) : null}
             </View>
+          ) : null}
+          <View style={styles.primaryActionRow} pointerEvents="box-none">
+            <Pressable
+              onPress={handleCallPress}
+              disabled={callBusy || isTerminal}
+              style={({ pressed }) => [styles.primaryCircleButton, styles.callCircleButton, (pressed || callBusy || isTerminal) && { opacity: 0.72 }]}
+              accessibilityRole="button"
+              accessibilityLabel={callButtonLabel}
+            >
+              {callBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={callButtonIcon} size={28} color="#FFF" />}
+              <Text style={styles.primaryCircleLabel}>{callButtonLabel}</Text>
+            </Pressable>
+            <Pressable
+              onPress={onTrustRequest}
+              disabled={trustBusy || isTerminal || trustStatus === 'accepted' || trustPendingIncoming}
+              style={({ pressed }) => [styles.primaryCircleButton, styles.trustCircleButton, (pressed || trustBusy || isTerminal) && { opacity: 0.72 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Güven AL"
+            >
+              {trustBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="shield-checkmark" size={28} color="#FFF" />}
+              <Text style={styles.primaryCircleLabel}>
+                {trustStatus === 'accepted' ? 'Onaylı' : trustStatus === 'declined' ? 'Müsait değil' : 'Güven AL'}
+              </Text>
+            </Pressable>
           </View>
-
-          <View style={styles.actionButtons}>
+          {trustStatus === 'accepted' || trustStatus === 'declined' ? (
+            <View style={[styles.trustStateStrip, trustStatus === 'accepted' ? styles.trustStateAccepted : styles.trustStateDeclined]}>
+              <Ionicons
+                name={trustStatus === 'accepted' ? 'checkmark-circle' : 'information-circle-outline'}
+                size={16}
+                color={trustStatus === 'accepted' ? '#15803D' : '#475569'}
+              />
+              <Text style={[styles.trustStateText, trustStatus === 'accepted' ? styles.trustStateTextAccepted : styles.trustStateTextDeclined]}>
+                {trustStatus === 'accepted' ? 'Sözlü güven onayı alındı' : 'Güven isteği şu an uygun değil'}
+              </Text>
+            </View>
+          ) : null}
+          <View style={styles.finishActionRow}>
             <Pressable
-              style={({ pressed }) => [styles.tripAiFabWrap, pressed && { opacity: 0.92 }]}
-              onPress={onShareLocation}
-              disabled={sendingLocation || isTerminal}
-              accessibilityRole="button"
-              accessibilityLabel="Konum paylaş"
+              style={({ pressed }) => [styles.finishButton, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+              onPress={onQrFinish}
+              disabled={actionBusy || isTerminal}
             >
-              <LinearGradient
-                colors={['#22D3EE', '#3FA9F5', '#6366F1', '#8B5CF6']}
-                locations={[0, 0.35, 0.65, 1]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.tripAiFabGrad}
-              >
-                <Ionicons name="locate" size={25} color="#FFF" />
-              </LinearGradient>
-              <Text style={styles.tripAiFabLabel} numberOfLines={1}>GPS</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.navigationButton, (pressed || navigationDisabled) && { opacity: 0.78 }]}
-              onPress={onNavigate}
-              disabled={navigationDisabled || isTerminal}
-              accessibilityRole="button"
-              accessibilityLabel={navigationLabel}
-            >
-              <LinearGradient
-                colors={navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
-                style={styles.navigationButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Ionicons name="navigate" size={18} color="#FFF" />
-                <Text style={styles.navigationButtonText} numberOfLines={1}>{navigationLabel}</Text>
+              <LinearGradient colors={isTerminal ? ['#64748B', '#475569'] : ['#8B5CF6', '#7C3AED']} style={styles.finishButtonGradient}>
+                <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
+                <Text style={styles.finishButtonText}>{qrButtonLabel}</Text>
               </LinearGradient>
             </Pressable>
-
-            {canFinish ? (
-              <Pressable
-                style={({ pressed }) => [styles.qrEndButton, (pressed || actionBusy) && { opacity: 0.86 }]}
-                onPress={onFinish}
-                disabled={actionBusy}
-              >
-                <LinearGradient
-                  colors={['#8B5CF6', '#7C3AED']}
-                  style={styles.qrEndButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Ionicons name="checkmark-circle" size={18} color="#FFF" />
-                  <Text style={styles.qrEndButtonText}>Yol Paylaşımını Bitir</Text>
-                </LinearGradient>
-              </Pressable>
-            ) : (
-              <View style={styles.qrEndButton}>
-                <LinearGradient
-                  colors={['#64748B', '#475569']}
-                  style={styles.qrEndButtonGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Ionicons name="time" size={18} color="#FFF" />
-                  <Text style={styles.qrEndButtonText}>{statusLabel}</Text>
-                </LinearGradient>
-              </View>
-            )}
-
-            {!isTerminal ? (
-              <Pressable
-                style={({ pressed }) => [styles.endButton, (pressed || actionBusy) && { opacity: 0.78 }]}
-                onPress={onCancel}
-                disabled={actionBusy}
-              >
-                <Ionicons name="close-circle" size={18} color="#FFF" />
-                <Text style={styles.endButtonText}>Zorla Bitir</Text>
-              </Pressable>
-            ) : null}
+            <Pressable
+              style={({ pressed }) => [styles.finishButton, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+              onPress={onForceFinish}
+              disabled={actionBusy || isTerminal}
+            >
+              <LinearGradient colors={isTerminal ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
+                <Ionicons name="warning-outline" size={18} color="#FFF" />
+                <Text style={styles.finishButtonText}>Zorla Bitir</Text>
+              </LinearGradient>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -571,6 +502,44 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148, 163, 184, 0.35)',
   },
   vehiclePillText: { fontSize: 13, fontWeight: '700', color: '#334155' },
+  routeActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    marginTop: 6,
+    gap: 10,
+  },
+  activeStatusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(5, 46, 22, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.55)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  activeStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  activeStatusText: { color: '#BBF7D0', fontSize: 11, fontWeight: '900', letterSpacing: 0.3 },
+  routeActionCluster: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flex: 1 },
+  routeMiniAction: { borderRadius: 13, overflow: 'hidden', flexShrink: 1 },
+  routeMiniActionGrad: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  routeMiniActionText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
   driverMatchMatrixRow: {
     width: '100%',
     flexDirection: 'row',
@@ -659,6 +628,38 @@ const styles = StyleSheet.create({
   driverYolcuyaGitChipLabel: { color: '#FFF', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   bottomGradient: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 18, backgroundColor: 'transparent' },
+  finishSummary: {
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 14,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  finishSummaryQr: { backgroundColor: 'rgba(220, 252, 231, 0.95)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.28)' },
+  finishSummaryForced: { backgroundColor: 'rgba(254, 243, 199, 0.95)', borderWidth: 1, borderColor: 'rgba(217,119,6,0.25)' },
+  finishSummaryText: { flex: 1, fontSize: 12, fontWeight: '900', lineHeight: 17 },
+  finishSummaryTextQr: { color: '#15803D' },
+  finishSummaryTextForced: { color: '#92400E' },
+  primaryActionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 18, marginBottom: 12 },
+  primaryCircleButton: {
+    flex: 1,
+    minHeight: 70,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.36,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  callCircleButton: { backgroundColor: '#16A34A', shadowColor: '#064E3B' },
+  trustCircleButton: { backgroundColor: '#0D9488', shadowColor: '#115E59' },
+  primaryCircleLabel: { color: '#FFF', fontSize: 13, fontWeight: '900', letterSpacing: 0.2 },
   tripActionBar: { width: '100%', marginBottom: 10 },
   tripActionBarCol: { width: '100%', paddingHorizontal: 2 },
   driverTripCallTitle: {
@@ -756,6 +757,10 @@ const styles = StyleSheet.create({
   trustStateText: { fontSize: 12, fontWeight: '900' },
   trustStateTextAccepted: { color: '#15803D' },
   trustStateTextDeclined: { color: '#475569' },
+  finishActionRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 10 },
+  finishButton: { flex: 1, borderRadius: 14, overflow: 'hidden' },
+  finishButtonGradient: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
+  finishButtonText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
   actionButtons: { flexDirection: 'row', gap: 12, alignItems: 'flex-end' },
   tripAiFabWrap: { alignItems: 'center', justifyContent: 'center', minWidth: 52, maxWidth: 56 },
   tripAiFabGrad: {

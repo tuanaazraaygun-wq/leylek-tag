@@ -22286,6 +22286,15 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "cancel_reason": row.get("cancel_reason"),
         "finished_at": row.get("finished_at"),
         "finished_by_user_id": row.get("finished_by_user_id"),
+        "finish_method": row.get("finish_method"),
+        "forced_finish_requested_by_user_id": row.get("forced_finish_requested_by_user_id"),
+        "forced_finish_requested_at": row.get("forced_finish_requested_at"),
+        "forced_finish_confirmed_by_user_id": row.get("forced_finish_confirmed_by_user_id"),
+        "forced_finish_confirmed_at": row.get("forced_finish_confirmed_at"),
+        "forced_finish_other_user_response": row.get("forced_finish_other_user_response"),
+        "finish_score_delta": row.get("finish_score_delta"),
+        "finish_note": row.get("finish_note"),
+        "qr_finish_token_created_at": row.get("qr_finish_token_created_at"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
@@ -22488,6 +22497,17 @@ async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: 
     ):
         if uid:
             await emit_socket_event_to_user(uid, event_name, payload)
+
+
+def _muhabbet_trip_counterparty(row: dict, uid: str) -> str:
+    uid_lo = str(uid or "").strip().lower()
+    passenger_id = str((row or {}).get("passenger_id") or "").strip().lower()
+    driver_id = str((row or {}).get("driver_id") or "").strip().lower()
+    if uid_lo == passenger_id:
+        return driver_id
+    if uid_lo == driver_id:
+        return passenger_id
+    return ""
 
 
 @sio.on("muhabbet_trip_convert_request")
@@ -22845,6 +22865,179 @@ async def sio_muhabbet_trip_finish(sid, data):
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
     except Exception as e:
         logger.warning("muhabbet_trip_finish: %s", e)
+
+
+@sio.on("muhabbet_trip_qr_create")
+async def sio_muhabbet_trip_qr_create(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        uid_lo = str(uid).strip().lower()
+        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+            await sio.emit("muhabbet_trip_error", {"code": "passenger_required", "message": "QR kodu yolcu oluşturabilir."}, room=sid)
+            return
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
+            return
+        token = secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:10].upper()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {"qr_finish_token": token, "qr_finish_token_created_at": now_iso, "updated_at": now_iso}
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "qr_finish_token": token,
+            "session": _muhabbet_trip_session_public(next_row),
+        }
+        await sio.emit("muhabbet_trip_qr_created", payload, room=sid)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_qr_create: %s", e)
+
+
+@sio.on("muhabbet_trip_qr_confirm")
+async def sio_muhabbet_trip_qr_confirm(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    token = str(data.get("qr_finish_token") or data.get("token") or "").strip().upper()
+    if not uid or not session_id or not token:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        uid_lo = str(uid).strip().lower()
+        if str(row.get("driver_id") or "").strip().lower() != uid_lo:
+            await sio.emit("muhabbet_trip_error", {"code": "driver_required", "message": "QR kodu sürücü onaylayabilir."}, room=sid)
+            return
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            return
+        expected = str(row.get("qr_finish_token") or "").strip().upper()
+        if not expected or not secrets.compare_digest(expected, token):
+            await sio.emit("muhabbet_trip_error", {"code": "bad_qr_token", "message": "QR kod geçersiz."}, room=sid)
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "status": "finished",
+            "finish_method": "qr",
+            "finish_score_delta": 3,
+            "finish_note": "QR confirmed clean Muhabbet finish",
+            "finished_at": now_iso,
+            "finished_by_user_id": uid_lo,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        logger.info("[muhabbet_trip_finish] qr_finished session_id=%s score=3", session_id)
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_qr_confirm: %s", e)
+
+
+@sio.on("muhabbet_trip_force_finish_request")
+async def sio_muhabbet_trip_force_finish_request(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
+            return
+        uid_lo = str(uid).strip().lower()
+        target_uid = _muhabbet_trip_counterparty(row, uid_lo)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "forced_finish_requested_by_user_id": uid_lo,
+            "forced_finish_requested_at": now_iso,
+            "forced_finish_confirmed_by_user_id": None,
+            "forced_finish_confirmed_at": None,
+            "forced_finish_other_user_response": None,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "requester_user_id": uid_lo,
+            "target_user_id": target_uid,
+            "session": _muhabbet_trip_session_public(next_row),
+        }
+        logger.info("[muhabbet_trip_finish] forced_requested session_id=%s by=%s", session_id, uid_lo)
+        for target in (uid_lo, target_uid):
+            if target:
+                await emit_socket_event_to_user(target, "muhabbet_trip_force_finish_requested", payload)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_force_finish_request: %s", e)
+
+
+@sio.on("muhabbet_trip_force_finish_respond")
+async def sio_muhabbet_trip_force_finish_respond(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    response_raw = str(data.get("response") or "").strip().lower()
+    response = "accepted" if response_raw == "accepted" else "declined"
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            return
+        uid_lo = str(uid).strip().lower()
+        requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
+        if not requester_uid:
+            requester_uid = _muhabbet_trip_counterparty(row, uid_lo)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "status": "finished",
+            "finish_method": "forced",
+            "finish_score_delta": -5,
+            "finish_note": "Forced Muhabbet finish",
+            "forced_finish_confirmed_by_user_id": uid_lo,
+            "forced_finish_confirmed_at": now_iso,
+            "forced_finish_other_user_response": response,
+            "finished_at": now_iso,
+            "finished_by_user_id": requester_uid or uid_lo,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "requester_user_id": requester_uid,
+            "responder_user_id": uid_lo,
+            "response": response,
+            "score_delta": -5,
+            "session": _muhabbet_trip_session_public(next_row),
+        }
+        logger.info("[muhabbet_trip_finish] forced_finished session_id=%s response=%s score=-5", session_id, response)
+        await sio.emit("muhabbet_trip_force_finished", payload, room=muhabbet_trip_room(session_id))
+        for target in (requester_uid, uid_lo):
+            if target:
+                await emit_socket_event_to_user(target, "muhabbet_trip_force_finished", payload)
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_force_finish_respond: %s", e)
 
 
 @sio.on("muhabbet_trip_call_start")

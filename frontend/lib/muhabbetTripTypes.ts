@@ -44,6 +44,15 @@ export type MuhabbetTripSession = {
   cancel_reason?: string | null;
   finished_at?: string | null;
   finished_by_user_id?: string | null;
+  finish_method?: 'qr' | 'forced' | null;
+  forced_finish_requested_by_user_id?: string | null;
+  forced_finish_requested_at?: string | null;
+  forced_finish_confirmed_by_user_id?: string | null;
+  forced_finish_confirmed_at?: string | null;
+  forced_finish_other_user_response?: 'accepted' | 'declined' | null;
+  finish_score_delta?: number | null;
+  finish_note?: string | null;
+  qr_finish_token_created_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -76,5 +85,18 @@ export type MuhabbetTripTrustSocketPayload = {
   requester_user_id?: string;
   target_user_id?: string;
   status?: 'requested' | 'accepted' | 'declined';
+  session?: MuhabbetTripSession;
+};
+
+export type MuhabbetTripFinishSocketPayload = {
+  session_id?: string;
+  sessionId?: string;
+  conversation_id?: string | null;
+  requester_user_id?: string;
+  target_user_id?: string;
+  responder_user_id?: string;
+  response?: 'accepted' | 'declined';
+  score_delta?: number;
+  qr_finish_token?: string;
   session?: MuhabbetTripSession;
 };

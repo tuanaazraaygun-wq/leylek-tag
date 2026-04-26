@@ -9,6 +9,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +21,7 @@ import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToke
 import { agoraUidFromUserId } from '../lib/agoraUid';
 import type {
   MuhabbetTripCallSocketPayload,
+  MuhabbetTripFinishSocketPayload,
   MuhabbetTripSession,
   MuhabbetTripSessionSocketPayload,
   MuhabbetTripTrustSocketPayload,
@@ -36,6 +38,7 @@ type Coord = { latitude: number; longitude: number };
 type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish';
 type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 type TrustPrompt = { requesterUserId: string; targetUserId: string } | null;
+type ForceFinishPrompt = { requesterUserId: string; targetUserId: string } | null;
 
 function coord(lat?: number | null, lng?: number | null): Coord | null {
   const la = Number(lat);
@@ -79,6 +82,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [callPayload, setCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
   const [trustBusy, setTrustBusy] = useState(false);
   const [trustPrompt, setTrustPrompt] = useState<TrustPrompt>(null);
+  const [forceFinishPrompt, setForceFinishPrompt] = useState<ForceFinishPrompt>(null);
+  const [forceFinishWarningVisible, setForceFinishWarningVisible] = useState(false);
+  const [qrFinishVisible, setQrFinishVisible] = useState(false);
+  const [qrFinishToken, setQrFinishToken] = useState('');
+  const [qrInput, setQrInput] = useState('');
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
   const joinedCallKeyRef = useRef('');
 
@@ -220,6 +228,34 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setTrustPrompt(null);
       if (payload.session) setSession(payload.session);
     };
+    const onQrCreated = (payload: MuhabbetTripFinishSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_qr_created', payload);
+      if (!callMatches(payload)) return;
+      setActionBusy(false);
+      if (payload.session) setSession(payload.session);
+      setQrFinishToken(String(payload.qr_finish_token || '').trim().toUpperCase());
+      setQrFinishVisible(true);
+    };
+    const onForceRequested = (payload: MuhabbetTripFinishSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_force_finish_requested', payload);
+      if (!callMatches(payload)) return;
+      setActionBusy(false);
+      if (payload.session) setSession(payload.session);
+      if (String(payload.requester_user_id || '').trim().toLowerCase() !== myId) {
+        setForceFinishPrompt({
+          requesterUserId: String(payload.requester_user_id || '').trim().toLowerCase(),
+          targetUserId: String(payload.target_user_id || '').trim().toLowerCase(),
+        });
+      }
+    };
+    const onForceFinished = (payload: MuhabbetTripFinishSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_force_finished', payload);
+      if (!callMatches(payload)) return;
+      setActionBusy(false);
+      setForceFinishPrompt(null);
+      setForceFinishWarningVisible(false);
+      if (payload.session) setSession(payload.session);
+    };
     const joinPayload = { session_id: sessionId };
     console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
     socket.emit('muhabbet_trip_join', joinPayload);
@@ -232,6 +268,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     socket.on('muhabbet_trip_call_end', onCallEnd);
     socket.on('muhabbet_trip_trust_requested', onTrustRequested);
     socket.on('muhabbet_trip_trust_resolved', onTrustResolved);
+    socket.on('muhabbet_trip_qr_created', onQrCreated);
+    socket.on('muhabbet_trip_force_finish_requested', onForceRequested);
+    socket.on('muhabbet_trip_force_finished', onForceFinished);
     return () => {
       const leavePayload = { session_id: sessionId };
       console.log('[leylek-trip] emit', 'muhabbet_trip_leave', leavePayload);
@@ -245,6 +284,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_call_end', onCallEnd);
       socket.off('muhabbet_trip_trust_requested', onTrustRequested);
       socket.off('muhabbet_trip_trust_resolved', onTrustResolved);
+      socket.off('muhabbet_trip_qr_created', onQrCreated);
+      socket.off('muhabbet_trip_force_finish_requested', onForceRequested);
+      socket.off('muhabbet_trip_force_finished', onForceFinished);
       void muhabbetAgoraVoiceService.leaveChannelAndDestroy();
       muhabbetAgoraVoiceService.resetCallbacks();
     };
@@ -389,6 +431,57 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     }
   }, [navigationTarget]);
 
+  const openQrFinish = useCallback(() => {
+    if (!session || isTerminal) return;
+    if (isDriver) {
+      setQrInput('');
+      setQrFinishVisible(true);
+      return;
+    }
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_qr_create', payload);
+    setActionBusy(true);
+    getOrCreateSocket().emit('muhabbet_trip_qr_create', payload);
+    setTimeout(() => setActionBusy(false), 1500);
+  }, [isDriver, isTerminal, session, sessionId]);
+
+  const confirmQrFinish = useCallback(() => {
+    const token = qrInput.trim().toUpperCase();
+    if (!token) {
+      Alert.alert('QR ile Bitir', 'Yolcunun gösterdiği kodu girin.');
+      return;
+    }
+    const payload = { session_id: sessionId, qr_finish_token: token };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_qr_confirm', payload);
+    setActionBusy(true);
+    getOrCreateSocket().emit('muhabbet_trip_qr_confirm', payload);
+    setQrFinishVisible(false);
+    setTimeout(() => setActionBusy(false), 1500);
+  }, [qrInput, sessionId]);
+
+  const requestForceFinish = useCallback(() => {
+    if (!session || isTerminal) return;
+    setForceFinishWarningVisible(true);
+  }, [isTerminal, session]);
+
+  const confirmForceFinishRequest = useCallback(() => {
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_force_finish_request', payload);
+    setForceFinishWarningVisible(false);
+    setActionBusy(true);
+    getOrCreateSocket().emit('muhabbet_trip_force_finish_request', payload);
+    setTimeout(() => setActionBusy(false), 1500);
+  }, [sessionId]);
+
+  const respondForceFinish = useCallback((accepted: boolean) => {
+    const payload = { session_id: sessionId, response: accepted ? 'accepted' : 'declined' };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_force_finish_respond', payload);
+    setForceFinishPrompt(null);
+    setActionBusy(true);
+    getOrCreateSocket().emit('muhabbet_trip_force_finish_respond', payload);
+    setTimeout(() => setActionBusy(false), 1500);
+  }, [sessionId]);
+
   useEffect(() => {
     if (callState !== 'outgoing' || !callPayload || !myId) return;
     if (String(callPayload.caller_id || '').trim().toLowerCase() !== myId) return;
@@ -468,6 +561,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           trustStatus === 'requested' &&
           String(session.trust_requested_by_user_id || '').trim().toLowerCase() !== myId
         }
+        finishMethod={session.finish_method}
+        finishScoreDelta={session.finish_score_delta}
+        forcedFinishResponse={session.forced_finish_other_user_response}
         navigationLabel={navigationLabel}
         navigationDisabled={!navigationTarget}
         sendingLocation={sendingLocation}
@@ -483,6 +579,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onEndCall={() => void endCall()}
         onTrustRequest={requestTrust}
         onNavigate={() => void openNavigation()}
+        onQrFinish={openQrFinish}
+        onForceFinish={requestForceFinish}
         onStart={() => emitAction('muhabbet_trip_start')}
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}
@@ -516,6 +614,96 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               onPress={() => resolveTrust(false)}
             >
               <Text style={styles.trustDeclineText}>Müsait değilim</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={qrFinishVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQrFinishVisible(false)}
+      >
+        <View style={styles.trustModalRoot}>
+          <View style={styles.trustModalCard}>
+            <View style={[styles.trustModalIcon, { backgroundColor: '#7C3AED' }]}>
+              <Ionicons name="qr-code" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.trustModalTitle}>{isDriver ? 'QR Oku' : 'QR Göster'}</Text>
+            {isDriver ? (
+              <>
+                <Text style={styles.trustModalText}>Yolcunun gösterdiği QR/kodu girerek temiz bitiriş yapın. Puan etkisi: +3</Text>
+                <TextInput
+                  style={styles.qrInput}
+                  value={qrInput}
+                  onChangeText={setQrInput}
+                  placeholder="QR kod"
+                  autoCapitalize="characters"
+                  placeholderTextColor="#94A3B8"
+                />
+                <Pressable style={({ pressed }) => [styles.trustAcceptButton, pressed && { opacity: 0.9 }]} onPress={confirmQrFinish}>
+                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                  <Text style={styles.trustAcceptText}>QR ile Bitir</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={styles.trustModalText}>Bu kodu sürücüye gösterin. QR ile tamamlanan Muhabbet bitirişi temiz kapanış sayılır.</Text>
+                <View style={styles.qrTokenBox}>
+                  <Text style={styles.qrTokenText}>{qrFinishToken || 'Hazırlanıyor...'}</Text>
+                </View>
+              </>
+            )}
+            <Pressable style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]} onPress={() => setQrFinishVisible(false)}>
+              <Text style={styles.trustDeclineText}>Kapat</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={forceFinishWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setForceFinishWarningVisible(false)}
+      >
+        <View style={styles.trustModalRoot}>
+          <View style={styles.trustModalCard}>
+            <View style={[styles.trustModalIcon, { backgroundColor: '#DC2626' }]}>
+              <Ionicons name="warning" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.trustModalTitle}>Zorla Bitir</Text>
+            <Text style={styles.trustModalText}>
+              Zorla bitirme -5 puan etkileyebilir. Karşı taraf onay verirse/onay vermezse kayıt altına alınır.
+            </Text>
+            <Pressable style={({ pressed }) => [styles.forceButton, pressed && { opacity: 0.9 }]} onPress={confirmForceFinishRequest}>
+              <Ionicons name="warning-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.trustAcceptText}>Zorla Bitirme İsteği Gönder</Text>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]} onPress={() => setForceFinishWarningVisible(false)}>
+              <Text style={styles.trustDeclineText}>Vazgeç</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={!!forceFinishPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setForceFinishPrompt(null)}
+      >
+        <View style={styles.trustModalRoot}>
+          <View style={styles.trustModalCard}>
+            <View style={[styles.trustModalIcon, { backgroundColor: '#F97316' }]}>
+              <Ionicons name="alert-circle" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.trustModalTitle}>Zorla Bitirme İsteği</Text>
+            <Text style={styles.trustModalText}>Karşı taraf yolculuğu zorla bitirmek istiyor. Onaylıyor musun?</Text>
+            <Pressable style={({ pressed }) => [styles.trustAcceptButton, pressed && { opacity: 0.9 }]} onPress={() => respondForceFinish(true)}>
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+              <Text style={styles.trustAcceptText}>Onaylıyorum</Text>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]} onPress={() => respondForceFinish(false)}>
+              <Text style={styles.trustDeclineText}>Onaylamıyorum</Text>
             </Pressable>
           </View>
         </View>
@@ -584,4 +772,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   trustDeclineText: { color: '#475569', fontSize: 14, fontWeight: '900' },
+  qrInput: {
+    marginTop: 16,
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#0F172A',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 2,
+  },
+  qrTokenBox: {
+    marginTop: 16,
+    width: '100%',
+    borderRadius: 18,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  qrTokenText: { color: '#5B21B6', fontSize: 28, fontWeight: '900', letterSpacing: 3 },
+  forceButton: {
+    marginTop: 18,
+    width: '100%',
+    borderRadius: 16,
+    backgroundColor: '#DC2626',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
 });
