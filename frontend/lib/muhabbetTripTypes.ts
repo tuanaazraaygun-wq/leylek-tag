@@ -32,6 +32,12 @@ export type MuhabbetTripSession = {
   driver_location_lat?: number | null;
   driver_location_lng?: number | null;
   driver_location_updated_at?: string | null;
+  trust_status?: 'requested' | 'accepted' | 'declined' | null;
+  trust_requested_by_user_id?: string | null;
+  trust_resolved_by_user_id?: string | null;
+  trust_requested_at?: string | null;
+  trust_resolved_at?: string | null;
+  navigation_status?: string | null;
   started_at?: string | null;
   cancelled_at?: string | null;
   cancelled_by_user_id?: string | null;
@@ -69,5 +75,6 @@ export type MuhabbetTripTrustSocketPayload = {
   conversation_id?: string | null;
   requester_user_id?: string;
   target_user_id?: string;
-  status?: 'requested' | 'placeholder';
+  status?: 'requested' | 'accepted' | 'declined';
+  session?: MuhabbetTripSession;
 };

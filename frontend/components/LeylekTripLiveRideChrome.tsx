@@ -29,12 +29,17 @@ type LeylekTripLiveRideChromeProps = {
   routePolyline?: string | null;
   routeDistanceKm?: number | null;
   routeDurationMin?: number | null;
+  sessionStatus?: string | null;
   pickup?: Coord | null;
   dropoff?: Coord | null;
   passengerLocation?: Coord | null;
   driverLocation?: Coord | null;
   deviceLocation?: Coord | null;
   routeDataMissing?: boolean;
+  trustStatus?: 'requested' | 'accepted' | 'declined' | null;
+  trustPendingIncoming?: boolean;
+  navigationLabel: string;
+  navigationDisabled?: boolean;
   sendingLocation: boolean;
   actionBusy: boolean;
   callState: 'idle' | 'incoming' | 'outgoing' | 'active';
@@ -47,6 +52,7 @@ type LeylekTripLiveRideChromeProps = {
   onJoinCall: () => void;
   onEndCall: () => void;
   onTrustRequest: () => void;
+  onNavigate: () => void;
   onStart: () => void;
   onFinish: () => void;
   onCancel: () => void;
@@ -73,12 +79,17 @@ export default function LeylekTripLiveRideChrome({
   routePolyline,
   routeDistanceKm,
   routeDurationMin,
+  sessionStatus,
   pickup,
   dropoff,
   passengerLocation,
   driverLocation,
   deviceLocation,
   routeDataMissing,
+  trustStatus,
+  trustPendingIncoming,
+  navigationLabel,
+  navigationDisabled,
   sendingLocation,
   actionBusy,
   callState,
@@ -91,6 +102,7 @@ export default function LeylekTripLiveRideChrome({
   onJoinCall,
   onEndCall,
   onTrustRequest,
+  onNavigate,
   onStart,
   onFinish,
   onCancel,
@@ -160,6 +172,7 @@ export default function LeylekTripLiveRideChrome({
           driverLocation={driverLocation}
           deviceLocation={deviceLocation}
           routePolyline={routePolyline}
+          sessionStatus={sessionStatus}
           style={styles.map}
         />
       </View>
@@ -317,22 +330,42 @@ export default function LeylekTripLiveRideChrome({
                 <View style={styles.tripGuvenMirrorWrap}>
                   <Pressable
                     onPress={onTrustRequest}
-                    disabled={trustBusy || isTerminal}
+                    disabled={trustBusy || isTerminal || trustStatus === 'accepted' || trustPendingIncoming}
                     style={({ pressed }) => [styles.tripGuvenFabCompact, (pressed || trustBusy || isTerminal) && { opacity: 0.7 }]}
                   >
                     <LinearGradient
-                      colors={['#0D9488', '#059669', '#10B981', '#34D399']}
+                      colors={
+                        trustStatus === 'accepted'
+                          ? ['#16A34A', '#22C55E', '#4ADE80', '#86EFAC']
+                          : trustStatus === 'declined'
+                            ? ['#475569', '#64748B', '#94A3B8', '#CBD5E1']
+                            : ['#0D9488', '#059669', '#10B981', '#34D399']
+                      }
                       locations={[0, 0.35, 0.7, 1]}
                       style={styles.tripGuvenFabCompactInner}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
                       {trustBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="shield-checkmark" size={20} color="#FFF" />}
-                      <Text style={styles.tripGuvenFabLabel}>Güven AL</Text>
+                      <Text style={styles.tripGuvenFabLabel}>
+                        {trustStatus === 'accepted' ? 'Onaylı' : trustStatus === 'declined' ? 'Müsait Değil' : 'Güven AL'}
+                      </Text>
                     </LinearGradient>
                   </Pressable>
                 </View>
               </View>
+              {trustStatus === 'accepted' || trustStatus === 'declined' ? (
+                <View style={[styles.trustStateStrip, trustStatus === 'accepted' ? styles.trustStateAccepted : styles.trustStateDeclined]}>
+                  <Ionicons
+                    name={trustStatus === 'accepted' ? 'checkmark-circle' : 'information-circle-outline'}
+                    size={16}
+                    color={trustStatus === 'accepted' ? '#15803D' : '#475569'}
+                  />
+                  <Text style={[styles.trustStateText, trustStatus === 'accepted' ? styles.trustStateTextAccepted : styles.trustStateTextDeclined]}>
+                    {trustStatus === 'accepted' ? 'Sözlü güven onayı alındı' : 'Güven isteği şu an uygun değil'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
@@ -354,6 +387,24 @@ export default function LeylekTripLiveRideChrome({
                 <Ionicons name="locate" size={25} color="#FFF" />
               </LinearGradient>
               <Text style={styles.tripAiFabLabel} numberOfLines={1}>GPS</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.navigationButton, (pressed || navigationDisabled) && { opacity: 0.78 }]}
+              onPress={onNavigate}
+              disabled={navigationDisabled || isTerminal}
+              accessibilityRole="button"
+              accessibilityLabel={navigationLabel}
+            >
+              <LinearGradient
+                colors={navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
+                style={styles.navigationButtonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Ionicons name="navigate" size={18} color="#FFF" />
+                <Text style={styles.navigationButtonText} numberOfLines={1}>{navigationLabel}</Text>
+              </LinearGradient>
             </Pressable>
 
             {canFinish ? (
@@ -690,6 +741,21 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.38)',
   },
   tripGuvenFabLabel: { color: '#FFF', fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
+  trustStateStrip: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  trustStateAccepted: { backgroundColor: 'rgba(220, 252, 231, 0.96)', borderWidth: 1, borderColor: 'rgba(34, 197, 94, 0.26)' },
+  trustStateDeclined: { backgroundColor: 'rgba(241, 245, 249, 0.96)', borderWidth: 1, borderColor: 'rgba(100, 116, 139, 0.22)' },
+  trustStateText: { fontSize: 12, fontWeight: '900' },
+  trustStateTextAccepted: { color: '#15803D' },
+  trustStateTextDeclined: { color: '#475569' },
   actionButtons: { flexDirection: 'row', gap: 12, alignItems: 'flex-end' },
   tripAiFabWrap: { alignItems: 'center', justifyContent: 'center', minWidth: 52, maxWidth: 56 },
   tripAiFabGrad: {
@@ -705,6 +771,9 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   tripAiFabLabel: { fontSize: 10, fontWeight: '900', color: '#334155', marginTop: 4, letterSpacing: 0.6 },
+  navigationButton: { flex: 1.35, borderRadius: 12, overflow: 'hidden' },
+  navigationButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 12 },
+  navigationButtonText: { fontSize: 12, fontWeight: '800', marginLeft: 6, color: '#FFF' },
   qrEndButton: { flex: 2, borderRadius: 12, overflow: 'hidden' },
   qrEndButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 16 },
   qrEndButtonText: { fontSize: 13, fontWeight: '700', marginLeft: 6, color: '#FFF' },

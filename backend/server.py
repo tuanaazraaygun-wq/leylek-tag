@@ -22274,6 +22274,12 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "driver_location_lat": row.get("driver_location_lat"),
         "driver_location_lng": row.get("driver_location_lng"),
         "driver_location_updated_at": row.get("driver_location_updated_at"),
+        "trust_status": row.get("trust_status"),
+        "trust_requested_by_user_id": row.get("trust_requested_by_user_id"),
+        "trust_resolved_by_user_id": row.get("trust_resolved_by_user_id"),
+        "trust_requested_at": row.get("trust_requested_at"),
+        "trust_resolved_at": row.get("trust_resolved_at"),
+        "navigation_status": row.get("navigation_status"),
         "started_at": row.get("started_at"),
         "cancelled_at": row.get("cancelled_at"),
         "cancelled_by_user_id": row.get("cancelled_by_user_id"),
@@ -22943,12 +22949,24 @@ async def sio_muhabbet_trip_trust_request(sid, data):
         driver_id = str(row.get("driver_id") or "").strip().lower()
         uid_lo = str(uid).strip().lower()
         target_uid = driver_id if uid_lo == passenger_id else passenger_id
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "trust_status": "requested",
+            "trust_requested_by_user_id": uid_lo,
+            "trust_resolved_by_user_id": None,
+            "trust_requested_at": now_iso,
+            "trust_resolved_at": None,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
         payload = {
             "session_id": session_id,
             "conversation_id": row.get("conversation_id"),
             "requester_user_id": uid_lo,
             "target_user_id": target_uid,
-            "status": "placeholder",
+            "status": "requested",
+            "session": _muhabbet_trip_session_public(next_row),
         }
         for target in (uid_lo, target_uid):
             if target:
@@ -22957,6 +22975,57 @@ async def sio_muhabbet_trip_trust_request(sid, data):
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_trust_request: %s", e)
+
+
+async def _muhabbet_trip_trust_resolve(sid, data, status: str):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        uid_lo = str(uid).strip().lower()
+        requester_uid = str(row.get("trust_requested_by_user_id") or "").strip().lower()
+        if not requester_uid or requester_uid == uid_lo or str(row.get("trust_status") or "").strip().lower() != "requested":
+            await sio.emit("muhabbet_trip_error", {"code": "bad_trust_state", "message": "Güven isteği yanıtlanamaz."}, room=sid)
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "trust_status": status,
+            "trust_resolved_by_user_id": uid_lo,
+            "trust_resolved_at": now_iso,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "requester_user_id": requester_uid,
+            "target_user_id": uid_lo,
+            "status": status,
+            "session": _muhabbet_trip_session_public(next_row),
+        }
+        await sio.emit("muhabbet_trip_trust_resolved", payload, room=muhabbet_trip_room(session_id))
+        for target in (requester_uid, uid_lo):
+            if target:
+                await emit_socket_event_to_user(target, "muhabbet_trip_trust_resolved", payload)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_trust_%s: %s", status, e)
+
+
+@sio.on("muhabbet_trip_trust_accept")
+async def sio_muhabbet_trip_trust_accept(sid, data):
+    await _muhabbet_trip_trust_resolve(sid, data, "accepted")
+
+
+@sio.on("muhabbet_trip_trust_decline")
+async def sio_muhabbet_trip_trust_decline(sid, data):
+    await _muhabbet_trip_trust_resolve(sid, data, "declined")
 
 
 @api_router.get("/muhabbet/conversations/me")

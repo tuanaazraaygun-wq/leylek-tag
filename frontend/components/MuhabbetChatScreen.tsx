@@ -326,6 +326,7 @@ export default function MuhabbetChatScreen({
     !ctx?.matched_via_leylek_key &&
     !!pendingPairRequestId &&
     pendingPairDirection === 'outgoing';
+  const conversionUiActive = !!ctx?.matched_via_leylek_key || tripConvertState === 'confirmed';
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
   const pushSystemCard = useCallback((tone: ChatSystemCard['tone'], text: string) => {
@@ -1602,7 +1603,7 @@ export default function MuhabbetChatScreen({
           ) : (
             <FlatList
               ref={listRef}
-              data={rows}
+              data={conversionUiActive ? [] : rows}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="always"
@@ -1645,6 +1646,14 @@ export default function MuhabbetChatScreen({
                           <Text style={styles.secureStatusTxt}>Sonraki adım: Anlaşmayı yolculuğa çevir</Text>
                         </View>
                       </View>
+                    </View>
+                  ) : null}
+                  {conversionUiActive ? (
+                    <View style={styles.tripModeOnlyCard}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={18} color="#2563EB" />
+                      <Text style={styles.tripModeOnlyText}>
+                        Ön görüşme mesajları gizlendi. Bu ekranda yalnızca eşleşme, yolculuğa çevirme ve canlı trip durumu gösterilir.
+                      </Text>
                     </View>
                   ) : null}
                   {hasOutgoingPendingPairRequest ? (
@@ -1854,39 +1863,41 @@ export default function MuhabbetChatScreen({
               )}
             </View>
           ) : null}
-          <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-            <TextInput
-              style={styles.input}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Mesaj yaz…"
-              placeholderTextColor={TEXT_SECONDARY}
-              multiline
-              maxLength={1000}
-            />
-            <Pressable
-              onPress={() => void send()}
-              disabled={sending || !draft.trim()}
-              style={({ pressed }) => [
-                styles.sendBtnWrap,
-                (!draft.trim() || sending) && { opacity: 0.4 },
-                pressed && draft.trim() && !sending && { opacity: 0.9, transform: [{ scale: 0.96 }] },
-              ]}
-            >
-              <LinearGradient
-                colors={SEND_BTN_GRAD}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.sendBtnGrad}
+          {!conversionUiActive ? (
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+              <TextInput
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Mesaj yaz…"
+                placeholderTextColor={TEXT_SECONDARY}
+                multiline
+                maxLength={1000}
+              />
+              <Pressable
+                onPress={() => void send()}
+                disabled={sending || !draft.trim()}
+                style={({ pressed }) => [
+                  styles.sendBtnWrap,
+                  (!draft.trim() || sending) && { opacity: 0.4 },
+                  pressed && draft.trim() && !sending && { opacity: 0.9, transform: [{ scale: 0.96 }] },
+                ]}
               >
-                {sending ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Ionicons name="arrow-up" size={22} color="#fff" />
-                )}
-              </LinearGradient>
-            </Pressable>
-          </View>
+                <LinearGradient
+                  colors={SEND_BTN_GRAD}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sendBtnGrad}
+                >
+                  {sending ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="arrow-up" size={22} color="#fff" />
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </View>
+          ) : null}
         </KeyboardAvoidingView>
         <Modal
           visible={!!pairInModal}
@@ -2098,6 +2109,20 @@ const styles = StyleSheet.create({
   secureMatchIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#16A34A' },
   secureMatchTitle: { color: '#14532D', fontSize: 16, fontWeight: '900', lineHeight: 21 },
   secureMatchSub: { marginTop: 6, color: '#166534', fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  tripModeOnlyCard: {
+    marginHorizontal: 14,
+    marginBottom: 10,
+    borderRadius: 16,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(37,99,235,0.24)',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  tripModeOnlyText: { flex: 1, color: '#1D4ED8', fontSize: 12, fontWeight: '800', lineHeight: 17 },
   secureStatusList: { marginTop: 12, gap: 7 },
   secureStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   secureStatusTxt: { color: '#14532D', fontSize: 12, fontWeight: '800', flex: 1 },

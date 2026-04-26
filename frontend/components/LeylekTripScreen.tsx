@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Linking,
+  Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -33,6 +35,7 @@ type LeylekTripScreenProps = {
 type Coord = { latitude: number; longitude: number };
 type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish';
 type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
+type TrustPrompt = { requesterUserId: string; targetUserId: string } | null;
 
 function coord(lat?: number | null, lng?: number | null): Coord | null {
   const la = Number(lat);
@@ -75,12 +78,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [callBusy, setCallBusy] = useState(false);
   const [callPayload, setCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
   const [trustBusy, setTrustBusy] = useState(false);
+  const [trustPrompt, setTrustPrompt] = useState<TrustPrompt>(null);
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
   const joinedCallKeyRef = useRef('');
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = session?.status === 'cancelled' || session?.status === 'finished';
   const status = displayStatus(session?.status);
+  const trustStatus = session?.trust_status || null;
 
   const loadSession = useCallback(async () => {
     const token = await getPersistedAccessToken();
@@ -113,26 +118,47 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     void loadSession();
   }, [loadSession]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadDeviceLocation = async () => {
-      try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        if (perm.status !== 'granted') return;
-        const last = await Location.getLastKnownPositionAsync();
-        const pos = last || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-        if (!cancelled && pos?.coords) {
-          setDeviceLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-        }
-      } catch {
-        /* Device location is only a map fallback; absence should not block the trip screen. */
+  const emitCurrentLocation = useCallback(async (opts?: { requestPermission?: boolean; showAlert?: boolean; manual?: boolean }) => {
+    if (opts?.manual) setSendingLocation(true);
+    try {
+      const perm = opts?.requestPermission
+        ? await Location.requestForegroundPermissionsAsync()
+        : await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        if (opts?.showAlert) Alert.alert('Konum izni', 'Konum paylaşmak için izin gerekli.');
+        return false;
       }
-    };
-    void loadDeviceLocation();
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setDeviceLocation(next);
+      const payload = {
+        session_id: sessionId,
+        latitude: next.latitude,
+        longitude: next.longitude,
+      };
+      console.log('[leylek-trip] emit', 'muhabbet_trip_location_update', payload);
+      getOrCreateSocket().emit('muhabbet_trip_location_update', payload);
+      return true;
+    } catch {
+      if (opts?.showAlert) Alert.alert('Konum', 'Konum alınamadı.');
+      return false;
+    } finally {
+      if (opts?.manual) setSendingLocation(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !myId || isTerminal) return;
+    let cancelled = false;
+    void emitCurrentLocation({ requestPermission: true, showAlert: false });
+    const interval = setInterval(() => {
+      if (!cancelled) void emitCurrentLocation({ requestPermission: false, showAlert: false });
+    }, 15000);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
-  }, []);
+  }, [emitCurrentLocation, isTerminal, myId, sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -179,9 +205,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       console.log('[leylek-trip] event', 'muhabbet_trip_trust_requested', payload);
       if (!callMatches(payload)) return;
       setTrustBusy(false);
+      if (payload.session) setSession(payload.session);
       if (String(payload.requester_user_id || '').trim().toLowerCase() !== myId) {
-        Alert.alert('Güven AL', 'Karşı taraf Muhabbet güven kontrolü istedi. Bu akış yakında aktif olacak.');
+        setTrustPrompt({
+          requesterUserId: String(payload.requester_user_id || '').trim().toLowerCase(),
+          targetUserId: String(payload.target_user_id || '').trim().toLowerCase(),
+        });
       }
+    };
+    const onTrustResolved = (payload: MuhabbetTripTrustSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_trust_resolved', payload);
+      if (!callMatches(payload)) return;
+      setTrustBusy(false);
+      setTrustPrompt(null);
+      if (payload.session) setSession(payload.session);
     };
     const joinPayload = { session_id: sessionId };
     console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
@@ -194,6 +231,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     socket.on('muhabbet_trip_call_join', onCallJoin);
     socket.on('muhabbet_trip_call_end', onCallEnd);
     socket.on('muhabbet_trip_trust_requested', onTrustRequested);
+    socket.on('muhabbet_trip_trust_resolved', onTrustResolved);
     return () => {
       const leavePayload = { session_id: sessionId };
       console.log('[leylek-trip] emit', 'muhabbet_trip_leave', leavePayload);
@@ -206,6 +244,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_call_join', onCallJoin);
       socket.off('muhabbet_trip_call_end', onCallEnd);
       socket.off('muhabbet_trip_trust_requested', onTrustRequested);
+      socket.off('muhabbet_trip_trust_resolved', onTrustResolved);
       void muhabbetAgoraVoiceService.leaveChannelAndDestroy();
       muhabbetAgoraVoiceService.resetCallbacks();
     };
@@ -222,28 +261,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   }, [session]);
 
   const shareLocation = useCallback(async () => {
-    setSendingLocation(true);
-    try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== 'granted') {
-        Alert.alert('Konum izni', 'Konum paylaşmak için izin gerekli.');
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setDeviceLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      const payload = {
-        session_id: sessionId,
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      };
-      console.log('[leylek-trip] emit', 'muhabbet_trip_location_update', payload);
-      getOrCreateSocket().emit('muhabbet_trip_location_update', payload);
-    } catch {
-      Alert.alert('Konum', 'Konum alınamadı.');
-    } finally {
-      setSendingLocation(false);
-    }
-  }, [sessionId]);
+    await emitCurrentLocation({ requestPermission: true, showAlert: true, manual: true });
+  }, [emitCurrentLocation]);
 
   const emitAction = useCallback((eventName: TripActionEvent) => {
     const payload = { session_id: sessionId };
@@ -333,9 +352,42 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     console.log('[leylek-trip] emit', 'muhabbet_trip_trust_request', payload);
     setTrustBusy(true);
     getOrCreateSocket().emit('muhabbet_trip_trust_request', payload);
-    Alert.alert('Güven AL', 'Muhabbet güven isteği gönderildi. Bu izole akışın canlı görüşme adımı yakında aktif olacak.');
     setTimeout(() => setTrustBusy(false), 1500);
   }, [isTerminal, session, sessionId]);
+
+  const resolveTrust = useCallback((accepted: boolean) => {
+    const eventName = accepted ? 'muhabbet_trip_trust_accept' : 'muhabbet_trip_trust_decline';
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', eventName, payload);
+    setTrustBusy(true);
+    setTrustPrompt(null);
+    getOrCreateSocket().emit(eventName, payload);
+    setTimeout(() => setTrustBusy(false), 1500);
+  }, [sessionId]);
+
+  const navigationTarget = useMemo(() => {
+    if (!session) return null;
+    if (session.status === 'started') return locations.dropoff;
+    if (isDriver) return locations.passenger || locations.pickup;
+    return locations.driver || locations.pickup;
+  }, [isDriver, locations.driver, locations.dropoff, locations.passenger, locations.pickup, session]);
+
+  const navigationLabel = session?.status === 'started' ? 'Varışa Git' : isDriver ? 'Yolcuya Git' : 'Navigasyon';
+  const openNavigation = useCallback(async () => {
+    if (!navigationTarget) {
+      Alert.alert('Navigasyon', 'Navigasyon için gerekli konum henüz hazır değil.');
+      return;
+    }
+    const q = `${navigationTarget.latitude},${navigationTarget.longitude}`;
+    const nativeUrl = Platform.OS === 'android' ? `google.navigation:q=${q}&mode=d` : `comgooglemaps://?daddr=${q}&directionsmode=driving`;
+    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}&travelmode=driving`;
+    try {
+      const canOpenNative = await Linking.canOpenURL(nativeUrl);
+      await Linking.openURL(canOpenNative ? nativeUrl : webUrl);
+    } catch {
+      await Linking.openURL(webUrl);
+    }
+  }, [navigationTarget]);
 
   useEffect(() => {
     if (callState !== 'outgoing' || !callPayload || !myId) return;
@@ -353,6 +405,19 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
     });
   }, [callPayload, callState, joinMuhabbetAgoraChannel, myId]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (!session.route_polyline && locations.pickup && locations.dropoff) {
+      console.log('[leylek-trip] route data missing; drawing fallback line', {
+        session_id: sessionId,
+        pickup: locations.pickup,
+        dropoff: locations.dropoff,
+      });
+    } else if (!locations.pickup || !locations.dropoff) {
+      console.log('[leylek-trip] route coordinates missing', { session_id: sessionId });
+    }
+  }, [locations.dropoff, locations.pickup, session, sessionId]);
 
   if (loading) {
     return (
@@ -391,12 +456,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         routePolyline={session.route_polyline}
         routeDistanceKm={session.route_distance_km}
         routeDurationMin={session.route_duration_min}
+        sessionStatus={session.status}
         pickup={locations.pickup}
         dropoff={locations.dropoff}
         passengerLocation={locations.passenger}
         driverLocation={locations.driver}
         deviceLocation={deviceLocation}
         routeDataMissing={!locations.pickup || !locations.dropoff}
+        trustStatus={trustStatus}
+        trustPendingIncoming={
+          trustStatus === 'requested' &&
+          String(session.trust_requested_by_user_id || '').trim().toLowerCase() !== myId
+        }
+        navigationLabel={navigationLabel}
+        navigationDisabled={!navigationTarget}
         sendingLocation={sendingLocation}
         actionBusy={actionBusy}
         callState={callState}
@@ -409,10 +482,44 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onJoinCall={() => void joinCall()}
         onEndCall={() => void endCall()}
         onTrustRequest={requestTrust}
+        onNavigate={() => void openNavigation()}
         onStart={() => emitAction('muhabbet_trip_start')}
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}
       />
+      <Modal
+        visible={!!trustPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTrustPrompt(null)}
+      >
+        <View style={styles.trustModalRoot}>
+          <View style={styles.trustModalCard}>
+            <View style={styles.trustModalIcon}>
+              <Ionicons name="shield-checkmark" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.trustModalTitle}>Güven AL isteği</Text>
+            <Text style={styles.trustModalText}>
+              {String(trustPrompt?.requesterUserId || '').toLowerCase() === String(session.driver_id || '').toLowerCase()
+                ? 'Sürücü sözlü güven almak istiyor. Kabul ediyor musun?'
+                : 'Yolcu sözlü güven almak istiyor. Kabul ediyor musun?'}
+            </Text>
+            <Pressable
+              style={({ pressed }) => [styles.trustAcceptButton, pressed && { opacity: 0.9 }]}
+              onPress={() => resolveTrust(true)}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+              <Text style={styles.trustAcceptText}>Evet, onaylıyorum</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]}
+              onPress={() => resolveTrust(false)}
+            >
+              <Text style={styles.trustDeclineText}>Müsait değilim</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -425,4 +532,56 @@ const styles = StyleSheet.create({
   emptySub: { marginTop: 6, fontSize: 13, color: '#64748B' },
   emptyBackBtn: { marginTop: 16, borderRadius: 14, backgroundColor: '#2563EB', paddingVertical: 11, paddingHorizontal: 18 },
   emptyBackTxt: { color: '#FFF', fontWeight: '900' },
+  trustModalRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.58)',
+  },
+  trustModalCard: {
+    width: '100%',
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    padding: 22,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.24,
+    shadowRadius: 22,
+    elevation: 18,
+  },
+  trustModalIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  trustModalTitle: { fontSize: 20, fontWeight: '900', color: '#0F172A' },
+  trustModalText: { marginTop: 8, color: '#475569', fontSize: 15, lineHeight: 21, textAlign: 'center', fontWeight: '700' },
+  trustAcceptButton: {
+    marginTop: 18,
+    width: '100%',
+    borderRadius: 16,
+    backgroundColor: '#16A34A',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  trustAcceptText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  trustDeclineButton: {
+    marginTop: 10,
+    width: '100%',
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trustDeclineText: { color: '#475569', fontSize: 14, fontWeight: '900' },
 });

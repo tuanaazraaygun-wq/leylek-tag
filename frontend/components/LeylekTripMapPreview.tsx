@@ -12,6 +12,7 @@ type LeylekTripMapPreviewProps = {
   driverLocation?: Coord | null;
   deviceLocation?: Coord | null;
   routePolyline?: string | null;
+  sessionStatus?: string | null;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -85,30 +86,69 @@ export default function LeylekTripMapPreview({
   driverLocation,
   deviceLocation,
   routePolyline,
+  sessionStatus,
   style,
 }: LeylekTripMapPreviewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
   const routeCoordinates = useMemo(() => decodePolyline(routePolyline), [routePolyline]);
-  const fitCoords = useMemo(
-    () => [passengerLocation, driverLocation, pickup, dropoff, ...routeCoordinates].filter(isCoord),
-    [pickup, dropoff, passengerLocation, driverLocation, routeCoordinates],
+  const tripStarted = sessionStatus === 'started' || sessionStatus === 'finished';
+  const approachTarget = passengerLocation || pickup;
+  const approachCoordinates = useMemo(
+    () => (isCoord(driverLocation) && isCoord(approachTarget) ? [driverLocation, approachTarget] : []),
+    [approachTarget, driverLocation],
   );
+  const tripFallbackCoordinates = useMemo(
+    () => (isCoord(pickup) && isCoord(dropoff) ? [pickup, dropoff] : []),
+    [dropoff, pickup],
+  );
+  const displayRouteCoordinates = routeCoordinates.length >= 2 ? routeCoordinates : tripFallbackCoordinates;
+  const routeIsFallback = routeCoordinates.length < 2 && tripFallbackCoordinates.length >= 2;
+  const fitCoords = useMemo(() => {
+    const livePair = [driverLocation, passengerLocation].filter(isCoord);
+    if (livePair.length >= 2) return livePair;
+    if (tripStarted && displayRouteCoordinates.length >= 2) return displayRouteCoordinates;
+    if (!tripStarted && approachCoordinates.length >= 2) return approachCoordinates;
+    if (tripFallbackCoordinates.length >= 2) return tripFallbackCoordinates;
+    return [driverLocation, passengerLocation, pickup, dropoff, deviceLocation].filter(isCoord);
+  }, [
+    approachCoordinates,
+    deviceLocation,
+    displayRouteCoordinates,
+    driverLocation,
+    dropoff,
+    passengerLocation,
+    pickup,
+    tripFallbackCoordinates,
+    tripStarted,
+  ]);
   const center = useMemo(
     () =>
-      [passengerLocation, driverLocation, pickup, dropoff, deviceLocation].filter(isCoord)[0] ||
+      [driverLocation, passengerLocation, pickup, dropoff, deviceLocation].filter(isCoord)[0] ||
       DEFAULT_TR_MAP_FALLBACK_CENTER,
     [deviceLocation, driverLocation, dropoff, passengerLocation, pickup],
   );
 
   useEffect(() => {
-    if (!mapReady || !mapRef.current || fitCoords.length < 2) return;
+    if (!mapReady || !mapRef.current || fitCoords.length < 1) return;
     const t = setTimeout(() => {
       try {
-        mapRef.current?.fitToCoordinates(fitCoords, {
-          edgePadding: { top: 80, right: 48, bottom: 80, left: 48 },
-          animated: true,
-        });
+        if (fitCoords.length >= 2) {
+          mapRef.current?.fitToCoordinates(fitCoords, {
+            edgePadding: { top: 96, right: 56, bottom: 156, left: 56 },
+            animated: true,
+          });
+        } else {
+          mapRef.current?.animateToRegion(
+            {
+              latitude: fitCoords[0].latitude,
+              longitude: fitCoords[0].longitude,
+              latitudeDelta: 0.045,
+              longitudeDelta: 0.045,
+            },
+            450,
+          );
+        }
       } catch {
         /* map readiness can be racy on Android */
       }
@@ -162,35 +202,32 @@ export default function LeylekTripMapPreview({
             <MarkerBubble label="Yolcu" color="#F97316" icon="person" />
           </Marker>
         ) : null}
-        {isCoord(passengerLocation) && isCoord(driverLocation) ? (
+        {!tripStarted && approachCoordinates.length >= 2 ? (
           <Polyline
-            coordinates={[passengerLocation, driverLocation]}
+            coordinates={approachCoordinates}
             strokeColor="#047857"
             strokeWidth={8}
             lineJoin="round"
             lineCap="round"
           />
         ) : null}
-        {routeCoordinates.length >= 2 ? (
+        {tripStarted && displayRouteCoordinates.length >= 2 ? (
           <Polyline
-            coordinates={routeCoordinates}
+            coordinates={displayRouteCoordinates}
             strokeColor="#EA580C"
             strokeWidth={8}
-            lineDashPattern={[12, 6]}
-            lineJoin="round"
-            lineCap="round"
-          />
-        ) : isCoord(pickup) && isCoord(dropoff) ? (
-          <Polyline
-            coordinates={[pickup, dropoff]}
-            strokeColor="#EA580C"
-            strokeWidth={8}
-            lineDashPattern={[12, 6]}
+            lineDashPattern={routeIsFallback ? [12, 6] : undefined}
             lineJoin="round"
             lineCap="round"
           />
         ) : null}
       </MapView>
+      {routeIsFallback ? (
+        <View style={styles.fallbackBadge} pointerEvents="none">
+          <Ionicons name="git-branch-outline" size={13} color="#92400E" />
+          <Text style={styles.fallbackBadgeText}>Rota tahmini çizgi</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -230,6 +267,25 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   markerText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  fallbackBadge: {
+    position: 'absolute',
+    left: 14,
+    bottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(254, 243, 199, 0.96)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(180, 83, 9, 0.25)',
+  },
+  fallbackBadgeText: {
+    color: '#92400E',
     fontSize: 11,
     fontWeight: '800',
   },
