@@ -300,6 +300,7 @@ export default function MuhabbetChatScreen({
   const [tripConvertInModal, setTripConvertInModal] = useState<{ rid: string } | null>(null);
   const [tripConvertLoading, setTripConvertLoading] = useState(false);
   const [tripConvertState, setTripConvertState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
+  const [tripLockReason, setTripLockReason] = useState<string | null>(null);
   const tripConvertStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   const tripSessionNavRef = useRef<string | null>(null);
   /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
@@ -326,7 +327,14 @@ export default function MuhabbetChatScreen({
     !ctx?.matched_via_leylek_key &&
     !!pendingPairRequestId &&
     pendingPairDirection === 'outgoing';
-  const conversionUiActive = !!ctx?.matched_via_leylek_key || tripConvertState === 'confirmed';
+  const tripLockActive = !!tripLockReason || tripConvertState === 'pending' || tripConvertState === 'confirmed';
+  const tripLockLogReason =
+    tripLockReason ||
+    (tripConvertState === 'pending'
+      ? 'muhabbet_trip_convert_request pending'
+      : tripConvertState === 'confirmed'
+        ? 'muhabbet_trip_convert_confirmed'
+        : null);
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
   const pushSystemCard = useCallback((tone: ChatSystemCard['tone'], text: string) => {
@@ -413,9 +421,18 @@ export default function MuhabbetChatScreen({
     tripConvertStateRef.current = tripConvertState;
   }, [tripConvertState]);
 
+  useEffect(() => {
+    if (tripLockActive) {
+      console.log(`[muhabbet-chat] tripLockActive=true reason=${tripLockLogReason || 'unknown'}`);
+    } else if (ctx?.matched_via_leylek_key) {
+      console.log('[muhabbet-chat] tripLockActive=false keyMatchOnly');
+    }
+  }, [ctx?.matched_via_leylek_key, tripLockActive, tripLockLogReason]);
+
   const navigateToLeylekTripSession = useCallback((payload?: MuhabbetTripSessionSocketPayload | null) => {
     const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '').trim().toLowerCase();
     if (!sessionId || tripSessionNavRef.current === sessionId) return;
+    setTripLockReason('route /leylek-trip/[sessionId] is about to open');
     console.log('[muhabbet-trip] navigating', payload);
     tripSessionNavRef.current = sessionId;
     router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
@@ -628,18 +645,21 @@ export default function MuhabbetChatScreen({
       const myRole = String(ctxRef.current?.my_role || '').trim().toLowerCase();
       if (isDriverAppRole(myRole)) return;
       setTripConvertState('pending');
+      setTripLockReason('muhabbet_trip_convert_request pending');
       setTripConvertInModal({ rid });
     };
     const onConvertSent = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
       setTripConvertState('pending');
+      setTripLockReason('muhabbet_trip_convert_request_sent');
     };
     const onConvertConfirmed = (data: MuhabbetTripSessionSocketPayload) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
       setTripConvertInModal(null);
       setTripConvertState('confirmed');
+      setTripLockReason('muhabbet_trip_convert_confirmed');
       if (tripConvertStateRef.current !== 'confirmed') {
         pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
       }
@@ -647,18 +667,22 @@ export default function MuhabbetChatScreen({
     };
     const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
       if (!convMatches(data)) return;
+      setTripConvertState('confirmed');
+      setTripLockReason('muhabbet_trip_session_ready');
       navigateToLeylekTripSession(data);
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
       setTripConvertState('idle');
+      setTripLockReason(null);
       pushSystemCard('orange', 'Yolculuğa çevirme isteği reddedildi.');
       Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
     };
     const onConvertError = (data: { code?: string; detail?: string; message?: string }) => {
       setTripConvertLoading(false);
       setTripConvertState('idle');
+      setTripLockReason(null);
       if (data?.code === 'driver_required') {
         Alert.alert('Yolculuğa çevir', 'Bu isteği yalnızca sürücü başlatabilir.');
         return;
@@ -1518,6 +1542,7 @@ export default function MuhabbetChatScreen({
       return;
     }
     setTripConvertState('pending');
+    setTripLockReason('muhabbet_trip_convert_request pending');
     socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
     setTimeout(() => setTripConvertLoading(false), 15000);
   }, [cid, ensureSocketReadyForSend, tripConvertLoading, tripConvertState]);
@@ -1603,7 +1628,7 @@ export default function MuhabbetChatScreen({
           ) : (
             <FlatList
               ref={listRef}
-              data={conversionUiActive ? [] : rows}
+              data={tripLockActive ? [] : rows}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="always"
@@ -1648,7 +1673,7 @@ export default function MuhabbetChatScreen({
                       </View>
                     </View>
                   ) : null}
-                  {conversionUiActive ? (
+                  {tripLockActive ? (
                     <View style={styles.tripModeOnlyCard}>
                       <Ionicons name="chatbubble-ellipses-outline" size={18} color="#2563EB" />
                       <Text style={styles.tripModeOnlyText}>
@@ -1821,7 +1846,7 @@ export default function MuhabbetChatScreen({
               </Animated.View>
             </View>
           ) : null}
-          {ctx?.matched_via_leylek_key ? (
+          {ctx?.matched_via_leylek_key && (currentUserIsDriver || tripConvertState !== 'idle' || !!tripConvertInModal) ? (
             <View style={[styles.tripConvertSticky, tripConvertState === 'confirmed' && styles.tripConvertStickyConfirmed]}>
               {tripConvertState === 'confirmed' ? (
                 <>
@@ -1863,7 +1888,7 @@ export default function MuhabbetChatScreen({
               )}
             </View>
           ) : null}
-          {!conversionUiActive ? (
+          {!tripLockActive ? (
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
               <TextInput
                 style={styles.input}
