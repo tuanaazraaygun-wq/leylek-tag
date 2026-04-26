@@ -1312,7 +1312,8 @@ export default function MuhabbetChatScreen({
       Alert.alert('Bilgi', p?.message || 'İşlem tamam.');
     };
     try {
-      const ready = await ensureSocketReadyForSend();
+      const alreadyReady = socket.connected && roomJoinedRef.current;
+      const ready = alreadyReady ? true : await ensureSocketReadyForSend();
       if (!ready) {
         finish();
         Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
@@ -1328,15 +1329,28 @@ export default function MuhabbetChatScreen({
         finish();
         Alert.alert('Zaman aşımı', 'Sunucudan yanıt alınamadı. Bağlantınızı kontrol edin.');
       }, 15000);
-      try {
-        socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-      } catch {
-        /* noop */
+      if (!roomJoinedRef.current) {
+        try {
+          socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+        } catch {
+          /* noop */
+        }
       }
       console.log('[chat] send leylek pair request conversation=', cid);
       const payload = { conversation_id: cid };
       console.log("[leylek-pair] emit payload", payload);
-      socket.emit('leylek_pair_match_request', payload);
+      const emitSocket = getOrCreateSocket();
+      console.log("[leylek-pair] socket final", {
+        connected: emitSocket.connected,
+        disconnected: emitSocket.disconnected,
+        id: emitSocket.id,
+      });
+      if (!emitSocket.connected) {
+        finish();
+        Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+        return;
+      }
+      emitSocket.emit('leylek_pair_match_request', payload);
     } catch {
       if (tmo) {
         clearTimeout(tmo);

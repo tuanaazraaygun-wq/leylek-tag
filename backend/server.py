@@ -21916,7 +21916,21 @@ async def _sio_leylek_pair_request_handler(sid, data):
         await sio.enter_room(sid, muhabbet_room(cid))
     except Exception as e:
         logger.warning("leylek_pair_request enter_room: %s", e)
-    r = _leylek_pair_request_try_from_socket(uid, cid)
+    logger.info("[leylek_pair_request] handler_start sid=%s uid=%s cid=%s", sid, uid, cid)
+    try:
+        r = _leylek_pair_request_try_from_socket(uid, cid)
+        logger.info("[leylek_pair_request] result=%s", r)
+    except Exception as e:
+        logger.exception("[leylek_pair_request] exception sid=%s uid=%s cid=%s", sid, uid, cid)
+        await sio.emit(
+            "leylek_pair_error",
+            {
+                "code": "server_error",
+                "message": "Eşleşme isteği işlenemedi. Lütfen tekrar deneyin.",
+            },
+            to=sid,
+        )
+        return
     if not r.get("ok"):
         if r.get("err") == "cooldown":
             await sio.emit("leylek_pair_error", {"code": "cooldown", "detail": r.get("detail") or ""}, room=sid)
