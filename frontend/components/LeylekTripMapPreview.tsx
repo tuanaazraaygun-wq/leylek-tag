@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
 
@@ -10,6 +10,7 @@ type LeylekTripMapPreviewProps = {
   dropoff?: Coord | null;
   passengerLocation?: Coord | null;
   driverLocation?: Coord | null;
+  style?: StyleProp<ViewStyle>;
 };
 
 let MapView: any = null;
@@ -47,6 +48,7 @@ export default function LeylekTripMapPreview({
   dropoff,
   passengerLocation,
   driverLocation,
+  style,
 }: LeylekTripMapPreviewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -74,7 +76,7 @@ export default function LeylekTripMapPreview({
 
   if (Platform.OS === 'web' || !MapView) {
     return (
-      <View style={[styles.map, styles.fallback]}>
+      <View style={[styles.map, style, styles.fallback]}>
         <Ionicons name="map-outline" size={36} color="#3B82F6" />
         <Text style={styles.fallbackTitle}>Muhabbet yolculuk haritası</Text>
         <Text style={styles.fallbackSub}>Konum ve rota önizlemesi cihazda gösterilir.</Text>
@@ -83,7 +85,7 @@ export default function LeylekTripMapPreview({
   }
 
   return (
-    <View style={styles.map}>
+    <View style={[styles.map, style]}>
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}

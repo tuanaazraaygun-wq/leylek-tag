@@ -2,22 +2,27 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import type { MuhabbetTripSession, MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
 import LeylekTripMapPreview from './LeylekTripMapPreview';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HEADER_GRAD = ['#0F172A', '#1E3A8A'] as const;
+const DRIVER_GRAD = ['#2563EB', '#60A5FA'] as const;
+const FINISH_GRAD = ['#16A34A', '#22C55E'] as const;
+const SHARE_GRAD = ['#F97316', '#FDBA74'] as const;
 
 type LeylekTripScreenProps = {
   apiBaseUrl: string;
@@ -25,6 +30,7 @@ type LeylekTripScreenProps = {
 };
 
 type Coord = { latitude: number; longitude: number };
+type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish';
 
 function coord(lat?: number | null, lng?: number | null): Coord | null {
   const la = Number(lat);
@@ -32,30 +38,22 @@ function coord(lat?: number | null, lng?: number | null): Coord | null {
   return Number.isFinite(la) && Number.isFinite(lo) ? { latitude: la, longitude: lo } : null;
 }
 
-function statusLabel(status?: string | null): string {
+function displayStatus(status?: string | null): { label: string; detail: string; color: string; icon: keyof typeof Ionicons.glyphMap } {
   switch (status) {
     case 'started':
-      return 'Yolculuk başladı';
+      return { label: 'Yolculuk başladı', detail: 'Konum paylaşımı açık, rota takip ediliyor.', color: '#2563EB', icon: 'navigate-circle' };
     case 'cancelled':
-      return 'İptal edildi';
+      return { label: 'İptal edildi', detail: 'Muhabbet yolculuk oturumu kapandı.', color: '#DC2626', icon: 'close-circle' };
     case 'finished':
-      return 'Tamamlandı';
+      return { label: 'Tamamlandı', detail: 'Muhabbet yolculuk oturumu tamamlandı.', color: '#16A34A', icon: 'checkmark-circle' };
     default:
-      return 'Başlamaya hazır';
+      return { label: 'Başlamaya hazır', detail: 'Sürücü başlattığında canlı takip görünür.', color: '#F97316', icon: 'time' };
   }
 }
 
-function statusTone(status?: string | null): string {
-  switch (status) {
-    case 'started':
-      return '#2563EB';
-    case 'cancelled':
-      return '#DC2626';
-    case 'finished':
-      return '#16A34A';
-    default:
-      return '#F97316';
-  }
+function shortId(v?: string | null): string {
+  const s = String(v || '').trim();
+  return s ? `${s.slice(0, 6)}…${s.slice(-4)}` : '—';
 }
 
 async function currentUserId(): Promise<string> {
@@ -71,6 +69,7 @@ async function currentUserId(): Promise<string> {
 
 export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripScreenProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [session, setSession] = useState<MuhabbetTripSession | null>(null);
   const [myId, setMyId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -79,6 +78,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = session?.status === 'cancelled' || session?.status === 'finished';
+  const status = displayStatus(session?.status);
 
   const loadSession = useCallback(async () => {
     const token = await getPersistedAccessToken();
@@ -97,6 +97,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         Alert.alert('Muhabbet yolculuğu', data.detail || 'Oturum açılmadı.');
         return;
       }
+      console.log('[leylek-trip] session loaded', data.session);
       setSession(data.session);
     } catch {
       Alert.alert('Muhabbet yolculuğu', 'Bağlantı hatası.');
@@ -114,28 +115,31 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     if (!sessionId) return;
     const socket = getOrCreateSocket();
     const matches = (payload: MuhabbetTripSessionSocketPayload) =>
-      String(payload?.session_id || payload?.session?.id || '').trim().toLowerCase() === sessionId.toLowerCase();
-    const onSession = (payload: MuhabbetTripSessionSocketPayload) => {
-      if (!matches(payload) || !payload.session) return;
-      setSession(payload.session);
+      String(payload?.session_id || payload?.sessionId || payload?.session?.id || '').trim().toLowerCase() === sessionId.toLowerCase();
+    const bind = (eventName: string) => (payload: MuhabbetTripSessionSocketPayload) => {
+      console.log('[leylek-trip] event', eventName, payload);
+      if (!matches(payload)) return;
+      if (payload.session) setSession(payload.session);
+      else void loadSession();
     };
-    socket.emit('join_muhabbet_trip_session', { session_id: sessionId });
-    socket.on('joined_muhabbet_trip_session', onSession);
-    socket.on('muhabbet_trip_session_updated', onSession);
-    socket.on('muhabbet_trip_started', onSession);
-    socket.on('muhabbet_trip_cancelled', onSession);
-    socket.on('muhabbet_trip_finished', onSession);
-    socket.on('muhabbet_trip_location_updated', onSession);
+    const onLocation = bind('muhabbet_trip_location_updated');
+    const onStarted = bind('muhabbet_trip_started');
+    const onCancelled = bind('muhabbet_trip_cancelled');
+    const onFinished = bind('muhabbet_trip_finished');
+    const joinPayload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
+    socket.emit('muhabbet_trip_join', joinPayload);
+    socket.on('muhabbet_trip_location_updated', onLocation);
+    socket.on('muhabbet_trip_started', onStarted);
+    socket.on('muhabbet_trip_cancelled', onCancelled);
+    socket.on('muhabbet_trip_finished', onFinished);
     return () => {
-      socket.emit('leave_muhabbet_trip_session', { session_id: sessionId });
-      socket.off('joined_muhabbet_trip_session', onSession);
-      socket.off('muhabbet_trip_session_updated', onSession);
-      socket.off('muhabbet_trip_started', onSession);
-      socket.off('muhabbet_trip_cancelled', onSession);
-      socket.off('muhabbet_trip_finished', onSession);
-      socket.off('muhabbet_trip_location_updated', onSession);
+      socket.off('muhabbet_trip_location_updated', onLocation);
+      socket.off('muhabbet_trip_started', onStarted);
+      socket.off('muhabbet_trip_cancelled', onCancelled);
+      socket.off('muhabbet_trip_finished', onFinished);
     };
-  }, [sessionId]);
+  }, [loadSession, sessionId]);
 
   const locations = useMemo(() => {
     if (!session) return {};
@@ -156,11 +160,13 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      getOrCreateSocket().emit('muhabbet_trip_location_update', {
+      const payload = {
         session_id: sessionId,
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
-      });
+      };
+      console.log('[leylek-trip] emit', 'muhabbet_trip_location_update', payload);
+      getOrCreateSocket().emit('muhabbet_trip_location_update', payload);
     } catch {
       Alert.alert('Konum', 'Konum alınamadı.');
     } finally {
@@ -168,86 +174,140 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     }
   }, [sessionId]);
 
-  const emitAction = useCallback((eventName: 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish') => {
+  const emitAction = useCallback((eventName: TripActionEvent) => {
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', eventName, payload);
     setActionBusy(true);
-    getOrCreateSocket().emit(eventName, { session_id: sessionId });
+    getOrCreateSocket().emit(eventName, payload);
     setTimeout(() => setActionBusy(false), 1200);
   }, [sessionId]);
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.root}>
-        <ScreenHeaderGradient title="Leylek Yolculuk" onBack={() => router.back()} gradientColors={['#3B82F6', '#60A5FA']} />
-        <View style={styles.center}>
-          <ActivityIndicator color="#2563EB" />
-        </View>
+      <SafeAreaView style={styles.loadingRoot}>
+        <ActivityIndicator color="#2563EB" />
+        <Text style={styles.loadingText}>Leylek yolculuk hazırlanıyor…</Text>
       </SafeAreaView>
     );
   }
 
   if (!session) {
     return (
-      <SafeAreaView style={styles.root}>
-        <ScreenHeaderGradient title="Leylek Yolculuk" onBack={() => router.back()} gradientColors={['#3B82F6', '#60A5FA']} />
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>Oturum bulunamadı</Text>
-          <Text style={styles.emptySub}>Sohbete dönüp tekrar deneyin.</Text>
-        </View>
+      <SafeAreaView style={styles.loadingRoot}>
+        <Ionicons name="alert-circle-outline" size={36} color="#F97316" />
+        <Text style={styles.emptyTitle}>Oturum bulunamadı</Text>
+        <Text style={styles.emptySub}>Sohbete dönüp tekrar deneyin.</Text>
+        <Pressable onPress={() => router.back()} style={styles.emptyBackBtn}>
+          <Text style={styles.emptyBackTxt}>Geri dön</Text>
+        </Pressable>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
-      <ScreenHeaderGradient title="Leylek Yolculuk" onBack={() => router.back()} gradientColors={['#3B82F6', '#60A5FA']} />
-      <ScrollView contentContainerStyle={styles.body}>
-        <View style={styles.statusCard}>
-          <View style={[styles.statusDot, { backgroundColor: statusTone(session.status) }]} />
+    <View style={styles.root}>
+      <LeylekTripMapPreview
+        pickup={locations.pickup}
+        dropoff={locations.dropoff}
+        passengerLocation={locations.passenger}
+        driverLocation={locations.driver}
+        style={styles.map}
+      />
+
+      <SafeAreaView pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+        <View style={[styles.topChrome, { paddingTop: Math.max(insets.top, 8) }]}>
+          <View style={styles.headerRow}>
+            <Pressable onPress={() => router.back()} style={styles.backFab} hitSlop={10}>
+              <Ionicons name="chevron-back" size={24} color="#0F172A" />
+            </Pressable>
+            <LinearGradient colors={HEADER_GRAD} style={styles.headerPill}>
+              <Ionicons name="leaf" size={16} color="#A7F3D0" />
+              <Text style={styles.headerPillText}>Leylek Teklif Sende</Text>
+            </LinearGradient>
+          </View>
+
+          <View style={styles.routeGlassCard}>
+            <View style={styles.routeGlassHeader}>
+              <View style={[styles.statusIcon, { backgroundColor: `${status.color}22` }]}>
+                <Ionicons name={status.icon} size={22} color={status.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statusTitle}>{status.label}</Text>
+                <Text style={styles.statusSub}>{status.detail}</Text>
+              </View>
+            </View>
+            <View style={styles.routeLine} />
+            <View style={styles.routePointRow}>
+              <View style={[styles.routeDot, { backgroundColor: '#2563EB' }]} />
+              <View style={styles.routeTextStack}>
+                <Text style={styles.routeLabel}>Alış noktası</Text>
+                <Text style={styles.routeValue} numberOfLines={1}>{session.pickup_text || 'Sohbette belirlenen alış noktası'}</Text>
+              </View>
+            </View>
+            <View style={styles.routePointRow}>
+              <View style={[styles.routeDot, { backgroundColor: '#16A34A' }]} />
+              <View style={styles.routeTextStack}>
+                <Text style={styles.routeLabel}>Varış noktası</Text>
+                <Text style={styles.routeValue} numberOfLines={1}>{session.dropoff_text || 'Sohbette belirlenen varış noktası'}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      <View style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+        <View style={styles.grabber} />
+        <View style={styles.identityRow}>
+          <View style={styles.identityAvatar}>
+            <Ionicons name={isDriver ? 'car-sport' : 'person'} size={22} color="#FFFFFF" />
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.statusTitle}>{statusLabel(session.status)}</Text>
-            <Text style={styles.statusSub}>Bu ekran yalnızca Muhabbet oturumudur; normal ride sistemi kullanılmaz.</Text>
+            <Text style={styles.identityTitle}>{isDriver ? 'Sürücü ekranı' : 'Yolcu ekranı'}</Text>
+            <Text style={styles.identitySub}>
+              Oturum {shortId(session.id)} · {session.vehicle_kind === 'motorcycle' ? 'Motor' : 'Araç'}
+            </Text>
+          </View>
+          {session.agreed_price != null ? (
+            <View style={styles.pricePill}>
+              <Text style={styles.priceText}>₺{session.agreed_price}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.metricRow}>
+          <View style={styles.metricCard}>
+            <Ionicons name="navigate" size={18} color="#2563EB" />
+            <Text style={styles.metricValue}>{locations.driver ? 'Açık' : 'Bekliyor'}</Text>
+            <Text style={styles.metricLabel}>Sürücü konumu</Text>
+          </View>
+          <View style={styles.metricCard}>
+            <Ionicons name="person" size={18} color="#F97316" />
+            <Text style={styles.metricValue}>{locations.passenger ? 'Açık' : 'Bekliyor'}</Text>
+            <Text style={styles.metricLabel}>Yolcu konumu</Text>
           </View>
         </View>
 
-        <LeylekTripMapPreview
-          pickup={locations.pickup}
-          dropoff={locations.dropoff}
-          passengerLocation={locations.passenger}
-          driverLocation={locations.driver}
-        />
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Rota önizleme</Text>
-          <View style={styles.routeRow}>
-            <Ionicons name="location" size={19} color="#2563EB" />
-            <Text style={styles.routeText}>{session.pickup_text || 'Alış noktası belirtilmedi'}</Text>
-          </View>
-          <View style={styles.routeRow}>
-            <Ionicons name="flag" size={19} color="#16A34A" />
-            <Text style={styles.routeText}>{session.dropoff_text || 'Varış noktası belirtilmedi'}</Text>
-          </View>
-          {session.agreed_price != null ? <Text style={styles.priceText}>Anlaşılan ücret: ₺{session.agreed_price}</Text> : null}
-        </View>
-
-        <View style={styles.actions}>
+        <View style={styles.actionGrid}>
           <Pressable
             onPress={() => void shareLocation()}
             disabled={sendingLocation || isTerminal}
-            style={({ pressed }) => [styles.secondaryBtn, (pressed || sendingLocation || isTerminal) && { opacity: 0.72 }]}
+            style={({ pressed }) => [styles.actionBtnWrap, (pressed || sendingLocation || isTerminal) && { opacity: 0.72 }]}
           >
-            {sendingLocation ? <ActivityIndicator size="small" color="#2563EB" /> : <Ionicons name="navigate" size={18} color="#2563EB" />}
-            <Text style={styles.secondaryBtnTxt}>Konumumu paylaş</Text>
+            <LinearGradient colors={SHARE_GRAD} style={styles.actionBtn}>
+              {sendingLocation ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="locate" size={19} color="#FFF" />}
+              <Text style={styles.actionBtnText}>Konum paylaş</Text>
+            </LinearGradient>
           </Pressable>
 
           {isDriver && session.status === 'ready' ? (
             <Pressable
               onPress={() => emitAction('muhabbet_trip_start')}
               disabled={actionBusy}
-              style={({ pressed }) => [styles.primaryBtnWrap, (pressed || actionBusy) && { opacity: 0.86 }]}
+              style={({ pressed }) => [styles.actionBtnWrap, (pressed || actionBusy) && { opacity: 0.86 }]}
             >
-              <LinearGradient colors={['#2563EB', '#60A5FA']} style={styles.primaryBtn}>
-                <Ionicons name="play" size={18} color="#FFF" />
-                <Text style={styles.primaryBtnTxt}>Başlat</Text>
+              <LinearGradient colors={DRIVER_GRAD} style={styles.actionBtn}>
+                <Ionicons name="play" size={19} color="#FFF" />
+                <Text style={styles.actionBtnText}>Başlat</Text>
               </LinearGradient>
             </Pressable>
           ) : null}
@@ -256,11 +316,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             <Pressable
               onPress={() => emitAction('muhabbet_trip_finish')}
               disabled={actionBusy}
-              style={({ pressed }) => [styles.primaryBtnWrap, (pressed || actionBusy) && { opacity: 0.86 }]}
+              style={({ pressed }) => [styles.actionBtnWrap, (pressed || actionBusy) && { opacity: 0.86 }]}
             >
-              <LinearGradient colors={['#16A34A', '#22C55E']} style={styles.primaryBtn}>
-                <Ionicons name="checkmark-circle" size={18} color="#FFF" />
-                <Text style={styles.primaryBtnTxt}>Bitir</Text>
+              <LinearGradient colors={FINISH_GRAD} style={styles.actionBtn}>
+                <Ionicons name="checkmark-circle" size={19} color="#FFF" />
+                <Text style={styles.actionBtnText}>Bitir</Text>
               </LinearGradient>
             </Pressable>
           ) : null}
@@ -269,66 +329,129 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             <Pressable
               onPress={() => emitAction('muhabbet_trip_cancel')}
               disabled={actionBusy}
-              style={({ pressed }) => [styles.dangerBtn, (pressed || actionBusy) && { opacity: 0.78 }]}
+              style={({ pressed }) => [styles.cancelBtn, (pressed || actionBusy) && { opacity: 0.78 }]}
             >
-              <Ionicons name="close-circle-outline" size={18} color="#B91C1C" />
-              <Text style={styles.dangerBtnTxt}>İptal et</Text>
+              <Ionicons name="close-circle-outline" size={19} color="#FCA5A5" />
+              <Text style={styles.cancelBtnText}>İptal et</Text>
             </Pressable>
           ) : null}
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#EEF1F5' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  body: { padding: 16, paddingBottom: 28, gap: 14 },
-  statusCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-  },
-  statusDot: { width: 12, height: 12, borderRadius: 6 },
-  statusTitle: { fontSize: 17, fontWeight: '900', color: '#0F172A' },
-  statusSub: { marginTop: 3, fontSize: 12, color: '#64748B', lineHeight: 17 },
-  card: { padding: 16, borderRadius: 20, backgroundColor: '#FFFFFF' },
-  cardTitle: { fontSize: 16, fontWeight: '900', color: '#0F172A', marginBottom: 12 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 9 },
-  routeText: { flex: 1, fontSize: 14, color: '#1F2937', fontWeight: '600' },
-  priceText: { marginTop: 6, fontSize: 14, color: '#16A34A', fontWeight: '800' },
-  actions: { gap: 10 },
-  primaryBtnWrap: { borderRadius: 16, overflow: 'hidden' },
-  primaryBtn: { minHeight: 52, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
-  primaryBtnTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
-  secondaryBtn: {
-    minHeight: 52,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+  root: { flex: 1, backgroundColor: '#0F172A' },
+  loadingRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#EEF1F5' },
+  loadingText: { marginTop: 10, color: '#334155', fontWeight: '800' },
+  map: { flex: 1, height: undefined, borderRadius: 0 },
+  topChrome: { paddingHorizontal: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  backFab: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.94)',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  secondaryBtnTxt: { color: '#2563EB', fontSize: 15, fontWeight: '900' },
-  dangerBtn: {
+  headerPill: {
+    minHeight: 38,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  headerPillText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
+  routeGlassCard: {
+    width: Math.min(SCREEN_WIDTH - 28, 420),
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 22,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(226,232,240,0.95)',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  routeGlassHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  statusIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  statusTitle: { color: '#0F172A', fontSize: 16, fontWeight: '900' },
+  statusSub: { marginTop: 2, color: '#64748B', fontSize: 12, fontWeight: '600' },
+  routeLine: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 11 },
+  routePointRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  routeDot: { width: 9, height: 9, borderRadius: 5, marginRight: 10 },
+  routeTextStack: { flex: 1, minWidth: 0 },
+  routeLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  routeValue: { color: '#111827', fontSize: 14, fontWeight: '800', marginTop: 2 },
+  bottomSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 10,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.96)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  grabber: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.28)', marginBottom: 14 },
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  identityAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  identityTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' },
+  identitySub: { marginTop: 3, color: '#CBD5E1', fontSize: 12, fontWeight: '700' },
+  pricePill: { borderRadius: 999, backgroundColor: 'rgba(22,163,74,0.18)', paddingVertical: 8, paddingHorizontal: 12 },
+  priceText: { color: '#86EFAC', fontSize: 15, fontWeight: '900' },
+  metricRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  metricCard: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  metricValue: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', marginTop: 6 },
+  metricLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  actionGrid: { gap: 10 },
+  actionBtnWrap: { borderRadius: 16, overflow: 'hidden' },
+  actionBtn: { minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  actionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  cancelBtn: {
     minHeight: 50,
     borderRadius: 16,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: 'rgba(185, 28, 28, 0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.32)',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
     gap: 8,
-    borderWidth: 1,
-    borderColor: '#FECACA',
   },
-  dangerBtnTxt: { color: '#B91C1C', fontSize: 15, fontWeight: '900' },
-  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A' },
+  cancelBtnText: { color: '#FECACA', fontSize: 15, fontWeight: '900' },
+  emptyTitle: { marginTop: 10, fontSize: 18, fontWeight: '900', color: '#0F172A' },
   emptySub: { marginTop: 6, fontSize: 13, color: '#64748B' },
+  emptyBackBtn: { marginTop: 16, borderRadius: 14, backgroundColor: '#2563EB', paddingVertical: 11, paddingHorizontal: 18 },
+  emptyBackTxt: { color: '#FFF', fontWeight: '900' },
 });
