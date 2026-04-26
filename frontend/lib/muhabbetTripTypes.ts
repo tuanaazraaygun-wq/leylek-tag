@@ -44,6 +44,7 @@ export type MuhabbetTripSession = {
 
 export type MuhabbetTripSessionSocketPayload = {
   session_id?: string;
+  sessionId?: string;
   request_id?: string;
   conversation_id?: string;
   session?: MuhabbetTripSession;

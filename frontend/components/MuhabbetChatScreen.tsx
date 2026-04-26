@@ -412,9 +412,10 @@ export default function MuhabbetChatScreen({
     tripConvertStateRef.current = tripConvertState;
   }, [tripConvertState]);
 
-  const navigateToLeylekTripSession = useCallback((sessionIdRaw?: string | null) => {
-    const sessionId = String(sessionIdRaw || '').trim().toLowerCase();
+  const navigateToLeylekTripSession = useCallback((payload?: MuhabbetTripSessionSocketPayload | null) => {
+    const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '').trim().toLowerCase();
     if (!sessionId || tripSessionNavRef.current === sessionId) return;
+    console.log('[muhabbet-trip] navigating', payload);
     tripSessionNavRef.current = sessionId;
     router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
   }, [router]);
@@ -641,11 +642,11 @@ export default function MuhabbetChatScreen({
       if (tripConvertStateRef.current !== 'confirmed') {
         pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
       }
-      navigateToLeylekTripSession(data?.session_id || data?.session?.id || null);
+      navigateToLeylekTripSession(data);
     };
     const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
       if (!convMatches(data)) return;
-      navigateToLeylekTripSession(data?.session_id || data?.session?.id || null);
+      navigateToLeylekTripSession(data);
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
