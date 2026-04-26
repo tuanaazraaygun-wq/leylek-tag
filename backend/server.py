@@ -22506,6 +22506,19 @@ async def muhabbet_trip_session_get(
     return {"success": True, "session": _muhabbet_trip_session_public(row)}
 
 
+def _muhabbet_trip_call_payload(session_row: dict, uid: str) -> dict:
+    session_id = str(session_row.get("id") or "").strip().lower()
+    channel_name = f"muhabbet_trip_{session_id}"
+    return {
+        "session_id": session_id,
+        "conversation_id": session_row.get("conversation_id"),
+        "channel_name": channel_name,
+        "agora_uid": agora_uid_from_user_id(uid),
+        "agora_token": generate_agora_token(channel_name, user_id=uid),
+    }
+
+
+@sio.on("muhabbet_trip_join")
 @sio.on("join_muhabbet_trip_session")
 async def sio_join_muhabbet_trip_session(sid, data):
     if not isinstance(data, dict):
@@ -22520,7 +22533,7 @@ async def sio_join_muhabbet_trip_session(sid, data):
         room = muhabbet_trip_room(session_id)
         await sio.enter_room(sid, room)
         await sio.emit(
-            "joined_muhabbet_trip_session",
+            "muhabbet_trip_joined",
             {"session_id": session_id, "room": room, "session": _muhabbet_trip_session_public(row)},
             room=sid,
         )
@@ -22531,17 +22544,20 @@ async def sio_join_muhabbet_trip_session(sid, data):
         await sio.emit("muhabbet_trip_error", {"code": "server_error", "message": "Oturuma katılamadı."}, room=sid)
 
 
+@sio.on("muhabbet_trip_leave")
 @sio.on("leave_muhabbet_trip_session")
 async def sio_leave_muhabbet_trip_session(sid, data):
     if not isinstance(data, dict):
         data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
     session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
-    if not session_id:
+    if not uid or not session_id:
         return
     try:
+        _muhabbet_trip_session_for_member_or_403(session_id, uid)
         await sio.leave_room(sid, muhabbet_trip_room(session_id))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("leave_muhabbet_trip_session: %s", e)
 
 
 @sio.on("muhabbet_trip_location_update")
@@ -22673,6 +22689,91 @@ async def sio_muhabbet_trip_finish(sid, data):
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
     except Exception as e:
         logger.warning("muhabbet_trip_finish: %s", e)
+
+
+@sio.on("muhabbet_trip_call_start")
+async def sio_muhabbet_trip_call_start(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
+            return
+        passenger_id = str(row.get("passenger_id") or "").strip().lower()
+        driver_id = str(row.get("driver_id") or "").strip().lower()
+        for target_uid in (passenger_id, driver_id):
+            if not target_uid:
+                continue
+            payload = {
+                **_muhabbet_trip_call_payload(row, target_uid),
+                "caller_id": str(uid).strip().lower(),
+            }
+            await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_start", payload)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_call_start: %s", e)
+
+
+@sio.on("muhabbet_trip_call_join")
+async def sio_muhabbet_trip_call_join(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        private_payload = {
+            **_muhabbet_trip_call_payload(row, uid),
+            "joined_user_id": str(uid).strip().lower(),
+        }
+        public_payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "channel_name": f"muhabbet_trip_{session_id}",
+            "joined_user_id": str(uid).strip().lower(),
+        }
+        await sio.emit("muhabbet_trip_call_join", public_payload, room=muhabbet_trip_room(session_id))
+        await sio.emit("muhabbet_trip_call_join", private_payload, room=sid)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_call_join: %s", e)
+
+
+@sio.on("muhabbet_trip_call_end")
+async def sio_muhabbet_trip_call_end(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "channel_name": f"muhabbet_trip_{session_id}",
+            "ended_by_user_id": str(uid).strip().lower(),
+        }
+        await sio.emit("muhabbet_trip_call_end", payload, room=muhabbet_trip_room(session_id))
+        passenger_id = str(row.get("passenger_id") or "").strip()
+        driver_id = str(row.get("driver_id") or "").strip()
+        for target_uid in (passenger_id, driver_id):
+            if target_uid:
+                await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_end", payload)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_call_end: %s", e)
 
 
 @api_router.get("/muhabbet/conversations/me")

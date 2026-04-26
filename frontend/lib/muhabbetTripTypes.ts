@@ -49,3 +49,15 @@ export type MuhabbetTripSessionSocketPayload = {
   conversation_id?: string;
   session?: MuhabbetTripSession;
 };
+
+export type MuhabbetTripCallSocketPayload = {
+  session_id?: string;
+  sessionId?: string;
+  conversation_id?: string | null;
+  channel_name?: string;
+  caller_id?: string;
+  joined_user_id?: string;
+  ended_by_user_id?: string;
+  agora_token?: string;
+  agora_uid?: number;
+};
