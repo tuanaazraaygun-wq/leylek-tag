@@ -8,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  Vibration,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,6 +38,7 @@ type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbe
 type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 type QrMode = 'boarding' | 'finish';
 type ForceFinishPrompt = { requesterUserId: string; targetUserId: string } | null;
+type FinishResult = { paymentMethod: 'cash' | 'card' | null } | null;
 const TERMINAL_TRIP_STATUSES = new Set(['finished', 'cancelled', 'expired']);
 const MUHABBET_SAFE_ROUTE = '/' as Href;
 
@@ -91,6 +93,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [paymentPromptVisible, setPaymentPromptVisible] = useState(false);
   const [paymentPromptShown, setPaymentPromptShown] = useState(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [boardingMessage, setBoardingMessage] = useState('');
+  const [finishResult, setFinishResult] = useState<FinishResult>(null);
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
@@ -227,16 +231,41 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const onStarted = (payload: MuhabbetTripSessionSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_started', payload);
       if (!matches(payload)) return;
-      if (payload.session) setSession(payload.session);
+      const nextSession = payload.session || null;
+      if (nextSession) setSession(nextSession);
       else void loadSession();
       setQrCodeVisible(false);
       setQrScanVisible(false);
       setQrFinishToken('');
       setQrExpiresAt(null);
       setActionBusy(false);
+      setBoardingMessage(myId && String(nextSession?.driver_id || '').trim().toLowerCase() === myId
+        ? 'Yolculuk başladı. Hedefte QR gösterin'
+        : 'Araca bindiniz. Hedefte QR okutun');
+      setTimeout(() => setBoardingMessage(''), 4200);
     };
     const onCancelled = bindTerminal('muhabbet_trip_cancelled');
-    const onFinished = bindTerminal('muhabbet_trip_finished');
+    const onFinished = (payload: MuhabbetTripSessionSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_finished', payload);
+      if (!matches(payload)) return;
+      const nextSession = payload.session || session || null;
+      if (nextSession?.finish_method === 'qr') {
+        setQrCodeVisible(false);
+        setQrScanVisible(false);
+        setQrFinishToken('');
+        setQrExpiresAt(null);
+        setForceFinishPrompt(null);
+        setForceFinishWarningVisible(false);
+        setCallPayload(null);
+        setCallState('idle');
+        setCallBusy(false);
+        setActionBusy(false);
+        setSession(nextSession);
+        setFinishResult({ paymentMethod: nextSession.payment_method || null });
+        return;
+      }
+      closeTerminalTrip('muhabbet_trip_finished', nextSession);
+    };
     const onExpired = bindTerminal('muhabbet_trip_expired');
     const callMatches = (payload: MuhabbetTripCallSocketPayload) =>
       String(payload?.session_id || payload?.sessionId || '').trim().toLowerCase() === sessionId.toLowerCase();
@@ -364,7 +393,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_force_finish_requested', onForceRequested);
       socket.off('muhabbet_trip_force_finished', onForceFinished);
     };
-  }, [closeTerminalTrip, loadSession, myId, sessionId]);
+  }, [closeTerminalTrip, loadSession, myId, session, sessionId]);
 
   const locations = useMemo(() => {
     if (!session) return {};
@@ -516,6 +545,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       : { session_id: sessionId, finish_qr_token: token };
     console.log('[leylek-trip] emit', eventName, payload);
     setActionBusy(true);
+    if (qrMode === 'finish') {
+      Vibration.vibrate([0, 70, 55, 90]);
+    }
     getOrCreateSocket().emit(eventName, payload);
     setQrScanVisible(false);
     setTimeout(() => setActionBusy(false), 1500);
@@ -579,6 +611,26 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     );
   }
 
+  if (finishResult) {
+    const isCard = finishResult.paymentMethod === 'card';
+    return (
+      <SafeAreaView style={styles.resultRoot}>
+        <View style={styles.resultCard}>
+          <View style={[styles.resultIcon, { backgroundColor: isCard ? '#2563EB' : '#16A34A' }]}>
+            <Ionicons name={isCard ? 'card-outline' : 'cash-outline'} size={42} color="#FFFFFF" />
+          </View>
+          <Text style={styles.resultTitle}>Yolculuk tamamlandı</Text>
+          <Text style={styles.resultText}>
+            {isCard ? 'Kart ödeme altyapısı yakında burada açılacak.' : 'Ödeme taraflar arasında tamamlanır'}
+          </Text>
+          <Pressable style={({ pressed }) => [styles.resultButton, pressed && { opacity: 0.86 }]} onPress={() => router.replace(MUHABBET_SAFE_ROUTE)}>
+            <Text style={styles.resultButtonText}>Sohbete dön</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <LeylekTripLiveRideChrome
@@ -624,6 +676,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}
       />
+      {boardingMessage ? (
+        <View style={styles.boardingToast} pointerEvents="none">
+          <Ionicons name="checkmark-circle" size={19} color="#BBF7D0" />
+          <Text style={styles.boardingToastText}>{boardingMessage}</Text>
+        </View>
+      ) : null}
       <Modal
         visible={paymentPromptVisible}
         transparent
@@ -750,6 +808,49 @@ const styles = StyleSheet.create({
   emptySub: { marginTop: 6, fontSize: 13, color: '#64748B' },
   emptyBackBtn: { marginTop: 16, borderRadius: 14, backgroundColor: '#2563EB', paddingVertical: 11, paddingHorizontal: 18 },
   emptyBackTxt: { color: '#FFF', fontWeight: '900' },
+  resultRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#EEF1F5' },
+  resultCard: {
+    width: '100%',
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 22,
+    elevation: 16,
+  },
+  resultIcon: { width: 78, height: 78, borderRadius: 39, alignItems: 'center', justifyContent: 'center' },
+  resultTitle: { marginTop: 16, color: '#0F172A', fontSize: 23, fontWeight: '900', textAlign: 'center' },
+  resultText: { marginTop: 10, color: '#475569', fontSize: 16, lineHeight: 23, fontWeight: '800', textAlign: 'center' },
+  resultButton: {
+    marginTop: 20,
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 17,
+    backgroundColor: '#F97316',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  boardingToast: {
+    position: 'absolute',
+    top: 54,
+    left: 18,
+    right: 18,
+    zIndex: 200,
+    borderRadius: 18,
+    backgroundColor: 'rgba(5, 46, 22, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.42)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  boardingToastText: { flex: 1, color: '#DCFCE7', fontSize: 14, fontWeight: '900' },
   trustModalRoot: {
     flex: 1,
     alignItems: 'center',

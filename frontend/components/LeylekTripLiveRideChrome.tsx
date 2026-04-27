@@ -168,11 +168,11 @@ export default function LeylekTripLiveRideChrome({
   const qrButtonLabel =
     sessionStatus === 'ready'
       ? isDriver
-        ? 'Biniş QR'
-        : 'QR Oku'
+        ? 'Biniş QR Göster'
+        : 'Biniş QR Oku'
       : isDriver
-        ? 'Yolculuğu Bitir'
-        : 'QR Oku';
+        ? 'Hedefte QR Göster'
+        : 'Hedefte QR Oku';
   const qrActionActive = sessionStatus === 'active' || sessionStatus === 'started';
   const finishSummary =
     finishMethod === 'qr'
@@ -731,10 +731,10 @@ const styles = StyleSheet.create({
   },
   tripInlineChatBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.15 },
   finishActionRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 10 },
-  finishButton: { flex: 1, borderRadius: 14, overflow: 'hidden' },
-  finishButtonPressable: { flex: 1 },
-  finishButtonGradient: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
-  finishButtonText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
+  finishButton: { flex: 1, borderRadius: 20, overflow: 'hidden' },
+  finishButtonPressable: { flex: 1, borderRadius: 20, overflow: 'hidden' },
+  finishButtonGradient: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12 },
+  finishButtonText: { color: '#FFF', fontSize: 15, fontWeight: '900', textAlign: 'center' },
   actionButtons: { flexDirection: 'row', gap: 12, alignItems: 'flex-end' },
   tripAiFabWrap: { alignItems: 'center', justifyContent: 'center', minWidth: 52, maxWidth: 56 },
   tripAiFabGrad: {

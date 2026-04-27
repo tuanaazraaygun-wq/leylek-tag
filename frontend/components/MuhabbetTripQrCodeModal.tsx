@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Modal,
   Pressable,
   StyleSheet,
@@ -37,6 +38,19 @@ export default function MuhabbetTripQrCodeModal({
   expiresAt,
   onClose,
 }: MuhabbetTripQrCodeModalProps) {
+  const pulse = useRef(new Animated.Value(0.72)).current;
+  useEffect(() => {
+    if (!visible) return undefined;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.72, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [pulse, visible]);
+
   const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
   const hint =
     mode === 'boarding'
@@ -53,10 +67,12 @@ export default function MuhabbetTripQrCodeModal({
             <Ionicons name="qr-code" size={28} color="#FFFFFF" />
           </View>
           <Text style={styles.title}>{title}</Text>
+          <Text style={styles.scanTitle}>Yolcuya okut</Text>
           <Text style={styles.hint}>{hint}</Text>
+          <Animated.View style={[styles.qrGlow, { opacity: pulse, transform: [{ scale: pulse }] }]} pointerEvents="none" />
           <View style={styles.qrBox}>
             {value ? (
-              <QRCode value={value} size={220} backgroundColor="#FFFFFF" color="#111827" quietZone={10} />
+              <QRCode value={value} size={270} backgroundColor="#FFFFFF" color="#111827" quietZone={14} />
             ) : (
               <View style={styles.loadingBox}>
                 <ActivityIndicator color="#7C3AED" />
@@ -64,8 +80,6 @@ export default function MuhabbetTripQrCodeModal({
               </View>
             )}
           </View>
-          <Text style={styles.codeLabel}>Manuel kod</Text>
-          <Text style={styles.token}>{token || 'Hazırlanıyor'}</Text>
           {expiresLabel ? <Text style={styles.expires}>Son geçerlilik: {expiresLabel}</Text> : null}
           <Pressable style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]} onPress={onClose}>
             <Text style={styles.closeText}>Kapat</Text>
@@ -87,8 +101,8 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    padding: 22,
+    backgroundColor: '#F8FAFC',
+    padding: 20,
     alignItems: 'center',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 12 },
@@ -106,32 +120,49 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: { color: '#0F172A', fontSize: 21, fontWeight: '900' },
+  scanTitle: { marginTop: 6, color: '#F97316', fontSize: 28, fontWeight: '900', letterSpacing: 0.2 },
   hint: { marginTop: 8, color: '#475569', fontSize: 14, lineHeight: 20, textAlign: 'center', fontWeight: '700' },
+  qrGlow: {
+    position: 'absolute',
+    top: 168,
+    width: 292,
+    height: 292,
+    borderRadius: 34,
+    backgroundColor: 'rgba(249, 115, 22, 0.22)',
+    shadowColor: '#F97316',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.86,
+    shadowRadius: 24,
+    elevation: 16,
+  },
   qrBox: {
-    marginTop: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    marginTop: 22,
+    borderRadius: 28,
+    borderWidth: 6,
+    borderColor: '#FFFFFF',
     backgroundColor: '#FFFFFF',
     padding: 14,
-    minWidth: 250,
-    minHeight: 250,
+    minWidth: 306,
+    minHeight: 306,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#7C2D12',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 18,
   },
   loadingBox: { alignItems: 'center', justifyContent: 'center', gap: 10 },
   loadingText: { color: '#64748B', fontWeight: '800' },
-  codeLabel: { marginTop: 14, color: '#64748B', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 },
-  token: { marginTop: 4, color: '#5B21B6', fontSize: 28, fontWeight: '900', letterSpacing: 3 },
-  expires: { marginTop: 8, color: '#92400E', fontSize: 12, fontWeight: '800' },
+  expires: { marginTop: 14, color: '#92400E', fontSize: 12, fontWeight: '800' },
   closeButton: {
-    marginTop: 16,
+    marginTop: 18,
     width: '100%',
     borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 13,
+    backgroundColor: '#0F172A',
+    paddingVertical: 15,
     alignItems: 'center',
   },
-  closeText: { color: '#475569', fontSize: 14, fontWeight: '900' },
+  closeText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
   pressed: { opacity: 0.82 },
 });
