@@ -273,13 +273,14 @@ export default function LeylekMuhabbetiFaz1Screen({
   const tabInsets = useSafeAreaInsets();
   const propTok = (accessToken || '').trim();
   const [persistedTok, setPersistedTok] = useState('');
+  const [lastGoodToken, setLastGoodToken] = useState(propTok);
   const [tokenResolving, setTokenResolving] = useState(!propTok);
-  const tok = propTok || persistedTok;
+  const tok = propTok || persistedTok || lastGoodToken;
   useEffect(() => {
     let cancelled = false;
     if (propTok) {
       console.log('[muhabbet] resolved token source=prop');
-      setPersistedTok('');
+      setLastGoodToken(propTok);
       setTokenResolving(false);
       return () => {
         cancelled = true;
@@ -293,6 +294,9 @@ export default function LeylekMuhabbetiFaz1Screen({
         if (persisted) {
           console.log('[muhabbet] resolved token source=persisted');
           setPersistedTok(persisted);
+          setLastGoodToken(persisted);
+        } else if (lastGoodToken) {
+          console.log('[muhabbet] last good token used');
         }
       } finally {
         if (!cancelled) setTokenResolving(false);
@@ -301,7 +305,7 @@ export default function LeylekMuhabbetiFaz1Screen({
     return () => {
       cancelled = true;
     };
-  }, [propTok]);
+  }, [propTok, lastGoodToken]);
   const requireMuhabbetToken = (): boolean => {
     if (!tok) {
       Alert.alert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);

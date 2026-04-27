@@ -224,9 +224,7 @@ export default function ListingsTab({
 
   const loadFeed = useCallback(async () => {
     if (!tok) {
-      setListings([]);
-      setViewerCanActAsDriver(false);
-      setViewerDriverVk(null);
+      console.log('[muhabbet] preserving rows during reconnect');
       return;
     }
     if (segment === 'mine') {
@@ -247,8 +245,8 @@ export default function ListingsTab({
       const res = await fetch(`${base}/muhabbet/listings/feed?${u.toString()}`, {
         headers: authHeader(tok),
       });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setListings([]);
+      if (res.status === 401) {
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       const d = (await res.json().catch(() => ({}))) as {
@@ -269,9 +267,11 @@ export default function ListingsTab({
           return true;
         });
         setListings(openOnly);
-      } else setListings([]);
+      } else {
+        console.log('[muhabbet] preserving rows during reconnect');
+      }
     } catch {
-      setListings([]);
+      console.log('[muhabbet] preserving rows during reconnect');
     } finally {
       setLoadingFeed(false);
     }
@@ -279,9 +279,7 @@ export default function ListingsTab({
 
   const loadMyListings = useCallback(async () => {
     if (!tok) {
-      setMyListings([]);
-      setViewerCanActAsDriver(false);
-      setViewerDriverVk(null);
+      console.log('[muhabbet] preserving rows during reconnect');
       return;
     }
     setLoadingMine(true);
@@ -290,8 +288,8 @@ export default function ListingsTab({
       const res = await fetch(`${base}/muhabbet/listings/me?${u.toString()}`, {
         headers: authHeader(tok),
       });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setMyListings([]);
+      if (res.status === 401) {
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       const d = (await res.json().catch(() => ({}))) as {
@@ -309,9 +307,11 @@ export default function ListingsTab({
           ? d.listings.filter((r) => (String(r.city || '').trim().toLowerCase() === cityKey))
           : d.listings;
         setMyListings(rows);
-      } else setMyListings([]);
+      } else {
+        console.log('[muhabbet] preserving rows during reconnect');
+      }
     } catch {
-      setMyListings([]);
+      console.log('[muhabbet] preserving rows during reconnect');
     } finally {
       setLoadingMine(false);
     }
@@ -319,7 +319,7 @@ export default function ListingsTab({
 
   const loadOutgoing = useCallback(async () => {
     if (!tok) {
-      setOutgoing([]);
+      console.log('[muhabbet] preserving rows during reconnect');
       return;
     }
     setLoadingOut(true);
@@ -328,15 +328,15 @@ export default function ListingsTab({
       const res = await fetch(`${base}/muhabbet/match-requests/outgoing?${u.toString()}`, {
         headers: authHeader(tok),
       });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setOutgoing([]);
+      if (res.status === 401) {
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; requests?: MatchRequestRow[] };
       if (res.ok && d.success && Array.isArray(d.requests)) setOutgoing(d.requests);
-      else setOutgoing([]);
+      else console.log('[muhabbet] preserving rows during reconnect');
     } catch {
-      setOutgoing([]);
+      console.log('[muhabbet] preserving rows during reconnect');
     } finally {
       setLoadingOut(false);
     }

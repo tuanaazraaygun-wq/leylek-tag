@@ -327,6 +327,7 @@ export default function MuhabbetChatScreen({
   /** message_id -> 8 sn ack bekleme (timeout iptali onAck’te) */
   const ackTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
+  const readinessInFlightRef = useRef(false);
 
   const pendingPairRequestId = String(ctx?.pending_pair_request_id || '').trim().toLowerCase();
   const pendingPairDirection = ctx?.pending_pair_request_direction || null;
@@ -374,6 +375,42 @@ export default function MuhabbetChatScreen({
     [clearAckWait]
   );
 
+  const waitForMuhabbetJoin = useCallback(
+    (socket: Socket, timeoutMs: number): Promise<'joined' | 'not_registered' | 'forbidden' | 'timeout'> => {
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (status: 'joined' | 'not_registered' | 'forbidden' | 'timeout') => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(tid);
+          socket.off('joined_muhabbet', onJoined);
+          socket.off('muhabbet_error', onErr);
+          resolve(status);
+        };
+        const tid = setTimeout(() => finish('timeout'), timeoutMs);
+        const onJoined = (p: { conversation_id?: string }) => {
+          const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+          if (!conv || conv !== cid.toLowerCase()) return;
+          roomJoinedRef.current = true;
+          setRoomJoined(true);
+          console.log(`[muhabbet-chat] readiness join ok conversation_id=${cid}`);
+          finish('joined');
+        };
+        const onErr = (p: { code?: string; conversation_id?: string }) => {
+          const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+          if (conv && conv !== cid.toLowerCase()) return;
+          if (p?.code === 'not_registered') finish('not_registered');
+          else if (p?.code === 'forbidden') finish('forbidden');
+        };
+        socket.on('joined_muhabbet', onJoined);
+        socket.on('muhabbet_error', onErr);
+        console.log('[chat] join emitted', cid);
+        socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+      });
+    },
+    [cid]
+  );
+
   const ensureMuhabbetSocketReady = useCallback(async (): Promise<boolean> => {
     if (!cid) return false;
     const socket = getOrCreateSocket();
@@ -400,41 +437,29 @@ export default function MuhabbetChatScreen({
       });
     }
     if (!socket.connected) return false;
-    const regOk = await waitForNextRegisterSuccess(socket, 12000);
-    if (!regOk) {
-      console.log('[muhabbet-chat] readiness registered timeout');
-      return false;
+    readinessInFlightRef.current = true;
+    try {
+      console.log('[muhabbet-chat] join-first readiness');
+      let joinStatus = await waitForMuhabbetJoin(socket, 5000);
+      if (joinStatus === 'joined') return true;
+      if (joinStatus === 'forbidden') return false;
+
+      notifyAuthTokenBecameAvailableForSocket();
+      const regOk = await waitForNextRegisterSuccess(socket, 16000);
+      if (regOk) {
+        console.log('[muhabbet-chat] readiness registered ok');
+      } else {
+        console.log('[muhabbet-chat] readiness registered timeout; retrying join once');
+      }
+      joinStatus = await waitForMuhabbetJoin(socket, 7000);
+      if (joinStatus !== 'joined') {
+        console.log('[muhabbet-chat] readiness join retry failed status=', joinStatus);
+      }
+      return joinStatus === 'joined';
+    } finally {
+      readinessInFlightRef.current = false;
     }
-    console.log('[muhabbet-chat] readiness registered ok');
-    roomJoinedRef.current = false;
-    setRoomJoined(false);
-    const joined = await new Promise<boolean>((resolve) => {
-      let done = false;
-      const finish = (ok: boolean) => {
-        if (done) return;
-        done = true;
-        clearTimeout(t);
-        socket.off('joined_muhabbet', onJoined);
-        resolve(ok);
-      };
-      const t = setTimeout(() => finish(false), 2500);
-      const onJoined = (p: { conversation_id?: string }) => {
-        const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
-        if (!conv || conv !== cid.toLowerCase()) return;
-        roomJoinedRef.current = true;
-        setRoomJoined(true);
-        console.log(`[muhabbet-chat] readiness join ok conversation_id=${cid}`);
-        finish(true);
-      };
-      socket.on('joined_muhabbet', onJoined);
-      console.log('[chat] join emitted', cid);
-      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-    });
-    if (!joined) {
-      console.log('[muhabbet-chat] readiness join timeout conversation_id=', cid);
-    }
-    return joined;
-  }, [cid]);
+  }, [cid, waitForMuhabbetJoin]);
 
   const retryPendingActionAfterNotRegistered = useCallback(async () => {
     const pending = pendingActionRef.current;
@@ -1220,6 +1245,9 @@ export default function MuhabbetChatScreen({
       }
       if (p?.code === 'not_registered') {
         notifyAuthTokenBecameAvailableForSocket();
+        if (readinessInFlightRef.current && !errMid) {
+          return;
+        }
         void (async () => {
           const retried = await retryPendingActionAfterNotRegistered();
           if (retried) return;

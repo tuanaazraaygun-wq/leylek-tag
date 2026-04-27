@@ -221,7 +221,7 @@ async function loadActiveTagForUserResume(
 async function tryResumeActiveMatchSession(
   parsedUser: User,
   deps: {
-    saveUser: (u: User) => Promise<void>;
+    saveUser: (u: User) => Promise<User>;
     setUser: (u: User | ((prev: User | null) => User | null)) => void;
     setSelectedRole: (r: 'passenger' | 'driver') => void;
     setScreen: (s: AppScreen) => void;
@@ -265,8 +265,8 @@ async function tryResumeActiveMatchSession(
       console.log('TRY_RESUME_SUCCESS', { userId: uid });
       console.log('TRY_RESUME_ROLE', role);
       const u: User = { ...parsedUser, role };
-      await deps.saveUser(u);
-      deps.setUser(u);
+      const savedUser = await deps.saveUser(u);
+      deps.setUser(savedUser);
       deps.setSelectedRole(role);
       deps.setScreen('dashboard');
       try {
@@ -1212,7 +1212,7 @@ export default function App() {
     );
   };
 
-  const saveUser = async (userData: User) => {
+  const saveUser = async (userData: User): Promise<User> => {
     const raw = await getPersistedUserRaw();
     const next = { ...(userData as unknown as Record<string, unknown>) };
     if (raw) {
@@ -1228,12 +1228,22 @@ export default function App() {
         /* yalnızca userData yaz */
       }
     }
+    if (!next.access_token && !next.accessToken) {
+      const flatTok = (await getPersistedAccessToken())?.trim();
+      if (flatTok) {
+        next.access_token = flatTok;
+        next.accessToken = flatTok;
+      }
+    }
     await setPersistedUserJson(JSON.stringify(next));
     console.log('SAVE_USER_PERSIST', {
       key: USER_JSON_STORAGE_KEY,
       preservedTokenFromPrev: !!(next.access_token || next.accessToken),
     });
-    setUser(next as unknown as User);
+    console.log('[auth] preserving token on setUser=true', !!(next.access_token || next.accessToken));
+    const saved = next as unknown as User;
+    setUser(saved);
+    return saved;
   };
 
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
@@ -1246,6 +1256,7 @@ export default function App() {
     if (!token) return;
     setUser((prev) => {
       if (!prev) return prev;
+      console.log('[auth] preserving token on setUser=true', true);
       return {
         ...prev,
         access_token: token,
@@ -1697,10 +1708,9 @@ export default function App() {
         if (data.user_exists && data.user && typeof data.user === 'object') {
           // Kayıtlı kullanıcı - giriş yapıyor, kayıt sayfasına atma
           const loggedUser = data.user as User;
-          await saveUser(loggedUser);
-          setUser(loggedUser);
+          const savedUser = await saveUser(loggedUser);
           if (data.has_pin) {
-            const u = loggedUser as { phone?: string };
+            const u = savedUser as { phone?: string };
             const ten =
               normalizeTrMobile10(phone) || normalizeTrMobile10(u?.phone) || '';
             if (ten.length === 10) {

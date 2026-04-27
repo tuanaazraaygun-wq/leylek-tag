@@ -283,11 +283,7 @@ export default function LeylekMuhabbetiHomeTab({
       return;
     }
     if (!tok) {
-      setPendingIncoming(0);
-      setIncomingRequests([]);
-      setFeedPreview([]);
-      setViewerCanActAsDriver(false);
-      setViewerDriverVk(null);
+      console.log('[muhabbet] preserving rows during reconnect');
       return;
     }
     setFeedLoading(true);
@@ -298,9 +294,8 @@ export default function LeylekMuhabbetiHomeTab({
         fetch(`${base}/muhabbet/match-requests/incoming?status=pending&limit=50`, { headers: h }),
         fetch(`${base}/muhabbet/listings/feed?${u.toString()}`, { headers: h }),
       ]);
-      if (handleUnauthorizedAndMaybeRedirect(rInc) || handleUnauthorizedAndMaybeRedirect(rFeed)) {
-        setPendingIncoming(0);
-        setFeedPreview([]);
+      if (rInc.status === 401 || rFeed.status === 401) {
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       {
@@ -309,8 +304,7 @@ export default function LeylekMuhabbetiHomeTab({
           setPendingIncoming(di.requests.length);
           setIncomingRequests(di.requests.slice(0, 4));
         } else {
-          setPendingIncoming(0);
-          setIncomingRequests([]);
+          console.log('[muhabbet] preserving rows during reconnect');
         }
       }
       {
@@ -332,12 +326,12 @@ export default function LeylekMuhabbetiHomeTab({
             return true;
           });
           setFeedPreview(list.slice(0, 36));
-        } else setFeedPreview([]);
+        } else {
+          console.log('[muhabbet] preserving rows during reconnect');
+        }
       }
     } catch {
-      setPendingIncoming(0);
-      setIncomingRequests([]);
-      setFeedPreview([]);
+      console.log('[muhabbet] preserving rows during reconnect');
     } finally {
       setFeedLoading(false);
     }

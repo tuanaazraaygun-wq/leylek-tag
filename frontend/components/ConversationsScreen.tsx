@@ -195,14 +195,14 @@ export default function ConversationsScreen({
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) {
         setErr('Oturum bulunamadı.');
-        setRows([]);
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       const res = await fetch(`${base}/muhabbet/conversations/me?limit=100`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setRows([]);
+      if (res.status === 401) {
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       const data = (await res.json().catch(() => ({}))) as {
@@ -212,7 +212,7 @@ export default function ConversationsScreen({
       };
       if (!res.ok || !data.success) {
         setErr(typeof data.detail === 'string' && data.detail ? data.detail : 'Liste yüklenemedi.');
-        setRows([]);
+        console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
       let list = Array.isArray(data.conversations) ? data.conversations : [];
@@ -260,7 +260,7 @@ export default function ConversationsScreen({
       setRows(sortConversations(enriched));
     } catch {
       setErr('Bağlantı hatası.');
-      setRows([]);
+      console.log('[muhabbet] preserving rows during reconnect');
     } finally {
       setLoading(false);
     }
