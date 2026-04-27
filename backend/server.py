@@ -22514,6 +22514,27 @@ async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: 
             await emit_socket_event_to_user(uid, event_name, payload)
 
 
+async def _emit_muhabbet_trip_force_finished(session_row: dict, response: str, responder_user_id: str | None = None) -> None:
+    session_id = str(session_row.get("id") or "").strip().lower()
+    requester_uid = str(session_row.get("forced_finish_requested_by_user_id") or "").strip().lower()
+    payload = {
+        "session_id": session_id,
+        "conversation_id": session_row.get("conversation_id"),
+        "requester_user_id": requester_uid,
+        "responder_user_id": responder_user_id,
+        "response": response,
+        "score_delta": -3,
+        "session": _muhabbet_trip_session_public(session_row),
+    }
+    await sio.emit("muhabbet_trip_force_finished", payload, room=muhabbet_trip_room(session_id))
+    for target in (
+        str(session_row.get("passenger_id") or "").strip(),
+        str(session_row.get("driver_id") or "").strip(),
+    ):
+        if target:
+            await emit_socket_event_to_user(target, "muhabbet_trip_force_finished", payload)
+
+
 def _muhabbet_trip_parse_dt(value):
     try:
         raw = str(value or "").strip()
@@ -22847,7 +22868,7 @@ async def muhabbet_trip_session_active_get(
             supabase.table("muhabbet_trip_sessions")
             .select("*")
             .eq("passenger_id", uid_lo)
-            .in_("status", ["ready", "active"])
+            .in_("status", ["ready", "started", "active"])
             .order("updated_at", desc=True)
             .limit(1)
             .execute()
@@ -22856,7 +22877,7 @@ async def muhabbet_trip_session_active_get(
             supabase.table("muhabbet_trip_sessions")
             .select("*")
             .eq("driver_id", uid_lo)
-            .in_("status", ["ready", "active"])
+            .in_("status", ["ready", "started", "active"])
             .order("updated_at", desc=True)
             .limit(1)
             .execute()
@@ -23301,7 +23322,7 @@ async def sio_muhabbet_trip_force_finish_respond(sid, data):
     uid = _muhabbet_socket_uid_from_sid(sid)
     session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
     response_raw = str(data.get("response") or "").strip().lower()
-    response = "accepted" if response_raw == "accepted" else "declined"
+    response = response_raw if response_raw in ("accepted", "declined", "timeout") else "declined"
     if not uid or not session_id:
         return
     try:
@@ -23316,7 +23337,7 @@ async def sio_muhabbet_trip_force_finish_respond(sid, data):
         patch = {
             "status": "finished",
             "finish_method": "forced",
-            "finish_score_delta": -5,
+            "finish_score_delta": -3,
             "finish_note": "Forced Muhabbet finish",
             "forced_finish_confirmed_by_user_id": uid_lo,
             "forced_finish_confirmed_at": now_iso,
@@ -23327,20 +23348,8 @@ async def sio_muhabbet_trip_force_finish_respond(sid, data):
         }
         upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
         next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "requester_user_id": requester_uid,
-            "responder_user_id": uid_lo,
-            "response": response,
-            "score_delta": -5,
-            "session": _muhabbet_trip_session_public(next_row),
-        }
-        logger.info("[muhabbet_trip_finish] forced_finished session_id=%s response=%s score=-5", session_id, response)
-        await sio.emit("muhabbet_trip_force_finished", payload, room=muhabbet_trip_room(session_id))
-        for target in (requester_uid, uid_lo):
-            if target:
-                await emit_socket_event_to_user(target, "muhabbet_trip_force_finished", payload)
+        logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s", session_id, response)
+        await _emit_muhabbet_trip_force_finished(next_row, response, uid_lo)
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)

@@ -10,6 +10,9 @@ type ActiveTripResponse = {
   session?: MuhabbetTripSession | null;
 };
 
+const TERMINAL_TRIP_STATUSES = new Set(['finished', 'cancelled', 'expired']);
+const RECOVERABLE_TRIP_STATUSES = new Set(['ready', 'started', 'active']);
+
 export function useMuhabbetActiveTripRecovery() {
   const router = useRouter();
   const pathname = usePathname();
@@ -40,7 +43,7 @@ export function useMuhabbetActiveTripRecovery() {
       const data = (await res.json().catch(() => ({}))) as ActiveTripResponse;
       const sessionId = String(data?.session?.id || data?.session?.session_id || '').trim().toLowerCase();
       const status = String(data?.session?.status || '').trim().toLowerCase();
-      if (!sessionId || !['ready', 'active'].includes(status)) return;
+      if (!sessionId || TERMINAL_TRIP_STATUSES.has(status) || !RECOVERABLE_TRIP_STATUSES.has(status)) return;
       if (lastRedirectRef.current === sessionId && pathnameRef.current.startsWith('/leylek-trip/')) return;
 
       console.log('[muhabbet-trip-recovery] redirect', { reason, session_id: sessionId, status });

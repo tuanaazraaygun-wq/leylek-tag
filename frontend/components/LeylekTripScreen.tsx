@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import type {
@@ -37,6 +37,8 @@ type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbe
 type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 type QrMode = 'boarding' | 'finish';
 type ForceFinishPrompt = { requesterUserId: string; targetUserId: string } | null;
+const TERMINAL_TRIP_STATUSES = new Set(['finished', 'cancelled', 'expired']);
+const MUHABBET_SAFE_ROUTE = '/' as Href;
 
 function coord(lat?: number | null, lng?: number | null): Coord | null {
   const la = Number(lat);
@@ -89,8 +91,29 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
-  const isTerminal = session?.status === 'cancelled' || session?.status === 'finished';
+  const isTerminal = TERMINAL_TRIP_STATUSES.has(String(session?.status || '').trim().toLowerCase());
   const status = displayStatus(session?.status);
+
+  const closeTerminalTrip = useCallback((eventName: string, nextSession?: MuhabbetTripSession | null) => {
+    const terminalSessionId = String(nextSession?.id || nextSession?.session_id || sessionId || '').trim().toLowerCase();
+    const terminalStatus = String(nextSession?.status || '').trim().toLowerCase();
+    console.log(`[leylek-trip] terminal event received event=${eventName} session_id=${terminalSessionId}`);
+    if (terminalStatus) {
+      console.log(`[leylek-trip] terminal status on load status=${terminalStatus}`);
+    }
+    setQrCodeVisible(false);
+    setQrScanVisible(false);
+    setQrFinishToken('');
+    setQrExpiresAt(null);
+    setForceFinishPrompt(null);
+    setForceFinishWarningVisible(false);
+    setCallPayload(null);
+    setCallState('idle');
+    setCallBusy(false);
+    setActionBusy(false);
+    setSession(null);
+    setTimeout(() => router.replace(MUHABBET_SAFE_ROUTE), 120);
+  }, [router, sessionId]);
 
   const loadSession = useCallback(async () => {
     const token = await getPersistedAccessToken();
@@ -109,6 +132,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         Alert.alert('Muhabbet yolculuğu', data.detail || 'Oturum açılmadı.');
         return;
       }
+      const loadedStatus = String(data.session.status || '').trim().toLowerCase();
+      if (TERMINAL_TRIP_STATUSES.has(loadedStatus)) {
+        console.log(`[leylek-trip] terminal status on load status=${loadedStatus}`);
+        closeTerminalTrip('load', data.session);
+        return;
+      }
       console.log('[leylek-trip] session loaded', data.session);
       setSession(data.session);
     } catch {
@@ -116,7 +145,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl, sessionId]);
+  }, [apiBaseUrl, closeTerminalTrip, sessionId]);
 
   useEffect(() => {
     void currentUserId().then(setMyId);
@@ -176,6 +205,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (payload.session) setSession(payload.session);
       else void loadSession();
     };
+    const bindTerminal = (eventName: string) => (payload: MuhabbetTripSessionSocketPayload) => {
+      console.log('[leylek-trip] event', eventName, payload);
+      if (!matches(payload)) return;
+      closeTerminalTrip(eventName, payload.session || null);
+    };
     const onLocation = bind('muhabbet_trip_location_updated');
     const onStarted = (payload: MuhabbetTripSessionSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_started', payload);
@@ -188,22 +222,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrExpiresAt(null);
       setActionBusy(false);
     };
-    const onCancelled = bind('muhabbet_trip_cancelled');
-    const onFinished = (payload: MuhabbetTripSessionSocketPayload) => {
-      console.log('[leylek-trip] event', 'muhabbet_trip_finished', payload);
-      if (!matches(payload)) return;
-      if (payload.session) setSession(payload.session);
-      setQrCodeVisible(false);
-      setQrScanVisible(false);
-      setQrFinishToken('');
-      setQrExpiresAt(null);
-      setForceFinishPrompt(null);
-      setForceFinishWarningVisible(false);
-      setCallPayload(null);
-      setCallState('idle');
-      setActionBusy(false);
-      setTimeout(() => router.back(), 250);
-    };
+    const onCancelled = bindTerminal('muhabbet_trip_cancelled');
+    const onFinished = bindTerminal('muhabbet_trip_finished');
+    const onExpired = bindTerminal('muhabbet_trip_expired');
     const callMatches = (payload: MuhabbetTripCallSocketPayload) =>
       String(payload?.session_id || payload?.sessionId || '').trim().toLowerCase() === sessionId.toLowerCase();
     const onCallStart = (payload: MuhabbetTripCallSocketPayload) => {
@@ -287,10 +308,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const onForceFinished = (payload: MuhabbetTripFinishSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_force_finished', payload);
       if (!callMatches(payload)) return;
-      setActionBusy(false);
-      setForceFinishPrompt(null);
-      setForceFinishWarningVisible(false);
-      if (payload.session) setSession(payload.session);
+      closeTerminalTrip('muhabbet_trip_force_finished', payload.session || null);
     };
     const joinPayload = { session_id: sessionId };
     console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
@@ -299,6 +317,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     socket.on('muhabbet_trip_started', onStarted);
     socket.on('muhabbet_trip_cancelled', onCancelled);
     socket.on('muhabbet_trip_finished', onFinished);
+    socket.on('muhabbet_trip_expired', onExpired);
     socket.on('muhabbet_trip_call_start', onCallStart);
     socket.on('muhabbet_trip_call_incoming', onCallIncoming);
     socket.on('muhabbet_trip_call_accept', onCallAccept);
@@ -317,6 +336,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_started', onStarted);
       socket.off('muhabbet_trip_cancelled', onCancelled);
       socket.off('muhabbet_trip_finished', onFinished);
+      socket.off('muhabbet_trip_expired', onExpired);
       socket.off('muhabbet_trip_call_start', onCallStart);
       socket.off('muhabbet_trip_call_incoming', onCallIncoming);
       socket.off('muhabbet_trip_call_accept', onCallAccept);
@@ -328,7 +348,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_force_finish_requested', onForceRequested);
       socket.off('muhabbet_trip_force_finished', onForceFinished);
     };
-  }, [loadSession, myId, router, sessionId]);
+  }, [closeTerminalTrip, loadSession, myId, sessionId]);
 
   const locations = useMemo(() => {
     if (!session) return {};

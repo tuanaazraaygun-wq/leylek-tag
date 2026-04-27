@@ -1,4 +1,4 @@
-export type MuhabbetTripStatus = 'ready' | 'started' | 'active' | 'cancelled' | 'finished';
+export type MuhabbetTripStatus = 'ready' | 'started' | 'active' | 'cancelled' | 'finished' | 'expired';
 
 export type MuhabbetTripSession = {
   id: string;
@@ -49,9 +49,12 @@ export type MuhabbetTripSession = {
   forced_finish_requested_at?: string | null;
   forced_finish_confirmed_by_user_id?: string | null;
   forced_finish_confirmed_at?: string | null;
-  forced_finish_other_user_response?: 'accepted' | 'declined' | null;
+  forced_finish_other_user_response?: 'accepted' | 'declined' | 'timeout' | null;
   finish_score_delta?: number | null;
   finish_note?: string | null;
+  expires_at?: string | null;
+  expired_at?: string | null;
+  expire_reason?: string | null;
   boarding_qr_created_at?: string | null;
   boarding_qr_expires_at?: string | null;
   boarding_qr_confirmed_at?: string | null;
@@ -106,7 +109,7 @@ export type MuhabbetTripFinishSocketPayload = {
   requester_user_id?: string;
   target_user_id?: string;
   responder_user_id?: string;
-  response?: 'accepted' | 'declined';
+  response?: 'accepted' | 'declined' | 'timeout';
   score_delta?: number;
   boarding_qr_token?: string;
   qr_finish_token?: string;
