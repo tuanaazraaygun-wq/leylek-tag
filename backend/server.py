@@ -22280,6 +22280,9 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "trust_requested_at": row.get("trust_requested_at"),
         "trust_resolved_at": row.get("trust_resolved_at"),
         "navigation_status": row.get("navigation_status"),
+        "expires_at": row.get("expires_at"),
+        "expired_at": row.get("expired_at"),
+        "expire_reason": row.get("expire_reason"),
         "started_at": row.get("started_at"),
         "cancelled_at": row.get("cancelled_at"),
         "cancelled_by_user_id": row.get("cancelled_by_user_id"),
@@ -22457,12 +22460,16 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
         return out
 
     hydrated = _muhabbet_trip_hydrate_source(row)
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
     insert_payload = {
         "conversion_request_id": rid,
         "conversation_id": row.get("conversation_id"),
         "passenger_id": row.get("passenger_id"),
         "driver_id": row.get("driver_id"),
         "status": "ready",
+        "expires_at": (now + timedelta(hours=1)).isoformat(),
+        "updated_at": now_iso,
         **hydrated,
     }
     logger.info("[muhabbet_trip_session] insert_payload=%s", insert_payload)
@@ -22505,6 +22512,77 @@ async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: 
     ):
         if uid:
             await emit_socket_event_to_user(uid, event_name, payload)
+
+
+def _muhabbet_trip_parse_dt(value):
+    try:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        out = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if out.tzinfo is None:
+            out = out.replace(tzinfo=timezone.utc)
+        return out
+    except Exception:
+        return None
+
+
+async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
+    """Expire unboarded Muhabbet trip sessions only; never touches normal ride state."""
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    stale_cutoff = now - timedelta(hours=2)
+    expired_rows: list[dict] = []
+    try:
+        rows = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("*")
+            .eq("status", "ready")
+            .is_("boarding_qr_confirmed_at", "null")
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("[muhabbet_trip_expiry] select failed err=%s", e)
+        return expired_rows
+
+    for raw in rows.data or []:
+        row = dict(raw)
+        session_id = str(row.get("id") or "").strip().lower()
+        if not session_id:
+            continue
+        reason = None
+        expires_at = _muhabbet_trip_parse_dt(row.get("expires_at"))
+        created_at = _muhabbet_trip_parse_dt(row.get("created_at"))
+        if expires_at and expires_at < now:
+            reason = "boarding_timeout"
+        if created_at and created_at < stale_cutoff:
+            reason = "stale_ready_cleanup"
+        if not reason:
+            continue
+        patch = {
+            "status": "expired",
+            "expired_at": now_iso,
+            "expire_reason": reason,
+            "boarding_qr_token": None,
+            "finish_qr_token": None,
+            "qr_finish_token": None,
+            "updated_at": now_iso,
+        }
+        try:
+            upd = (
+                supabase.table("muhabbet_trip_sessions")
+                .update(patch)
+                .eq("id", session_id)
+                .eq("status", "ready")
+                .execute()
+            )
+            next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+            expired_rows.append(next_row)
+            logger.info("[muhabbet_trip_expiry] expired session_id=%s reason=%s", session_id, reason)
+            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_expired")
+        except Exception as e:
+            logger.warning("[muhabbet_trip_expiry] expire failed session_id=%s err=%s", session_id, e)
+    return expired_rows
 
 
 def _muhabbet_trip_counterparty(row: dict, uid: str) -> str:
@@ -22764,6 +22842,7 @@ async def muhabbet_trip_session_active_get(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     uid_lo = str(uid or "").strip().lower()
     try:
+        await _expire_stale_muhabbet_trip_sessions()
         passenger_rows = (
             supabase.table("muhabbet_trip_sessions")
             .select("*")
@@ -22799,6 +22878,7 @@ async def muhabbet_trip_session_get(
 ):
     """Leylek Teklif Sende Phase 2 session detail; never reads normal ride tags."""
     uid = await _muhabbet_listing_uid(authenticated_user_id)
+    await _expire_stale_muhabbet_trip_sessions()
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
     return {"success": True, "session": _muhabbet_trip_session_public(row)}
 
@@ -22840,6 +22920,7 @@ async def sio_join_muhabbet_trip_session(sid, data):
         await sio.emit("muhabbet_trip_error", {"code": "bad_request", "message": "session_id gerekli."}, room=sid)
         return
     try:
+        await _expire_stale_muhabbet_trip_sessions()
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         room = muhabbet_trip_room(session_id)
         await sio.enter_room(sid, room)
@@ -22988,6 +23069,7 @@ async def sio_muhabbet_trip_boarding_qr_create(sid, data):
     if not uid or not session_id:
         return
     try:
+        await _expire_stale_muhabbet_trip_sessions()
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         uid_lo = str(uid).strip().lower()
         if str(row.get("driver_id") or "").strip().lower() != uid_lo:
@@ -23034,6 +23116,7 @@ async def sio_muhabbet_trip_boarding_qr_confirm(sid, data):
     if not uid or not session_id or not token:
         return
     try:
+        await _expire_stale_muhabbet_trip_sessions()
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         uid_lo = str(uid).strip().lower()
         if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
@@ -23077,6 +23160,7 @@ async def sio_muhabbet_trip_qr_create(sid, data):
     if not uid or not session_id:
         return
     try:
+        await _expire_stale_muhabbet_trip_sessions()
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         uid_lo = str(uid).strip().lower()
         if str(row.get("driver_id") or "").strip().lower() != uid_lo:
@@ -23128,6 +23212,7 @@ async def sio_muhabbet_trip_qr_confirm(sid, data):
     if not uid or not session_id or not token:
         return
     try:
+        await _expire_stale_muhabbet_trip_sessions()
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         uid_lo = str(uid).strip().lower()
         if str(row.get("passenger_id") or "").strip().lower() != uid_lo:

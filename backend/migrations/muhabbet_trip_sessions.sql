@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.muhabbet_trip_sessions (
   passenger_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
   driver_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
   status text NOT NULL DEFAULT 'ready'
-    CHECK (status IN ('ready', 'started', 'active', 'cancelled', 'finished')),
+    CHECK (status IN ('ready', 'started', 'active', 'cancelled', 'finished', 'expired')),
   city text NULL,
   pickup_text text NULL,
   pickup_lat double precision NULL,
@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS public.muhabbet_trip_sessions (
   trust_requested_at timestamptz NULL,
   trust_resolved_at timestamptz NULL,
   navigation_status text NULL,
+  expires_at timestamptz NULL,
+  expired_at timestamptz NULL,
+  expire_reason text NULL,
   started_at timestamptz NULL,
   cancelled_at timestamptz NULL,
   cancelled_by_user_id uuid NULL REFERENCES public.users (id) ON DELETE SET NULL,
@@ -121,6 +124,9 @@ ALTER TABLE public.muhabbet_trip_sessions
   ADD COLUMN IF NOT EXISTS trust_requested_at timestamptz,
   ADD COLUMN IF NOT EXISTS trust_resolved_at timestamptz,
   ADD COLUMN IF NOT EXISTS navigation_status text,
+  ADD COLUMN IF NOT EXISTS expires_at timestamptz,
+  ADD COLUMN IF NOT EXISTS expired_at timestamptz,
+  ADD COLUMN IF NOT EXISTS expire_reason text,
   ADD COLUMN IF NOT EXISTS started_at timestamptz,
   ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
   ADD COLUMN IF NOT EXISTS cancelled_by_user_id uuid,
@@ -158,7 +164,7 @@ ALTER TABLE public.muhabbet_trip_sessions
 
 ALTER TABLE public.muhabbet_trip_sessions
   ADD CONSTRAINT muhabbet_trip_sessions_status_check
-  CHECK (status IN ('ready', 'started', 'active', 'cancelled', 'finished'));
+  CHECK (status IN ('ready', 'started', 'active', 'cancelled', 'finished', 'expired'));
 
 CREATE INDEX IF NOT EXISTS idx_mts_conversation_status_created
   ON public.muhabbet_trip_sessions (conversation_id, status, created_at DESC);
