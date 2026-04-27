@@ -258,6 +258,11 @@ export default function LeylekTripLiveRideChrome({
                   <Ionicons name="alert-circle-outline" size={15} color="#B45309" />
                   <Text style={styles.routeWarningText}>Alış/varış konumu henüz belirlenmedi.</Text>
                 </View>
+              ) : !routePolyline ? (
+                <View style={styles.routeWarning}>
+                  <Ionicons name="time-outline" size={15} color="#B45309" />
+                  <Text style={styles.routeWarningText}>Rota hesaplanıyor</Text>
+                </View>
               ) : null}
 
               <View style={styles.priceRow}>

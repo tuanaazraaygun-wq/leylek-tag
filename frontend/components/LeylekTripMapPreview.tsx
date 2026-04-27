@@ -98,18 +98,13 @@ export default function LeylekTripMapPreview({
     () => (isCoord(driverLocation) && isCoord(approachTarget) ? [driverLocation, approachTarget] : []),
     [approachTarget, driverLocation],
   );
-  const tripFallbackCoordinates = useMemo(
-    () => (isCoord(pickup) && isCoord(dropoff) ? [pickup, dropoff] : []),
-    [dropoff, pickup],
-  );
-  const displayRouteCoordinates = routeCoordinates.length >= 2 ? routeCoordinates : tripFallbackCoordinates;
-  const routeIsFallback = routeCoordinates.length < 2 && tripFallbackCoordinates.length >= 2;
+  const displayRouteCoordinates = routeCoordinates.length >= 2 ? routeCoordinates : [];
+  const routeCalculating = routeCoordinates.length < 2 && (isCoord(pickup) || isCoord(dropoff) || approachCoordinates.length >= 2);
   const fitCoords = useMemo(() => {
     const livePair = [driverLocation, passengerLocation].filter(isCoord);
     if (livePair.length >= 2) return livePair;
     if (tripStarted && displayRouteCoordinates.length >= 2) return displayRouteCoordinates;
     if (!tripStarted && approachCoordinates.length >= 2) return approachCoordinates;
-    if (tripFallbackCoordinates.length >= 2) return tripFallbackCoordinates;
     return [driverLocation, passengerLocation, pickup, dropoff, deviceLocation].filter(isCoord);
   }, [
     approachCoordinates,
@@ -119,7 +114,6 @@ export default function LeylekTripMapPreview({
     dropoff,
     passengerLocation,
     pickup,
-    tripFallbackCoordinates,
     tripStarted,
   ]);
   const center = useMemo(
@@ -202,9 +196,9 @@ export default function LeylekTripMapPreview({
             <MarkerBubble label="Yolcu" color="#F97316" icon="person" />
           </Marker>
         ) : null}
-        {!tripStarted && approachCoordinates.length >= 2 ? (
+        {!tripStarted && routeCoordinates.length >= 2 ? (
           <Polyline
-            coordinates={approachCoordinates}
+            coordinates={routeCoordinates}
             strokeColor="#047857"
             strokeWidth={8}
             lineJoin="round"
@@ -216,16 +210,15 @@ export default function LeylekTripMapPreview({
             coordinates={displayRouteCoordinates}
             strokeColor="#EA580C"
             strokeWidth={8}
-            lineDashPattern={routeIsFallback ? [12, 6] : undefined}
             lineJoin="round"
             lineCap="round"
           />
         ) : null}
       </MapView>
-      {routeIsFallback ? (
+      {routeCalculating ? (
         <View style={styles.fallbackBadge} pointerEvents="none">
-          <Ionicons name="git-branch-outline" size={13} color="#92400E" />
-          <Text style={styles.fallbackBadgeText}>Rota tahmini çizgi</Text>
+          <Ionicons name="time-outline" size={13} color="#92400E" />
+          <Text style={styles.fallbackBadgeText}>Rota hesaplanıyor</Text>
         </View>
       ) : null}
     </View>

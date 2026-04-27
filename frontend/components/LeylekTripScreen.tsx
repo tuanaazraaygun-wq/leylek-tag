@@ -502,7 +502,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   useEffect(() => {
     if (!session) return;
     if (!session.route_polyline && locations.pickup && locations.dropoff) {
-      console.log('[leylek-trip] route data missing; drawing fallback line', {
+      console.log('[leylek-trip] route data missing; waiting for road route', {
         session_id: sessionId,
         pickup: locations.pickup,
         dropoff: locations.dropoff,

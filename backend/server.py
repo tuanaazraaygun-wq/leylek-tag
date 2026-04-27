@@ -22510,6 +22510,67 @@ def _muhabbet_trip_counterparty(row: dict, uid: str) -> str:
     return ""
 
 
+async def _muhabbet_trip_calculate_and_store_route(row: dict) -> dict:
+    """Muhabbet-only route projection. Reads/writes only muhabbet_trip_sessions."""
+    session_id = str((row or {}).get("id") or "").strip().lower()
+    status = str((row or {}).get("status") or "").strip().lower()
+    origin = None
+    dest = None
+    if status == "started":
+        origin = (
+            _muhabbet_trip_float_or_none(row.get("driver_location_lat")),
+            _muhabbet_trip_float_or_none(row.get("driver_location_lng")),
+        )
+        dest = (
+            _muhabbet_trip_float_or_none(row.get("dropoff_lat")),
+            _muhabbet_trip_float_or_none(row.get("dropoff_lng")),
+        )
+    else:
+        origin = (
+            _muhabbet_trip_float_or_none(row.get("driver_location_lat")),
+            _muhabbet_trip_float_or_none(row.get("driver_location_lng")),
+        )
+        passenger = (
+            _muhabbet_trip_float_or_none(row.get("passenger_location_lat")),
+            _muhabbet_trip_float_or_none(row.get("passenger_location_lng")),
+        )
+        pickup = (
+            _muhabbet_trip_float_or_none(row.get("pickup_lat")),
+            _muhabbet_trip_float_or_none(row.get("pickup_lng")),
+        )
+        dest = passenger if passenger[0] is not None and passenger[1] is not None else pickup
+    if not origin or not dest or origin[0] is None or origin[1] is None or dest[0] is None or dest[1] is None:
+        logger.info("[muhabbet_trip_route] missing coords session_id=%s", session_id)
+        return row
+    try:
+        route = await get_route_info(origin[0], origin[1], dest[0], dest[1])
+    except Exception as e:
+        logger.warning("[muhabbet_trip_route] calculate failed session_id=%s err=%s", session_id, e)
+        route = None
+    if not isinstance(route, dict) or str(route.get("source") or "").strip().lower() == "haversine_fallback":
+        logger.info("[muhabbet_trip_route] missing coords session_id=%s", session_id)
+        return row
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "route_polyline": route.get("overview_polyline"),
+        "route_distance_km": _muhabbet_trip_float_or_none(route.get("distance_km")),
+        "route_duration_min": int(round(float(route.get("duration_min")))) if route.get("duration_min") is not None else None,
+        "route_source": route.get("source") or "muhabbet_route",
+        "route_updated_at": now_iso,
+        "updated_at": now_iso,
+    }
+    patch = {k: v for k, v in patch.items() if v is not None}
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    out = dict(upd.data[0]) if upd.data else {**row, **patch}
+    logger.info(
+        "[muhabbet_trip_route] calculated session_id=%s distance=%s duration=%s",
+        session_id,
+        patch.get("route_distance_km"),
+        patch.get("route_duration_min"),
+    )
+    return out
+
+
 @sio.on("muhabbet_trip_convert_request")
 async def sio_muhabbet_trip_convert_request(sid, data):
     if not isinstance(data, dict):
@@ -22772,6 +22833,7 @@ async def sio_muhabbet_trip_location_update(sid, data):
             return
         upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
         next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
         payload = {
             "session_id": session_id,
             "user_id": uid_lo,
@@ -22805,6 +22867,7 @@ async def sio_muhabbet_trip_start(sid, data):
             {"status": "started", "started_at": now_iso, "updated_at": now_iso}
         ).eq("id", session_id).execute()
         next_row = dict(upd.data[0]) if upd.data else {**row, "status": "started", "started_at": now_iso, "updated_at": now_iso}
+        next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started")
     except Exception as e:
         logger.warning("muhabbet_trip_start: %s", e)
