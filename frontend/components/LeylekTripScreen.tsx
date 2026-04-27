@@ -88,6 +88,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [qrMode, setQrMode] = useState<QrMode>('finish');
   const [qrFinishToken, setQrFinishToken] = useState('');
   const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null);
+  const [paymentPromptVisible, setPaymentPromptVisible] = useState(false);
+  const [paymentPromptShown, setPaymentPromptShown] = useState(false);
+  const [paymentBusy, setPaymentBusy] = useState(false);
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
@@ -110,6 +113,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     setCallPayload(null);
     setCallState('idle');
     setCallBusy(false);
+    setPaymentPromptVisible(false);
+    setPaymentBusy(false);
     setActionBusy(false);
     setSession(null);
     setTimeout(() => router.replace(MUHABBET_SAFE_ROUTE), 120);
@@ -211,6 +216,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       closeTerminalTrip(eventName, payload.session || null);
     };
     const onLocation = bind('muhabbet_trip_location_updated');
+    const onPaymentMethodSet = (payload: MuhabbetTripSessionSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_payment_method_set', payload);
+      if (!matches(payload)) return;
+      if (payload.session) setSession(payload.session);
+      else void loadSession();
+      setPaymentBusy(false);
+      setPaymentPromptVisible(false);
+    };
     const onStarted = (payload: MuhabbetTripSessionSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_started', payload);
       if (!matches(payload)) return;
@@ -290,6 +303,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const onTripError = (payload: { code?: string; message?: string; detail?: string }) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_error', payload);
       setActionBusy(false);
+      setPaymentBusy(false);
       const message = payload?.message || payload?.detail || '';
       if (message) Alert.alert('Muhabbet yolculuk', message);
     };
@@ -314,6 +328,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
     socket.emit('muhabbet_trip_join', joinPayload);
     socket.on('muhabbet_trip_location_updated', onLocation);
+    socket.on('muhabbet_trip_payment_method_set', onPaymentMethodSet);
     socket.on('muhabbet_trip_started', onStarted);
     socket.on('muhabbet_trip_cancelled', onCancelled);
     socket.on('muhabbet_trip_finished', onFinished);
@@ -333,6 +348,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       console.log('[leylek-trip] emit', 'muhabbet_trip_leave', leavePayload);
       socket.emit('muhabbet_trip_leave', leavePayload);
       socket.off('muhabbet_trip_location_updated', onLocation);
+      socket.off('muhabbet_trip_payment_method_set', onPaymentMethodSet);
       socket.off('muhabbet_trip_started', onStarted);
       socket.off('muhabbet_trip_cancelled', onCancelled);
       socket.off('muhabbet_trip_finished', onFinished);
@@ -364,6 +380,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     await emitCurrentLocation({ requestPermission: true, showAlert: true, manual: true });
   }, [emitCurrentLocation]);
 
+  useEffect(() => {
+    if (!session || !myId || paymentPromptShown || isTerminal) return;
+    const passengerId = String(session.passenger_id || '').trim().toLowerCase();
+    const hasPaymentMethod = !!String(session.payment_method || '').trim();
+    if (myId === passengerId && !hasPaymentMethod) {
+      setPaymentPromptShown(true);
+      setPaymentPromptVisible(true);
+    }
+  }, [isTerminal, myId, paymentPromptShown, session]);
+
   const emitAction = useCallback((eventName: TripActionEvent) => {
     const payload = { session_id: sessionId };
     console.log('[leylek-trip] emit', eventName, payload);
@@ -381,6 +407,18 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     getOrCreateSocket().emit('muhabbet_trip_call_start', payload);
     setTimeout(() => setCallBusy(false), 1500);
   }, [isTerminal, session, sessionId]);
+
+  const selectPaymentMethod = useCallback((paymentMethod: 'cash' | 'card') => {
+    if (!session || isTerminal || paymentBusy) return;
+    const payload = { session_id: sessionId, payment_method: paymentMethod };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_payment_method_set', payload);
+    setPaymentBusy(true);
+    getOrCreateSocket().emit('muhabbet_trip_payment_method_set', payload);
+    setTimeout(() => {
+      setPaymentBusy(false);
+      setPaymentPromptVisible(false);
+    }, 1000);
+  }, [isTerminal, paymentBusy, session, sessionId]);
 
   const acceptCall = useCallback(() => {
     if (!callPayload) return;
@@ -553,6 +591,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         dropoffText={session.dropoff_text || 'Sohbette belirlenen varış noktası'}
         agreedPrice={session.agreed_price}
         vehicleKind={session.vehicle_kind}
+        paymentMethod={session.payment_method}
         routePolyline={session.route_polyline}
         routeDistanceKm={session.route_distance_km}
         routeDurationMin={session.route_duration_min}
@@ -585,6 +624,47 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}
       />
+      <Modal
+        visible={paymentPromptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPaymentPromptVisible(false)}
+      >
+        <View style={styles.trustModalRoot}>
+          <View style={styles.trustModalCard}>
+            <View style={[styles.trustModalIcon, { backgroundColor: '#F97316' }]}>
+              <Ionicons name="wallet" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.trustModalTitle}>Masraf paylaşımı</Text>
+            <Text style={styles.trustModalText}>Yol paylaşımı masrafını nasıl planlıyorsunuz?</Text>
+            <View style={styles.paymentChoiceRow}>
+              <Pressable
+                style={({ pressed }) => [styles.paymentChoiceButton, pressed && styles.paymentChoicePressed]}
+                disabled={paymentBusy}
+                onPress={() => selectPaymentMethod('cash')}
+              >
+                {paymentBusy ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="cash-outline" size={20} color="#FFFFFF" />}
+                <Text style={styles.paymentChoiceText}>Nakit</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.paymentChoiceButton, styles.paymentChoiceCardButton, pressed && styles.paymentChoicePressed]}
+                disabled={paymentBusy}
+                onPress={() => selectPaymentMethod('card')}
+              >
+                {paymentBusy ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="card-outline" size={20} color="#FFFFFF" />}
+                <Text style={styles.paymentChoiceText}>Kart</Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]}
+              disabled={paymentBusy}
+              onPress={() => setPaymentPromptVisible(false)}
+            >
+              <Text style={styles.trustDeclineText}>Şimdilik sonra</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <MuhabbetTripCallScreen
         visible={callState === 'incoming' || callState === 'outgoing' || callState === 'active'}
         mode={callState === 'active' ? 'active' : callState === 'incoming' ? 'incoming' : 'outgoing'}
@@ -722,6 +802,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   trustDeclineText: { color: '#475569', fontSize: 14, fontWeight: '900' },
+  paymentChoiceRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  paymentChoiceButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 16,
+    backgroundColor: '#16A34A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  paymentChoiceCardButton: {
+    backgroundColor: '#2563EB',
+  },
+  paymentChoiceText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  paymentChoicePressed: { opacity: 0.84 },
   qrTokenBox: {
     marginTop: 16,
     width: '100%',

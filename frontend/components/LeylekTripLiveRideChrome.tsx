@@ -27,6 +27,7 @@ type LeylekTripLiveRideChromeProps = {
   dropoffText: string;
   agreedPrice?: number | string | null;
   vehicleKind?: string | null;
+  paymentMethod?: 'cash' | 'card' | null;
   routePolyline?: string | null;
   routeDistanceKm?: number | null;
   routeDurationMin?: number | null;
@@ -39,7 +40,7 @@ type LeylekTripLiveRideChromeProps = {
   routeDataMissing?: boolean;
   finishMethod?: 'qr' | 'forced' | null;
   finishScoreDelta?: number | null;
-  forcedFinishResponse?: 'accepted' | 'declined' | null;
+  forcedFinishResponse?: 'accepted' | 'declined' | 'timeout' | null;
   navigationLabel: string;
   navigationDisabled?: boolean;
   sendingLocation: boolean;
@@ -64,6 +65,12 @@ function vehicleLabel(vehicleKind?: string | null): string {
   return vehicleKind === 'motorcycle' ? 'Motor' : 'Araç';
 }
 
+function paymentLabel(paymentMethod?: 'cash' | 'card' | null): string {
+  if (paymentMethod === 'card') return 'Kart';
+  if (paymentMethod === 'cash') return 'Nakit';
+  return '';
+}
+
 function locationLabel(v?: Coord | null): string {
   return v ? 'Canlı' : 'Bekleniyor';
 }
@@ -78,6 +85,7 @@ export default function LeylekTripLiveRideChrome({
   dropoffText,
   agreedPrice,
   vehicleKind,
+  paymentMethod,
   routePolyline,
   routeDistanceKm,
   routeDurationMin,
@@ -156,6 +164,7 @@ export default function LeylekTripLiveRideChrome({
     routeDistanceKm != null && Number.isFinite(Number(routeDistanceKm))
       ? `${Number(routeDistanceKm).toFixed(1)} km${routeDurationMin != null ? ` • ${Math.max(1, Math.round(Number(routeDurationMin)))} dk` : ''}`
       : null;
+  const paymentText = paymentLabel(paymentMethod);
   const qrButtonLabel =
     sessionStatus === 'ready'
       ? isDriver
@@ -271,6 +280,12 @@ export default function LeylekTripLiveRideChrome({
                   <Ionicons name={vehicleKind === 'motorcycle' ? 'bicycle-outline' : 'car-sport-outline'} size={15} color="#334155" />
                   <Text style={styles.vehiclePillText}>{vehicleLabel(vehicleKind)}</Text>
                 </View>
+                {paymentText ? (
+                  <View style={styles.paymentPill}>
+                    <Ionicons name={paymentMethod === 'card' ? 'card-outline' : 'cash-outline'} size={15} color="#0F766E" />
+                    <Text style={styles.paymentPillText}>Ödeme: {paymentText}</Text>
+                  </View>
+                ) : null}
               </View>
             </View>
           </LinearGradient>
@@ -485,6 +500,19 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148, 163, 184, 0.35)',
   },
   vehiclePillText: { fontSize: 13, fontWeight: '700', color: '#334155' },
+  paymentPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(240, 253, 250, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(20, 184, 166, 0.28)',
+  },
+  paymentPillText: { fontSize: 12, fontWeight: '800', color: '#0F766E' },
   routeActionRow: {
     flexDirection: 'row',
     alignItems: 'center',

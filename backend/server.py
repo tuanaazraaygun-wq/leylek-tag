@@ -22263,6 +22263,7 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "agreed_price": row.get("agreed_price"),
         "vehicle_kind": row.get("vehicle_kind"),
         "payment_method": row.get("payment_method"),
+        "payment_method_selected_at": row.get("payment_method_selected_at"),
         "route_polyline": row.get("route_polyline"),
         "route_distance_km": row.get("route_distance_km"),
         "route_duration_min": row.get("route_duration_min"),
@@ -23021,6 +23022,42 @@ async def sio_muhabbet_trip_location_update(sid, data):
         await sio.emit("muhabbet_trip_location_updated", payload, room=muhabbet_trip_room(session_id))
     except Exception as e:
         logger.warning("muhabbet_trip_location_update: %s", e)
+
+
+@sio.on("muhabbet_trip_payment_method_set")
+async def sio_muhabbet_trip_payment_method_set(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    payment_method = _canonical_passenger_payment_method(data.get("payment_method") or data.get("paymentMethod"))
+    if not uid or not session_id or payment_method not in ("cash", "card"):
+        await sio.emit("muhabbet_trip_error", {"code": "bad_payment_method", "message": "Geçerli ödeme yöntemi seçin."}, room=sid)
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        uid_lo = str(uid).strip().lower()
+        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+            await sio.emit("muhabbet_trip_error", {"code": "passenger_required", "message": "Ödeme yöntemini yolcu seçebilir."}, room=sid)
+            return
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished", "expired"):
+            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "payment_method": payment_method,
+            "payment_method_selected_at": now_iso,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        logger.info("[muhabbet_trip_payment] method_set session_id=%s method=%s", session_id, payment_method)
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_payment_method_set")
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_payment_method_set: %s", e)
+        await sio.emit("muhabbet_trip_error", {"code": "server_error", "message": "Ödeme yöntemi kaydedilemedi."}, room=sid)
 
 
 @sio.on("muhabbet_trip_start")

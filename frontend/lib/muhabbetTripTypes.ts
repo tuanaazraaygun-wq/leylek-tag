@@ -21,6 +21,7 @@ export type MuhabbetTripSession = {
   agreed_price?: number | string | null;
   vehicle_kind?: 'car' | 'motorcycle' | null;
   payment_method?: 'cash' | 'card' | null;
+  payment_method_selected_at?: string | null;
   route_polyline?: string | null;
   route_distance_km?: number | null;
   route_duration_min?: number | null;
