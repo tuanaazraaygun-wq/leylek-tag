@@ -118,6 +118,12 @@ type ChatSystemCard = {
   text: string;
 };
 
+type PendingMuhabbetAction =
+  | { kind: 'send_message'; messageId: string; body: string; retryCount: number }
+  | { kind: 'trip_convert_request'; retryCount: number }
+  | { kind: 'trip_convert_accept'; requestId: string; retryCount: number }
+  | { kind: 'trip_convert_decline'; requestId: string; retryCount: number };
+
 function chatInitials(nameRaw: string): string {
   const parts = String(nameRaw || '')
     .trim()
@@ -320,6 +326,7 @@ export default function MuhabbetChatScreen({
   const chatSessionActiveRef = useRef(true);
   /** message_id -> 8 sn ack bekleme (timeout iptali onAck’te) */
   const ackTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
 
   const pendingPairRequestId = String(ctx?.pending_pair_request_id || '').trim().toLowerCase();
   const pendingPairDirection = ctx?.pending_pair_request_direction || null;
@@ -348,18 +355,29 @@ export default function MuhabbetChatScreen({
     ackTimeoutsRef.current.delete(messageId);
   }, []);
 
-  const emitJoinForChat = useCallback(() => {
-    if (!cid) return;
-    const socket = getOrCreateSocket();
-    if (!socket.connected) return;
-    notifyAuthTokenBecameAvailableForSocket();
-    console.log('[chat] join emitted', cid);
-    socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-  }, [cid]);
+  const scheduleAckTimeout = useCallback(
+    (messageId: string) => {
+      clearAckWait(messageId);
+      const tmo = setTimeout(() => {
+        ackTimeoutsRef.current.delete(messageId);
+        setRows((prev) =>
+          prev.map((m) =>
+            rowIdLo(m) === rowIdLo({ id: messageId }) && m.out_status === 'sending'
+              ? { ...m, out_status: 'failed' as const }
+              : m
+          )
+        );
+        console.log('[chat] ack timeout message_id=', messageId);
+      }, 8000);
+      ackTimeoutsRef.current.set(messageId, tmo);
+    },
+    [clearAckWait]
+  );
 
-  const ensureSocketReadyForSend = useCallback(async (): Promise<boolean> => {
+  const ensureMuhabbetSocketReady = useCallback(async (): Promise<boolean> => {
     if (!cid) return false;
     const socket = getOrCreateSocket();
+    console.log(`[muhabbet-chat] readiness start sid=${socket.id || 'null'}`);
     notifyAuthTokenBecameAvailableForSocket();
     if (!socket.connected) {
       try {
@@ -384,30 +402,69 @@ export default function MuhabbetChatScreen({
     if (!socket.connected) return false;
     const regOk = await waitForNextRegisterSuccess(socket, 12000);
     if (!regOk) {
-      console.log('[chat-send] blocked reason=register_timeout (emit yine denenecek)');
+      console.log('[muhabbet-chat] readiness registered timeout');
+      return false;
     }
+    console.log('[muhabbet-chat] readiness registered ok');
     roomJoinedRef.current = false;
     setRoomJoined(false);
-    emitJoinForChat();
-    await new Promise<void>((resolve) => {
+    const joined = await new Promise<boolean>((resolve) => {
       let done = false;
-      const finish = () => {
+      const finish = (ok: boolean) => {
         if (done) return;
         done = true;
         clearTimeout(t);
         socket.off('joined_muhabbet', onJoined);
-        resolve();
+        resolve(ok);
       };
-      const t = setTimeout(finish, 1500);
+      const t = setTimeout(() => finish(false), 2500);
       const onJoined = (p: { conversation_id?: string }) => {
         const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
         if (!conv || conv !== cid.toLowerCase()) return;
-        finish();
+        roomJoinedRef.current = true;
+        setRoomJoined(true);
+        console.log(`[muhabbet-chat] readiness join ok conversation_id=${cid}`);
+        finish(true);
       };
       socket.on('joined_muhabbet', onJoined);
+      console.log('[chat] join emitted', cid);
+      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
     });
-    return true;
-  }, [cid, emitJoinForChat]);
+    if (!joined) {
+      console.log('[muhabbet-chat] readiness join timeout conversation_id=', cid);
+    }
+    return joined;
+  }, [cid]);
+
+  const retryPendingActionAfterNotRegistered = useCallback(async () => {
+    const pending = pendingActionRef.current;
+    if (!pending) return false;
+    if (pending.retryCount >= 1) return false;
+    pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
+    console.log(`[muhabbet-chat] retry after not_registered action=${pending.kind}`);
+    const ready = await ensureMuhabbetSocketReady();
+    if (!ready) return false;
+    const socket = getOrCreateSocket();
+    if (!socket.connected) return false;
+    if (pending.kind === 'send_message') {
+      scheduleAckTimeout(pending.messageId);
+      socket.emit('muhabbet_send', { conversation_id: cid, text: pending.body, message_id: pending.messageId });
+      return true;
+    }
+    if (pending.kind === 'trip_convert_request') {
+      socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
+      return true;
+    }
+    if (pending.kind === 'trip_convert_accept') {
+      socket.emit('muhabbet_trip_convert_accept', { conversation_id: cid, request_id: pending.requestId });
+      return true;
+    }
+    if (pending.kind === 'trip_convert_decline') {
+      socket.emit('muhabbet_trip_convert_decline', { conversation_id: cid, request_id: pending.requestId });
+      return true;
+    }
+    return false;
+  }, [cid, ensureMuhabbetSocketReady, scheduleAckTimeout]);
 
   useEffect(() => {
     myIdRef.current = myId;
@@ -650,12 +707,19 @@ export default function MuhabbetChatScreen({
     };
     const onConvertSent = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
+      if (pendingActionRef.current?.kind === 'trip_convert_request') pendingActionRef.current = null;
       setTripConvertLoading(false);
       setTripConvertState('pending');
       setTripLockReason('muhabbet_trip_convert_request_sent');
     };
     const onConvertConfirmed = (data: MuhabbetTripSessionSocketPayload) => {
       if (!convMatches(data)) return;
+      if (
+        pendingActionRef.current?.kind === 'trip_convert_request' ||
+        pendingActionRef.current?.kind === 'trip_convert_accept'
+      ) {
+        pendingActionRef.current = null;
+      }
       setTripConvertLoading(false);
       setTripConvertInModal(null);
       setTripConvertState('confirmed');
@@ -667,12 +731,24 @@ export default function MuhabbetChatScreen({
     };
     const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
       if (!convMatches(data)) return;
+      if (
+        pendingActionRef.current?.kind === 'trip_convert_request' ||
+        pendingActionRef.current?.kind === 'trip_convert_accept'
+      ) {
+        pendingActionRef.current = null;
+      }
       setTripConvertState('confirmed');
       setTripLockReason('muhabbet_trip_session_ready');
       navigateToLeylekTripSession(data);
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
+      if (
+        pendingActionRef.current?.kind === 'trip_convert_request' ||
+        pendingActionRef.current?.kind === 'trip_convert_decline'
+      ) {
+        pendingActionRef.current = null;
+      }
       setTripConvertLoading(false);
       setTripConvertState('idle');
       setTripLockReason(null);
@@ -680,6 +756,19 @@ export default function MuhabbetChatScreen({
       Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
     };
     const onConvertError = (data: { code?: string; detail?: string; message?: string }) => {
+      if (data?.code === 'not_registered') {
+        void (async () => {
+          const retried = await retryPendingActionAfterNotRegistered();
+          if (retried) return;
+          pendingActionRef.current = null;
+          setTripConvertLoading(false);
+          setTripConvertState('idle');
+          setTripLockReason(null);
+          Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'Bağlantı hazırlanıyor. Lütfen tekrar deneyin.');
+        })();
+        return;
+      }
+      pendingActionRef.current = null;
       setTripConvertLoading(false);
       setTripConvertState('idle');
       setTripLockReason(null);
@@ -703,7 +792,7 @@ export default function MuhabbetChatScreen({
       socket.off('muhabbet_trip_convert_declined', onConvertDeclined);
       socket.off('muhabbet_trip_convert_error', onConvertError);
     };
-  }, [cid, navigateToLeylekTripSession, pushSystemCard]);
+  }, [cid, navigateToLeylekTripSession, pushSystemCard, retryPendingActionAfterNotRegistered]);
 
   /** Karşı taraftan Leylek Anahtar isteği — sunucu emit_socket_event_to_user ile (oda join şart değil). */
   useEffect(() => {
@@ -902,6 +991,9 @@ export default function MuhabbetChatScreen({
       const st = String(p?.status || 'sent').toLowerCase();
       if (st !== 'sent' && p?.status != null) return;
       clearAckWait(mid);
+      if (pendingActionRef.current?.kind === 'send_message' && pendingActionRef.current.messageId === mid) {
+        pendingActionRef.current = null;
+      }
       console.log('[chat] current socket id =', socket.id);
       console.log('[chat] received ack message_id=', mid, p);
       const myLo = (myIdRef.current || '').trim().toLowerCase();
@@ -1128,10 +1220,15 @@ export default function MuhabbetChatScreen({
       }
       if (p?.code === 'not_registered') {
         notifyAuthTokenBecameAvailableForSocket();
-        setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
-        if (conv && conv === cid.toLowerCase()) {
-          Alert.alert('Bağlantı', det || 'Oturum doğrulanıyor. Bir saniye sonra tekrar deneyin.');
-        }
+        void (async () => {
+          const retried = await retryPendingActionAfterNotRegistered();
+          if (retried) return;
+          pendingActionRef.current = null;
+          setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
+          if (conv && conv === cid.toLowerCase()) {
+            Alert.alert('Bağlantı', det || 'Oturum doğrulanıyor. Bir saniye sonra tekrar deneyin.');
+          }
+        })();
         return;
       }
       if (p?.code === 'bad_message_id') {
@@ -1150,7 +1247,7 @@ export default function MuhabbetChatScreen({
     return () => {
       socket.off('muhabbet_error', onMuErr);
     };
-  }, [cid]);
+  }, [cid, retryPendingActionAfterNotRegistered]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
@@ -1193,25 +1290,6 @@ export default function MuhabbetChatScreen({
     [cid, base]
   );
 
-  const scheduleAckTimeout = useCallback(
-    (messageId: string) => {
-      clearAckWait(messageId);
-      const tmo = setTimeout(() => {
-        ackTimeoutsRef.current.delete(messageId);
-      setRows((prev) =>
-        prev.map((m) =>
-          rowIdLo(m) === rowIdLo({ id: messageId }) && m.out_status === 'sending'
-            ? { ...m, out_status: 'failed' as const }
-            : m
-        )
-      );
-        console.log('[chat] ack timeout message_id=', messageId);
-      }, 8000);
-      ackTimeoutsRef.current.set(messageId, tmo);
-    },
-    [clearAckWait]
-  );
-
   const resendMessage = useCallback(
     async (row: ChatMessageRow) => {
       console.log('[chat-send] pressed');
@@ -1241,9 +1319,11 @@ export default function MuhabbetChatScreen({
         prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
       scheduleAckTimeout(messageId);
-      const ready = await ensureSocketReadyForSend();
+      pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
+      const ready = await ensureMuhabbetSocketReady();
       if (!ready) {
         console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
+        pendingActionRef.current = null;
         setRows((prev) => markMessageFailedById(prev, messageId));
         Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
         return;
@@ -1253,6 +1333,7 @@ export default function MuhabbetChatScreen({
         socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
       } catch {
         clearAckWait(messageId);
+        pendingActionRef.current = null;
         setRows((prev) =>
           prev.map((m) =>
             rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'failed' as const } : m
@@ -1260,7 +1341,7 @@ export default function MuhabbetChatScreen({
         );
       }
     },
-    [cid, clearAckWait, emitJoinForChat, scheduleAckTimeout, ensureSocketReadyForSend]
+    [cid, clearAckWait, scheduleAckTimeout, ensureMuhabbetSocketReady]
   );
 
   const send = async () => {
@@ -1307,10 +1388,12 @@ export default function MuhabbetChatScreen({
     setSending(true);
     scheduleAckTimeout(messageId);
     console.log('[chat-send] message_id=', messageId);
-    const ready = await ensureSocketReadyForSend();
+    pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
+    const ready = await ensureMuhabbetSocketReady();
     if (!ready) {
       console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
       clearAckWait(messageId);
+      pendingActionRef.current = null;
       setRows((prev) => markMessageFailedById(prev, messageId));
       setSending(false);
       Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
@@ -1321,6 +1404,7 @@ export default function MuhabbetChatScreen({
       socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
     } catch {
       clearAckWait(messageId);
+      pendingActionRef.current = null;
       Alert.alert('Gönderilemedi', 'Bağlantı hatası.');
       setDraft(body);
       setRows((p) => p.filter((m) => rowIdLo(m) !== rowIdLo({ id: messageId })));
@@ -1424,7 +1508,7 @@ export default function MuhabbetChatScreen({
     };
     try {
       const alreadyReady = socket.connected && roomJoinedRef.current;
-      const ready = alreadyReady ? true : await ensureSocketReadyForSend();
+      const ready = alreadyReady ? true : await ensureMuhabbetSocketReady();
       if (!ready) {
         finish();
         Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
@@ -1471,7 +1555,7 @@ export default function MuhabbetChatScreen({
       finish();
       Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
     }
-  }, [cid, ensureSocketReadyForSend, pairRequestLoading, pushSystemCard]);
+  }, [cid, ensureMuhabbetSocketReady, pairRequestLoading, pushSystemCard]);
 
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (
@@ -1529,14 +1613,17 @@ export default function MuhabbetChatScreen({
   const sendTripConvertRequest = useCallback(async () => {
     if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
     setTripConvertLoading(true);
-    const ready = await ensureSocketReadyForSend();
+    pendingActionRef.current = { kind: 'trip_convert_request', retryCount: 0 };
+    const ready = await ensureMuhabbetSocketReady();
     if (!ready) {
+      pendingActionRef.current = null;
       setTripConvertLoading(false);
       Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
       return;
     }
     const socket = getOrCreateSocket();
     if (!socket.connected) {
+      pendingActionRef.current = null;
       setTripConvertLoading(false);
       Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
       return;
@@ -1545,27 +1632,43 @@ export default function MuhabbetChatScreen({
     setTripLockReason('muhabbet_trip_convert_request pending');
     socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
     setTimeout(() => setTripConvertLoading(false), 15000);
-  }, [cid, ensureSocketReadyForSend, tripConvertLoading, tripConvertState]);
+  }, [cid, ensureMuhabbetSocketReady, tripConvertLoading, tripConvertState]);
 
-  const acceptTripConvertFromModal = useCallback(() => {
+  const acceptTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;
+    const requestId = tripConvertInModal.rid;
+    pendingActionRef.current = { kind: 'trip_convert_accept', requestId, retryCount: 0 };
+    const ready = await ensureMuhabbetSocketReady();
+    if (!ready) {
+      pendingActionRef.current = null;
+      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+      return;
+    }
     const socket = getOrCreateSocket();
     socket.emit('muhabbet_trip_convert_accept', {
       conversation_id: cid,
-      request_id: tripConvertInModal.rid,
+      request_id: requestId,
     });
     setTripConvertInModal(null);
-  }, [cid, tripConvertInModal]);
+  }, [cid, ensureMuhabbetSocketReady, tripConvertInModal]);
 
-  const declineTripConvertFromModal = useCallback(() => {
+  const declineTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;
+    const requestId = tripConvertInModal.rid;
+    pendingActionRef.current = { kind: 'trip_convert_decline', requestId, retryCount: 0 };
+    const ready = await ensureMuhabbetSocketReady();
+    if (!ready) {
+      pendingActionRef.current = null;
+      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+      return;
+    }
     const socket = getOrCreateSocket();
     socket.emit('muhabbet_trip_convert_decline', {
       conversation_id: cid,
-      request_id: tripConvertInModal.rid,
+      request_id: requestId,
     });
     setTripConvertInModal(null);
-  }, [cid, tripConvertInModal]);
+  }, [cid, ensureMuhabbetSocketReady, tripConvertInModal]);
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right']}>
