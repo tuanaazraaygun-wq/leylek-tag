@@ -15,6 +15,7 @@ import {
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter, type Href } from 'expo-router';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
@@ -49,6 +50,14 @@ type HomeFeedListing = {
   match_request_status?: string | null;
   created_by_user_id?: string | null;
   status?: string | null;
+};
+
+type IncomingOfferRequest = {
+  id: string;
+  sender_user_id?: string | null;
+  sender_name?: string | null;
+  sender_user_name?: string | null;
+  listing?: { from_text?: string | null; to_text?: string | null } | null;
 };
 
 function isDriverRole(r: string | null | undefined): boolean {
@@ -245,6 +254,7 @@ export default function LeylekMuhabbetiHomeTab({
   viewerAppRole,
   requireToken,
 }: LeylekMuhabbetiHomeTabProps) {
+  const router = useRouter();
   const openDriver = onOpenDriverListing ?? onOpenListingsCreate;
   const openPassenger = onOpenPassengerListing ?? onOpenListingsCreate;
   const tok = accessToken.trim();
@@ -253,10 +263,13 @@ export default function LeylekMuhabbetiHomeTab({
   const listSlide = useRef(new Animated.Value(0)).current;
 
   const [pendingIncoming, setPendingIncoming] = useState(0);
+  const [incomingRequests, setIncomingRequests] = useState<IncomingOfferRequest[]>([]);
   const [feedPreview, setFeedPreview] = useState<HomeFeedListing[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [windowOffset, setWindowOffset] = useState(0);
   const [matchBusyId, setMatchBusyId] = useState<string | null>(null);
+  const [incomingBusyId, setIncomingBusyId] = useState<string | null>(null);
+  const [incomingBusyAction, setIncomingBusyAction] = useState<'accept' | 'reject' | null>(null);
   const [viewerCanActAsDriver, setViewerCanActAsDriver] = useState(false);
   const [viewerDriverVk, setViewerDriverVk] = useState<'car' | 'motorcycle' | null>(null);
 
@@ -264,12 +277,14 @@ export default function LeylekMuhabbetiHomeTab({
     const cityQ = (selectedCity || '').trim();
     if (!cityQ) {
       setPendingIncoming(0);
+      setIncomingRequests([]);
       setFeedPreview([]);
       setFeedLoading(false);
       return;
     }
     if (!tok) {
       setPendingIncoming(0);
+      setIncomingRequests([]);
       setFeedPreview([]);
       setViewerCanActAsDriver(false);
       setViewerDriverVk(null);
@@ -289,9 +304,14 @@ export default function LeylekMuhabbetiHomeTab({
         return;
       }
       {
-        const di = (await rInc.json().catch(() => ({}))) as { success?: boolean; requests?: unknown[] };
-        if (rInc.ok && di.success && Array.isArray(di.requests)) setPendingIncoming(di.requests.length);
-        else setPendingIncoming(0);
+        const di = (await rInc.json().catch(() => ({}))) as { success?: boolean; requests?: IncomingOfferRequest[] };
+        if (rInc.ok && di.success && Array.isArray(di.requests)) {
+          setPendingIncoming(di.requests.length);
+          setIncomingRequests(di.requests.slice(0, 4));
+        } else {
+          setPendingIncoming(0);
+          setIncomingRequests([]);
+        }
       }
       {
         const df = (await rFeed.json().catch(() => ({}))) as {
@@ -316,6 +336,7 @@ export default function LeylekMuhabbetiHomeTab({
       }
     } catch {
       setPendingIncoming(0);
+      setIncomingRequests([]);
       setFeedPreview([]);
     } finally {
       setFeedLoading(false);
@@ -364,6 +385,50 @@ export default function LeylekMuhabbetiHomeTab({
   }, [feedPreview, windowOffset]);
 
   const uidLo = (currentUserId || '').trim().toLowerCase();
+
+  const openChatForAcceptedRequest = useCallback((conversationId: string, row: IncomingOfferRequest) => {
+    const q = new URLSearchParams();
+    const name = (row.sender_user_name || row.sender_name || 'Leylek kullanıcısı').trim();
+    const from = String(row.listing?.from_text || '').trim();
+    const to = String(row.listing?.to_text || '').trim();
+    const otherUserId = String(row.sender_user_id || '').trim();
+    if (name) q.set('n', name);
+    if (from) q.set('f', from);
+    if (to) q.set('t', to);
+    if (otherUserId) q.set('ou', otherUserId);
+    const s = q.toString();
+    router.push((s ? `/muhabbet-chat/${encodeURIComponent(conversationId)}?${s}` : `/muhabbet-chat/${encodeURIComponent(conversationId)}`) as Href);
+  }, [router]);
+
+  const respondIncomingRequest = useCallback(async (row: IncomingOfferRequest, action: 'accept' | 'reject') => {
+    if (!requireToken() || !tok || incomingBusyId) return;
+    setIncomingBusyId(row.id);
+    setIncomingBusyAction(action);
+    try {
+      const res = await fetch(`${base}/muhabbet/match-requests/${encodeURIComponent(row.id)}/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (handleUnauthorizedAndMaybeRedirect(res)) return;
+      const d = (await res.json().catch(() => ({}))) as { success?: boolean; conversation_id?: string; detail?: string };
+      if (!res.ok || !d.success) {
+        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : action === 'accept' ? 'Kabul edilemedi.' : 'Reddedilemedi.');
+        return;
+      }
+      setIncomingRequests((rows) => rows.filter((x) => x.id !== row.id));
+      setPendingIncoming((n) => Math.max(0, n - 1));
+      void loadPreview();
+      if (action === 'accept' && d.conversation_id) {
+        openChatForAcceptedRequest(d.conversation_id, row);
+      }
+    } catch {
+      Alert.alert('Talep', 'Bağlantı hatası.');
+    } finally {
+      setIncomingBusyId(null);
+      setIncomingBusyAction(null);
+    }
+  }, [base, incomingBusyId, loadPreview, openChatForAcceptedRequest, requireToken, tok]);
 
   const sendHomeMatchRequest = useCallback(
     async (listingId: string, actorIntent: 'driver' | 'passenger') => {
@@ -426,17 +491,46 @@ export default function LeylekMuhabbetiHomeTab({
       </View>
 
       <View style={styles.inset}>
-        {pendingIncoming > 0 ? (
-          <Pressable
-            onPress={onOpenMatchRequests}
-            disabled={!onOpenMatchRequests}
-            style={({ pressed }) => [styles.alertCard, pressed && onOpenMatchRequests && { opacity: 0.92 }]}
-          >
-            <Ionicons name="notifications-outline" size={22} color={ACCENT} />
-            <Text style={styles.alertText}>
-              {pendingIncoming} bekleyen talebin var. Gelen talepleri görmek için dokun.
-            </Text>
-          </Pressable>
+        {incomingRequests.length > 0 ? (
+          <View style={styles.incomingCompactBlock}>
+            {incomingRequests.map((r) => {
+              const name = (r.sender_user_name || r.sender_name || 'Biri').trim();
+              const initial = name.charAt(0).toLocaleUpperCase('tr-TR') || 'L';
+              const acceptBusy = incomingBusyId === r.id && incomingBusyAction === 'accept';
+              const rejectBusy = incomingBusyId === r.id && incomingBusyAction === 'reject';
+              return (
+                <View key={r.id} style={styles.incomingRow}>
+                  <View style={styles.incomingAvatar}>
+                    <Text style={styles.incomingAvatarText}>{initial}</Text>
+                  </View>
+                  <Text style={styles.incomingRowText} numberOfLines={1}>
+                    <Text style={styles.incomingName}>{name}</Text> teklifine beni de al dedi
+                  </Text>
+                  <View style={styles.incomingActions}>
+                  <Pressable
+                    style={({ pressed }) => [styles.incomingRejectBtn, pressed && { opacity: 0.82 }]}
+                    disabled={!!incomingBusyId}
+                    onPress={() => void respondIncomingRequest(r, 'reject')}
+                  >
+                    <Text style={styles.incomingRejectText}>{rejectBusy ? '...' : 'Red'}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.incomingAcceptBtn, pressed && { opacity: 0.88 }]}
+                    disabled={!!incomingBusyId}
+                    onPress={() => void respondIncomingRequest(r, 'accept')}
+                  >
+                    {acceptBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.incomingAcceptText}>Kabul</Text>}
+                  </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+            {pendingIncoming > incomingRequests.length ? (
+              <Pressable onPress={onOpenMatchRequests} disabled={!onOpenMatchRequests} style={styles.incomingMoreBtn}>
+                <Text style={styles.incomingMoreText}>+{pendingIncoming - incomingRequests.length} talep daha</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         <View style={[styles.summaryCard, styles.offersCardPad]}>
@@ -534,14 +628,62 @@ const styles = StyleSheet.create({
   offersSectionHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 8, lineHeight: 18 },
   offersEmpty: { fontSize: 17, color: TEXT_SECONDARY, lineHeight: 24, marginTop: 4 },
   summaryCard: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
-  alertCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(245,158,11,0.12)',
-    borderRadius: 16,
-    padding: 14,
+  incomingCompactBlock: {
+    gap: 7,
     marginBottom: 12,
   },
-  alertText: { flex: 1, fontSize: 14, color: TEXT_PRIMARY, lineHeight: 20 },
+  incomingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    backgroundColor: 'rgba(255, 251, 247, 0.96)',
+    borderRadius: 18,
+    paddingVertical: 8,
+    paddingLeft: 10,
+    paddingRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.22)',
+    shadowColor: '#9A3412',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  incomingAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FED7AA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(249,115,22,0.24)',
+  },
+  incomingAvatarText: { color: '#C2410C', fontSize: 13, fontWeight: '900' },
+  incomingRowText: { flex: 1, minWidth: 0, fontSize: 12.5, color: TEXT_PRIMARY, fontWeight: '700', lineHeight: 17 },
+  incomingName: { fontWeight: '900', color: '#111827' },
+  incomingActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  incomingRejectBtn: {
+    borderRadius: 999,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  incomingRejectText: { color: '#6B7280', fontSize: 11.5, fontWeight: '900' },
+  incomingAcceptBtn: {
+    minWidth: 56,
+    borderRadius: 999,
+    backgroundColor: '#F97316',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  incomingAcceptText: { color: '#FFFFFF', fontSize: 11.5, fontWeight: '900' },
+  incomingMoreBtn: { alignSelf: 'flex-start', paddingHorizontal: 4, paddingVertical: 2 },
+  incomingMoreText: { color: '#2563EB', fontSize: 12, fontWeight: '900' },
 });
