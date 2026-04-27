@@ -74,6 +74,7 @@ import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../li
 import {
   persistAccessToken,
   clearSessionStorage,
+  getPersistedAccessToken,
   getPersistedUserRaw,
   setPersistedUserJson,
   USER_JSON_STORAGE_KEY,
@@ -337,6 +338,8 @@ interface User {
   };
   vehicle_model?: string;
   vehicle_color?: string;
+  access_token?: string;
+  accessToken?: string;
 }
 
 interface Tag {
@@ -1230,7 +1233,25 @@ export default function App() {
       key: USER_JSON_STORAGE_KEY,
       preservedTokenFromPrev: !!(next.access_token || next.accessToken),
     });
-    setUser(userData);
+    setUser(next as unknown as User);
+  };
+
+  const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
+    await persistAccessToken(payload);
+    const token = (await getPersistedAccessToken())?.trim();
+    console.log('[muhabbet] auth token refresh after persist', {
+      userId: userId ?? null,
+      tokenReady: !!token,
+    });
+    if (!token) return;
+    setUser((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        access_token: token,
+        accessToken: token,
+      };
+    });
   };
 
   // Legal consent kabul (saveUser sonrası — aktif eşleşmede rol düzeltmesi için)
@@ -1482,7 +1503,7 @@ export default function App() {
       const tokStr = typeof rawTok === 'string' ? rawTok.trim() : '';
       await saveUser(withVehicle);
       console.log('USER_SAVED', withVehicle);
-      await persistAccessToken(tokStr ? { access_token: tokStr } : {});
+      await persistAccessTokenAndRefreshUser(tokStr ? { access_token: tokStr } : {}, withVehicle.id);
       await afterAuthAccessTokenPersisted(withVehicle.id);
       try {
         await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
@@ -1717,7 +1738,7 @@ export default function App() {
               if (registerData.success && registerData.user) {
                 await saveUser(registerData.user);
                 console.log('USER_SAVED', registerData.user);
-                await persistAccessToken(registerData as TokenPayload);
+                await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
                 await afterAuthAccessTokenPersisted(registerData.user.id);
                 appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
@@ -1842,7 +1863,7 @@ export default function App() {
       if (data.success) {
         await saveUser(data.user);
         console.log('USER_SAVED', data.user);
-        await persistAccessToken(data as TokenPayload);
+        await persistAccessTokenAndRefreshUser(data as TokenPayload, data.user?.id);
         await afterAuthAccessTokenPersisted(data.user?.id);
         setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
       } else {
@@ -2548,7 +2569,7 @@ export default function App() {
               await saveUser(nextUser);
               console.log('USER_SAVED', nextUser);
             }
-            await persistAccessToken(setPinData as TokenPayload);
+            await persistAccessTokenAndRefreshUser(setPinData as TokenPayload, user?.id);
             await afterAuthAccessTokenPersisted(user?.id);
             appAlert(
               'Kayıt Başarılı',
@@ -2579,7 +2600,7 @@ export default function App() {
         if (registerData.success && registerData.user) {
           await saveUser(registerData.user);
           console.log('USER_SAVED', registerData.user);
-          await persistAccessToken(registerData as TokenPayload);
+          await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
           await afterAuthAccessTokenPersisted(registerData.user.id);
           appAlert(
             'Kayıt Başarılı',
@@ -2743,7 +2764,7 @@ export default function App() {
           }
           await saveUser(data.user as User);
           console.log('USER_SAVED', data.user);
-          await persistAccessToken(data as TokenPayload);
+          await persistAccessTokenAndRefreshUser(data as TokenPayload, (data.user as User)?.id);
           await afterAuthAccessTokenPersisted((data.user as User)?.id);
           // Admin kontrolü
           const cleanPhone = phone.replace(/\D/g, '');

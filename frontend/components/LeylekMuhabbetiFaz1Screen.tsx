@@ -31,6 +31,7 @@ import { useRouter, type Href } from 'expo-router';
 import LeylekMuhabbetiHomeTab from './LeylekMuhabbetiHomeTab';
 import ListingsTab from './ListingsTab';
 import ConversationsScreen from './ConversationsScreen';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -270,7 +271,37 @@ export default function LeylekMuhabbetiFaz1Screen({
 }: LeylekMuhabbetiFaz1ScreenProps) {
   const router = useRouter();
   const tabInsets = useSafeAreaInsets();
-  const tok = (accessToken || '').trim();
+  const propTok = (accessToken || '').trim();
+  const [persistedTok, setPersistedTok] = useState('');
+  const [tokenResolving, setTokenResolving] = useState(!propTok);
+  const tok = propTok || persistedTok;
+  useEffect(() => {
+    let cancelled = false;
+    if (propTok) {
+      console.log('[muhabbet] resolved token source=prop');
+      setPersistedTok('');
+      setTokenResolving(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setTokenResolving(true);
+    void (async () => {
+      try {
+        const persisted = (await getPersistedAccessToken())?.trim() || '';
+        if (cancelled) return;
+        if (persisted) {
+          console.log('[muhabbet] resolved token source=persisted');
+          setPersistedTok(persisted);
+        }
+      } finally {
+        if (!cancelled) setTokenResolving(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propTok]);
   const requireMuhabbetToken = (): boolean => {
     if (!tok) {
       Alert.alert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);
@@ -1364,7 +1395,13 @@ export default function LeylekMuhabbetiFaz1Screen({
       ) : (
         <>
           <View style={styles.tabShell}>
-            {mainTab === 'home' ? (
+            {!tok && tokenResolving ? (
+              <View style={styles.tabPlaceholder}>
+                <ActivityIndicator color={ACCENT} />
+                <Text style={[styles.mutedLight, { marginTop: 10 }]}>Oturum hazırlanıyor...</Text>
+              </View>
+            ) : null}
+            {mainTab === 'home' && (tok || !tokenResolving) ? (
               <ScrollView
                 style={[styles.scroll, { flex: 1 }]}
                 contentContainerStyle={styles.scrollContent}
@@ -1404,7 +1441,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                 />
               </View>
             ) : null}
-            {mainTab === 'listings' && !tok ? (
+            {mainTab === 'listings' && !tok && !tokenResolving ? (
               <View style={styles.tabPlaceholder}>
                 <Text style={styles.mutedLight}>Teklifler için oturum açmalısın.</Text>
               </View>
@@ -1419,7 +1456,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                 />
               </View>
             ) : null}
-            {mainTab === 'chats' && !tok ? (
+            {mainTab === 'chats' && !tok && !tokenResolving ? (
               <View style={styles.tabPlaceholder}>
                 <Text style={styles.mutedLight}>Sohbetler için oturum açmalısın.</Text>
               </View>
