@@ -22756,6 +22756,42 @@ async def sio_muhabbet_trip_convert_decline(sid, data):
         logger.warning("muhabbet_trip_convert_decline: %s", e)
 
 
+@api_router.get("/muhabbet/trip-sessions/active")
+async def muhabbet_trip_session_active_get(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Latest unfinished Muhabbet trip session for the current user; never reads normal ride state."""
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    uid_lo = str(uid or "").strip().lower()
+    try:
+        passenger_rows = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("*")
+            .eq("passenger_id", uid_lo)
+            .in_("status", ["ready", "active"])
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        driver_rows = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("*")
+            .eq("driver_id", uid_lo)
+            .in_("status", ["ready", "active"])
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        candidates = [dict(x) for x in ((passenger_rows.data or []) + (driver_rows.data or []))]
+        if not candidates:
+            return {"success": True, "session": None}
+        candidates.sort(key=lambda x: str(x.get("updated_at") or x.get("created_at") or ""), reverse=True)
+        return {"success": True, "session": _muhabbet_trip_session_public(candidates[0])}
+    except Exception as e:
+        logger.warning("muhabbet_trip_session_active_get: %s", e)
+        raise HTTPException(status_code=500, detail="Aktif Muhabbet yolculuğu alınamadı")
+
+
 @api_router.get("/muhabbet/trip-sessions/{session_id}")
 async def muhabbet_trip_session_get(
     session_id: str,
@@ -23031,6 +23067,7 @@ async def sio_muhabbet_trip_boarding_qr_confirm(sid, data):
         logger.warning("muhabbet_trip_boarding_qr_confirm: %s", e)
 
 
+@sio.on("muhabbet_trip_finish_qr_create")
 @sio.on("muhabbet_trip_qr_create")
 async def sio_muhabbet_trip_qr_create(sid, data):
     if not isinstance(data, dict):
@@ -23041,6 +23078,10 @@ async def sio_muhabbet_trip_qr_create(sid, data):
         return
     try:
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        uid_lo = str(uid).strip().lower()
+        if str(row.get("driver_id") or "").strip().lower() != uid_lo:
+            await sio.emit("muhabbet_trip_error", {"code": "driver_required", "message": "Bitiriş QR kodunu sürücü oluşturabilir."}, room=sid)
+            return
         if str(row.get("status") or "").strip().lower() not in ("active", "started"):
             await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Yolculuk başlamadan bitiriş QR oluşturulamaz."}, room=sid)
             return
@@ -23069,12 +23110,14 @@ async def sio_muhabbet_trip_qr_create(sid, data):
             "session": _muhabbet_trip_session_public(next_row),
         }
         await sio.emit("muhabbet_trip_qr_created", payload, room=sid)
+        await sio.emit("muhabbet_trip_finish_qr_created", payload, room=sid)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_qr_create: %s", e)
 
 
+@sio.on("muhabbet_trip_finish_qr_confirm")
 @sio.on("muhabbet_trip_qr_confirm")
 async def sio_muhabbet_trip_qr_confirm(sid, data):
     if not isinstance(data, dict):
@@ -23087,6 +23130,9 @@ async def sio_muhabbet_trip_qr_confirm(sid, data):
     try:
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         uid_lo = str(uid).strip().lower()
+        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+            await sio.emit("muhabbet_trip_error", {"code": "passenger_required", "message": "Bitiriş QR kodunu yolcu onaylayabilir."}, room=sid)
+            return
         if str(row.get("status") or "").strip().lower() not in ("active", "started"):
             return
         expected = str(row.get("finish_qr_token") or row.get("qr_finish_token") or "").strip().upper()

@@ -162,8 +162,9 @@ export default function LeylekTripLiveRideChrome({
         ? 'Biniş QR'
         : 'QR Oku'
       : isDriver
-        ? 'QR Oku'
-        : 'QR Göster';
+        ? 'Yolculuğu Bitir'
+        : 'QR Oku';
+  const qrActionActive = sessionStatus === 'active' || sessionStatus === 'started';
   const finishSummary =
     finishMethod === 'qr'
       ? `Yolculuk QR ile tamamlandı • Puan etkisi: +${finishScoreDelta ?? 3}`
@@ -338,16 +339,18 @@ export default function LeylekTripLiveRideChrome({
             </Pressable>
           </View>
           <View style={styles.finishActionRow}>
-            <Pressable
-              style={({ pressed }) => [styles.finishButton, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
-              onPress={onQrFinish}
-              disabled={actionBusy || isTerminal}
-            >
-              <LinearGradient colors={isTerminal ? ['#64748B', '#475569'] : ['#8B5CF6', '#7C3AED']} style={styles.finishButtonGradient}>
-                <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                <Text style={styles.finishButtonText}>{qrButtonLabel}</Text>
-              </LinearGradient>
-            </Pressable>
+            <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
+              <Pressable
+                style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+                onPress={onQrFinish}
+                disabled={actionBusy || isTerminal}
+              >
+                <LinearGradient colors={isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']} style={styles.finishButtonGradient}>
+                  <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
+                  <Text style={styles.finishButtonText}>{qrButtonLabel}</Text>
+                </LinearGradient>
+              </Pressable>
+            </Animated.View>
             <Pressable
               style={({ pressed }) => [styles.finishButton, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
               onPress={onForceFinish}
@@ -701,6 +704,7 @@ const styles = StyleSheet.create({
   tripInlineChatBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.15 },
   finishActionRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 10 },
   finishButton: { flex: 1, borderRadius: 14, overflow: 'hidden' },
+  finishButtonPressable: { flex: 1 },
   finishButtonGradient: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
   finishButtonText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
   actionButtons: { flexDirection: 'row', gap: 12, alignItems: 'flex-end' },

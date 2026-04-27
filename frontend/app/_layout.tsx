@@ -27,6 +27,7 @@ import { LeylekZekaChromeProvider } from '../contexts/LeylekZekaChromeContext';
 import { TrustProvider } from '../contexts/TrustContext';
 import LeylekZekaWidget from '../components/LeylekZekaWidget';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useMuhabbetActiveTripRecovery } from '../hooks/useMuhabbetActiveTripRecovery';
 
 // Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
@@ -40,6 +41,8 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
+  useMuhabbetActiveTripRecovery();
+
   // Native splash’i hemen kapat — aksi halde APK’da Leylek görseli üstte kalıp JS ekranı hiç görünmeyebilir
   useEffect(() => {
     void ExpoSplashScreen.hideAsync().catch(() => {});
