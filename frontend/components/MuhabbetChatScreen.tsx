@@ -29,7 +29,7 @@ import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
-import { getOrCreateSocket } from '../contexts/SocketContext';
+import { getLastRegisteredSocketSid, getOrCreateSocket } from '../contexts/SocketContext';
 import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import { publishSocketSessionRefresh, subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { MUHABBET_CONVERSATION_READ, MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
@@ -415,6 +415,7 @@ export default function MuhabbetChatScreen({
     if (!cid) return false;
     const socket = getOrCreateSocket();
     console.log(`[muhabbet-chat] readiness start sid=${socket.id || 'null'}`);
+    console.log('[muhabbet-chat] readiness registered sid=', getLastRegisteredSocketSid());
     notifyAuthTokenBecameAvailableForSocket();
     if (!socket.connected) {
       try {
@@ -437,6 +438,15 @@ export default function MuhabbetChatScreen({
       });
     }
     if (!socket.connected) return false;
+    const currentSid = socket.id || null;
+    const lastRegisteredSid = getLastRegisteredSocketSid();
+    if (currentSid && lastRegisteredSid && currentSid !== lastRegisteredSid) {
+      console.log('[muhabbet-chat] current sid differs from last registered sid', {
+        currentSid,
+        lastRegisteredSid,
+      });
+      notifyAuthTokenBecameAvailableForSocket();
+    }
     readinessInFlightRef.current = true;
     try {
       console.log('[muhabbet-chat] join-first readiness');
@@ -465,12 +475,12 @@ export default function MuhabbetChatScreen({
     const pending = pendingActionRef.current;
     if (!pending) return false;
     if (pending.retryCount >= 1) return false;
-    pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
     console.log(`[muhabbet-chat] retry after not_registered action=${pending.kind}`);
     const ready = await ensureMuhabbetSocketReady();
     if (!ready) return false;
     const socket = getOrCreateSocket();
     if (!socket.connected) return false;
+    pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
     if (pending.kind === 'send_message') {
       scheduleAckTimeout(pending.messageId);
       socket.emit('muhabbet_send', { conversation_id: cid, text: pending.body, message_id: pending.messageId });
@@ -490,6 +500,28 @@ export default function MuhabbetChatScreen({
     }
     return false;
   }, [cid, ensureMuhabbetSocketReady, scheduleAckTimeout]);
+
+  const retryPendingActionAfterReconnect = useCallback(
+    (messageId?: string) => {
+      setTimeout(() => {
+        void (async () => {
+          const retried = await retryPendingActionAfterNotRegistered();
+          if (retried) return;
+          const pending = pendingActionRef.current;
+          if (messageId && pending?.kind === 'send_message' && pending.messageId === messageId) {
+            pendingActionRef.current = null;
+            setRows((prev) => markMessageFailedById(prev, messageId));
+            Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
+            return;
+          }
+          if (pending && pending.kind !== 'send_message') {
+            pendingActionRef.current = null;
+          }
+        })();
+      }, 1500);
+    },
+    [retryPendingActionAfterNotRegistered]
+  );
 
   useEffect(() => {
     myIdRef.current = myId;
@@ -1339,6 +1371,7 @@ export default function MuhabbetChatScreen({
       console.log('[chat-send] socket_exists=', Boolean(socket));
       console.log('[chat-send] socket_connected=', socket.connected);
       console.log('[chat-send] socket_id=', socket.id || null);
+      console.log('[chat-send] last_registered_sid=', getLastRegisteredSocketSid());
       console.log('[chat-send] roomJoined=', roomJoinedRef.current);
       console.log('[chat-send] conversation_id=', cid);
       console.log('[chat-send] message_id=', messageId);
@@ -1346,18 +1379,22 @@ export default function MuhabbetChatScreen({
       setRows((prev) =>
         prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
-      scheduleAckTimeout(messageId);
       pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
+      console.log('[chat-send] before ensureMuhabbetSocketReady', {
+        sid: socket.id || null,
+        connected: socket.connected,
+        lastRegisteredSid: getLastRegisteredSocketSid(),
+      });
       const ready = await ensureMuhabbetSocketReady();
+      console.log('[chat-send] after ensureMuhabbetSocketReady', { ready, sid: socket.id || null });
       if (!ready) {
         console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
-        pendingActionRef.current = null;
-        setRows((prev) => markMessageFailedById(prev, messageId));
-        Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
+        retryPendingActionAfterReconnect(messageId);
         return;
       }
       try {
         console.log('[chat-send] emit muhabbet_send');
+        scheduleAckTimeout(messageId);
         socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
       } catch {
         clearAckWait(messageId);
@@ -1369,7 +1406,7 @@ export default function MuhabbetChatScreen({
         );
       }
     },
-    [cid, clearAckWait, scheduleAckTimeout, ensureMuhabbetSocketReady]
+    [cid, clearAckWait, scheduleAckTimeout, ensureMuhabbetSocketReady, retryPendingActionAfterReconnect]
   );
 
   const send = async () => {
@@ -1387,6 +1424,7 @@ export default function MuhabbetChatScreen({
     console.log('[chat-send] socket_exists=', Boolean(socket));
     console.log('[chat-send] socket_connected=', socket.connected);
     console.log('[chat-send] socket_id=', socket.id || null);
+    console.log('[chat-send] last_registered_sid=', getLastRegisteredSocketSid());
     console.log('[chat-send] roomJoined=', roomJoinedRef.current);
     console.log('[chat-send] conversation_id=', cid);
     const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
@@ -1414,21 +1452,24 @@ export default function MuhabbetChatScreen({
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     setDraft('');
     setSending(true);
-    scheduleAckTimeout(messageId);
     console.log('[chat-send] message_id=', messageId);
     pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
+    console.log('[chat-send] before ensureMuhabbetSocketReady', {
+      sid: socket.id || null,
+      connected: socket.connected,
+      lastRegisteredSid: getLastRegisteredSocketSid(),
+    });
     const ready = await ensureMuhabbetSocketReady();
+    console.log('[chat-send] after ensureMuhabbetSocketReady', { ready, sid: socket.id || null });
     if (!ready) {
       console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
-      clearAckWait(messageId);
-      pendingActionRef.current = null;
-      setRows((prev) => markMessageFailedById(prev, messageId));
       setSending(false);
-      Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
+      retryPendingActionAfterReconnect(messageId);
       return;
     }
     try {
       console.log('[chat-send] emit muhabbet_send');
+      scheduleAckTimeout(messageId);
       socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
     } catch {
       clearAckWait(messageId);
@@ -1642,25 +1683,31 @@ export default function MuhabbetChatScreen({
     if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
     setTripConvertLoading(true);
     pendingActionRef.current = { kind: 'trip_convert_request', retryCount: 0 };
+    const beforeSocket = getOrCreateSocket();
+    console.log('[muhabbet-trip-convert] before ensure', {
+      sid: beforeSocket.id || null,
+      connected: beforeSocket.connected,
+      lastRegisteredSid: getLastRegisteredSocketSid(),
+      conversation_id: cid,
+    });
     const ready = await ensureMuhabbetSocketReady();
+    console.log('[muhabbet-trip-convert] after ensure', { ready, sid: beforeSocket.id || null });
     if (!ready) {
-      pendingActionRef.current = null;
       setTripConvertLoading(false);
-      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+      retryPendingActionAfterReconnect();
       return;
     }
     const socket = getOrCreateSocket();
     if (!socket.connected) {
-      pendingActionRef.current = null;
       setTripConvertLoading(false);
-      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+      retryPendingActionAfterReconnect();
       return;
     }
     setTripConvertState('pending');
     setTripLockReason('muhabbet_trip_convert_request pending');
     socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
     setTimeout(() => setTripConvertLoading(false), 15000);
-  }, [cid, ensureMuhabbetSocketReady, tripConvertLoading, tripConvertState]);
+  }, [cid, ensureMuhabbetSocketReady, retryPendingActionAfterReconnect, tripConvertLoading, tripConvertState]);
 
   const acceptTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;

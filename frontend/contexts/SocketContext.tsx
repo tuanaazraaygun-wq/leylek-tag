@@ -39,6 +39,16 @@ export const emitWithLog = (socket: Socket, event: string, payload: any) => {
 // ═══════════════════════════════════════════════════════════════════
 let singletonSocket: Socket | null = null;
 let pingInterval: NodeJS.Timeout | null = null;
+let lastRegisteredSocketSid: string | null = null;
+let lastRegisteredSocketUserId: string | null = null;
+
+export function getLastRegisteredSocketSid(): string | null {
+  return lastRegisteredSocketSid;
+}
+
+export function getLastRegisteredSocketUserId(): string | null {
+  return lastRegisteredSocketUserId;
+}
 
 export function getOrCreateSocket(): Socket {
   if (singletonSocket) {
@@ -66,6 +76,7 @@ export function getOrCreateSocket(): Socket {
   singletonSocket.on('connect', () => {
     const id = singletonSocket?.id;
     console.log('[socket] connected', id);
+    console.log(`[socket] connect sid=${id || 'null'}`);
     if (pingInterval) clearInterval(pingInterval);
     pingInterval = setInterval(() => {
       if (singletonSocket?.connected) {
@@ -84,6 +95,9 @@ export function getOrCreateSocket(): Socket {
 
   singletonSocket.on('disconnect', (reason) => {
     console.log('[socket] disconnect', reason);
+    console.log(`[socket] disconnect sid=${singletonSocket?.id || 'null'} reason=${String(reason || '')}`);
+    lastRegisteredSocketSid = null;
+    lastRegisteredSocketUserId = null;
     if (pingInterval) {
       clearInterval(pingInterval);
       pingInterval = null;
@@ -97,6 +111,7 @@ export function getOrCreateSocket(): Socket {
     const mgr = singletonSocket.io;
     mgr.on('reconnect_attempt', (attempt: number) => {
       console.log('[socket] reconnect_attempt', attempt);
+      console.log(`[socket] reconnect_attempt n=${attempt}`);
     });
     mgr.on('reconnect_error', (err: Error) => {
       console.warn('[socket] reconnect_error', err?.message || err);
@@ -110,6 +125,7 @@ export function getOrCreateSocket(): Socket {
 
   singletonSocket.on('reconnect', (attempt?: number) => {
     console.log('[socket] reconnect', { id: singletonSocket?.id, attempt });
+    console.log(`[socket] reconnect sid=${singletonSocket?.id || 'null'}`);
     publishSocketSessionRefresh('socket_reconnect');
   });
 
@@ -335,6 +351,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
         registerAckOkRef.current = false;
         const registerPayload = { user_id: uid, token, role };
         console.log('SOCKET REGISTER EMIT', uid);
+        console.log(`[socket] register emit sid=${sock.id || 'null'} user_id=${uid}`);
         console.log('REGISTER_EMIT_PAYLOAD', registerPayload);
         sock.emit('register', registerPayload);
         registerTimerRef.current = setTimeout(() => {
@@ -457,6 +474,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
       console.log('FRONTEND_SOCKET_REGISTER_ACK', data);
       if (data?.success === true && data?.room) {
         registerAckOkRef.current = true;
+        lastRegisteredSocketSid = socket.id ?? null;
+        lastRegisteredSocketUserId =
+          data?.resolved_user_id != null
+            ? String(data.resolved_user_id)
+            : data?.user_id != null
+              ? String(data.user_id)
+              : userIdRef.current;
+        console.log(`[socket] registered sid=${lastRegisteredSocketSid || 'null'} user_id=${lastRegisteredSocketUserId || 'null'}`);
         setIsRegistered(true);
         if (registerTimerRef.current) {
           clearTimeout(registerTimerRef.current);
