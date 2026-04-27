@@ -1,4 +1,4 @@
-export type MuhabbetTripStatus = 'ready' | 'started' | 'cancelled' | 'finished';
+export type MuhabbetTripStatus = 'ready' | 'started' | 'active' | 'cancelled' | 'finished';
 
 export type MuhabbetTripSession = {
   id: string;
@@ -52,7 +52,15 @@ export type MuhabbetTripSession = {
   forced_finish_other_user_response?: 'accepted' | 'declined' | null;
   finish_score_delta?: number | null;
   finish_note?: string | null;
+  boarding_qr_created_at?: string | null;
+  boarding_qr_expires_at?: string | null;
+  boarding_qr_confirmed_at?: string | null;
+  boarding_qr_confirmed_by_user_id?: string | null;
   qr_finish_token_created_at?: string | null;
+  finish_qr_created_at?: string | null;
+  finish_qr_expires_at?: string | null;
+  finish_qr_confirmed_at?: string | null;
+  finish_qr_confirmed_by_user_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -71,6 +79,9 @@ export type MuhabbetTripCallSocketPayload = {
   conversation_id?: string | null;
   channel_name?: string;
   caller_id?: string;
+  target_user_id?: string;
+  accepted_by_user_id?: string;
+  declined_by_user_id?: string;
   joined_user_id?: string;
   ended_by_user_id?: string;
   agora_app_id?: string;
@@ -97,6 +108,9 @@ export type MuhabbetTripFinishSocketPayload = {
   responder_user_id?: string;
   response?: 'accepted' | 'declined';
   score_delta?: number;
+  boarding_qr_token?: string;
   qr_finish_token?: string;
+  finish_qr_token?: string;
+  expires_at?: string;
   session?: MuhabbetTripSession;
 };

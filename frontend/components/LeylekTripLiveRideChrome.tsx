@@ -164,7 +164,14 @@ export default function LeylekTripLiveRideChrome({
     routeDistanceKm != null && Number.isFinite(Number(routeDistanceKm))
       ? `${Number(routeDistanceKm).toFixed(1)} km${routeDurationMin != null ? ` • ${Math.max(1, Math.round(Number(routeDurationMin)))} dk` : ''}`
       : null;
-  const qrButtonLabel = isDriver ? 'QR Oku' : 'QR Göster';
+  const qrButtonLabel =
+    sessionStatus === 'ready'
+      ? isDriver
+        ? 'Biniş QR'
+        : 'QR Oku'
+      : isDriver
+        ? 'QR Oku'
+        : 'QR Göster';
   const finishSummary =
     finishMethod === 'qr'
       ? `Yolculuk QR ile tamamlandı • Puan etkisi: +${finishScoreDelta ?? 3}`

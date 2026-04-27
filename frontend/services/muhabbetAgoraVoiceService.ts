@@ -111,6 +111,14 @@ class MuhabbetAgoraVoiceService {
       /* noop */
     }
   }
+
+  setMuted(muted: boolean): void {
+    this.engine?.muteLocalAudioStream(muted);
+  }
+
+  setSpeakerOn(on: boolean): void {
+    this.engine?.setEnableSpeakerphone(on);
+  }
 }
 
 export const muhabbetAgoraVoiceService = new MuhabbetAgoraVoiceService();

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.muhabbet_trip_sessions (
   passenger_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
   driver_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
   status text NOT NULL DEFAULT 'ready'
-    CHECK (status IN ('ready', 'started', 'cancelled', 'finished')),
+    CHECK (status IN ('ready', 'started', 'active', 'cancelled', 'finished')),
   city text NULL,
   pickup_text text NULL,
   pickup_lat double precision NULL,
@@ -56,8 +56,18 @@ CREATE TABLE IF NOT EXISTS public.muhabbet_trip_sessions (
   ),
   finish_score_delta integer NULL,
   finish_note text NULL,
+  boarding_qr_token text NULL,
+  boarding_qr_created_at timestamptz NULL,
+  boarding_qr_expires_at timestamptz NULL,
+  boarding_qr_confirmed_at timestamptz NULL,
+  boarding_qr_confirmed_by_user_id uuid NULL REFERENCES public.users (id) ON DELETE SET NULL,
   qr_finish_token text NULL,
   qr_finish_token_created_at timestamptz NULL,
+  finish_qr_token text NULL,
+  finish_qr_created_at timestamptz NULL,
+  finish_qr_expires_at timestamptz NULL,
+  finish_qr_confirmed_at timestamptz NULL,
+  finish_qr_confirmed_by_user_id uuid NULL REFERENCES public.users (id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT muhabbet_trip_session_roles CHECK (passenger_id <> driver_id),
@@ -125,13 +135,30 @@ ALTER TABLE public.muhabbet_trip_sessions
   ADD COLUMN IF NOT EXISTS forced_finish_other_user_response text,
   ADD COLUMN IF NOT EXISTS finish_score_delta integer,
   ADD COLUMN IF NOT EXISTS finish_note text,
+  ADD COLUMN IF NOT EXISTS boarding_qr_token text,
+  ADD COLUMN IF NOT EXISTS boarding_qr_created_at timestamptz,
+  ADD COLUMN IF NOT EXISTS boarding_qr_expires_at timestamptz,
+  ADD COLUMN IF NOT EXISTS boarding_qr_confirmed_at timestamptz,
+  ADD COLUMN IF NOT EXISTS boarding_qr_confirmed_by_user_id uuid,
   ADD COLUMN IF NOT EXISTS qr_finish_token text,
   ADD COLUMN IF NOT EXISTS qr_finish_token_created_at timestamptz,
+  ADD COLUMN IF NOT EXISTS finish_qr_token text,
+  ADD COLUMN IF NOT EXISTS finish_qr_created_at timestamptz,
+  ADD COLUMN IF NOT EXISTS finish_qr_expires_at timestamptz,
+  ADD COLUMN IF NOT EXISTS finish_qr_confirmed_at timestamptz,
+  ADD COLUMN IF NOT EXISTS finish_qr_confirmed_by_user_id uuid,
   ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 ALTER TABLE public.muhabbet_trip_sessions
   ALTER COLUMN status SET DEFAULT 'ready';
+
+ALTER TABLE public.muhabbet_trip_sessions
+  DROP CONSTRAINT IF EXISTS muhabbet_trip_sessions_status_check;
+
+ALTER TABLE public.muhabbet_trip_sessions
+  ADD CONSTRAINT muhabbet_trip_sessions_status_check
+  CHECK (status IN ('ready', 'started', 'active', 'cancelled', 'finished'));
 
 CREATE INDEX IF NOT EXISTS idx_mts_conversation_status_created
   ON public.muhabbet_trip_sessions (conversation_id, status, created_at DESC);
