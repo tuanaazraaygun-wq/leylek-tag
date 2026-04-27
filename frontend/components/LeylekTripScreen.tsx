@@ -22,7 +22,6 @@ import type {
   MuhabbetTripFinishSocketPayload,
   MuhabbetTripSession,
   MuhabbetTripSessionSocketPayload,
-  MuhabbetTripTrustSocketPayload,
 } from '../lib/muhabbetTripTypes';
 import LeylekTripLiveRideChrome from './LeylekTripLiveRideChrome';
 import MuhabbetTripCallScreen from './MuhabbetTripCallScreen';
@@ -36,7 +35,6 @@ type Coord = { latitude: number; longitude: number };
 type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish';
 type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 type QrMode = 'boarding' | 'finish';
-type TrustPrompt = { requesterUserId: string; targetUserId: string } | null;
 type ForceFinishPrompt = { requesterUserId: string; targetUserId: string } | null;
 
 function coord(lat?: number | null, lng?: number | null): Coord | null {
@@ -80,8 +78,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [callState, setCallState] = useState<CallState>('idle');
   const [callBusy, setCallBusy] = useState(false);
   const [callPayload, setCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
-  const [trustBusy, setTrustBusy] = useState(false);
-  const [trustPrompt, setTrustPrompt] = useState<TrustPrompt>(null);
   const [forceFinishPrompt, setForceFinishPrompt] = useState<ForceFinishPrompt>(null);
   const [forceFinishWarningVisible, setForceFinishWarningVisible] = useState(false);
   const [qrFinishVisible, setQrFinishVisible] = useState(false);
@@ -93,7 +89,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = session?.status === 'cancelled' || session?.status === 'finished';
   const status = displayStatus(session?.status);
-  const trustStatus = session?.trust_status || null;
 
   const loadSession = useCallback(async () => {
     const token = await getPersistedAccessToken();
@@ -233,25 +228,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setCallState('idle');
       setCallBusy(false);
     };
-    const onTrustRequested = (payload: MuhabbetTripTrustSocketPayload) => {
-      console.log('[leylek-trip] event', 'muhabbet_trip_trust_requested', payload);
-      if (!callMatches(payload)) return;
-      setTrustBusy(false);
-      if (payload.session) setSession(payload.session);
-      if (String(payload.requester_user_id || '').trim().toLowerCase() !== myId) {
-        setTrustPrompt({
-          requesterUserId: String(payload.requester_user_id || '').trim().toLowerCase(),
-          targetUserId: String(payload.target_user_id || '').trim().toLowerCase(),
-        });
-      }
-    };
-    const onTrustResolved = (payload: MuhabbetTripTrustSocketPayload) => {
-      console.log('[leylek-trip] event', 'muhabbet_trip_trust_resolved', payload);
-      if (!callMatches(payload)) return;
-      setTrustBusy(false);
-      setTrustPrompt(null);
-      if (payload.session) setSession(payload.session);
-    };
     const onBoardingQrCreated = (payload: MuhabbetTripFinishSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_boarding_qr_created', payload);
       if (!callMatches(payload)) return;
@@ -302,8 +278,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     socket.on('muhabbet_trip_call_accept', onCallAccept);
     socket.on('muhabbet_trip_call_decline', onCallDecline);
     socket.on('muhabbet_trip_call_end', onCallEnd);
-    socket.on('muhabbet_trip_trust_requested', onTrustRequested);
-    socket.on('muhabbet_trip_trust_resolved', onTrustResolved);
     socket.on('muhabbet_trip_boarding_qr_created', onBoardingQrCreated);
     socket.on('muhabbet_trip_qr_created', onQrCreated);
     socket.on('muhabbet_trip_force_finish_requested', onForceRequested);
@@ -321,8 +295,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_call_accept', onCallAccept);
       socket.off('muhabbet_trip_call_decline', onCallDecline);
       socket.off('muhabbet_trip_call_end', onCallEnd);
-      socket.off('muhabbet_trip_trust_requested', onTrustRequested);
-      socket.off('muhabbet_trip_trust_resolved', onTrustResolved);
       socket.off('muhabbet_trip_boarding_qr_created', onBoardingQrCreated);
       socket.off('muhabbet_trip_qr_created', onQrCreated);
       socket.off('muhabbet_trip_force_finish_requested', onForceRequested);
@@ -389,25 +361,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     setCallPayload(null);
     setCallState('idle');
     setCallBusy(false);
-  }, [sessionId]);
-
-  const requestTrust = useCallback(() => {
-    if (isTerminal || !session) return;
-    const payload = { session_id: sessionId };
-    console.log('[leylek-trip] emit', 'muhabbet_trip_trust_request', payload);
-    setTrustBusy(true);
-    getOrCreateSocket().emit('muhabbet_trip_trust_request', payload);
-    setTimeout(() => setTrustBusy(false), 1500);
-  }, [isTerminal, session, sessionId]);
-
-  const resolveTrust = useCallback((accepted: boolean) => {
-    const eventName = accepted ? 'muhabbet_trip_trust_accept' : 'muhabbet_trip_trust_decline';
-    const payload = { session_id: sessionId };
-    console.log('[leylek-trip] emit', eventName, payload);
-    setTrustBusy(true);
-    setTrustPrompt(null);
-    getOrCreateSocket().emit(eventName, payload);
-    setTimeout(() => setTrustBusy(false), 1500);
   }, [sessionId]);
 
   const navigationTarget = useMemo(() => {
@@ -561,11 +514,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         driverLocation={locations.driver}
         deviceLocation={deviceLocation}
         routeDataMissing={!locations.pickup || !locations.dropoff}
-        trustStatus={trustStatus}
-        trustPendingIncoming={
-          trustStatus === 'requested' &&
-          String(session.trust_requested_by_user_id || '').trim().toLowerCase() !== myId
-        }
         finishMethod={session.finish_method}
         finishScoreDelta={session.finish_score_delta}
         forcedFinishResponse={session.forced_finish_other_user_response}
@@ -575,14 +523,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         actionBusy={actionBusy}
         callState={callState}
         callBusy={callBusy}
-        trustBusy={trustBusy}
         canStart={false}
         canFinish={isDriver && (session.status === 'active' || session.status === 'started')}
         onShareLocation={() => void shareLocation()}
         onStartCall={startCall}
         onJoinCall={acceptCall}
         onEndCall={endCall}
-        onTrustRequest={requestTrust}
         onNavigate={() => void openNavigation()}
         onQrFinish={openQrFinish}
         onForceFinish={requestForceFinish}
@@ -601,39 +547,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onDecline={declineCall}
         onCancel={endCall}
       />
-      <Modal
-        visible={!!trustPrompt}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTrustPrompt(null)}
-      >
-        <View style={styles.trustModalRoot}>
-          <View style={styles.trustModalCard}>
-            <View style={styles.trustModalIcon}>
-              <Ionicons name="shield-checkmark" size={28} color="#FFFFFF" />
-            </View>
-            <Text style={styles.trustModalTitle}>Güven AL isteği</Text>
-            <Text style={styles.trustModalText}>
-              {String(trustPrompt?.requesterUserId || '').toLowerCase() === String(session.driver_id || '').toLowerCase()
-                ? 'Sürücü sözlü güven almak istiyor. Kabul ediyor musun?'
-                : 'Yolcu sözlü güven almak istiyor. Kabul ediyor musun?'}
-            </Text>
-            <Pressable
-              style={({ pressed }) => [styles.trustAcceptButton, pressed && { opacity: 0.9 }]}
-              onPress={() => resolveTrust(true)}
-            >
-              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.trustAcceptText}>Evet, onaylıyorum</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]}
-              onPress={() => resolveTrust(false)}
-            >
-              <Text style={styles.trustDeclineText}>Müsait değilim</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
       <Modal
         visible={qrFinishVisible}
         transparent

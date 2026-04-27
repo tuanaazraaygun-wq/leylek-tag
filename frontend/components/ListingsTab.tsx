@@ -753,18 +753,6 @@ export default function ListingsTab({
     <View style={styles.root}>
       <MuhabbetWatermark />
       <View style={styles.toolbar}>
-        <View style={styles.cityStrip}>
-          <View style={styles.cityStripRow}>
-            <Ionicons name="location-sharp" size={22} color={PRIMARY_GRAD[0]} />
-            <View style={styles.cityStripTextCol}>
-              <Text style={styles.cityStripLabel}>Şehir</Text>
-              <Text style={styles.cityStripCity} numberOfLines={1}>
-                {(selectedCity || '').trim() || '—'}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.cityStripHint}>Şehri üstteki çubuktan değiştirebilirsin.</Text>
-        </View>
         <TouchableOpacity
           onPress={() => {
             setModalInitialRole('passenger');
@@ -773,8 +761,10 @@ export default function ListingsTab({
           activeOpacity={0.9}
           style={styles.newListingBtnHero}
         >
-          <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          <Ionicons name="add-circle" size={24} color="#fff" style={{ marginRight: 8 }} />
+          <LinearGradient colors={['#FFF7ED', '#FED7AA']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View style={styles.newListingIconBubble}>
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+          </View>
           <Text style={styles.newListingBtnHeroText}>Teklif aç</Text>
         </TouchableOpacity>
         {segmentScroll}
@@ -801,19 +791,7 @@ export default function ListingsTab({
 
 const styles = StyleSheet.create({
   root: { flex: 1, position: 'relative' },
-  toolbar: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, gap: 12, zIndex: 1 },
-  cityStrip: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    ...CARD_SHADOW,
-  },
-  cityStripRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cityStripTextCol: { flex: 1, minWidth: 0 },
-  cityStripLabel: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY, letterSpacing: 0.2 },
-  cityStripCity: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 2 },
-  cityStripHint: { fontSize: 12, color: TEXT_SECONDARY, marginTop: 8, lineHeight: 17 },
+  toolbar: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, gap: 10, zIndex: 1 },
   segmentScroll: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -857,13 +835,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    paddingVertical: 14,
-    minHeight: 52,
+    borderRadius: 18,
+    paddingVertical: 13,
+    minHeight: 50,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(249,115,22,0.35)',
     ...CARD_SHADOW,
   },
-  newListingBtnHeroText: { color: '#fff', fontWeight: '800', fontSize: 17 },
+  newListingIconBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F97316',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  newListingBtnHeroText: { color: '#C2410C', fontWeight: '900', fontSize: 18, letterSpacing: 0.2 },
   scroll: { paddingHorizontal: 16, paddingBottom: 24, zIndex: 1 },
   requestsLead: { fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22, marginBottom: 12 },
   incomingHero: {
@@ -880,12 +869,12 @@ const styles = StyleSheet.create({
   incomingHeroSub: { color: 'rgba(255,255,255,0.92)', fontSize: 13, marginTop: 4, lineHeight: 18 },
   muted: { color: TEXT_SECONDARY, fontSize: 16, marginVertical: 10, lineHeight: 23 },
   mutedSmall: { color: TEXT_SECONDARY, fontSize: 14, marginTop: 6 },
-  sectionTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 8, marginBottom: 10 },
-  card: { backgroundColor: CARD_BG, borderRadius: 16, padding: 14, marginBottom: 12, ...CARD_SHADOW },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 6, marginBottom: 8 },
+  card: { backgroundColor: CARD_BG, borderRadius: 14, padding: 11, marginBottom: 9, ...CARD_SHADOW },
   cardNeutral: { borderLeftWidth: 4, borderLeftColor: '#94A3B8' },
   cardThemeDriver: { borderLeftWidth: 5, borderLeftColor: '#2563EB' },
   cardThemePassenger: { borderLeftWidth: 5, borderLeftColor: '#EA580C' },
-  cardTop: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginBottom: 8 },
+  cardTop: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', alignItems: 'center', gap: 6, marginBottom: 6 },
   transportPill: {
     paddingHorizontal: 9,
     paddingVertical: 4,
@@ -904,41 +893,41 @@ const styles = StyleSheet.create({
   rolePillPax: { backgroundColor: 'rgba(245,158,11,0.24)' },
   rolePillText: { fontSize: 12, fontWeight: '800', color: TEXT_PRIMARY },
   statusPill: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY, marginLeft: 'auto' },
-  cardNameLg: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8 },
-  routeBlock: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 },
+  cardNameLg: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 6 },
+  routeBlock: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginBottom: 8 },
   routeEnd: { flex: 1, minWidth: 0 },
   routeMiniLabel: { fontSize: 11, fontWeight: '800', color: TEXT_SECONDARY, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
-  routeValue: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY, lineHeight: 21 },
+  routeValue: { fontSize: 14, fontWeight: '700', color: TEXT_PRIMARY, lineHeight: 19 },
   cardRouteLg: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY, lineHeight: 22 },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginBottom: 8,
-    paddingVertical: 8,
+    marginBottom: 6,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: 'rgba(60,60,67,0.06)',
   },
   priceLabel: { fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY },
-  priceValue: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
-  metaLine: { marginTop: 2, fontSize: 14, color: TEXT_SECONDARY, lineHeight: 20 },
-  vehicleKindLine: { marginTop: 4, fontSize: 13, fontWeight: '700', color: '#1E40AF' },
-  note: { marginTop: 6, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 19 },
+  priceValue: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
+  metaLine: { marginTop: 1, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
+  vehicleKindLine: { marginTop: 3, fontSize: 12, fontWeight: '700', color: '#1E40AF' },
+  note: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, lineHeight: 17 },
   incomingHintWrap: {
-    marginTop: 12,
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     backgroundColor: 'rgba(245,158,11,0.14)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(234,88,12,0.25)',
   },
-  incomingCountBadge: { fontSize: 16, fontWeight: '800', color: '#C2410C' },
-  incomingHint: { fontSize: 14, color: TEXT_PRIMARY, fontWeight: '600', marginTop: 4, lineHeight: 20 },
+  incomingCountBadge: { fontSize: 15, fontWeight: '800', color: '#C2410C' },
+  incomingHint: { fontSize: 13, color: TEXT_PRIMARY, fontWeight: '600', marginTop: 3, lineHeight: 18 },
   roleHint: { marginTop: 8, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 19 },
   sentPill: {
     marginTop: 12,
@@ -978,30 +967,30 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   lifecyclePrompt: {
-    marginTop: 14,
-    padding: 14,
-    borderRadius: 14,
+    marginTop: 9,
+    padding: 10,
+    borderRadius: 12,
     backgroundColor: 'rgba(59,130,246,0.08)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(59,130,246,0.25)',
   },
-  lifecyclePromptTitle: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY },
-  lifecyclePromptSub: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 19 },
-  lifecycleRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  lifecyclePromptTitle: { fontSize: 14, fontWeight: '800', color: TEXT_PRIMARY },
+  lifecyclePromptSub: { fontSize: 12, color: TEXT_SECONDARY, marginTop: 4, lineHeight: 17 },
+  lifecycleRow: { flexDirection: 'row', gap: 8, marginTop: 9 },
   lifecycleBtnPri: {
     flex: 1,
     backgroundColor: PRIMARY_GRAD[0],
-    paddingVertical: 12,
+    paddingVertical: 9,
     borderRadius: 12,
     alignItems: 'center',
   },
-  lifecycleBtnPriTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  lifecycleBtnPriTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
   lifecycleBtnSec: {
     flex: 1,
     backgroundColor: 'rgba(60,60,67,0.1)',
-    paddingVertical: 12,
+    paddingVertical: 9,
     borderRadius: 12,
     alignItems: 'center',
   },
-  lifecycleBtnSecTxt: { color: TEXT_PRIMARY, fontWeight: '700', fontSize: 15 },
+  lifecycleBtnSecTxt: { color: TEXT_PRIMARY, fontWeight: '700', fontSize: 14 },
 });

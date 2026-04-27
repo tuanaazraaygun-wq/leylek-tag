@@ -37,8 +37,6 @@ type LeylekTripLiveRideChromeProps = {
   driverLocation?: Coord | null;
   deviceLocation?: Coord | null;
   routeDataMissing?: boolean;
-  trustStatus?: 'requested' | 'accepted' | 'declined' | null;
-  trustPendingIncoming?: boolean;
   finishMethod?: 'qr' | 'forced' | null;
   finishScoreDelta?: number | null;
   forcedFinishResponse?: 'accepted' | 'declined' | null;
@@ -48,14 +46,12 @@ type LeylekTripLiveRideChromeProps = {
   actionBusy: boolean;
   callState: 'idle' | 'incoming' | 'outgoing' | 'active';
   callBusy: boolean;
-  trustBusy: boolean;
   canStart: boolean;
   canFinish: boolean;
   onShareLocation: () => void;
   onStartCall: () => void;
   onJoinCall: () => void;
   onEndCall: () => void;
-  onTrustRequest: () => void;
   onNavigate: () => void;
   onQrFinish: () => void;
   onForceFinish: () => void;
@@ -92,8 +88,6 @@ export default function LeylekTripLiveRideChrome({
   driverLocation,
   deviceLocation,
   routeDataMissing,
-  trustStatus,
-  trustPendingIncoming,
   finishMethod,
   finishScoreDelta,
   forcedFinishResponse,
@@ -103,14 +97,12 @@ export default function LeylekTripLiveRideChrome({
   actionBusy,
   callState,
   callBusy,
-  trustBusy,
   canStart,
   canFinish,
   onShareLocation,
   onStartCall,
   onJoinCall,
   onEndCall,
-  onTrustRequest,
   onNavigate,
   onQrFinish,
   onForceFinish,
@@ -344,31 +336,7 @@ export default function LeylekTripLiveRideChrome({
               {callBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={callButtonIcon} size={28} color="#FFF" />}
               <Text style={styles.primaryCircleLabel}>{callButtonLabel}</Text>
             </Pressable>
-            <Pressable
-              onPress={onTrustRequest}
-              disabled={trustBusy || isTerminal || trustStatus === 'accepted' || trustPendingIncoming}
-              style={({ pressed }) => [styles.primaryCircleButton, styles.trustCircleButton, (pressed || trustBusy || isTerminal) && { opacity: 0.72 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Güven AL"
-            >
-              {trustBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="shield-checkmark" size={28} color="#FFF" />}
-              <Text style={styles.primaryCircleLabel}>
-                {trustStatus === 'accepted' ? 'Onaylı' : trustStatus === 'declined' ? 'Müsait değil' : 'Güven AL'}
-              </Text>
-            </Pressable>
           </View>
-          {trustStatus === 'accepted' || trustStatus === 'declined' ? (
-            <View style={[styles.trustStateStrip, trustStatus === 'accepted' ? styles.trustStateAccepted : styles.trustStateDeclined]}>
-              <Ionicons
-                name={trustStatus === 'accepted' ? 'checkmark-circle' : 'information-circle-outline'}
-                size={16}
-                color={trustStatus === 'accepted' ? '#15803D' : '#475569'}
-              />
-              <Text style={[styles.trustStateText, trustStatus === 'accepted' ? styles.trustStateTextAccepted : styles.trustStateTextDeclined]}>
-                {trustStatus === 'accepted' ? 'Sözlü güven onayı alındı' : 'Güven isteği şu an uygun değil'}
-              </Text>
-            </View>
-          ) : null}
           <View style={styles.finishActionRow}>
             <Pressable
               style={({ pressed }) => [styles.finishButton, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
@@ -670,7 +638,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   callCircleButton: { backgroundColor: '#16A34A', shadowColor: '#064E3B' },
-  trustCircleButton: { backgroundColor: '#0D9488', shadowColor: '#115E59' },
   primaryCircleLabel: { color: '#FFF', fontSize: 13, fontWeight: '900', letterSpacing: 0.2 },
   tripActionBar: { width: '100%', marginBottom: 10 },
   tripActionBarCol: { width: '100%', paddingHorizontal: 2 },
@@ -692,7 +659,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
   },
-  tripCallGuvenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   tripCallChatCluster: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
   mapCallFabCircle: {
     width: 48,
@@ -733,42 +699,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   tripInlineChatBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.15 },
-  tripGuvenMirrorWrap: { marginTop: -4 },
-  tripGuvenFabCompact: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#14B8A6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.42,
-    shadowRadius: 12,
-    elevation: 10,
-  },
-  tripGuvenFabCompactInner: {
-    minWidth: 76,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.38)',
-  },
-  tripGuvenFabLabel: { color: '#FFF', fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
-  trustStateStrip: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-  },
-  trustStateAccepted: { backgroundColor: 'rgba(220, 252, 231, 0.96)', borderWidth: 1, borderColor: 'rgba(34, 197, 94, 0.26)' },
-  trustStateDeclined: { backgroundColor: 'rgba(241, 245, 249, 0.96)', borderWidth: 1, borderColor: 'rgba(100, 116, 139, 0.22)' },
-  trustStateText: { fontSize: 12, fontWeight: '900' },
-  trustStateTextAccepted: { color: '#15803D' },
-  trustStateTextDeclined: { color: '#475569' },
   finishActionRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 10 },
   finishButton: { flex: 1, borderRadius: 14, overflow: 'hidden' },
   finishButtonGradient: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
