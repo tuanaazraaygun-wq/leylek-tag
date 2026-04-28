@@ -19,7 +19,6 @@ import { useRouter, type Href } from 'expo-router';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
-const ACCENT = '#F59E0B';
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
@@ -34,6 +33,8 @@ const CTA_CARD_SHADOW = Platform.select({
   android: { elevation: 5 },
   default: {},
 });
+
+type ListingScope = 'local' | 'intercity';
 
 type HomeFeedListing = {
   id: string;
@@ -230,8 +231,8 @@ export type LeylekMuhabbetiHomeTabProps = {
   selectedCity: string;
   refreshNonce: number;
   onOpenListingsCreate: () => void;
-  onOpenDriverListing?: () => void;
-  onOpenPassengerListing?: () => void;
+  onOpenDriverListing?: (scope: ListingScope) => void;
+  onOpenPassengerListing?: (scope: ListingScope) => void;
   onOpenMatchRequests?: () => void;
   /** Teklifler sekmesine geç ve bu ilanı üste taşı (ListingsTab ile eşleşir). */
   onOpenListingsForListing?: (listingId: string) => void;
@@ -255,12 +256,13 @@ export default function LeylekMuhabbetiHomeTab({
   requireToken,
 }: LeylekMuhabbetiHomeTabProps) {
   const router = useRouter();
-  const openDriver = onOpenDriverListing ?? onOpenListingsCreate;
-  const openPassenger = onOpenPassengerListing ?? onOpenListingsCreate;
+  const openDriver = (scope: ListingScope) => onOpenDriverListing ? onOpenDriverListing(scope) : onOpenListingsCreate();
+  const openPassenger = (scope: ListingScope) => onOpenPassengerListing ? onOpenPassengerListing(scope) : onOpenListingsCreate();
   const tok = accessToken.trim();
   const base = apiUrl.replace(/\/$/, '');
   const listAnim = useRef(new Animated.Value(1)).current;
   const listSlide = useRef(new Animated.Value(0)).current;
+  const ctaPulse = useRef(new Animated.Value(0)).current;
 
   const [pendingIncoming, setPendingIncoming] = useState(0);
   const [incomingRequests, setIncomingRequests] = useState<IncomingOfferRequest[]>([]);
@@ -344,6 +346,17 @@ export default function LeylekMuhabbetiHomeTab({
   useEffect(() => {
     setWindowOffset(0);
   }, [feedPreview]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ctaPulse, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(ctaPulse, { toValue: 0, duration: 1800, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [ctaPulse]);
 
   const rotateWindow = useCallback(() => {
     const n = feedPreview.length;
@@ -450,37 +463,78 @@ export default function LeylekMuhabbetiHomeTab({
     [base, tok, requireToken, loadPreview]
   );
 
+  const pulseStyle = {
+    opacity: ctaPulse.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.34] }),
+    transform: [{ scale: ctaPulse.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1.04] }) }],
+  };
+
+  const renderCreateSection = (
+    scope: ListingScope,
+    title: string,
+    subtitle: string,
+    driverSub: string,
+    passengerSub: string,
+  ) => (
+    <View style={styles.createSection}>
+      <View style={styles.createSectionHead}>
+        <Text style={styles.ctaSectionTitle}>{title}</Text>
+        <Text style={styles.ctaSectionSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={[styles.ctaRow, !tok && styles.ctaRowDim]}>
+        <Pressable
+          onPress={() => openDriver(scope)}
+          style={({ pressed }) => [styles.ctaBig, styles.ctaBigDriver, pressed && styles.ctaPressed]}
+          android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
+        >
+          <Animated.View pointerEvents="none" style={[styles.ctaPulseGlow, styles.ctaPulseDriver, pulseStyle]} />
+          <LinearGradient colors={['#0B2B6F', '#1D4ED8', '#38BDF8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View style={styles.ctaShine} />
+          <View style={styles.ctaBigInner}>
+            <View style={styles.ctaIconBubble}>
+              <Text style={styles.ctaBigEmoji}>🚗</Text>
+            </View>
+            <Text style={styles.ctaBigTitle}>Sürücü teklifi aç</Text>
+            <Text style={styles.ctaBigSub}>{driverSub}</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          onPress={() => openPassenger(scope)}
+          style={({ pressed }) => [styles.ctaBig, styles.ctaBigPassenger, pressed && styles.ctaPressed]}
+          android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
+        >
+          <Animated.View pointerEvents="none" style={[styles.ctaPulseGlow, styles.ctaPulsePassenger, pulseStyle]} />
+          <LinearGradient colors={['#7C2D12', '#C2410C', '#F97316']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View style={styles.ctaShine} />
+          <View style={styles.ctaBigInner}>
+            <View style={styles.ctaIconBubble}>
+              <Text style={styles.ctaBigEmoji}>🧍</Text>
+            </View>
+            <Text style={styles.ctaBigTitle}>Yolcu teklifi aç</Text>
+            <Text style={styles.ctaBigSub}>{passengerSub}</Text>
+          </View>
+        </Pressable>
+      </View>
+    </View>
+  );
+
   return (
     <View style={styles.root}>
       <MuhabbetWatermark />
       <View style={styles.insetTop}>
-        <Text style={styles.ctaSectionTitle}>Teklif aç</Text>
-        <View style={[styles.ctaRow, !tok && styles.ctaRowDim]}>
-          <Pressable
-            onPress={openDriver}
-            style={({ pressed }) => [styles.ctaBig, styles.ctaBigDriver, pressed && styles.ctaPressed]}
-            android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-          >
-            <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <View style={styles.ctaBigInner}>
-              <Text style={styles.ctaBigEmoji}>🚗</Text>
-              <Text style={styles.ctaBigTitle}>Sürücü teklifi aç</Text>
-              <Text style={styles.ctaBigSub}>Rotanı ve koltuğu paylaş.</Text>
-            </View>
-          </Pressable>
-          <Pressable
-            onPress={openPassenger}
-            style={({ pressed }) => [styles.ctaBig, styles.ctaBigPassenger, pressed && styles.ctaPressed]}
-            android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-          >
-            <LinearGradient colors={['#F59E0B', '#FBBF24']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <View style={styles.ctaBigInner}>
-              <Text style={styles.ctaBigEmoji}>🧍</Text>
-              <Text style={styles.ctaBigTitle}>Yolcu teklifi aç</Text>
-              <Text style={styles.ctaBigSub}>Nereye gideceğini yaz.</Text>
-            </View>
-          </Pressable>
-        </View>
+        {renderCreateSection(
+          'local',
+          'Şehir içi yol paylaşımı',
+          `${selectedCity} içinde kısa mesafe teklif aç`,
+          'Rotanı ve koltuğu şehir içinde paylaş.',
+          'Şehir içinde nereye gideceğini yaz.',
+        )}
+        {renderCreateSection(
+          'intercity',
+          'Şehirler arası yol paylaşımı',
+          'Kalkış ve varış şehrini seçerek uzun yol teklifi aç',
+          'Uzun yol rotanı ve boş koltuğunu paylaş.',
+          'Şehirler arası yolculuk talebini oluştur.',
+        )}
         {!tok ? <Text style={styles.ctaHint}>Teklif açmak için oturum açman yeterli — butona basınca yönlendirilirsin.</Text> : null}
       </View>
 
@@ -586,36 +640,81 @@ const styles = StyleSheet.create({
   root: { flex: 1, position: 'relative' },
   insetTop: { paddingHorizontal: 16, paddingTop: 4, zIndex: 1 },
   inset: { paddingHorizontal: 16, marginTop: 12, zIndex: 1 },
+  createSection: {
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.22)',
+    ...CARD_SHADOW,
+  },
+  createSectionHead: { marginBottom: 10 },
   ctaSectionTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '900',
     color: TEXT_PRIMARY,
-    letterSpacing: 0.3,
-    marginBottom: 8,
+    letterSpacing: 0.45,
     textTransform: 'uppercase',
   },
-  ctaRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  ctaSectionSubtitle: { marginTop: 4, fontSize: 12.5, fontWeight: '700', color: TEXT_SECONDARY, lineHeight: 17 },
+  ctaRow: { flexDirection: 'row', gap: 10, marginBottom: 2 },
   ctaRowDim: { opacity: 0.92 },
   ctaHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 18 },
   ctaBig: {
     flex: 1,
-    minHeight: 128,
-    borderRadius: 18,
+    minHeight: 136,
+    minWidth: 0,
+    borderRadius: 22,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
     ...CTA_CARD_SHADOW,
   },
-  ctaBigDriver: {},
-  ctaBigPassenger: {},
+  ctaBigDriver: { shadowColor: '#1D4ED8' },
+  ctaBigPassenger: { shadowColor: '#C2410C' },
+  ctaPulseGlow: {
+    position: 'absolute',
+    left: -12,
+    right: -12,
+    top: -12,
+    bottom: -12,
+    borderRadius: 28,
+    zIndex: 1,
+  },
+  ctaPulseDriver: { backgroundColor: 'rgba(96,165,250,0.36)' },
+  ctaPulsePassenger: { backgroundColor: 'rgba(251,146,60,0.34)' },
+  ctaShine: {
+    position: 'absolute',
+    top: -42,
+    right: -32,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    zIndex: 2,
+  },
   ctaPressed: { transform: [{ scale: 0.98 }] },
   ctaBigInner: {
     flex: 1,
-    minHeight: 128,
+    minHeight: 136,
     paddingVertical: 16,
     paddingHorizontal: 12,
     justifyContent: 'center',
+    zIndex: 3,
   },
-  ctaBigEmoji: { fontSize: 24, color: '#fff', fontWeight: '800' },
-  ctaBigTitle: { fontSize: 16, fontWeight: '800', color: '#fff', marginTop: 6 },
+  ctaIconBubble: {
+    width: 38,
+    height: 38,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  ctaBigEmoji: { fontSize: 22, color: '#fff', fontWeight: '800' },
+  ctaBigTitle: { fontSize: 16, fontWeight: '900', color: '#fff', marginTop: 10, letterSpacing: -0.2 },
   ctaBigSub: { fontSize: 13, color: 'rgba(255,255,255,0.92)', marginTop: 4, lineHeight: 18 },
   offersCardPad: { paddingBottom: 18 },
   offersSectionTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY },

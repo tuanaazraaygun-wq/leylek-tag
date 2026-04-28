@@ -76,6 +76,8 @@ function addLocalDays(base: Date, n: number): Date {
 }
 
 type DepartureTab = 'today' | 'tomorrow' | 'future';
+type ListingScope = 'local' | 'intercity';
+type CityPickerField = 'origin' | 'destination';
 
 function defaultDepartureHm(): { h: number; m: number } {
   const d = new Date();
@@ -114,6 +116,19 @@ const TR_MONTHS = [
   'Kasım',
   'Aralık',
 ];
+
+const TR_CITIES = [
+  'Adana', 'Adıyaman', 'Afyonkarahisar', 'Ağrı', 'Aksaray', 'Amasya', 'Ankara', 'Antalya',
+  'Ardahan', 'Artvin', 'Aydın', 'Balıkesir', 'Bartın', 'Batman', 'Bayburt', 'Bilecik',
+  'Bingöl', 'Bitlis', 'Bolu', 'Burdur', 'Bursa', 'Çanakkale', 'Çankırı', 'Çorum',
+  'Denizli', 'Diyarbakır', 'Düzce', 'Edirne', 'Elazığ', 'Erzincan', 'Erzurum', 'Eskişehir',
+  'Gaziantep', 'Giresun', 'Gümüşhane', 'Hakkari', 'Hatay', 'Iğdır', 'Isparta', 'İstanbul',
+  'İzmir', 'Kahramanmaraş', 'Karabük', 'Karaman', 'Kars', 'Kastamonu', 'Kayseri', 'Kırıkkale',
+  'Kırklareli', 'Kırşehir', 'Kilis', 'Kocaeli', 'Konya', 'Kütahya', 'Malatya', 'Manisa',
+  'Mardin', 'Mersin', 'Muğla', 'Muş', 'Nevşehir', 'Niğde', 'Ordu', 'Osmaniye',
+  'Rize', 'Sakarya', 'Samsun', 'Siirt', 'Sinop', 'Sivas', 'Şanlıurfa', 'Şırnak',
+  'Tekirdağ', 'Tokat', 'Trabzon', 'Tunceli', 'Uşak', 'Van', 'Yalova', 'Yozgat', 'Zonguldak',
+] as const;
 
 function formatDepartureSummary(tab: DepartureTab, futureDay: Date | null, h: number, m: number): string {
   const hm = `${pad2(h)}:${pad2(m)}`;
@@ -177,6 +192,7 @@ export type CreateListingModalProps = {
   accessToken: string;
   city: string;
   initialRole: 'driver' | 'passenger';
+  initialScope?: ListingScope;
   requireToken: () => boolean;
   onCreated?: () => void;
 };
@@ -188,6 +204,7 @@ export default function CreateListingModal({
   accessToken,
   city,
   initialRole,
+  initialScope = 'local',
   requireToken,
   onCreated,
 }: CreateListingModalProps) {
@@ -203,6 +220,11 @@ export default function CreateListingModal({
   const mapPinRequired = muhabbetListingMapPinFlowAvailable();
 
   const [createRole, setCreateRole] = useState<'driver' | 'passenger'>(initialRole);
+  const [listingScope, setListingScope] = useState<ListingScope>(initialScope);
+  const [originCity, setOriginCity] = useState(city.trim());
+  const [destinationCity, setDestinationCity] = useState('');
+  const [cityPickerOpen, setCityPickerOpen] = useState(false);
+  const [cityPickerField, setCityPickerField] = useState<CityPickerField>('origin');
   const [fromPoint, setFromPoint] = useState<MuhabbetCommittedPlace | null>(null);
   const [toPoint, setToPoint] = useState<MuhabbetCommittedPlace | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -238,12 +260,16 @@ export default function CreateListingModal({
   useEffect(() => {
     if (visible) {
       setCreateRole(initialRole);
+      const scope = initialScope === 'intercity' ? 'intercity' : 'local';
+      setListingScope(scope);
+      setOriginCity(city.trim());
+      setDestinationCity(scope === 'intercity' ? '' : city.trim());
       setDepartureTimeConfirmed(false);
       setDepartureTab('today');
       setFuturePick(null);
       setOfferVehicleKind('car');
     }
-  }, [visible, initialRole]);
+  }, [visible, initialRole, initialScope, city]);
 
   useEffect(() => {
     if (!visible) return;
@@ -320,6 +346,15 @@ export default function CreateListingModal({
 
   const missingReasons = useMemo(() => {
     const out: string[] = [];
+    const origin = originCity.trim();
+    const destination = destinationCity.trim();
+    if (listingScope === 'intercity') {
+      if (!origin) out.push('Kalkış şehri seçilmedi.');
+      if (!destination) out.push('Varış şehri seçilmedi.');
+      if (origin && destination && origin.toLocaleLowerCase('tr-TR') === destination.toLocaleLowerCase('tr-TR')) {
+        out.push('Şehirler arası teklifte kalkış ve varış şehirleri farklı olmalı.');
+      }
+    }
     if (!fromPoint) out.push('Nereden seçilmedi.');
     else if (!hasFiniteCoords(fromPoint)) out.push('Nereden: konum koordinatları eksik.');
     else if (mapPinRequired && !fromPoint.mapPinConfirmed) {
@@ -345,7 +380,18 @@ export default function CreateListingModal({
     }
 
     return out;
-  }, [fromPoint, toPoint, mapPinRequired, departureTimeConfirmed, suggestedBase, createRole, driverSeatsValid]);
+  }, [
+    createRole,
+    departureTimeConfirmed,
+    destinationCity,
+    driverSeatsValid,
+    fromPoint,
+    listingScope,
+    mapPinRequired,
+    originCity,
+    suggestedBase,
+    toPoint,
+  ]);
 
   const canSubmit = missingReasons.length === 0;
 
@@ -396,6 +442,7 @@ export default function CreateListingModal({
     setFromPoint(null);
     setToPoint(null);
     setPickerOpen(false);
+    setCityPickerOpen(false);
     setUserBias(null);
     const hm = defaultDepartureHm();
     setDepartureHm(hm);
@@ -416,11 +463,43 @@ export default function CreateListingModal({
     setBrandSheetOpen(false);
     setPassengerBudgetText('');
     setOfferVehicleKind('car');
+    setListingScope(initialScope === 'intercity' ? 'intercity' : 'local');
+    setOriginCity(city.trim());
+    setDestinationCity(initialScope === 'intercity' ? '' : city.trim());
   };
 
   const openPicker = (field: 'from' | 'to') => {
+    if (listingScope === 'intercity') {
+      const pickerCity = field === 'from' ? originCity.trim() : destinationCity.trim();
+      if (!pickerCity) {
+        Alert.alert('Şehir seç', field === 'from' ? 'Önce kalkış şehrini seç.' : 'Önce varış şehrini seç.');
+        return;
+      }
+    }
     setPickerField(field);
     setPickerOpen(true);
+  };
+
+  const openCityPicker = (field: CityPickerField) => {
+    setCityPickerField(field);
+    setCityPickerOpen(true);
+  };
+
+  const selectIntercityCity = (nextCity: string) => {
+    const picked = nextCity.trim();
+    if (!picked) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (cityPickerField === 'origin') {
+      setOriginCity(picked);
+      setFromPoint(null);
+    } else {
+      setDestinationCity(picked);
+      setToPoint(null);
+    }
+    setSuggestedBase(null);
+    setPriceDelta(0);
+    setPriceMeta(null);
+    setCityPickerOpen(false);
   };
 
   const onPickerCommitted = useCallback(
@@ -546,8 +625,13 @@ export default function CreateListingModal({
       const listing_type = createRole === 'driver' ? 'gidiyorum' : 'gidecegim';
       const role_type = createRole === 'driver' ? 'driver' : 'passenger';
       const departure_time = buildDepartureIso(departureTab, futurePick, departureHm.h, departureHm.m);
+      const origin_city = listingScope === 'intercity' ? originCity.trim() : city.trim();
+      const destination_city = listingScope === 'intercity' ? destinationCity.trim() : city.trim();
       const body: Record<string, unknown> = {
-        city: city.trim(),
+        city: origin_city,
+        listing_scope: listingScope,
+        origin_city,
+        destination_city,
         from_text: fromPoint.address.trim(),
         to_text: toPoint.address.trim(),
         start_lat: fromPoint.latitude,
@@ -631,12 +715,17 @@ export default function CreateListingModal({
 
   const endpointSummary = (p: MuhabbetCommittedPlace | null) =>
     p ? (p.address.length > 52 ? `${p.address.slice(0, 52)}…` : p.address) : 'Konumu seç';
+  const pickerCity = listingScope === 'intercity'
+    ? pickerField === 'from'
+      ? originCity.trim()
+      : destinationCity.trim()
+    : city.trim();
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalRoot} edges={['left', 'right', 'bottom']}>
         <ScreenHeaderGradient
-          title={createRole === 'driver' ? 'Sürücü teklifi oluştur' : 'Yolcu teklifi oluştur'}
+          title={`${listingScope === 'intercity' ? 'Şehirler arası' : 'Şehir içi'} ${createRole === 'driver' ? 'sürücü teklifi' : 'yolcu teklifi'}`}
           onBack={onClose}
           backIcon="close"
           gradientColors={[...HEADER_GRAD]}
@@ -652,10 +741,30 @@ export default function CreateListingModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.sectionEyebrow}>Şehir</Text>
-            <View style={styles.card}>
-              <Text style={styles.cityLock}>{city}</Text>
-            </View>
+            <Text style={styles.sectionEyebrow}>{listingScope === 'intercity' ? 'Şehirler arası' : 'Şehir'}</Text>
+            {listingScope === 'intercity' ? (
+              <View style={styles.card}>
+                <Text style={styles.scopeHint}>Kalkış ve varış şehirlerini seç; adres seçici her şehir için ayrı açılır.</Text>
+                <View style={styles.cityPairRow}>
+                  <TouchableOpacity style={styles.cityPickCard} onPress={() => openCityPicker('origin')} activeOpacity={0.88}>
+                    <Text style={styles.inLabel}>Kalkış şehri</Text>
+                    <Text style={originCity.trim() ? styles.cityPickValue : styles.cityPickPlaceholder}>
+                      {originCity.trim() || 'Şehir seç'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.cityPickCard} onPress={() => openCityPicker('destination')} activeOpacity={0.88}>
+                    <Text style={styles.inLabel}>Varış şehri</Text>
+                    <Text style={destinationCity.trim() ? styles.cityPickValue : styles.cityPickPlaceholder}>
+                      {destinationCity.trim() || 'Şehir seç'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.card}>
+                <Text style={styles.cityLock}>{city}</Text>
+              </View>
+            )}
 
             <Text style={styles.sectionEyebrow}>Teklif türü</Text>
             <View style={styles.roleRow}>
@@ -700,6 +809,7 @@ export default function CreateListingModal({
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.rowLabel}>Nereden</Text>
+                {listingScope === 'intercity' ? <Text style={styles.rowMetaOk}>{originCity.trim() || 'Kalkış şehri seç'}</Text> : null}
                 <Text style={styles.rowValue} numberOfLines={2}>
                   {endpointSummary(fromPoint)}
                 </Text>
@@ -716,6 +826,7 @@ export default function CreateListingModal({
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.rowLabel}>Nereye</Text>
+                {listingScope === 'intercity' ? <Text style={styles.rowMetaOk}>{destinationCity.trim() || 'Varış şehri seç'}</Text> : null}
                 <Text style={styles.rowValue} numberOfLines={2}>
                   {endpointSummary(toPoint)}
                 </Text>
@@ -902,12 +1013,46 @@ export default function CreateListingModal({
         <MuhabbetEndpointPickerModal
           visible={pickerOpen}
           title={pickerField === 'from' ? 'Nereden' : 'Nereye'}
-          city={city.trim()}
+          city={pickerCity}
           biasLatitude={userBias?.latitude}
           biasLongitude={userBias?.longitude}
           onRequestClose={() => setPickerOpen(false)}
           onCommitted={onPickerCommitted}
         />
+
+        <Modal visible={cityPickerOpen} transparent animationType="fade" onRequestClose={() => setCityPickerOpen(false)}>
+          <Pressable style={styles.sheetOverlay} onPress={() => setCityPickerOpen(false)}>
+            <Pressable style={styles.brandSheet} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.sheetTitle}>{cityPickerField === 'origin' ? 'Kalkış şehri' : 'Varış şehri'}</Text>
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                <View style={styles.brandGrid}>
+                  {TR_CITIES.map((c) => (
+                    <TouchableOpacity
+                      key={c}
+                      style={[
+                        styles.brandChip,
+                        (cityPickerField === 'origin' ? originCity : destinationCity) === c && styles.brandChipOn,
+                      ]}
+                      onPress={() => selectIntercityCity(c)}
+                    >
+                      <Text
+                        style={[
+                          styles.brandChipText,
+                          (cityPickerField === 'origin' ? originCity : destinationCity) === c && styles.brandChipTextOn,
+                        ]}
+                      >
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              <TouchableOpacity style={styles.sheetClose} onPress={() => setCityPickerOpen(false)}>
+                <Text style={styles.sheetCloseText}>Kapat</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <Modal visible={brandSheetOpen} transparent animationType="fade" onRequestClose={() => setBrandSheetOpen(false)}>
           <Pressable style={styles.sheetOverlay} onPress={() => setBrandSheetOpen(false)}>
@@ -1090,6 +1235,20 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cityLock: { fontSize: 17, fontWeight: '700', color: TEXT_PRIMARY },
+  scopeHint: { fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18, marginBottom: 12 },
+  cityPairRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  cityPickCard: {
+    flex: 1,
+    minWidth: 135,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.35)',
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  cityPickValue: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY },
+  cityPickPlaceholder: { fontSize: 16, fontWeight: '700', color: TEXT_MUTED },
   roleRow: { flexDirection: 'row', gap: 10 },
   roleChip: {
     flex: 1,

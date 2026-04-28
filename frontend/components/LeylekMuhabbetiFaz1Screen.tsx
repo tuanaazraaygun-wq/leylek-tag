@@ -306,13 +306,13 @@ export default function LeylekMuhabbetiFaz1Screen({
       cancelled = true;
     };
   }, [propTok, lastGoodToken]);
-  const requireMuhabbetToken = (): boolean => {
+  const requireMuhabbetToken = useCallback((): boolean => {
     if (!tok) {
       Alert.alert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);
       return false;
     }
     return true;
-  };
+  }, [tok]);
 
   const [selectedCity, setSelectedCity] = useState(() => {
     const c = (user.city || '').trim();
@@ -335,6 +335,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [mainTab, setMainTab] = useState<'home' | 'listings' | 'chats'>('home');
   const [listingCreateSignal, setListingCreateSignal] = useState(0);
   const [listingCreateRole, setListingCreateRole] = useState<'driver' | 'passenger'>('passenger');
+  const [listingCreateScope, setListingCreateScope] = useState<'local' | 'intercity'>('local');
   const [listingFocusId, setListingFocusId] = useState<string | null>(null);
   const [listingFocusNonce, setListingFocusNonce] = useState(0);
 
@@ -526,16 +527,18 @@ export default function LeylekMuhabbetiFaz1Screen({
   const openListingsCreate = useCallback(() => {
     if (!requireMuhabbetToken()) return;
     setListingCreateRole('passenger');
+    setListingCreateScope('local');
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
-  }, [tok]);
+  }, [requireMuhabbetToken]);
 
-  const openListingCreateAs = useCallback((role: 'driver' | 'passenger') => {
+  const openListingCreateAs = useCallback((role: 'driver' | 'passenger', scope: 'local' | 'intercity' = 'local') => {
     if (!requireMuhabbetToken()) return;
     setListingCreateRole(role);
+    setListingCreateScope(scope);
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
-  }, [tok]);
+  }, [requireMuhabbetToken]);
 
   const openListingsForListing = useCallback((listingId: string) => {
     const id = (listingId || '').trim();
@@ -1418,8 +1421,8 @@ export default function LeylekMuhabbetiFaz1Screen({
                   selectedCity={selectedCity}
                   refreshNonce={inboxSync}
                   onOpenListingsCreate={openListingsCreate}
-                  onOpenDriverListing={() => openListingCreateAs('driver')}
-                  onOpenPassengerListing={() => openListingCreateAs('passenger')}
+                  onOpenDriverListing={(scope) => openListingCreateAs('driver', scope)}
+                  onOpenPassengerListing={(scope) => openListingCreateAs('passenger', scope)}
                   onOpenMatchRequests={() => router.push('/muhabbet-match-requests' as Href)}
                   onOpenListingsForListing={openListingsForListing}
                   currentUserId={user.id}
@@ -1439,6 +1442,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                   syncVersion={inboxSync}
                   openCreateSignal={listingCreateSignal}
                   initialCreateRole={listingCreateRole}
+                  initialCreateScope={listingCreateScope}
                   requireToken={requireMuhabbetToken}
                   focusListingId={listingFocusId}
                   focusListingNonce={listingFocusNonce}

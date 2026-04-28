@@ -37,6 +37,7 @@ const CARD_SHADOW = Platform.select({
 });
 
 type ListingsSegment = 'all' | 'driver' | 'passenger' | 'mine' | 'requests';
+type ListingScope = 'local' | 'intercity';
 
 export type FeedListing = {
   id: string;
@@ -88,6 +89,7 @@ export type ListingsTabProps = {
   syncVersion: number;
   openCreateSignal: number;
   initialCreateRole?: 'driver' | 'passenger';
+  initialCreateScope?: ListingScope;
   requireToken: () => boolean;
   /** Ana sayfadan teklif kartına basılınca bu ilan üste taşınır (nonce her odakta artırılmalı). */
   focusListingId?: string | null;
@@ -189,6 +191,7 @@ export default function ListingsTab({
   syncVersion,
   openCreateSignal,
   initialCreateRole = 'passenger',
+  initialCreateScope = 'local',
   requireToken,
   focusListingId = null,
   focusListingNonce = 0,
@@ -212,15 +215,17 @@ export default function ListingsTab({
 
   const [createOpen, setCreateOpen] = useState(false);
   const [modalInitialRole, setModalInitialRole] = useState<'driver' | 'passenger'>(initialCreateRole);
+  const [modalInitialScope, setModalInitialScope] = useState<ListingScope>(initialCreateScope);
 
   const prevOpenSig = React.useRef(openCreateSignal);
   useEffect(() => {
     if (openCreateSignal !== prevOpenSig.current && openCreateSignal > 0) {
       setModalInitialRole(initialCreateRole);
+      setModalInitialScope(initialCreateScope);
       setCreateOpen(true);
       prevOpenSig.current = openCreateSignal;
     }
-  }, [openCreateSignal, initialCreateRole]);
+  }, [openCreateSignal, initialCreateRole, initialCreateScope]);
 
   const loadFeed = useCallback(async () => {
     if (!tok) {
@@ -756,6 +761,7 @@ export default function ListingsTab({
         <TouchableOpacity
           onPress={() => {
             setModalInitialRole('passenger');
+            setModalInitialScope('local');
             setCreateOpen(true);
           }}
           activeOpacity={0.9}
@@ -782,6 +788,7 @@ export default function ListingsTab({
         accessToken={tok}
         city={selectedCity}
         initialRole={modalInitialRole}
+        initialScope={modalInitialScope}
         requireToken={requireToken}
         onCreated={() => void loadAll()}
       />
