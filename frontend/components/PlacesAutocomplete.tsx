@@ -51,6 +51,7 @@ const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } =
   'Trabzon': { lat: 41.0027, lng: 39.7168, bbox: '38.8,40.5,40.5,41.5' },
   'Malatya': { lat: 38.3552, lng: 38.3095, bbox: '37.5,37.8,39.2,38.9' },
   'Erzurum': { lat: 39.9043, lng: 41.2679, bbox: '40.3,39.3,42.5,40.5' },
+  'Adıyaman': { lat: 37.7648, lng: 38.2786, bbox: '37.4,37.3,38.8,38.2' },
 };
 
 /** Kayıtlı şehir adı CITY_DATA anahtarıyla birebir olmayabilir (büyük/küçük harf vb.) */
@@ -504,6 +505,10 @@ interface PlacesAutocompleteProps {
   inputSize?: 'default' | 'large';
   /** Öneri listesi tavanına eklenecek piksel */
   predictionMaxHeightBonus?: number;
+  /** Muhabbet endpoint picker: şehir bağlamını metin aramasına da ekle. */
+  forceCityInSearch?: boolean;
+  /** Muhabbet endpoint picker teşhis logları. */
+  pickerDebugLabel?: string;
 }
 
 export default function PlacesAutocomplete({
@@ -521,6 +526,8 @@ export default function PlacesAutocomplete({
   biasDeltaDeg = 0.34,
   inputSize = 'default',
   predictionMaxHeightBonus = 0,
+  forceCityInSearch = false,
+  pickerDebugLabel,
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
   const tech = visualVariant === 'tech';
@@ -572,7 +579,7 @@ export default function PlacesAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, widerSearch, city, strictCityBounds, biasLatitude, biasLongitude, biasDeltaDeg]);
+  }, [query, widerSearch, city, strictCityBounds, biasLatitude, biasLongitude, biasDeltaDeg, forceCityInSearch]);
 
   /** Önce Google Places (Autocomplete + Details ile koordinat); boş / hata → Nominatim (mevcut mantık). */
   const searchPlaces = async (input: string) => {
@@ -592,6 +599,14 @@ export default function PlacesAutocomplete({
       const explicitOtherKey = explicitOtherMajorCityKeyFromQuery(input, cityKeyHome);
       const effectiveCityKey = explicitOtherKey || cityKeyHome;
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
+      const cityAwareSearchQuery = forceCityInSearch
+        ? buildNominatimSearchQuery(input, cityLabel, explicitOtherKey)
+        : input.trim();
+
+      if (pickerDebugLabel) {
+        console.log('[picker] cityContext=', cityLabel || null, 'label=', pickerDebugLabel);
+        console.log('[picker] searchQuery=', cityAwareSearchQuery);
+      }
 
       acDiag('AUTOCOMPLETE_INPUT', {
         query: input.trim(),
@@ -608,7 +623,7 @@ export default function PlacesAutocomplete({
         try {
           acDiag('AUTOCOMPLETE_PROVIDER_START', {
             provider: 'google',
-            query: input.trim(),
+            query: cityAwareSearchQuery,
             city_label: cityLabel || null,
             request_id: requestId,
           });
@@ -619,7 +634,7 @@ export default function PlacesAutocomplete({
             biasLongitude,
             strictCityBounds,
           );
-          const raw = await googlePlacesAutocompleteMerged(input.trim(), apiKey, gBias);
+          const raw = await googlePlacesAutocompleteMerged(cityAwareSearchQuery, apiKey, gBias);
           if (requestId !== autocompleteRequestIdRef.current) {
             return;
           }
@@ -634,7 +649,7 @@ export default function PlacesAutocomplete({
           filtered = filtered.slice(0, gCap);
           acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
             provider: 'google',
-            query: input.trim(),
+            query: cityAwareSearchQuery,
             city_label: cityLabel || null,
             raw_result_count: raw.length,
             final_result_count: filtered.length,
@@ -647,7 +662,7 @@ export default function PlacesAutocomplete({
           googleErrorHint = msg.slice(0, 160);
           acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
             provider: 'google',
-            query: input.trim(),
+            query: cityAwareSearchQuery,
             city_label: cityLabel || null,
             raw_result_count: 0,
             final_result_count: 0,
@@ -662,12 +677,12 @@ export default function PlacesAutocomplete({
         enteredNominatim = true;
         acDiag('AUTOCOMPLETE_FALLBACK_START', {
           provider: 'nominatim',
-          query: input.trim(),
+          query: cityAwareSearchQuery,
           city_label: cityLabel || null,
           had_google_key: !!apiKey,
           request_id: requestId,
         });
-        const searchQuery = buildNominatimSearchQuery(input, city, explicitOtherKey);
+        const searchQuery = cityAwareSearchQuery;
         const limitPrimary =
           widerSearch && !strictCityBounds ? 22 : strictCityBounds ? 20 : 12;
 
@@ -866,6 +881,9 @@ export default function PlacesAutocomplete({
         bias_lng_present: biasLongitude != null && Number.isFinite(biasLongitude),
         request_id: requestId,
       });
+      if (pickerDebugLabel) {
+        console.log('[picker] results count=', filtered.length, 'label=', pickerDebugLabel);
+      }
 
       if (filtered.length > 0) {
         setPredictions(filtered);

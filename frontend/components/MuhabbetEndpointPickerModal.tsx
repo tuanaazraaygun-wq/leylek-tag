@@ -60,6 +60,7 @@ export type MuhabbetEndpointPickerModalProps = {
   visible: boolean;
   title: string;
   city: string;
+  cityContext?: string;
   /** Arama / harita önerilerini yakınlaştırmak için (opsiyonel) */
   biasLatitude?: number;
   biasLongitude?: number;
@@ -71,6 +72,7 @@ export default function MuhabbetEndpointPickerModal({
   visible,
   title,
   city,
+  cityContext,
   biasLatitude,
   biasLongitude,
   onRequestClose,
@@ -84,7 +86,10 @@ export default function MuhabbetEndpointPickerModal({
   const [geocoding, setGeocoding] = useState(false);
   const [acMountKey, setAcMountKey] = useState(0);
 
-  const cityTrim = (city || '').trim();
+  const cityTrim = (cityContext || city || '').trim();
+  const registeredCityCenter = getRegisteredCityCenter(cityTrim);
+  const searchBiasLatitude = registeredCityCenter?.latitude ?? biasLatitude;
+  const searchBiasLongitude = registeredCityCenter?.longitude ?? biasLongitude;
   const useMap = !!EndpointMapView && isNativeGoogleMapsSupported();
 
   const reset = useCallback(() => {
@@ -100,11 +105,11 @@ export default function MuhabbetEndpointPickerModal({
       return;
     }
     setAcMountKey((k) => k + 1);
-    const c = getRegisteredCityCenter(cityTrim);
-    const lat = c?.latitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
-    const lng = c?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+    console.log('[picker] cityContext=', cityTrim || null);
+    const lat = registeredCityCenter?.latitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
+    const lng = registeredCityCenter?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
     setPin({ latitude: lat, longitude: lng });
-  }, [visible, cityTrim, reset]);
+  }, [visible, cityTrim, registeredCityCenter?.latitude, registeredCityCenter?.longitude, reset]);
 
   useEffect(() => {
     if (!visible || phase !== 'search' || !pin) return;
@@ -321,11 +326,13 @@ export default function MuhabbetEndpointPickerModal({
                       visualVariant="tech"
                       suggestionsFirst={false}
                       strictCityBounds={!!cityTrim}
-                      biasLatitude={biasLatitude}
-                      biasLongitude={biasLongitude}
+                      biasLatitude={searchBiasLatitude}
+                      biasLongitude={searchBiasLongitude}
                       biasDeltaDeg={0.22}
                       inputSize="large"
                       predictionMaxHeightBonus={56}
+                      forceCityInSearch={!!cityTrim}
+                      pickerDebugLabel={title}
                       onPlaceSelected={onSearchPick}
                     />
                   </View>

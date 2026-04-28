@@ -1176,6 +1176,7 @@ export default function CreateListingModal({
           visible={pickerOpen}
           title={pickerField === 'from' ? 'Nereden' : 'Nereye'}
           city={pickerCity}
+          cityContext={pickerCity}
           biasLatitude={userBias?.latitude}
           biasLongitude={userBias?.longitude}
           onRequestClose={() => setPickerOpen(false)}
