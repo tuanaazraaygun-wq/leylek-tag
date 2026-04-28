@@ -38,6 +38,7 @@ type LeylekTripLiveRideChromeProps = {
   driverLocation?: Coord | null;
   deviceLocation?: Coord | null;
   routeDataMissing?: boolean;
+  tripInfoReady?: boolean;
   finishMethod?: 'qr' | 'forced' | null;
   finishScoreDelta?: number | null;
   forcedFinishResponse?: 'accepted' | 'declined' | 'timeout' | null;
@@ -96,6 +97,7 @@ export default function LeylekTripLiveRideChrome({
   driverLocation,
   deviceLocation,
   routeDataMissing,
+  tripInfoReady = true,
   finishMethod,
   finishScoreDelta,
   forcedFinishResponse,
@@ -262,7 +264,12 @@ export default function LeylekTripLiveRideChrome({
                 ) : null}
               </View>
 
-              {routeDataMissing ? (
+              {!tripInfoReady ? (
+                <View style={styles.routeWarning}>
+                  <Ionicons name="time-outline" size={15} color="#B45309" />
+                  <Text style={styles.routeWarningText}>Yolculuk bilgisi hazırlanıyor</Text>
+                </View>
+              ) : routeDataMissing ? (
                 <View style={styles.routeWarning}>
                   <Ionicons name="alert-circle-outline" size={15} color="#B45309" />
                   <Text style={styles.routeWarningText}>Alış/varış konumu henüz belirlenmedi.</Text>
@@ -299,26 +306,26 @@ export default function LeylekTripLiveRideChrome({
           <View style={styles.routeActionCluster}>
             <Pressable
               onPress={canStart ? onStart : onShareLocation}
-              disabled={(canStart && actionBusy) || sendingLocation || isTerminal}
-              style={({ pressed }) => [styles.routeMiniAction, (pressed || sendingLocation || isTerminal) && { opacity: 0.78 }]}
+              disabled={!tripInfoReady || (canStart && actionBusy) || sendingLocation || isTerminal}
+              style={({ pressed }) => [styles.routeMiniAction, (pressed || !tripInfoReady || sendingLocation || isTerminal) && { opacity: 0.78 }]}
             >
               <LinearGradient
-                colors={canStart ? ['#1D4ED8', '#2563EB'] : ['#F97316', '#EA580C']}
+                colors={!tripInfoReady ? ['#64748B', '#475569'] : canStart ? ['#1D4ED8', '#2563EB'] : ['#F97316', '#EA580C']}
                 style={styles.routeMiniActionGrad}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                {canStart && actionBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={canStart ? 'play' : 'locate'} size={17} color="#FFF" />}
-                <Text style={styles.routeMiniActionText}>{canStart ? 'Başlat' : 'Konum Paylaş'}</Text>
+                {canStart && actionBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={!tripInfoReady ? 'time-outline' : canStart ? 'play' : 'locate'} size={17} color="#FFF" />}
+                <Text style={styles.routeMiniActionText}>{!tripInfoReady ? 'Hazırlanıyor' : canStart ? 'Başlat' : 'Konum Paylaş'}</Text>
               </LinearGradient>
             </Pressable>
             <Pressable
               onPress={onNavigate}
-              disabled={navigationDisabled || isTerminal}
-              style={({ pressed }) => [styles.routeMiniAction, (pressed || navigationDisabled || isTerminal) && { opacity: 0.78 }]}
+              disabled={!tripInfoReady || navigationDisabled || isTerminal}
+              style={({ pressed }) => [styles.routeMiniAction, (pressed || !tripInfoReady || navigationDisabled || isTerminal) && { opacity: 0.78 }]}
             >
               <LinearGradient
-                colors={navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
+                colors={!tripInfoReady || navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
                 style={styles.routeMiniActionGrad}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
@@ -344,8 +351,8 @@ export default function LeylekTripLiveRideChrome({
           <View style={styles.primaryActionRow} pointerEvents="box-none">
             <Pressable
               onPress={handleCallPress}
-              disabled={callBusy || isTerminal}
-              style={({ pressed }) => [styles.primaryCircleButton, styles.callCircleButton, (pressed || callBusy || isTerminal) && { opacity: 0.72 }]}
+              disabled={!tripInfoReady || callBusy || isTerminal}
+              style={({ pressed }) => [styles.primaryCircleButton, styles.callCircleButton, (pressed || !tripInfoReady || callBusy || isTerminal) && { opacity: 0.72 }]}
               accessibilityRole="button"
               accessibilityLabel={callButtonLabel}
             >
@@ -358,20 +365,20 @@ export default function LeylekTripLiveRideChrome({
               <Pressable
                 style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
                 onPress={onQrFinish}
-                disabled={actionBusy || isTerminal}
+                disabled={!tripInfoReady || actionBusy || isTerminal}
               >
-                <LinearGradient colors={isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']} style={styles.finishButtonGradient}>
+                <LinearGradient colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']} style={styles.finishButtonGradient}>
                   <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                  <Text style={styles.finishButtonText}>{qrButtonLabel}</Text>
+                  <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
                 </LinearGradient>
               </Pressable>
             </Animated.View>
             <Pressable
-              style={({ pressed }) => [styles.finishButton, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+              style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy || isTerminal) && { opacity: 0.76 }]}
               onPress={onForceFinish}
-              disabled={actionBusy || isTerminal}
+              disabled={!tripInfoReady || actionBusy || isTerminal}
             >
-              <LinearGradient colors={isTerminal ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
+              <LinearGradient colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
                 <Ionicons name="warning-outline" size={18} color="#FFF" />
                 <Text style={styles.finishButtonText}>Zorla Bitir</Text>
               </LinearGradient>

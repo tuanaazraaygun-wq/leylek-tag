@@ -482,6 +482,15 @@ export function SocketProvider({ children }: SocketProviderProps) {
               ? String(data.user_id)
               : userIdRef.current;
         console.log(`[socket] registered sid=${lastRegisteredSocketSid || 'null'} user_id=${lastRegisteredSocketUserId || 'null'}`);
+        try {
+          const roomUserId = lastRegisteredSocketUserId || userIdRef.current;
+          if (roomUserId) {
+            socket.emit('join_user_room', { user_id: roomUserId });
+            console.log(`[socket] user room joined user_id=${roomUserId}`);
+          }
+        } catch (e) {
+          console.warn('[socket] user room join emit failed', e);
+        }
         setIsRegistered(true);
         if (registerTimerRef.current) {
           clearTimeout(registerTimerRef.current);

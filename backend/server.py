@@ -527,8 +527,19 @@ async def register(sid, data):
     logger.info("[SOCKET MAP] user_id=%s sids=%s", resolved_lower[:96], _all_sids_for_registered_user(resolved_lower))
     logger.info("[SOCKET MAP FULL] connected_users keys=%s", list(connected_users.keys()))
 
+    room_names = {
+        _normalize_user_room(resolved_uid),
+        _normalize_user_room(resolved_lower),
+    }
+    if raw_lower and raw_lower != resolved_lower:
+        room_names.add(_normalize_user_room(raw_lower))
+    if client_declares_uid:
+        room_names.add(_normalize_user_room(client_declares_uid))
+    room_names = {r for r in room_names if r}
     room_name = _normalize_user_room(resolved_uid)
-    await sio.enter_room(sid, room_name)
+    for rn in sorted(room_names):
+        await sio.enter_room(sid, rn)
+        logger.info("[SOCKET USER ROOM] joined sid=%s room=%s", sid, rn)
     print(f"JOIN ROOM: {resolved_uid}")
     logger.info("JOIN ROOM: %s", resolved_uid)
 
@@ -562,6 +573,35 @@ async def register(sid, data):
             asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_uid))
         except Exception:
             pass
+
+
+@sio.on("join_user_room")
+async def sio_join_user_room(sid, data):
+    """Client reconnect sonrası kişisel user_<id> odasını yeniden garanti eder."""
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    if not uid:
+        logger.warning("[SOCKET USER ROOM] join_user_room not_registered sid=%s", sid)
+        await sio.emit("user_room_joined", {"success": False, "error": "not_registered"}, room=sid)
+        return
+    raw_user = str(data.get("user_id") or data.get("userId") or uid).strip()
+    keys = {uid, uid.lower()}
+    try:
+        resolved = await resolve_user_id(raw_user or uid)
+        if resolved:
+            keys.add(str(resolved).strip())
+            keys.add(str(resolved).strip().lower())
+    except Exception:
+        pass
+    if raw_user:
+        keys.add(raw_user)
+        keys.add(raw_user.lower())
+    rooms = {_normalize_user_room(k) for k in keys if k}
+    for room in sorted(r for r in rooms if r):
+        await sio.enter_room(sid, room)
+        logger.info("[SOCKET USER ROOM] joined sid=%s room=%s via=join_user_room", sid, room)
+    await sio.emit("user_room_joined", {"success": True, "user_id": uid, "rooms": sorted(rooms)}, room=sid)
 
 @sio.event
 async def call_user(sid, data):
@@ -1943,14 +1983,19 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                     await sio.emit(event_name, payload, to=sid)
                 except Exception as em:
                     logger.warning("%s emit to=sid sid=%s err=%s", event_name, sid, em)
+            try:
+                await sio.emit(event_name, payload, room=room)
+            except Exception as em:
+                logger.warning("%s emit room=%s err=%s", event_name, room, em)
             if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=%s", str(resolved_uid or raw_in).lower(), sorted(all_sids))
+                logger.info("[muhabbet_ack] sent user=%s sids=%s room=%s", str(resolved_uid or raw_in).lower(), sorted(all_sids), room)
             else:
                 logger.info(
-                    "📤 %s to=sids user=%s… count=%s tried_keys=%s",
+                    "📤 %s to=sids+room user=%s… count=%s room=%s tried_keys=%s",
                     event_name,
                     str(resolved_uid or raw_in).lower()[:13],
                     len(all_sids),
+                    room,
                     sorted(keys_to_try),
                 )
         else:
