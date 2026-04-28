@@ -803,6 +803,7 @@ export default function MuhabbetChatScreen({
     if (!cid) return;
     const s = getOrCreateSocket();
     const onMatch = (data: { conversation_id?: string }) => {
+      console.log('LEYLEK KEY EVENT:', 'leylek_key_match_completed', data);
       const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
       if (m && m === cid.toLowerCase()) {
         pushSystemCard('green', 'Leylek Anahtar ile eşleşme tamamlandı.');
@@ -826,6 +827,7 @@ export default function MuhabbetChatScreen({
       return !!conv && conv === cidLo;
     };
     const onConvertRequest = (data: { conversation_id?: string; request_id?: string }) => {
+      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_request', data);
       if (!convMatches(data)) return;
       const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
       if (!rid) return;
@@ -836,6 +838,7 @@ export default function MuhabbetChatScreen({
       setTripConvertInModal({ rid });
     };
     const onConvertSent = (data: { conversation_id?: string }) => {
+      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_request_sent', data);
       if (!convMatches(data)) return;
       if (pendingActionRef.current?.kind === 'trip_convert_request') pendingActionRef.current = null;
       setTripConvertLoading(false);
@@ -843,6 +846,7 @@ export default function MuhabbetChatScreen({
       setTripLockReason('muhabbet_trip_convert_request_sent');
     };
     const onConvertConfirmed = (data: MuhabbetTripSessionSocketPayload) => {
+      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_confirmed', data);
       if (!convMatches(data)) return;
       if (
         pendingActionRef.current?.kind === 'trip_convert_request' ||
@@ -860,6 +864,8 @@ export default function MuhabbetChatScreen({
       navigateToLeylekTripSession(data);
     };
     const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
+      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_session_ready', data);
+      console.log('LEYLEK SESSION READY:', data?.session_id || data?.sessionId || data?.session?.id);
       if (!convMatches(data)) return;
       if (
         pendingActionRef.current?.kind === 'trip_convert_request' ||
@@ -872,6 +878,7 @@ export default function MuhabbetChatScreen({
       navigateToLeylekTripSession(data);
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
+      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_declined', data);
       if (!convMatches(data)) return;
       if (
         pendingActionRef.current?.kind === 'trip_convert_request' ||
@@ -886,6 +893,7 @@ export default function MuhabbetChatScreen({
       Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
     };
     const onConvertError = (data: { code?: string; detail?: string; message?: string }) => {
+      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_error', data);
       if (data?.code === 'not_registered') {
         void (async () => {
           const retried = await retryPendingActionAfterNotRegistered();
@@ -936,6 +944,7 @@ export default function MuhabbetChatScreen({
       from_user_id?: string;
       initiator_user_id?: string;
     }) => {
+      console.log('LEYLEK KEY EVENT:', 'leylek_pair_match_request', data);
       console.log('[chat] received leylek_pair_match_request data=', data);
       const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
       if (conv !== cidLo) return;

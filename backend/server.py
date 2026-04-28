@@ -22317,6 +22317,7 @@ async def _sio_leylek_pair_request_handler(sid, data):
     rid = r["request_id"]
     target = r["target"]
     role = r.get("initiator_role") or ""
+    logger.info("[leylek-key] request_created conversation_id=%s request_id=%s requester=%s target=%s", cid, rid, str(uid)[:13], str(target)[:13] if target else "")
     logger.info("[leylek_pair_request] requester=%s target=%s conversation=%s", uid, target, cid)
     logger.info(
         "[leylek_pair_request] participants requester=%s target=%s conversation_id=%s request_id=%s",
@@ -22387,7 +22388,13 @@ async def _leylek_pair_accept_from_socket(uid: str, cid: str, rid: str) -> dict:
     ).eq("id", cid).execute()
     _muhabbet_mark_ride_listing_matched_for_muhabbet_conversation(cid)
     await _muhabbet_notify_leylek_key_matched(initiator, uid, cid)
-    return {"ok": True, "conversation_id": cid}
+    session_row = await _muhabbet_create_trip_session_after_leylek_key_accept(
+        acceptor_uid=uid,
+        conversation_id=cid,
+        pair_request_id=rid,
+        initiator_uid=initiator,
+    )
+    return {"ok": True, "conversation_id": cid, "session_id": session_row.get("id") if session_row else None}
 
 
 @sio.on("leylek_pair_accept")
@@ -22814,7 +22821,116 @@ async def _emit_muhabbet_trip_session_ready(session_row: dict) -> None:
         str(session_row.get("driver_id") or "").strip(),
     ):
         if uid:
+            logger.info(
+                "[leylek-key] emit session_ready to uid=%s conversation_id=%s session_id=%s",
+                uid[:13],
+                payload.get("conversation_id"),
+                payload.get("session_id"),
+            )
             await emit_socket_event_to_user(uid, "muhabbet_trip_session_ready", payload)
+
+
+async def _muhabbet_create_trip_session_after_leylek_key_accept(
+    *,
+    acceptor_uid: str,
+    conversation_id: str,
+    pair_request_id: str,
+    initiator_uid: str,
+) -> dict | None:
+    """Leylek Anahtar accept -> Muhabbet trip session only; never touches normal ride state."""
+    uid = str(acceptor_uid or "").strip().lower()
+    cid = str(conversation_id or "").strip().lower()
+    rid = str(pair_request_id or "").strip().lower()
+    initiator = str(initiator_uid or "").strip().lower()
+    logger.info("[leylek-key] accept_received conversation_id=%s pair_request_id=%s acceptor=%s initiator=%s", cid, rid, uid[:13], initiator[:13])
+    if not uid or not cid:
+        logger.warning("[leylek-key] accept_missing_context conversation_id=%s acceptor=%s", cid, uid[:13])
+        return None
+
+    try:
+        existing = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("*")
+            .eq("conversation_id", cid)
+            .in_("status", ["ready", "started", "active"])
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            session_row = dict(existing.data[0])
+            payload = {
+                "request_id": session_row.get("conversion_request_id"),
+                "conversation_id": cid,
+                "session_id": session_row.get("id"),
+            }
+            for target_uid in (str(session_row.get("requester_user_id") or initiator).strip(), uid):
+                if target_uid:
+                    await emit_socket_event_to_user(target_uid, "muhabbet_trip_convert_confirmed", payload)
+            await _emit_muhabbet_trip_session_ready(session_row)
+            logger.info("[leylek-key] existing_session_ready session_id=%s conversation_id=%s", session_row.get("id"), cid)
+            return session_row
+
+        ctx = _muhabbet_trip_conversion_context(uid, cid)
+        if not ctx.get("ok"):
+            logger.warning("[leylek-key] conversion_context_failed conversation_id=%s code=%s detail=%s", cid, ctx.get("code"), ctx.get("detail"))
+            return None
+
+        requester_uid = initiator or str(ctx.get("driver_id") or ctx.get("requester_user_id") or uid).strip().lower()
+        target_uid = uid
+        now_iso = datetime.now(timezone.utc).isoformat()
+        ins = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .insert(
+                {
+                    "conversation_id": cid,
+                    "listing_id": ctx.get("listing_id"),
+                    "listing_match_request_id": ctx.get("listing_match_request_id"),
+                    "requester_user_id": requester_uid,
+                    "target_user_id": target_uid,
+                    "passenger_id": ctx.get("passenger_id"),
+                    "driver_id": ctx.get("driver_id"),
+                    "status": "accepted",
+                    "city": ctx.get("city"),
+                    "pickup_text": ctx.get("pickup_text"),
+                    "pickup_lat": ctx.get("pickup_lat"),
+                    "pickup_lng": ctx.get("pickup_lng"),
+                    "dropoff_text": ctx.get("dropoff_text"),
+                    "dropoff_lat": ctx.get("dropoff_lat"),
+                    "dropoff_lng": ctx.get("dropoff_lng"),
+                    "agreed_price": ctx.get("agreed_price"),
+                    "vehicle_kind": ctx.get("vehicle_kind"),
+                    "payment_method": ctx.get("payment_method"),
+                    "requested_at": now_iso,
+                    "responded_at": now_iso,
+                    "updated_at": now_iso,
+                }
+            )
+            .execute()
+        )
+        if not ins.data or not ins.data[0].get("id"):
+            logger.warning("[leylek-key] request_create_failed conversation_id=%s", cid)
+            return None
+        conversion_row = dict(ins.data[0])
+        conversion_request_id = str(conversion_row.get("id") or "").strip().lower()
+        logger.info("[leylek-key] request_created conversation_id=%s request_id=%s", cid, conversion_request_id)
+        logger.info("[leylek-key] conversion_status_updated request_id=%s status=accepted", conversion_request_id)
+
+        session_row = _muhabbet_trip_create_or_get_session_for_request(conversion_row)
+        logger.info("[leylek-key] trip_session_insert_ok session_id=%s request_id=%s", session_row.get("id"), conversion_request_id)
+        payload = {
+            "request_id": conversion_request_id,
+            "conversation_id": cid,
+            "session_id": session_row.get("id"),
+        }
+        for target in (requester_uid, target_uid):
+            if target:
+                await emit_socket_event_to_user(target, "muhabbet_trip_convert_confirmed", payload)
+        await _emit_muhabbet_trip_session_ready(session_row)
+        return session_row
+    except Exception as e:
+        logger.exception("[leylek-key] trip_session_create_failed conversation_id=%s pair_request_id=%s err=%s", cid, rid, e)
+        return None
 
 
 async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: str = "muhabbet_trip_session_updated") -> None:
