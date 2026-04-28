@@ -21218,8 +21218,8 @@ def _parse_iso_dt(val: object) -> Optional[datetime]:
 
 def _muhabbet_conversation_get_or_create_id(sen: str, rec: str) -> str:
     """
-    user_a, user_b string (uuid) karşılaştırmalı sıralı; aynı çift için tek satır (UNIQUE).
-    Yarış durumunda benzersiz ihlalinde tekrar select.
+    Pair-scoped eski Muhabbet sohbetleri için user_a/user_b sıralı tek sohbet.
+    Listing match accept artık bu helper'ı kullanmaz; match-scoped yeni conversation açar.
     """
     sen = (sen or "").strip().lower()
     rec = (rec or "").strip().lower()
@@ -21247,6 +21247,76 @@ def _muhabbet_conversation_get_or_create_id(sen: str, rec: str) -> str:
             if ex2.data and ex2.data[0].get("id"):
                 return str(ex2.data[0]["id"]).strip().lower()
         logger.error("muhabbet_conversation_get_or_create_id: %s", e)
+        raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı") from e
+    raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı")
+
+
+def _muhabbet_conversation_create_for_match_request(sen: str, rec: str, request_id: str) -> str:
+    """
+    Listing match kabulü için yeni, match-scoped conversation.
+    Aynı iki kullanıcının önceki Muhabbet sohbetleri okunabilir kalır; yeni kabul eski mesajları reuse etmez.
+    """
+    sen = (sen or "").strip().lower()
+    rec = (rec or "").strip().lower()
+    rid = (request_id or "").strip().lower()
+    if not sen or not rec or sen == rec:
+        raise HTTPException(status_code=400, detail="Geçersiz eşleşme katılımcıları")
+    if not rid:
+        raise HTTPException(status_code=400, detail="Geçersiz eşleşme isteği")
+    ua, ub = (sen, rec) if sen < rec else (rec, sen)
+    try:
+        ins = (
+            supabase.table("conversations")
+            .insert(
+                {
+                    "user_a": ua,
+                    "user_b": ub,
+                    "conversation_kind": "listing_match_request",
+                    "listing_match_request_id": rid,
+                }
+            )
+            .execute()
+        )
+        if ins.data and ins.data[0].get("id"):
+            conv_id = str(ins.data[0]["id"]).strip().lower()
+            logger.info("[muhabbet_conversation] match_scoped_created request_id=%s conversation_id=%s", rid, conv_id)
+            return conv_id
+    except Exception as e:
+        err = (str(e) or "").lower()
+        logger.error("[muhabbet_conversation] match_scoped_create_failed request_id=%s err=%s", rid, e)
+        if ("23505" in str(e) or "unique" in err or "duplicate" in err) and rid:
+            try:
+                ex = (
+                    supabase.table("conversations")
+                    .select("id")
+                    .eq("listing_match_request_id", rid)
+                    .limit(1)
+                    .execute()
+                )
+                if ex.data and ex.data[0].get("id"):
+                    return str(ex.data[0]["id"]).strip().lower()
+            except Exception:
+                pass
+        if "conversation_kind" in err or "listing_match_request_id" in err or "column" in err:
+            try:
+                ins2 = supabase.table("conversations").insert({"user_a": ua, "user_b": ub}).execute()
+                if ins2.data and ins2.data[0].get("id"):
+                    conv_id = str(ins2.data[0]["id"]).strip().lower()
+                    logger.info("[muhabbet_conversation] match_scoped_created_legacy_schema request_id=%s conversation_id=%s", rid, conv_id)
+                    return conv_id
+            except Exception as e2:
+                err2 = (str(e2) or "").lower()
+                if "23505" in str(e2) or "unique" in err2 or "duplicate" in err2:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Muhabbet match-scoped conversation migration gerekli: conversations(user_a,user_b) unique kısıtı kaldırılmalı.",
+                    ) from e2
+                raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı") from e2
+        if "23505" in str(e) or "unique" in err or "duplicate" in err:
+            raise HTTPException(
+                status_code=500,
+                detail="Muhabbet match-scoped conversation migration gerekli: conversations(user_a,user_b) unique kısıtı kaldırılmalı.",
+            ) from e
         raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı") from e
     raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı")
 
@@ -21305,7 +21375,7 @@ async def muhabbet_match_request_accept(
 ):
     """
     Kabul: yalnızca ilan sahibi (receiver). İdempotent: zaten kabul+conversation varsa aynı yanıt.
-    Aynı iki kullanıcı çifti için mevcut conversations satırı reuse edilir.
+    Listing match kabulü her request için yeni conversation açar; eski pair sohbetleri okunabilir kalır.
     """
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
@@ -21339,7 +21409,7 @@ async def muhabbet_match_request_accept(
             sen0 = str(row.get("sender_user_id") or "").strip().lower()
             rec0 = str(row.get("receiver_user_id") or "").strip().lower()
             lid_rec = str(row.get("listing_id") or "").strip().lower()
-            conversation_id = _muhabbet_conversation_get_or_create_id(sen0, rec0)
+            conversation_id = _muhabbet_conversation_create_for_match_request(sen0, rec0, rid)
             nowx = _muhabbet_listing_row_ts()
             supabase.table("listing_match_requests").update(
                 {"conversation_id": conversation_id, "updated_at": nowx}
@@ -21372,7 +21442,7 @@ async def muhabbet_match_request_accept(
         now_ts = _muhabbet_listing_row_ts()
         sen = str(row.get("sender_user_id") or "").strip().lower()
         rec = str(row.get("receiver_user_id") or "").strip().lower()
-        conversation_id = _muhabbet_conversation_get_or_create_id(sen, rec)
+        conversation_id = _muhabbet_conversation_create_for_match_request(sen, rec, rid)
         supabase.table("listing_match_requests").update(
             {
                 "status": "accepted",
