@@ -166,3 +166,7 @@ node_modules
 .env 
 frontend/.metro-cache/
 platform-tools/ 
+website/.next/
+website/node_modules/
+website/.next/
+website/node_modules/
