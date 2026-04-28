@@ -19234,6 +19234,7 @@ async def muhabbet_create_report(
 _MUHABBET_LISTING_TYPES = frozenset({"gidiyorum", "gidecegim", "beni_alsin", "ozel_sofor"})
 _MUHABBET_LISTING_ROLES = frozenset({"driver", "passenger", "private_driver"})
 _MUHABBET_LISTING_STATUSES = frozenset({"active", "pending_chat", "matched", "closed", "cancelled"})
+_MUHABBET_LISTING_SCOPES = frozenset({"local", "intercity"})
 _MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelled"})
 
 
@@ -19397,6 +19398,9 @@ _RIDE_LISTINGS_INSERT_COLUMN_WHITELIST = frozenset(
         "linked_user_route_id",
         "linked_pattern_hash",
         "city",
+        "listing_scope",
+        "origin_city",
+        "destination_city",
         "from_text",
         "to_text",
         "start_lat",
@@ -19454,6 +19458,15 @@ def _ride_listing_response_row(row: dict) -> dict:
     uid = _ride_listing_creator_uid(r)
     if uid and not r.get("created_by_user_id"):
         r["created_by_user_id"] = uid
+    scope = str(r.get("listing_scope") or "local").strip().lower()
+    if scope not in _MUHABBET_LISTING_SCOPES:
+        scope = "local"
+    r["listing_scope"] = scope
+    city = str(r.get("city") or "").strip()
+    if not str(r.get("origin_city") or "").strip():
+        r["origin_city"] = city
+    if not str(r.get("destination_city") or "").strip():
+        r["destination_city"] = city
     vk = str(r.get("vehicle_kind") or "car").strip().lower()
     if vk not in ("car", "motorcycle"):
         vk = "car"
@@ -19477,7 +19490,10 @@ class MuhabbetListingCreateBody(BaseModel):
     benzeri alanları `note` içinde gömebilir — kalıcı şema değil; sonraki fazda ayrı kolonlar eklenecek.
     """
 
-    city: str
+    city: Optional[str] = None
+    listing_scope: Optional[str] = Field(default="local", description="local | intercity")
+    origin_city: Optional[str] = None
+    destination_city: Optional[str] = None
     from_text: str
     to_text: str
     start_lat: Optional[float] = None
@@ -19493,12 +19509,28 @@ class MuhabbetListingCreateBody(BaseModel):
     linked_pattern_hash: Optional[str] = None
     vehicle_kind: Optional[str] = Field(default="car", description="car | motorcycle")
 
-    @field_validator("city", "from_text", "to_text", mode="before")
+    @field_validator("from_text", "to_text", mode="before")
     @classmethod
     def _strip_required(cls, v: str) -> str:
         s = (v or "").strip()
         if not s:
             raise ValueError("Zorunlu alan boş olamaz")
+        return s
+
+    @field_validator("city", "origin_city", "destination_city", mode="before")
+    @classmethod
+    def _strip_optional_city(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v or "").strip()
+        return s or None
+
+    @field_validator("listing_scope", mode="before")
+    @classmethod
+    def _listing_scope_v(cls, v: Optional[str]) -> str:
+        s = str(v or "local").strip().lower()
+        if s not in _MUHABBET_LISTING_SCOPES:
+            raise ValueError("listing_scope local veya intercity olmalı")
         return s
 
     @field_validator("listing_type", mode="before")
@@ -19998,17 +20030,43 @@ def _muhabbet_listing_expires_at_default_iso() -> str:
     return (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat()
 
 
+def _muhabbet_listing_scope_city_values(body: MuhabbetListingCreateBody) -> tuple[str, str, str, str]:
+    """Muhabbet listing scope/city normalizasyonu; local varsayılanı mevcut davranışı korur."""
+    scope = str(body.listing_scope or "local").strip().lower()
+    if scope not in _MUHABBET_LISTING_SCOPES:
+        raise HTTPException(status_code=400, detail="Geçersiz listing_scope")
+    city = str(body.city or "").strip()
+    if scope == "local":
+        if not city:
+            raise HTTPException(status_code=400, detail="city gerekli")
+        return scope, city, city, city
+
+    origin = str(body.origin_city or "").strip()
+    destination = str(body.destination_city or "").strip()
+    if not origin or not destination:
+        raise HTTPException(status_code=400, detail="Şehirler arası teklif için origin_city ve destination_city gerekli")
+    if _muhabbet_feed_city_key(origin) == _muhabbet_feed_city_key(destination):
+        raise HTTPException(status_code=400, detail="Şehirler arası teklifte kalkış ve varış şehirleri farklı olmalı")
+    return scope, origin, origin, destination
+
+
 def _muhabbet_listing_core_insert_dict(
     owner_col: str,
     uid: str,
     body: MuhabbetListingCreateBody,
     city: str,
+    listing_scope: str,
+    origin_city: str,
+    destination_city: str,
 ) -> dict:
     """ride_listings çekirdek kolonları (FK + rota + meta)."""
     dep = body.departure_time.isoformat() if body.departure_time else None
     return {
         owner_col: uid,
         "city": city,
+        "listing_scope": listing_scope,
+        "origin_city": origin_city,
+        "destination_city": destination_city,
         "from_text": body.from_text,
         "to_text": body.to_text,
         "start_lat": body.start_lat,
@@ -20031,6 +20089,9 @@ def _muhabbet_listing_insert_payload_variants(
     uid: str,
     body: MuhabbetListingCreateBody,
     city: str,
+    listing_scope: str,
+    origin_city: str,
+    destination_city: str,
     lrid: Optional[str],
     lph: Optional[str],
 ) -> list[dict]:
@@ -20038,7 +20099,7 @@ def _muhabbet_listing_insert_payload_variants(
     Eski ride_listings tablolarında linked_* veya updated_at kolonları yoksa insert kırılmasın diye
     azalan kolon setleri (sırayla denenir).
     """
-    core = _muhabbet_listing_core_insert_dict(owner_col, uid, body, city)
+    core = _muhabbet_listing_core_insert_dict(owner_col, uid, body, city, listing_scope, origin_city, destination_city)
     seen: set[str] = set()
     out: list[dict] = []
 
@@ -20109,7 +20170,7 @@ async def muhabbet_listing_create(
             ) from None
         if opened_today >= 20:
             raise HTTPException(status_code=400, detail="Bugün en fazla 20 teklif açabilirsiniz.")
-        c = body.city
+        listing_scope, c, origin_city, destination_city = _muhabbet_listing_scope_city_values(body)
         lrid: Optional[str] = None
         lph = (body.linked_pattern_hash or "").strip() or None
         if body.linked_user_route_id:
@@ -20135,13 +20196,16 @@ async def muhabbet_listing_create(
             body_dump = body.model_dump()
         logger.info("%s validated body model_dump=%s", LP, body_dump)
         logger.info(
-            "%s create request auth_sub=%s resolved_uid=%s owner_col=%s city=%s listing_type=%s role_type=%s "
-            "departure=%s price=%s note_len=%s linked_route=%s",
+            "%s create request auth_sub=%s resolved_uid=%s owner_col=%s city=%s scope=%s origin_city=%s destination_city=%s "
+            "listing_type=%s role_type=%s departure=%s price=%s note_len=%s linked_route=%s",
             LP,
             str(authenticated_user_id)[:48],
             uid,
             owner_col,
             (c or "")[:80],
+            listing_scope,
+            (origin_city or "")[:80],
+            (destination_city or "")[:80],
             body.listing_type,
             body.role_type,
             body.departure_time.isoformat() if body.departure_time else None,
@@ -20149,7 +20213,17 @@ async def muhabbet_listing_create(
             len(body.note or "") if body.note else 0,
             lrid,
         )
-        variants = _muhabbet_listing_insert_payload_variants(owner_col, uid, body, c, lrid, lph)
+        variants = _muhabbet_listing_insert_payload_variants(
+            owner_col,
+            uid,
+            body,
+            c,
+            listing_scope,
+            origin_city,
+            destination_city,
+            lrid,
+            lph,
+        )
         last_exc: Optional[BaseException] = None
         ins = None
         for idx, insert_payload in enumerate(variants):
@@ -20276,6 +20350,7 @@ async def muhabbet_listings_feed(
     limit: int = 30,
     listing_type: Optional[str] = None,
     role_type: Optional[str] = None,
+    listing_scope: Optional[str] = None,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """Şehirdeki yalnızca status=active ve expires_at gelecekteki ilanlar; match_request özeti, social proof sayım."""
@@ -20286,27 +20361,75 @@ async def muhabbet_listings_feed(
             raise HTTPException(status_code=400, detail="city gerekli")
         c_key = _muhabbet_feed_city_key(c_raw)
         lim = max(1, min(int(limit or 30), 100))
-        q = supabase.table("ride_listings").select("*").ilike("city", c_raw).eq("status", "active")
-        if (listing_type or "").strip():
-            lt = (listing_type or "").strip()
-            if lt not in _MUHABBET_LISTING_TYPES:
-                raise HTTPException(status_code=400, detail="Geçersiz listing_type")
-            q = q.eq("listing_type", lt)
-        if (role_type or "").strip():
-            rt = (role_type or "").strip()
-            if rt not in _MUHABBET_LISTING_ROLES:
-                raise HTTPException(status_code=400, detail="Geçersiz role_type")
-            q = q.eq("role_type", rt)
-        res = q.order("created_at", desc=True).limit(lim).execute()
-        rows = [_ride_listing_response_row(dict(x)) for x in (res.data or [])]
+        scope = str(listing_scope or "local").strip().lower()
+        if scope not in _MUHABBET_LISTING_SCOPES:
+            raise HTTPException(status_code=400, detail="Geçersiz listing_scope")
+
+        def apply_listing_filters(query):
+            if (listing_type or "").strip():
+                lt = (listing_type or "").strip()
+                if lt not in _MUHABBET_LISTING_TYPES:
+                    raise HTTPException(status_code=400, detail="Geçersiz listing_type")
+                query = query.eq("listing_type", lt)
+            if (role_type or "").strip():
+                rt = (role_type or "").strip()
+                if rt not in _MUHABBET_LISTING_ROLES:
+                    raise HTTPException(status_code=400, detail="Geçersiz role_type")
+                query = query.eq("role_type", rt)
+            return query
+
+        raw_rows: list[dict] = []
+        if scope == "intercity":
+            seen_ids: set[str] = set()
+            for city_col in ("origin_city", "destination_city"):
+                q = (
+                    supabase.table("ride_listings")
+                    .select("*")
+                    .eq("status", "active")
+                    .eq("listing_scope", "intercity")
+                    .ilike(city_col, c_raw)
+                )
+                q = apply_listing_filters(q)
+                res_part = q.order("created_at", desc=True).limit(lim).execute()
+                for x in res_part.data or []:
+                    row = dict(x)
+                    rid = str(row.get("id") or "")
+                    if rid and rid in seen_ids:
+                        continue
+                    if rid:
+                        seen_ids.add(rid)
+                    raw_rows.append(row)
+            raw_rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+        else:
+            q = (
+                supabase.table("ride_listings")
+                .select("*")
+                .ilike("city", c_raw)
+                .eq("status", "active")
+                .eq("listing_scope", "local")
+            )
+            q = apply_listing_filters(q)
+            res = q.order("created_at", desc=True).limit(lim).execute()
+            raw_rows = [dict(x) for x in (res.data or [])]
+        rows = [_ride_listing_response_row(x) for x in raw_rows]
         rows = [
             r
             for r in rows
-            if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key
+            if (
+                (
+                    scope == "intercity"
+                    and (
+                        _muhabbet_feed_city_key(str(r.get("origin_city") or "")) == c_key
+                        or _muhabbet_feed_city_key(str(r.get("destination_city") or "")) == c_key
+                    )
+                )
+                or (scope == "local" and _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key)
+            )
             and not _muhabbet_listing_departure_passed(r)
             and not _muhabbet_listing_offer_expired(r)
             and not (r.get("matched_conversation_id") or r.get("accepted_match_request_id"))
             and str(r.get("status") or "").strip().lower() == "active"
+            and str(r.get("listing_scope") or "local").strip().lower() == scope
         ][:lim]
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
