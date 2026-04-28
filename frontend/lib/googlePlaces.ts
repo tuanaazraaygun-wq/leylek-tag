@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 
 const AUTOCOMPLETE_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
 const DETAILS_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
+const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 
 export function getGoogleMapsApiKey(): string {
   const fromEnv = typeof process !== 'undefined' ? process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() : '';
@@ -36,6 +37,17 @@ interface GoogleDetailsResponse {
     formatted_address?: string;
     geometry?: { location?: { lat: number; lng: number } };
   };
+  status: string;
+  error_message?: string;
+}
+
+interface GoogleGeocodeResponse {
+  results?: {
+    formatted_address?: string;
+    place_id?: string;
+    types?: string[];
+    geometry?: { location?: { lat: number; lng: number } };
+  }[];
   status: string;
   error_message?: string;
 }
@@ -144,4 +156,39 @@ export async function googlePlaceDetailsLatLng(
     lng: loc.lng,
     formattedAddress: data.result.formatted_address || '',
   };
+}
+
+export async function googleGeocodeText(
+  address: string,
+  apiKey: string,
+  bias: GoogleAutocompleteBias | null,
+): Promise<{ lat: number; lng: number; formattedAddress: string; placeId?: string; types?: string[] }[]> {
+  const params = new URLSearchParams({
+    address: address.trim(),
+    key: apiKey,
+    language: 'tr',
+    components: 'country:TR',
+  });
+  if (bias) {
+    const latDelta = Math.max(0.04, Math.min(0.65, bias.radiusMeters / 111_000));
+    const lngDelta = latDelta / Math.max(0.35, Math.cos((bias.latitude * Math.PI) / 180));
+    params.set(
+      'bounds',
+      `${bias.latitude - latDelta},${bias.longitude - lngDelta}|${bias.latitude + latDelta},${bias.longitude + lngDelta}`,
+    );
+  }
+  const res = await fetch(`${GEOCODE_URL}?${params.toString()}`);
+  const data = (await res.json()) as GoogleGeocodeResponse;
+  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+    throw new Error(data.error_message || data.status || 'geocode_failed');
+  }
+  return (data.results || [])
+    .map((r) => ({
+      lat: Number(r.geometry?.location?.lat),
+      lng: Number(r.geometry?.location?.lng),
+      formattedAddress: r.formatted_address || '',
+      placeId: r.place_id,
+      types: r.types,
+    }))
+    .filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng) && !!r.formattedAddress);
 }

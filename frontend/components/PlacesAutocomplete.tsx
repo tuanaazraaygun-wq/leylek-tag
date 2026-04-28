@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   getGoogleMapsApiKey,
+  googleGeocodeText,
   googlePlacesAutocompleteMerged,
   googlePlaceDetailsLatLng,
   type GoogleAutocompleteBias,
@@ -55,13 +56,38 @@ const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } =
 };
 
 /** Kayıtlı şehir adı CITY_DATA anahtarıyla birebir olmayabilir (büyük/küçük harf vb.) */
+function foldTrAscii(raw: string): string {
+  return raw
+    .trim()
+    .replace(/İ/g, 'I')
+    .replace(/ı/g, 'i')
+    .replace(/Ş/g, 'S')
+    .replace(/ş/g, 's')
+    .replace(/Ğ/g, 'G')
+    .replace(/ğ/g, 'g')
+    .replace(/Ü/g, 'U')
+    .replace(/ü/g, 'u')
+    .replace(/Ö/g, 'O')
+    .replace(/ö/g, 'o')
+    .replace(/Ç/g, 'C')
+    .replace(/ç/g, 'c')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function normCityNeedle(raw: string): string {
+  return foldTrAscii(raw).toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ');
+}
+
 function resolveCityDataKey(raw: string): string | null {
   const t = raw.trim();
   if (!t) return null;
   if (CITY_DATA[t]) return t;
   const lower = t.toLocaleLowerCase('tr-TR');
+  const folded = normCityNeedle(t);
   for (const k of Object.keys(CITY_DATA)) {
     if (k.toLocaleLowerCase('tr-TR') === lower) return k;
+    if (normCityNeedle(k) === folded) return k;
   }
   return null;
 }
@@ -119,10 +145,11 @@ function gpsBiasViewbox(lat: number, lng: number, deltaDeg: number): string {
 /** Kullanıcı sorguda başka bir ili açıkça yazdıysa (ör. seyahat), o ilin bbox’ı kullanılır */
 function explicitOtherMajorCityKeyFromQuery(query: string, homeKey: string | null): string | null {
   const q = query.trim().toLocaleLowerCase('tr-TR');
+  const qFolded = normCityNeedle(query);
   if (q.length < 3) return null;
   for (const k of Object.keys(CITY_DATA)) {
     if (homeKey && k === homeKey) continue;
-    if (q.includes(k.toLocaleLowerCase('tr-TR'))) return k;
+    if (q.includes(k.toLocaleLowerCase('tr-TR')) || qFolded.includes(normCityNeedle(k))) return k;
   }
   return null;
 }
@@ -145,6 +172,30 @@ function buildNominatimSearchQuery(rawInput: string, cityLabel: string, forcedCi
     return `${head}, ${effectiveLabel}, Türkiye`;
   }
   return `${head}, Türkiye`;
+}
+
+function buildCityAwareSearchQueryVariants(rawInput: string, cityLabel: string, forcedCityKey: string | null): string[] {
+  const head = rawInput.trim().replace(/\s+/g, ' ');
+  if (!head) return [];
+  const effectiveLabel = (forcedCityKey || cityLabel || '').trim();
+  const variants = [
+    buildNominatimSearchQuery(head, cityLabel, forcedCityKey),
+  ];
+  if (effectiveLabel) {
+    variants.push(`${head} ${effectiveLabel}`);
+    variants.push(`${foldTrAscii(head)} ${foldTrAscii(effectiveLabel)} Turkey`);
+  } else {
+    variants.push(`${foldTrAscii(head)} Turkey`);
+  }
+  const seen = new Set<string>();
+  return variants
+    .map((q) => q.trim().replace(/\s+/g, ' '))
+    .filter((q) => {
+      const key = normCityNeedle(q);
+      if (!q || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -599,13 +650,15 @@ export default function PlacesAutocomplete({
       const explicitOtherKey = explicitOtherMajorCityKeyFromQuery(input, cityKeyHome);
       const effectiveCityKey = explicitOtherKey || cityKeyHome;
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
-      const cityAwareSearchQuery = forceCityInSearch
-        ? buildNominatimSearchQuery(input, cityLabel, explicitOtherKey)
-        : input.trim();
+      const cityAwareSearchQueries = forceCityInSearch
+        ? buildCityAwareSearchQueryVariants(input, cityLabel, explicitOtherKey)
+        : [input.trim()];
+      const cityAwareSearchQuery = cityAwareSearchQueries[0] || input.trim();
 
       if (pickerDebugLabel) {
-        console.log('[picker] cityContext=', cityLabel || null, 'label=', pickerDebugLabel);
-        console.log('[picker] searchQuery=', cityAwareSearchQuery);
+        console.log('[picker] rawText=', input.trim());
+        console.log('[picker] cityContext=', cityLabel || null);
+        console.log('[picker] finalQuery=', cityAwareSearchQuery);
       }
 
       acDiag('AUTOCOMPLETE_INPUT', {
@@ -621,6 +674,12 @@ export default function PlacesAutocomplete({
 
       if (apiKey) {
         try {
+          if (pickerDebugLabel) {
+            console.log('[picker] provider=', 'google');
+            console.log('[picker] rawText=', input.trim());
+            console.log('[picker] cityContext=', cityLabel || null);
+            console.log('[picker] finalQuery=', cityAwareSearchQuery);
+          }
           acDiag('AUTOCOMPLETE_PROVIDER_START', {
             provider: 'google',
             query: cityAwareSearchQuery,
@@ -656,6 +715,56 @@ export default function PlacesAutocomplete({
             error_message: null,
             request_id: requestId,
           });
+          if (pickerDebugLabel) {
+            console.log('[picker] result count=', filtered.length);
+            console.log('[picker] first result=', filtered[0]?.display_name || null);
+          }
+          if (filtered.length === 0) {
+            try {
+              if (pickerDebugLabel) {
+                console.log('[picker] provider=', 'google_geocode');
+                console.log('[picker] rawText=', input.trim());
+                console.log('[picker] cityContext=', cityLabel || null);
+                console.log('[picker] finalQuery=', cityAwareSearchQuery);
+              }
+              const geocoded = await googleGeocodeText(cityAwareSearchQuery, apiKey, gBias);
+              if (requestId !== autocompleteRequestIdRef.current) {
+                return;
+              }
+              filtered = geocoded.map((r, ix) => ({
+                place_id: r.placeId || `google_geocode_${ix}_${r.lat}_${r.lng}`,
+                display_name: r.formattedAddress,
+                lat: String(r.lat),
+                lon: String(r.lng),
+                type: r.types?.[0] || 'geocode',
+                class: 'google_geocode',
+                google_types: r.types,
+              }));
+              filtered = filtered.filter((item) =>
+                passesStrictLocality(item, {
+                  strictCityBounds,
+                  cityLabel,
+                  effectiveCityKey,
+                  cityDataEffective,
+                  biasLatitude,
+                  biasLongitude,
+                  biasDeltaDeg,
+                  usedBiasOnlyBbox: false,
+                }),
+              );
+              if (pickerDebugLabel) {
+                console.log('[picker] result count=', filtered.length);
+                console.log('[picker] first result=', filtered[0]?.display_name || null);
+              }
+            } catch (geocodeErr) {
+              if (pickerDebugLabel) {
+                console.log('[picker] provider=', 'google_geocode');
+                console.log('[picker] result count=', 0);
+                console.log('[picker] first result=', null);
+                console.warn('[picker] google_geocode_error=', geocodeErr instanceof Error ? geocodeErr.message : String(geocodeErr));
+              }
+            }
+          }
         } catch (gErr) {
           const msg = gErr instanceof Error ? gErr.message : String(gErr);
           googleHadError = true;
@@ -682,13 +791,12 @@ export default function PlacesAutocomplete({
           had_google_key: !!apiKey,
           request_id: requestId,
         });
-        const searchQuery = cityAwareSearchQuery;
         const limitPrimary =
           widerSearch && !strictCityBounds ? 22 : strictCityBounds ? 20 : 12;
 
-        const buildUrl = (bounded: boolean, lim: number) => {
+        const buildUrl = (queryText: string, bounded: boolean, lim: number) => {
           let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            searchQuery,
+            queryText,
           )}&countrycodes=tr&addressdetails=1&extratags=1&limit=${lim}&accept-language=tr`;
 
           let bboxParam: string | null = null;
@@ -715,8 +823,14 @@ export default function PlacesAutocomplete({
           return { url, usedBiasOnlyBbox };
         };
 
-        const runFetch = async (bounded: boolean, lim: number) => {
-          const { url } = buildUrl(bounded, lim);
+        const runFetch = async (queryText: string, bounded: boolean, lim: number) => {
+          const { url } = buildUrl(queryText, bounded, lim);
+          if (pickerDebugLabel) {
+            console.log('[picker] provider=', 'nominatim');
+            console.log('[picker] rawText=', input.trim());
+            console.log('[picker] cityContext=', cityLabel || null);
+            console.log('[picker] finalQuery=', queryText);
+          }
           const response = await fetch(url, {
             headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
           });
@@ -727,11 +841,20 @@ export default function PlacesAutocomplete({
           return Array.isArray(data) ? data : [];
         };
 
-        const { usedBiasOnlyBbox } = buildUrl(true, limitPrimary);
+        const { usedBiasOnlyBbox } = buildUrl(cityAwareSearchQuery, true, limitPrimary);
 
-        let data = await runFetch(true, limitPrimary);
-        if (requestId !== autocompleteRequestIdRef.current) {
-          return;
+        let data: PlaceResult[] = [];
+        for (const variant of cityAwareSearchQueries) {
+          const boundedRows = await runFetch(variant, true, Math.max(8, limitPrimary));
+          if (requestId !== autocompleteRequestIdRef.current) {
+            return;
+          }
+          if (pickerDebugLabel) {
+            console.log('[picker] result count=', boundedRows.length);
+            console.log('[picker] first result=', boundedRows[0]?.display_name || null);
+          }
+          data = boundedRows;
+          if (data.length > 0) break;
         }
         anyNomRaw = data.length > 0;
 
@@ -809,13 +932,22 @@ export default function PlacesAutocomplete({
         let nom = filterAndRank(data);
 
         if (nom.length < 5 && strictCityBounds) {
-          const loose = await runFetch(false, 35);
-          if (requestId !== autocompleteRequestIdRef.current) {
-            return;
+          const looseAll: PlaceResult[] = [];
+          for (const variant of cityAwareSearchQueries) {
+            const looseRows = await runFetch(variant, false, 35);
+            if (requestId !== autocompleteRequestIdRef.current) {
+              return;
+            }
+            if (pickerDebugLabel) {
+              console.log('[picker] result count=', looseRows.length);
+              console.log('[picker] first result=', looseRows[0]?.display_name || null);
+            }
+            looseAll.push(...looseRows);
+            if (looseRows.length > 0 && looseAll.length >= 8) break;
           }
-          anyNomRaw = anyNomRaw || loose.length > 0;
+          anyNomRaw = anyNomRaw || looseAll.length > 0;
           const byId = new Map<string, PlaceResult>();
-          for (const r of [...data, ...loose]) {
+          for (const r of [...data, ...looseAll]) {
             const id = String(r.place_id || `${r.lat},${r.lon}`);
             if (!byId.has(id)) byId.set(id, r);
           }
