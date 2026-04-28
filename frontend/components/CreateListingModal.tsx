@@ -372,6 +372,12 @@ export default function CreateListingModal({
     if (createRole === 'passenger') setSeatsText('');
   }, [createRole]);
 
+  useEffect(() => {
+    setSuggestedBase(null);
+    setPriceDelta(0);
+    setPriceMeta(null);
+  }, [createRole]);
+
   const driverSeatsValid = useMemo(() => {
     if (createRole !== 'driver') return true;
     const n = parseInt(seatsText.replace(/\D/g, ''), 10);
@@ -703,6 +709,7 @@ export default function CreateListingModal({
       // Backend ile birebir: server.py _MUHABBET_LISTING_TYPES / _MUHABBET_LISTING_ROLES
       const listing_type = createRole === 'driver' ? 'gidiyorum' : 'gidecegim';
       const role_type = createRole === 'driver' ? 'driver' : 'passenger';
+      console.log(`[listing-create] scope=${listingScope} role_type=${role_type} listing_type=${listing_type}`);
       const departure_time = buildDepartureIso(departureTab, futurePick, departureHm.h, departureHm.m);
       const origin_city = listingScope === 'intercity' ? originCity.trim() : city.trim();
       const destination_city = listingScope === 'intercity' ? destinationCity.trim() : city.trim();
@@ -812,8 +819,22 @@ export default function CreateListingModal({
       ? 'Şehirler arası sürücü teklifi'
       : 'Şehirler arası yolcu teklifi'
     : createRole === 'driver'
-      ? 'Sürücü teklifi oluştur'
-      : 'Yolcu teklifi oluştur';
+      ? 'Şehir içi sürücü teklifi'
+      : 'Şehir içi yolcu teklifi';
+  const roleOptions = [
+    {
+      role: 'driver' as const,
+      title: 'Sürücüyüm',
+      subtitle: isIntercity ? 'Şehir dışı yolcu arıyorum' : 'Şehir içi aracım var',
+      icon: 'car-sport-outline' as const,
+    },
+    {
+      role: 'passenger' as const,
+      title: 'Yolcuyum',
+      subtitle: isIntercity ? 'Şehir dışı sürücü arıyorum' : 'Şehir içi aracım yok',
+      icon: 'person-outline' as const,
+    },
+  ];
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -835,6 +856,37 @@ export default function CreateListingModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
+            <Text style={styles.sectionEyebrow}>Teklif niyeti</Text>
+            <View style={styles.intentSelector}>
+              {roleOptions.map((opt) => {
+                const selected = createRole === opt.role;
+                return (
+                  <TouchableOpacity
+                    key={opt.role}
+                    style={[styles.intentCard, selected && styles.intentCardOn]}
+                    onPress={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setCreateRole(opt.role);
+                    }}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                  >
+                    <View style={[styles.intentIconWrap, selected && styles.intentIconWrapOn]}>
+                      <Ionicons name={opt.icon} size={21} color={selected ? '#FFFFFF' : '#475569'} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.intentTitle, selected && styles.intentTitleOn]}>{opt.title}</Text>
+                      <Text style={[styles.intentSubtitle, selected && styles.intentSubtitleOn]} numberOfLines={2}>
+                        {opt.subtitle}
+                      </Text>
+                    </View>
+                    {selected ? <Ionicons name="checkmark-circle" size={20} color="#2563EB" /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <Text style={styles.sectionEyebrow}>{isIntercity ? 'Şehirler arası rota' : 'Şehir'}</Text>
             {isIntercity ? (
               <View style={styles.card}>
@@ -859,28 +911,6 @@ export default function CreateListingModal({
                 <Text style={styles.cityLock}>{city}</Text>
               </View>
             )}
-
-            {!isIntercity ? (
-              <>
-                <Text style={styles.sectionEyebrow}>Teklif türü</Text>
-                <View style={styles.roleRow}>
-                  <TouchableOpacity
-                    style={[styles.roleChip, createRole === 'passenger' && styles.roleChipOn]}
-                    onPress={() => setCreateRole('passenger')}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.roleChipText, createRole === 'passenger' && styles.roleChipTextOn]}>Yolcu</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.roleChip, createRole === 'driver' && styles.roleChipOn]}
-                    onPress={() => setCreateRole('driver')}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.roleChipText, createRole === 'driver' && styles.roleChipTextOn]}>Sürücü</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : null}
 
             {createRole === 'driver' ? (
               <>
@@ -1412,6 +1442,43 @@ const styles = StyleSheet.create({
   },
   cityPickValue: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY },
   cityPickPlaceholder: { fontSize: 16, fontWeight: '700', color: TEXT_MUTED },
+  intentSelector: { gap: 10, marginBottom: 14 },
+  intentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: CARD_BG,
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.24)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  intentCardOn: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+    shadowOpacity: 0.1,
+    elevation: 4,
+  },
+  intentIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  intentIconWrapOn: {
+    backgroundColor: '#2563EB',
+  },
+  intentTitle: { fontSize: 16, fontWeight: '900', color: TEXT_PRIMARY },
+  intentTitleOn: { color: '#1D4ED8' },
+  intentSubtitle: { marginTop: 3, fontSize: 13, lineHeight: 18, color: TEXT_SECONDARY },
+  intentSubtitleOn: { color: '#1E40AF' },
   roleRow: { flexDirection: 'row', gap: 10 },
   roleChip: {
     flex: 1,
