@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 const inter = Inter({

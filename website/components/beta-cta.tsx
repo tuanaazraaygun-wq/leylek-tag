@@ -19,9 +19,9 @@ export function BetaCta() {
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
-              <ButtonLink href="/indir">Uygulamayı İndir</ButtonLink>
-              <ButtonLink href="/muhabbet" variant="secondary">
-                Beta topluluğuna katıl
+              <ButtonLink href="/indir#erken-erisim">Beta’ya Katıl</ButtonLink>
+              <ButtonLink href="/indir" variant="secondary">
+                Uygulamayı İndir
               </ButtonLink>
             </div>
           </div>

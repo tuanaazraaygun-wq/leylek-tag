@@ -286,6 +286,8 @@ def _build_cors_allow_origins() -> list[str]:
             return parsed
     return [
         "https://api.leylektag.com",
+        "https://leylektag.com",
+        "https://www.leylektag.com",
         "http://localhost",
         "http://127.0.0.1",
         "http://localhost:3000",
@@ -13933,6 +13935,40 @@ async def get_qr_completions(admin_phone: str, limit: int = 50):
     except Exception as e:
         logger.error(f"Admin QR completions error: {e}")
         return {"success": False, "detail": str(e)}
+
+# ==================== PUBLIC WEBSITE (READ-ONLY LIVE DASHBOARDS) ====================
+from services.website_live_public import get_cached_city_live, get_cached_intercity_live
+
+
+@api_router.get("/public/live/city")
+async def api_public_live_city(city: str = Query(..., min_length=2, max_length=80)):
+    """
+    Website: şehir içi canlı özet (salt okunur).
+    Kaynak: tags tablosu, type=normal (Muhabbet tag'leri dahil değil).
+    """
+    if supabase is None:
+        return JSONResponse({"success": False, "error": "service_unavailable"}, status_code=503)
+    try:
+        return get_cached_city_live(supabase, city)
+    except Exception as e:
+        logger.exception("[public/live/city] failed: %s", e)
+        return JSONResponse({"success": False, "error": "internal_error"}, status_code=500)
+
+
+@api_router.get("/public/live/intercity")
+async def api_public_live_intercity():
+    """
+    Website: şehirler arası ilan özeti (salt okunur).
+    Kaynak: ride_listings, listing_scope=intercity — kullanıcı kimliği yok.
+    """
+    if supabase is None:
+        return JSONResponse({"success": False, "error": "service_unavailable"}, status_code=503)
+    try:
+        return get_cached_intercity_live(supabase)
+    except Exception as e:
+        logger.exception("[public/live/intercity] failed: %s", e)
+        return JSONResponse({"success": False, "error": "internal_error"}, status_code=500)
+
 
 # ==================== CORS & ROUTER ====================
 

@@ -33,6 +33,7 @@ const config: Config = {
         "slow-float": "slow-float 7s ease-in-out infinite",
         "pulse-soft": "pulse-soft 3s ease-in-out infinite",
         "feed-slide": "feed-slide 18s linear infinite",
+        "scan-map": "scan-map 5s linear infinite",
       },
       keyframes: {
         "slow-float": {
@@ -46,6 +47,12 @@ const config: Config = {
         "feed-slide": {
           "0%": { transform: "translateY(0)" },
           "100%": { transform: "translateY(-50%)" },
+        },
+        "scan-map": {
+          "0%": { transform: "translateY(-100%)", opacity: "0" },
+          "12%": { opacity: "1" },
+          "88%": { opacity: "1" },
+          "100%": { transform: "translateY(620px)", opacity: "0" },
         },
       },
     },

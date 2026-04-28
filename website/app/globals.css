@@ -52,3 +52,266 @@ a {
     mask-image: linear-gradient(to bottom, black, transparent);
   }
 }
+
+.leaflet-container {
+  background: #020817;
+  font-family: inherit;
+}
+
+.leaflet-control-attribution {
+  border-radius: 999px 0 0 0;
+  background: rgba(2, 8, 23, 0.72) !important;
+  color: rgba(226, 246, 255, 0.62) !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(12px);
+}
+
+.leaflet-control-attribution a {
+  color: rgba(103, 232, 249, 0.78) !important;
+}
+
+.leaflet-tile {
+  filter: brightness(1.25) contrast(1.15) saturate(1.15);
+}
+
+.leaflet-overlay-pane {
+  filter: drop-shadow(0 0 8px rgba(103, 232, 249, 0.55));
+}
+
+.leylek-live-route {
+  filter: drop-shadow(0 0 4px rgba(224, 252, 255, 0.95)) drop-shadow(0 0 14px rgba(34, 211, 238, 0.85));
+  stroke-dasharray: 4 16;
+  stroke-linecap: round;
+  animation: route-dash 1.9s linear infinite;
+}
+
+.leylek-route-glow {
+  filter: blur(2px) drop-shadow(0 0 16px rgba(34, 211, 238, 0.8));
+  stroke-linecap: round;
+}
+
+.leylek-route-main {
+  filter: drop-shadow(0 0 7px rgba(103, 232, 249, 0.85));
+  stroke-linecap: round;
+}
+
+.leylek-light-marker,
+.leylek-heat-marker {
+  background: transparent;
+  border: 0;
+}
+
+.leylek-city-light {
+  display: block;
+  height: 4px;
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(125, 249, 255, 0.72);
+  box-shadow: 0 0 10px rgba(103, 232, 249, 0.75);
+  animation: city-light-pulse 3s ease-in-out infinite;
+}
+
+.leylek-heat-zone {
+  display: block;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.18), rgba(16, 185, 129, 0.1) 42%, transparent 72%);
+  filter: blur(1px);
+}
+
+.leylek-district-marker {
+  background: transparent;
+  border: 0;
+}
+
+.leylek-marker {
+  position: relative;
+  height: 34px;
+  min-width: 120px;
+}
+
+.leylek-marker-pulse {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  height: 22px;
+  width: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  background: rgba(34, 211, 238, 0.12);
+  animation: marker-pulse 2.4s ease-in-out infinite;
+}
+
+.leylek-marker-core {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  height: 7px;
+  width: 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: #67e8f9;
+  box-shadow: 0 0 14px rgba(103, 232, 249, 0.95);
+}
+
+.leylek-marker-active .leylek-marker-core {
+  background: #a7f3d0;
+  box-shadow: 0 0 20px rgba(110, 231, 183, 0.95);
+}
+
+.leylek-marker-label {
+  position: absolute;
+  left: 14px;
+  top: -8px;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(2, 8, 23, 0.82), rgba(15, 23, 42, 0.66));
+  padding: 5px 9px;
+  color: rgba(226, 246, 255, 0.94);
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
+}
+
+.leylek-intercity-endpoint {
+  position: relative;
+  height: 26px;
+  min-width: 72px;
+}
+
+.leylek-intercity-endpoint .leylek-marker-pulse {
+  left: -5px;
+  top: -5px;
+  height: 18px;
+  width: 18px;
+}
+
+.leylek-intercity-endpoint .leylek-marker-core {
+  left: 0;
+  top: 0;
+  height: 6px;
+  width: 6px;
+}
+
+.leylek-intercity-endpoint .leylek-marker-label {
+  left: 11px;
+  top: -9px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.leylek-intercity-mid-icon {
+  background: transparent;
+  border: 0;
+}
+
+.leylek-intercity-route-pill {
+  display: inline-block;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid rgba(103, 232, 249, 0.38);
+  background: linear-gradient(135deg, rgba(2, 8, 23, 0.92), rgba(15, 23, 42, 0.78));
+  padding: 5px 11px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: #dffcff;
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(34, 211, 238, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.map-hud-panel {
+  pointer-events: none;
+  min-width: 0;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(2, 8, 23, 0.72), rgba(15, 23, 42, 0.52));
+  padding: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.map-hud-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 7px 8px;
+  color: rgba(226, 246, 255, 0.92);
+  font-size: 11px;
+  font-weight: 800;
+  animation: hud-row-glow 6s ease-in-out infinite;
+}
+
+.map-hud-dot {
+  height: 6px;
+  width: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #6ee7b7;
+  box-shadow: 0 0 12px rgba(110, 231, 183, 0.85);
+}
+
+.leylek-feed-cycle .map-hud-row:first-child {
+  border-color: rgba(110, 231, 183, 0.28);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.14);
+}
+
+@keyframes route-dash {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+
+@keyframes city-light-pulse {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.72);
+  }
+  50% {
+    opacity: 0.86;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes marker-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes hud-row-glow {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  12%,
+  36% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  .map-hud-panel {
+    padding: 9px;
+    border-radius: 16px;
+  }
+
+  .map-hud-row {
+    padding: 6px 7px;
+    font-size: 10px;
+  }
+}

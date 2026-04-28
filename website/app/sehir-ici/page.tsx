@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
+import { CityLiveMap } from "@/components/city-live-map";
 import { Container } from "@/components/container";
 import { CtaBand } from "@/components/cta-band";
 import { FeatureCard } from "@/components/feature-card";
-import { LiveMapVisual } from "@/components/live-map-visual";
 import { PageHero } from "@/components/page-hero";
 
 export const metadata: Metadata = {
@@ -34,13 +34,17 @@ export default function CityPage() {
       />
       <section className="py-12">
         <Container>
-          <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-            <div className="grid gap-5">
-              {steps.map((step) => (
-                <FeatureCard key={step.title} {...step} eyebrow="akış" />
-              ))}
-            </div>
-            <LiveMapVisual />
+          <div className="grid gap-5 md:grid-cols-3">
+            {steps.map((step) => (
+              <FeatureCard key={step.title} {...step} eyebrow="akış" />
+            ))}
+          </div>
+        </Container>
+      </section>
+      <section className="py-12">
+        <Container>
+          <div className="mx-auto max-w-[1600px]">
+            <CityLiveMap />
           </div>
         </Container>
       </section>

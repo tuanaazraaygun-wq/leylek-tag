@@ -1,13 +1,17 @@
 import { ActivityFeed } from "@/components/activity-feed";
 import { AppPreview } from "@/components/app-preview";
+import { AudienceSection } from "@/components/audience-section";
 import { BetaCta } from "@/components/beta-cta";
+import { BetaProcess } from "@/components/beta-process";
 import { ButtonLink } from "@/components/button-link";
+import { ComparisonSection } from "@/components/comparison-section";
 import { Container } from "@/components/container";
 import { FaqSection } from "@/components/faq-section";
 import { ListingCard } from "@/components/listing-card";
 import { LiveMapVisual } from "@/components/live-map-visual";
 import { ModeCard } from "@/components/mode-card";
 import { SectionHeading } from "@/components/section-heading";
+import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
 import { TrustBadges } from "@/components/trust-badges";
 import { ValueProps } from "@/components/value-props";
 import { getIntercityListings } from "@/lib/listings";
@@ -97,6 +101,19 @@ export default function Home() {
 
       <section className="py-14">
         <Container>
+          <div className="mb-8">
+            <SectionHeading
+              eyebrow="kimler için?"
+              title="Leylek Tag, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
+              description="Günlük şehir içi planlardan şehirler arası boş koltuk paylaşımına kadar, aynı yöne gidenleri topluluk içinde daha kontrollü buluşturur."
+            />
+          </div>
+          <AudienceSection />
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container>
           <div className="grid gap-5 lg:grid-cols-[0.8fr_1fr]">
             <ActivityFeed />
             <div className="grid gap-5 sm:grid-cols-3">
@@ -105,6 +122,19 @@ export default function Home() {
               ))}
             </div>
           </div>
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container>
+          <div className="mb-8">
+            <SectionHeading
+              eyebrow="neden farklı?"
+              title="Klasik yolculuk deneyiminden daha topluluk odaklı."
+              description="Leylek Tag hızlı eşleşmeyi, sohbet ederek karar vermeyi, şehirler arası masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
+            />
+          </div>
+          <ComparisonSection />
         </Container>
       </section>
 
@@ -126,8 +156,8 @@ export default function Home() {
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <SectionHeading
               eyebrow="şehirler arası"
-              title="Aynı yöne gidenler için daha görünür ilanlar."
-              description="Rota, tarih/saat, boş koltuk ve önerilen masraf paylaşımı bilgileri tek kartta görünür. Gerçek canlı bağlantı uygulama içinde tamamlanacaktır."
+              title="Şehirler arası yolculuklarda boş koltuklar değerlenir."
+              description="Gideceğin rotayı, saati ve boş koltuk sayısını paylaş. Aynı yöne gidenlerle masrafı böl."
             />
             <ButtonLink href="/sehirler-arasi" variant="secondary">
               Tümünü Gör
@@ -141,6 +171,25 @@ export default function Home() {
           <p className="mt-5 rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 text-sm leading-6 text-slate-300">
             İlanlar örnek gösterimdir. Canlı bağlantı için uygulama kullanılacaktır.
           </p>
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container>
+          <div className="mb-8">
+            <SectionHeading
+              eyebrow="beta süreci"
+              title="Önce kontrollü test, sonra daha geniş topluluk."
+              description="Leylek Tag’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
+            />
+          </div>
+          <BetaProcess />
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container>
+          <SocialProofPlaceholder />
         </Container>
       </section>
 
