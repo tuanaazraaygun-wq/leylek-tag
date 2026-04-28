@@ -19579,16 +19579,21 @@ class MuhabbetMatchRequestMessageBody(BaseModel):
 
 
 class MuhabbetChatMessageCreateBody(BaseModel):
-    body: str
+    body: Optional[str] = None
+    text: Optional[str] = None
+    message_id: Optional[str] = None
+    client_message_id: Optional[str] = None
 
-    @field_validator("body", mode="before")
+    @field_validator("body", "text", mode="before")
     @classmethod
-    def _body_chat(cls, v) -> str:
-        if v is None or (isinstance(v, str) and not str(v).strip()):
-            raise ValueError("Mesaj boş olamaz")
+    def _body_chat(cls, v) -> Optional[str]:
+        if v is None:
+            return None
         t = str(v).strip()
-        if len(t) > 1000:
-            raise ValueError("Mesaj en fazla 1000 karakter olabilir")
+        if not t:
+            return None
+        if len(t) > 2000:
+            raise ValueError("Mesaj en fazla 2000 karakter olabilir")
         return t
 
 
@@ -21568,6 +21573,80 @@ def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: s
                 "[muhabbet_send] muhabbet_messages table missing or migration not applied; run leylek_muhabbet_messages_retention.sql"
             )
         return (False, err_txt)
+
+
+def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
+    cid = str(cid or "").strip().lower()
+    mid = str(msg_id or "").strip().lower()
+    if not cid or not mid:
+        return None
+    try:
+        res = (
+            supabase.table("muhabbet_messages")
+            .select("id,conversation_id,sender_id,text,created_at")
+            .eq("id", mid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        return dict(res.data[0]) if res.data else None
+    except Exception as e:
+        logger.warning("muhabbet_message_fetch_by_id: %s", e)
+        return None
+
+
+async def _muhabbet_publish_message_after_persist(
+    *,
+    cid: str,
+    msg_id: str,
+    sender_id: str,
+    text: str,
+    created_iso: str,
+    conversation_row: dict,
+) -> None:
+    """Persist sonrası Muhabbet realtime yayını; DB insert socket sid'e bağlı değildir."""
+    cid = str(cid or "").strip().lower()
+    msg_id = str(msg_id or "").strip().lower()
+    sender_id = str(sender_id or "").strip().lower()
+    a = str((conversation_row or {}).get("user_a") or "").strip().lower()
+    b = str((conversation_row or {}).get("user_b") or "").strip().lower()
+    recipient = b if a == sender_id else a
+    try:
+        _muhabbet_touch_conversation_last_message(conversation_id=cid, text=text, now_iso=created_iso)
+    except Exception as e:
+        logger.warning("muhabbet rest touch conversation failed cid=%s message_id=%s err=%s", cid, msg_id, e)
+    payload = {
+        "conversation_id": cid,
+        "text": text,
+        "sender_id": sender_id,
+        "message_id": msg_id,
+        "created_at": created_iso,
+    }
+    try:
+        await sio.emit("message", payload, room=muhabbet_room(cid))
+    except Exception as e:
+        logger.warning("muhabbet rest room emit failed cid=%s message_id=%s err=%s", cid, msg_id, e)
+    try:
+        await emit_socket_event_to_user(
+            sender_id,
+            "message_ack",
+            {"conversation_id": cid, "message_id": msg_id, "status": "sent"},
+        )
+    except Exception as e:
+        logger.warning("muhabbet rest ack emit failed: %s", e)
+    try:
+        conv_payload = {
+            "conversation_id": cid,
+            "last_message_body": text,
+            "last_message_at": created_iso,
+            "sender_id": sender_id,
+            "unread_for_user_id": recipient,
+        }
+        for target in (sender_id, recipient):
+            if target:
+                await emit_socket_event_to_user(target, "muhabbet_conversation_updated", conv_payload)
+    except Exception as e:
+        logger.warning("muhabbet rest conversation_updated failed: %s", e)
 
 
 def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 200) -> list:
@@ -24042,11 +24121,56 @@ async def muhabbet_conversation_messages_post(
     msg: MuhabbetChatMessageCreateBody,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Metinli mesaj yalnızca Socket.IO `muhabbet_send` ile; sunucu `muhabbet_messages` tablosunda ~90 gün saklar."""
-    raise HTTPException(
-        status_code=410,
-        detail="Mesaj göndermek için Socket.IO muhabbet_send kullanın; içerik sunucuda ~90 gün tutulur.",
-    )
+    """Muhabbet-only REST fallback: DB insert socket sid'e bağlı değildir."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        crow = _muhabbet_conversation_for_member_or_403(cid, uid)
+        text = str(msg.body or msg.text or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
+        if len(text) > 2000:
+            raise HTTPException(status_code=400, detail="Mesaj en fazla 2000 karakter olabilir")
+        raw_mid = msg.message_id or msg.client_message_id
+        parsed_mid, mid_err = _muhabbet_parse_client_message_id(raw_mid)
+        if mid_err:
+            raise HTTPException(status_code=400, detail=mid_err)
+        msg_id = parsed_mid or str(uuid.uuid4())
+        now_iso = datetime.now(timezone.utc).isoformat()
+        db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso)
+        if not db_ok:
+            logger.warning("[muhabbet_rest_send] db_insert_failed cid=%s message_id=%s err=%s", cid, msg_id, db_err[:300] if db_err else "")
+            raise HTTPException(status_code=500, detail="Mesaj gönderilemedi. Lütfen tekrar deneyin.")
+        row = _muhabbet_message_fetch_by_id(cid, msg_id) or {
+            "id": msg_id,
+            "conversation_id": cid,
+            "sender_id": uid,
+            "text": text,
+            "created_at": now_iso,
+        }
+        created_iso = row.get("created_at") or now_iso
+        await _muhabbet_publish_message_after_persist(
+            cid=cid,
+            msg_id=msg_id,
+            sender_id=uid,
+            text=str(row.get("text") or text),
+            created_iso=created_iso,
+            conversation_row=crow,
+        )
+        return {
+            "success": True,
+            "message": {
+                "id": msg_id,
+                "body": row.get("text") or text,
+                "sender_user_id": uid,
+                "created_at": created_iso,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_messages_post: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @api_router.post("/muhabbet/conversations/{conversation_id}/messages/{message_id}/delete-for-me")

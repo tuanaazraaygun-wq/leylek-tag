@@ -356,23 +356,97 @@ export default function MuhabbetChatScreen({
     ackTimeoutsRef.current.delete(messageId);
   }, []);
 
-  const scheduleAckTimeout = useCallback(
-    (messageId: string) => {
-      clearAckWait(messageId);
-      const tmo = setTimeout(() => {
-        ackTimeoutsRef.current.delete(messageId);
+  const sendMessageViaRest = useCallback(
+    async (messageId: string, body: string): Promise<boolean> => {
+      const mid = normalizeMuhabbetMessageId(messageId);
+      const text = String(body || '').trim();
+      if (!cid || !mid || !text) return false;
+      try {
+        const token = (await getPersistedAccessToken())?.trim();
+        if (!token) {
+          setRows((prev) => markMessageFailedById(prev, mid));
+          return false;
+        }
+        const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ body: text, message_id: mid }),
+        });
+        if (handleUnauthorizedAndMaybeRedirect(res)) {
+          setRows((prev) => markMessageFailedById(prev, mid));
+          return false;
+        }
+        const data = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          message?: { id?: string; body?: string; sender_user_id?: string; created_at?: string };
+          detail?: string;
+        };
+        if (!res.ok || !data.success) {
+          console.log('[chat-send] rest fallback failed', { status: res.status, detail: data.detail });
+          setRows((prev) => markMessageFailedById(prev, mid));
+          return false;
+        }
+        const serverMessage = data.message || {};
+        const serverId = normalizeMuhabbetMessageId(serverMessage.id || mid) || mid;
+        clearAckWait(mid);
+        if (pendingActionRef.current?.kind === 'send_message' && pendingActionRef.current.messageId === mid) {
+          pendingActionRef.current = null;
+        }
         setRows((prev) =>
           prev.map((m) =>
-            rowIdLo(m) === rowIdLo({ id: messageId }) && m.out_status === 'sending'
-              ? { ...m, out_status: 'failed' as const }
+            rowIdLo(m) === mid
+              ? {
+                  ...m,
+                  id: serverId,
+                  body: serverMessage.body != null ? String(serverMessage.body) : m.body,
+                  sender_user_id: serverMessage.sender_user_id != null ? String(serverMessage.sender_user_id).trim().toLowerCase() : m.sender_user_id,
+                  created_at: coerceMessageCreatedAt(serverMessage.created_at || m.created_at),
+                  out_status: 'sent' as const,
+                }
               : m
           )
         );
+        DeviceEventEmitter.emit(MUHABBET_NEW_LOCAL_MESSAGE, {
+          type: 'muhabbet_message',
+          conversation_id: cid,
+          text,
+          sender_id: myIdRef.current,
+          created_at: serverMessage.created_at || new Date().toISOString(),
+        });
+        return true;
+      } catch (e) {
+        console.log('[chat-send] rest fallback exception', e);
+        setRows((prev) => markMessageFailedById(prev, mid));
+        return false;
+      }
+    },
+    [base, cid, clearAckWait]
+  );
+
+  const scheduleAckTimeout = useCallback(
+    (messageId: string, body?: string) => {
+      clearAckWait(messageId);
+      const tmo = setTimeout(() => {
+        ackTimeoutsRef.current.delete(messageId);
+        if (body && body.trim()) {
+          void sendMessageViaRest(messageId, body);
+        } else {
+          setRows((prev) =>
+            prev.map((m) =>
+              rowIdLo(m) === rowIdLo({ id: messageId }) && m.out_status === 'sending'
+                ? { ...m, out_status: 'failed' as const }
+                : m
+            )
+          );
+        }
         console.log('[chat] ack timeout message_id=', messageId);
       }, 8000);
       ackTimeoutsRef.current.set(messageId, tmo);
     },
-    [clearAckWait]
+    [clearAckWait, sendMessageViaRest]
   );
 
   const waitForMuhabbetJoin = useCallback(
@@ -482,7 +556,7 @@ export default function MuhabbetChatScreen({
     if (!socket.connected) return false;
     pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
     if (pending.kind === 'send_message') {
-      scheduleAckTimeout(pending.messageId);
+      scheduleAckTimeout(pending.messageId, pending.body);
       socket.emit('muhabbet_send', { conversation_id: cid, text: pending.body, message_id: pending.messageId });
       return true;
     }
@@ -510,8 +584,7 @@ export default function MuhabbetChatScreen({
           const pending = pendingActionRef.current;
           if (messageId && pending?.kind === 'send_message' && pending.messageId === messageId) {
             pendingActionRef.current = null;
-            setRows((prev) => markMessageFailedById(prev, messageId));
-            Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
+            void sendMessageViaRest(messageId, pending.body);
             return;
           }
           if (pending && pending.kind !== 'send_message') {
@@ -520,7 +593,7 @@ export default function MuhabbetChatScreen({
         })();
       }, 1500);
     },
-    [retryPendingActionAfterNotRegistered]
+    [retryPendingActionAfterNotRegistered, sendMessageViaRest]
   );
 
   useEffect(() => {
@@ -1283,11 +1356,21 @@ export default function MuhabbetChatScreen({
         void (async () => {
           const retried = await retryPendingActionAfterNotRegistered();
           if (retried) return;
-          pendingActionRef.current = null;
-          setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
-          if (conv && conv === cid.toLowerCase()) {
-            Alert.alert('Bağlantı', det || 'Oturum doğrulanıyor. Bir saniye sonra tekrar deneyin.');
+          const pending = pendingActionRef.current;
+          if (pending?.kind === 'send_message') {
+            pendingActionRef.current = null;
+            await sendMessageViaRest(pending.messageId, pending.body);
+            return;
           }
+          pendingActionRef.current = null;
+          if (errMid) {
+            const row = rowsRef.current.find((m) => rowIdLo(m) === errMid);
+            if (row?.body) {
+              await sendMessageViaRest(errMid, row.body);
+              return;
+            }
+          }
+          setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
         })();
         return;
       }
@@ -1307,7 +1390,7 @@ export default function MuhabbetChatScreen({
     return () => {
       socket.off('muhabbet_error', onMuErr);
     };
-  }, [cid, retryPendingActionAfterNotRegistered]);
+  }, [cid, retryPendingActionAfterNotRegistered, sendMessageViaRest]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
@@ -1388,25 +1471,21 @@ export default function MuhabbetChatScreen({
       const ready = await ensureMuhabbetSocketReady();
       console.log('[chat-send] after ensureMuhabbetSocketReady', { ready, sid: socket.id || null });
       if (!ready) {
-        console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
-        retryPendingActionAfterReconnect(messageId);
+        console.log('[chat-send] socket not ready; using rest fallback');
+        await sendMessageViaRest(messageId, body);
         return;
       }
       try {
         console.log('[chat-send] emit muhabbet_send');
-        scheduleAckTimeout(messageId);
+        scheduleAckTimeout(messageId, body);
         socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
       } catch {
         clearAckWait(messageId);
         pendingActionRef.current = null;
-        setRows((prev) =>
-          prev.map((m) =>
-            rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'failed' as const } : m
-          )
-        );
+        await sendMessageViaRest(messageId, body);
       }
     },
-    [cid, clearAckWait, scheduleAckTimeout, ensureMuhabbetSocketReady, retryPendingActionAfterReconnect]
+    [cid, clearAckWait, scheduleAckTimeout, ensureMuhabbetSocketReady, sendMessageViaRest]
   );
 
   const send = async () => {
@@ -1462,21 +1541,19 @@ export default function MuhabbetChatScreen({
     const ready = await ensureMuhabbetSocketReady();
     console.log('[chat-send] after ensureMuhabbetSocketReady', { ready, sid: socket.id || null });
     if (!ready) {
-      console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
+      console.log('[chat-send] socket not ready; using rest fallback');
       setSending(false);
-      retryPendingActionAfterReconnect(messageId);
+      await sendMessageViaRest(messageId, body);
       return;
     }
     try {
       console.log('[chat-send] emit muhabbet_send');
-      scheduleAckTimeout(messageId);
+      scheduleAckTimeout(messageId, body);
       socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
     } catch {
       clearAckWait(messageId);
       pendingActionRef.current = null;
-      Alert.alert('Gönderilemedi', 'Bağlantı hatası.');
-      setDraft(body);
-      setRows((p) => p.filter((m) => rowIdLo(m) !== rowIdLo({ id: messageId })));
+      await sendMessageViaRest(messageId, body);
     } finally {
       setSending(false);
     }
