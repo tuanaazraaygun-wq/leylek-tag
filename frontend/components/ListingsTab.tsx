@@ -26,7 +26,6 @@ import CreateListingModal from './CreateListingModal';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
-const ACCENT = '#F59E0B';
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
@@ -43,6 +42,7 @@ export type FeedListing = {
   id: string;
   from_text?: string | null;
   to_text?: string | null;
+  created_at?: string | null;
   departure_time?: string | null;
   price_amount?: number | null;
   note?: string | null;
@@ -62,6 +62,9 @@ export type FeedListing = {
   expires_at?: string | null;
   muhabbet_offer_expired?: boolean;
   city?: string | null;
+  listing_scope?: string | null;
+  origin_city?: string | null;
+  destination_city?: string | null;
   matched_conversation_id?: string | null;
   accepted_user_id?: string | null;
 };
@@ -182,6 +185,16 @@ function transportLine(L: FeedListing): string {
   return 'Araba';
 }
 
+function isIntercityListing(L: FeedListing): boolean {
+  return (L.listing_scope || '').toString().toLowerCase() === 'intercity';
+}
+
+function intercityCityRoute(L: FeedListing): string {
+  const origin = (L.origin_city || L.city || '').toString().trim();
+  const destination = (L.destination_city || '').toString().trim();
+  return origin && destination ? `${origin} → ${destination}` : '';
+}
+
 export default function ListingsTab({
   apiUrl,
   accessToken,
@@ -217,6 +230,12 @@ export default function ListingsTab({
   const [modalInitialRole, setModalInitialRole] = useState<'driver' | 'passenger'>(initialCreateRole);
   const [modalInitialScope, setModalInitialScope] = useState<ListingScope>(initialCreateScope);
 
+  const openCreate = useCallback((role: 'driver' | 'passenger', scope: ListingScope) => {
+    setModalInitialRole(role);
+    setModalInitialScope(scope);
+    setCreateOpen(true);
+  }, []);
+
   const prevOpenSig = React.useRef(openCreateSignal);
   useEffect(() => {
     if (openCreateSignal !== prevOpenSig.current && openCreateSignal > 0) {
@@ -244,27 +263,49 @@ export default function ListingsTab({
     }
     setLoadingFeed(true);
     try {
-      const u = new URLSearchParams({ city: cityQ, limit: '40' });
-      if (segment === 'driver') u.set('role_type', 'driver');
-      else if (segment === 'passenger') u.set('role_type', 'passenger');
-      const res = await fetch(`${base}/muhabbet/listings/feed?${u.toString()}`, {
-        headers: authHeader(tok),
-      });
+      const localQ = new URLSearchParams({ city: cityQ, limit: '40', listing_scope: 'local' });
+      const intercityQ = new URLSearchParams({ city: cityQ, limit: '40', listing_scope: 'intercity' });
+      if (segment === 'driver') {
+        localQ.set('role_type', 'driver');
+        intercityQ.set('role_type', 'driver');
+      } else if (segment === 'passenger') {
+        localQ.set('role_type', 'passenger');
+        intercityQ.set('role_type', 'passenger');
+      }
+      const [res, intercityRes] = await Promise.all([
+        fetch(`${base}/muhabbet/listings/feed?${localQ.toString()}`, {
+          headers: authHeader(tok),
+        }),
+        fetch(`${base}/muhabbet/listings/feed?${intercityQ.toString()}`, {
+          headers: authHeader(tok),
+        }),
+      ]);
       if (res.status === 401) {
         console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
-      const d = (await res.json().catch(() => ({}))) as {
+      type FeedResponse = {
         success?: boolean;
         listings?: FeedListing[];
         viewer_can_act_as_driver?: boolean;
         viewer_driver_vehicle_kind?: string | null;
       };
+      const d = (await res.json().catch(() => ({}))) as FeedResponse;
+      const di = intercityRes.ok ? ((await intercityRes.json().catch(() => ({}))) as FeedResponse) : {};
       if (typeof d.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(d.viewer_can_act_as_driver);
-      const vkFeed = (d.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+      else if (typeof di.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(di.viewer_can_act_as_driver);
+      const vkFeed = (d.viewer_driver_vehicle_kind || di.viewer_driver_vehicle_kind || '').toString().toLowerCase();
       setViewerDriverVk(vkFeed === 'motorcycle' ? 'motorcycle' : vkFeed === 'car' ? 'car' : null);
       if (res.ok && d.success && Array.isArray(d.listings)) {
-        const openOnly = d.listings.filter((row) => {
+        const seen = new Set<string>();
+        const merged = [...d.listings, ...(di.success && Array.isArray(di.listings) ? di.listings : [])]
+          .filter((row) => {
+            if (!row?.id || seen.has(row.id)) return false;
+            seen.add(row.id);
+            return true;
+          })
+          .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+        const openOnly = merged.filter((row) => {
           const st = (row.status || '').toLowerCase();
           if (st === 'matched' || st === 'closed' || st === 'cancelled' || st === 'pending_chat') return false;
           const m = (row.match_request_status || '').toLowerCase();
@@ -309,7 +350,17 @@ export default function ListingsTab({
       if (res.ok && d.success && Array.isArray(d.listings)) {
         const cityKey = (selectedCity || '').trim().toLowerCase();
         const rows = cityKey
-          ? d.listings.filter((r) => (String(r.city || '').trim().toLowerCase() === cityKey))
+          ? d.listings.filter((r) => {
+              const scope = String(r.listing_scope || 'local').trim().toLowerCase();
+              if (scope === 'intercity') {
+                return (
+                  String(r.origin_city || '').trim().toLowerCase() === cityKey ||
+                  String(r.destination_city || '').trim().toLowerCase() === cityKey ||
+                  String(r.city || '').trim().toLowerCase() === cityKey
+                );
+              }
+              return String(r.city || '').trim().toLowerCase() === cityKey;
+            })
           : d.listings;
         setMyListings(rows);
       } else {
@@ -369,7 +420,7 @@ export default function ListingsTab({
     const copy = [...primaryListings];
     const [head] = copy.splice(i, 1);
     return [head, ...copy];
-  }, [primaryListings, focusListingId, focusListingNonce]);
+  }, [primaryListings, focusListingId]);
 
   const [focusHighlightId, setFocusHighlightId] = useState<string | null>(null);
   useEffect(() => {
@@ -425,13 +476,12 @@ export default function ListingsTab({
   const filteredListings = useMemo(() => {
     if (segment === 'requests') return [];
     if (segment === 'mine') return orderedListings;
-    const uid = String(currentUserId || '').trim().toLowerCase();
     return orderedListings.filter((L) => {
       if (segment === 'driver') return offerKindFromListing(L) === 'driver_offer';
       if (segment === 'passenger') return offerKindFromListing(L) === 'passenger_offer';
       return true;
     });
-  }, [orderedListings, segment, currentUserId]);
+  }, [orderedListings, segment]);
 
   const listingLifecycleAction = useCallback(
     async (listingId: string, action: 'continue' | 'close') => {
@@ -568,6 +618,8 @@ export default function ListingsTab({
         const effViewerVk = viewerDriverVk ?? (viewerCanActAsDriver ? 'car' : null);
         const vehicleOk =
           !passengerOffer || !viewerCanActAsDriver || effViewerVk === null || listVk === effViewerVk;
+        const intercity = isIntercityListing(L);
+        const cityRoute = intercityCityRoute(L);
         const canRequest =
           !own && (passengerOffer ? viewerCanActAsDriver && vehicleOk : true) && !accepted && !pending;
         return (
@@ -586,6 +638,11 @@ export default function ListingsTab({
               <View style={styles.transportPill}>
                 <Text style={styles.transportPillText}>{transportLine(L)}</Text>
               </View>
+              {intercity ? (
+                <View style={styles.scopeBadge}>
+                  <Text style={styles.scopeBadgeText}>Şehirler arası</Text>
+                </View>
+              ) : null}
               <Text style={styles.statusPill}>{statusLabel(L.status)}</Text>
             </View>
             {segment === 'mine' ? (
@@ -604,6 +661,12 @@ export default function ListingsTab({
             <Text style={styles.cardNameLg} numberOfLines={1}>
               {L.creator_public_name || L.creator_name || 'Leylek kullanıcısı'}
             </Text>
+            {cityRoute ? (
+              <View style={styles.cityRouteBanner}>
+                <Ionicons name="map-outline" size={14} color="#0369A1" />
+                <Text style={styles.cityRouteText} numberOfLines={1}>{cityRoute}</Text>
+              </View>
+            ) : null}
             <View style={styles.routeBlock}>
               <View style={styles.routeEnd}>
                 <Text style={styles.routeMiniLabel}>Nereden</Text>
@@ -760,9 +823,7 @@ export default function ListingsTab({
       <View style={styles.toolbar}>
         <TouchableOpacity
           onPress={() => {
-            setModalInitialRole('passenger');
-            setModalInitialScope('local');
-            setCreateOpen(true);
+            openCreate('passenger', 'local');
           }}
           activeOpacity={0.9}
           style={styles.newListingBtnHero}
@@ -773,6 +834,24 @@ export default function ListingsTab({
           </View>
           <Text style={styles.newListingBtnHeroText}>Teklif aç</Text>
         </TouchableOpacity>
+        <View style={styles.createChoiceRow}>
+          <TouchableOpacity
+            style={[styles.createChoiceChip, styles.createChoiceLocal]}
+            activeOpacity={0.88}
+            onPress={() => openCreate('passenger', 'local')}
+          >
+            <Ionicons name="navigate-outline" size={15} color="#1D4ED8" />
+            <Text style={styles.createChoiceTextLocal}>Şehir içi teklif aç</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.createChoiceChip, styles.createChoiceIntercity]}
+            activeOpacity={0.88}
+            onPress={() => openCreate('passenger', 'intercity')}
+          >
+            <Ionicons name="map-outline" size={15} color="#C2410C" />
+            <Text style={styles.createChoiceTextIntercity}>Şehirler arası teklif aç</Text>
+          </TouchableOpacity>
+        </View>
         {segmentScroll}
       </View>
 
@@ -860,6 +939,29 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   newListingBtnHeroText: { color: '#C2410C', fontWeight: '900', fontSize: 18, letterSpacing: 0.2 },
+  createChoiceRow: { flexDirection: 'row', gap: 8 },
+  createChoiceChip: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  createChoiceLocal: {
+    backgroundColor: 'rgba(59,130,246,0.1)',
+    borderColor: 'rgba(59,130,246,0.28)',
+  },
+  createChoiceIntercity: {
+    backgroundColor: 'rgba(249,115,22,0.12)',
+    borderColor: 'rgba(249,115,22,0.28)',
+  },
+  createChoiceTextLocal: { color: '#1D4ED8', fontSize: 12.5, fontWeight: '900' },
+  createChoiceTextIntercity: { color: '#C2410C', fontSize: 12.5, fontWeight: '900' },
   scroll: { paddingHorizontal: 16, paddingBottom: 24, zIndex: 1 },
   requestsLead: { fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22, marginBottom: 12 },
   incomingHero: {
@@ -891,6 +993,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(22, 163, 74, 0.35)',
   },
   transportPillText: { fontSize: 11, fontWeight: '800', color: '#15803D' },
+  scopeBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(14,165,233,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(14,165,233,0.34)',
+  },
+  scopeBadgeText: { fontSize: 11, fontWeight: '900', color: '#0369A1' },
   cardFocused: {
     borderWidth: 2,
     borderColor: '#2563EB',
@@ -901,6 +1012,19 @@ const styles = StyleSheet.create({
   rolePillText: { fontSize: 12, fontWeight: '800', color: TEXT_PRIMARY },
   statusPill: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY, marginLeft: 'auto' },
   cardNameLg: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 6 },
+  cityRouteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: 'rgba(14,165,233,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(14,165,233,0.22)',
+  },
+  cityRouteText: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '900', color: '#0F172A' },
   routeBlock: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginBottom: 8 },
   routeEnd: { flex: 1, minWidth: 0 },
   routeMiniLabel: { fontSize: 11, fontWeight: '800', color: TEXT_SECONDARY, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },

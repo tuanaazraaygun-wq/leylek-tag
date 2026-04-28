@@ -185,6 +185,32 @@ function hasFiniteCoords(p: MuhabbetCommittedPlace | null): boolean {
   return Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
 }
 
+function parsePositiveIntText(text: string): number | null {
+  const n = parseInt(String(text || '').replace(/\D/g, ''), 10);
+  return !Number.isNaN(n) && n > 0 ? n : null;
+}
+
+function roundToNearestTen(value: number): number {
+  return Math.max(0, Math.round(value / 10) * 10);
+}
+
+function calculateIntercitySuggestedPrice(params: {
+  distanceKm: number;
+  createRole: 'driver' | 'passenger';
+  seatsText: string;
+  passengerCountText: string;
+}): number {
+  const fuelLitersPer100Km = 7;
+  const fuelPricePerLiter = 45;
+  const totalFuelCost = (params.distanceKm / 100) * fuelLitersPer100Km * fuelPricePerLiter;
+  const enteredCount =
+    params.createRole === 'driver'
+      ? parsePositiveIntText(params.seatsText)
+      : parsePositiveIntText(params.passengerCountText);
+  const sharingPeople = Math.max(3, (enteredCount ?? 2) + 1);
+  return roundToNearestTen(totalFuelCost / sharingPeople);
+}
+
 export type CreateListingModalProps = {
   visible: boolean;
   onClose: () => void;
@@ -252,6 +278,7 @@ export default function CreateListingModal({
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [brandSheetOpen, setBrandSheetOpen] = useState(false);
+  const [passengerCountText, setPassengerCountText] = useState('');
   const [passengerBudgetText, setPassengerBudgetText] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
   /** Teklif satırı: car | motorcycle (API ile aynı). */
@@ -264,9 +291,16 @@ export default function CreateListingModal({
       setListingScope(scope);
       setOriginCity(city.trim());
       setDestinationCity(scope === 'intercity' ? '' : city.trim());
+      setFromPoint(null);
+      setToPoint(null);
       setDepartureTimeConfirmed(false);
       setDepartureTab('today');
       setFuturePick(null);
+      setSuggestedBase(null);
+      setPriceDelta(0);
+      setPriceMeta(null);
+      setSeatsText('');
+      setPassengerCountText('');
       setOfferVehicleKind('car');
     }
   }, [visible, initialRole, initialScope, city]);
@@ -344,6 +378,12 @@ export default function CreateListingModal({
     return !Number.isNaN(n) && n >= 1;
   }, [createRole, seatsText]);
 
+  const passengerCountValid = useMemo(() => {
+    if (listingScope !== 'intercity' || createRole !== 'passenger') return true;
+    const n = parseInt(passengerCountText.replace(/\D/g, ''), 10);
+    return !Number.isNaN(n) && n >= 1;
+  }, [createRole, listingScope, passengerCountText]);
+
   const missingReasons = useMemo(() => {
     const out: string[] = [];
     const origin = originCity.trim();
@@ -372,11 +412,19 @@ export default function CreateListingModal({
     }
 
     if (suggestedBase == null) {
-      out.push('Önce rota için taban fiyat hesaplamalısın.');
+      out.push(
+        listingScope === 'intercity'
+          ? 'Önce rota için öneri fiyat hesaplamalısın.'
+          : 'Önce rota için taban fiyat hesaplamalısın.',
+      );
     }
 
     if (createRole === 'driver' && !driverSeatsValid) {
-      out.push('Sürücü teklifi için koltuk sayısı (en az 1) zorunlu.');
+      out.push(`${listingScope === 'intercity' ? 'Boş koltuk sayısı' : 'Sürücü teklifi için koltuk sayısı'} (en az 1) zorunlu.`);
+    }
+
+    if (listingScope === 'intercity' && createRole === 'passenger' && !passengerCountValid) {
+      out.push('Kaç kişi alanı (en az 1) zorunlu.');
     }
 
     return out;
@@ -389,6 +437,7 @@ export default function CreateListingModal({
     listingScope,
     mapPinRequired,
     originCity,
+    passengerCountValid,
     suggestedBase,
     toPoint,
   ]);
@@ -402,15 +451,20 @@ export default function CreateListingModal({
 
   const composedNote = useMemo(() => {
     const meta: string[] = [];
+    if (listingScope === 'intercity') {
+      meta.push(`Kapsam: Şehirler arası (${originCity.trim()} → ${destinationCity.trim()})`);
+    }
     if (createRole === 'driver') {
       const sc = parseInt(seatsText.replace(/\D/g, ''), 10);
-      if (!Number.isNaN(sc) && sc > 0) meta.push(`Koltuk: ${sc}`);
+      if (!Number.isNaN(sc) && sc > 0) meta.push(`${listingScope === 'intercity' ? 'Boş koltuk' : 'Koltuk'}: ${sc}`);
       const vb = vehicleBrand.trim();
       const vm = vehicleModel.trim();
       const vc = vehicleColor.trim();
       if (vb || vm || vc) meta.push(`Araç: ${[vb, vm, vc].filter(Boolean).join(' · ')}`);
     } else {
       meta.push('Yolcu teklifi');
+      const pc = parseInt(passengerCountText.replace(/\D/g, ''), 10);
+      if (!Number.isNaN(pc) && pc > 0) meta.push(`Kişi: ${pc}`);
       const bud = parseFloat(passengerBudgetText.replace(',', '.'));
       if (!Number.isNaN(bud) && bud >= 0 && passengerBudgetText.trim()) {
         meta.push(`Bütçe üst sınırı: ${bud} ₺`);
@@ -418,7 +472,7 @@ export default function CreateListingModal({
     }
     if (suggestedBase != null) {
       const finalP = Math.max(0, Math.round(suggestedBase + priceDelta));
-      meta.push(`Ücret (taban±): ${finalP} ₺`);
+      meta.push(`${listingScope === 'intercity' ? 'Öneri fiyat' : 'Ücret (taban±)'}: ${finalP} ₺`);
     }
     if (priceMeta?.distance_km != null) meta.push(`Mesafe: ~${priceMeta.distance_km} km`);
     const head = meta.join(' · ');
@@ -427,7 +481,11 @@ export default function CreateListingModal({
     return head || tail || null;
   }, [
     createRole,
+    destinationCity,
+    listingScope,
     noteBody,
+    originCity,
+    passengerCountText,
     passengerBudgetText,
     priceDelta,
     priceMeta?.distance_km,
@@ -461,6 +519,7 @@ export default function CreateListingModal({
     setVehicleModel('');
     setVehicleColor('');
     setBrandSheetOpen(false);
+    setPassengerCountText('');
     setPassengerBudgetText('');
     setOfferVehicleKind('car');
     setListingScope(initialScope === 'intercity' ? 'intercity' : 'local');
@@ -488,6 +547,11 @@ export default function CreateListingModal({
   const selectIntercityCity = (nextCity: string) => {
     const picked = nextCity.trim();
     if (!picked) return;
+    const other = cityPickerField === 'origin' ? destinationCity.trim() : originCity.trim();
+    if (other && picked.toLocaleLowerCase('tr-TR') === other.toLocaleLowerCase('tr-TR')) {
+      Alert.alert('Şehirler farklı olmalı', 'Şehirler arası teklifte nereden ve nereye şehirleri aynı olamaz.');
+      return;
+    }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (cityPickerField === 'origin') {
       setOriginCity(picked);
@@ -550,7 +614,8 @@ export default function CreateListingModal({
         error?: string;
         detail?: string;
       };
-      if (!res.ok || !data.success || data.suggested_price == null) {
+      const distanceKm = Number(data.distance_km ?? data.trip_distance_km ?? 0);
+      if (listingScope !== 'intercity' && (!res.ok || !data.success || data.suggested_price == null)) {
         const msg =
           typeof data.detail === 'string'
             ? data.detail
@@ -560,10 +625,24 @@ export default function CreateListingModal({
         Alert.alert('Ücret', msg);
         return;
       }
-      setSuggestedBase(Math.round(Number(data.suggested_price)));
+      if (listingScope === 'intercity' && (!res.ok || !data.success || !Number.isFinite(distanceKm) || distanceKm <= 0)) {
+        const msg =
+          typeof data.detail === 'string'
+            ? data.detail
+            : typeof data.error === 'string'
+              ? data.error
+              : 'Öneri fiyat şu an hesaplanamadı. Bağlantını kontrol edip tekrar dene.';
+        Alert.alert('Öneri fiyat', msg);
+        return;
+      }
+      const nextSuggested =
+        listingScope === 'intercity'
+          ? calculateIntercitySuggestedPrice({ distanceKm, createRole, seatsText, passengerCountText })
+          : Math.round(Number(data.suggested_price));
+      setSuggestedBase(nextSuggested);
       setPriceDelta(0);
       setPriceMeta({
-        distance_km: Number(data.distance_km ?? data.trip_distance_km ?? 0) || undefined,
+        distance_km: distanceKm || undefined,
         estimated_minutes: data.estimated_minutes,
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -572,7 +651,7 @@ export default function CreateListingModal({
     } finally {
       setPriceCalcBusy(false);
     }
-  }, [base, fromPoint, toPoint, mapPinRequired]);
+  }, [base, createRole, fromPoint, listingScope, mapPinRequired, passengerCountText, seatsText, toPoint]);
 
   const finalPriceInt = useMemo(() => {
     if (suggestedBase == null) return null;
@@ -645,6 +724,13 @@ export default function CreateListingModal({
         price_amount: finalPriceInt,
         vehicle_kind: offerVehicleKind,
       };
+      if (createRole === 'driver') {
+        const sc = parseInt(seatsText.replace(/\D/g, ''), 10);
+        if (!Number.isNaN(sc) && sc > 0) body.seats_count = sc;
+      } else if (listingScope === 'intercity') {
+        const pc = parseInt(passengerCountText.replace(/\D/g, ''), 10);
+        if (!Number.isNaN(pc) && pc > 0) body.passenger_count = pc;
+      }
 
       const bodyJson = JSON.stringify(body);
       console.warn('[muhabbet-create] fetch primary', urlPrimary);
@@ -720,12 +806,20 @@ export default function CreateListingModal({
       ? originCity.trim()
       : destinationCity.trim()
     : city.trim();
+  const isIntercity = listingScope === 'intercity';
+  const formTitle = isIntercity
+    ? createRole === 'driver'
+      ? 'Şehirler arası sürücü teklifi'
+      : 'Şehirler arası yolcu teklifi'
+    : createRole === 'driver'
+      ? 'Sürücü teklifi oluştur'
+      : 'Yolcu teklifi oluştur';
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalRoot} edges={['left', 'right', 'bottom']}>
         <ScreenHeaderGradient
-          title={`${listingScope === 'intercity' ? 'Şehirler arası' : 'Şehir içi'} ${createRole === 'driver' ? 'sürücü teklifi' : 'yolcu teklifi'}`}
+          title={formTitle}
           onBack={onClose}
           backIcon="close"
           gradientColors={[...HEADER_GRAD]}
@@ -741,19 +835,19 @@ export default function CreateListingModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.sectionEyebrow}>{listingScope === 'intercity' ? 'Şehirler arası' : 'Şehir'}</Text>
-            {listingScope === 'intercity' ? (
+            <Text style={styles.sectionEyebrow}>{isIntercity ? 'Şehirler arası rota' : 'Şehir'}</Text>
+            {isIntercity ? (
               <View style={styles.card}>
-                <Text style={styles.scopeHint}>Kalkış ve varış şehirlerini seç; adres seçici her şehir için ayrı açılır.</Text>
+                <Text style={styles.scopeHint}>Nereden ve nereye gideceğini iki şehirle belirle; adres seçici her şehir için ayrı açılır.</Text>
                 <View style={styles.cityPairRow}>
                   <TouchableOpacity style={styles.cityPickCard} onPress={() => openCityPicker('origin')} activeOpacity={0.88}>
-                    <Text style={styles.inLabel}>Kalkış şehri</Text>
+                    <Text style={styles.inLabel}>Nereden şehir</Text>
                     <Text style={originCity.trim() ? styles.cityPickValue : styles.cityPickPlaceholder}>
                       {originCity.trim() || 'Şehir seç'}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.cityPickCard} onPress={() => openCityPicker('destination')} activeOpacity={0.88}>
-                    <Text style={styles.inLabel}>Varış şehri</Text>
+                    <Text style={styles.inLabel}>Nereye şehir</Text>
                     <Text style={destinationCity.trim() ? styles.cityPickValue : styles.cityPickPlaceholder}>
                       {destinationCity.trim() || 'Şehir seç'}
                     </Text>
@@ -766,41 +860,69 @@ export default function CreateListingModal({
               </View>
             )}
 
-            <Text style={styles.sectionEyebrow}>Teklif türü</Text>
-            <View style={styles.roleRow}>
-              <TouchableOpacity
-                style={[styles.roleChip, createRole === 'passenger' && styles.roleChipOn]}
-                onPress={() => setCreateRole('passenger')}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.roleChipText, createRole === 'passenger' && styles.roleChipTextOn]}>Yolcu</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.roleChip, createRole === 'driver' && styles.roleChipOn]}
-                onPress={() => setCreateRole('driver')}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.roleChipText, createRole === 'driver' && styles.roleChipTextOn]}>Sürücü</Text>
-              </TouchableOpacity>
-            </View>
+            {!isIntercity ? (
+              <>
+                <Text style={styles.sectionEyebrow}>Teklif türü</Text>
+                <View style={styles.roleRow}>
+                  <TouchableOpacity
+                    style={[styles.roleChip, createRole === 'passenger' && styles.roleChipOn]}
+                    onPress={() => setCreateRole('passenger')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.roleChipText, createRole === 'passenger' && styles.roleChipTextOn]}>Yolcu</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.roleChip, createRole === 'driver' && styles.roleChipOn]}
+                    onPress={() => setCreateRole('driver')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.roleChipText, createRole === 'driver' && styles.roleChipTextOn]}>Sürücü</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
 
-            <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Taşıma türü</Text>
-            <View style={styles.roleRow}>
-              <TouchableOpacity
-                style={[styles.roleChip, offerVehicleKind === 'car' && styles.roleChipOn]}
-                onPress={() => setOfferVehicleKind('car')}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.roleChipText, offerVehicleKind === 'car' && styles.roleChipTextOn]}>Araba</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.roleChip, offerVehicleKind === 'motorcycle' && styles.roleChipOn]}
-                onPress={() => setOfferVehicleKind('motorcycle')}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.roleChipText, offerVehicleKind === 'motorcycle' && styles.roleChipTextOn]}>Motor</Text>
-              </TouchableOpacity>
-            </View>
+            {createRole === 'driver' ? (
+              <>
+                <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Araç türü</Text>
+                <View style={styles.roleRow}>
+                  <TouchableOpacity
+                    style={[styles.roleChip, offerVehicleKind === 'car' && styles.roleChipOn]}
+                    onPress={() => setOfferVehicleKind('car')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.roleChipText, offerVehicleKind === 'car' && styles.roleChipTextOn]}>Araba</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.roleChip, offerVehicleKind === 'motorcycle' && styles.roleChipOn]}
+                    onPress={() => setOfferVehicleKind('motorcycle')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.roleChipText, offerVehicleKind === 'motorcycle' && styles.roleChipTextOn]}>Motor</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : !isIntercity ? (
+              <>
+                <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Taşıma türü</Text>
+                <View style={styles.roleRow}>
+                  <TouchableOpacity
+                    style={[styles.roleChip, offerVehicleKind === 'car' && styles.roleChipOn]}
+                    onPress={() => setOfferVehicleKind('car')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.roleChipText, offerVehicleKind === 'car' && styles.roleChipTextOn]}>Araba</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.roleChip, offerVehicleKind === 'motorcycle' && styles.roleChipOn]}
+                    onPress={() => setOfferVehicleKind('motorcycle')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.roleChipText, offerVehicleKind === 'motorcycle' && styles.roleChipTextOn]}>Motor</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
 
             <Text style={styles.sectionEyebrow}>Rota</Text>
             <TouchableOpacity style={styles.cardRow} onPress={() => openPicker('from')} activeOpacity={0.88}>
@@ -808,8 +930,8 @@ export default function CreateListingModal({
                 <Ionicons name="navigate-circle-outline" size={22} color="#2563eb" />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.rowLabel}>Nereden</Text>
-                {listingScope === 'intercity' ? <Text style={styles.rowMetaOk}>{originCity.trim() || 'Kalkış şehri seç'}</Text> : null}
+                <Text style={styles.rowLabel}>{isIntercity ? (createRole === 'driver' ? 'Nereden adres / çıkış noktası' : 'Nereden adres / konum') : 'Nereden'}</Text>
+                {isIntercity ? <Text style={styles.rowMetaOk}>{originCity.trim() || 'Nereden şehir seç'}</Text> : null}
                 <Text style={styles.rowValue} numberOfLines={2}>
                   {endpointSummary(fromPoint)}
                 </Text>
@@ -825,8 +947,8 @@ export default function CreateListingModal({
                 <Ionicons name="flag-outline" size={22} color={ACCENT_ORANGE} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.rowLabel}>Nereye</Text>
-                {listingScope === 'intercity' ? <Text style={styles.rowMetaOk}>{destinationCity.trim() || 'Varış şehri seç'}</Text> : null}
+                <Text style={styles.rowLabel}>{isIntercity ? (createRole === 'driver' ? 'Nereye adres / varış noktası' : 'Nereye adres / konum') : 'Nereye'}</Text>
+                {isIntercity ? <Text style={styles.rowMetaOk}>{destinationCity.trim() || 'Nereye şehir seç'}</Text> : null}
                 <Text style={styles.rowValue} numberOfLines={2}>
                   {endpointSummary(toPoint)}
                 </Text>
@@ -836,6 +958,38 @@ export default function CreateListingModal({
               </View>
               <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
             </TouchableOpacity>
+
+            {isIntercity && createRole === 'driver' ? (
+              <>
+                <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Boş koltuk sayısı</Text>
+                <View style={styles.card}>
+                  <TextInput
+                    style={styles.inField}
+                    value={seatsText}
+                    onChangeText={setSeatsText}
+                    keyboardType="number-pad"
+                    placeholder="Örn. 3"
+                    placeholderTextColor={TEXT_MUTED}
+                  />
+                </View>
+              </>
+            ) : null}
+
+            {isIntercity && createRole === 'passenger' ? (
+              <>
+                <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Kaç kişi</Text>
+                <View style={styles.card}>
+                  <TextInput
+                    style={styles.inField}
+                    value={passengerCountText}
+                    onChangeText={setPassengerCountText}
+                    keyboardType="number-pad"
+                    placeholder="Örn. 2"
+                    placeholderTextColor={TEXT_MUTED}
+                  />
+                </View>
+              </>
+            ) : null}
 
             <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Saat</Text>
             <TouchableOpacity
@@ -865,11 +1019,11 @@ export default function CreateListingModal({
               <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
             </TouchableOpacity>
 
-            <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Ücret</Text>
+            <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>{isIntercity ? 'Yol paylaşımı öneri fiyatı' : 'Ücret'}</Text>
             <View style={[styles.priceCard, createRole === 'driver' ? styles.priceCardDriver : styles.priceCardPassenger]}>
-              <Text style={styles.priceLead}>Rota mesafesine göre sistem tabanı</Text>
+              <Text style={styles.priceLead}>{isIntercity ? 'Yakıt maliyetini yolcularla paylaşmaya göre kişi başı öneri fiyat hesaplanır.' : 'Rota mesafesine göre sistem tabanı'}</Text>
               <GradientButton
-                label={priceCalcBusy ? 'Hesaplanıyor…' : 'Taban fiyat hesapla'}
+                label={priceCalcBusy ? 'Hesaplanıyor…' : isIntercity ? 'Öneri fiyat hesapla' : 'Taban fiyat hesapla'}
                 loading={priceCalcBusy}
                 onPress={() => void calcBasePrice()}
                 disabled={!fromPoint || !toPoint || (mapPinRequired && (!fromPoint.mapPinConfirmed || !toPoint.mapPinConfirmed))}
@@ -884,7 +1038,7 @@ export default function CreateListingModal({
               {finalPriceInt != null ? (
                 <View style={styles.priceHighlight}>
                   <Text style={styles.priceHuge}>{finalPriceInt} ₺</Text>
-                  <Text style={styles.priceSub}>Önerilen tutar (± ile ince ayar)</Text>
+                  <Text style={styles.priceSub}>{isIntercity ? 'Yol paylaşımı öneri fiyatı' : 'Önerilen tutar (± ile ince ayar)'}</Text>
                   <View style={styles.stepRow}>
                     <TouchableOpacity
                       style={styles.stepPill}
@@ -906,28 +1060,31 @@ export default function CreateListingModal({
                     >
                       <Text style={styles.stepPillText}>+10 ₺</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.stepPillOrange}
-                      onPress={() => {
-                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                        setPriceDelta(0);
-                      }}
-                      disabled={suggestedBase == null}
-                    >
-                      <Text style={styles.stepPillOrangeText}>Taban</Text>
-                    </TouchableOpacity>
+                    {!isIntercity ? (
+                      <TouchableOpacity
+                        style={styles.stepPillOrange}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          setPriceDelta(0);
+                        }}
+                        disabled={suggestedBase == null}
+                      >
+                        <Text style={styles.stepPillOrangeText}>Taban</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </View>
               ) : (
-                <Text style={styles.priceHintMuted}>Önce tabanı hesapla; sonra istersen ±10 ₺ oynayabilirsin.</Text>
+                <Text style={styles.priceHintMuted}>Önce {isIntercity ? 'öneri fiyatı' : 'tabanı'} hesapla; sonra istersen ±10 ₺ oynayabilirsin.</Text>
               )}
             </View>
 
             {createRole === 'driver' ? (
+              !isIntercity ? (
               <>
                 <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Kapasite</Text>
                 <View style={styles.card}>
-                  <Text style={styles.inLabel}>Koltuk (zorunlu)</Text>
+                  <Text style={styles.inLabel}>{isIntercity ? 'Boş koltuk sayısı (zorunlu)' : 'Koltuk (zorunlu)'}</Text>
                   <TextInput
                     style={styles.inField}
                     value={seatsText}
@@ -965,19 +1122,24 @@ export default function CreateListingModal({
                   />
                 </View>
               </>
+              ) : null
             ) : (
               <>
-                <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Bütçe (opsiyonel)</Text>
-                <View style={styles.card}>
-                  <TextInput
-                    style={styles.inField}
-                    value={passengerBudgetText}
-                    onChangeText={setPassengerBudgetText}
-                    keyboardType="decimal-pad"
-                    placeholder="Üst limit (₺)"
-                    placeholderTextColor={TEXT_MUTED}
-                  />
-                </View>
+                {!isIntercity ? (
+                  <>
+                    <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Bütçe (opsiyonel)</Text>
+                    <View style={styles.card}>
+                      <TextInput
+                        style={styles.inField}
+                        value={passengerBudgetText}
+                        onChangeText={setPassengerBudgetText}
+                        keyboardType="decimal-pad"
+                        placeholder="Üst limit (₺)"
+                        placeholderTextColor={TEXT_MUTED}
+                      />
+                    </View>
+                  </>
+                ) : null}
               </>
             )}
 
@@ -995,7 +1157,7 @@ export default function CreateListingModal({
             </View>
 
             <GradientButton
-              label="Teklifi aç"
+              label={isIntercity ? 'İlanı aç' : 'Teklifi aç'}
               loading={createBusy}
               disabled={createBusy}
               onPress={() => void submitCreate()}

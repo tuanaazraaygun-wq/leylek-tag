@@ -51,6 +51,11 @@ type HomeFeedListing = {
   match_request_status?: string | null;
   created_by_user_id?: string | null;
   status?: string | null;
+  created_at?: string | null;
+  city?: string | null;
+  listing_scope?: string | null;
+  origin_city?: string | null;
+  destination_city?: string | null;
 };
 
 type IncomingOfferRequest = {
@@ -107,6 +112,9 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
   const glow = isDriver ? 'rgba(59,130,246,0.38)' : 'rgba(245,158,11,0.36)';
   const from = (item.from_text || '—').toString().trim() || '—';
   const to = (item.to_text || '—').toString().trim() || '—';
+  const isIntercity = (item.listing_scope || '').toString().toLowerCase() === 'intercity';
+  const originCity = (item.origin_city || item.city || '').toString().trim();
+  const destinationCity = (item.destination_city || '').toString().trim();
   const priceStr =
     item.price_amount != null && !Number.isNaN(Number(item.price_amount))
       ? `${Number(item.price_amount).toLocaleString('tr-TR')} ₺`
@@ -130,8 +138,18 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
           <View style={cs.pillGreen}>
             <Text style={cs.pillGreenTxt}>{transport}</Text>
           </View>
+          {isIntercity ? (
+            <View style={cs.scopePill}>
+              <Text style={cs.scopePillTxt}>Şehirler arası</Text>
+            </View>
+          ) : null}
           <Text style={cs.price}>{priceStr}</Text>
         </View>
+        {isIntercity && originCity && destinationCity ? (
+          <Text style={cs.cityRoute} numberOfLines={1}>
+            {originCity} → {destinationCity}
+          </Text>
+        ) : null}
         <View style={cs.routeRow}>
           <View style={cs.miniCol}>
             <Text style={cs.tagG}>NEREDEN</Text>
@@ -207,7 +225,17 @@ const cs = StyleSheet.create({
     borderColor: 'rgba(22, 163, 74, 0.35)',
   },
   pillGreenTxt: { fontSize: 10, fontWeight: '800', color: '#15803D' },
+  scopePill: {
+    backgroundColor: 'rgba(14, 165, 233, 0.14)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(14, 165, 233, 0.34)',
+  },
+  scopePillTxt: { fontSize: 10, fontWeight: '900', color: '#0369A1' },
   price: { marginLeft: 'auto', fontSize: 14, fontWeight: '800', color: '#374151' },
+  cityRoute: { marginBottom: 8, fontSize: 13, fontWeight: '900', color: '#0F172A' },
   routeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   miniCol: { flex: 1, minWidth: 0 },
   tagG: { fontSize: 9, fontWeight: '800', color: '#15803D', marginBottom: 2 },
@@ -291,10 +319,12 @@ export default function LeylekMuhabbetiHomeTab({
     setFeedLoading(true);
     try {
       const h = { Authorization: `Bearer ${tok}` };
-      const u = new URLSearchParams({ city: cityQ, limit: '36' });
-      const [rInc, rFeed] = await Promise.all([
+      const localQ = new URLSearchParams({ city: cityQ, limit: '36', listing_scope: 'local' });
+      const intercityQ = new URLSearchParams({ city: cityQ, limit: '36', listing_scope: 'intercity' });
+      const [rInc, rFeed, rFeedIntercity] = await Promise.all([
         fetch(`${base}/muhabbet/match-requests/incoming?status=pending&limit=50`, { headers: h }),
-        fetch(`${base}/muhabbet/listings/feed?${u.toString()}`, { headers: h }),
+        fetch(`${base}/muhabbet/listings/feed?${localQ.toString()}`, { headers: h }),
+        fetch(`${base}/muhabbet/listings/feed?${intercityQ.toString()}`, { headers: h }),
       ]);
       if (rInc.status === 401 || rFeed.status === 401) {
         console.log('[muhabbet] preserving rows during reconnect');
@@ -310,17 +340,28 @@ export default function LeylekMuhabbetiHomeTab({
         }
       }
       {
-        const df = (await rFeed.json().catch(() => ({}))) as {
+        type FeedResponse = {
           success?: boolean;
           listings?: HomeFeedListing[];
           viewer_can_act_as_driver?: boolean;
           viewer_driver_vehicle_kind?: string | null;
         };
+        const df = (await rFeed.json().catch(() => ({}))) as FeedResponse;
+        const di = rFeedIntercity.ok ? ((await rFeedIntercity.json().catch(() => ({}))) as FeedResponse) : {};
         if (typeof df.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(df.viewer_can_act_as_driver);
-        const vkh = (df.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+        else if (typeof di.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(di.viewer_can_act_as_driver);
+        const vkh = (df.viewer_driver_vehicle_kind || di.viewer_driver_vehicle_kind || '').toString().toLowerCase();
         setViewerDriverVk(vkh === 'motorcycle' ? 'motorcycle' : vkh === 'car' ? 'car' : null);
         if (rFeed.ok && df.success && Array.isArray(df.listings)) {
-          const list = df.listings.filter((row) => {
+          const seen = new Set<string>();
+          const merged = [...df.listings, ...(di.success && Array.isArray(di.listings) ? di.listings : [])]
+            .filter((row) => {
+              if (!row?.id || seen.has(row.id)) return false;
+              seen.add(row.id);
+              return true;
+            })
+            .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+          const list = merged.filter((row) => {
             const ls = (row.status || '').toLowerCase();
             if (ls === 'matched' || ls === 'closed' || ls === 'cancelled' || ls === 'pending_chat') return false;
             const st = (row.match_request_status || '').toLowerCase();
