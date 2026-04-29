@@ -24,6 +24,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
@@ -57,6 +58,9 @@ const CITIES = [
 ];
 
 const REPORT_PRESETS = ['Spam', 'Hakaret / nefret', 'Yasadışı içerik', 'Kişisel veri', 'Diğer'];
+
+/** Muhabbet üst header — sol leylek görseli (`frontend/assets/images/leylek-header.png`). */
+const MUHABBET_HEADER_IMAGE = require('../assets/images/leylek-header.png');
 
 const MUHABBET_POST_BODY_MAX = 500;
 
@@ -1210,33 +1214,83 @@ export default function LeylekMuhabbetiFaz1Screen({
           }
         />
       ) : (
-        <ScreenHeaderGradient
-          title="Leylek Teklif Sende"
-          onBack={onBack}
-          gradientColors={leylekTabGrad}
-          right={
-            <View style={styles.headerRightCluster}>
-              <TouchableOpacity onPress={goMuhabbetProfile} style={styles.headerIcon} accessibilityRole="button">
-                <Ionicons name="person-circle-outline" size={26} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowCityModal(true)} style={styles.headerIcon} accessibilityRole="button">
-                <Ionicons name="location-outline" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
+        <View style={[styles.muhabbetTopChrome, { paddingTop: tabInsets.top }]}>
+          <View style={styles.muhabbetGlassOuter}>
+            <View style={styles.muhabbetGlassGlowShell} pointerEvents="none">
+              <LinearGradient
+                colors={['rgba(251,146,60,0.55)', 'rgba(244,114,182,0.35)', 'transparent']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+              />
             </View>
-          }
-        />
+            <LinearGradient
+              colors={['#6d28d9', '#6366f1', '#2563eb']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 26 }]}
+            />
+            <LinearGradient
+              colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.06)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 25 }]}
+            />
+            <BlurView intensity={Platform.OS === 'ios' ? 34 : 22} tint="light" style={styles.muhabbetGlassBlurMask} />
+            <View style={styles.muhabbetGlassInner}>
+              <TouchableOpacity onPress={onBack} style={styles.muhabbetGlassBack} accessibilityRole="button" hitSlop={10}>
+                <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+              <View style={styles.muhabbetLogoBubbleOuter}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.98)', '#EFF6FF']}
+                  style={styles.muhabbetLogoBubbleGrad}
+                >
+                  <Image source={MUHABBET_HEADER_IMAGE} style={styles.muhabbetLogoImg} resizeMode="contain" />
+                </LinearGradient>
+              </View>
+              <View style={styles.muhabbetGlassTitles}>
+                <Text style={styles.muhabbetGlassTitle} numberOfLines={2}>
+                  Leylek Teklif Sende
+                </Text>
+                <Text style={styles.muhabbetGlassSub} numberOfLines={2}>
+                  Teklif aç, eşleş, güvenle yola
+                </Text>
+              </View>
+              <View style={styles.muhabbetGlassRight}>
+                <TouchableOpacity onPress={goMuhabbetProfile} style={styles.muhabbetRoundBtn} accessibilityRole="button">
+                  <Ionicons name="person" size={21} color="#1e3a8a" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowCityModal(true)} style={styles.muhabbetRoundBtn} accessibilityRole="button">
+                  <Ionicons name="location" size={20} color="#1d4ed8" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
       )}
 
+      {muhabbetSurface !== 'legacy' ? (
+        <LinearGradient
+          colors={['rgba(109, 40, 217, 0)', 'rgba(237, 233, 254, 0.28)', 'rgba(237, 233, 254, 0.55)']}
+          locations={[0, 0.5, 1]}
+          style={styles.muhabbetHeaderFade}
+          pointerEvents="none"
+        />
+      ) : null}
+
       <TouchableOpacity
-        style={styles.cityChipLight}
+        style={[styles.cityChipGlass, muhabbetSurface !== 'legacy' && styles.cityChipOverlap]}
         onPress={() => setShowCityModal(true)}
-        activeOpacity={0.88}
+        activeOpacity={0.9}
       >
-        <View style={styles.cityChipLightInner}>
-          <Ionicons name={theme.icon} size={18} color={ACCENT} />
-          <Text style={styles.cityChipLightText}>{selectedCity}</Text>
-          <Ionicons name="chevron-down" size={18} color={TEXT_SECONDARY} />
-        </View>
+        <BlurView intensity={Platform.OS === 'ios' ? 55 : 28} tint="light" style={styles.cityChipGlassBlur}>
+          <View style={styles.cityChipGlassInner}>
+            <Ionicons name={theme.icon} size={20} color={ACCENT} />
+            <Text style={styles.cityChipGlassText}>{selectedCity}</Text>
+            <Ionicons name="chevron-down" size={20} color={TEXT_SECONDARY} />
+          </View>
+        </BlurView>
       </TouchableOpacity>
 
       {muhabbetSurface === 'legacy' ? (
@@ -1470,29 +1524,71 @@ export default function LeylekMuhabbetiFaz1Screen({
               </View>
             ) : null}
           </View>
-          <View style={[styles.muhabbetTabBar, { paddingBottom: Math.max(tabInsets.bottom, 6) }]}>
-            {(['home', 'listings', 'chats'] as const).map((t) => {
-              const active = mainTab === t;
-              const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'Teklifler' : 'Sohbetler';
-              const icon = (() => {
-                if (t === 'home') return active ? ('home' as const) : ('home-outline' as const);
-                if (t === 'listings') return active ? ('newspaper' as const) : ('newspaper-outline' as const);
-                return active ? ('chatbubbles' as const) : ('chatbubbles-outline' as const);
-              })();
-              return (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.muhabbetTabItem, active && styles.muhabbetTabItemActive]}
-                  onPress={() => setMainTab(t)}
-                  activeOpacity={0.88}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                >
-                  <Ionicons name={icon} size={25} color={active ? '#1D4ED8' : TEXT_SECONDARY} />
-                  <Text style={[styles.muhabbetTabLabel, active && styles.muhabbetTabLabelActive]}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View
+            style={[
+              styles.muhabbetTabBarWarmOuter,
+              { paddingBottom: Math.max(tabInsets.bottom, 12) },
+            ]}
+          >
+            <LinearGradient
+              colors={[
+                'rgba(251, 146, 60, 0.42)',
+                'rgba(244, 114, 182, 0.38)',
+                'rgba(168, 85, 247, 0.4)',
+                'rgba(124, 58, 237, 0.38)',
+              ]}
+              locations={[0, 0.35, 0.65, 1]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.muhabbetTabBarWarmGrad}
+              pointerEvents="none"
+            />
+            <BlurView
+              intensity={Platform.OS === 'ios' ? 38 : 22}
+              tint="light"
+              style={styles.muhabbetTabBarBlur}
+            >
+              <View style={styles.muhabbetTabBarInner}>
+                {(['home', 'listings', 'chats'] as const).map((t) => {
+                  const active = mainTab === t;
+                  const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'Teklifler' : 'Sohbetler';
+                  const icon = (() => {
+                    if (t === 'home') return active ? ('home' as const) : ('home-outline' as const);
+                    if (t === 'listings') return active ? ('newspaper' as const) : ('newspaper-outline' as const);
+                    return active ? ('chatbubbles' as const) : ('chatbubbles-outline' as const);
+                  })();
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.muhabbetTabItemWrap, active && styles.muhabbetTabItemWrapActive]}
+                      onPress={() => setMainTab(t)}
+                      activeOpacity={0.88}
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: active }}
+                    >
+                      {active ? (
+                        <View style={styles.muhabbetTabActiveScale}>
+                          <LinearGradient
+                            colors={['#DBEAFE', '#BFDBFE']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.muhabbetTabPillGradActive}
+                          >
+                            <Ionicons name={icon} size={30} color="#1D4ED8" />
+                            <Text style={styles.muhabbetTabLabelActiveFloating}>{label}</Text>
+                          </LinearGradient>
+                        </View>
+                      ) : (
+                        <View style={styles.muhabbetTabInactiveCol}>
+                          <Ionicons name={icon} size={25} color="#64748B" />
+                          <Text style={styles.muhabbetTabLabelFloating}>{label}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </BlurView>
           </View>
         </>
       )}
@@ -1633,49 +1729,257 @@ export default function LeylekMuhabbetiFaz1Screen({
 }
 
 const styles = StyleSheet.create({
-  discoveryRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
+  discoveryRoot: { flex: 1, backgroundColor: '#EDE9FE' },
   tabShell: { flex: 1, minHeight: 0 },
   tabPlaceholder: { flex: 1, justifyContent: 'center', padding: 24 },
-  muhabbetTabBar: {
+  muhabbetTopChrome: { paddingHorizontal: 12, paddingBottom: 6 },
+  muhabbetGlassOuter: {
+    marginHorizontal: 2,
+    borderRadius: 26,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.48)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#6366f1',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.38,
+        shadowRadius: 22,
+      },
+      android: { elevation: 14 },
+      default: {},
+    }),
+  },
+  muhabbetGlassGlowShell: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    opacity: 0.95,
+  },
+  muhabbetGlassBlurMask: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    opacity: Platform.OS === 'ios' ? 0.42 : 0.28,
+  },
+  muhabbetGlassInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    minHeight: 76,
+  },
+  muhabbetGlassBack: {
+    width: 38,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  muhabbetLogoBubbleOuter: {
+    marginLeft: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
+  },
+  muhabbetLogoBubbleGrad: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    padding: 8,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.95)',
+  },
+  muhabbetLogoImg: {
+    width: 38,
+    height: 38,
+    alignSelf: 'center',
+  },
+  muhabbetGlassTitles: { flex: 1, marginLeft: 10, marginRight: 4, minWidth: 0 },
+  muhabbetGlassTitle: {
+    color: '#FFFFFF',
+    fontSize: 15.5,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  muhabbetGlassSub: {
+    marginTop: 3,
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: -0.05,
+    lineHeight: 14,
+  },
+  muhabbetGlassRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  muhabbetRoundBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.22,
+        shadowRadius: 8,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+  },
+  muhabbetHeaderFade: {
+    height: 14,
+    width: '100%',
+    marginTop: -4,
+  },
+  cityChipOverlap: {
+    marginTop: -8,
+  },
+  cityChipGlass: {
+    marginHorizontal: 14,
+    marginBottom: 8,
+    borderRadius: 22,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.14,
+        shadowRadius: 18,
+      },
+      android: { elevation: 10 },
+      default: {},
+    }),
+  },
+  cityChipGlassBlur: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  cityChipGlassInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingVertical: 22,
+    paddingHorizontal: 22,
+  },
+  cityChipGlassText: {
+    color: TEXT_PRIMARY,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.45,
+  },
+  muhabbetTabBarWarmOuter: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    marginTop: -8,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+    borderRadius: 24,
+    overflow: 'hidden',
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.16,
+        shadowRadius: 18,
+      },
+      android: { elevation: 14 },
+      default: {},
+    }),
+  },
+  muhabbetTabBarWarmGrad: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 24,
+  },
+  muhabbetTabBarBlur: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.48)',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.14,
+        shadowRadius: 24,
+      },
+      android: { elevation: 12 },
+      default: {},
+    }),
+  },
+  muhabbetTabBarInner: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(60,60,67,0.12)',
-    backgroundColor: '#FAFAFA',
-    paddingTop: 8,
+    paddingVertical: 8,
     paddingHorizontal: 6,
   },
-  muhabbetTabItem: {
+  muhabbetTabItemWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderRadius: 14,
-    marginHorizontal: 2,
+    minHeight: 76,
+    paddingHorizontal: 2,
   },
-  muhabbetTabItemActive: {
-    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+  muhabbetTabItemWrapActive: {},
+  muhabbetTabActiveScale: {
+    transform: [{ scale: 1.08 }],
   },
-  muhabbetTabLabel: { marginTop: 4, fontSize: 11, fontWeight: '700', color: TEXT_SECONDARY, letterSpacing: -0.1 },
-  muhabbetTabLabelActive: { color: '#1D4ED8', fontWeight: '800' },
-  cityChipLight: {
-    marginHorizontal: 14,
-    marginBottom: 8,
-    borderRadius: 18,
-    backgroundColor: CARD_BG,
-    overflow: 'hidden',
-    ...CARD_SHADOW,
-  },
-  cityChipLightInner: {
-    flexDirection: 'row',
+  muhabbetTabPillGradActive: {
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 26,
+    width: '100%',
+    maxWidth: 124,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#2563eb',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.42,
+        shadowRadius: 18,
+      },
+      android: { elevation: 10 },
+      default: {},
+    }),
   },
-  cityChipLightText: { color: TEXT_PRIMARY, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  muhabbetTabInactiveCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  muhabbetTabLabelFloating: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: -0.15,
+  },
+  muhabbetTabLabelActiveFloating: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: -0.15,
+  },
   feedRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
   feedListContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
   postCardLight: {
@@ -1710,7 +2014,7 @@ const styles = StyleSheet.create({
   headerRightCluster: { flexDirection: 'row', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 0, paddingBottom: 36 },
+  scrollContent: { paddingHorizontal: 0, paddingBottom: 28 },
   sectionBlock: { paddingHorizontal: 16, marginTop: 8 },
   sectionTitle: {
     color: TEXT_PRIMARY,
