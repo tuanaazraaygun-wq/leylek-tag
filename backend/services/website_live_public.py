@@ -108,12 +108,10 @@ _TURKEY_CITIES_ORDERED = [
 ]
 
 
-_DEFAULT_REGION_NAMES = ("Merkez", "Üniversite", "Otogar", "Sanayi", "Çarşı")
-
-_FALLBACK_ACTIVITY_TITLES = (
-    "Şehir içinde eşleşmeler hazırlanıyor",
-    "Aynı yöne gidenler aranıyor",
-)
+_ANKARA_FALLBACK_REGIONS = ("Kızılay", "Çankaya", "Ulus", "Sıhhiye", "Keçiören", "Batıkent", "Etimesgut")
+_ISTANBUL_FALLBACK_REGIONS = ("Kadıköy", "Beşiktaş", "Üsküdar", "Şişli", "Bakırköy", "Taksim", "Levent")
+_IZMIR_FALLBACK_REGIONS = ("Konak", "Alsancak", "Karşıyaka", "Bornova", "Buca", "Göztepe")
+_OTHER_FALLBACK_REGIONS = ("Merkez", "Otogar", "Üniversite", "Sanayi", "Çarşı")
 
 
 def _normalize_city_name(raw: Optional[str]) -> str:
@@ -301,10 +299,19 @@ def _derive_counts_from_rows(rows: list[dict], day_start_iso: str) -> tuple[int,
     return active, pending, today_m
 
 
-def _default_regions_payload() -> list[dict[str, Any]]:
-    intensities = (72, 58, 66, 52, 48)
+def _default_regions_payload(city: str) -> list[dict[str, Any]]:
+    cn = _normalize_city_name(city)
+    if cn == "Ankara":
+        names = _ANKARA_FALLBACK_REGIONS
+    elif cn == "İstanbul":
+        names = _ISTANBUL_FALLBACK_REGIONS
+    elif cn == "İzmir":
+        names = _IZMIR_FALLBACK_REGIONS
+    else:
+        names = _OTHER_FALLBACK_REGIONS
+    intensities = (72, 58, 66, 52, 48, 62, 54)
     out: list[dict[str, Any]] = []
-    for i, name in enumerate(_DEFAULT_REGION_NAMES):
+    for i, name in enumerate(names):
         intensity = intensities[i % len(intensities)]
         level = "Yüksek" if intensity >= 70 else ("Düşük" if intensity < 50 else "Orta")
         out.append({"name": name, "intensity": intensity, "level": level})
@@ -312,14 +319,47 @@ def _default_regions_payload() -> list[dict[str, Any]]:
 
 
 def _fallback_activities_payload(city: str) -> list[dict[str, str]]:
+    cn = _normalize_city_name(city)
+    specs: list[tuple[str, str, str, str]]
+    if cn == "Ankara":
+        specs = [
+            ("Kızılay → Çankaya yolculuk başladı", "Şehir içi rota", "Şimdi", "trip"),
+            ("Çankaya bölgesinde yoğun teklif", "Talep yoğunluğu", "Şimdi", "offer"),
+            ("Ulus yönünde aynı yöne gidenler aranıyor", "Yön eşleştirme", "Az önce", "demand"),
+            ("Sıhhiye hattında güvenli eşleşme", "Eşleşme katmanı", "1 dk önce", "match"),
+            ("Keçiören → Batıkent talep artışı", "Şehir içi", "1 dk önce", "demand"),
+        ]
+    elif cn == "İstanbul":
+        specs = [
+            ("Kadıköy → Beşiktaş yolculuk başladı", "Şehir içi rota", "Şimdi", "trip"),
+            ("Üsküdar bölgesinde yoğun teklif", "Talep yoğunluğu", "Şimdi", "offer"),
+            ("Şişli yönünde yolcu aranıyor", "Yön eşleştirme", "Az önce", "demand"),
+            ("Levent hattında eşleşme tamamlandı", "Eşleşme katmanı", "1 dk önce", "match"),
+            ("Bakırköy → Kadıköy yoğun akış", "Şehir içi", "1 dk önce", "trip"),
+        ]
+    elif cn == "İzmir":
+        specs = [
+            ("Konak → Alsancak yolculuk başladı", "Şehir içi rota", "Şimdi", "trip"),
+            ("Karşıyaka bölgesinde yoğun teklif", "Talep yoğunluğu", "Şimdi", "offer"),
+            ("Bornova yönünde aynı yöne gidenler aranıyor", "Yön eşleştirme", "Az önce", "demand"),
+            ("Göztepe çevresinde eşleşme", "Eşleşme katmanı", "1 dk önce", "match"),
+            ("Buca hattında talep artışı", "Şehir içi", "1 dk önce", "demand"),
+        ]
+    else:
+        specs = [
+            ("Merkez → Otogar yoğun talep", "Şehir içi", "Şimdi", "demand"),
+            ("Üniversite çevresinde teklif yoğunluğu", "Talep", "Şimdi", "offer"),
+            ("Sanayi bölgesinde yolculuk başladı", "Şehir içi rota", "Az önce", "trip"),
+            ("Çarşı hattında eşleşme tamamlandı", "Eşleşme katmanı", "1 dk önce", "match"),
+        ]
     out: list[dict[str, str]] = []
-    for index, title in enumerate(_FALLBACK_ACTIVITY_TITLES):
+    for title, subtitle, time_label, typ in specs:
         out.append(
             {
-                "title": title,
-                "subtitle": city[:120],
-                "timeLabel": "Şimdi",
-                "type": "trip" if index == 0 else "demand",
+                "title": title[:160],
+                "subtitle": subtitle[:120],
+                "timeLabel": time_label[:32],
+                "type": typ[:24],
             }
         )
     return out
@@ -448,7 +488,7 @@ def build_city_live_payload(sb: Any, city_raw: str) -> dict[str, Any]:
             regions_out.append({"name": name[:80], "intensity": intensity, "level": level})
 
     if not regions_out:
-        regions_out = _default_regions_payload()
+        regions_out = _default_regions_payload(city)
 
     activities: list[dict[str, str]] = []
     for tag in rows[:10]:
@@ -465,9 +505,9 @@ def build_city_live_payload(sb: Any, city_raw: str) -> dict[str, Any]:
         activities = _fallback_activities_payload(city)
 
     stats = {
-        "activeTrips": str(active_trips),
-        "pendingOffers": str(pending_offers),
-        "todayMatches": str(today_matches),
+        "activeTrips": int(active_trips),
+        "pendingOffers": int(pending_offers),
+        "todayMatches": int(today_matches),
         "busiestRegion": busiest_region[:120],
         "activeLine": active_line[:160],
     }

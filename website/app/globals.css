@@ -249,6 +249,25 @@ a {
   animation: hud-row-glow 6s ease-in-out infinite;
 }
 
+.map-hud-row.map-hud-row--fresh {
+  animation: map-hud-fresh-pop 1.25s ease-out 1;
+}
+
+@keyframes map-hud-fresh-pop {
+  0% {
+    border-color: rgba(103, 232, 249, 0.08);
+    box-shadow: 0 0 0 rgba(34, 211, 238, 0);
+  }
+  40% {
+    border-color: rgba(103, 232, 249, 0.55);
+    box-shadow: 0 0 22px rgba(34, 211, 238, 0.42);
+  }
+  100% {
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 rgba(34, 211, 238, 0);
+  }
+}
+
 .map-hud-dot {
   height: 6px;
   width: 6px;

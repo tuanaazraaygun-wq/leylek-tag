@@ -2,14 +2,20 @@
 
 import L, { type LatLngExpression } from "leaflet";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
-import type { CityDistrict, CityRoute, TurkeyCity } from "@/lib/city-live-data";
+import type { CityActivity, CityDistrict, CityRoute, TurkeyCity } from "@/lib/city-live-data";
 import { getCityCoordinates } from "@/lib/city-live-data";
 
-type RealCityMapProps = {
+export type RealCityMapProps = {
   city: TurkeyCity;
   districts: CityDistrict[];
   routes: CityRoute[];
   activeLine: string;
+  activities: CityActivity[];
+  dataMode: "live" | "demo";
+  /** Second line under “CANLI ŞEHİR İÇİ AĞ” badge */
+  mapHudSubtitle: string;
+  /** Increments when the newest activity row should flash (live polls). */
+  hudFreshCycle: number;
 };
 
 function RecenterMap({ center, zoom }: { center: LatLngExpression; zoom: number }) {
@@ -95,7 +101,74 @@ function shortStatus(status: string) {
   return "başladı";
 }
 
-export default function RealCityMap({ city, districts, routes, activeLine }: RealCityMapProps) {
+type HudLine = { key: string; text: string; time: string };
+
+function buildHudLines(
+  activities: CityActivity[],
+  routes: CityRoute[],
+  districts: CityDistrict[],
+): { left: HudLine[]; right: HudLine[] } {
+  const fmt = (a: CityActivity): HudLine => ({
+    key: a.id,
+    text: a.subtitle.trim() ? `${a.title} · ${a.subtitle}` : a.title,
+    time: a.time,
+  });
+
+  if (activities.length > 0) {
+    const mid = Math.ceil(activities.length / 2);
+    const leftActs = activities.slice(0, mid).map(fmt);
+    const rightActs = activities.slice(mid).map(fmt);
+    return {
+      left: leftActs,
+      right:
+        rightActs.length > 0
+          ? rightActs
+          : [
+              {
+                key: "syn-fill",
+                text: `${districts[1]?.name ?? districts[0]?.name ?? "Merkez"} çevresinde hareket`,
+                time: "şimdi",
+              },
+            ],
+    };
+  }
+
+  return {
+    left: routes.slice(0, 3).map((r, i) => ({
+      key: r.id,
+      text: `${r.from} → ${r.to} · ${shortStatus(r.status)}`,
+      time: i === 0 ? "şimdi" : `${i} dk`,
+    })),
+    right: [
+      {
+        key: "demo-r1",
+        text: `${districts[1]?.name ?? districts[0]?.name ?? ""} bölgesi yoğun`,
+        time: "şimdi",
+      },
+      {
+        key: "demo-r2",
+        text: `${routes[0]?.from ?? districts[0]?.name ?? ""} hattı aktif`,
+        time: "1 dk",
+      },
+      {
+        key: "demo-r3",
+        text: `${districts[2]?.name ?? districts[0]?.name ?? ""} yönünde talep artıyor`,
+        time: "2 dk",
+      },
+    ],
+  };
+}
+
+export default function RealCityMap({
+  city,
+  districts,
+  routes,
+  activeLine,
+  activities,
+  dataMode,
+  mapHudSubtitle,
+  hudFreshCycle,
+}: RealCityMapProps) {
   const cityCenter = getCityCoordinates(city);
   const center: LatLngExpression = [cityCenter.lat, cityCenter.lng];
   const cityLights = getLightPoints(city, cityCenter.lat, cityCenter.lng);
@@ -103,6 +176,9 @@ export default function RealCityMap({ city, districts, routes, activeLine }: Rea
   function findDistrict(name: string) {
     return districts.find((district) => district.name === name) ?? districts[0];
   }
+
+  const { left: hudLeft, right: hudRight } = buildHudLines(activities, routes, districts);
+  const heatBadge = dataMode === "live" ? "canlı" : "demo";
 
   return (
     <div className="relative h-full min-h-[640px] overflow-hidden rounded-[2rem]">
@@ -197,7 +273,7 @@ export default function RealCityMap({ city, districts, routes, activeLine }: Rea
           <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.9)]" />
           <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-100">CANLI ŞEHİR İÇİ AĞ</p>
         </div>
-        <p className="mt-1 text-xs font-semibold text-slate-400">Harita görünümü · Demo canlı katman</p>
+        <p className="mt-1 text-xs font-semibold text-slate-400">{mapHudSubtitle}</p>
       </div>
 
       <div className="pointer-events-none absolute inset-x-4 top-24 text-center sm:top-20">
@@ -213,13 +289,15 @@ export default function RealCityMap({ city, districts, routes, activeLine }: Rea
             <span className="rounded-full bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">canlı</span>
           </div>
           <div className="space-y-1.5">
-            {routes.slice(0, 3).map((route, index) => (
-              <div key={route.id} className="map-hud-row" style={{ animationDelay: `${index * 0.6}s` }}>
+            {hudLeft.map((row, index) => (
+              <div
+                key={index === 0 ? `left-${hudFreshCycle}-${row.key}` : row.key}
+                className={`map-hud-row ${index === 0 && hudFreshCycle > 0 ? "map-hud-row--fresh" : ""}`}
+                style={{ animationDelay: `${index * 0.6}s` }}
+              >
                 <span className="map-hud-dot" />
-                <span className="truncate">
-                  {route.from} → {route.to} · {shortStatus(route.status)}
-                </span>
-                <span className="ml-auto text-[10px] text-cyan-100/70">{index === 0 ? "şimdi" : `${index} dk`}</span>
+                <span className="truncate">{row.text}</span>
+                <span className="ml-auto text-[10px] text-cyan-100/70">{row.time}</span>
               </div>
             ))}
           </div>
@@ -228,7 +306,7 @@ export default function RealCityMap({ city, districts, routes, activeLine }: Rea
         <div className="map-hud-panel hidden lg:block">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">Bölge yoğunluğu</p>
-            <span className="text-[10px] font-bold text-slate-400">demo</span>
+            <span className="text-[10px] font-bold text-slate-400">{heatBadge}</span>
           </div>
           <div className="grid grid-cols-4 gap-2">
             {districts.slice(0, 4).map((district) => (
@@ -237,9 +315,9 @@ export default function RealCityMap({ city, districts, routes, activeLine }: Rea
                   <span className="truncate text-[11px] font-bold text-white">{district.name}</span>
                   <span className="text-[10px] text-cyan-100">{district.level}</span>
                 </div>
-                <div className="mt-1 h-1 rounded-full bg-white/10">
+                <div className="mt-1 h-1 rounded-full bg-white/10 transition-[width] duration-700 ease-out">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-cyan-200 to-emerald-300"
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-200 to-emerald-300 transition-[width] duration-700 ease-out"
                     style={{ width: `${district.intensity}%` }}
                   />
                 </div>
@@ -254,15 +332,11 @@ export default function RealCityMap({ city, districts, routes, activeLine }: Rea
             <span className="rounded-full bg-cyan-300/10 px-2 py-0.5 text-[10px] font-black text-cyan-100">akış</span>
           </div>
           <div className="space-y-1.5">
-            {[
-              `${districts[1]?.name ?? districts[0]?.name} bölgesi yoğun`,
-              `${routes[0]?.from ?? districts[0]?.name} hattı aktif`,
-              `${districts[2]?.name ?? districts[0]?.name} yönünde talep artıyor`,
-            ].map((item, index) => (
-              <div key={item} className="map-hud-row" style={{ animationDelay: `${index * 0.7}s` }}>
+            {hudRight.map((row, index) => (
+              <div key={row.key} className="map-hud-row" style={{ animationDelay: `${index * 0.7}s` }}>
                 <span className="map-hud-dot bg-cyan-200" />
-                <span className="truncate">{item}</span>
-                <span className="ml-auto text-[10px] text-cyan-100/70">{index === 0 ? "şimdi" : `${index} dk`}</span>
+                <span className="truncate">{row.text}</span>
+                <span className="ml-auto text-[10px] text-cyan-100/70">{row.time}</span>
               </div>
             ))}
           </div>

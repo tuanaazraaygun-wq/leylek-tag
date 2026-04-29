@@ -347,7 +347,13 @@ function mergeIntercityFromApi(data: PublicIntercityResponse): IntercityDashboar
   return { routes, stats, activityFeed, routeInfoPreviews, telemetry };
 }
 
-export async function loadIntercityDashboard(): Promise<{ dashboard: IntercityDashboard; source: "live" | "demo" }> {
+export type LoadIntercityDashboardOptions = {
+  retainedLive?: IntercityDashboard | null;
+};
+
+export async function loadIntercityDashboard(
+  options?: LoadIntercityDashboardOptions,
+): Promise<{ dashboard: IntercityDashboard; source: "live" | "demo" }> {
   const baseUrl = apiConfig.apiBaseUrl.replace(/\/$/, "");
   const wantLive = process.env.NEXT_PUBLIC_USE_REAL_LIVE_DATA === "true";
   if (!wantLive || !baseUrl) {
@@ -371,6 +377,10 @@ export async function loadIntercityDashboard(): Promise<{ dashboard: IntercityDa
       source: "live",
     };
   } catch {
+    const retained = options?.retainedLive;
+    if (retained) {
+      return { dashboard: retained, source: "live" };
+    }
     return { dashboard: demoDashboard(), source: "demo" };
   }
 }

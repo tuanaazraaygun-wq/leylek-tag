@@ -1,28 +1,50 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ButtonLink } from "@/components/button-link";
 import { IntercityRealMapLoader } from "@/components/intercity-real-map-loader";
-import { getIntercityDashboard, loadIntercityDashboard } from "@/lib/intercity-live-data";
+import { hasApiBaseUrl } from "@/lib/config";
+import { getIntercityDashboard, loadIntercityDashboard, type IntercityDashboard } from "@/lib/intercity-live-data";
 
 const wantLiveData = process.env.NEXT_PUBLIC_USE_REAL_LIVE_DATA === "true";
 
 export function IntercityLiveMap() {
   const [dashboard, setDashboard] = useState(() => getIntercityDashboard());
   const [liveOk, setLiveOk] = useState(false);
+  const liveSnapshotRef = useRef<IntercityDashboard | null>(null);
 
   useEffect(() => {
+    if (!wantLiveData || !hasApiBaseUrl) {
+      void Promise.resolve().then(() => {
+        setDashboard(getIntercityDashboard());
+        setLiveOk(false);
+      });
+      return;
+    }
+
     let cancelled = false;
-    (async () => {
-      const { dashboard: next, source } = await loadIntercityDashboard();
-      if (!cancelled) {
-        setDashboard(next);
-        setLiveOk(source === "live");
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    async function tick() {
+      const retained = liveSnapshotRef.current;
+      const { dashboard: next, source } = await loadIntercityDashboard({
+        retainedLive: retained ?? undefined,
+      });
+      if (cancelled) return;
+      if (source === "live") {
+        liveSnapshotRef.current = next;
       }
-    })();
+      setDashboard(next);
+      setLiveOk(source === "live");
+    }
+
+    tick();
+    intervalId = setInterval(tick, 15000);
+
     return () => {
       cancelled = true;
+      if (intervalId !== undefined) clearInterval(intervalId);
     };
   }, []);
 

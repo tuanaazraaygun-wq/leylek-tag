@@ -123,9 +123,9 @@ export type CityLiveDashboard = {
   routes: CityRoute[];
   activities: CityActivity[];
   stats: {
-    activeTrips: string;
-    pendingOffers: string;
-    todayMatches: string;
+    activeTrips: number;
+    pendingOffers: number;
+    todayMatches: number;
     busiestRegion: string;
     activeLine: string;
   };
@@ -461,28 +461,49 @@ export function getCityLiveDashboard(city: string): CityLiveDashboard {
     routes,
     activities,
     stats: {
-      activeTrips: "24",
-      pendingOffers: "11",
-      todayMatches: "148",
+      activeTrips: 24,
+      pendingOffers: 11,
+      todayMatches: 148,
       busiestRegion,
       activeLine,
     },
   };
 }
 
+function coerceLiveStat(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  if (typeof value === "string") {
+    const n = parseInt(value.replace(/\D/g, ""), 10);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  return 0;
+}
+
 type PublicCityLiveResponse = {
   success: boolean;
   city: string;
   stats: {
-    activeTrips: string;
-    pendingOffers: string;
-    todayMatches: string;
+    activeTrips: number | string;
+    pendingOffers: number | string;
+    todayMatches: number | string;
     busiestRegion: string;
     activeLine: string;
   };
   activities: Array<{ title: string; subtitle: string; timeLabel: string; type: string }>;
   regions: Array<{ name: string; intensity: number; level: string }>;
 };
+
+function fnv1aActivityId(parts: string[]): string {
+  let h = 2166136261 >>> 0;
+  const blob = parts.join("\x1e");
+  for (let i = 0; i < blob.length; i++) {
+    h ^= blob.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return (h >>> 0).toString(36);
+}
 
 function mapActivityApiType(raw: string): CityActivity["type"] {
   const x = raw.toLowerCase();
@@ -513,7 +534,7 @@ function mergeCityLiveFromApi(cityParam: string, api: PublicCityLiveResponse): C
   const selected = resolveTurkeyCityLabel(api.city || cityParam);
   const base = getCityLiveDashboard(selected);
   const mappedActivities = (api.activities ?? []).slice(0, 12).map((a, index) => ({
-    id: `live-${index}`,
+    id: `live-${fnv1aActivityId([String(index), a.title, a.subtitle, a.timeLabel, a.type])}`,
     title: a.title,
     subtitle: a.subtitle,
     time: a.timeLabel,
@@ -524,16 +545,24 @@ function mergeCityLiveFromApi(cityParam: string, api: PublicCityLiveResponse): C
     districts: mergeDistrictsFromApi(base.districts, api.regions ?? []),
     activities: mappedActivities.length > 0 ? mappedActivities : base.activities,
     stats: {
-      activeTrips: api.stats?.activeTrips ?? base.stats.activeTrips,
-      pendingOffers: api.stats?.pendingOffers ?? base.stats.pendingOffers,
-      todayMatches: api.stats?.todayMatches ?? base.stats.todayMatches,
+      activeTrips: coerceLiveStat(api.stats?.activeTrips ?? base.stats.activeTrips),
+      pendingOffers: coerceLiveStat(api.stats?.pendingOffers ?? base.stats.pendingOffers),
+      todayMatches: coerceLiveStat(api.stats?.todayMatches ?? base.stats.todayMatches),
       busiestRegion: api.stats?.busiestRegion ?? base.stats.busiestRegion,
       activeLine: api.stats?.activeLine ?? base.stats.activeLine,
     },
   };
 }
 
-export async function loadCityLiveDashboard(city: string): Promise<{ dashboard: CityLiveDashboard; source: "live" | "demo" }> {
+export type LoadCityLiveDashboardOptions = {
+  /** Last successful live snapshot for this city; used when fetch fails (keeps UI stable). */
+  retainedLive?: CityLiveDashboard | null;
+};
+
+export async function loadCityLiveDashboard(
+  city: string,
+  options?: LoadCityLiveDashboardOptions,
+): Promise<{ dashboard: CityLiveDashboard; source: "live" | "demo" }> {
   const baseUrl = apiConfig.apiBaseUrl.replace(/\/$/, "");
   const wantLive = process.env.NEXT_PUBLIC_USE_REAL_LIVE_DATA === "true";
   if (!wantLive || !baseUrl) {
@@ -547,6 +576,10 @@ export async function loadCityLiveDashboard(city: string): Promise<{ dashboard: 
     if (!data.success) throw new Error("not_success");
     return { dashboard: mergeCityLiveFromApi(city, data), source: "live" };
   } catch {
+    const retained = options?.retainedLive;
+    if (retained) {
+      return { dashboard: retained, source: "live" };
+    }
     return { dashboard: getCityLiveDashboard(city), source: "demo" };
   }
 }
