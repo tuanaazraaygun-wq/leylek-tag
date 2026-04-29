@@ -17,7 +17,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -92,6 +92,8 @@ export type ConversationsScreenProps = {
   onlyAccepted?: boolean;
   /** Üst bileşen yenilemesinde listeyi tekrar çek */
   refreshNonce?: number;
+  /** Liste unread toplamı (alt tab rozeti vb.) */
+  onUnreadSumChange?: (total: number) => void;
 };
 
 const MS = 1000;
@@ -259,14 +261,13 @@ const ConversationListRow = memo(function ConversationListRow({
                   <UnreadPulseWrap active={unread && isFocused}>
                     <View style={styles.timeColPulseInner}>
                       <View style={styles.timeUnreadRow}>
-                        {unread && unreadCount <= 1 ? <View style={styles.unreadDot} /> : null}
                         {item.last_message_at ? (
                           <Text style={[styles.timeRight, unread && styles.timeRightUnread]}>
                             {formatLastMessageListTime(String(item.last_message_at))}
                           </Text>
                         ) : null}
                       </View>
-                      {unread && unreadCount > 1 ? (
+                      {unread ? (
                         unreadCount > 9 ? (
                           <View style={styles.unreadBadge}>
                             <Text style={styles.unreadBadgeTxt}>9+</Text>
@@ -324,6 +325,7 @@ export default function ConversationsScreen({
   variant = 'full',
   onlyAccepted = false,
   refreshNonce = 0,
+  onUnreadSumChange,
 }: ConversationsScreenProps) {
   const router = useRouter();
   const chatOpenBusyRef = useRef(false);
@@ -334,7 +336,21 @@ export default function ConversationsScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState<MuhabbetConversationListItem[]>([]);
   const [myUserId, setMyUserId] = useState('');
+  const myUserIdRef = useRef('');
   const [err, setErr] = useState<string | null>(null);
+
+  const emitUnreadSum = useCallback(
+    (items: MuhabbetConversationListItem[]) => {
+      if (!onUnreadSumChange) return;
+      const sum = items.reduce((acc, c) => acc + Math.max(0, Number(c.unread_count || 0)), 0);
+      onUnreadSumChange(sum);
+    },
+    [onUnreadSumChange]
+  );
+
+  useEffect(() => {
+    myUserIdRef.current = myUserId;
+  }, [myUserId]);
   const sortConversations = useCallback((items: MuhabbetConversationListItem[]) => {
     return [...items].sort((a, b) => {
       const ta = new Date(String(a.last_message_at || a.created_at || 0)).getTime();
@@ -415,7 +431,7 @@ export default function ConversationsScreen({
                 ...c,
                 last_message_body: lp.text,
                 last_message_at: lp.created_at,
-                unread_count: c.unread_count || 0,
+                unread_count: Number(c.unread_count ?? 0),
               };
             }
           } catch {
@@ -425,18 +441,41 @@ export default function ConversationsScreen({
             ...c,
             last_message_body: c.last_message_body ?? c.last_message ?? null,
             last_message_at: c.last_message_at ?? null,
-            unread_count: c.unread_count || 0,
+            unread_count: Number(c.unread_count ?? 0),
           };
         })
       );
-      setRows(sortConversations(enriched));
+      const sorted = sortConversations(enriched);
+      setRows(sorted);
+      emitUnreadSum(sorted);
     } catch {
       setErr('Bağlantı hatası.');
       console.log('[muhabbet] preserving rows during reconnect');
     } finally {
       setLoading(false);
     }
-  }, [base, embedded, onlyAccepted, sortConversations]);
+  }, [base, embedded, onlyAccepted, sortConversations, emitUnreadSum]);
+
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleReload = useCallback(() => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      void load();
+    }, 400);
+  }, [load]);
+
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (embedded) void load();
+    }, [embedded, load])
+  );
 
   useEffect(() => {
     void load();
@@ -456,7 +495,7 @@ export default function ConversationsScreen({
         const mapped = prev.map((c) => {
           const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
           if (cid !== conv) return c;
-          const isIncoming = Boolean(senderId && myUserId && senderId !== myUserId);
+          const isIncoming = Boolean(senderId && myUserIdRef.current && senderId !== myUserIdRef.current);
           return {
             ...c,
             last_message_body: text || null,
@@ -464,27 +503,31 @@ export default function ConversationsScreen({
             unread_count: isIncoming ? Math.max(1, Number(c.unread_count || 0) + 1) : Number(c.unread_count || 0),
           };
         });
-        return sortConversations(mapped);
+        const next = sortConversations(mapped);
+        queueMicrotask(() => emitUnreadSum(next));
+        return next;
       });
     });
     return () => sub.remove();
-  }, [myUserId, sortConversations]);
+  }, [sortConversations, emitUnreadSum]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const sub = DeviceEventEmitter.addListener(MUHABBET_CONVERSATION_READ, (payload: Record<string, unknown>) => {
       const conv = payload?.conversation_id != null ? String(payload.conversation_id).trim().toLowerCase() : '';
       if (!conv) return;
-      setRows((prev) =>
-        prev.map((c) => {
+      setRows((prev) => {
+        const next = prev.map((c) => {
           const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
           if (cid !== conv) return c;
           return { ...c, unread_count: 0 };
-        })
-      );
+        });
+        queueMicrotask(() => emitUnreadSum(next));
+        return next;
+      });
     });
     return () => sub.remove();
-  }, []);
+  }, [emitUnreadSum]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -504,11 +547,16 @@ export default function ConversationsScreen({
       const unreadFor = payload?.unread_for_user_id != null ? String(payload.unread_for_user_id).trim().toLowerCase() : '';
       setRows((prev) => {
         let found = false;
+        const myLo = myUserIdRef.current.trim().toLowerCase();
+        if (!myLo) {
+          scheduleReload();
+          return prev;
+        }
         const next = prev.map((c) => {
           const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
           if (cid !== conv) return c;
           found = true;
-          const isUnreadForMe = Boolean(myUserId && unreadFor && unreadFor === myUserId && sender && sender !== myUserId);
+          const isUnreadForMe = Boolean(unreadFor && unreadFor === myLo && sender && sender !== myLo);
           return {
             ...c,
             last_message_body: body || c.last_message_body || null,
@@ -520,14 +568,16 @@ export default function ConversationsScreen({
           void load();
           return prev;
         }
-        return sortConversations(next);
+        const sorted = sortConversations(next);
+        queueMicrotask(() => emitUnreadSum(sorted));
+        return sorted;
       });
     };
     socket.on('muhabbet_conversation_updated', onConversationUpdated);
     return () => {
       socket.off('muhabbet_conversation_updated', onConversationUpdated);
     };
-  }, [load, myUserId, sortConversations]);
+  }, [load, sortConversations, scheduleReload, emitUnreadSum]);
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -597,6 +647,18 @@ export default function ConversationsScreen({
         })
       );
       DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
+      void (async () => {
+        try {
+          const token = (await getPersistedAccessToken())?.trim();
+          if (!token) return;
+          await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/read`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {
+          /* noop */
+        }
+      })();
       const otherPublicName =
         (c.other_user_public_name && String(c.other_user_public_name).trim()) ||
         (c.other_user_name && String(c.other_user_name).trim()) ||
@@ -610,7 +672,7 @@ export default function ConversationsScreen({
         })
       );
     },
-    [router]
+    [router, base]
   );
 
   const conversationKeyExtractor = useCallback((item: MuhabbetConversationListItem, index: number) => {
@@ -808,12 +870,6 @@ const styles = StyleSheet.create({
   timeCol: { alignItems: 'flex-end', gap: 5 },
   timeColPulseInner: { alignItems: 'flex-end', gap: 5 },
   timeUnreadRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  unreadDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#2563EB',
-  },
   avatarRing: {
     borderRadius: 999,
     padding: 3,

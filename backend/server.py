@@ -21791,6 +21791,95 @@ def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
         return None
 
 
+def _muhabbet_reader_last_read_dt(conversation_row: dict, uid: str):
+    uid_lo = str(uid or "").strip().lower()
+    a = str(conversation_row.get("user_a") or "").strip().lower()
+    b = str(conversation_row.get("user_b") or "").strip().lower()
+    if uid_lo == a:
+        raw = conversation_row.get("user_a_last_read_at")
+    elif uid_lo == b:
+        raw = conversation_row.get("user_b_last_read_at")
+    else:
+        return None
+    return _muhabbet_trip_parse_dt(raw)
+
+
+def _muhabbet_unread_count_for_member(conversation_row: dict, uid: str) -> int:
+    """Karşı tarafın gönderdiği, okuma zaman damgasından sonra gelen ve silinmemiş mesaj sayısı."""
+    cid = str(conversation_row.get("id") or "").strip().lower()
+    uid_lo = str(uid or "").strip().lower()
+    if not cid or not uid_lo:
+        return 0
+    cur_dt = _muhabbet_reader_last_read_dt(conversation_row, uid_lo)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        res = (
+            supabase.table("muhabbet_messages")
+            .select("sender_id,created_at,deleted_for_user_ids")
+            .eq("conversation_id", cid)
+            .gt("expires_at", now_iso)
+            .neq("sender_id", uid_lo)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("_muhabbet_unread_count_for_member: %s", e)
+        return 0
+    n = 0
+    for r in res.data or []:
+        del_ids = r.get("deleted_for_user_ids") or []
+        del_lo = {str(x).strip().lower() for x in del_ids if x}
+        if uid_lo in del_lo:
+            continue
+        msg_dt = _muhabbet_trip_parse_dt(r.get("created_at"))
+        if msg_dt is None:
+            continue
+        if cur_dt is None or msg_dt > cur_dt:
+            n += 1
+    return n
+
+
+def _muhabbet_bump_reader_cursor_to_max_iso(cid: str, reader_uid: str, candidate_iso: str) -> None:
+    """Okuma işaretini en fazla candidate_iso olacak şekilde ilerlet (geri almaz)."""
+    cid = str(cid or "").strip().lower()
+    reader_uid = str(reader_uid or "").strip().lower()
+    cand_raw = str(candidate_iso or "").strip()
+    if not cid or not reader_uid or not cand_raw:
+        return
+    cand_dt = _muhabbet_trip_parse_dt(cand_raw)
+    if cand_dt is None:
+        return
+    try:
+        cr = (
+            supabase.table("conversations")
+            .select("user_a,user_b,user_a_last_read_at,user_b_last_read_at")
+            .eq("id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not cr.data:
+            return
+        row = dict(cr.data[0])
+        a = str(row.get("user_a") or "").strip().lower()
+        b = str(row.get("user_b") or "").strip().lower()
+        now_patch_iso = datetime.now(timezone.utc).isoformat()
+        patch: dict = {"updated_at": now_patch_iso}
+        if reader_uid == a:
+            prev_dt = _muhabbet_trip_parse_dt(row.get("user_a_last_read_at"))
+            if prev_dt is not None and cand_dt <= prev_dt:
+                return
+            patch["user_a_last_read_at"] = cand_raw
+        elif reader_uid == b:
+            prev_dt = _muhabbet_trip_parse_dt(row.get("user_b_last_read_at"))
+            if prev_dt is not None and cand_dt <= prev_dt:
+                return
+            patch["user_b_last_read_at"] = cand_raw
+        else:
+            return
+        supabase.table("conversations").update(patch).eq("id", cid).execute()
+    except Exception as e:
+        logger.warning("_muhabbet_bump_reader_cursor_to_max_iso: %s", e)
+
+
 async def _muhabbet_publish_message_after_persist(
     *,
     cid: str,
@@ -22230,6 +22319,14 @@ async def _muhabbet_route_message_receipt(sid: str, data: Any, out_event: str) -
     if uid not in (a, b) or author not in (a, b) or uid == author:
         return
     await emit_socket_event_to_user(author, out_event, {"conversation_id": cid, "message_id": mid})
+    if out_event == "message_seen":
+        try:
+            msg_row = _muhabbet_message_fetch_by_id(cid, mid)
+            created_iso = str((msg_row or {}).get("created_at") or "").strip()
+            if created_iso:
+                _muhabbet_bump_reader_cursor_to_max_iso(cid, uid, created_iso)
+        except Exception as bump_err:
+            logger.warning("message_seen read cursor bump: %s", bump_err)
 
 
 @sio.on("message_delivered")
@@ -24203,7 +24300,10 @@ async def muhabbet_conversations_me(
         fetch_lim = min(100, lim + len(hidden_ids))
         res = (
             supabase.table("conversations")
-            .select("id, user_a, user_b, created_at, matched_at, match_source, last_message, last_message_at")
+            .select(
+                "id, user_a, user_b, created_at, matched_at, match_source, last_message, last_message_at, "
+                "user_a_last_read_at, user_b_last_read_at"
+            )
             .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
             .order("created_at", desc=True)
             .limit(fetch_lim)
@@ -24324,6 +24424,11 @@ async def muhabbet_conversations_me(
             conv_last_at = c.get("last_message_at")
             last_body = lm.get("last_message_body") or conv_last_body
             last_at = lm.get("last_message_at") or conv_last_at
+            try:
+                unread_n = _muhabbet_unread_count_for_member(dict(c), uid)
+            except Exception as ue:
+                logger.warning("conversations_me unread_count cid=%s err=%s", conv_id, ue)
+                unread_n = 0
             out.append(
                 {
                     "id": conv_id,
@@ -24350,6 +24455,7 @@ async def muhabbet_conversations_me(
                     "last_message_body": last_body,
                     "last_message": conv_last_body,
                     "last_message_at": last_at,
+                    "unread_count": unread_n,
                 }
             )
         logger.info("[muhabbet-conversations] returned_count=%s", len(out))
@@ -24696,6 +24802,36 @@ async def muhabbet_leylek_pair_request_decline(
         raise
     except Exception as e:
         logger.error(f"muhabbet_leylek_pair_request_decline: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/read")
+async def muhabbet_conversation_mark_read(
+    conversation_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sohbet açıldığında okundu işareti; unread_count için user_*_last_read_at güncellenir."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        crow = _muhabbet_conversation_for_member_or_403(cid, uid)
+        uid_lo = str(uid or "").strip().lower()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        a = str(crow.get("user_a") or "").strip().lower()
+        b = str(crow.get("user_b") or "").strip().lower()
+        patch = {"updated_at": now_iso}
+        if uid_lo == a:
+            patch["user_a_last_read_at"] = now_iso
+        elif uid_lo == b:
+            patch["user_b_last_read_at"] = now_iso
+        else:
+            raise HTTPException(status_code=403, detail="Bu sohbetin üyesi değilsiniz")
+        supabase.table("conversations").update(patch).eq("id", cid).execute()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_mark_read: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

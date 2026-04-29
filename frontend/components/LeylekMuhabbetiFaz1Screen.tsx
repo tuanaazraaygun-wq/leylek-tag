@@ -33,6 +33,7 @@ import LeylekMuhabbetiHomeTab from './LeylekMuhabbetiHomeTab';
 import ListingsTab from './ListingsTab';
 import ConversationsScreen from './ConversationsScreen';
 import { getPersistedAccessToken } from '../lib/sessionToken';
+import { getOrCreateSocket } from '../contexts/SocketContext';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -337,6 +338,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [inboxSync, setInboxSync] = useState(0);
   const [muhabbetSurface, setMuhabbetSurface] = useState<'tabs' | 'legacy'>('tabs');
   const [mainTab, setMainTab] = useState<'home' | 'listings' | 'chats'>('home');
+  const [chatsUnreadTotal, setChatsUnreadTotal] = useState(0);
   const [listingCreateSignal, setListingCreateSignal] = useState(0);
   const [listingCreateRole, setListingCreateRole] = useState<'driver' | 'passenger'>('passenger');
   const [listingCreateScope, setListingCreateScope] = useState<'local' | 'intercity'>('local');
@@ -374,6 +376,73 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [createGroupName, setCreateGroupName] = useState('');
   const [createGroupDesc, setCreateGroupDesc] = useState('');
   const [createGroupBusy, setCreateGroupBusy] = useState(false);
+
+  const fetchChatsUnreadSum = useCallback(async () => {
+    if (!tok) {
+      setChatsUnreadTotal(0);
+      return;
+    }
+    try {
+      const token = (await getPersistedAccessToken())?.trim();
+      if (!token) return;
+      const base = apiUrl.replace(/\/$/, '');
+      const res = await fetch(`${base}/muhabbet/conversations/me?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        conversations?: {
+          unread_count?: number;
+          request_status?: string | null;
+          matched_at?: string | null;
+          last_message_at?: string | null;
+          last_message_body?: string | null;
+          last_message?: string | null;
+        }[];
+      };
+      if (!data.success || !Array.isArray(data.conversations)) return;
+      const list = data.conversations.filter((c) => {
+        const req = (c.request_status || '').toLowerCase();
+        if (req === 'accepted') return true;
+        if (String(c.matched_at || '').trim()) return true;
+        if (
+          String(c.last_message_at || '').trim() ||
+          String(c.last_message_body || '').trim() ||
+          String(c.last_message || '').trim()
+        ) {
+          return true;
+        }
+        return false;
+      });
+      const sum = list.reduce((acc, c) => acc + Math.max(0, Number(c.unread_count || 0)), 0);
+      setChatsUnreadTotal(sum);
+    } catch {
+      /* noop */
+    }
+  }, [tok, apiUrl]);
+
+  useEffect(() => {
+    void fetchChatsUnreadSum();
+  }, [fetchChatsUnreadSum, inboxSync, mainTab]);
+
+  useEffect(() => {
+    if (!tok || Platform.OS === 'web') return;
+    const socket = getOrCreateSocket();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void fetchChatsUnreadSum();
+      }, 450);
+    };
+    socket.on('muhabbet_conversation_updated', schedule);
+    return () => {
+      socket.off('muhabbet_conversation_updated', schedule);
+      if (timer) clearTimeout(timer);
+    };
+  }, [tok, fetchChatsUnreadSum]);
 
   useEffect(() => {
     const gid = (initialGroupId || '').trim();
@@ -1517,6 +1586,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                   variant="embedded"
                   onlyAccepted
                   refreshNonce={inboxSync}
+                  onUnreadSumChange={setChatsUnreadTotal}
                 />
               </View>
             ) : null}
@@ -1550,6 +1620,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                     if (t === 'listings') return active ? ('newspaper' as const) : ('newspaper-outline' as const);
                     return active ? ('chatbubbles' as const) : ('chatbubbles-outline' as const);
                   })();
+                  const showChatBadge = t === 'chats' && chatsUnreadTotal > 0;
                   return (
                     <TouchableOpacity
                       key={t}
@@ -1558,25 +1629,37 @@ export default function LeylekMuhabbetiFaz1Screen({
                       activeOpacity={0.88}
                       accessibilityRole="tab"
                       accessibilityState={{ selected: active }}
+                      accessibilityLabel={
+                        showChatBadge ? `${label}, ${chatsUnreadTotal > 9 ? '9+' : chatsUnreadTotal} okunmamış` : label
+                      }
                     >
-                      {active ? (
-                        <View style={styles.muhabbetTabActiveScale}>
-                          <LinearGradient
-                            colors={['#FFFFFF', '#DBEAFE', '#BFDBFE']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.muhabbetTabPillGradActive}
-                          >
-                            <Ionicons name={icon} size={30} color="#1E40AF" />
-                            <Text style={styles.muhabbetTabLabelActiveFloating}>{label}</Text>
-                          </LinearGradient>
-                        </View>
-                      ) : (
-                        <View style={styles.muhabbetTabInactiveCol}>
-                          <Ionicons name={icon} size={25} color="#475569" />
-                          <Text style={styles.muhabbetTabLabelFloating}>{label}</Text>
-                        </View>
-                      )}
+                      <View style={styles.muhabbetTabIconAnchor}>
+                        {showChatBadge ? (
+                          <View style={styles.muhabbetTabUnreadBadge} pointerEvents="none">
+                            <Text style={styles.muhabbetTabUnreadBadgeTxt}>
+                              {chatsUnreadTotal > 9 ? '9+' : String(chatsUnreadTotal)}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {active ? (
+                          <View style={styles.muhabbetTabActiveScale}>
+                            <LinearGradient
+                              colors={['#FFFFFF', '#DBEAFE', '#BFDBFE']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={styles.muhabbetTabPillGradActive}
+                            >
+                              <Ionicons name={icon} size={30} color="#1E40AF" />
+                              <Text style={styles.muhabbetTabLabelActiveFloating}>{label}</Text>
+                            </LinearGradient>
+                          </View>
+                        ) : (
+                          <View style={styles.muhabbetTabInactiveCol}>
+                            <Ionicons name={icon} size={25} color="#475569" />
+                            <Text style={styles.muhabbetTabLabelFloating}>{label}</Text>
+                          </View>
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -1919,6 +2002,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 76,
     paddingHorizontal: 2,
+  },
+  muhabbetTabIconAnchor: {
+    width: '100%',
+    maxWidth: 130,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  muhabbetTabUnreadBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.95)',
+  },
+  muhabbetTabUnreadBadgeTxt: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
   },
   muhabbetTabItemWrapActive: {},
   muhabbetTabActiveScale: {

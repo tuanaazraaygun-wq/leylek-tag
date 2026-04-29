@@ -311,6 +311,15 @@ export default function MuhabbetChatScreen({
   const [systemCards, setSystemCards] = useState<ChatSystemCard[]>([]);
   const infoFade = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
+  const scrollEndThrottleRef = useRef(0);
+  const scrollToEndThrottled = useCallback((animated = false) => {
+    const now = Date.now();
+    if (now - scrollEndThrottleRef.current < 320) return;
+    scrollEndThrottleRef.current = now;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
   const ctxRef = useRef<ChatContext | null>(null);
   /** Sohbet odası (joined_muhabbet) — mesaj almak için gerekli */
   const [roomJoined, setRoomJoined] = useState(false);
@@ -371,8 +380,16 @@ export default function MuhabbetChatScreen({
               ? {
                   ...m,
                   id: serverId,
-                  body: serverMessage.body != null ? String(serverMessage.body) : m.body,
-                  sender_user_id: serverMessage.sender_user_id != null ? String(serverMessage.sender_user_id).trim().toLowerCase() : m.sender_user_id,
+                  body:
+                    serverMessage.body != null && String(serverMessage.body).trim() !== ''
+                      ? String(serverMessage.body)
+                      : String(m.body ?? '').trim() !== ''
+                        ? String(m.body)
+                        : String(serverMessage.body ?? ''),
+                  sender_user_id:
+                    serverMessage.sender_user_id != null
+                      ? String(serverMessage.sender_user_id).trim().toLowerCase()
+                      : m.sender_user_id,
                   created_at: coerceMessageCreatedAt(serverMessage.created_at || m.created_at),
                   out_status: 'sent' as const,
                 }
@@ -686,9 +703,21 @@ export default function MuhabbetChatScreen({
   }, [cid, bootstrapPhase, fetchMessages]);
 
   useEffect(() => {
-    if (!cid) return;
+    if (!cid || bootstrapPhase !== 'ready') return;
     DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
-  }, [cid]);
+    void (async () => {
+      try {
+        const token = (await getPersistedAccessToken())?.trim();
+        if (!token) return;
+        await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/read`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* noop */
+      }
+    })();
+  }, [cid, bootstrapPhase, base]);
 
   useEffect(() => {
     if (infoStripDismissed) return;
@@ -915,8 +944,21 @@ export default function MuhabbetChatScreen({
       const roleFor = (isMine ? myR : oR) || null;
 
       setRows((prev) => {
-        if (prev.some((m) => rowIdLo(m) === id)) {
-                    return prev;
+        const ix = prev.findIndex((m) => rowIdLo(m) === id);
+        if (ix >= 0) {
+          const cur = prev[ix];
+          const mergedBody =
+            text.trim() !== '' ? text : String(cur.body ?? '').trim() !== '' ? String(cur.body) : text;
+          const next = [...prev];
+          next[ix] = {
+            ...cur,
+            body: mergedBody,
+            sender_user_id: senderLo || cur.sender_user_id,
+            created_at: created,
+            sender_role: roleFor ?? cur.sender_role ?? undefined,
+            ...(isMine && cur.out_status !== 'seen' ? { out_status: 'sent' as const } : {}),
+          };
+          return sortRowsByCreatedAtAsc(next);
         }
         return sortRowsByCreatedAtAsc([
           ...prev,
@@ -930,7 +972,7 @@ export default function MuhabbetChatScreen({
           },
         ]);
       });
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      scrollToEndThrottled(true);
 
       if (!isMine && myLo) {
         try {
@@ -1055,7 +1097,7 @@ export default function MuhabbetChatScreen({
       socket.off('message_seen', onSeenEvt);
       socket.off('message_deleted', onDel);
     };
-  }, [cid, bootstrapPhase]);
+  }, [cid, bootstrapPhase, scrollToEndThrottled]);
 
   useEffect(() => {
     if (!cid || bootstrapPhase === 'loading') return;
@@ -1092,8 +1134,20 @@ export default function MuhabbetChatScreen({
       const oR = (ctxRef.current?.other_role || '').trim().toLowerCase();
       const roleFor = (isMine ? myR : oR) || null;
       setRows((prev) => {
-        if (prev.some((m) => rowIdLo(m) === id)) {
-          return prev;
+        const ix = prev.findIndex((m) => rowIdLo(m) === id);
+        if (ix >= 0) {
+          const cur = prev[ix];
+          const mergedBody =
+            text.trim() !== '' ? text : String(cur.body ?? '').trim() !== '' ? String(cur.body) : text;
+          const next = [...prev];
+          next[ix] = {
+            ...cur,
+            body: mergedBody,
+            sender_user_id: senderLo || cur.sender_user_id,
+            created_at: created,
+            sender_role: roleFor ?? cur.sender_role ?? undefined,
+          };
+          return sortRowsByCreatedAtAsc(next);
         }
         return sortRowsByCreatedAtAsc([
           ...prev,
@@ -1107,10 +1161,10 @@ export default function MuhabbetChatScreen({
           },
         ]);
       });
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      scrollToEndThrottled(true);
     });
     return () => sub.remove();
-  }, [cid]);
+  }, [cid, scrollToEndThrottled]);
 
   useEffect(() => {
     if (!cid || bootstrapPhase !== 'ready') return;
@@ -1291,7 +1345,7 @@ export default function MuhabbetChatScreen({
         },
       ]);
     });
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    scrollToEndThrottled(true);
     setDraft('');
     pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
     const ok = await sendMessageViaRest(messageId, body);
@@ -1461,8 +1515,8 @@ export default function MuhabbetChatScreen({
         ) : null}
         <KeyboardAvoidingView
           style={styles.kav}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={keyboardOffset}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? keyboardOffset : 0}
         >
           {bootstrapPhase === 'loading' ? (
             <View style={styles.center}>
@@ -1476,7 +1530,7 @@ export default function MuhabbetChatScreen({
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="always"
               keyboardDismissMode="none"
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+              onContentSizeChange={() => scrollToEndThrottled(false)}
               ListHeaderComponent={
                 <View>
                   {tripConvertEligible ? (
@@ -1868,12 +1922,12 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontWeight: '600',
   },
-  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '78%', marginBottom: 8, flexShrink: 1 },
-  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '78%', marginBottom: 8, flexShrink: 1 },
-  bubbleRowMine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
-  bubbleRowTheirs: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 6 },
+  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '88%', marginBottom: 8 },
+  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '88%', marginBottom: 8 },
+  bubbleRowMine: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-end', gap: 6 },
+  bubbleRowTheirs: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 6 },
   trashHit: { padding: 2 },
-  bubbleMax: { maxWidth: '78%' },
+  bubbleMax: { maxWidth: '100%', flexShrink: 1 },
   bubbleShadowWrap: { ...BUBBLE_SHADOW, borderRadius: 18, maxWidth: '100%' },
   bubbleAlignEnd: { alignSelf: 'flex-end' },
   bubbleAlignStart: { alignSelf: 'flex-start' },
@@ -1884,6 +1938,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: '600',
     flexShrink: 1,
+    alignSelf: 'stretch',
     maxWidth: '100%',
     textShadowColor: 'rgba(0,0,0,0.12)',
     textShadowOffset: { width: 0, height: 1 },

@@ -117,14 +117,14 @@ export async function upsertMuhabbetMessageFromPushData(data: Record<string, unk
   return true;
 }
 
-export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): Array<{
+export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): {
   id: string;
   body: string;
   sender_user_id: string;
   created_at: string;
   out_status?: string;
   sender_role?: string | null;
-}> {
+}[] {
   return items.map((m) => ({
     id: m.message_id,
     body: m.text,
@@ -138,14 +138,14 @@ export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): Arr
 /** Chat state’inden AsyncStorage’a tam liste yazar */
 export async function persistMuhabbetChatRowsLocal(
   conversationId: string,
-  rows: Array<{
+  rows: {
     id: string;
     body?: string | null;
     sender_user_id?: string | null;
     created_at?: string | null;
     out_status?: string;
     sender_role?: string | null;
-  }>
+  }[]
 ): Promise<void> {
   const c = String(conversationId || '').trim().toLowerCase();
   if (!c) return;
@@ -171,7 +171,7 @@ export async function persistMuhabbetChatRowsLocal(
 /** GET /muhabbet/conversations/:id/messages satırları → depolama biçimi */
 export function storedMessagesFromConversationApi(
   conversationId: string,
-  apiMessages: Array<{ id?: string; body?: string; sender_user_id?: string; created_at?: string }>
+  apiMessages: { id?: string; body?: string; sender_user_id?: string; created_at?: string }[]
 ): StoredMuhabbetMessage[] {
   const cid = String(conversationId || '').trim().toLowerCase();
   const out: StoredMuhabbetMessage[] = [];
@@ -229,10 +229,14 @@ export function mergeMuhabbetLocalWithServer(
         )
       );
     } else {
+      const srvText = String(srow.text ?? '').trim();
+      const locText = loc ? String(loc.text ?? '').trim() : '';
+      const mergedText = srvText !== '' ? String(srow.text) : locText !== '' ? String(loc!.text) : String(srow.text ?? '');
       merged.push(
         normalizeStored(
           {
             ...srow,
+            text: mergedText,
             sender_role: loc?.sender_role ?? srow.sender_role,
             out_status:
               loc && String(loc.sender_id || '').trim().toLowerCase() === my
