@@ -308,6 +308,7 @@ export default function MuhabbetChatScreen({
   /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
   const [infoStripDismissed, setInfoStripDismissed] = useState(false);
   const [infoRotateIx, setInfoRotateIx] = useState(0);
+  const [systemCards, setSystemCards] = useState<ChatSystemCard[]>([]);
   const infoFade = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
   const ctxRef = useRef<ChatContext | null>(null);
