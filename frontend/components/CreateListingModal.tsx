@@ -1,7 +1,7 @@
 /**
  * Muhabbet teklif oluşturma — konum, taban ücret, doğrulamalar (premium UI).
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -258,7 +258,8 @@ export default function CreateListingModal({
   const [toPoint, setToPoint] = useState<MuhabbetCommittedPlace | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [locationChoiceOpen, setLocationChoiceOpen] = useState(false);
-  const [locationChoiceBusy, setLocationChoiceBusy] = useState(false);
+  const [locationChoiceLoading, setLocationChoiceLoading] = useState(false);
+  const gpsFetchingRef = useRef(false);
   const [pickerField, setPickerField] = useState<'from' | 'to'>('from');
   const [userBias, setUserBias] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -522,7 +523,8 @@ export default function CreateListingModal({
     setToPoint(null);
     setPickerOpen(false);
     setLocationChoiceOpen(false);
-    setLocationChoiceBusy(false);
+    setLocationChoiceLoading(false);
+    gpsFetchingRef.current = false;
     setCityPickerOpen(false);
     setUserBias(null);
     const hm = defaultDepartureHm();
@@ -559,6 +561,10 @@ export default function CreateListingModal({
       }
     }
     setPickerField(field);
+    if (field === 'to') {
+      setPickerOpen(true);
+      return;
+    }
     setLocationChoiceOpen(true);
   };
 
@@ -568,20 +574,67 @@ export default function CreateListingModal({
   }, []);
 
   const commitCurrentGpsLocation = useCallback(async () => {
+    if (gpsFetchingRef.current) return;
+    gpsFetchingRef.current = true;
+    setLocationChoiceLoading(true);
+
+    const field = pickerField;
     const cityCtx =
       listingScope === 'intercity'
-        ? pickerField === 'from'
+        ? field === 'from'
           ? originCity.trim()
           : destinationCity.trim()
         : city.trim();
-    setLocationChoiceBusy(true);
+
+    const TEMP_LABEL = 'Mevcut konum';
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+    const POSITION_TIMEOUT_MS = 8000;
+
+    const coordClose = (a: number, b: number) => Math.abs(a - b) <= 1e-5;
+
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== 'granted') {
         Alert.alert('Konum izni gerekli', 'Konumunu kullanmak için ayarlardan konum iznini aç.');
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+
+      let pos: Location.LocationObject | null = null;
+      let usedLastKnown = false;
+
+      try {
+        const last = await Location.getLastKnownPositionAsync();
+        if (
+          last &&
+          Number.isFinite(last.coords.latitude) &&
+          Number.isFinite(last.coords.longitude)
+        ) {
+          const age = Date.now() - last.timestamp;
+          if (age >= 0 && age <= FIVE_MIN_MS) {
+            pos = last;
+            usedLastKnown = true;
+          }
+        }
+      } catch {
+        /* ignore last-known */
+      }
+
+      if (!pos) {
+        try {
+          pos = await Promise.race([
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Low,
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('location_timeout')), POSITION_TIMEOUT_MS),
+            ),
+          ]);
+        } catch {
+          Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
+          return;
+        }
+      }
+
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -595,24 +648,78 @@ export default function CreateListingModal({
         );
         return;
       }
-      const address = await reverseGeocodeTr(lat, lng);
-      const place: MuhabbetCommittedPlace = {
-        address,
-        latitude: lat,
-        longitude: lng,
+
+      const latSnap = lat;
+      const lngSnap = lng;
+      const placeTemp: MuhabbetCommittedPlace = {
+        address: TEMP_LABEL,
+        latitude: latSnap,
+        longitude: lngSnap,
         mapPinConfirmed: true,
       };
+
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (pickerField === 'from') setFromPoint(place);
-      else setToPoint(place);
+      if (field === 'from') setFromPoint(placeTemp);
+      else setToPoint(placeTemp);
       setSuggestedBase(null);
       setPriceDelta(0);
       setPriceMeta(null);
       setLocationChoiceOpen(false);
+
+      void (async () => {
+        try {
+          const addr = await reverseGeocodeTr(latSnap, lngSnap);
+          const applyAddr = (prev: MuhabbetCommittedPlace | null) => {
+            if (!prev) return prev;
+            if (!coordClose(prev.latitude, latSnap) || !coordClose(prev.longitude, lngSnap)) return prev;
+            if (prev.address !== TEMP_LABEL) return prev;
+            return { ...prev, address: addr };
+          };
+          if (field === 'from') setFromPoint(applyAddr);
+          else setToPoint(applyAddr);
+        } catch {
+          /* keep temporary label */
+        }
+      })();
+
+      if (usedLastKnown) {
+        void (async () => {
+          try {
+            const fresh = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Low,
+            });
+            const flat = fresh.coords.latitude;
+            const flng = fresh.coords.longitude;
+            if (!Number.isFinite(flat) || !Number.isFinite(flng)) return;
+            if (cityCtx && !isLatLngWithinRegisteredCity(cityCtx, flat, flng)) return;
+
+            const bumpCoords = (prev: MuhabbetCommittedPlace | null): MuhabbetCommittedPlace | null => {
+              if (!prev) return prev;
+              if (!coordClose(prev.latitude, latSnap) || !coordClose(prev.longitude, lngSnap)) return prev;
+              return { ...prev, latitude: flat, longitude: flng, address: TEMP_LABEL };
+            };
+            if (field === 'from') setFromPoint(bumpCoords);
+            else setToPoint(bumpCoords);
+
+            const addr2 = await reverseGeocodeTr(flat, flng);
+            const applyAddr2 = (prev: MuhabbetCommittedPlace | null) => {
+              if (!prev) return prev;
+              if (!coordClose(prev.latitude, flat) || !coordClose(prev.longitude, flng)) return prev;
+              if (prev.address !== TEMP_LABEL) return prev;
+              return { ...prev, address: addr2 };
+            };
+            if (field === 'from') setFromPoint(applyAddr2);
+            else setToPoint(applyAddr2);
+          } catch {
+            /* ignore background refresh */
+          }
+        })();
+      }
     } catch {
       Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
     } finally {
-      setLocationChoiceBusy(false);
+      gpsFetchingRef.current = false;
+      setLocationChoiceLoading(false);
     }
   }, [listingScope, pickerField, originCity, destinationCity, city]);
 
@@ -879,11 +986,13 @@ export default function CreateListingModal({
 
   const endpointSummary = (p: MuhabbetCommittedPlace | null) =>
     p ? (p.address.length > 52 ? `${p.address.slice(0, 52)}…` : p.address) : 'Konumu seç';
-  const pickerCity = listingScope === 'intercity'
-    ? pickerField === 'from'
-      ? originCity.trim()
-      : destinationCity.trim()
-    : city.trim();
+  /** Uç nokta seçimi — her zaman ilgili alanın şehri (Nereye için varış şehri karışmaz). */
+  const pickerCity = useMemo(() => {
+    if (listingScope === 'intercity') {
+      return pickerField === 'from' ? originCity.trim() : destinationCity.trim();
+    }
+    return city.trim();
+  }, [listingScope, pickerField, originCity, destinationCity, city]);
   const isIntercity = listingScope === 'intercity';
   const formTitle = isIntercity
     ? createRole === 'driver'
@@ -1278,36 +1387,42 @@ export default function CreateListingModal({
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (!locationChoiceBusy) setLocationChoiceOpen(false);
+            if (!locationChoiceLoading) setLocationChoiceOpen(false);
           }}
         >
-          <Pressable style={styles.sheetOverlay} onPress={() => !locationChoiceBusy && setLocationChoiceOpen(false)}>
+          <Pressable style={styles.sheetOverlay} onPress={() => !locationChoiceLoading && setLocationChoiceOpen(false)}>
             <Pressable style={styles.locationChoiceSheet} onPress={(e) => e.stopPropagation()}>
               <Text style={styles.locationChoiceTitle}>Konum seç</Text>
               <Text style={styles.locationChoiceDesc}>
-                Bulunduğun konumu kullanabilir veya farklı bir adres seçebilirsin.
+                {pickerField === 'from'
+                  ? 'Bulunduğun konumu kullanabilir veya farklı bir adres seçebilirsin.'
+                  : 'Gideceğin adresi arayıp seç.'}
               </Text>
-              <TouchableOpacity
-                style={styles.locationChoiceRow}
-                onPress={() => void commitCurrentGpsLocation()}
-                disabled={locationChoiceBusy}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="navigate-circle-outline" size={22} color={ACCENT_ORANGE} />
-                <Text style={styles.locationChoiceRowText}>Konumum</Text>
-                {locationChoiceBusy ? <ActivityIndicator size="small" color={ACCENT_ORANGE} /> : null}
-              </TouchableOpacity>
+              {pickerField === 'from' ? (
+                <TouchableOpacity
+                  style={styles.locationChoiceRow}
+                  onPress={() => void commitCurrentGpsLocation()}
+                  disabled={locationChoiceLoading}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="navigate-circle-outline" size={22} color={ACCENT_ORANGE} />
+                  <Text style={styles.locationChoiceRowText}>
+                    {locationChoiceLoading ? 'Konum alınıyor...' : 'Konumum'}
+                  </Text>
+                  {locationChoiceLoading ? <ActivityIndicator size="small" color={ACCENT_ORANGE} /> : null}
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={styles.locationChoiceRow}
                 onPress={openAddressPickerModal}
-                disabled={locationChoiceBusy}
+                disabled={locationChoiceLoading}
                 activeOpacity={0.85}
               >
                 <Ionicons name="map-outline" size={22} color="#2563eb" />
                 <Text style={styles.locationChoiceRowText}>Başka adres</Text>
                 <Ionicons name="chevron-forward" size={18} color={TEXT_SECONDARY} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.sheetClose} onPress={() => !locationChoiceBusy && setLocationChoiceOpen(false)}>
+              <TouchableOpacity style={styles.sheetClose} onPress={() => !locationChoiceLoading && setLocationChoiceOpen(false)}>
                 <Text style={styles.sheetCloseText}>Vazgeç</Text>
               </TouchableOpacity>
             </Pressable>

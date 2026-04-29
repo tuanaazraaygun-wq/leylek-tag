@@ -3,7 +3,7 @@
  * (PlacesAutocomplete → haritada pin → "Tam burası" → ters geokod).
  * GMS yoksa arama sonucu doğrudan onaylanır.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -82,15 +82,20 @@ export default function MuhabbetEndpointPickerModal({
   const insets = useSafeAreaInsets();
   const mapRef = useRef<any>(null);
   const mapCenterRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const cityLookupGenRef = useRef(0);
   const [phase, setPhase] = useState<'search' | 'map'>('search');
   const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(null);
   const [geocoding, setGeocoding] = useState(false);
   const [acMountKey, setAcMountKey] = useState(0);
+  const [resolvedCityCenter, setResolvedCityCenter] = useState<{ latitude: number; longitude: number } | null>(
+    null,
+  );
 
   const cityTrim = (cityContext || city || '').trim();
-  const registeredCityCenter = getRegisteredCityCenter(cityTrim);
-  const searchBiasLatitude = registeredCityCenter?.latitude ?? biasLatitude;
-  const searchBiasLongitude = registeredCityCenter?.longitude ?? biasLongitude;
+  const staticCityCenter = useMemo(() => getRegisteredCityCenter(cityTrim), [cityTrim]);
+  const effectiveCityCenter = staticCityCenter ?? resolvedCityCenter;
+  const searchBiasLatitude = effectiveCityCenter?.latitude ?? biasLatitude;
+  const searchBiasLongitude = effectiveCityCenter?.longitude ?? biasLongitude;
   const useMap = !!EndpointMapView && isNativeGoogleMapsSupported();
 
   const reset = useCallback(() => {
@@ -100,16 +105,50 @@ export default function MuhabbetEndpointPickerModal({
     setGeocoding(false);
   }, []);
 
+  /** CITY_DATA dışı şehirler: harita/bias Ankara fallback'e düşmesin diye Nominatim ile merkez çöz */
+  useEffect(() => {
+    if (!visible || !cityTrim) {
+      cityLookupGenRef.current += 1;
+      setResolvedCityCenter(null);
+      return;
+    }
+    if (staticCityCenter) {
+      cityLookupGenRef.current += 1;
+      setResolvedCityCenter(null);
+      return;
+    }
+    const gen = ++cityLookupGenRef.current;
+    void (async () => {
+      try {
+        const q = encodeURIComponent(`${cityTrim}, Türkiye`);
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`;
+        const response = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
+        const data = (await response.json()) as { lat?: string; lon?: string }[];
+        if (gen !== cityLookupGenRef.current) return;
+        const row = Array.isArray(data) ? data[0] : undefined;
+        const lat = Number(row?.lat);
+        const lng = Number(row?.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setResolvedCityCenter({ latitude: lat, longitude: lng });
+        } else {
+          setResolvedCityCenter(null);
+        }
+      } catch {
+        if (gen === cityLookupGenRef.current) setResolvedCityCenter(null);
+      }
+    })();
+  }, [visible, cityTrim, staticCityCenter]);
+
   useEffect(() => {
     if (!visible) {
       reset();
       return;
     }
     setAcMountKey((k) => k + 1);
-    const lat = registeredCityCenter?.latitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
-    const lng = registeredCityCenter?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+    const lat = effectiveCityCenter?.latitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
+    const lng = effectiveCityCenter?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
     setPin({ latitude: lat, longitude: lng });
-  }, [visible, cityTrim, registeredCityCenter?.latitude, registeredCityCenter?.longitude, reset]);
+  }, [visible, cityTrim, effectiveCityCenter?.latitude, effectiveCityCenter?.longitude, reset]);
 
   useEffect(() => {
     if (!visible || phase !== 'search' || !pin) return;
@@ -251,6 +290,7 @@ export default function MuhabbetEndpointPickerModal({
       <View style={styles.root}>
         {EndpointMapView && useMap ? (
           <EndpointMapView
+            key={`endpoint-map-${cityTrim}-${acMountKey}`}
             ref={mapRef}
             style={StyleSheet.absoluteFillObject}
             provider={EndpointMapProvider}

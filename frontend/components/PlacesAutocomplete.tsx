@@ -53,6 +53,7 @@ const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } =
   'Malatya': { lat: 38.3552, lng: 38.3095, bbox: '37.5,37.8,39.2,38.9' },
   'Erzurum': { lat: 39.9043, lng: 41.2679, bbox: '40.3,39.3,42.5,40.5' },
   'Adıyaman': { lat: 37.7648, lng: 38.2786, bbox: '37.4,37.3,38.8,38.2' },
+  'Ağrı': { lat: 39.7191, lng: 43.0503, bbox: '42.45,39.20,44.55,40.15' },
 };
 
 /** Kayıtlı şehir adı CITY_DATA anahtarıyla birebir olmayabilir (büyük/küçük harf vb.) */
@@ -746,6 +747,13 @@ export default function PlacesAutocomplete({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Artan kimlik: tamamlanan arama yanıtı yalnızca en son isteğe aitse state günceller (yarış / boş liste). */
   const autocompleteRequestIdRef = useRef(0);
+
+  /** Şehir bağlamı değişince önceki şehir önerileri kalmasın (harita/bias güncellenmesiyle uyumlu). */
+  useEffect(() => {
+    autocompleteRequestIdRef.current += 1;
+    setPredictions([]);
+    setSearchRoundDone(false);
+  }, [city]);
 
   // Debounced search
   useEffect(() => {
