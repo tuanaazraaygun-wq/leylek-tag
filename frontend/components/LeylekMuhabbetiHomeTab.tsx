@@ -18,11 +18,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import MuhabbetWatermark from './MuhabbetWatermark';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
-const LEYLEK_HERO_IMAGE = require('../assets/images/leylek-header.png');
+const LEYLEK_HERO_IMAGE = require('../assets/images/leylek-blue.png');
 const VISIBLE_OFFERS = 20;
 const CTA_CARD_SHADOW = Platform.select({
   ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 12 },
@@ -858,39 +859,66 @@ export default function LeylekMuhabbetiHomeTab({
             </View>
           </View>
           <View style={styles.heroLeylekAbsolute} pointerEvents="none">
+            <Svg width={220} height={220} style={styles.heroLeylekRadialSvg}>
+              <Defs>
+                <RadialGradient id="heroLeylekRadialBlend" cx="50%" cy="50%" r="55%" fx="50%" fy="50%">
+                  <Stop offset="0%" stopColor="rgba(255,255,255,0.18)" stopOpacity={1} />
+                  <Stop offset="100%" stopColor="rgba(255,255,255,0)" stopOpacity={1} />
+                </RadialGradient>
+              </Defs>
+              <Circle cx={110} cy={110} r={108} fill="url(#heroLeylekRadialBlend)" />
+            </Svg>
             <Image source={LEYLEK_HERO_IMAGE} style={styles.heroLeylekImg} resizeMode="contain" />
           </View>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.15)']}
+            locations={[0.35, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroCardCornerFog}
+            pointerEvents="none"
+          />
         </View>
 
         <View style={styles.chipsWrap}>
           <View style={styles.chipsPrimaryFull}>
-            <View style={[styles.statChip, styles.statChipFull]}>
-              <Ionicons name="location" size={15} color="#1D4ED8" />
-              <Text style={styles.statChipTxt} numberOfLines={1}>
+            <View style={[styles.statChip, styles.statChipFull, styles.statChipCity]}>
+              <Ionicons name="location" size={14} color="#1D4ED8" />
+              <Text style={styles.statChipTxt} numberOfLines={1} ellipsizeMode="tail">
                 {selectedCity.trim() || 'Şehir'}
               </Text>
             </View>
           </View>
-          <View style={styles.chipsGrid}>
-            <View style={[styles.statChip, styles.statChipHalf]}>
-              <Ionicons name="albums-outline" size={15} color="#0369A1" />
-              <Text style={styles.statChipTxt}>{listingScopeCounts.total} açık</Text>
+          <View style={styles.chipsStatRow}>
+            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
+              <Ionicons name="albums-outline" size={11} color="#0369A1" />
+              <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
+                {listingScopeCounts.total} açık
+              </Text>
             </View>
-            <View style={[styles.statChip, styles.statChipMuted, styles.statChipHalf]}>
-              <Ionicons name="navigate-outline" size={14} color="#15803D" />
-              <Text style={styles.statChipTxtMuted}>İç {listingScopeCounts.local}</Text>
+            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
+              <Ionicons name="navigate-outline" size={11} color="#15803D" />
+              <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
+                İç {listingScopeCounts.local}
+              </Text>
             </View>
-            <View style={[styles.statChip, styles.statChipMuted, styles.statChipHalf]}>
-              <Ionicons name="airplane-outline" size={14} color="#C2410C" />
-              <Text style={styles.statChipTxtMuted}>Arası {listingScopeCounts.intercity}</Text>
+            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
+              <Ionicons name="airplane-outline" size={11} color="#C2410C" />
+              <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
+                Arası {listingScopeCounts.intercity}
+              </Text>
             </View>
-            {pendingIncoming > 0 ? (
-              <View style={[styles.statChip, styles.statChipAlert, styles.statChipHalf]}>
-                <Ionicons name="notifications-outline" size={15} color="#C2410C" />
-                <Text style={styles.statChipAlertTxt}>{pendingIncoming} talep</Text>
-              </View>
-            ) : null}
           </View>
+          {pendingIncoming > 0 ? (
+            <View style={styles.chipsPendingRow}>
+              <View style={[styles.statChip, styles.statChipAlert, styles.statChipFull, styles.statChipPendingInner]}>
+                <Ionicons name="notifications-outline" size={12} color="#C2410C" />
+                <Text style={styles.statChipAlertTxt} numberOfLines={1} ellipsizeMode="tail">
+                  {pendingIncoming} talep
+                </Text>
+              </View>
+            </View>
+          ) : null}
         </View>
 
         {renderCreateSection(
@@ -1096,13 +1124,13 @@ const styles = StyleSheet.create({
     right: 40,
     backgroundColor: 'rgba(249,115,22,0.1)',
   },
-  insetTop: { paddingHorizontal: 16, paddingTop: 6 },
+  insetTop: { paddingHorizontal: 16, paddingTop: 4 },
   inset: { paddingHorizontal: 16, marginTop: 16, paddingBottom: 10 },
   heroShell: {
     borderRadius: 28,
     overflow: 'hidden',
     marginTop: -10,
-    marginBottom: 12,
+    marginBottom: 11,
     position: 'relative',
     ...Platform.select({
       ios: {
@@ -1162,41 +1190,63 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   heroInnerRow: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 18,
-    zIndex: 3,
+    zIndex: 5,
+  },
+  heroCardCornerFog: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: '58%',
+    maxWidth: 210,
+    height: '52%',
+    minHeight: 112,
+    borderBottomRightRadius: 26,
+    zIndex: 4,
   },
   heroLeylekAbsolute: {
     position: 'absolute',
-    bottom: 0,
-    right: -4,
-    width: 118,
+    bottom: -4,
+    right: -8,
+    width: 136,
+    height: 130,
     zIndex: 3,
+    overflow: 'visible',
     justifyContent: 'flex-end',
     alignItems: 'flex-end',
-    paddingBottom: 0,
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(15, 23, 42, 0.35)',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.35,
-        shadowRadius: 18,
+        shadowColor: 'rgba(15, 23, 42, 0.28)',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.32,
+        shadowRadius: 20,
       },
-      android: { elevation: 6 },
+      android: { elevation: 5 },
       default: {},
     }),
   },
+  heroLeylekRadialSvg: {
+    position: 'absolute',
+    right: -52,
+    bottom: -48,
+  },
   heroLeylekImg: {
-    width: 108,
-    height: 108,
-    opacity: 0.95,
-    transform: [{ scale: 1.02 }],
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 112,
+    height: 112,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    opacity: 0.85,
+    transform: [{ scale: 1.06 }],
   },
   heroContent: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 108,
+    paddingRight: 124,
     zIndex: 3,
   },
   heroEyebrow: { marginBottom: 10 },
@@ -1266,31 +1316,44 @@ const styles = StyleSheet.create({
   },
   chipsWrap: {
     width: '100%',
-    marginBottom: 16,
+    marginBottom: 14,
+    gap: 6,
   },
   chipsPrimaryFull: {
     width: '100%',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   statChipFull: {
     width: '100%',
   },
-  chipsGrid: {
+  chipsStatRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    rowGap: 8,
-    columnGap: 8,
     justifyContent: 'space-between',
-    alignContent: 'flex-start',
+    alignItems: 'stretch',
+    gap: 4,
     width: '100%',
   },
-  statChipHalf: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: '47%',
-    maxWidth: '48%',
+  chipsPendingRow: {
+    width: '100%',
+    marginTop: 1,
+  },
+  statChipStatCell: {
+    flex: 1,
+    marginHorizontal: 2,
     minWidth: 0,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  statChipCity: {
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+  },
+  statChipPendingInner: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 4,
   },
   statChip: {
     flexDirection: 'row',
@@ -1322,8 +1385,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(249,115,22,0.42)',
   },
   statChipTxt: { fontSize: 13, fontWeight: '900', color: TEXT_PRIMARY, flexShrink: 1 },
-  statChipTxtMuted: { fontSize: 12, fontWeight: '800', color: '#475569' },
-  statChipAlertTxt: { fontSize: 12.5, fontWeight: '900', color: '#C2410C' },
+  statChipTxtStat: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  statChipAlertTxt: { fontSize: 12, fontWeight: '900', color: '#C2410C', flexShrink: 1 },
   createSectionWrap: {
     marginBottom: 18,
     borderRadius: 28,

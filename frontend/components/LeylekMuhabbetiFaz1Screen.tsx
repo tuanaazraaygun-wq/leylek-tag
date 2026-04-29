@@ -1530,21 +1530,8 @@ export default function LeylekMuhabbetiFaz1Screen({
               { paddingBottom: Math.max(tabInsets.bottom, 12) },
             ]}
           >
-            <LinearGradient
-              colors={[
-                'rgba(251, 146, 60, 0.42)',
-                'rgba(244, 114, 182, 0.38)',
-                'rgba(168, 85, 247, 0.4)',
-                'rgba(124, 58, 237, 0.38)',
-              ]}
-              locations={[0, 0.35, 0.65, 1]}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={styles.muhabbetTabBarWarmGrad}
-              pointerEvents="none"
-            />
             <BlurView
-              intensity={Platform.OS === 'ios' ? 38 : 22}
+              intensity={Platform.OS === 'ios' ? 52 : 28}
               tint="light"
               style={styles.muhabbetTabBarBlur}
             >
@@ -1569,7 +1556,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                       {active ? (
                         <View style={styles.muhabbetTabActiveScale}>
                           <LinearGradient
-                            colors={['#DBEAFE', '#BFDBFE']}
+                            colors={['#DBEAFE', '#E8E4FF']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={styles.muhabbetTabPillGradActive}
@@ -1887,40 +1874,27 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
     marginTop: -8,
-    paddingHorizontal: 4,
-    paddingTop: 4,
+    paddingHorizontal: 3,
+    paddingTop: 3,
     borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#ea580c',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.16,
-        shadowRadius: 18,
-      },
-      android: { elevation: 14 },
-      default: {},
-    }),
-  },
-  muhabbetTabBarWarmGrad: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 24,
+    backgroundColor: 'transparent',
   },
   muhabbetTabBarBlur: {
-    borderRadius: 22,
+    borderRadius: 21,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.48)',
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.14,
-        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
       },
-      android: { elevation: 12 },
+      android: { elevation: 6 },
       default: {},
     }),
   },
@@ -1939,7 +1913,7 @@ const styles = StyleSheet.create({
   },
   muhabbetTabItemWrapActive: {},
   muhabbetTabActiveScale: {
-    transform: [{ scale: 1.08 }],
+    transform: [{ scale: 1.06 }],
   },
   muhabbetTabPillGradActive: {
     flexDirection: 'column',
@@ -1952,12 +1926,12 @@ const styles = StyleSheet.create({
     maxWidth: 124,
     ...Platform.select({
       ios: {
-        shadowColor: '#2563eb',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.42,
-        shadowRadius: 18,
+        shadowColor: '#1e40af',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 12,
       },
-      android: { elevation: 10 },
+      android: { elevation: 6 },
       default: {},
     }),
   },
