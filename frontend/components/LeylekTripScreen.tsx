@@ -121,7 +121,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (!activeSessionId) {
         console.log(`[leylek-trip] emit blocked event=${eventName} session_id=`);
         if (opts?.showAlert !== false) {
-          Alert.alert('Muhabbet yolculuğu', 'Yolculuk bilgisi hazırlanıyor.');
+          Alert.alert(
+            'Yolculuk',
+            'Yolculuk oturumu hazırlanıyor, lütfen birkaç saniye sonra tekrar deneyin.'
+          );
         }
         return false;
       }

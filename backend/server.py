@@ -21520,6 +21520,40 @@ def _muhabbet_apply_listing_after_match_request_accepted(
         logger.warning("listing_match_requests cancel peers: %s", e)
 
 
+def _muhabbet_conversation_apply_listing_match_metadata(conversation_id: str) -> None:
+    """
+    Teklif talebi kabulü: conversations üzerinde eşleşme tamam bayrağı (Yolculuğa çevir için trip_convert önkoşulu).
+    Mevcut leylek_key / leylek_key_inchat eşleşmelerinin üzerine yazılmaz.
+    """
+    cid = str(conversation_id or "").strip().lower()
+    if not cid:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        sel = supabase.table("conversations").select("match_source, matched_at").eq("id", cid).limit(1).execute()
+        if not sel.data:
+            return
+        crow = dict(sel.data[0])
+        ms = str(crow.get("match_source") or "").strip().lower()
+        if ms in ("leylek_key", "leylek_key_inchat"):
+            return
+        if ms == "listing_match" and crow.get("matched_at"):
+            return
+        try:
+            supabase.table("conversations").update(
+                {"matched_at": now_iso, "match_source": "listing_match", "updated_at": now_iso}
+            ).eq("id", cid).execute()
+        except Exception as e1:
+            err1 = (str(e1) or "").lower()
+            logger.warning("conversation listing_match metadata update cid=%s err=%s", cid[:12], e1)
+            if "column" in err1:
+                supabase.table("conversations").update(
+                    {"matched_at": now_iso, "match_source": "listing_match"}
+                ).eq("id", cid).execute()
+    except Exception as e:
+        logger.warning("conversation_apply_listing_match_metadata cid=%s err=%s", cid[:12], e)
+
+
 def _muhabbet_mark_ride_listing_matched_for_muhabbet_conversation(conversation_id: str) -> None:
     """Sohbet içi Leylek Anahtar kabulü: ilgili ilan matched (pending_chat → matched)."""
     cid = str(conversation_id or "").strip().lower()
@@ -21562,6 +21596,7 @@ async def muhabbet_match_request_accept(
             ecid_n = str(ecid_raw).strip().lower()
             if lid_done and ecid_n and sen_done:
                 _muhabbet_apply_listing_after_match_request_accepted(lid_done, rid, ecid_n, sen_done)
+            _muhabbet_conversation_apply_listing_match_metadata(ecid_n)
             return {
                 "success": True,
                 "chat_unlocked": True,
@@ -21583,6 +21618,7 @@ async def muhabbet_match_request_accept(
             await _muhabbet_notify_match_accepted(sen0, rec0, conversation_id, lid_rec)
             if lid_rec and sen0:
                 _muhabbet_apply_listing_after_match_request_accepted(lid_rec, rid, str(conversation_id).strip().lower(), sen0)
+            _muhabbet_conversation_apply_listing_match_metadata(str(conversation_id).strip().lower())
             return {
                 "success": True,
                 "chat_unlocked": True,
@@ -21619,6 +21655,7 @@ async def muhabbet_match_request_accept(
         await _muhabbet_notify_match_accepted(sen, rec, conversation_id, lid)
         if lid and sen:
             _muhabbet_apply_listing_after_match_request_accepted(lid, rid, str(conversation_id).strip().lower(), sen)
+        _muhabbet_conversation_apply_listing_match_metadata(str(conversation_id).strip().lower())
         return {
             "success": True,
             "chat_unlocked": True,
@@ -22545,8 +22582,27 @@ def _muhabbet_trip_conversion_context(uid: str, cid: str, *, require_driver_requ
     except HTTPException as e:
         return {"ok": False, "code": "forbidden" if e.status_code == 403 else "bad_conversation", "detail": str(e.detail)}
     ms = str(c_row.get("match_source") or "").strip().lower()
-    if not c_row.get("matched_at") or ms not in ("leylek_key", "leylek_key_inchat"):
-        return {"ok": False, "code": "not_matched", "detail": "Önce Leylek Anahtarı eşleşmesi gerekli."}
+    matched_at = c_row.get("matched_at")
+    trip_sources_ok = ms in ("leylek_key", "leylek_key_inchat", "listing_match")
+    listing_accepted_row = False
+    try:
+        chk = (
+            supabase.table("listing_match_requests")
+            .select("id")
+            .eq("conversation_id", cid)
+            .eq("status", "accepted")
+            .limit(1)
+            .execute()
+        )
+        listing_accepted_row = bool(chk.data)
+    except Exception as e:
+        logger.warning("[trip_convert_context] listing_match_requests lookup cid=%s err=%s", cid[:12], e)
+    if not listing_accepted_row and (not matched_at or not trip_sources_ok):
+        return {
+            "ok": False,
+            "code": "not_matched",
+            "detail": "Önce teklif talebinin kabul edilmesi gerekir.",
+        }
 
     a = str(c_row.get("user_a") or "").strip().lower()
     b = str(c_row.get("user_b") or "").strip().lower()
@@ -23424,8 +23480,19 @@ async def sio_join_muhabbet_trip_session(sid, data):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
     session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
-    if not uid or not session_id:
-        await sio.emit("muhabbet_trip_error", {"code": "bad_request", "message": "session_id gerekli."}, room=sid)
+    if not uid:
+        await sio.emit(
+            "muhabbet_trip_error",
+            {"code": "not_registered", "message": "Bağlantı hazırlanıyor, lütfen tekrar deneyin."},
+            room=sid,
+        )
+        return
+    if not session_id:
+        await sio.emit(
+            "muhabbet_trip_error",
+            {"code": "bad_request", "message": "Yolculuk oturumu henüz hazır değil."},
+            room=sid,
+        )
         return
     try:
         await _expire_stale_muhabbet_trip_sessions()
@@ -24181,8 +24248,8 @@ async def muhabbet_conversations_me(
                 reason = "conversation_last_message_at"
             else:
                 ms = str(c.get("match_source") or "").strip().lower()
-                if c.get("matched_at") and ms in ("leylek_key", "leylek_key_inchat"):
-                    reason = "leylek_key_match"
+                if c.get("matched_at") and ms in ("leylek_key", "leylek_key_inchat", "listing_match"):
+                    reason = "listing_or_leylek_match"
                 elif last_map.get(cid0):
                     reason = "visible_muhabbet_message"
             if reason:
@@ -24345,6 +24412,21 @@ async def muhabbet_conversation_messages_get(
         ms = str(c_row.get("match_source") or "").strip().lower()
         matched_at = c_row.get("matched_at")
         leylek_matched = bool(matched_at) and ms in ("leylek_key", "leylek_key_inchat")
+        listing_match_ok = bool(matched_at) and ms == "listing_match"
+        trip_convert_eligible = leylek_matched or listing_match_ok
+        if not trip_convert_eligible:
+            try:
+                lac = (
+                    supabase.table("listing_match_requests")
+                    .select("id")
+                    .eq("conversation_id", cid)
+                    .eq("status", "accepted")
+                    .limit(1)
+                    .execute()
+                )
+                trip_convert_eligible = bool(lac.data)
+            except Exception as e:
+                logger.warning("messages_get trip_convert_eligible listing lookup: %s", e)
         pending_pair_request_id = None
         pending_pair_request_direction = None
         pending_pair_request_requester_id = None
@@ -24383,6 +24465,7 @@ async def muhabbet_conversation_messages_get(
             "my_role": my_r,
             "other_role": oth_r,
             "matched_via_leylek_key": leylek_matched,
+            "trip_convert_eligible": trip_convert_eligible,
             "matched_at": matched_at,
             "match_source": ms or None,
             "pending_pair_request_id": pending_pair_request_id,

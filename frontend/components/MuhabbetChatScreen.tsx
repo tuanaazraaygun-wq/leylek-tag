@@ -9,7 +9,6 @@ import {
   Animated,
   AppState,
   DeviceEventEmitter,
-  Easing,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -103,6 +102,8 @@ export type ChatContext = {
   my_role?: string | null;
   other_role?: string | null;
   matched_via_leylek_key?: boolean;
+  /** Teklif kabulü veya Leylek anahtar sonrası Yolculuğa çevir için uygun */
+  trip_convert_eligible?: boolean;
   matched_at?: string | null;
   match_source?: string | null;
   pending_pair_request_id?: string | null;
@@ -298,10 +299,6 @@ export default function MuhabbetChatScreen({
   const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctx, setCtx] = useState<ChatContext | null>(null);
   const [draft, setDraft] = useState('');
-  const [pairRequestLoading, setPairRequestLoading] = useState(false);
-  const [systemCards, setSystemCards] = useState<ChatSystemCard[]>([]);
-  /** Karşı taraftan gelen Leylek Anahtar eşleşme isteği (modal) */
-  const [pairInModal, setPairInModal] = useState<{ rid: string; fromLo: string } | null>(null);
   const [tripConvertInModal, setTripConvertInModal] = useState<{ rid: string } | null>(null);
   const [tripConvertLoading, setTripConvertLoading] = useState(false);
   const [tripConvertState, setTripConvertState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
@@ -312,12 +309,8 @@ export default function MuhabbetChatScreen({
   const [infoStripDismissed, setInfoStripDismissed] = useState(false);
   const [infoRotateIx, setInfoRotateIx] = useState(0);
   const infoFade = useRef(new Animated.Value(1)).current;
-  const pairRequestBusyRef = useRef(false);
-  /** İstemci tarafı 60 sn eşleşme isteği aralığı (sunucu cooldown ile uyumlu) */
-  const lastLeylekPairRequestAtRef = useRef(0);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
   const ctxRef = useRef<ChatContext | null>(null);
-  const ctaPulse = useRef(new Animated.Value(1)).current;
   /** Sohbet odası (joined_muhabbet) — mesaj almak için gerekli */
   const [roomJoined, setRoomJoined] = useState(false);
   const roomJoinedRef = useRef(false);
@@ -326,12 +319,6 @@ export default function MuhabbetChatScreen({
   const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
   const readinessInFlightRef = useRef(false);
 
-  const pendingPairRequestId = String(ctx?.pending_pair_request_id || '').trim().toLowerCase();
-  const pendingPairDirection = ctx?.pending_pair_request_direction || null;
-  const hasOutgoingPendingPairRequest =
-    !ctx?.matched_via_leylek_key &&
-    !!pendingPairRequestId &&
-    pendingPairDirection === 'outgoing';
   const tripLockActive = !!tripLockReason || tripConvertState === 'pending' || tripConvertState === 'confirmed';
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
@@ -611,48 +598,18 @@ export default function MuhabbetChatScreen({
 
   const navigateToLeylekTripSession = useCallback((payload?: MuhabbetTripSessionSocketPayload | null) => {
     const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '').trim().toLowerCase();
-    if (!sessionId || tripSessionNavRef.current === sessionId) return;
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+      Alert.alert(
+        'Yolculuk',
+        'Yolculuk oturumu hazırlanıyor, lütfen birkaç saniye sonra tekrar deneyin.'
+      );
+      return;
+    }
+    if (tripSessionNavRef.current === sessionId) return;
     setTripLockReason('route /leylek-trip/[sessionId] is about to open');
-        tripSessionNavRef.current = sessionId;
+    tripSessionNavRef.current = sessionId;
     router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
   }, [router]);
-
-  useEffect(() => {
-    if (!cid || ctx?.matched_via_leylek_key) return;
-    const rid = String(ctx?.pending_pair_request_id || '').trim().toLowerCase();
-    if (!rid || ctx?.pending_pair_request_direction !== 'incoming') return;
-    const fromLo = String(ctx.pending_pair_request_requester_id || '').trim().toLowerCase();
-    // Leylek Teklif Sende only: restore missed in-chat match requests from Muhabbet context.
-    // This must not call normal ride creation, tags, dispatch, route, QR, Guven Al, or Agora.
-    setPairInModal((prev) => (prev?.rid === rid ? prev : { rid, fromLo }));
-  }, [
-    cid,
-    ctx?.matched_via_leylek_key,
-    ctx?.pending_pair_request_direction,
-    ctx?.pending_pair_request_id,
-    ctx?.pending_pair_request_requester_id,
-  ]);
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(ctaPulse, {
-          toValue: 0.94,
-          duration: 1600,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(ctaPulse, {
-          toValue: 1,
-          duration: 1600,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [ctaPulse]);
 
   useEffect(() => {
     let cancelled = false;
@@ -752,7 +709,7 @@ export default function MuhabbetChatScreen({
     const onMatch = (data: { conversation_id?: string }) => {
             const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
       if (m && m === cid.toLowerCase()) {
-        pushSystemCard('green', 'Leylek Anahtar ile eşleşme tamamlandı.');
+        pushSystemCard('green', 'Eşleşme tamamlandı.');
         void loadContext();
       }
     };
@@ -870,57 +827,6 @@ export default function MuhabbetChatScreen({
       socket.off('muhabbet_trip_convert_error', onConvertError);
     };
   }, [cid, navigateToLeylekTripSession, pushSystemCard, retryPendingActionAfterNotRegistered]);
-
-  /** Karşı taraftan Leylek Anahtar isteği — sunucu emit_socket_event_to_user ile (oda join şart değil). */
-  useEffect(() => {
-    if (!cid) return;
-    const socket = getOrCreateSocket();
-    const cidLo = cid.toLowerCase();
-    const onReq = (data: {
-      conversation_id?: string;
-      request_id?: string;
-      requester_user_id?: string;
-      from_user_id?: string;
-      initiator_user_id?: string;
-    }) => {
-                  const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
-      if (conv !== cidLo) return;
-      const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
-      if (!rid) return;
-      const fromLo = String(
-        data?.requester_user_id != null
-          ? data.requester_user_id
-          : data?.from_user_id != null
-            ? data.from_user_id
-            : data?.initiator_user_id != null
-              ? data.initiator_user_id
-              : ''
-      )
-        .trim()
-        .toLowerCase();
-      if (!fromLo) return;
-      void (async () => {
-        let me = (myId || '').trim().toLowerCase();
-        if (!me) {
-          try {
-            const raw = await getPersistedUserRaw();
-            if (raw) {
-              const u = JSON.parse(raw) as { id?: string };
-              if (u?.id) me = String(u.id).trim().toLowerCase();
-            }
-          } catch {
-            /* noop */
-          }
-        }
-        if (me && fromLo === me) return;
-        setPairInModal((prev) => (prev?.rid === rid ? prev : { rid, fromLo }));
-      })();
-    };
-    socket.on('leylek_pair_match_request', onReq);
-    return () => {
-      socket.off('leylek_pair_match_request', onReq);
-    };
-  }, [cid, myId]);
 
   useEffect(() => {
     if (!cid || bootstrapPhase !== 'ready') return;
@@ -1237,22 +1143,6 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     if (!cid) return;
     const socket = getOrCreateSocket();
-    const cidLo = cid.trim().toLowerCase();
-    const onDeclined = (p: { conversation_id?: string }) => {
-      const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
-      if (c && c !== cidLo) return;
-      pushSystemCard('orange', 'Karşı taraf şu an müsait değil.');
-      Alert.alert('Eşleşme', 'Karşı taraf şu an eşleşmeyi kabul etmedi.');
-    };
-    socket.on('leylek_pair_declined', onDeclined);
-    return () => {
-      socket.off('leylek_pair_declined', onDeclined);
-    };
-  }, [cid, pushSystemCard]);
-
-  useEffect(() => {
-    if (!cid) return;
-    const socket = getOrCreateSocket();
     const onMuErr = (p: { code?: string; detail?: string; message?: string; message_id?: string; conversation_id?: string; max?: number }) => {
       const conv = p?.conversation_id != null ? String(p.conversation_id).toLowerCase() : '';
       if (conv && conv !== cid.toLowerCase()) return;
@@ -1424,76 +1314,6 @@ export default function MuhabbetChatScreen({
     router.push(`/muhabbet-profile/${encodeURIComponent(ou)}` as Href);
   }, [otherUserId, ctx, router]);
 
-  const sendLeylekPairRequest = useCallback(async () => {
-    if (!cid) return;
-    if (pairRequestBusyRef.current) {
-      if (pairRequestLoading) return;
-      pairRequestBusyRef.current = false;
-    }
-    const token = (await getPersistedAccessToken())?.trim();
-    if (!token) {
-      Alert.alert('Oturum', 'Giriş yapın ve tekrar deneyin.');
-      return;
-    }
-    const now = Date.now();
-    if (lastLeylekPairRequestAtRef.current + 60_000 > now) {
-      const w = Math.ceil((lastLeylekPairRequestAtRef.current + 60_000 - now) / 1000);
-      Alert.alert('Çok sık istek', `${Math.max(1, w)} sn sonra tekrar deneyebilirsiniz.`);
-      return;
-    }
-    pairRequestBusyRef.current = true;
-    setPairRequestLoading(true);
-    try {
-      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-request`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-      });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        return;
-      }
-      const raw = (await res.json().catch(() => ({}))) as {
-        success?: boolean;
-        pending?: boolean;
-        request?: { id?: string; conversation_id?: string };
-        detail?: unknown;
-      };
-      const detailStr = (() => {
-        const d = raw.detail;
-        if (typeof d === 'string') return d;
-        if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
-          return (d[0] as { msg: string }).msg;
-        }
-        return '';
-      })();
-      if (!res.ok) {
-        Alert.alert('İstek gönderilemedi', detailStr || `Hata (${res.status})`);
-        return;
-      }
-      if (raw.success && raw.pending) {
-        lastLeylekPairRequestAtRef.current = Date.now();
-        pushSystemCard('orange', 'Karşı tarafta bekleyen bir eşleşme isteği var.');
-        Alert.alert('Bekleyen istek', 'Zaten bir eşleşme isteğiniz var.');
-        await pullMessagesFromApi();
-        return;
-      }
-      if (raw.success) {
-        lastLeylekPairRequestAtRef.current = Date.now();
-        pushSystemCard('blue', 'Eşleşme isteği gönderildi.');
-        Alert.alert('Eşleşme isteği gönderildi.', 'Karşı taraf onaylarsa eşleşme tamamlanır.');
-        await pullMessagesFromApi();
-      }
-    } catch {
-      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
-    } finally {
-      pairRequestBusyRef.current = false;
-      setPairRequestLoading(false);
-    }
-  }, [cid, base, pairRequestLoading, pushSystemCard, pullMessagesFromApi]);
-
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (
     <Pressable onPress={openOtherProfile} style={styles.headerIcon} accessibilityRole="button">
@@ -1510,6 +1330,7 @@ export default function MuhabbetChatScreen({
     'Leylek kullanıcısı';
   const chatHeaderRole = (ctx?.other_user_role_label && String(ctx.other_user_role_label).trim()) || (isDriverAppRole(oR) ? 'Sürücü' : 'Yolcu');
   const chatHeaderPhoto = (ctx?.other_user_profile_photo_url || '').trim();
+  const tripConvertEligible = !!(ctx?.trip_convert_eligible ?? ctx?.matched_via_leylek_key);
 
   const bubbleForMsg = (item: ChatMessageRow) => {
     const mine = myId && String(item.sender_user_id || '').toLowerCase() === myId;
@@ -1518,90 +1339,6 @@ export default function MuhabbetChatScreen({
     const drv = isDriverAppRole(sr);
     return { mine, drv };
   };
-
-  const acceptPairFromModal = useCallback(async () => {
-    if (!cid || !pairInModal) return;
-    const token = (await getPersistedAccessToken())?.trim();
-    if (!token) {
-      Alert.alert('Oturum', 'Giriş yapın.');
-      return;
-    }
-    const rid = pairInModal.rid;
-    try {
-      const res = await fetch(
-        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-requests/${encodeURIComponent(rid)}/accept`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: '{}',
-        }
-      );
-      if (handleUnauthorizedAndMaybeRedirect(res)) return;
-      const raw = (await res.json().catch(() => ({}))) as { detail?: unknown };
-      const detailStr = (() => {
-        const d = raw.detail;
-        if (typeof d === 'string') return d;
-        if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
-          return (d[0] as { msg: string }).msg;
-        }
-        return '';
-      })();
-      if (!res.ok) {
-        Alert.alert('Hata', detailStr || `Hata (${res.status})`);
-        return;
-      }
-      setPairInModal(null);
-      await pullMessagesFromApi();
-      Alert.alert('Eşleşme kabul edildi.');
-    } catch {
-      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
-    }
-  }, [cid, pairInModal, base, pullMessagesFromApi]);
-
-  const closePairModalDecline = useCallback(async () => {
-    if (!cid || !pairInModal) return;
-    const token = (await getPersistedAccessToken())?.trim();
-    if (!token) {
-      Alert.alert('Oturum', 'Giriş yapın.');
-      return;
-    }
-    const rid = pairInModal.rid;
-    try {
-      const res = await fetch(
-        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-requests/${encodeURIComponent(rid)}/decline`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: '{}',
-        }
-      );
-      if (handleUnauthorizedAndMaybeRedirect(res)) return;
-      const raw = (await res.json().catch(() => ({}))) as { detail?: unknown };
-      const detailStr = (() => {
-        const d = raw.detail;
-        if (typeof d === 'string') return d;
-        if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
-          return (d[0] as { msg: string }).msg;
-        }
-        return '';
-      })();
-      if (!res.ok) {
-        Alert.alert('Hata', detailStr || `Hata (${res.status})`);
-        return;
-      }
-      setPairInModal(null);
-      await pullMessagesFromApi();
-      Alert.alert('Eşleşme isteği reddedildi.');
-    } catch {
-      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
-    }
-  }, [cid, pairInModal, base, pullMessagesFromApi]);
 
   const sendTripConvertRequest = useCallback(async () => {
     if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
@@ -1691,8 +1428,10 @@ export default function MuhabbetChatScreen({
             <Text style={styles.peerName} numberOfLines={1}>{chatHeaderTitle}</Text>
             <View style={styles.peerBadgesRow}>
               <Text style={[styles.peerRolePill, chatHeaderRole === 'Sürücü' ? styles.peerRoleDriver : styles.peerRolePax]}>{chatHeaderRole}</Text>
-              {ctx?.matched_via_leylek_key ? (
-                <Text style={styles.peerMatchedPill}>Leylek Anahtar eşleşti</Text>
+              {tripConvertEligible ? (
+                <Text style={styles.peerMatchedPill}>
+                  {ctx?.matched_via_leylek_key ? 'Leylek Anahtar eşleşti' : 'Eşleşme tamam'}
+                </Text>
               ) : (
                 <Text style={styles.peerPreviewPill}>Ön görüşme</Text>
               )}
@@ -1700,12 +1439,21 @@ export default function MuhabbetChatScreen({
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </Pressable>
-        {ctx?.matched_via_leylek_key ? (
+        {tripConvertEligible && ctx?.matched_via_leylek_key ? (
           <View style={styles.matchStrip}>
             <View style={styles.matchBadge}>
               <Ionicons name="shield-checkmark" size={15} color="#fff" style={{ marginRight: 6 }} />
               <Text style={styles.matchBadgeTxt} numberOfLines={2}>
                 Leylek Anahtar ile eşleşme tamamlandı
+              </Text>
+            </View>
+          </View>
+        ) : tripConvertEligible ? (
+          <View style={styles.matchStrip}>
+            <View style={styles.matchBadge}>
+              <Ionicons name="checkmark-circle" size={15} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.matchBadgeTxt} numberOfLines={2}>
+                Teklif eşleşmesi tamam — güzergâh ve ücreti sohbette netleştirin
               </Text>
             </View>
           </View>
@@ -1730,10 +1478,14 @@ export default function MuhabbetChatScreen({
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               ListHeaderComponent={
                 <View>
-                  {ctx?.matched_at ? (
+                  {tripConvertEligible ? (
                     <View style={styles.systemPermanentOk}>
                       <Ionicons name="checkmark-circle" size={15} color="#15803D" />
-                      <Text style={styles.systemPermanentOkTxt}>Leylek Anahtar ile eşleşme tamamlandı</Text>
+                      <Text style={styles.systemPermanentOkTxt}>
+                        {ctx?.matched_via_leylek_key
+                          ? 'Leylek Anahtar ile eşleşme tamamlandı'
+                          : 'Teklif eşleşmesi tamamlandı'}
+                      </Text>
                     </View>
                   ) : null}
                   {ctx?.matched_via_leylek_key ? (
@@ -1772,14 +1524,6 @@ export default function MuhabbetChatScreen({
                       <Ionicons name="chatbubble-ellipses-outline" size={18} color="#2563EB" />
                       <Text style={styles.tripModeOnlyText}>
                         Ön görüşme mesajları gizlendi. Bu ekranda yalnızca eşleşme, yolculuğa çevirme ve canlı trip durumu gösterilir.
-                      </Text>
-                    </View>
-                  ) : null}
-                  {hasOutgoingPendingPairRequest ? (
-                    <View style={styles.systemPermanentPending}>
-                      <Ionicons name="time-outline" size={15} color="#1D4ED8" />
-                      <Text style={styles.systemPermanentPendingTxt}>
-                        Leylek Anahtarı eşleşme isteği gönderildi, yanıt bekleniyor.
                       </Text>
                     </View>
                   ) : null}
@@ -1909,38 +1653,7 @@ export default function MuhabbetChatScreen({
               }}
             />
           )}
-          {!ctx?.matched_via_leylek_key ? (
-            <View style={styles.keyRow}>
-              <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
-                <View style={styles.keyCtaGlow}>
-                  <Pressable
-                    onPress={() => void sendLeylekPairRequest()}
-                    disabled={pairRequestLoading}
-                    style={({ pressed }) => [pressed && !pairRequestLoading && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Leylek Anahtar ile eşleşme isteği gönder"
-                  >
-                    <LinearGradient
-                      colors={['#6366F1', '#7C3AED']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[styles.keyCta, pairRequestLoading && { opacity: 0.75 }]}
-                    >
-                      {pairRequestLoading ? (
-                        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-                      ) : (
-                        <Ionicons name="key" size={18} color="#fff" style={{ marginRight: 8 }} />
-                      )}
-                      <Text style={styles.keyCtaTxt}>
-                        {pairRequestLoading ? 'Gönderiliyor…' : 'Leylek Anahtar ile eşleş'}
-                      </Text>
-                    </LinearGradient>
-                  </Pressable>
-                </View>
-              </Animated.View>
-            </View>
-          ) : null}
-          {ctx?.matched_via_leylek_key && (currentUserIsDriver || tripConvertState !== 'idle' || !!tripConvertInModal) ? (
+          {tripConvertEligible && (currentUserIsDriver || tripConvertState !== 'idle' || !!tripConvertInModal) ? (
             <View style={[styles.tripConvertSticky, tripConvertState === 'confirmed' && styles.tripConvertStickyConfirmed]}>
               {tripConvertState === 'confirmed' ? (
                 <>
@@ -2014,38 +1727,6 @@ export default function MuhabbetChatScreen({
             </View>
           ) : null}
         </KeyboardAvoidingView>
-        <Modal
-          visible={!!pairInModal}
-          transparent
-          animationType="fade"
-          onRequestClose={closePairModalDecline}
-        >
-          <View style={styles.pairModalRoot}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={closePairModalDecline} />
-            <View style={styles.pairModalCard}>
-              <Text style={styles.pairModalTitle}>Leylek Anahtar eşleşme isteği</Text>
-              <Text style={styles.pairModalBody}>
-                {chatHeaderTitle} ile güzergâh, ücret ve buluşma bilgilerini onayladıysanız eşleşebilirsiniz.
-              </Text>
-              <Pressable
-                onPress={acceptPairFromModal}
-                style={({ pressed }) => [styles.pairModalPri, pressed && { opacity: 0.92 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Eşleş"
-              >
-                <Text style={styles.pairModalPriTxt}>Eşleş</Text>
-              </Pressable>
-              <Pressable
-                onPress={closePairModalDecline}
-                style={({ pressed }) => [styles.pairModalSec, pressed && { opacity: 0.88 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Müsait değilim"
-              >
-                <Text style={styles.pairModalSecTxt}>Müsait değilim</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
         <Modal
           visible={!!tripConvertInModal}
           transparent
