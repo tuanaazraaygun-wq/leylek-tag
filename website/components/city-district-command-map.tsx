@@ -5,6 +5,7 @@ type CityDistrictCommandMapProps = {
   city: TurkeyCity;
   mapHudSubtitle: string;
   dataMode: "live" | "demo";
+  liveSparse?: boolean;
   districts: CityDistrict[];
   routes: CityRoute[];
   activities: CityActivity[];
@@ -28,6 +29,7 @@ export function CityDistrictCommandMap({
   city,
   mapHudSubtitle,
   dataMode,
+  liveSparse = false,
   districts,
   routes,
   activities,
@@ -48,6 +50,7 @@ export function CityDistrictCommandMap({
         dataMode={dataMode}
         mapHudSubtitle={mapHudSubtitle}
         hudFreshCycle={hudFreshCycle}
+        liveSparse={liveSparse}
       />
       <div className="pointer-events-none absolute right-4 top-4 z-[500] hidden grid-cols-3 gap-2 rounded-2xl border border-cyan-200/15 bg-slate-950/78 p-2 shadow-soft-card backdrop-blur-xl sm:grid">
         {[
@@ -57,7 +60,9 @@ export function CityDistrictCommandMap({
         ].map(([statLabel, value]) => (
           <div key={statLabel} className="rounded-xl bg-white/[0.06] px-3 py-2">
             <p className="text-[10px] text-slate-500">{statLabel}</p>
-            <p className="mt-1 whitespace-nowrap text-xs font-black text-white tabular-nums transition-colors duration-500">{value}</p>
+            <p className="mt-1 whitespace-nowrap text-xs font-black text-white tabular-nums transition-[color,opacity] duration-500 ease-out">
+              {value}
+            </p>
           </div>
         ))}
       </div>

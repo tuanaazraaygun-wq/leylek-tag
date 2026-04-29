@@ -14,8 +14,23 @@ const IntercityRealMap = dynamic(() => import("@/components/intercity-real-map")
 
 type Props = {
   dashboard: IntercityDashboard;
+  dataMode?: "live" | "demo";
+  activityHudFreshCycle?: number;
+  liveSparse?: boolean;
 };
 
-export function IntercityRealMapLoader({ dashboard }: Props) {
-  return <IntercityRealMap dashboard={dashboard} />;
+export function IntercityRealMapLoader({
+  dashboard,
+  dataMode = "demo",
+  activityHudFreshCycle = 0,
+  liveSparse = false,
+}: Props) {
+  return (
+    <IntercityRealMap
+      dashboard={dashboard}
+      dataMode={dataMode}
+      activityHudFreshCycle={activityHudFreshCycle}
+      liveSparse={liveSparse}
+    />
+  );
 }

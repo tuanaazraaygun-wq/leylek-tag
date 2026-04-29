@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CityDistrictCommandMap } from "@/components/city-district-command-map";
+import { LiveDashboardTrustStrip, LiveSparseBanner } from "@/components/live-dashboard-chrome";
 import { hasApiBaseUrl } from "@/lib/config";
 import {
   DEFAULT_CITY,
@@ -22,7 +23,8 @@ export function CityLiveMap() {
   const [hudFreshCycle, setHudFreshCycle] = useState(0);
 
   const liveCacheRef = useRef<Partial<Record<TurkeyCity, CityLiveDashboard>>>({});
-  const prevHeadByCity = useRef<Partial<Record<TurkeyCity, string>>>({});
+  const prevFirstTitleRef = useRef<Partial<Record<TurkeyCity, string>>>({});
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!wantLiveData || !hasApiBaseUrl) {
@@ -34,7 +36,20 @@ export function CityLiveMap() {
     }
 
     let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    function clearPoll() {
+      if (pollIntervalRef.current !== null) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    }
+
+    function schedulePoll(tick: () => void | Promise<void>) {
+      clearPoll();
+      pollIntervalRef.current = setInterval(() => {
+        void tick();
+      }, 8000);
+    }
 
     async function tick() {
       const retained = liveCacheRef.current[selectedCity] ?? null;
@@ -50,28 +65,52 @@ export function CityLiveMap() {
       setDashboard(next);
       setDataSource(source);
 
-      const headId = next.activities[0]?.id ?? "";
-      const prevHead = prevHeadByCity.current[selectedCity];
-      if (source === "live" && headId && prevHead !== undefined && headId !== prevHead) {
+      const headTitle = next.activities[0]?.title ?? "";
+      const prevTitle = prevFirstTitleRef.current[selectedCity];
+      if (source === "live" && headTitle && prevTitle !== undefined && headTitle !== prevTitle) {
         setHudFreshCycle((k) => k + 1);
       }
-      if (source === "live" && headId) {
-        prevHeadByCity.current[selectedCity] = headId;
+      if (source === "live") {
+        prevFirstTitleRef.current[selectedCity] = headTitle;
       }
     }
 
-    tick();
-    intervalId = setInterval(tick, 8000);
+    function runWhenVisible() {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        clearPoll();
+        return;
+      }
+      void tick();
+      schedulePoll(tick);
+    }
+
+    runWhenVisible();
+
+    function onVisibilityChange() {
+      if (cancelled) return;
+      if (document.visibilityState === "hidden") {
+        clearPoll();
+        return;
+      }
+      void tick();
+      schedulePoll(tick);
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelled = true;
-      if (intervalId !== undefined) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearPoll();
     };
   }, [selectedCity]);
 
   const label = wantLiveData && dataSource === "live" ? "Canlı veri" : "Demo görünüm · Gerçek veriye hazır";
   const mapHudSubtitle =
     dataSource === "live" ? "Harita görünümü · Canlı yoğunluk katmanı" : "Harita görünümü · Demo görünüm";
+
+  const liveSparse = useMemo(() => Boolean(dashboard.uiHints?.liveSparse), [dashboard.uiHints?.liveSparse]);
+  const showSparseBanner = dataSource === "live" && liveSparse;
 
   return (
     <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/50 p-4 shadow-soft-card sm:p-5">
@@ -112,12 +151,15 @@ export function CityLiveMap() {
           </div>
         </div>
 
-        <div>
+        <div className="space-y-3">
+          {showSparseBanner ? <LiveSparseBanner variant="city" /> : null}
+          <LiveDashboardTrustStrip />
           <div>
             <CityDistrictCommandMap
               city={dashboard.city}
               mapHudSubtitle={mapHudSubtitle}
               dataMode={dataSource}
+              liveSparse={liveSparse}
               districts={dashboard.districts}
               routes={dashboard.routes}
               activities={dashboard.activities}

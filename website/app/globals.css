@@ -95,6 +95,52 @@ a {
   stroke-linecap: round;
 }
 
+.leylek-route-flow {
+  stroke-dasharray: 10 16;
+  animation: route-flow-dash 2.4s linear infinite;
+}
+
+.leylek-route-glow--hot {
+  filter: blur(0.6px);
+}
+
+.leylek-live-route--hot {
+  filter: drop-shadow(0 0 6px rgba(207, 250, 254, 0.65));
+}
+
+@keyframes route-flow-dash {
+  to {
+    stroke-dashoffset: -52;
+  }
+}
+
+.leylek-route-particle-marker {
+  background: transparent;
+  border: 0;
+}
+
+.leylek-route-particle {
+  display: block;
+  height: 6px;
+  width: 6px;
+  border-radius: 999px;
+  background: rgba(207, 250, 254, 0.92);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.78);
+  animation: route-particle-drift 2.8s ease-in-out infinite;
+}
+
+@keyframes route-particle-drift {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
 .leylek-light-marker,
 .leylek-heat-marker {
   background: transparent;
@@ -116,6 +162,18 @@ a {
   border-radius: 999px;
   background: radial-gradient(circle, rgba(34, 211, 238, 0.18), rgba(16, 185, 129, 0.1) 42%, transparent 72%);
   filter: blur(1px);
+}
+
+.leylek-heat-zone--high {
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.28), rgba(16, 185, 129, 0.14) 38%, transparent 70%);
+}
+
+.leylek-heat-zone--mid {
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.2), rgba(16, 185, 129, 0.11) 40%, transparent 72%);
+}
+
+.leylek-heat-zone--low {
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.14), rgba(16, 185, 129, 0.08) 42%, transparent 74%);
 }
 
 .leylek-district-marker {
@@ -174,6 +232,21 @@ a {
   backdrop-filter: blur(14px);
 }
 
+.leylek-marker-accent-high .leylek-marker-label {
+  border-color: rgba(103, 232, 249, 0.42);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.35),
+    0 0 14px rgba(34, 211, 238, 0.22);
+}
+
+.leylek-marker-accent-mid .leylek-marker-label {
+  border-color: rgba(103, 232, 249, 0.26);
+}
+
+.leylek-marker-accent-low .leylek-marker-label {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
 .leylek-intercity-endpoint {
   position: relative;
   height: 26px;
@@ -204,6 +277,84 @@ a {
 .leylek-intercity-mid-icon {
   background: transparent;
   border: 0;
+}
+
+.leylek-intercity-mid-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  max-width: min(92vw, 240px);
+  padding: 7px 11px;
+  border-radius: 14px;
+  border: 1px solid rgba(103, 232, 249, 0.32);
+  background: linear-gradient(145deg, rgba(2, 8, 23, 0.92), rgba(15, 23, 42, 0.8));
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.44),
+    0 0 18px rgba(34, 211, 238, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.leylek-intercity-mid-title {
+  display: block;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #ecfeff;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.leylek-intercity-mid-meta {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(165, 214, 226, 0.96);
+  text-align: center;
+  line-height: 1.25;
+}
+
+.leylek-intercity-line--pulse-glow {
+  animation: intercity-pulse-glow 2.5s ease-in-out infinite;
+}
+
+.leylek-intercity-line--pulse-main {
+  animation: intercity-pulse-main 2.5s ease-in-out infinite;
+}
+
+.leylek-intercity-line--pulse-rim {
+  animation: intercity-pulse-rim 2.5s ease-in-out infinite;
+}
+
+@keyframes intercity-pulse-glow {
+  0%,
+  100% {
+    opacity: 0.34;
+  }
+  50% {
+    opacity: 0.58;
+  }
+}
+
+@keyframes intercity-pulse-main {
+  0%,
+  100% {
+    opacity: 0.88;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes intercity-pulse-rim {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 0.96;
+  }
 }
 
 .leylek-intercity-route-pill {
@@ -250,17 +401,36 @@ a {
 }
 
 .map-hud-row.map-hud-row--fresh {
-  animation: map-hud-fresh-pop 1.25s ease-out 1;
+  animation: map-hud-fresh-pop 0.95s ease-out 1;
 }
 
 @keyframes map-hud-fresh-pop {
   0% {
-    border-color: rgba(103, 232, 249, 0.08);
+    border-color: rgba(103, 232, 249, 0.12);
     box-shadow: 0 0 0 rgba(34, 211, 238, 0);
   }
-  40% {
-    border-color: rgba(103, 232, 249, 0.55);
-    box-shadow: 0 0 22px rgba(34, 211, 238, 0.42);
+  38% {
+    border-color: rgba(103, 232, 249, 0.36);
+    box-shadow: 0 0 14px rgba(34, 211, 238, 0.22);
+  }
+  100% {
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 rgba(34, 211, 238, 0);
+  }
+}
+
+.map-hud-row.map-hud-row--fresh-intercity {
+  animation: map-hud-fresh-intercity 0.85s ease-out 1;
+}
+
+@keyframes map-hud-fresh-intercity {
+  0% {
+    border-color: rgba(103, 232, 249, 0.1);
+    box-shadow: 0 0 0 rgba(34, 211, 238, 0);
+  }
+  42% {
+    border-color: rgba(103, 232, 249, 0.34);
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.18);
   }
   100% {
     border-color: rgba(255, 255, 255, 0.08);
@@ -332,5 +502,143 @@ a {
   .map-hud-row {
     padding: 6px 7px;
     font-size: 10px;
+  }
+}
+
+.map-hud-district-accent-high {
+  border: 1px solid rgba(103, 232, 249, 0.28);
+}
+
+.map-hud-district-accent-mid {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.map-hud-district-accent-low {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.map-hud-district-label-high {
+  color: rgba(236, 254, 255, 0.98);
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.22);
+}
+
+.map-hud-district-label-mid {
+  color: rgba(226, 246, 255, 0.94);
+}
+
+.map-hud-district-label-low {
+  color: rgba(203, 213, 225, 0.92);
+}
+
+/* Premium live dashboard chrome (maps): heartbeat dot, ambient drift, legend swatches */
+.live-canli-dot {
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #a7f3d0, #34d399 55%, #059669);
+  box-shadow:
+    0 0 0 1px rgba(167, 243, 208, 0.35),
+    0 0 12px rgba(52, 211, 153, 0.55);
+  animation: live-canli-heartbeat 2.8s ease-in-out infinite;
+}
+
+@keyframes live-canli-heartbeat {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scale(1);
+    box-shadow:
+      0 0 0 1px rgba(167, 243, 208, 0.28),
+      0 0 10px rgba(52, 211, 153, 0.42);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+    box-shadow:
+      0 0 0 1px rgba(167, 243, 208, 0.42),
+      0 0 16px rgba(52, 211, 153, 0.62);
+  }
+}
+
+.leylek-ambient-drift {
+  background-image:
+    radial-gradient(ellipse 130% 90% at 18% 28%, rgba(34, 211, 238, 0.09), transparent 52%),
+    radial-gradient(ellipse 110% 70% at 82% 72%, rgba(99, 102, 241, 0.07), transparent 48%),
+    radial-gradient(ellipse 80% 50% at 55% 45%, rgba(16, 185, 129, 0.05), transparent 55%);
+  animation: leylek-ambient-shift 18s ease-in-out infinite;
+}
+
+@keyframes leylek-ambient-shift {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    opacity: 0.94;
+    transform: translate3d(1.2%, -0.8%, 0) scale(1.015);
+  }
+  66% {
+    opacity: 0.97;
+    transform: translate3d(-0.9%, 0.6%, 0) scale(1.008);
+  }
+}
+
+.map-legend-panel {
+  pointer-events: none;
+}
+
+.map-legend-swatch {
+  display: inline-block;
+  height: 10px;
+  width: 10px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.map-legend-swatch--heat {
+  background: radial-gradient(circle at 30% 25%, rgba(103, 232, 249, 0.95), rgba(16, 185, 129, 0.35) 58%, rgba(15, 23, 42, 0.5));
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
+}
+
+.map-legend-swatch--route {
+  background: linear-gradient(105deg, rgba(34, 211, 238, 0.95), rgba(103, 232, 249, 0.35));
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.42);
+}
+
+.map-legend-swatch--pulse {
+  background: linear-gradient(145deg, rgba(167, 243, 208, 0.95), rgba(52, 211, 153, 0.55));
+  box-shadow: 0 0 10px rgba(110, 231, 183, 0.45);
+  animation: map-legend-pulse-soft 2.6s ease-in-out infinite;
+}
+
+.map-legend-swatch--steady {
+  background: linear-gradient(135deg, rgba(103, 232, 249, 0.85), rgba(34, 211, 238, 0.45));
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.35);
+}
+
+.map-legend-swatch--matching {
+  background: linear-gradient(135deg, rgba(167, 243, 208, 0.75), rgba(34, 211, 238, 0.55));
+  border-color: rgba(110, 231, 183, 0.35);
+  animation: map-legend-pulse-soft 3.2s ease-in-out infinite;
+}
+
+.map-legend-swatch--soon {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.35), rgba(34, 211, 238, 0.22));
+  border-color: rgba(251, 191, 36, 0.28);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.22);
+}
+
+@keyframes map-legend-pulse-soft {
+  0%,
+  100% {
+    opacity: 0.88;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
   }
 }

@@ -129,6 +129,10 @@ export type CityLiveDashboard = {
     busiestRegion: string;
     activeLine: string;
   };
+  /** Present when merged from live API; drives sparse-state UX. */
+  uiHints?: {
+    liveSparse: boolean;
+  };
 };
 
 export const DEFAULT_CITY: TurkeyCity = "Ankara";
@@ -505,6 +509,112 @@ function fnv1aActivityId(parts: string[]): string {
   return (h >>> 0).toString(36);
 }
 
+/** Polyline emphasis driven by API activity ↔ district name matching */
+export type RouteVisualTier = "active" | "linked" | "idle";
+
+export function resolveDistrictOnMap(raw: string, districts: CityDistrict[]): CityDistrict | undefined {
+  const q = raw.trim().toLocaleLowerCase("tr-TR");
+  if (!q) return undefined;
+  const exact = districts.find((d) => d.name.toLocaleLowerCase("tr-TR") === q);
+  if (exact) return exact;
+  return districts.find((d) => {
+    const dn = d.name.toLocaleLowerCase("tr-TR");
+    return dn.startsWith(q) || q.startsWith(dn);
+  });
+}
+
+/** Parse titles like "Kızılay → Çankaya sefer başladı" into endpoints (no PII). */
+export function parseActivityDistrictPair(title: string): { from: string; to: string } | null {
+  const t = title.trim();
+  if (!t.includes("→")) return null;
+  const parts = t.split(/\s*→\s*/);
+  if (parts.length < 2) return null;
+  const fromRaw = parts[0]?.trim() ?? "";
+  const rightJoined = parts.slice(1).join(" → ").trim();
+  const stripTrail = (s: string) =>
+    s
+      .replace(
+        /\s+(sefer|yolculuk|başladı|arıyor|bölgesinde|yoğun|teklif|tamamlandı|hareketi|katmanı|paylaşımı|talep|artışı|akışı).*$/iu,
+        "",
+      )
+      .trim();
+  const toRaw = stripTrail(rightJoined);
+  const from = stripTrail(fromRaw);
+  const to = toRaw.split(/\s+/).slice(0, 6).join(" ").trim();
+  if (from.length < 2 || to.length < 2) return null;
+  return { from, to };
+}
+
+function routeEndKey(a: string, b: string): string {
+  return `${a.toLocaleLowerCase("tr-TR")}|${b.toLocaleLowerCase("tr-TR")}`;
+}
+
+/**
+ * Merge activity-derived segments with demo routes; assign tiers for map styling.
+ * First matching pair → active; further pairs → linked; remainder → idle.
+ */
+export function buildMapRoutesAndTiers(
+  routes: CityRoute[],
+  activities: CityActivity[],
+  districts: CityDistrict[],
+): { routes: CityRoute[]; tiers: Map<string, RouteVisualTier> } {
+  const tiers = new Map<string, RouteVisualTier>();
+  routes.forEach((r) => tiers.set(r.id, "idle"));
+
+  type Resolved = { routeId: string; from: string; to: string };
+  const resolved: Resolved[] = [];
+
+  for (const act of activities) {
+    const pair = parseActivityDistrictPair(act.title);
+    if (!pair) continue;
+    const fd = resolveDistrictOnMap(pair.from, districts);
+    const td = resolveDistrictOnMap(pair.to, districts);
+    if (!fd || !td || fd.id === td.id) continue;
+    const existing = routes.find((r) => routeEndKey(r.from, r.to) === routeEndKey(fd.name, td.name));
+    const routeId = existing?.id ?? `live-route-${fnv1aActivityId([routeEndKey(fd.name, td.name)])}`;
+    resolved.push({ routeId, from: fd.name, to: td.name });
+  }
+
+  const extras: CityRoute[] = [];
+  const seenPair = new Set<string>();
+  for (const p of resolved) {
+    const k = routeEndKey(p.from, p.to);
+    if (seenPair.has(k)) continue;
+    seenPair.add(k);
+    const exists = routes.some((r) => routeEndKey(r.from, r.to) === k);
+    if (!exists) {
+      extras.push({
+        id: p.routeId,
+        from: p.from,
+        to: p.to,
+        status: "Canlı",
+        time: "Şimdi",
+      });
+      tiers.set(p.routeId, "idle");
+    }
+  }
+
+  let assignedActive = false;
+  for (const p of resolved) {
+    const cur = tiers.get(p.routeId);
+    if (cur === "active" || cur === "linked") continue;
+    tiers.set(p.routeId, !assignedActive ? "active" : "linked");
+    assignedActive = true;
+  }
+
+  const extraKeys = new Set(extras.map((e) => routeEndKey(e.from, e.to)));
+  const baseRoutes = routes.filter((r) => !extraKeys.has(routeEndKey(r.from, r.to)));
+  const merged = [...extras.slice(0, 6), ...baseRoutes];
+
+  return { routes: merged, tiers };
+}
+
+export function districtIntensityAccent(intensity: number): "high" | "mid" | "low" {
+  if (intensity >= 72) return "high";
+  if (intensity >= 48) return "mid";
+  return "low";
+}
+
 function mapActivityApiType(raw: string): CityActivity["type"] {
   const x = raw.toLowerCase();
   if (x === "offer") return "offer";
@@ -533,6 +643,7 @@ function mergeDistrictsFromApi(base: CityDistrict[], regions: PublicCityLiveResp
 function mergeCityLiveFromApi(cityParam: string, api: PublicCityLiveResponse): CityLiveDashboard {
   const selected = resolveTurkeyCityLabel(api.city || cityParam);
   const base = getCityLiveDashboard(selected);
+  const liveSparse = (api.activities?.length ?? 0) === 0 && (api.regions?.length ?? 0) === 0;
   const mappedActivities = (api.activities ?? []).slice(0, 12).map((a, index) => ({
     id: `live-${fnv1aActivityId([String(index), a.title, a.subtitle, a.timeLabel, a.type])}`,
     title: a.title,
@@ -551,6 +662,7 @@ function mergeCityLiveFromApi(cityParam: string, api: PublicCityLiveResponse): C
       busiestRegion: api.stats?.busiestRegion ?? base.stats.busiestRegion,
       activeLine: api.stats?.activeLine ?? base.stats.activeLine,
     },
+    uiHints: { liveSparse },
   };
 }
 

@@ -74,6 +74,9 @@ export type IntercityDashboard = {
   /** Bottom-right HUD: özet rota kartları */
   routeInfoPreviews: IntercityRouteInfoPreview[];
   telemetry: IntercityTelemetry;
+  uiHints?: {
+    liveSparse: boolean;
+  };
 };
 
 function coordFor(city: string) {
@@ -296,8 +299,30 @@ function averageSuggestedCostFromRoutes(routes: IntercityRouteItem[]): string {
   return `${avg} ₺`;
 }
 
+function fnv1aFeedId(parts: string[]): string {
+  let h = 2166136261 >>> 0;
+  const blob = parts.join("\x1e");
+  for (let i = 0; i < blob.length; i++) {
+    h ^= blob.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** Short HUD line from API activity (no PII). */
+function compactActivityHudLine(a: { title: string; subtitle: string }): string {
+  const sub = (a.subtitle ?? "").trim();
+  const ti = (a.title ?? "").trim();
+  if (sub.length > 0 && sub.length <= 96) {
+    return sub.includes("→") ? sub : `${sub} · ${ti}`.slice(0, 96).trim();
+  }
+  return ti.slice(0, 96) || "Şehirler arası ilan";
+}
+
 function mergeIntercityFromApi(data: PublicIntercityResponse): IntercityDashboard {
   const demo = demoDashboard();
+
+  const liveSparse = (data.routes?.length ?? 0) === 0 && (data.activities?.length ?? 0) === 0;
 
   const mappedRoutes: IntercityRouteItem[] = (data.routes ?? []).map((r) =>
     buildRoute({
@@ -324,8 +349,8 @@ function mergeIntercityFromApi(data: PublicIntercityResponse): IntercityDashboar
   const activityFeed: IntercityActivityItem[] =
     data.activities?.length > 0
       ? data.activities.slice(0, 8).map((a, index) => ({
-          id: `live-${index}`,
-          text: `${a.subtitle} · ${a.title}`,
+          id: `live-${fnv1aFeedId([String(index), a.subtitle, a.title, a.timeLabel])}`,
+          text: compactActivityHudLine(a),
         }))
       : demo.activityFeed;
 
@@ -344,7 +369,7 @@ function mergeIntercityFromApi(data: PublicIntercityResponse): IntercityDashboar
     disclaimer: "Demo görünüm · gerçek ilan verisine hazır",
   };
 
-  return { routes, stats, activityFeed, routeInfoPreviews, telemetry };
+  return { routes, stats, activityFeed, routeInfoPreviews, telemetry, uiHints: { liveSparse } };
 }
 
 export type LoadIntercityDashboardOptions = {
