@@ -23,7 +23,7 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
-const LEYLEK_HERO_IMAGE = require('../assets/images/leylek-blue.png');
+const MUHABBET_HERO_LEYLEK = require('../assets/images/leylek-blue.png');
 const VISIBLE_OFFERS = 20;
 const CTA_CARD_SHADOW = Platform.select({
   ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 12 },
@@ -816,10 +816,6 @@ export default function LeylekMuhabbetiHomeTab({
             style={[StyleSheet.absoluteFillObject, styles.heroInnerShadowOverlay]}
             pointerEvents="none"
           />
-          <View style={styles.heroOrangeRadialGlow} pointerEvents="none" />
-          <View style={styles.heroDecorCircle} />
-          <View style={styles.heroDecorRing} />
-          <View style={styles.heroDecorShard} />
           <View style={styles.heroInnerRow}>
             <View style={styles.heroContent}>
               <View style={styles.heroEyebrow}>
@@ -830,7 +826,7 @@ export default function LeylekMuhabbetiHomeTab({
                   style={styles.heroEyebrowGrad}
                 >
                   <Ionicons name="sparkles" size={14} color="#2563EB" />
-                  <Text style={styles.heroEyebrowText}>Leylek Muhabbeti</Text>
+                  <Text style={styles.heroEyebrowText}>Leylek Teklifi</Text>
                 </LinearGradient>
               </View>
               <Text style={styles.heroTitle}>Yolunu paylaş, teklifini oluştur</Text>
@@ -859,16 +855,16 @@ export default function LeylekMuhabbetiHomeTab({
             </View>
           </View>
           <View style={styles.heroLeylekAbsolute} pointerEvents="none">
-            <Svg width={220} height={220} style={styles.heroLeylekRadialSvg}>
+            <Svg width={254} height={254} style={styles.heroLeylekRadialSvg}>
               <Defs>
                 <RadialGradient id="heroLeylekRadialBlend" cx="50%" cy="50%" r="55%" fx="50%" fy="50%">
                   <Stop offset="0%" stopColor="rgba(255,255,255,0.18)" stopOpacity={1} />
                   <Stop offset="100%" stopColor="rgba(255,255,255,0)" stopOpacity={1} />
                 </RadialGradient>
               </Defs>
-              <Circle cx={110} cy={110} r={108} fill="url(#heroLeylekRadialBlend)" />
+              <Circle cx={127} cy={127} r={124} fill="url(#heroLeylekRadialBlend)" />
             </Svg>
-            <Image source={LEYLEK_HERO_IMAGE} style={styles.heroLeylekImg} resizeMode="contain" />
+            <Image source={MUHABBET_HERO_LEYLEK} style={styles.heroLeylekImg} resizeMode="contain" />
           </View>
           <LinearGradient
             colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.15)']}
@@ -1148,47 +1144,6 @@ const styles = StyleSheet.create({
   heroInnerShadowOverlay: {
     zIndex: 2,
   },
-  heroOrangeRadialGlow: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(251,146,60,0.22)',
-    opacity: 0.65,
-    right: -56,
-    bottom: 28,
-    zIndex: 1,
-  },
-  heroDecorCircle: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(59,130,246,0.12)',
-    top: -36,
-    right: -28,
-  },
-  heroDecorRing: {
-    position: 'absolute',
-    width: 148,
-    height: 148,
-    borderRadius: 74,
-    borderWidth: 2,
-    borderColor: 'rgba(249,115,22,0.16)',
-    top: -42,
-    left: -52,
-  },
-  heroDecorShard: {
-    position: 'absolute',
-    width: 56,
-    height: 96,
-    borderRadius: 14,
-    backgroundColor: 'rgba(249,115,22,0.09)',
-    transform: [{ rotate: '-14deg' }],
-    bottom: 28,
-    left: 8,
-    zIndex: 0,
-  },
   heroInnerRow: {
     paddingHorizontal: 16,
     paddingTop: 18,
@@ -1210,8 +1165,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -4,
     right: -8,
-    width: 136,
-    height: 130,
+    width: 156,
+    height: 150,
     zIndex: 3,
     overflow: 'visible',
     justifyContent: 'flex-end',
@@ -1229,24 +1184,24 @@ const styles = StyleSheet.create({
   },
   heroLeylekRadialSvg: {
     position: 'absolute',
-    right: -52,
-    bottom: -48,
+    right: -56,
+    bottom: -52,
   },
   heroLeylekImg: {
     position: 'absolute',
     right: 0,
     bottom: 0,
-    width: 112,
-    height: 112,
+    width: 132,
+    height: 132,
     backgroundColor: 'transparent',
     borderRadius: 0,
     opacity: 0.85,
-    transform: [{ scale: 1.06 }],
+    transform: [{ scale: 1.12 }],
   },
   heroContent: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 124,
+    paddingRight: 138,
     zIndex: 3,
   },
   heroEyebrow: { marginBottom: 10 },

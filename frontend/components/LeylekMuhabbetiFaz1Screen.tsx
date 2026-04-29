@@ -1530,12 +1530,16 @@ export default function LeylekMuhabbetiFaz1Screen({
               { paddingBottom: Math.max(tabInsets.bottom, 12) },
             ]}
           >
-            <BlurView
-              intensity={Platform.OS === 'ios' ? 52 : 28}
-              tint="light"
-              style={styles.muhabbetTabBarBlur}
-            >
-              <View style={styles.muhabbetTabBarInner}>
+            <LinearGradient
+              colors={['#FF8A00', '#FF6B42', '#FF5E62']}
+              locations={[0, 0.52, 1]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.muhabbetTabBarOrangeGrad}
+              pointerEvents="none"
+            />
+            <View style={styles.muhabbetTabBarLightWash} pointerEvents="none" />
+            <View style={styles.muhabbetTabBarInner}>
                 {(['home', 'listings', 'chats'] as const).map((t) => {
                   const active = mainTab === t;
                   const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'Teklifler' : 'Sohbetler';
@@ -1556,18 +1560,18 @@ export default function LeylekMuhabbetiFaz1Screen({
                       {active ? (
                         <View style={styles.muhabbetTabActiveScale}>
                           <LinearGradient
-                            colors={['#DBEAFE', '#E8E4FF']}
+                            colors={['#FFFFFF', '#DBEAFE', '#BFDBFE']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={styles.muhabbetTabPillGradActive}
                           >
-                            <Ionicons name={icon} size={30} color="#1D4ED8" />
+                            <Ionicons name={icon} size={30} color="#1E40AF" />
                             <Text style={styles.muhabbetTabLabelActiveFloating}>{label}</Text>
                           </LinearGradient>
                         </View>
                       ) : (
                         <View style={styles.muhabbetTabInactiveCol}>
-                          <Ionicons name={icon} size={25} color="#64748B" />
+                          <Ionicons name={icon} size={25} color="#475569" />
                           <Text style={styles.muhabbetTabLabelFloating}>{label}</Text>
                         </View>
                       )}
@@ -1575,7 +1579,6 @@ export default function LeylekMuhabbetiFaz1Screen({
                   );
                 })}
               </View>
-            </BlurView>
           </View>
         </>
       )}
@@ -1874,35 +1877,39 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
     marginTop: -8,
-    paddingHorizontal: 3,
-    paddingTop: 3,
+    paddingHorizontal: 4,
+    paddingTop: 4,
     borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
     backgroundColor: 'transparent',
-  },
-  muhabbetTabBarBlur: {
-    borderRadius: 21,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.7)',
-    backgroundColor: 'rgba(255,255,255,0.88)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.11,
+        shadowRadius: 12,
       },
-      android: { elevation: 6 },
+      android: { elevation: 7 },
       default: {},
     }),
+  },
+  muhabbetTabBarOrangeGrad: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 24,
+  },
+  muhabbetTabBarLightWash: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 252, 248, 0.88)',
   },
   muhabbetTabBarInner: {
     flexDirection: 'row',
     alignItems: 'stretch',
     paddingVertical: 8,
     paddingHorizontal: 6,
+    position: 'relative',
+    zIndex: 1,
   },
   muhabbetTabItemWrap: {
     flex: 1,
@@ -1924,14 +1931,16 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     width: '100%',
     maxWidth: 124,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.95)',
     ...Platform.select({
       ios: {
         shadowColor: '#1e40af',
         shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.22,
-        shadowRadius: 12,
+        shadowOpacity: 0.26,
+        shadowRadius: 14,
       },
-      android: { elevation: 6 },
+      android: { elevation: 8 },
       default: {},
     }),
   },
@@ -1944,14 +1953,14 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#334155',
     letterSpacing: -0.15,
   },
   muhabbetTabLabelActiveFloating: {
     marginTop: 5,
     fontSize: 11,
-    fontWeight: '800',
-    color: '#1D4ED8',
+    fontWeight: '900',
+    color: '#1E40AF',
     letterSpacing: -0.15,
   },
   feedRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
