@@ -2,7 +2,11 @@
 Read-only aggregates for the marketing website live dashboards.
 
 Privacy: no user_id, phone, message body, or precise addresses in responses.
-Normal ride city dashboard uses tags (type=normal) only.
+Normal ride city dashboard uses tags (type=normal). City matching does not depend on
+tags.city: the requested province is matched as a word token (Turkish-normalized)
+against city, pickup_city, dropoff_city, pickup_location, dropoff_location,
+route_text, note (and district). Optional ILIKE OR prefilter narrows candidates;
+Python token matching is authoritative.
 Intercity dashboard uses ride_listings (listing_scope=intercity) only — separate from dispatch tags.
 """
 
@@ -20,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 TAG_TYPE_NORMAL = "normal"
 
-_CACHE_TTL_SEC = 15.0
+_CACHE_TTL_SEC = 5.0
 _city_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _intercity_cache: Optional[tuple[float, dict[str, Any]]] = None
 
@@ -108,10 +112,55 @@ _TURKEY_CITIES_ORDERED = [
 ]
 
 
-_ANKARA_FALLBACK_REGIONS = ("Kızılay", "Çankaya", "Ulus", "Sıhhiye", "Keçiören", "Batıkent", "Etimesgut")
+_ANKARA_FALLBACK_REGIONS = (
+    "Kızılay",
+    "Çankaya",
+    "Ulus",
+    "Sıhhiye",
+    "Bahçelievler",
+    "Keçiören",
+    "Batıkent",
+    "Etimesgut",
+    "Yenimahalle",
+)
 _ISTANBUL_FALLBACK_REGIONS = ("Kadıköy", "Beşiktaş", "Üsküdar", "Şişli", "Bakırköy", "Taksim", "Levent")
 _IZMIR_FALLBACK_REGIONS = ("Konak", "Alsancak", "Karşıyaka", "Bornova", "Buca", "Göztepe")
 _OTHER_FALLBACK_REGIONS = ("Merkez", "Otogar", "Üniversite", "Sanayi", "Çarşı")
+
+_DISTRICT_MERKEZ_LABEL = "Merkez"
+
+# Fold Turkish letters to ASCII for safe token-boundary matching (no locale-dependent .lower() quirks on İ).
+_TR_FOLD_CHAR = {
+    "İ": "i",
+    "I": "i",
+    "ı": "i",
+    "i": "i",
+    "Ş": "s",
+    "ş": "s",
+    "Ğ": "g",
+    "ğ": "g",
+    "Ü": "u",
+    "ü": "u",
+    "Ö": "o",
+    "ö": "o",
+    "Ç": "c",
+    "ç": "c",
+}
+
+
+def _fold_tr_ascii(s: str) -> str:
+    out: list[str] = []
+    for ch in s:
+        out.append(_TR_FOLD_CHAR.get(ch, ch))
+    return "".join(out).lower()
+
+
+def _fold_match_word(haystack_folded: str, needle_folded: str) -> bool:
+    """True if needle appears as a standalone alphanumeric token (post-fold ASCII)."""
+    if not needle_folded or not haystack_folded:
+        return False
+    pattern = r"(?<![a-z0-9])" + re.escape(needle_folded) + r"(?![a-z0-9])"
+    return re.search(pattern, haystack_folded) is not None
 
 
 def _normalize_city_name(raw: Optional[str]) -> str:
@@ -169,7 +218,7 @@ def _relative_tr_label(iso_ts: Optional[str]) -> str:
 
 def _activity_type_from_tag_status(status: Optional[str]) -> str:
     st = (status or "").strip().lower()
-    if st in ("matched", "in_progress"):
+    if st in ("matched", "accepted", "in_progress", "driver_arriving"):
         return "match"
     if st in ("offers_received", "pending"):
         return "offer"
@@ -180,7 +229,7 @@ def _activity_type_from_tag_status(status: Optional[str]) -> str:
 
 def _activity_title_from_status(status: Optional[str]) -> str:
     st = (status or "").strip().lower()
-    if st in ("matched", "in_progress"):
+    if st in ("matched", "accepted", "in_progress", "driver_arriving"):
         return "Eşleşen yolculuk"
     if st in ("offers_received", "pending"):
         return "Teklif aşamasında talep"
@@ -189,56 +238,113 @@ def _activity_title_from_status(status: Optional[str]) -> str:
     return "Şehir içi yolculuk hareketi"
 
 
-def _location_blob(tag: dict) -> str:
+def _tag_city_match_blob(tag: dict) -> str:
+    """All fields consulted for requested-city inclusion (no PII in response — parsing only)."""
     parts = [
-        str(tag.get("pickup_location") or ""),
-        str(tag.get("dropoff_location") or ""),
-        str(tag.get("route_text") or ""),
-        str(tag.get("district") or ""),
+        tag.get("city"),
+        tag.get("pickup_city"),
+        tag.get("dropoff_city"),
+        tag.get("pickup_location"),
+        tag.get("dropoff_location"),
+        tag.get("route_text"),
+        tag.get("note"),
+        tag.get("district"),
     ]
-    return " ".join(parts)
+    return " ".join(str(p or "").strip() for p in parts)
 
 
-def _infer_canonical_city_from_locations(tag: dict) -> Optional[str]:
-    """Match a known province name inside pickup/dropoff/route text (city column missing)."""
-    blob = _location_blob(tag).strip()
+def _requested_city_matches_tag(tag: dict, requested: str) -> bool:
+    req = _normalize_city_name(requested).strip()
+    if not req:
+        return False
+    blob = _tag_city_match_blob(tag).strip()
     if not blob:
+        return False
+    bf = _fold_tr_ascii(blob)
+    cf = _fold_tr_ascii(req)
+    return _fold_match_word(bf, cf)
+
+
+def _known_district_tokens_for_city(city: str) -> tuple[str, ...]:
+    cn = _normalize_city_name(city)
+    if cn == "Ankara":
+        return (
+            "Yenimahalle",
+            "Bahçelievler",
+            "Keçiören",
+            "Etimesgut",
+            "Batıkent",
+            "Çankaya",
+            "Sıhhiye",
+            "Kızılay",
+            "Ulus",
+        )
+    if cn == "İstanbul":
+        return tuple(sorted(_ISTANBUL_FALLBACK_REGIONS, key=len, reverse=True))
+    if cn == "İzmir":
+        return tuple(sorted(_IZMIR_FALLBACK_REGIONS, key=len, reverse=True))
+    return ()
+
+
+def _district_from_known_tokens(text: str, city: str) -> Optional[str]:
+    if not (text or "").strip():
         return None
-    blob_lower = blob.casefold()
-    for prov in sorted(_TURKEY_CITIES_ORDERED, key=len, reverse=True):
-        if len(prov) >= 3 and prov.casefold() in blob_lower:
-            return prov
+    bf = _fold_tr_ascii(text)
+    for token in _known_district_tokens_for_city(city):
+        tf = _fold_tr_ascii(token)
+        if _fold_match_word(bf, tf):
+            return token
     return None
 
 
-def _tag_matches_requested_city(tag: dict, requested: str) -> bool:
-    req = _normalize_city_name(requested)
-    ccol = (tag.get("city") or "").strip()
-    if ccol:
-        return _normalize_city_name(ccol) == req
-    inferred = _infer_canonical_city_from_locations(tag)
-    if inferred:
-        return _normalize_city_name(inferred) == req
-    return False
+def _extract_primary_district(tag: dict, city: str) -> str:
+    """Known districts only from configured tokens; otherwise Merkez (no raw street text)."""
+    blob_all = _tag_city_match_blob(tag)
+    hit = _district_from_known_tokens(blob_all, city)
+    if hit:
+        return hit
+    return _DISTRICT_MERKEZ_LABEL
 
 
-def _safe_district_label(tag: dict) -> str:
-    d = (tag.get("district") or "").strip()
-    c = (tag.get("city") or "").strip()
-    if d:
-        part = d.split("→")[0].split(",")[0].strip()
-        return part[:80] if part else (c or "Merkez")[:80]
-    if c:
-        return c[:80]
-    loc = (tag.get("pickup_location") or "").strip()
-    if loc:
-        short = re.split(r"[,→]", loc, maxsplit=1)[0].strip()
-        if short:
-            return short[:40]
-    inferred = _infer_canonical_city_from_locations(tag)
-    if inferred:
-        return inferred[:80]
-    return "Merkez"
+def _extract_pickup_drop_districts(tag: dict, city: str) -> tuple[Optional[str], Optional[str]]:
+    pu_txt = " ".join(str(p or "").strip() for p in (tag.get("pickup_city"), tag.get("pickup_location"))).strip()
+    do_txt = " ".join(str(p or "").strip() for p in (tag.get("dropoff_city"), tag.get("dropoff_location"))).strip()
+    pu = _district_from_known_tokens(pu_txt, city) if pu_txt else None
+    do = _district_from_known_tokens(do_txt, city) if do_txt else None
+    return pu, do
+
+
+def _is_unknown_or_merkez_district(label: Optional[str]) -> bool:
+    if label is None:
+        return True
+    return _fold_tr_ascii(label) == _fold_tr_ascii(_DISTRICT_MERKEZ_LABEL)
+
+
+def _real_activity_copy(tag: dict, city: str) -> str:
+    st = str(tag.get("status") or "").strip().lower()
+    pu, do = _extract_pickup_drop_districts(tag, city)
+    primary = _extract_primary_district(tag, city)
+
+    route_ready = (
+        not _is_unknown_or_merkez_district(pu)
+        and not _is_unknown_or_merkez_district(do)
+        and pu is not None
+        and do is not None
+        and _fold_tr_ascii(pu) != _fold_tr_ascii(do)
+        and st in ("matched", "accepted", "in_progress", "driver_arriving")
+    )
+    if route_ready:
+        return f"{pu} → {do} sefer başladı"
+
+    if st in ("waiting", "pending", "offers_received"):
+        return f"{primary} bölgesinde yeni yolculuk talebi"
+    if st in ("matched", "accepted"):
+        return f"{primary} yönünde eşleşme başladı"
+    if st == "in_progress":
+        return f"{primary} yolculuğu aktif"
+    if st == "driver_arriving":
+        return f"{primary} için sürücü yolda"
+    return _activity_title_from_status(tag.get("status"))
 
 
 def _minimum_stats_if_zero(city: str, active: int, pending: int, today_m: int) -> tuple[int, int, int]:
@@ -250,39 +356,113 @@ def _minimum_stats_if_zero(city: str, active: int, pending: int, today_m: int) -
     return rng.randint(3, 12), rng.randint(1, 6), rng.randint(5, 20)
 
 
-_TAG_COLUMNS_FULL = (
-    "status, city, district, created_at, matched_at, updated_at, pickup_location, dropoff_location"
+def _sanitize_ilike_fragment(text: str) -> str:
+    """Remove LIKE wildcards from city fragment (user/API controlled)."""
+    return re.sub(r"[%_\\]", "", text or "")
+
+
+def _ilike_contains_pattern(city: str) -> str:
+    c = _sanitize_ilike_fragment(_normalize_city_name(city)).strip()
+    if len(c) < 2:
+        return ""
+    return f"%{c}%"
+
+
+def _tags_or_ilike(columns: tuple[str, ...], pattern: str) -> str:
+    return ",".join(f"{col}.ilike.{pattern}" for col in columns)
+
+
+_TAG_PREFILTER_COLS_FULL = (
+    "city",
+    "pickup_city",
+    "dropoff_city",
+    "pickup_location",
+    "dropoff_location",
+    "route_text",
+    "note",
+)
+
+_TAG_PREFILTER_COLS_NARROW = (
+    "city",
+    "pickup_location",
+    "dropoff_location",
+    "route_text",
 )
 
 
-def _fetch_tags_rows(sb: Any, *, city_eq: Optional[str], limit: int) -> list[dict]:
-    """Fetch tag rows; retry with narrower columns if Supabase rejects unknown fields."""
-    q_base = sb.table("tags").select(_TAG_COLUMNS_FULL).eq("type", TAG_TYPE_NORMAL)
-    if city_eq is not None:
-        q_base = q_base.eq("city", city_eq)
+_TAG_COLUMNS_FULL = (
+    "status, city, district, created_at, matched_at, updated_at, "
+    "pickup_location, dropoff_location, pickup_city, dropoff_city, route_text, note"
+)
+
+
+_TAG_COLUMNS_NARROW = (
+    "status, city, district, created_at, matched_at, updated_at, "
+    "pickup_location, dropoff_location, route_text"
+)
+
+
+def _try_fetch_tags(
+    sb: Any,
+    *,
+    cols_select: str,
+    limit: int,
+    pattern: str,
+    pre_cols: Optional[tuple[str, ...]],
+) -> Optional[list[dict]]:
+    q = sb.table("tags").select(cols_select).eq("type", TAG_TYPE_NORMAL)
+    if pattern and pre_cols:
+        try:
+            q = q.or_(_tags_or_ilike(pre_cols, pattern))
+        except Exception as e:
+            logger.warning("[website-live-city] prefilter OR build failed err=%s", e)
+            return None
     try:
-        res = q_base.order("created_at", desc=True).limit(limit).execute()
+        res = q.order("created_at", desc=True).limit(limit).execute()
         return list(res.data or [])
     except Exception as e:
-        logger.warning("[website-live-city] fetch full columns failed city_eq=%s err=%s", city_eq, e)
-    narrow = "status, city, district, created_at, matched_at, pickup_location, dropoff_location"
-    q2 = sb.table("tags").select(narrow).eq("type", TAG_TYPE_NORMAL)
-    if city_eq is not None:
-        q2 = q2.eq("city", city_eq)
-    try:
-        res = q2.order("created_at", desc=True).limit(limit).execute()
-        return list(res.data or [])
-    except Exception as e2:
-        logger.warning("[website-live-city] fetch narrow columns failed city_eq=%s err=%s", city_eq, e2)
-        return []
+        logger.warning("[website-live-city] tags query failed err=%s", e)
+        return None
+
+
+def _fetch_tags_rows(
+    sb: Any,
+    *,
+    limit: int = 100,
+    city_for_prefilter: Optional[str] = None,
+) -> tuple[list[dict], bool]:
+    """
+    Recent normal tags. Optional lightweight ILIKE OR prefilter on text columns; Python token
+    matching still authoritative. Returns (rows, used_db_prefilter).
+    """
+    pattern = _ilike_contains_pattern(city_for_prefilter) if city_for_prefilter else ""
+
+    for cols_sel, narrow in (
+        (_TAG_COLUMNS_FULL, False),
+        (_TAG_COLUMNS_NARROW, True),
+    ):
+        pre_cols = _TAG_PREFILTER_COLS_NARROW if narrow else _TAG_PREFILTER_COLS_FULL
+        if pattern:
+            rows = _try_fetch_tags(sb, cols_select=cols_sel, limit=limit, pattern=pattern, pre_cols=pre_cols)
+            if rows is not None and len(rows) > 0:
+                return rows, True
+        rows = _try_fetch_tags(sb, cols_select=cols_sel, limit=limit, pattern="", pre_cols=None)
+        if rows is not None:
+            return rows, False
+
+    return [], False
 
 
 def _derive_counts_from_rows(rows: list[dict], day_start_iso: str) -> tuple[int, int, int]:
     if not rows:
         return 0, 0, 0
     day_dt = _parse_iso_dt(day_start_iso)
-    active = sum(1 for t in rows if str(t.get("status") or "").strip().lower() in ("matched", "in_progress"))
-    pending = sum(1 for t in rows if str(t.get("status") or "").strip().lower() in ("waiting", "pending", "offers_received"))
+    active = sum(
+        1 for t in rows if str(t.get("status") or "").strip().lower() in ("matched", "accepted", "in_progress", "driver_arriving")
+    )
+    pending = sum(
+        1 for t in rows if str(t.get("status") or "").strip().lower() in ("waiting", "pending", "offers_received")
+    )
     today_m = 0
     if not day_dt:
         return active, pending, 0
@@ -365,98 +545,35 @@ def _fallback_activities_payload(city: str) -> list[dict[str, str]]:
     return out
 
 
-def _count_city_tags(sb: Any, city: str, statuses: tuple[str, ...]) -> int:
-    """
-    Count tags: type=normal, city=city, status in statuses.
-    Never raises; returns 0 on any Supabase/query failure.
-    """
-    try:
-        if not city or not statuses:
-            return 0
-        res = (
-            sb.table("tags")
-            .select("id", count="exact")
-            .eq("type", TAG_TYPE_NORMAL)
-            .eq("city", city)
-            .in_("status", list(statuses))
-            .limit(1)
-            .execute()
-        )
-        cnt = getattr(res, "count", None)
-        if cnt is not None:
-            return int(cnt)
-        return len(res.data or [])
-    except Exception as e:
-        logger.warning("[website-live-city] _count_city_tags failed city=%s statuses=%s err=%s", city, statuses, e)
-        return 0
-
-
 def build_city_live_payload(sb: Any, city_raw: str) -> dict[str, Any]:
     city = _normalize_city_name(city_raw)
     day_start = _utc_day_start_iso()
 
-    active_trips = _count_city_tags(sb, city, ("matched", "in_progress"))
-    pending_offers = _count_city_tags(sb, city, ("waiting", "pending", "offers_received"))
+    rows_all, _ = _fetch_tags_rows(sb, limit=100, city_for_prefilter=city)
+    matched_rows = [t for t in rows_all if _requested_city_matches_tag(t, city)]
 
-    today_matches = 0
-    try:
-        r1 = (
-            sb.table("tags")
-            .select("id", count="exact")
-            .eq("type", TAG_TYPE_NORMAL)
-            .eq("city", city)
-            .gte("matched_at", day_start)
-            .limit(1)
-            .execute()
-        )
-        today_matches = int(getattr(r1, "count", None) or 0)
-    except Exception:
-        pass
-    if today_matches == 0:
-        try:
-            r2 = (
-                sb.table("tags")
-                .select("id", count="exact")
-                .eq("type", TAG_TYPE_NORMAL)
-                .eq("city", city)
-                .eq("status", "completed")
-                .gte("updated_at", day_start)
-                .limit(1)
-                .execute()
-            )
-            today_matches = int(getattr(r2, "count", None) or 0)
-        except Exception:
-            today_matches = 0
+    total_n = len(rows_all)
+    matched_n = len(matched_rows)
+    matched_ratio = (matched_n / total_n) if total_n else 0.0
+    logger.info(
+        "[city-live-debug] city=%s total_rows=%d matched_rows=%d matched_ratio=%.5f",
+        city,
+        total_n,
+        matched_n,
+        matched_ratio,
+    )
 
-    fallback_used = False
-    matched_fb: list[dict] = []
-    fb: list[dict] = []
-
-    rows_primary = _fetch_tags_rows(sb, city_eq=city, limit=400)
-    if rows_primary:
-        rows = list(rows_primary)
-    else:
-        fb = _fetch_tags_rows(sb, city_eq=None, limit=50)
-        fallback_used = len(fb) > 0
-        if fallback_used:
-            logger.info("[website-live-city-fallback-used] city=%s reason=no_city_rows_using_global_limit_50", city)
-        matched_fb = [t for t in fb if _tag_matches_requested_city(t, city)]
-        rows = matched_fb if matched_fb else list(fb)
-
-    derive_pool: list[dict] = rows_primary if rows_primary else matched_fb
-    derive_ok = bool(rows_primary) or bool(matched_fb)
-
-    if derive_ok and derive_pool and active_trips == 0 and pending_offers == 0 and today_matches == 0:
-        da, dp, dt = _derive_counts_from_rows(derive_pool, day_start)
-        if da or dp or dt:
-            active_trips, pending_offers, today_matches = da, dp, dt
-
+    active_trips, pending_offers, today_matches = _derive_counts_from_rows(matched_rows, day_start)
     active_trips, pending_offers, today_matches = _minimum_stats_if_zero(city, active_trips, pending_offers, today_matches)
+
+    fallback_used = len(matched_rows) == 0
+
+    rows = matched_rows
 
     district_counts: dict[str, int] = {}
     line_counts: dict[str, int] = {}
     for tag in rows:
-        label = _safe_district_label(tag)
+        label = _extract_primary_district(tag, city)
         district_counts[label] = district_counts.get(label, 0) + 1
         d_raw = (tag.get("district") or "").strip()
         if "→" in d_raw:
@@ -494,8 +611,8 @@ def build_city_live_payload(sb: Any, city_raw: str) -> dict[str, Any]:
     for tag in rows[:10]:
         activities.append(
             {
-                "title": _activity_title_from_status(tag.get("status")),
-                "subtitle": _safe_district_label(tag),
+                "title": _real_activity_copy(tag, city)[:160],
+                "subtitle": _extract_primary_district(tag, city)[:120],
                 "timeLabel": _relative_tr_label(tag.get("matched_at") or tag.get("created_at")),
                 "type": _activity_type_from_tag_status(tag.get("status")),
             }
