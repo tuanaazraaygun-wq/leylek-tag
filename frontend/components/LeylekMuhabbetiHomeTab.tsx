@@ -18,16 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
-const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
-const VISIBLE_OFFERS = 10;
-const CARD_SHADOW = Platform.select({
-  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 10 },
-  android: { elevation: 3 },
-  default: {},
-});
+const VISIBLE_OFFERS = 20;
 const CTA_CARD_SHADOW = Platform.select({
   ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 12 },
   android: { elevation: 5 },
@@ -109,7 +103,8 @@ type CompactOfferCardProps = {
 
 function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled, ctaBusy }: CompactOfferCardProps) {
   const isDriver = offerKindFromHomeListing(item) === 'driver_offer';
-  const glow = isDriver ? 'rgba(59,130,246,0.38)' : 'rgba(245,158,11,0.36)';
+  const glow = isDriver ? 'rgba(59,130,246,0.42)' : 'rgba(245,158,11,0.4)';
+  const accent = isDriver ? '#2563EB' : '#EA580C';
   const from = (item.from_text || '—').toString().trim() || '—';
   const to = (item.to_text || '—').toString().trim() || '—';
   const isIntercity = (item.listing_scope || '').toString().toLowerCase() === 'intercity';
@@ -122,135 +117,235 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
   const transport = transportLabelForUser(item);
   const roleLabel = isDriver ? 'Sürücü' : 'Yolcu';
   const creatorPublic = (item.creator_public_name || item.creator_name || 'Leylek kullanıcısı').trim();
+  const initial = creatorPublic.charAt(0).toLocaleUpperCase('tr-TR') || '?';
 
   return (
     <Pressable
       onPress={onPressCard}
-      style={({ pressed }) => [{ opacity: pressed ? 0.96 : 1 }, cs.slot]}
+      style={({ pressed }) => [cs.slot, pressed && { opacity: 0.97 }]}
       android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
     >
       <View style={[cs.glow, { shadowColor: glow }]} />
-      <View style={cs.card}>
-        <View style={cs.row1}>
-          <View style={[cs.pill, { backgroundColor: isDriver ? 'rgba(59,130,246,0.14)' : 'rgba(245,158,11,0.18)' }]}>
-            <Text style={[cs.pillTxt, { color: isDriver ? '#1D4ED8' : '#C2410C' }]}>{roleLabel}</Text>
+      <View style={cs.cardOuter}>
+        <View style={[cs.accentStrip, { backgroundColor: accent }]} />
+        <View style={cs.card}>
+          <View style={cs.cardTop}>
+            <View style={cs.chipsRow}>
+              <View style={[cs.pill, { backgroundColor: isDriver ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.15)' }]}>
+                <Text style={[cs.pillTxt, { color: isDriver ? '#1D4ED8' : '#C2410C' }]}>{roleLabel}</Text>
+              </View>
+              <View style={cs.pillMuted}>
+                <Ionicons name="car-outline" size={11} color="#15803D" style={{ marginRight: 3 }} />
+                <Text style={cs.pillMutedTxt}>{transport}</Text>
+              </View>
+              {isIntercity ? (
+                <View style={cs.scopePill}>
+                  <Ionicons name="airplane-outline" size={10} color="#0369A1" style={{ marginRight: 3 }} />
+                  <Text style={cs.scopePillTxt}>Şehirler arası</Text>
+                </View>
+              ) : (
+                <View style={cs.scopePillLocal}>
+                  <Ionicons name="business-outline" size={10} color="#0369A1" style={{ marginRight: 3 }} />
+                  <Text style={cs.scopePillLocalTxt}>Şehir içi</Text>
+                </View>
+              )}
+            </View>
+            <View style={cs.pricePill}>
+              <Text style={cs.pricePillTxt}>{priceStr}</Text>
+            </View>
           </View>
-          <View style={cs.pillGreen}>
-            <Text style={cs.pillGreenTxt}>{transport}</Text>
-          </View>
-          {isIntercity ? (
-            <View style={cs.scopePill}>
-              <Text style={cs.scopePillTxt}>Şehirler arası</Text>
+          {isIntercity && originCity && destinationCity ? (
+            <View style={cs.cityPillRow}>
+              <Ionicons name="map-outline" size={14} color="#0F172A" />
+              <Text style={cs.cityRoute} numberOfLines={1}>
+                {originCity} → {destinationCity}
+              </Text>
             </View>
           ) : null}
-          <Text style={cs.price}>{priceStr}</Text>
-        </View>
-        {isIntercity && originCity && destinationCity ? (
-          <Text style={cs.cityRoute} numberOfLines={1}>
-            {originCity} → {destinationCity}
-          </Text>
-        ) : null}
-        <View style={cs.routeRow}>
-          <View style={cs.miniCol}>
-            <Text style={cs.tagG}>NEREDEN</Text>
-            <Text style={cs.place} numberOfLines={1}>
-              {from}
+          <View style={cs.routeRow}>
+            <View style={cs.miniCol}>
+              <Text style={cs.tagG}>NEREDEN</Text>
+              <Text style={cs.place} numberOfLines={2}>
+                {from}
+              </Text>
+            </View>
+            <View style={cs.routeArrow}>
+              <Ionicons name="arrow-forward" size={16} color="#94A3B8" />
+            </View>
+            <View style={cs.miniCol}>
+              <Text style={cs.tagG}>NEREYE</Text>
+              <Text style={cs.place} numberOfLines={2}>
+                {to}
+              </Text>
+            </View>
+          </View>
+          <View style={cs.creatorRow}>
+            <View style={cs.avatarCircle}>
+              <Text style={cs.avatarTxt}>{initial}</Text>
+            </View>
+            <Text style={cs.creatorLine} numberOfLines={1}>
+              {creatorPublic}
             </Text>
           </View>
-          <Ionicons name="arrow-forward" size={14} color="#9CA3AF" style={{ marginHorizontal: 6 }} />
-          <View style={cs.miniCol}>
-            <Text style={cs.tagG}>NEREYE</Text>
-            <Text style={cs.place} numberOfLines={1}>
-              {to}
-            </Text>
-          </View>
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              onPressCta();
+            }}
+            disabled={ctaDisabled || ctaBusy}
+            style={({ pressed }) => [
+              cs.cta,
+              isDriver ? cs.ctaDriver : cs.ctaPassenger,
+              (ctaDisabled || ctaBusy) && { opacity: 0.45 },
+              pressed && !ctaDisabled && !ctaBusy && cs.ctaPressedInner,
+            ]}
+          >
+            {ctaBusy ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name={isDriver ? 'hand-left-outline' : 'flash-outline'} size={16} color="#fff" style={{ marginRight: 6 }} />
+                <Text style={cs.ctaTxt}>{ctaLabel}</Text>
+              </>
+            )}
+          </Pressable>
         </View>
-        <Text style={cs.creatorLine} numberOfLines={1}>
-          {creatorPublic}
-        </Text>
-        <Pressable
-          onPress={(e) => {
-            e?.stopPropagation?.();
-            onPressCta();
-          }}
-          disabled={ctaDisabled || ctaBusy}
-          style={({ pressed }) => [
-            cs.cta,
-            isDriver ? cs.ctaDriver : cs.ctaPassenger,
-            (ctaDisabled || ctaBusy) && { opacity: 0.45 },
-            pressed && !ctaDisabled && !ctaBusy && { opacity: 0.9 },
-          ]}
-        >
-          {ctaBusy ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={cs.ctaTxt}>{ctaLabel}</Text>
-          )}
-        </Pressable>
       </View>
     </Pressable>
   );
 }
 
 const cs = StyleSheet.create({
-  slot: { position: 'relative', marginBottom: 8 },
+  slot: { position: 'relative', marginBottom: 14 },
   glow: {
     position: 'absolute',
-    left: -1,
-    right: -1,
-    top: -1,
-    bottom: -1,
-    borderRadius: 14,
+    left: -3,
+    right: -3,
+    top: -3,
+    bottom: -3,
+    borderRadius: 22,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
+    elevation: 5,
   },
-  card: {
+  cardOuter: {
+    borderRadius: 18,
+    overflow: 'hidden',
     backgroundColor: CARD_BG,
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    ...CARD_SHADOW,
-  },
-  row1: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  pillTxt: { fontSize: 11, fontWeight: '800' },
-  pillGreen: {
-    backgroundColor: 'rgba(22, 163, 74, 0.14)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(22, 163, 74, 0.35)',
+    borderColor: 'rgba(148,163,184,0.25)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.07,
+        shadowRadius: 14,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
   },
-  pillGreenTxt: { fontSize: 10, fontWeight: '800', color: '#15803D' },
+  accentStrip: { height: 4, width: '100%' },
+  card: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    paddingTop: 12,
+    backgroundColor: CARD_BG,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
+  chipsRow: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
+  pillTxt: { fontSize: 11, fontWeight: '900', letterSpacing: 0.2 },
+  pillMuted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(22, 163, 74, 0.22)',
+  },
+  pillMutedTxt: { fontSize: 10, fontWeight: '800', color: '#15803D' },
   scopePill: {
-    backgroundColor: 'rgba(14, 165, 233, 0.14)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(14, 165, 233, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(14, 165, 233, 0.34)',
+    borderColor: 'rgba(14, 165, 233, 0.3)',
   },
   scopePillTxt: { fontSize: 10, fontWeight: '900', color: '#0369A1' },
-  price: { marginLeft: 'auto', fontSize: 14, fontWeight: '800', color: '#374151' },
-  cityRoute: { marginBottom: 8, fontSize: 13, fontWeight: '900', color: '#0F172A' },
-  routeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  scopePillLocal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(37, 99, 235, 0.2)',
+  },
+  scopePillLocalTxt: { fontSize: 10, fontWeight: '900', color: '#1D4ED8' },
+  pricePill: {
+    backgroundColor: 'rgba(15,23,42,0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15,23,42,0.06)',
+  },
+  pricePillTxt: { fontSize: 14, fontWeight: '900', color: '#0f172a', letterSpacing: -0.3 },
+  cityPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(241,245,249,0.95)',
+  },
+  cityRoute: { flex: 1, fontSize: 13, fontWeight: '900', color: '#0F172A' },
+  routeRow: { flexDirection: 'row', alignItems: 'stretch', marginBottom: 12 },
+  routeArrow: { justifyContent: 'center', paddingHorizontal: 4 },
   miniCol: { flex: 1, minWidth: 0 },
-  tagG: { fontSize: 9, fontWeight: '800', color: '#15803D', marginBottom: 2 },
-  place: { fontSize: 13, fontWeight: '700', color: '#111' },
+  tagG: { fontSize: 9, fontWeight: '900', color: '#64748B', marginBottom: 4, letterSpacing: 0.6 },
+  place: { fontSize: 13.5, fontWeight: '700', color: '#0f172a', lineHeight: 19 },
+  creatorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.25)',
+  },
+  avatarTxt: { fontSize: 14, fontWeight: '900', color: '#2563EB' },
+  creatorLine: { flex: 1, fontSize: 13, color: '#475569', fontWeight: '700' },
   cta: {
     alignSelf: 'stretch',
-    paddingVertical: 8,
-    borderRadius: 10,
+    flexDirection: 'row',
+    paddingVertical: 11,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ctaDriver: { backgroundColor: '#2563EB' },
   ctaPassenger: { backgroundColor: '#EA580C' },
-  ctaTxt: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  creatorLine: { marginBottom: 8, fontSize: 12, color: '#6B7280', fontWeight: '700' },
+  ctaPressedInner: { opacity: 0.92, transform: [{ scale: 0.985 }] },
+  ctaTxt: { color: '#fff', fontSize: 13.5, fontWeight: '900', letterSpacing: -0.1 },
 });
 
 export type LeylekMuhabbetiHomeTabProps = {
@@ -403,20 +498,20 @@ export default function LeylekMuhabbetiHomeTab({
     const n = feedPreview.length;
     if (n <= VISIBLE_OFFERS) return;
     Animated.parallel([
-      Animated.timing(listAnim, { toValue: 0.82, duration: 140, useNativeDriver: true }),
-      Animated.timing(listSlide, { toValue: 4, duration: 140, useNativeDriver: true }),
+      Animated.timing(listAnim, { toValue: 0.82, duration: 160, useNativeDriver: true }),
+      Animated.timing(listSlide, { toValue: 8, duration: 160, useNativeDriver: true }),
     ]).start(() => {
       setWindowOffset((o) => (o + 1) % n);
       Animated.parallel([
-        Animated.timing(listAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(listSlide, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(listAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.timing(listSlide, { toValue: 0, duration: 220, useNativeDriver: true }),
       ]).start();
     });
   }, [feedPreview.length, listAnim, listSlide]);
 
   useEffect(() => {
     if (feedPreview.length <= VISIBLE_OFFERS) return;
-    const t = setInterval(() => rotateWindow(), 7000);
+    const t = setInterval(() => rotateWindow(), 8500);
     return () => clearInterval(t);
   }, [feedPreview.length, rotateWindow]);
 
@@ -431,6 +526,18 @@ export default function LeylekMuhabbetiHomeTab({
     }
     return out;
   }, [feedPreview, windowOffset]);
+
+  /** Yalnızca chip gösterimi — mevcut feed önbelleğinden türetilir (fetch/API yok). */
+  const listingScopeCounts = React.useMemo(() => {
+    let local = 0;
+    let intercity = 0;
+    for (const row of feedPreview) {
+      const sc = String(row.listing_scope || 'local').toLowerCase();
+      if (sc === 'intercity') intercity += 1;
+      else local += 1;
+    }
+    return { local, intercity, total: feedPreview.length };
+  }, [feedPreview]);
 
   const uidLo = (currentUserId || '').trim().toLowerCase();
 
@@ -505,8 +612,8 @@ export default function LeylekMuhabbetiHomeTab({
   );
 
   const pulseStyle = {
-    opacity: ctaPulse.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.34] }),
-    transform: [{ scale: ctaPulse.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1.04] }) }],
+    opacity: ctaPulse.interpolate({ inputRange: [0, 1], outputRange: [0.24, 0.48] }),
+    transform: [{ scale: ctaPulse.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.05] }) }],
   };
 
   const renderCreateSection = (
@@ -515,66 +622,180 @@ export default function LeylekMuhabbetiHomeTab({
     subtitle: string,
     driverSub: string,
     passengerSub: string,
-  ) => (
-    <View style={styles.createSection}>
-      <View style={styles.createSectionHead}>
-        <Text style={styles.ctaSectionTitle}>{title}</Text>
-        <Text style={styles.ctaSectionSubtitle}>{subtitle}</Text>
-      </View>
-      <View style={[styles.ctaRow, !tok && styles.ctaRowDim]}>
-        <Pressable
-          onPress={() => openDriver(scope)}
-          style={({ pressed }) => [styles.ctaBig, styles.ctaBigDriver, pressed && styles.ctaPressed]}
-          android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
-        >
-          <Animated.View pointerEvents="none" style={[styles.ctaPulseGlow, styles.ctaPulseDriver, pulseStyle]} />
-          <LinearGradient colors={['#0B2B6F', '#1D4ED8', '#38BDF8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          <View style={styles.ctaShine} />
-          <View style={styles.ctaBigInner}>
-            <View style={styles.ctaIconBubble}>
-              <Text style={styles.ctaBigEmoji}>🚗</Text>
+  ) => {
+    const driverCTALabel = scope === 'intercity' ? 'Şehirler arası sürücü teklifi aç' : 'Şehir içi sürücü teklifi aç';
+    const passengerCTALabel = scope === 'intercity' ? 'Şehirler arası yolcu teklifi aç' : 'Şehir içi yolcu teklifi aç';
+    const driverGrad =
+      scope === 'intercity'
+        ? (['#0c4a6e', '#1d4ed8', '#38bdf8'] as const)
+        : (['#082f49', '#1e40af', '#60a5fa'] as const);
+    const passengerGrad =
+      scope === 'intercity'
+        ? (['#9a3412', '#dc2626', '#fb923c'] as const)
+        : (['#7c2d12', '#ea580c', '#fdba74'] as const);
+    const sectionBadgeIcon =
+      scope === 'intercity' ? ('airplane-outline' as const) : ('business-outline' as const);
+    const sectionBadgeLabel = scope === 'intercity' ? 'Uzun yol' : 'Şehir içi';
+
+    return (
+      <View
+        style={[
+          styles.createSectionWrap,
+          scope === 'intercity' ? styles.createSectionWrapInter : styles.createSectionWrapLocal,
+        ]}
+      >
+        <LinearGradient
+          colors={['rgba(255,255,255,0.97)', 'rgba(239,246,255,0.94)', 'rgba(255,247,237,0.5)']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.createSection}>
+          <View style={styles.createSectionHeadRow}>
+            <View style={[styles.sectionBadge, scope === 'intercity' ? styles.sectionBadgeInter : styles.sectionBadgeLocal]}>
+              <Ionicons name={sectionBadgeIcon} size={13} color={scope === 'intercity' ? '#0369A1' : '#1D4ED8'} />
+              <Text style={styles.sectionBadgeText}>{sectionBadgeLabel}</Text>
             </View>
-            <Text style={styles.ctaBigTitle}>Sürücü teklifi aç</Text>
-            <Text style={styles.ctaBigSub}>{driverSub}</Text>
           </View>
-        </Pressable>
-        <Pressable
-          onPress={() => openPassenger(scope)}
-          style={({ pressed }) => [styles.ctaBig, styles.ctaBigPassenger, pressed && styles.ctaPressed]}
-          android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
-        >
-          <Animated.View pointerEvents="none" style={[styles.ctaPulseGlow, styles.ctaPulsePassenger, pulseStyle]} />
-          <LinearGradient colors={['#7C2D12', '#C2410C', '#F97316']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          <View style={styles.ctaShine} />
-          <View style={styles.ctaBigInner}>
-            <View style={styles.ctaIconBubble}>
-              <Text style={styles.ctaBigEmoji}>🧍</Text>
-            </View>
-            <Text style={styles.ctaBigTitle}>Yolcu teklifi aç</Text>
-            <Text style={styles.ctaBigSub}>{passengerSub}</Text>
+          <View style={styles.createSectionHead}>
+            <Text style={styles.ctaSectionTitle}>{title}</Text>
+            <Text style={styles.ctaSectionSubtitle}>{subtitle}</Text>
           </View>
-        </Pressable>
+          <View style={[styles.ctaRow, !tok && styles.ctaRowDim]}>
+            <Pressable
+              onPress={() => openDriver(scope)}
+              style={({ pressed }) => [styles.ctaBig, styles.ctaBigDriver, pressed && styles.ctaPressed]}
+              android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
+            >
+              <Animated.View pointerEvents="none" style={[styles.ctaPulseGlow, styles.ctaPulseDriver, pulseStyle]} />
+              <LinearGradient colors={[...driverGrad]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <View style={styles.ctaShine} />
+              <View style={styles.ctaBigInner}>
+                <View style={styles.ctaRoleBadgeRow}>
+                  <View style={[styles.ctaRolePill, styles.ctaRolePillDriver]}>
+                    <Text style={styles.ctaRolePillTxt}>Sürücü</Text>
+                  </View>
+                </View>
+                <View style={styles.ctaIconBubble}>
+                  <Ionicons name="car-sport-outline" size={22} color="#FFFFFF" />
+                </View>
+                <Text style={styles.ctaBigTitle}>{driverCTALabel}</Text>
+                <Text style={styles.ctaBigSub}>{driverSub}</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => openPassenger(scope)}
+              style={({ pressed }) => [styles.ctaBig, styles.ctaBigPassenger, pressed && styles.ctaPressed]}
+              android_ripple={{ color: 'rgba(255,255,255,0.16)' }}
+            >
+              <Animated.View pointerEvents="none" style={[styles.ctaPulseGlow, styles.ctaPulsePassenger, pulseStyle]} />
+              <LinearGradient colors={[...passengerGrad]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <View style={styles.ctaShine} />
+              <View style={styles.ctaBigInner}>
+                <View style={styles.ctaRoleBadgeRow}>
+                  <View style={[styles.ctaRolePill, styles.ctaRolePillPax]}>
+                    <Text style={styles.ctaRolePillTxt}>Yolcu</Text>
+                  </View>
+                </View>
+                <View style={styles.ctaIconBubble}>
+                  <Ionicons name="person-outline" size={22} color="#FFFFFF" />
+                </View>
+                <Text style={styles.ctaBigTitle}>{passengerCTALabel}</Text>
+                <Text style={styles.ctaBigSub}>{passengerSub}</Text>
+              </View>
+            </Pressable>
+          </View>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.root}>
+      <LinearGradient
+        colors={['#bfdbfe', '#dbeafe', '#eff6ff']}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View pointerEvents="none" style={styles.patternLayer}>
+        <View style={[styles.patternBlob, styles.patternBlob1]} />
+        <View style={[styles.patternBlob, styles.patternBlob2]} />
+        <View style={[styles.patternBlob, styles.patternBlob3]} />
+      </View>
       <MuhabbetWatermark />
+      <View style={styles.foreground}>
       <View style={styles.insetTop}>
-        {renderCreateSection(
-          'local',
-          'Şehir içi yol paylaşımı',
-          `${selectedCity} içinde kısa mesafe teklif aç`,
-          'Rotanı ve koltuğu şehir içinde paylaş.',
-          'Şehir içinde nereye gideceğini yaz.',
-        )}
+        <View style={styles.heroShell}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0.98)', '#EFF6FF', 'rgba(254,243,199,0.35)']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.95, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.heroDecorCircle} />
+          <View style={styles.heroContent}>
+            <View style={styles.heroEyebrow}>
+              <LinearGradient
+                colors={['rgba(37,99,235,0.14)', 'rgba(249,115,22,0.12)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroEyebrowGrad}
+              >
+                <Ionicons name="sparkles" size={14} color="#2563EB" />
+                <Text style={styles.heroEyebrowText}>Leylek Muhabbeti</Text>
+              </LinearGradient>
+            </View>
+            <Text style={styles.heroTitle}>Teklif aç, eşleş, güvenle yola çık</Text>
+            <Text style={styles.heroSubtitle}>
+              Şehir içi kısa rotalar ve şehirler arası uzun yol için tekliflerini oluştur; özetinden şehir ve talepleri takip et.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.chipsWrap}>
+          <View style={styles.statChip}>
+            <Ionicons name="location" size={15} color="#1D4ED8" />
+            <Text style={styles.statChipTxt} numberOfLines={1}>
+              {selectedCity.trim() || 'Şehir'}
+            </Text>
+          </View>
+          <View style={styles.statChip}>
+            <Ionicons name="albums-outline" size={15} color="#0369A1" />
+            <Text style={styles.statChipTxt}>{listingScopeCounts.total} açık</Text>
+          </View>
+          <View style={[styles.statChip, styles.statChipMuted]}>
+            <Ionicons name="navigate-outline" size={14} color="#15803D" />
+            <Text style={styles.statChipTxtMuted}>İç {listingScopeCounts.local}</Text>
+          </View>
+          <View style={[styles.statChip, styles.statChipMuted]}>
+            <Ionicons name="airplane-outline" size={14} color="#C2410C" />
+            <Text style={styles.statChipTxtMuted}>Arası {listingScopeCounts.intercity}</Text>
+          </View>
+          {pendingIncoming > 0 ? (
+            <View style={[styles.statChip, styles.statChipAlert]}>
+              <Ionicons name="notifications-outline" size={15} color="#C2410C" />
+              <Text style={styles.statChipAlertTxt}>{pendingIncoming} talep</Text>
+            </View>
+          ) : null}
+        </View>
+
         {renderCreateSection(
           'intercity',
           'Şehirler arası yol paylaşımı',
           'Kalkış ve varış şehrini seçerek uzun yol teklifi aç',
           'Uzun yol rotanı ve boş koltuğunu paylaş.',
           'Şehirler arası yolculuk talebini oluştur.',
+        )}
+        {renderCreateSection(
+          'local',
+          'Şehir içi yol paylaşımı',
+          `${selectedCity} içinde kısa mesafe teklif aç`,
+          'Rotanı ve koltuğu şehir içinde paylaş.',
+          'Şehir içinde nereye gideceğini yaz.',
         )}
         {!tok ? <Text style={styles.ctaHint}>Teklif açmak için oturum açman yeterli — butona basınca yönlendirilirsin.</Text> : null}
       </View>
@@ -623,12 +844,50 @@ export default function LeylekMuhabbetiHomeTab({
         ) : null}
 
         <View style={[styles.summaryCard, styles.offersCardPad]}>
-          <Text style={styles.offersSectionTitle}>Günün teklifleri</Text>
-          <Text style={styles.offersSectionHint}>Şehrindeki açık teklifler — liste hafifçe yenilenir</Text>
-          {feedLoading ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} /> : null}
+          <View style={styles.offersSectionHead}>
+            <LinearGradient
+              colors={['rgba(37,99,235,0.12)', 'rgba(249,115,22,0.08)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.offersIconBadge}
+            >
+              <Ionicons name="sparkles" size={18} color="#1D4ED8" />
+            </LinearGradient>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.offersSectionTitle}>Günün teklifleri</Text>
+              <Text style={styles.offersSectionHint}>Şehrindeki açık teklifler — liste hafifçe yenilenir</Text>
+            </View>
+          </View>
+          <View style={styles.offersDivider} />
+          {feedLoading ? (
+            <View style={styles.skeletonWrap}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <View key={i} style={styles.skeletonCard}>
+                  <View style={styles.skeletonAccent} />
+                  <View style={styles.skeletonRow}>
+                    <View style={styles.skeletonPill} />
+                    <View style={styles.skeletonPillShort} />
+                  </View>
+                  <View style={styles.skeletonLine} />
+                  <View style={[styles.skeletonLine, { width: '68%' }]} />
+                  <View style={styles.skeletonCta} />
+                </View>
+              ))}
+            </View>
+          ) : null}
           {!feedLoading && visibleOffers.length === 0 ? (
-            <Text style={styles.offersEmpty}>Henüz teklif yok — teklif açarak başlat.</Text>
-          ) : !feedLoading ? (
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIconRing}>
+                <Ionicons name="earth-outline" size={42} color="#2563EB" />
+              </View>
+              <Text style={styles.emptyTitle}>Henüz liste görünmüyor</Text>
+              <Text style={styles.emptySub}>
+                Yukarıdan bir teklif türü seçerek başlayabilir veya veri geldiğinde burada günün tekliflerini görebilirsin.
+              </Text>
+              <Text style={styles.emptyHint}>Henüz teklif yok — teklif açarak başlat.</Text>
+            </View>
+          ) : null}
+          {!feedLoading && visibleOffers.length > 0 ? (
             <Animated.View
               style={{
                 opacity: listAnim,
@@ -673,24 +932,177 @@ export default function LeylekMuhabbetiHomeTab({
           ) : null}
         </View>
       </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, position: 'relative' },
-  insetTop: { paddingHorizontal: 16, paddingTop: 4, zIndex: 1 },
-  inset: { paddingHorizontal: 16, marginTop: 12, zIndex: 1 },
-  createSection: {
-    marginBottom: 14,
-    padding: 12,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(148,163,184,0.22)',
-    ...CARD_SHADOW,
+  root: { flex: 1, position: 'relative', overflow: 'hidden', backgroundColor: '#EFF6FF' },
+  foreground: { flex: 1, zIndex: 2 },
+  patternLayer: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
+  patternBlob: {
+    position: 'absolute',
+    borderRadius: 999,
+    opacity: 0.55,
   },
-  createSectionHead: { marginBottom: 10 },
+  patternBlob1: {
+    width: 200,
+    height: 200,
+    top: -50,
+    right: -60,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  patternBlob2: {
+    width: 140,
+    height: 140,
+    bottom: 120,
+    left: -40,
+    backgroundColor: 'rgba(59,130,246,0.14)',
+  },
+  patternBlob3: {
+    width: 100,
+    height: 100,
+    bottom: -20,
+    right: 40,
+    backgroundColor: 'rgba(249,115,22,0.1)',
+  },
+  insetTop: { paddingHorizontal: 16, paddingTop: 4 },
+  inset: { paddingHorizontal: 16, marginTop: 12, paddingBottom: 8 },
+  heroShell: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    marginBottom: 14,
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1e3a8a',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.14,
+        shadowRadius: 24,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
+  heroDecorCircle: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    top: -36,
+    right: -28,
+  },
+  heroContent: { paddingHorizontal: 18, paddingVertical: 20, zIndex: 1 },
+  heroEyebrow: { marginBottom: 10 },
+  heroEyebrowGrad: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.2)',
+  },
+  heroEyebrowText: { fontSize: 11.5, fontWeight: '900', color: '#1D4ED8', letterSpacing: 0.6 },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
+    lineHeight: 28,
+  },
+  heroSubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    lineHeight: 21,
+  },
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  statChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.18)',
+    maxWidth: '100%',
+  },
+  statChipMuted: {
+    backgroundColor: 'rgba(248,250,252,0.95)',
+    borderColor: 'rgba(148,163,184,0.35)',
+  },
+  statChipAlert: {
+    backgroundColor: 'rgba(255,247,237,0.96)',
+    borderColor: 'rgba(249,115,22,0.35)',
+  },
+  statChipTxt: { fontSize: 12.5, fontWeight: '800', color: TEXT_PRIMARY, flexShrink: 1 },
+  statChipTxtMuted: { fontSize: 12, fontWeight: '800', color: '#475569' },
+  statChipAlertTxt: { fontSize: 12.5, fontWeight: '900', color: '#C2410C' },
+  createSectionWrap: {
+    marginBottom: 18,
+    borderRadius: 28,
+    overflow: 'hidden',
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.08,
+        shadowRadius: 22,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
+  },
+  createSectionWrapInter: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284c7',
+  },
+  createSectionWrapLocal: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#2563eb',
+  },
+  createSection: {
+    padding: 14,
+    borderRadius: 26,
+    position: 'relative',
+    zIndex: 1,
+  },
+  createSectionHeadRow: { marginBottom: 8 },
+  sectionBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sectionBadgeInter: {
+    backgroundColor: 'rgba(14,165,233,0.1)',
+    borderColor: 'rgba(14,165,233,0.35)',
+  },
+  sectionBadgeLocal: {
+    backgroundColor: 'rgba(37,99,235,0.08)',
+    borderColor: 'rgba(37,99,235,0.28)',
+  },
+  sectionBadgeText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.35 },
   ctaSectionTitle: {
     fontSize: 13,
     fontWeight: '900',
@@ -704,27 +1116,27 @@ const styles = StyleSheet.create({
   ctaHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 18 },
   ctaBig: {
     flex: 1,
-    minHeight: 136,
+    minHeight: 148,
     minWidth: 0,
-    borderRadius: 22,
+    borderRadius: 24,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.38)',
     ...CTA_CARD_SHADOW,
   },
   ctaBigDriver: { shadowColor: '#1D4ED8' },
-  ctaBigPassenger: { shadowColor: '#C2410C' },
+  ctaBigPassenger: { shadowColor: '#EA580C' },
   ctaPulseGlow: {
     position: 'absolute',
-    left: -12,
-    right: -12,
-    top: -12,
-    bottom: -12,
-    borderRadius: 28,
+    left: -14,
+    right: -14,
+    top: -14,
+    bottom: -14,
+    borderRadius: 32,
     zIndex: 1,
   },
-  ctaPulseDriver: { backgroundColor: 'rgba(96,165,250,0.36)' },
-  ctaPulsePassenger: { backgroundColor: 'rgba(251,146,60,0.34)' },
+  ctaPulseDriver: { backgroundColor: 'rgba(96,165,250,0.42)' },
+  ctaPulsePassenger: { backgroundColor: 'rgba(251,146,60,0.4)' },
   ctaShine: {
     position: 'absolute',
     top: -42,
@@ -735,33 +1147,157 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.16)',
     zIndex: 2,
   },
-  ctaPressed: { transform: [{ scale: 0.98 }] },
+  ctaPressed: { transform: [{ scale: 0.96 }] },
   ctaBigInner: {
     flex: 1,
-    minHeight: 136,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
+    minHeight: 152,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    justifyContent: 'flex-start',
     zIndex: 3,
   },
+  ctaRoleBadgeRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 6 },
+  ctaRolePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  ctaRolePillDriver: { backgroundColor: 'rgba(0,0,0,0.2)' },
+  ctaRolePillPax: { backgroundColor: 'rgba(0,0,0,0.2)' },
+  ctaRolePillTxt: { fontSize: 10.5, fontWeight: '900', color: '#fff', letterSpacing: 0.4 },
   ctaIconBubble: {
-    width: 38,
-    height: 38,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.28)',
+    marginTop: 2,
   },
-  ctaBigEmoji: { fontSize: 22, color: '#fff', fontWeight: '800' },
-  ctaBigTitle: { fontSize: 16, fontWeight: '900', color: '#fff', marginTop: 10, letterSpacing: -0.2 },
-  ctaBigSub: { fontSize: 13, color: 'rgba(255,255,255,0.92)', marginTop: 4, lineHeight: 18 },
+  ctaBigTitle: { fontSize: 13.5, fontWeight: '900', color: '#fff', marginTop: 8, letterSpacing: -0.15, lineHeight: 18 },
+  ctaBigSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.93)', marginTop: 5, lineHeight: 17 },
+  offersSectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  offersIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.2)',
+  },
   offersCardPad: { paddingBottom: 18 },
-  offersSectionTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY },
-  offersSectionHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 8, lineHeight: 18 },
-  offersEmpty: { fontSize: 17, color: TEXT_SECONDARY, lineHeight: 24, marginTop: 4 },
-  summaryCard: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
+  offersSectionTitle: { fontSize: 20, fontWeight: '900', color: TEXT_PRIMARY, letterSpacing: -0.35 },
+  offersDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(148,163,184,0.35)',
+    marginBottom: 14,
+    borderRadius: 999,
+  },
+  skeletonWrap: { gap: 12 },
+  skeletonCard: {
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.35)',
+    padding: 14,
+    overflow: 'hidden',
+  },
+  skeletonAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: 'rgba(148,163,184,0.45)',
+    borderTopLeftRadius: 18,
+    borderBottomLeftRadius: 18,
+  },
+  skeletonRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  skeletonPill: {
+    width: 72,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: 'rgba(203,213,225,0.95)',
+  },
+  skeletonPillShort: {
+    width: 48,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: 'rgba(226,232,240,0.95)',
+  },
+  skeletonLine: {
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(226,232,240,0.95)',
+    width: '100%',
+    marginBottom: 8,
+  },
+  skeletonCta: {
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: 'rgba(203,213,225,0.85)',
+    marginTop: 4,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  emptyIconRing: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(59,130,246,0.1)',
+    borderWidth: 2,
+    borderColor: 'rgba(59,130,246,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: TEXT_PRIMARY, letterSpacing: -0.3, textAlign: 'center' },
+  emptySub: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  emptyHint: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
+    textAlign: 'center',
+  },
+  summaryCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.12)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.08,
+        shadowRadius: 22,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
+  },
   incomingCompactBlock: {
     gap: 7,
     marginBottom: 12,
