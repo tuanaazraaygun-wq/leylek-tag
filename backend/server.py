@@ -22205,9 +22205,9 @@ async def sio_message_seen(sid, data):
     await _muhabbet_route_message_receipt(sid, data, "message_seen")
 
 
-def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict:
+def _leylek_pair_request_try(uid: str, conversation_id: str) -> dict:
     """
-    Leylek eşleşme isteği (socket); REST hariç.
+    Leylek Anahtar eşleşme isteği — Socket.IO ve REST ortak mantık (DB insert / cooldown / pending).
     Dönüş: {ok, request_id, pending, target, initiator_role} veya {ok: False, err, detail}
     """
     try:
@@ -22301,6 +22301,30 @@ def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict
         raise
 
 
+async def _leylek_pair_request_emit_success(uid: str, cid: str, r: dict) -> None:
+    """Yeni oluşturulan istek için hedefe bildirim + istek sahibine leylek_pair_request_sent (socket ile uyumlu)."""
+    rid = str(r.get("request_id") or "").strip().lower()
+    target = str(r.get("target") or "").strip().lower()
+    role = str(r.get("initiator_role") or "").strip().lower()
+    if not rid or not target:
+        logger.warning("_leylek_pair_request_emit_success missing fields uid=%s cid=%s r=%s", uid, cid, r)
+        return
+    logger.info("[leylek-key] request_created conversation_id=%s request_id=%s requester=%s target=%s", cid, rid, str(uid)[:13], str(target)[:13] if target else "")
+    try:
+        await _muhabbet_notify_leylek_pair_request(str(target), uid, cid, rid, role)
+    except Exception as e:
+        logger.warning("leylek_pair_request notify: %s", e)
+    try:
+        await emit_socket_event_to_user(
+            str(uid).strip().lower(),
+            "leylek_pair_request_sent",
+            {"request_id": rid, "conversation_id": cid},
+        )
+        logger.info("[leylek_pair_request] ack sent requester=%s", str(uid)[:13])
+    except Exception as e:
+        logger.warning("leylek_pair_request_sent emit: %s", e)
+
+
 async def _sio_leylek_pair_request_handler(sid, data):
     """İstemci: leylek_pair_request veya leylek_pair_match_request — DB + leylek_pair_match_request emit."""
     if not isinstance(data, dict):
@@ -22328,7 +22352,7 @@ async def _sio_leylek_pair_request_handler(sid, data):
         logger.warning("leylek_pair_request enter_room: %s", e)
     logger.info("[leylek_pair_request] handler_start sid=%s uid=%s cid=%s", sid, uid, cid)
     try:
-        r = _leylek_pair_request_try_from_socket(uid, cid)
+        r = _leylek_pair_request_try(uid, cid)
         logger.info("[leylek_pair_request] result=%s", r)
     except Exception as e:
         logger.exception("[leylek_pair_request] exception sid=%s uid=%s cid=%s", sid, uid, cid)
@@ -22350,31 +22374,15 @@ async def _sio_leylek_pair_request_handler(sid, data):
     if r.get("pending"):
         await sio.emit("leylek_pair_info", {"code": "pending", "request_id": r.get("request_id")}, room=sid)
         return
-    rid = r["request_id"]
-    target = r["target"]
-    role = r.get("initiator_role") or ""
-    logger.info("[leylek-key] request_created conversation_id=%s request_id=%s requester=%s target=%s", cid, rid, str(uid)[:13], str(target)[:13] if target else "")
-    logger.info("[leylek_pair_request] requester=%s target=%s conversation=%s", uid, target, cid)
+    logger.info("[leylek_pair_request] requester=%s target=%s conversation=%s", uid, r.get("target"), cid)
     logger.info(
         "[leylek_pair_request] participants requester=%s target=%s conversation_id=%s request_id=%s",
         str(uid)[:13],
-        str(target)[:13] if target else "",
+        str(r.get("target") or "")[:13],
         cid,
-        str(rid)[:13] if rid else "",
+        str(r.get("request_id") or "")[:13],
     )
-    try:
-        await _muhabbet_notify_leylek_pair_request(str(target), uid, cid, rid, role)
-    except Exception as e:
-        logger.warning("leylek_pair_request notify: %s", e)
-    try:
-        await emit_socket_event_to_user(
-            str(uid).strip().lower(),
-            "leylek_pair_request_sent",
-            {"request_id": rid, "conversation_id": cid},
-        )
-        logger.info("[leylek_pair_request] ack sent requester=%s", str(uid)[:13])
-    except Exception as e:
-        logger.warning("leylek_pair_request_sent emit: %s", e)
+    await _leylek_pair_request_emit_success(uid, cid, r)
 
 
 @sio.on("leylek_pair_request")
@@ -22387,7 +22395,7 @@ async def sio_leylek_pair_match_request(sid, data):
     await _sio_leylek_pair_request_handler(sid, data)
 
 
-async def _leylek_pair_accept_from_socket(uid: str, cid: str, rid: str) -> dict:
+async def _leylek_pair_accept(uid: str, cid: str, rid: str) -> dict:
     uid = (uid or "").strip().lower()
     cid = (cid or "").strip().lower()
     rid = (rid or "").strip().lower()
@@ -22452,12 +22460,12 @@ async def sio_leylek_pair_accept(sid, data):
         await sio.enter_room(sid, muhabbet_room(cid))
     except Exception as e:
         logger.warning("leylek_pair_accept enter_room: %s", e)
-    out = await _leylek_pair_accept_from_socket(uid, cid, rid)
+    out = await _leylek_pair_accept(uid, cid, rid)
     if not out.get("ok"):
         await sio.emit("leylek_pair_error", {"code": "accept_failed", "detail": out.get("detail") or ""}, room=sid)
 
 
-def _leylek_pair_decline_from_socket(uid: str, cid: str, rid: str) -> dict:
+def _leylek_pair_decline(uid: str, cid: str, rid: str) -> dict:
     uid = (uid or "").strip().lower()
     cid = (cid or "").strip().lower()
     rid = (rid or "").strip().lower()
@@ -22506,8 +22514,15 @@ async def sio_leylek_pair_decline(sid, data):
         await sio.enter_room(sid, muhabbet_room(cid))
     except Exception as e:
         logger.warning("leylek_pair_decline enter_room: %s", e)
-    out = _leylek_pair_decline_from_socket(uid, cid, rid)
-    ini = (out or {}).get("initiator_user_id") if isinstance(out, dict) else None
+    out = _leylek_pair_decline(uid, cid, rid)
+    await _leylek_pair_decline_emit_to_initiator(cid, rid, out)
+
+
+async def _leylek_pair_decline_emit_to_initiator(cid: str, rid: str, out: dict) -> None:
+    """Decline sonrası initiator’a leylek_pair_declined (socket ile uyumlu)."""
+    if not isinstance(out, dict) or not out.get("ok"):
+        return
+    ini = out.get("initiator_user_id")
     if ini and str(out.get("message") or "") == "declined":
         try:
             await emit_socket_event_to_user(
@@ -22517,6 +22532,8 @@ async def sio_leylek_pair_decline(sid, data):
             )
         except Exception as e:
             logger.warning("leylek_pair_declined emit: %s", e)
+
+
 
 
 def _muhabbet_trip_conversion_context(uid: str, cid: str, *, require_driver_requester: bool = False) -> dict:
@@ -24491,11 +24508,45 @@ async def muhabbet_leylek_pair_request_create(
     conversation_id: str,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Eşleşme isteği yalnızca Socket.IO ile gönderilir (leylek_pair_match_request veya leylek_pair_request)."""
-    raise HTTPException(
-        status_code=410,
-        detail="Eşleşme isteği HTTP ile verilmez; Socket.IO leylek_pair_match_request (veya leylek_pair_request) kullanın.",
-    )
+    """Leylek Anahtar eşleşme isteği — REST (JWT); socket ile aynı DB + bildirim mantığı."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        try:
+            r = _leylek_pair_request_try(uid, cid)
+        except Exception as e:
+            logger.exception("muhabbet_leylek_pair_request_create try: %s", e)
+            raise HTTPException(status_code=500, detail="Eşleşme isteği işlenemedi.") from e
+        if not r.get("ok"):
+            err = str(r.get("err") or "error")
+            detail = str(r.get("detail") or "")
+            if err == "cooldown":
+                raise HTTPException(status_code=429, detail=detail or "Çok sık istek.")
+            if err == "forbidden":
+                raise HTTPException(status_code=403, detail=detail or "Bu sohbete erişim yok.")
+            if err == "bad_request":
+                raise HTTPException(status_code=400, detail=detail or "Geçersiz istek.")
+            if err == "db":
+                raise HTTPException(status_code=500, detail=detail or "İstek oluşturulamadı.")
+            raise HTTPException(status_code=400, detail=detail or err)
+        rid = str(r.get("request_id") or "").strip().lower()
+        if r.get("pending"):
+            return {
+                "success": True,
+                "pending": True,
+                "request": {"id": rid, "conversation_id": cid},
+            }
+        await _leylek_pair_request_emit_success(uid, cid, r)
+        return {
+            "success": True,
+            "pending": False,
+            "request": {"id": rid, "conversation_id": cid},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_pair_request_create: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @api_router.post("/muhabbet/conversations/{conversation_id}/leylek-pair-requests/{request_id}/accept")
@@ -24504,11 +24555,32 @@ async def muhabbet_leylek_pair_request_accept(
     request_id: str,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Kabul yalnızca Socket.IO `leylek_pair_accept` ile verilir."""
-    raise HTTPException(
-        status_code=410,
-        detail="Eşleşme yanıtı HTTP ile verilmez; Socket.IO leylek_pair_accept kullanın.",
-    )
+    """Leylek Anahtar eşleşmesini kabul et — REST (JWT); socket ile aynı mantık."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        rid = str(request_id or "").strip().lower()
+        try:
+            out = await _leylek_pair_accept(uid, cid, rid)
+        except Exception as e:
+            logger.exception("muhabbet_leylek_pair_request_accept: %s", e)
+            raise HTTPException(status_code=500, detail="Kabul işlenemedi.") from e
+        if not out.get("ok"):
+            detail = str(out.get("detail") or "Kabul edilemedi")
+            dl = detail.lower()
+            if "sadece karşı taraf" in dl or "bu sohbete erişim" in dl:
+                raise HTTPException(status_code=403, detail=detail)
+            if "bulunamadı" in dl:
+                raise HTTPException(status_code=404, detail=detail)
+            if "artık geçerli değil" in dl or "geçersiz istek" in dl:
+                raise HTTPException(status_code=409, detail=detail)
+            raise HTTPException(status_code=400, detail=detail)
+        return {"success": True, "status": "accepted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_pair_request_accept: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @api_router.post("/muhabbet/conversations/{conversation_id}/leylek-pair-requests/{request_id}/decline")
@@ -24517,11 +24589,31 @@ async def muhabbet_leylek_pair_request_decline(
     request_id: str,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Red yalnızca Socket.IO `leylek_pair_decline` ile verilir."""
-    raise HTTPException(
-        status_code=410,
-        detail="Eşleşme yanıtı HTTP ile verilmez; Socket.IO leylek_pair_decline kullanın.",
-    )
+    """Leylek Anahtar eşleşme isteğini reddet — REST (JWT); socket ile aynı mantık."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        rid = str(request_id or "").strip().lower()
+        try:
+            out = _leylek_pair_decline(uid, cid, rid)
+        except Exception as e:
+            logger.exception("muhabbet_leylek_pair_request_decline: %s", e)
+            raise HTTPException(status_code=500, detail="Red işlenemedi.") from e
+        if not out.get("ok"):
+            detail = str(out.get("detail") or "Reddedilemedi")
+            dl = detail.lower()
+            if "sadece karşı taraf" in dl:
+                raise HTTPException(status_code=403, detail=detail)
+            if "bulunamadı" in dl:
+                raise HTTPException(status_code=404, detail=detail)
+            raise HTTPException(status_code=400, detail=detail)
+        await _leylek_pair_decline_emit_to_initiator(cid, rid, out)
+        return {"success": True, "status": "declined"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_pair_request_decline: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @api_router.post("/muhabbet/conversations/{conversation_id}/hide")

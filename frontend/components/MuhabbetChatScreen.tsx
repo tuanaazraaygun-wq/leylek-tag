@@ -1425,7 +1425,6 @@ export default function MuhabbetChatScreen({
   }, [otherUserId, ctx, router]);
 
   const sendLeylekPairRequest = useCallback(async () => {
-    const socket = getOrCreateSocket();
     if (!cid) return;
     if (pairRequestBusyRef.current) {
       if (pairRequestLoading) return;
@@ -1444,109 +1443,56 @@ export default function MuhabbetChatScreen({
     }
     pairRequestBusyRef.current = true;
     setPairRequestLoading(true);
-    setTimeout(() => {
-      if (pairRequestBusyRef.current) {
-        pairRequestBusyRef.current = false;
-        setPairRequestLoading(false);
-        console.warn("[leylek-pair] busy safety reset");
+    try {
+      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-request`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      if (handleUnauthorizedAndMaybeRedirect(res)) {
+        return;
       }
-    }, 15000);
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
+      const raw = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        pending?: boolean;
+        request?: { id?: string; conversation_id?: string };
+        detail?: unknown;
+      };
+      const detailStr = (() => {
+        const d = raw.detail;
+        if (typeof d === 'string') return d;
+        if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
+          return (d[0] as { msg: string }).msg;
+        }
+        return '';
+      })();
+      if (!res.ok) {
+        Alert.alert('İstek gönderilemedi', detailStr || `Hata (${res.status})`);
+        return;
+      }
+      if (raw.success && raw.pending) {
+        lastLeylekPairRequestAtRef.current = Date.now();
+        pushSystemCard('orange', 'Karşı tarafta bekleyen bir eşleşme isteği var.');
+        Alert.alert('Bekleyen istek', 'Zaten bir eşleşme isteğiniz var.');
+        await pullMessagesFromApi();
+        return;
+      }
+      if (raw.success) {
+        lastLeylekPairRequestAtRef.current = Date.now();
+        pushSystemCard('blue', 'Eşleşme isteği gönderildi.');
+        Alert.alert('Eşleşme isteği gönderildi.', 'Karşı taraf onaylarsa eşleşme tamamlanır.');
+        await pullMessagesFromApi();
+      }
+    } catch {
+      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
+    } finally {
       pairRequestBusyRef.current = false;
       setPairRequestLoading(false);
-    };
-    let tmo: ReturnType<typeof setTimeout> | null = null;
-    const offPair = () => {
-      socket.off('leylek_pair_error', onErr);
-      socket.off('leylek_pair_info', onInfo);
-      socket.off('leylek_pair_request_sent', onSent);
-    };
-    const onSent = () => {
-      if (tmo) {
-        clearTimeout(tmo);
-        tmo = null;
-      }
-      offPair();
-      finish();
-      lastLeylekPairRequestAtRef.current = Date.now();
-      pushSystemCard('blue', 'Eşleşme isteği gönderildi.');
-      Alert.alert('Eşleşme isteği gönderildi.', 'Karşı taraf onaylarsa eşleşme tamamlanır.');
-    };
-    const onErr = (p: { code?: string; detail?: string }) => {
-      if (tmo) {
-        clearTimeout(tmo);
-        tmo = null;
-      }
-      offPair();
-      finish();
-      const det = typeof p?.detail === 'string' ? p.detail : '';
-      if (p?.code === 'cooldown') {
-        Alert.alert('Çok sık istek', det || 'Lütfen kısa bir süre sonra tekrar deneyin.');
-        return;
-      }
-      Alert.alert('İstek gönderilemedi', det || 'Tekrar deneyin.');
-    };
-    const onInfo = (p: { code?: string; message?: string; request_id?: string }) => {
-      if (tmo) {
-        clearTimeout(tmo);
-        tmo = null;
-      }
-      offPair();
-      finish();
-      const code = String(p?.code || '');
-      if (code === 'pending') {
-        pushSystemCard('orange', p?.message || 'Karşı tarafta bekleyen bir eşleşme isteği var.');
-        Alert.alert('Bekleyen istek', p?.message || 'Zaten bir eşleşme isteğiniz var.');
-        return;
-      }
-      Alert.alert('Bilgi', p?.message || 'İşlem tamam.');
-    };
-    try {
-      const alreadyReady = socket.connected && roomJoinedRef.current;
-      const ready = alreadyReady ? true : await ensureMuhabbetSocketReady();
-      if (!ready) {
-        finish();
-        Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
-        return;
-      }
-      offPair();
-      socket.on('leylek_pair_error', onErr);
-      socket.on('leylek_pair_info', onInfo);
-      socket.on('leylek_pair_request_sent', onSent);
-      tmo = setTimeout(() => {
-        tmo = null;
-        offPair();
-        finish();
-        Alert.alert('Zaman aşımı', 'Sunucudan yanıt alınamadı. Bağlantınızı kontrol edin.');
-      }, 15000);
-      if (!roomJoinedRef.current) {
-        try {
-          socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-        } catch {
-          /* noop */
-        }
-      }
-      const payload = { conversation_id: cid };
-      const emitSocket = getOrCreateSocket();
-      if (!emitSocket.connected) {
-        finish();
-        Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
-        return;
-      }
-      emitSocket.emit('leylek_pair_match_request', payload);
-    } catch {
-      if (tmo) {
-        clearTimeout(tmo);
-        tmo = null;
-      }
-      offPair();
-      finish();
-      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
     }
-  }, [cid, ensureMuhabbetSocketReady, pairRequestLoading, pushSystemCard]);
+  }, [cid, base, pairRequestLoading, pushSystemCard, pullMessagesFromApi]);
 
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (
@@ -1573,33 +1519,89 @@ export default function MuhabbetChatScreen({
     return { mine, drv };
   };
 
-  const closePairModalDecline = useCallback(() => {
+  const acceptPairFromModal = useCallback(async () => {
     if (!cid || !pairInModal) return;
-    const socket = getOrCreateSocket();
-    try {
-      socket.emit('leylek_pair_decline', { conversation_id: cid, request_id: pairInModal.rid });
-    } catch {
-      /* noop */
+    const token = (await getPersistedAccessToken())?.trim();
+    if (!token) {
+      Alert.alert('Oturum', 'Giriş yapın.');
+      return;
     }
-    setPairInModal(null);
-  }, [cid, pairInModal]);
+    const rid = pairInModal.rid;
+    try {
+      const res = await fetch(
+        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-requests/${encodeURIComponent(rid)}/accept`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        }
+      );
+      if (handleUnauthorizedAndMaybeRedirect(res)) return;
+      const raw = (await res.json().catch(() => ({}))) as { detail?: unknown };
+      const detailStr = (() => {
+        const d = raw.detail;
+        if (typeof d === 'string') return d;
+        if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
+          return (d[0] as { msg: string }).msg;
+        }
+        return '';
+      })();
+      if (!res.ok) {
+        Alert.alert('Hata', detailStr || `Hata (${res.status})`);
+        return;
+      }
+      setPairInModal(null);
+      await pullMessagesFromApi();
+      Alert.alert('Eşleşme kabul edildi.');
+    } catch {
+      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
+    }
+  }, [cid, pairInModal, base, pullMessagesFromApi]);
 
-  const acceptPairFromModal = useCallback(() => {
+  const closePairModalDecline = useCallback(async () => {
     if (!cid || !pairInModal) return;
-    const socket = getOrCreateSocket();
-    try {
-      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-    } catch {
-      /* noop */
+    const token = (await getPersistedAccessToken())?.trim();
+    if (!token) {
+      Alert.alert('Oturum', 'Giriş yapın.');
+      return;
     }
+    const rid = pairInModal.rid;
     try {
-      socket.emit('leylek_pair_accept', { conversation_id: cid, request_id: pairInModal.rid });
+      const res = await fetch(
+        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-requests/${encodeURIComponent(rid)}/decline`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        }
+      );
+      if (handleUnauthorizedAndMaybeRedirect(res)) return;
+      const raw = (await res.json().catch(() => ({}))) as { detail?: unknown };
+      const detailStr = (() => {
+        const d = raw.detail;
+        if (typeof d === 'string') return d;
+        if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
+          return (d[0] as { msg: string }).msg;
+        }
+        return '';
+      })();
+      if (!res.ok) {
+        Alert.alert('Hata', detailStr || `Hata (${res.status})`);
+        return;
+      }
+      setPairInModal(null);
+      await pullMessagesFromApi();
+      Alert.alert('Eşleşme isteği reddedildi.');
     } catch {
-      /* noop */
+      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
     }
-    pushSystemCard('green', 'Karşı taraf kabul etti. Eşleşme tamamlanıyor...');
-    setPairInModal(null);
-  }, [cid, pairInModal, pushSystemCard]);
+  }, [cid, pairInModal, base, pullMessagesFromApi]);
 
   const sendTripConvertRequest = useCallback(async () => {
     if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
