@@ -325,6 +325,32 @@ def _fallback_activities_payload(city: str) -> list[dict[str, str]]:
     return out
 
 
+def _count_city_tags(sb: Any, city: str, statuses: tuple[str, ...]) -> int:
+    """
+    Count tags: type=normal, city=city, status in statuses.
+    Never raises; returns 0 on any Supabase/query failure.
+    """
+    try:
+        if not city or not statuses:
+            return 0
+        res = (
+            sb.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("city", city)
+            .in_("status", list(statuses))
+            .limit(1)
+            .execute()
+        )
+        cnt = getattr(res, "count", None)
+        if cnt is not None:
+            return int(cnt)
+        return len(res.data or [])
+    except Exception as e:
+        logger.warning("[website-live-city] _count_city_tags failed city=%s statuses=%s err=%s", city, statuses, e)
+        return 0
+
+
 def build_city_live_payload(sb: Any, city_raw: str) -> dict[str, Any]:
     city = _normalize_city_name(city_raw)
     day_start = _utc_day_start_iso()
