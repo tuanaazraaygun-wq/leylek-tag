@@ -49,7 +49,8 @@ export function muhabbetListingMapPinFlowAvailable(): boolean {
   return !!EndpointMapView && isNativeGoogleMapsSupported();
 }
 
-async function reverseGeocodeTr(lat: number, lng: number): Promise<string> {
+/** OSM Nominatim ters geokod — teklif formu “Konumum” ile paylaşılır */
+export async function reverseGeocodeTr(lat: number, lng: number): Promise<string> {
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=tr`;
   const response = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
   const data = (await response.json().catch(() => ({}))) as { display_name?: string };
@@ -105,7 +106,6 @@ export default function MuhabbetEndpointPickerModal({
       return;
     }
     setAcMountKey((k) => k + 1);
-    console.log('[picker] cityContext=', cityTrim || null);
     const lat = registeredCityCenter?.latitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
     const lng = registeredCityCenter?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
     setPin({ latitude: lat, longitude: lng });
@@ -216,6 +216,36 @@ export default function MuhabbetEndpointPickerModal({
   const mapLng = pin?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
   const delta = phase === 'search' ? SEARCH_DELTA : PIN_DELTA;
 
+  const endpointSearchPanel = (
+    <View style={styles.panel} pointerEvents="auto">
+      <Text style={styles.hero}>{title}</Text>
+      <Text style={styles.subHero}>Adres ara, listeden seç; haritada konumu doğrula.</Text>
+      {!useMap ? (
+        <Text style={styles.gmsHint}>
+          Bu cihazda harita doğrulaması yok; listeden seçtiğiniz adres doğrudan kullanılır.
+        </Text>
+      ) : null}
+      <View style={styles.searchShell}>
+        <PlacesAutocomplete
+          key={acMountKey}
+          placeholder="Mahalle, sokak, mekan ara…"
+          city={cityTrim}
+          hidePopularChips
+          visualVariant="tech"
+          suggestionsFirst={false}
+          strictCityBounds={!!cityTrim}
+          biasLatitude={searchBiasLatitude}
+          biasLongitude={searchBiasLongitude}
+          biasDeltaDeg={0.22}
+          inputSize="large"
+          predictionMaxHeightBonus={56}
+          forceCityInSearch={!!cityTrim}
+          onPlaceSelected={onSearchPick}
+        />
+      </View>
+    </View>
+  );
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onRequestClose}>
       <View style={styles.root}>
@@ -304,40 +334,13 @@ export default function MuhabbetEndpointPickerModal({
             </View>
 
             {phase === 'search' ? (
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.kb}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
-              >
-                <View style={styles.panel} pointerEvents="auto">
-                  <Text style={styles.hero}>{title}</Text>
-                  <Text style={styles.subHero}>Adres ara, listeden seç; haritada konumu doğrula.</Text>
-                  {!useMap ? (
-                    <Text style={styles.gmsHint}>
-                      Bu cihazda harita doğrulaması yok; listeden seçtiğiniz adres doğrudan kullanılır.
-                    </Text>
-                  ) : null}
-                  <View style={styles.searchShell}>
-                    <PlacesAutocomplete
-                      key={acMountKey}
-                      placeholder="Mahalle, sokak, mekan ara…"
-                      city={cityTrim}
-                      hidePopularChips
-                      visualVariant="tech"
-                      suggestionsFirst={false}
-                      strictCityBounds={!!cityTrim}
-                      biasLatitude={searchBiasLatitude}
-                      biasLongitude={searchBiasLongitude}
-                      biasDeltaDeg={0.22}
-                      inputSize="large"
-                      predictionMaxHeightBonus={56}
-                      forceCityInSearch={!!cityTrim}
-                      pickerDebugLabel={title}
-                      onPlaceSelected={onSearchPick}
-                    />
-                  </View>
-                </View>
-              </KeyboardAvoidingView>
+              Platform.OS === 'android' ? (
+                <View style={styles.kb}>{endpointSearchPanel}</View>
+              ) : (
+                <KeyboardAvoidingView behavior="padding" style={styles.kb} keyboardVerticalOffset={6}>
+                  {endpointSearchPanel}
+                </KeyboardAvoidingView>
+              )
             ) : null}
           </SafeAreaView>
         </View>
@@ -415,7 +418,7 @@ const styles = StyleSheet.create({
   },
   changeAreaText: { color: '#E0F2FE', fontSize: 14, fontWeight: '600' },
   kb: { flex: 1 },
-  panel: { paddingHorizontal: 16, paddingTop: 8 },
+  panel: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
   hero: { fontSize: 20, fontWeight: '800', color: '#F8FAFC', marginBottom: 6 },
   subHero: { fontSize: 14, color: 'rgba(224,242,254,0.88)', lineHeight: 20, marginBottom: 10 },
   gmsHint: { fontSize: 13, color: 'rgba(254,243,199,0.95)', marginBottom: 8, lineHeight: 18 },

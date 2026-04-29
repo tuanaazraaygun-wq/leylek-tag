@@ -3,6 +3,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -26,8 +27,10 @@ import { API_BASE_URL } from '../lib/backendConfig';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import MuhabbetEndpointPickerModal, {
   muhabbetListingMapPinFlowAvailable,
+  reverseGeocodeTr,
   type MuhabbetCommittedPlace,
 } from './MuhabbetEndpointPickerModal';
+import { isLatLngWithinRegisteredCity } from './PlacesAutocomplete';
 
 const HEADER_GRAD = ['#1e3a5f', '#3B82F6'] as const;
 const SCREEN_BG = '#0c1524';
@@ -254,6 +257,8 @@ export default function CreateListingModal({
   const [fromPoint, setFromPoint] = useState<MuhabbetCommittedPlace | null>(null);
   const [toPoint, setToPoint] = useState<MuhabbetCommittedPlace | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [locationChoiceOpen, setLocationChoiceOpen] = useState(false);
+  const [locationChoiceBusy, setLocationChoiceBusy] = useState(false);
   const [pickerField, setPickerField] = useState<'from' | 'to'>('from');
   const [userBias, setUserBias] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -516,6 +521,8 @@ export default function CreateListingModal({
     setFromPoint(null);
     setToPoint(null);
     setPickerOpen(false);
+    setLocationChoiceOpen(false);
+    setLocationChoiceBusy(false);
     setCityPickerOpen(false);
     setUserBias(null);
     const hm = defaultDepartureHm();
@@ -545,15 +552,69 @@ export default function CreateListingModal({
 
   const openPicker = (field: 'from' | 'to') => {
     if (listingScope === 'intercity') {
-      const pickerCity = field === 'from' ? originCity.trim() : destinationCity.trim();
-      if (!pickerCity) {
+      const pc = field === 'from' ? originCity.trim() : destinationCity.trim();
+      if (!pc) {
         Alert.alert('Şehir seç', field === 'from' ? 'Önce kalkış şehrini seç.' : 'Önce varış şehrini seç.');
         return;
       }
     }
     setPickerField(field);
-    setPickerOpen(true);
+    setLocationChoiceOpen(true);
   };
+
+  const openAddressPickerModal = useCallback(() => {
+    setLocationChoiceOpen(false);
+    setPickerOpen(true);
+  }, []);
+
+  const commitCurrentGpsLocation = useCallback(async () => {
+    const cityCtx =
+      listingScope === 'intercity'
+        ? pickerField === 'from'
+          ? originCity.trim()
+          : destinationCity.trim()
+        : city.trim();
+    setLocationChoiceBusy(true);
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert('Konum izni gerekli', 'Konumunu kullanmak için ayarlardan konum iznini aç.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
+        return;
+      }
+      if (cityCtx && !isLatLngWithinRegisteredCity(cityCtx, lat, lng)) {
+        Alert.alert(
+          'Şehir sınırı',
+          'Anlık konumun seçili şehir alanı dışında görünüyor. Haritadan adres seçebilirsin.',
+        );
+        return;
+      }
+      const address = await reverseGeocodeTr(lat, lng);
+      const place: MuhabbetCommittedPlace = {
+        address,
+        latitude: lat,
+        longitude: lng,
+        mapPinConfirmed: true,
+      };
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (pickerField === 'from') setFromPoint(place);
+      else setToPoint(place);
+      setSuggestedBase(null);
+      setPriceDelta(0);
+      setPriceMeta(null);
+      setLocationChoiceOpen(false);
+    } catch {
+      Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
+    } finally {
+      setLocationChoiceBusy(false);
+    }
+  }, [listingScope, pickerField, originCity, destinationCity, city]);
 
   const openCityPicker = (field: CityPickerField) => {
     setCityPickerField(field);
@@ -1212,6 +1273,47 @@ export default function CreateListingModal({
           </ScrollView>
         </KeyboardAvoidingView>
 
+        <Modal
+          visible={locationChoiceOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!locationChoiceBusy) setLocationChoiceOpen(false);
+          }}
+        >
+          <Pressable style={styles.sheetOverlay} onPress={() => !locationChoiceBusy && setLocationChoiceOpen(false)}>
+            <Pressable style={styles.locationChoiceSheet} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.locationChoiceTitle}>Konum seç</Text>
+              <Text style={styles.locationChoiceDesc}>
+                Bulunduğun konumu kullanabilir veya farklı bir adres seçebilirsin.
+              </Text>
+              <TouchableOpacity
+                style={styles.locationChoiceRow}
+                onPress={() => void commitCurrentGpsLocation()}
+                disabled={locationChoiceBusy}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="navigate-circle-outline" size={22} color={ACCENT_ORANGE} />
+                <Text style={styles.locationChoiceRowText}>Konumum</Text>
+                {locationChoiceBusy ? <ActivityIndicator size="small" color={ACCENT_ORANGE} /> : null}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.locationChoiceRow}
+                onPress={openAddressPickerModal}
+                disabled={locationChoiceBusy}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="map-outline" size={22} color="#2563eb" />
+                <Text style={styles.locationChoiceRowText}>Başka adres</Text>
+                <Ionicons name="chevron-forward" size={18} color={TEXT_SECONDARY} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetClose} onPress={() => !locationChoiceBusy && setLocationChoiceOpen(false)}>
+                <Text style={styles.sheetCloseText}>Vazgeç</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         <MuhabbetEndpointPickerModal
           visible={pickerOpen}
           title={pickerField === 'from' ? 'Nereden' : 'Nereye'}
@@ -1639,6 +1741,34 @@ const styles = StyleSheet.create({
   brandChipTextOn: { color: '#1d4ed8' },
   sheetClose: { marginTop: 16, alignSelf: 'center', paddingVertical: 10 },
   sheetCloseText: { fontSize: 15, fontWeight: '600', color: TEXT_SECONDARY },
+  locationChoiceSheet: {
+    backgroundColor: CARD_BG,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 28,
+  },
+  locationChoiceTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8 },
+  locationChoiceDesc: {
+    fontSize: 14,
+    color: TEXT_SECONDARY,
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  locationChoiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.35)',
+  },
+  locationChoiceRowText: { flex: 1, fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
   timeSheetPremium: {
     backgroundColor: CARD_BG,
     borderTopLeftRadius: 22,
