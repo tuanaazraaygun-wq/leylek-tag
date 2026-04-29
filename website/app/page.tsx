@@ -7,15 +7,14 @@ import { ButtonLink } from "@/components/button-link";
 import { ComparisonSection } from "@/components/comparison-section";
 import { Container } from "@/components/container";
 import { FaqSection } from "@/components/faq-section";
-import { ListingCard } from "@/components/listing-card";
 import { LiveMapVisual } from "@/components/live-map-visual";
 import { ModeCard } from "@/components/mode-card";
 import { SectionHeading } from "@/components/section-heading";
 import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
 import { TrustBadges } from "@/components/trust-badges";
 import { ValueProps } from "@/components/value-props";
-import { getIntercityListings } from "@/lib/listings";
 import { featurePillars } from "@/lib/mock-data";
+import { IntercityList } from "@src/components/IntercityList";
 
 const experiences = [
   {
@@ -42,8 +41,6 @@ const experiences = [
 ];
 
 export default function Home() {
-  const listings = getIntercityListings();
-
   return (
     <>
       <section className="relative overflow-hidden py-16 sm:py-24">
@@ -153,24 +150,14 @@ export default function Home() {
 
       <section className="py-14">
         <Container>
-          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <SectionHeading
-              eyebrow="şehirler arası"
-              title="Şehirler arası yolculuklarda boş koltuklar değerlenir."
-              description="Gideceğin rotayı, saati ve boş koltuk sayısını paylaş. Aynı yöne gidenlerle masrafı böl."
-            />
-            <ButtonLink href="/sehirler-arasi" variant="secondary">
-              Tümünü Gör
-            </ButtonLink>
+          <div className="mb-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">canlı · şehirler arası</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Şehirler Arası Yol Paylaşımı</h2>
+            <p className="mt-3 max-w-2xl text-sm text-slate-400 sm:text-base">
+              Güncel ilanlar api.leylektag.com üzerinden canlı olarak yüklenir.
+            </p>
           </div>
-          <div className="grid gap-5 lg:grid-cols-3">
-            {listings.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
-            ))}
-          </div>
-          <p className="mt-5 rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-4 text-sm leading-6 text-slate-300">
-            İlanlar örnek gösterimdir. Canlı bağlantı için uygulama kullanılacaktır.
-          </p>
+          <IntercityList />
         </Container>
       </section>
 
