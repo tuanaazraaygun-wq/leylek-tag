@@ -1,14 +1,14 @@
 /**
  * Leylek Teklif Sende: sohbet listesi (conversations/me).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   DeviceEventEmitter,
   FlatList,
   Image,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -17,8 +17,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import MuhabbetWatermark from './MuhabbetWatermark';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -29,6 +31,7 @@ import {
   coerceMessageCreatedAt,
   getLastMessageFromLocal,
 } from '../lib/muhabbetMessagesStorage';
+import { formatMuhabbetRouteLabel } from '../lib/formatMuhabbetRouteLabel';
 import { getOrCreateSocket } from '../contexts/SocketContext';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
@@ -36,10 +39,15 @@ const ACCENT = '#F59E0B';
 const SURFACE = '#F2F2F7';
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
-const CARD_BG = '#FFFFFF';
-const CARD_SHADOW = Platform.select({
-  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 6 },
-  android: { elevation: 2 },
+const CARD_SHADOW_SOFT = Platform.select({
+  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 10 },
+  android: { elevation: 3 },
+  default: {},
+});
+
+const CARD_SHADOW_PREMIUM = Platform.select({
+  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12 },
+  android: { elevation: 8 },
   default: {},
 });
 
@@ -54,6 +62,10 @@ export type MuhabbetConversationListItem = {
   other_user_profile_photo_url?: string | null;
   from_text?: string | null;
   to_text?: string | null;
+  listing_scope?: string | null;
+  origin_city?: string | null;
+  destination_city?: string | null;
+  city?: string | null;
   last_message_body?: string | null;
   last_message?: string | null;
   last_message_at?: string | null;
@@ -81,10 +93,6 @@ export type ConversationsScreenProps = {
   /** Üst bileşen yenilemesinde listeyi tekrar çek */
   refreshNonce?: number;
 };
-
-function formatRouteLine(from: string | null | undefined, to: string | null | undefined): string {
-  return `${(from && String(from).trim()) || '—'} → ${(to && String(to).trim()) || '—'}`;
-}
 
 const MS = 1000;
 const MIN = 60 * MS;
@@ -129,7 +137,173 @@ function formatLastMessageListTime(iso: string | undefined | null): string {
   return d.toLocaleString('tr-TR', o);
 }
 
-/** Muhabbet sohbet ekranı deep link (Ana sayfa önizlemesi vb. ile paylaşılır). */
+function UnreadPulseWrap({ active, children }: { active: boolean; children: React.ReactNode }) {
+  const op = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!active) {
+      op.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(op, { toValue: 0.6, duration: 600, useNativeDriver: true }),
+        Animated.timing(op, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      op.setValue(1);
+    };
+  }, [active, op]);
+  return <Animated.View style={{ opacity: op }}>{children}</Animated.View>;
+}
+
+type ConversationListRowProps = {
+  item: MuhabbetConversationListItem;
+  onOpen: (c: MuhabbetConversationListItem) => void;
+  onLongRemove: (c: MuhabbetConversationListItem) => void;
+};
+
+const ConversationListRow = memo(function ConversationListRow({
+  item,
+  onOpen,
+  onLongRemove,
+}: ConversationListRowProps) {
+  const isFocused = useIsFocused();
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const last =
+    (item.last_message_body && String(item.last_message_body).trim()) ||
+    (item.last_message && String(item.last_message).trim()) ||
+    '';
+  const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Henüz mesaj yok';
+  const or = (item.other_user_role || '').toLowerCase();
+  const driverish = or === 'driver' || or === 'private_driver';
+  const unreadCount = Math.max(0, Number(item.unread_count || 0));
+  const unread = unreadCount > 0;
+  const publicName =
+    (item.other_user_public_name && String(item.other_user_public_name).trim()) ||
+    (item.other_user_name && String(item.other_user_name).trim()) ||
+    'Leylek kullanıcısı';
+  const roleLabel = item.other_user_role_label || (driverish ? 'Sürücü' : 'Yolcu');
+  const hasMatched = Boolean(item.matched_at) || (item.request_status || '').toLowerCase() === 'accepted';
+  const hasPending = (item.request_status || '').toLowerCase() === 'pending';
+  const photoUrl = (item.other_user_profile_photo_url || '').trim();
+  const routeLabel = formatMuhabbetRouteLabel({
+    listing_scope: item.listing_scope,
+    origin_city: item.origin_city,
+    destination_city: item.destination_city,
+    city: item.city,
+    from_text: item.from_text,
+    to_text: item.to_text,
+  });
+
+  const handlePress = useCallback(() => {
+    onOpen(item);
+  }, [item, onOpen]);
+
+  const handleLongPress = useCallback(() => {
+    onLongRemove(item);
+  }, [item, onLongRemove]);
+
+  return (
+    <Pressable
+      style={{ alignSelf: 'stretch' }}
+      onPressIn={() =>
+        void Animated.timing(scaleAnim, {
+          toValue: 0.98,
+          duration: 55,
+          useNativeDriver: true,
+        }).start()
+      }
+      onPressOut={() =>
+        void Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 120,
+          useNativeDriver: true,
+        }).start()
+      }
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      delayLongPress={300}
+      android_disableSound
+      accessibilityHint="Sohbetten kaldırmak için basılı tutun"
+    >
+      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+        <View style={styles.cardSheet}>
+        <LinearGradient
+          colors={['#60A5FA', '#93C5FD', '#FDBA74']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.cardAccentBar}
+        />
+        <View style={styles.cardBody}>
+          <View style={styles.cardRowMain}>
+            {photoUrl ? (
+              <View style={styles.avatarRing}>
+                <Image source={{ uri: photoUrl }} style={styles.avatar} />
+              </View>
+            ) : (
+              <View style={styles.avatarRing}>
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarInitials}>{initialsFromPublicName(publicName)}</Text>
+                </View>
+              </View>
+            )}
+            <View style={styles.cardTextCol}>
+              <View style={styles.nameTimeRow}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {publicName}
+                </Text>
+                <View style={styles.timeCol}>
+                  <UnreadPulseWrap active={unread && isFocused}>
+                    <View style={styles.timeColPulseInner}>
+                      <View style={styles.timeUnreadRow}>
+                        {unread && unreadCount <= 1 ? <View style={styles.unreadDot} /> : null}
+                        {item.last_message_at ? (
+                          <Text style={[styles.timeRight, unread && styles.timeRightUnread]}>
+                            {formatLastMessageListTime(String(item.last_message_at))}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {unread && unreadCount > 1 ? (
+                        unreadCount > 9 ? (
+                          <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadBadgeTxt}>9+</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadBadgeTxt}>{unreadCount}</Text>
+                          </View>
+                        )
+                      ) : null}
+                    </View>
+                  </UnreadPulseWrap>
+                </View>
+              </View>
+              <Text style={styles.routeCompact} numberOfLines={1} ellipsizeMode="tail">
+                {routeLabel}
+              </Text>
+              <Text
+                style={[styles.previewSub, unread && styles.previewSubUnread]}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              >
+                {lastLine}
+              </Text>
+              <View style={styles.badgesLine}>
+                <Text style={[styles.rolePill, driverish ? styles.rolePillDriver : styles.rolePillPax]}>{roleLabel}</Text>
+                {hasMatched ? <Text style={styles.matchedPill}>Eşleşti</Text> : null}
+                {!hasMatched && hasPending ? <Text style={styles.pendingPill}>Görüşme</Text> : null}
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+      </Animated.View>
+    </Pressable>
+  );
+});
 export function buildMuhabbetChatHref(
   conversationId: string,
   p: { otherUserName: string; fromText: string; toText: string; otherUserId?: string }
@@ -152,6 +326,7 @@ export default function ConversationsScreen({
   refreshNonce = 0,
 }: ConversationsScreenProps) {
   const router = useRouter();
+  const chatOpenBusyRef = useRef(false);
   const insets = useSafeAreaInsets();
   const base = apiBaseUrl.replace(/\/$/, '');
   const embedded = variant === 'embedded';
@@ -160,9 +335,6 @@ export default function ConversationsScreen({
   const [rows, setRows] = useState<MuhabbetConversationListItem[]>([]);
   const [myUserId, setMyUserId] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [hideTarget, setHideTarget] = useState<MuhabbetConversationListItem | null>(null);
-  const [hideBusy, setHideBusy] = useState(false);
-
   const sortConversations = useCallback((items: MuhabbetConversationListItem[]) => {
     return [...items].sort((a, b) => {
       const ta = new Date(String(a.last_message_at || a.created_at || 0)).getTime();
@@ -384,45 +556,14 @@ export default function ConversationsScreen({
     [base, load]
   );
 
-  const runHideForConversation = useCallback(
-    async (cidRaw: string) => {
-      const cid = cidRaw.trim();
+  const confirmRemoveConversation = useCallback(
+    (c: MuhabbetConversationListItem) => {
+      const cid = String(c.conversation_id || c.id || '').trim();
       if (!cid) return;
-      setHideBusy(true);
-      try {
-        await doHide(cid);
-      } finally {
-        setHideBusy(false);
-        setHideTarget(null);
-      }
-    },
-    [doHide]
-  );
-
-  const onHideFromListOnly = useCallback(() => {
-    const c = hideTarget;
-    const cid = c ? String(c.conversation_id || c.id || '').trim() : '';
-    if (!cid) {
-      setHideTarget(null);
-      return;
-    }
-    void runHideForConversation(cid);
-  }, [hideTarget, runHideForConversation]);
-
-  const onDeleteChatPressed = useCallback(() => {
-    const c = hideTarget;
-    const cid = c ? String(c.conversation_id || c.id || '').trim() : '';
-    if (!cid) {
-      setHideTarget(null);
-      return;
-    }
-    Alert.alert(
-      'Sohbeti sil',
-      'Mesaj içerikleri sunucularımızda saklanmaz. Bu işlem sohbeti listenizden kaldırır.',
-      [
-        { text: 'İptal', style: 'cancel' },
+      Alert.alert('Sil', 'Bu öğeyi silmek istiyor musun?', [
+        { text: 'Vazgeç', style: 'cancel' },
         {
-          text: 'Sohbeti sil',
+          text: 'Sil',
           style: 'destructive',
           onPress: () =>
             void (async () => {
@@ -431,53 +572,83 @@ export default function ConversationsScreen({
               } catch {
                 /* noop */
               }
-              await runHideForConversation(cid);
+              await doHide(cid);
             })(),
         },
-      ]
-    );
-  }, [hideTarget, runHideForConversation]);
+      ]);
+    },
+    [doHide]
+  );
 
-  const openHideModal = useCallback((c: MuhabbetConversationListItem) => {
-    setHideTarget(c);
+  const openChat = useCallback(
+    (c: MuhabbetConversationListItem) => {
+      if (chatOpenBusyRef.current) return;
+      const cid = String(c.conversation_id || c.id || '').trim();
+      if (!cid) return;
+      chatOpenBusyRef.current = true;
+      setTimeout(() => {
+        chatOpenBusyRef.current = false;
+      }, 500);
+      setRows((prev) =>
+        prev.map((x) => {
+          const xc = String(x.conversation_id || x.id || '').trim().toLowerCase();
+          if (xc !== cid.toLowerCase()) return x;
+          return { ...x, unread_count: 0 };
+        })
+      );
+      DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
+      const otherPublicName =
+        (c.other_user_public_name && String(c.other_user_public_name).trim()) ||
+        (c.other_user_name && String(c.other_user_name).trim()) ||
+        'Leylek kullanıcısı';
+      router.push(
+        buildMuhabbetChatHref(cid, {
+          otherUserName: otherPublicName,
+          fromText: (c.from_text && String(c.from_text)) || '',
+          toText: (c.to_text && String(c.to_text)) || '',
+          otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
+        })
+      );
+    },
+    [router]
+  );
+
+  const conversationKeyExtractor = useCallback((item: MuhabbetConversationListItem, index: number) => {
+    const id = String(item.conversation_id || item.id || '').trim();
+    return id.length > 0 ? id : `conversation-${index}`;
   }, []);
 
-  const openProfileFromModal = useCallback(() => {
-    const ou = hideTarget?.other_user_id ? String(hideTarget.other_user_id).trim() : '';
-    if (!ou) return;
-    setHideTarget(null);
-    router.push(`/muhabbet-profile/${encodeURIComponent(ou)}` as Href);
-  }, [hideTarget, router]);
-
-  const openChat = (c: MuhabbetConversationListItem) => {
-    const cid = String(c.conversation_id || c.id || '').trim();
-    if (!cid) return;
-    setRows((prev) =>
-      prev.map((x) => {
-        const xc = String(x.conversation_id || x.id || '').trim().toLowerCase();
-        if (xc !== cid.toLowerCase()) return x;
-        return { ...x, unread_count: 0 };
-      })
-    );
-    DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
-    const otherPublicName =
-      (c.other_user_public_name && String(c.other_user_public_name).trim()) ||
-      (c.other_user_name && String(c.other_user_name).trim()) ||
-      'Leylek kullanıcısı';
-    router.push(
-      buildMuhabbetChatHref(cid, {
-        otherUserName: otherPublicName,
-        fromText: (c.from_text && String(c.from_text)) || '',
-        toText: (c.to_text && String(c.to_text)) || '',
-        otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
-      })
-    );
-  };
+  const renderConversationItem = useCallback(
+    ({ item }: { item: MuhabbetConversationListItem }) => (
+      <ConversationListRow item={item} onOpen={openChat} onLongRemove={confirmRemoveConversation} />
+    ),
+    [openChat, confirmRemoveConversation]
+  );
 
   const listHeaderEmbedded = embedded ? (
-    <View style={styles.embedHeader}>
-      <Text style={styles.embedTitle}>Sohbetler</Text>
-      <Text style={styles.embedSub}>Kabul edilen teklifler sonrası sohbet burada görünür.</Text>
+    <View style={styles.embedHeaderOuter}>
+      <LinearGradient
+        colors={['rgba(239,246,255,0.98)', 'rgba(255,247,237,0.96)', 'rgba(254,243,199,0.35)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.embedHeaderCard}
+      >
+        <LinearGradient
+          colors={['#BFDBFE', '#FED7AA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.embedBadgeGrad}
+        >
+          <Text style={styles.embedBadgeTxt}>Eşleşen sohbetler</Text>
+        </LinearGradient>
+        <View style={styles.embedTitleRow}>
+          <LinearGradient colors={['#2563EB', '#3B82F6']} style={styles.embedTitleIconBubble}>
+            <Ionicons name="chatbubbles" size={16} color="#FFFFFF" />
+          </LinearGradient>
+          <Text style={styles.embedTitle}>Sohbetler</Text>
+        </View>
+        <Text style={styles.embedSub}>Gelen mesajlar burada gözükecek.</Text>
+      </LinearGradient>
     </View>
   ) : null;
 
@@ -497,8 +668,12 @@ export default function ConversationsScreen({
       ) : (
         <FlatList
           data={rows}
-          keyExtractor={(item, i) => String(item.conversation_id || item.id || i)}
+          keyExtractor={conversationKeyExtractor}
           style={{ flex: 1 }}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews
           contentContainerStyle={rows.length === 0 ? styles.emptyList : styles.list}
           ListHeaderComponent={embedded ? listHeaderEmbedded : undefined}
           refreshControl={
@@ -510,150 +685,27 @@ export default function ConversationsScreen({
             />
           }
           ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyTitle}>Henüz sohbet yok</Text>
-              <Text style={styles.emptySub}>
-                Kabul edilen teklifler sonrası sohbet burada listelenir. Teklifler sekmesinden talep gönder, kabul sonrası mesajlaş.
-              </Text>
+            <View style={styles.emptyOuter}>
+              <LinearGradient
+                colors={['rgba(239,246,255,0.65)', 'rgba(255,247,237,0.75)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.emptyCard}
+              >
+                <View style={styles.emptyIconWrap}>
+                  <Ionicons name="chatbox-ellipses-outline" size={40} color="#2563EB" />
+                </View>
+                <Text style={styles.emptyTitle}>Henüz sohbet yok</Text>
+                <Text style={styles.emptySub}>
+                  Tekliflerinden eşleşme kabul edildiğinde sohbetlerin burada görünür. Talep gönder, kabul sonrası mesajlaş.
+                </Text>
+              </LinearGradient>
             </View>
           }
-          renderItem={({ item }) => {
-            const last =
-              (item.last_message_body && String(item.last_message_body).trim()) ||
-              (item.last_message && String(item.last_message).trim()) ||
-              '';
-            const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Henüz mesaj yok';
-            const or = (item.other_user_role || '').toLowerCase();
-            const driverish = or === 'driver' || or === 'private_driver';
-            const unreadCount = Math.max(0, Number(item.unread_count || 0));
-            const unread = unreadCount > 0;
-            const publicName =
-              (item.other_user_public_name && String(item.other_user_public_name).trim()) ||
-              (item.other_user_name && String(item.other_user_name).trim()) ||
-              'Leylek kullanıcısı';
-            const roleLabel = item.other_user_role_label || (driverish ? 'Sürücü' : 'Yolcu');
-            const hasMatched = Boolean(item.matched_at) || (item.request_status || '').toLowerCase() === 'accepted';
-            const hasPending = (item.request_status || '').toLowerCase() === 'pending';
-            const photoUrl = (item.other_user_profile_photo_url || '').trim();
-            return (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.card,
-                  driverish ? styles.cardDriver : styles.cardPax,
-                  { transform: [{ scale: pressed ? 0.97 : 1 }] },
-                ]}
-                onPress={() => openChat(item)}
-                onLongPress={() => openHideModal(item)}
-                delayLongPress={450}
-                accessibilityHint="Sohbetten kaldırmak için basılı tutun"
-              >
-                <View style={styles.cardRow1}>
-                  <View style={styles.leftMain}>
-                    {photoUrl ? (
-                      <Image source={{ uri: photoUrl }} style={styles.avatar} />
-                    ) : (
-                      <View style={styles.avatarFallback}>
-                        <Text style={styles.avatarInitials}>{initialsFromPublicName(publicName)}</Text>
-                      </View>
-                    )}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.name} numberOfLines={1}>
-                        {publicName}
-                      </Text>
-                      <View style={styles.badgesLine}>
-                        <Text style={[styles.rolePill, driverish ? styles.rolePillDriver : styles.rolePillPax]}>{roleLabel}</Text>
-                        {hasMatched ? <Text style={styles.matchedPill}>Eşleşti</Text> : null}
-                        {!hasMatched && hasPending ? <Text style={styles.pendingPill}>Görüşme</Text> : null}
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.metaRight}>
-                    {item.last_message_at ? (
-                      <Text style={[styles.timeRight, unread && styles.timeRightUnread]}>
-                        {formatLastMessageListTime(String(item.last_message_at))}
-                      </Text>
-                    ) : null}
-                    {unread ? (
-                      unreadCount > 9 ? (
-                        <View style={styles.unreadBadge}>
-                          <Text style={styles.unreadBadgeTxt}>9+</Text>
-                        </View>
-                      ) : (
-                        <View style={styles.unreadBadge}>
-                          <Text style={styles.unreadBadgeTxt}>{unreadCount}</Text>
-                        </View>
-                      )
-                    ) : null}
-                  </View>
-                </View>
-                <Text style={styles.routeCompact} numberOfLines={1}>
-                  {formatRouteLine(item.from_text, item.to_text)}
-                </Text>
-                <Text style={[styles.previewSub, unread && styles.previewSubUnread]} numberOfLines={2}>
-                  {lastLine}
-                </Text>
-              </Pressable>
-            );
-          }}
+          renderItem={renderConversationItem}
         />
       )}
     </>
-  );
-
-  const hideModal = (
-    <Modal
-      visible={!!hideTarget}
-      transparent
-      animationType="fade"
-      onRequestClose={() => {
-        if (!hideBusy) setHideTarget(null);
-      }}
-    >
-      <View style={styles.modalRoot}>
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={() => (hideBusy ? null : setHideTarget(null))}
-        />
-        <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Sohbet</Text>
-          <Text style={styles.modalBody}>
-            Mesaj içerikleri sunucularımızda saklanmaz. Aşağıdaki seçenekler sohbeti yalnızca sizin listenizden kaldırır.
-          </Text>
-          <Pressable
-            onPress={() => (hideBusy ? null : void onHideFromListOnly())}
-            style={({ pressed }) => [styles.modalBtnPri, pressed && !hideBusy && { opacity: 0.9 }]}
-            disabled={hideBusy}
-          >
-            {hideBusy ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.modalBtnPriTxt}>Listemden gizle</Text>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => (hideBusy ? null : void onDeleteChatPressed())}
-            style={({ pressed }) => [styles.modalBtnDanger, pressed && !hideBusy && { opacity: 0.9 }]}
-            disabled={hideBusy}
-          >
-            <Text style={styles.modalBtnDangerTxt}>Sohbeti sil</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => (hideBusy ? null : void openProfileFromModal())}
-            style={({ pressed }) => [styles.modalBtnPri, { backgroundColor: '#0EA5E9', marginTop: 10 }, pressed && !hideBusy && { opacity: 0.9 }]}
-            disabled={hideBusy}
-          >
-            <Text style={styles.modalBtnPriTxt}>Profili görüntüle</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => (hideBusy ? null : setHideTarget(null))}
-            style={({ pressed }) => [styles.modalBtnSec, pressed && { opacity: 0.88 }]}
-            disabled={hideBusy}
-          >
-            <Text style={styles.modalBtnSecTxt}>Vazgeç</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
   );
 
   if (embedded) {
@@ -667,7 +719,6 @@ export default function ConversationsScreen({
         ) : (
           <View style={{ flex: 1, zIndex: 1 }}>{listBody}</View>
         )}
-        {hideModal}
       </View>
     );
   }
@@ -682,7 +733,6 @@ export default function ConversationsScreen({
       />
       <View style={{ flex: 1, zIndex: 1 }}>
         {listBody}
-        {hideModal}
       </View>
     </SafeAreaView>
   );
@@ -691,103 +741,179 @@ export default function ConversationsScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: SURFACE },
   embedRoot: { flex: 1, backgroundColor: SURFACE, position: 'relative' },
-  embedHeader: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  embedTitle: { fontSize: 22, fontWeight: '800', color: TEXT_PRIMARY },
-  embedSub: { marginTop: 6, fontSize: 14, color: TEXT_SECONDARY, lineHeight: 20 },
+  embedHeaderOuter: { paddingHorizontal: 14, paddingTop: 0, paddingBottom: 0 },
+  embedHeaderCard: {
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.2)',
+    ...CARD_SHADOW_SOFT,
+  },
+  embedBadgeGrad: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    marginBottom: 4,
+  },
+  embedBadgeTxt: { fontSize: 9, fontWeight: '900', color: '#1E3A8A', letterSpacing: 0.15 },
+  embedTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  embedTitleIconBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#2563EB', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 4 },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
+  embedTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    color: '#0F172A',
+  },
+  embedSub: { fontSize: 12, color: '#64748B', lineHeight: 16, fontWeight: '500' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   centeredPad: { flex: 1, justifyContent: 'center', padding: 24 },
-  list: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 36 },
+  list: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 36 },
   emptyList: { flexGrow: 1, padding: 18 },
   err: { color: '#C00', fontSize: 15, textAlign: 'center' },
   link: { marginTop: 12, color: ACCENT, fontWeight: '600', textAlign: 'center' },
-  card: {
-    backgroundColor: CARD_BG,
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+  cardSheet: {
     marginBottom: 14,
-    ...CARD_SHADOW,
+    borderRadius: 19,
+    overflow: 'hidden',
+    backgroundColor: '#FAFBFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E0E7FF',
+    ...CARD_SHADOW_PREMIUM,
   },
-  cardDriver: { borderLeftWidth: 4, borderLeftColor: '#2563EB', backgroundColor: '#F0F7FF' },
-  cardPax: { borderLeftWidth: 4, borderLeftColor: '#EA580C', backgroundColor: '#FFFAF0' },
-  cardRow1: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-  leftMain: { flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1, minWidth: 0 },
-  avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E5E7EB' },
-  avatarFallback: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center' },
-  avatarInitials: { color: '#1D4ED8', fontWeight: '800', fontSize: 14 },
-  name: { flex: 1, fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
-  badgesLine: { marginTop: 4, flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  rolePill: { fontSize: 10, fontWeight: '800', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
-  rolePillDriver: { color: '#1D4ED8', backgroundColor: 'rgba(37,99,235,0.14)' },
-  rolePillPax: { color: '#C2410C', backgroundColor: 'rgba(249,115,22,0.16)' },
-  matchedPill: { fontSize: 10, fontWeight: '800', color: '#15803D', backgroundColor: 'rgba(22,163,74,0.14)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
-  pendingPill: { fontSize: 10, fontWeight: '800', color: '#B45309', backgroundColor: 'rgba(245,158,11,0.18)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
-  timeRight: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '500', marginTop: 1 },
-  timeRightUnread: { color: '#1D4ED8', fontWeight: '700' },
-  metaRight: { alignItems: 'flex-end', justifyContent: 'flex-start', minWidth: 64 },
-  unreadBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
+  cardAccentBar: { height: 3, width: '100%', zIndex: 1 },
+  cardBody: { paddingVertical: 15, paddingHorizontal: 16, zIndex: 1 },
+  cardRowMain: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  cardTextCol: { flex: 1, minWidth: 0 },
+  nameTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  timeCol: { alignItems: 'flex-end', gap: 5 },
+  timeColPulseInner: { alignItems: 'flex-end', gap: 5 },
+  timeUnreadRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  unreadDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     backgroundColor: '#2563EB',
-    marginTop: 6,
+  },
+  avatarRing: {
+    borderRadius: 999,
+    padding: 3,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#BFDBFE',
+    ...Platform.select({
+      ios: { shadowColor: '#3B82F6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 8 },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#E5E7EB' },
+  avatarFallback: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitials: { color: '#1E40AF', fontWeight: '800', fontSize: 15 },
+  name: { flex: 1, fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
+  badgesLine: { marginTop: 10, flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  rolePill: { fontSize: 11, fontWeight: '800', borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10, overflow: 'hidden' },
+  rolePillDriver: { color: '#1E40AF', backgroundColor: 'rgba(59,130,246,0.16)' },
+  rolePillPax: { color: '#C2410C', backgroundColor: 'rgba(251,146,60,0.18)' },
+  matchedPill: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
+    backgroundColor: 'rgba(34,197,94,0.18)',
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
+  },
+  pendingPill: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C2410C',
+    backgroundColor: 'rgba(251,191,36,0.22)',
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
+  },
+  timeRight: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '500', textAlign: 'right' },
+  timeRightUnread: { color: '#1D4ED8', fontWeight: '700' },
+  unreadBadge: {
+    minWidth: 21,
+    height: 21,
+    borderRadius: 11,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
   },
   unreadBadgeTxt: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  routeCompact: { marginTop: 6, color: TEXT_SECONDARY, fontSize: 12, fontWeight: '500' },
-  previewSub: { marginTop: 6, color: '#4B5563', fontSize: 14, lineHeight: 20, fontWeight: '500' },
-  previewSubUnread: { color: '#0F172A', fontWeight: '800' },
-  emptyBox: { alignItems: 'center', paddingVertical: 48 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: TEXT_PRIMARY },
-  emptySub: { marginTop: 8, textAlign: 'center', color: TEXT_SECONDARY, fontSize: 15, lineHeight: 22, paddingHorizontal: 12 },
-  modalRoot: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+  routeCompact: {
+    marginTop: 8,
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
   },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 20,
-    zIndex: 2,
+  previewSub: { marginTop: 6, color: '#334155', fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  previewSubUnread: { color: '#1E293B', fontWeight: '700' },
+  emptyOuter: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 36, minHeight: 280 },
+  emptyCard: {
     width: '100%',
     maxWidth: 400,
-    alignSelf: 'center',
-  },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
-  modalBody: { marginTop: 10, fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22 },
-  modalBtnPri: {
-    marginTop: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: PRIMARY_GRAD[0],
+    borderRadius: 22,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalBtnPriTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  modalBtnDanger: {
-    marginTop: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: 'rgba(220,38,38,0.12)',
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(220,38,38,0.45)',
+    borderColor: 'rgba(148,163,184,0.25)',
+    ...CARD_SHADOW_SOFT,
+  },
+  emptyIconWrap: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(37,99,235,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(249,115,22,0.18)',
   },
-  modalBtnDangerTxt: { fontSize: 16, fontWeight: '700', color: '#B91C1C' },
-  modalBtnSec: {
-    marginTop: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(60,60,67,0.1)',
-    alignItems: 'center',
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY, letterSpacing: -0.3 },
+  emptySub: {
+    marginTop: 10,
+    textAlign: 'center',
+    color: TEXT_SECONDARY,
+    fontSize: 15,
+    lineHeight: 22,
+    paddingHorizontal: 8,
+    fontWeight: '500',
   },
-  modalBtnSecTxt: { fontSize: 16, fontWeight: '600', color: '#374151' },
 });

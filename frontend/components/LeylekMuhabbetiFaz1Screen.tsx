@@ -1279,19 +1279,21 @@ export default function LeylekMuhabbetiFaz1Screen({
         />
       ) : null}
 
-      <TouchableOpacity
-        style={[styles.cityChipGlass, muhabbetSurface !== 'legacy' && styles.cityChipOverlap]}
-        onPress={() => setShowCityModal(true)}
-        activeOpacity={0.9}
-      >
-        <BlurView intensity={Platform.OS === 'ios' ? 55 : 28} tint="light" style={styles.cityChipGlassBlur}>
-          <View style={styles.cityChipGlassInner}>
-            <Ionicons name={theme.icon} size={20} color={ACCENT} />
-            <Text style={styles.cityChipGlassText}>{selectedCity}</Text>
-            <Ionicons name="chevron-down" size={20} color={TEXT_SECONDARY} />
-          </View>
-        </BlurView>
-      </TouchableOpacity>
+      {(muhabbetSurface === 'legacy' || mainTab !== 'chats') ? (
+        <TouchableOpacity
+          style={[styles.cityChipGlass, muhabbetSurface !== 'legacy' && styles.cityChipOverlap]}
+          onPress={() => setShowCityModal(true)}
+          activeOpacity={0.9}
+        >
+          <BlurView intensity={Platform.OS === 'ios' ? 55 : 28} tint="light" style={styles.cityChipGlassBlur}>
+            <View style={styles.cityChipGlassInner}>
+              <Ionicons name={theme.icon} size={20} color={ACCENT} />
+              <Text style={styles.cityChipGlassText}>{selectedCity}</Text>
+              <Ionicons name="chevron-down" size={20} color={TEXT_SECONDARY} />
+            </View>
+          </BlurView>
+        </TouchableOpacity>
+      ) : null}
 
       {muhabbetSurface === 'legacy' ? (
         <ScrollView
@@ -1531,10 +1533,10 @@ export default function LeylekMuhabbetiFaz1Screen({
             ]}
           >
             <LinearGradient
-              colors={['#FF8A00', '#FF6B42', '#FF5E62']}
-              locations={[0, 0.52, 1]}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
+              colors={['#E0F2FE', '#DBEAFE', '#BFDBFE']}
+              locations={[0, 0.5, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.muhabbetTabBarOrangeGrad}
               pointerEvents="none"
             />
@@ -1901,7 +1903,7 @@ const styles = StyleSheet.create({
   muhabbetTabBarLightWash: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 252, 248, 0.88)',
+    backgroundColor: 'rgba(255, 255, 255, 0.42)',
   },
   muhabbetTabBarInner: {
     flexDirection: 'row',

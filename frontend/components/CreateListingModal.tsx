@@ -324,6 +324,10 @@ export default function CreateListingModal({
           passenger_preferred_vehicle?: string;
         };
         if (cancelled) return;
+        if (listingScope === 'intercity') {
+          setOfferVehicleKind('car');
+          return;
+        }
         const pick =
           createRole === 'driver'
             ? d.vehicle_kind === 'motorcycle'
@@ -340,7 +344,13 @@ export default function CreateListingModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, createRole, base]);
+  }, [visible, createRole, base, listingScope]);
+
+  useEffect(() => {
+    if (listingScope === 'intercity') {
+      setOfferVehicleKind('car');
+    }
+  }, [listingScope]);
 
   useEffect(() => {
     if (!visible) return;
@@ -729,7 +739,7 @@ export default function CreateListingModal({
         note: composedNote,
         departure_time,
         price_amount: finalPriceInt,
-        vehicle_kind: offerVehicleKind,
+        vehicle_kind: listingScope === 'intercity' ? 'car' : offerVehicleKind,
       };
       if (createRole === 'driver') {
         const sc = parseInt(seatsText.replace(/\D/g, ''), 10);
@@ -887,7 +897,7 @@ export default function CreateListingModal({
               })}
             </View>
 
-            <Text style={styles.sectionEyebrow}>{isIntercity ? 'Şehirler arası rota' : 'Şehir'}</Text>
+            <Text style={styles.sectionEyebrow}>{isIntercity ? 'Şehir dışı rota' : 'Şehir'}</Text>
             {isIntercity ? (
               <View style={styles.card}>
                 <Text style={styles.scopeHint}>Nereden ve nereye gideceğini iki şehirle belirle; adres seçici her şehir için ayrı açılır.</Text>
@@ -912,7 +922,7 @@ export default function CreateListingModal({
               </View>
             )}
 
-            {createRole === 'driver' ? (
+            {createRole === 'driver' && listingScope === 'local' ? (
               <>
                 <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Araç türü</Text>
                 <View style={styles.roleRow}>

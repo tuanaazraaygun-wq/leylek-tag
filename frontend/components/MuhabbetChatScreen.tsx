@@ -1,6 +1,6 @@
 /**
- * Muhabbet 1:1 sohbet — mesaj içeriği sunucuda tutulmaz; yalnızca Socket.IO ile odaya yayın.
- * REST mesaj endpoint’leri devre dışı; bağlam (roller, eşleşme) GET ile alınır.
+ * Muhabbet 1:1 sohbet — mesaj metni sunucuda saklanır (REST POST); Socket.IO isteğe bağlı realtime için.
+ * Gönderim ana yolu: POST /muhabbet/conversations/{id}/messages (socket zorunlu değil).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -11,6 +11,7 @@ import {
   DeviceEventEmitter,
   Easing,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -285,11 +286,10 @@ export default function MuhabbetChatScreen({
 
   const [myId, setMyId] = useState<string>('');
   const myIdRef = useRef('');
-  const [loading, setLoading] = useState(true);
   /**
-   * loading: ilk okuma
-   * local: yerel liste gösterilir, API ile birleştirme sürer
-   * ready: birleştirme bitti; socket join açılır
+   * bootstrapPhase `loading`: ilk okuma
+   * `local`: yerel liste gösterilir, API ile birleştirme sürer
+   * `ready`: birleştirme bitti; socket join açılır
    */
   const [bootstrapPhase, setBootstrapPhase] = useState<'loading' | 'local' | 'ready'>('loading');
   const [rows, setRows] = useState<ChatMessageRow[]>([]);
@@ -298,7 +298,6 @@ export default function MuhabbetChatScreen({
   const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctx, setCtx] = useState<ChatContext | null>(null);
   const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
   const [pairRequestLoading, setPairRequestLoading] = useState(false);
   const [systemCards, setSystemCards] = useState<ChatSystemCard[]>([]);
   /** Karşı taraftan gelen Leylek Anahtar eşleşme isteği (modal) */
@@ -324,8 +323,6 @@ export default function MuhabbetChatScreen({
   const roomJoinedRef = useRef(false);
   /** Ekran mount / unmount: açıkken message_seen gönder */
   const chatSessionActiveRef = useRef(true);
-  /** message_id -> 8 sn ack bekleme (timeout iptali onAck’te) */
-  const ackTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
   const readinessInFlightRef = useRef(false);
 
@@ -336,24 +333,11 @@ export default function MuhabbetChatScreen({
     !!pendingPairRequestId &&
     pendingPairDirection === 'outgoing';
   const tripLockActive = !!tripLockReason || tripConvertState === 'pending' || tripConvertState === 'confirmed';
-  const tripLockLogReason =
-    tripLockReason ||
-    (tripConvertState === 'pending'
-      ? 'muhabbet_trip_convert_request pending'
-      : tripConvertState === 'confirmed'
-        ? 'muhabbet_trip_convert_confirmed'
-        : null);
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
   const pushSystemCard = useCallback((tone: ChatSystemCard['tone'], text: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setSystemCards((prev) => [...prev, { id, tone, text }].slice(-8));
-  }, []);
-
-  const clearAckWait = useCallback((messageId: string) => {
-    const t = ackTimeoutsRef.current.get(messageId);
-    if (t) clearTimeout(t);
-    ackTimeoutsRef.current.delete(messageId);
   }, []);
 
   const sendMessageViaRest = useCallback(
@@ -385,13 +369,11 @@ export default function MuhabbetChatScreen({
           detail?: string;
         };
         if (!res.ok || !data.success) {
-          console.log('[chat-send] rest fallback failed', { status: res.status, detail: data.detail });
           setRows((prev) => markMessageFailedById(prev, mid));
           return false;
         }
         const serverMessage = data.message || {};
         const serverId = normalizeMuhabbetMessageId(serverMessage.id || mid) || mid;
-        clearAckWait(mid);
         if (pendingActionRef.current?.kind === 'send_message' && pendingActionRef.current.messageId === mid) {
           pendingActionRef.current = null;
         }
@@ -417,37 +399,74 @@ export default function MuhabbetChatScreen({
           created_at: serverMessage.created_at || new Date().toISOString(),
         });
         return true;
-      } catch (e) {
-        console.log('[chat-send] rest fallback exception', e);
+      } catch {
         setRows((prev) => markMessageFailedById(prev, mid));
         return false;
       }
     },
-    [base, cid, clearAckWait]
+    [base, cid]
   );
 
-  const scheduleAckTimeout = useCallback(
-    (messageId: string, body?: string) => {
-      clearAckWait(messageId);
-      const tmo = setTimeout(() => {
-        ackTimeoutsRef.current.delete(messageId);
-        if (body && body.trim()) {
-          void sendMessageViaRest(messageId, body);
-        } else {
-          setRows((prev) =>
-            prev.map((m) =>
-              rowIdLo(m) === rowIdLo({ id: messageId }) && m.out_status === 'sending'
-                ? { ...m, out_status: 'failed' as const }
-                : m
-            )
-          );
+  /** GET mesajlar + yerel birleştirme (periyodik çekim ve ilk yükleme sonrası sync). */
+  const pullMessagesFromApi = useCallback(async (): Promise<boolean> => {
+    if (!cid) return false;
+    try {
+      const token = (await getPersistedAccessToken())?.trim();
+      if (!token) {
+        setCtx(null);
+        return false;
+      }
+      let myLo = (myIdRef.current || '').trim().toLowerCase();
+      if (!myLo) {
+        try {
+          const raw = await getPersistedUserRaw();
+          if (raw) {
+            const u = JSON.parse(raw) as { id?: string };
+            if (u?.id) myLo = String(u.id).trim().toLowerCase();
+          }
+        } catch {
+          /* noop */
         }
-        console.log('[chat] ack timeout message_id=', messageId);
-      }, 8000);
-      ackTimeoutsRef.current.set(messageId, tmo);
-    },
-    [clearAckWait, sendMessageViaRest]
-  );
+      }
+      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages?limit=200`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (handleUnauthorizedAndMaybeRedirect(res)) {
+        setRows([]);
+        setCtx(null);
+        return false;
+      }
+      const d = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        context?: ChatContext;
+        messages?: { id?: string; body?: string; sender_user_id?: string; created_at?: string }[];
+      };
+      if (res.ok && d.success) {
+        const latestLocal = await loadMuhabbetMessagesLocal(cid);
+        const serverStored = storedMessagesFromConversationApi(cid, d.messages || []);
+        const merged = mergeMuhabbetLocalWithServer(latestLocal, serverStored, myLo);
+        await saveMuhabbetMessagesLocal(cid, merged);
+        const displayRows: ChatMessageRow[] = sortRowsByCreatedAtAsc(
+          storedMessagesToDisplayRows(merged).map((m) => ({
+            id: normalizeMuhabbetMessageId(m.id),
+            body: m.body,
+            sender_user_id: m.sender_user_id,
+            created_at: coerceMessageCreatedAt(m.created_at),
+            out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
+            sender_role: m.sender_role,
+          }))
+        );
+        setRows(displayRows);
+        setCtx(d.context || null);
+        return true;
+      }
+      setCtx(null);
+      return false;
+    } catch {
+      setCtx(null);
+      return false;
+    }
+  }, [base, cid]);
 
   const waitForMuhabbetJoin = useCallback(
     (socket: Socket, timeoutMs: number): Promise<'joined' | 'not_registered' | 'forbidden' | 'timeout'> => {
@@ -467,7 +486,6 @@ export default function MuhabbetChatScreen({
           if (!conv || conv !== cid.toLowerCase()) return;
           roomJoinedRef.current = true;
           setRoomJoined(true);
-          console.log(`[muhabbet-chat] readiness join ok conversation_id=${cid}`);
           finish('joined');
         };
         const onErr = (p: { code?: string; conversation_id?: string }) => {
@@ -478,7 +496,6 @@ export default function MuhabbetChatScreen({
         };
         socket.on('joined_muhabbet', onJoined);
         socket.on('muhabbet_error', onErr);
-        console.log('[chat] join emitted', cid);
         socket.emit('join_muhabbet_conversation', { conversation_id: cid });
       });
     },
@@ -488,8 +505,6 @@ export default function MuhabbetChatScreen({
   const ensureMuhabbetSocketReady = useCallback(async (): Promise<boolean> => {
     if (!cid) return false;
     const socket = getOrCreateSocket();
-    console.log(`[muhabbet-chat] readiness start sid=${socket.id || 'null'}`);
-    console.log('[muhabbet-chat] readiness registered sid=', getLastRegisteredSocketSid());
     notifyAuthTokenBecameAvailableForSocket();
     if (!socket.connected) {
       try {
@@ -515,30 +530,17 @@ export default function MuhabbetChatScreen({
     const currentSid = socket.id || null;
     const lastRegisteredSid = getLastRegisteredSocketSid();
     if (currentSid && lastRegisteredSid && currentSid !== lastRegisteredSid) {
-      console.log('[muhabbet-chat] current sid differs from last registered sid', {
-        currentSid,
-        lastRegisteredSid,
-      });
       notifyAuthTokenBecameAvailableForSocket();
     }
     readinessInFlightRef.current = true;
     try {
-      console.log('[muhabbet-chat] join-first readiness');
       let joinStatus = await waitForMuhabbetJoin(socket, 5000);
       if (joinStatus === 'joined') return true;
       if (joinStatus === 'forbidden') return false;
 
       notifyAuthTokenBecameAvailableForSocket();
-      const regOk = await waitForNextRegisterSuccess(socket, 16000);
-      if (regOk) {
-        console.log('[muhabbet-chat] readiness registered ok');
-      } else {
-        console.log('[muhabbet-chat] readiness registered timeout; retrying join once');
-      }
+      await waitForNextRegisterSuccess(socket, 16000);
       joinStatus = await waitForMuhabbetJoin(socket, 7000);
-      if (joinStatus !== 'joined') {
-        console.log('[muhabbet-chat] readiness join retry failed status=', joinStatus);
-      }
       return joinStatus === 'joined';
     } finally {
       readinessInFlightRef.current = false;
@@ -549,17 +551,16 @@ export default function MuhabbetChatScreen({
     const pending = pendingActionRef.current;
     if (!pending) return false;
     if (pending.retryCount >= 1) return false;
-    console.log(`[muhabbet-chat] retry after not_registered action=${pending.kind}`);
+    if (pending.kind === 'send_message') {
+      pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
+      await sendMessageViaRest(pending.messageId, pending.body);
+      return true;
+    }
     const ready = await ensureMuhabbetSocketReady();
     if (!ready) return false;
     const socket = getOrCreateSocket();
     if (!socket.connected) return false;
     pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
-    if (pending.kind === 'send_message') {
-      scheduleAckTimeout(pending.messageId, pending.body);
-      socket.emit('muhabbet_send', { conversation_id: cid, text: pending.body, message_id: pending.messageId });
-      return true;
-    }
     if (pending.kind === 'trip_convert_request') {
       socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
       return true;
@@ -573,7 +574,7 @@ export default function MuhabbetChatScreen({
       return true;
     }
     return false;
-  }, [cid, ensureMuhabbetSocketReady, scheduleAckTimeout]);
+  }, [cid, ensureMuhabbetSocketReady, sendMessageViaRest]);
 
   const retryPendingActionAfterReconnect = useCallback(
     (messageId?: string) => {
@@ -608,20 +609,11 @@ export default function MuhabbetChatScreen({
     tripConvertStateRef.current = tripConvertState;
   }, [tripConvertState]);
 
-  useEffect(() => {
-    if (tripLockActive) {
-      console.log(`[muhabbet-chat] tripLockActive=true reason=${tripLockLogReason || 'unknown'}`);
-    } else if (ctx?.matched_via_leylek_key) {
-      console.log('[muhabbet-chat] tripLockActive=false keyMatchOnly');
-    }
-  }, [ctx?.matched_via_leylek_key, tripLockActive, tripLockLogReason]);
-
   const navigateToLeylekTripSession = useCallback((payload?: MuhabbetTripSessionSocketPayload | null) => {
     const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '').trim().toLowerCase();
     if (!sessionId || tripSessionNavRef.current === sessionId) return;
     setTripLockReason('route /leylek-trip/[sessionId] is about to open');
-    console.log('[muhabbet-trip] navigating', payload);
-    tripSessionNavRef.current = sessionId;
+        tripSessionNavRef.current = sessionId;
     router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
   }, [router]);
 
@@ -687,10 +679,8 @@ export default function MuhabbetChatScreen({
   const loadContext = useCallback(async () => {
     if (!cid) {
       setBootstrapPhase('ready');
-      setLoading(false);
       return;
     }
-    setLoading(true);
     setBootstrapPhase('loading');
     let localItems = await loadMuhabbetMessagesLocal(cid);
     try {
@@ -704,7 +694,6 @@ export default function MuhabbetChatScreen({
           sender_role: m.sender_role,
         }))
       );
-      console.log('[chat] local load conversation=', cid, 'count=', mapped.length);
       setRows(mapped);
     } catch {
       localItems = [];
@@ -713,72 +702,30 @@ export default function MuhabbetChatScreen({
     setBootstrapPhase('local');
 
     try {
-      const token = (await getPersistedAccessToken())?.trim();
-      if (!token) {
-        setCtx(null);
-        return;
-      }
-      let myLo = (myIdRef.current || '').trim().toLowerCase();
-      if (!myLo) {
-        try {
-          const raw = await getPersistedUserRaw();
-          if (raw) {
-            const u = JSON.parse(raw) as { id?: string };
-            if (u?.id) myLo = String(u.id).trim().toLowerCase();
-          }
-        } catch {
-          /* noop */
-        }
-      }
-      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages?limit=200`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setRows([]);
-        setCtx(null);
-        return;
-      }
-      const d = (await res.json().catch(() => ({}))) as {
-        success?: boolean;
-        context?: ChatContext;
-        messages?: Array<{ id?: string; body?: string; sender_user_id?: string; created_at?: string }>;
-      };
-      if (res.ok && d.success) {
-        const latestLocal = await loadMuhabbetMessagesLocal(cid);
-        const serverStored = storedMessagesFromConversationApi(cid, d.messages || []);
-        const merged = mergeMuhabbetLocalWithServer(latestLocal, serverStored, myLo);
-        await saveMuhabbetMessagesLocal(cid, merged);
-        const displayRows: ChatMessageRow[] = sortRowsByCreatedAtAsc(
-          storedMessagesToDisplayRows(merged).map((m) => ({
-            id: normalizeMuhabbetMessageId(m.id),
-            body: m.body,
-            sender_user_id: m.sender_user_id,
-            created_at: coerceMessageCreatedAt(m.created_at),
-            out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
-            sender_role: m.sender_role,
-          }))
-        );
-        console.log('[chat] merged server messages conversation=', cid, 'count=', (d.messages || []).length);
-        setRows(displayRows);
-        setCtx(d.context || null);
-      } else {
-        setCtx(null);
-      }
+      await pullMessagesFromApi();
     } catch {
       setCtx(null);
     } finally {
       setBootstrapPhase('ready');
-      setLoading(false);
     }
-  }, [base, cid]);
+  }, [cid, pullMessagesFromApi]);
+
+  const fetchMessages = useCallback(async () => {
+    if (!cid) return;
+    await pullMessagesFromApi();
+  }, [cid, pullMessagesFromApi]);
 
   useEffect(() => {
     void loadContext();
   }, [loadContext]);
 
   useEffect(() => {
-    if (cid) console.log('[chat] route conversation_id=', cid);
-  }, [cid]);
+    if (!cid || bootstrapPhase !== 'ready') return;
+    const pollId = setInterval(() => {
+      void fetchMessages();
+    }, 12000);
+    return () => clearInterval(pollId);
+  }, [cid, bootstrapPhase, fetchMessages]);
 
   useEffect(() => {
     if (!cid) return;
@@ -803,8 +750,7 @@ export default function MuhabbetChatScreen({
     if (!cid) return;
     const s = getOrCreateSocket();
     const onMatch = (data: { conversation_id?: string }) => {
-      console.log('LEYLEK KEY EVENT:', 'leylek_key_match_completed', data);
-      const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
+            const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
       if (m && m === cid.toLowerCase()) {
         pushSystemCard('green', 'Leylek Anahtar ile eşleşme tamamlandı.');
         void loadContext();
@@ -827,8 +773,7 @@ export default function MuhabbetChatScreen({
       return !!conv && conv === cidLo;
     };
     const onConvertRequest = (data: { conversation_id?: string; request_id?: string }) => {
-      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_request', data);
-      if (!convMatches(data)) return;
+            if (!convMatches(data)) return;
       const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
       if (!rid) return;
       const myRole = String(ctxRef.current?.my_role || '').trim().toLowerCase();
@@ -838,16 +783,14 @@ export default function MuhabbetChatScreen({
       setTripConvertInModal({ rid });
     };
     const onConvertSent = (data: { conversation_id?: string }) => {
-      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_request_sent', data);
-      if (!convMatches(data)) return;
+            if (!convMatches(data)) return;
       if (pendingActionRef.current?.kind === 'trip_convert_request') pendingActionRef.current = null;
       setTripConvertLoading(false);
       setTripConvertState('pending');
       setTripLockReason('muhabbet_trip_convert_request_sent');
     };
     const onConvertConfirmed = (data: MuhabbetTripSessionSocketPayload) => {
-      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_confirmed', data);
-      if (!convMatches(data)) return;
+            if (!convMatches(data)) return;
       if (
         pendingActionRef.current?.kind === 'trip_convert_request' ||
         pendingActionRef.current?.kind === 'trip_convert_accept'
@@ -864,9 +807,7 @@ export default function MuhabbetChatScreen({
       navigateToLeylekTripSession(data);
     };
     const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
-      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_session_ready', data);
-      console.log('LEYLEK SESSION READY:', data?.session_id || data?.sessionId || data?.session?.id);
-      if (!convMatches(data)) return;
+                  if (!convMatches(data)) return;
       if (
         pendingActionRef.current?.kind === 'trip_convert_request' ||
         pendingActionRef.current?.kind === 'trip_convert_accept'
@@ -878,8 +819,7 @@ export default function MuhabbetChatScreen({
       navigateToLeylekTripSession(data);
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
-      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_declined', data);
-      if (!convMatches(data)) return;
+            if (!convMatches(data)) return;
       if (
         pendingActionRef.current?.kind === 'trip_convert_request' ||
         pendingActionRef.current?.kind === 'trip_convert_decline'
@@ -893,8 +833,7 @@ export default function MuhabbetChatScreen({
       Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
     };
     const onConvertError = (data: { code?: string; detail?: string; message?: string }) => {
-      console.log('LEYLEK KEY EVENT:', 'muhabbet_trip_convert_error', data);
-      if (data?.code === 'not_registered') {
+            if (data?.code === 'not_registered') {
         void (async () => {
           const retried = await retryPendingActionAfterNotRegistered();
           if (retried) return;
@@ -944,9 +883,7 @@ export default function MuhabbetChatScreen({
       from_user_id?: string;
       initiator_user_id?: string;
     }) => {
-      console.log('LEYLEK KEY EVENT:', 'leylek_pair_match_request', data);
-      console.log('[chat] received leylek_pair_match_request data=', data);
-      const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
+                  const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
       if (conv !== cidLo) return;
       const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
       if (!rid) return;
@@ -997,7 +934,6 @@ export default function MuhabbetChatScreen({
     const emitJoin = () => {
       if (cancelled || !socket.connected) return;
       notifyAuthTokenBecameAvailableForSocket();
-      console.log('[chat] join emitted', cid);
       socket.emit('join_muhabbet_conversation', { conversation_id: cid });
     };
 
@@ -1025,18 +961,12 @@ export default function MuhabbetChatScreen({
         });
       }
       if (cancelled) return;
-      if (socket.connected) {
-        console.log('[chat] socket connected');
-        console.log('[chat] current socket id =', socket.id);
-      }
       const regOk = await waitForNextRegisterSuccess(socket, 15000);
       if (cancelled) return;
       if (!regOk) {
         console.warn('[chat] register ack timeout — join atlanıyor; tekrar denenecek');
         return;
       }
-      console.log('[chat] registered');
-      console.log('[chat] current socket id =', socket.id);
       emitJoin();
       setTimeout(() => {
         if (!cancelled && socket.connected) emitJoin();
@@ -1048,7 +978,6 @@ export default function MuhabbetChatScreen({
       if (c !== cidLo) return;
       roomJoinedRef.current = true;
       setRoomJoined(true);
-      console.log('[chat] joined room', c);
     };
 
     const onMsg = (msg: {
@@ -1067,7 +996,6 @@ export default function MuhabbetChatScreen({
       }
       const id = normalizeMuhabbetMessageId(msg?.message_id);
       if (!id) return;
-      console.log('[chat] socket message received id=', id);
       const senderLo = String(msg?.sender_id || '')
         .trim()
         .toLowerCase();
@@ -1081,8 +1009,7 @@ export default function MuhabbetChatScreen({
 
       setRows((prev) => {
         if (prev.some((m) => rowIdLo(m) === id)) {
-          console.log('[chat] dedupe skip id=', id);
-          return prev;
+                    return prev;
         }
         return sortRowsByCreatedAtAsc([
           ...prev,
@@ -1129,12 +1056,9 @@ export default function MuhabbetChatScreen({
       if (!mid) return;
       const st = String(p?.status || 'sent').toLowerCase();
       if (st !== 'sent' && p?.status != null) return;
-      clearAckWait(mid);
       if (pendingActionRef.current?.kind === 'send_message' && pendingActionRef.current.messageId === mid) {
         pendingActionRef.current = null;
       }
-      console.log('[chat] current socket id =', socket.id);
-      console.log('[chat] received ack message_id=', mid, p);
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       setRows((prev) =>
         prev.map((m) => {
@@ -1184,9 +1108,8 @@ export default function MuhabbetChatScreen({
       setRows((prev) => prev.filter((m) => rowIdLo(m) !== mid));
     };
 
-    const refreshChatSocketSession = (reason: string) => {
+    const refreshChatSocketSession = (_reason: string) => {
       if (cancelled) return;
-      console.log('[chat] socket session refresh', reason);
       roomJoinedRef.current = false;
       setRoomJoined(false);
       void runRegisterAndJoin();
@@ -1200,15 +1123,6 @@ export default function MuhabbetChatScreen({
     socket.on('message_seen', onSeenEvt);
     socket.on('message_deleted', onDel);
 
-    let onAnyDbg: ((event: string, ...args: unknown[]) => void) | null = null;
-    if (__DEV__) {
-      onAnyDbg = (event: string, ...args: unknown[]) => {
-        if (event === 'heartbeat' || event === 'pong_keepalive') return;
-        console.log('[socket event]', event, args[0]);
-      };
-      (socket as unknown as { onAny: (cb: (event: string, ...args: unknown[]) => void) => void }).onAny(onAnyDbg);
-    }
-
     void runRegisterAndJoin();
 
     return () => {
@@ -1221,8 +1135,6 @@ export default function MuhabbetChatScreen({
         persistDebounceRef.current = null;
       }
       void persistMuhabbetChatRowsLocal(cid, rowsRef.current);
-      ackTimeoutsRef.current.forEach((t) => clearTimeout(t));
-      ackTimeoutsRef.current.clear();
       unsubSessionRefresh();
       try {
         socket.emit('leave_muhabbet_conversation', { conversation_id: cid });
@@ -1235,13 +1147,8 @@ export default function MuhabbetChatScreen({
       socket.off('message_delivered', onDelivered);
       socket.off('message_seen', onSeenEvt);
       socket.off('message_deleted', onDel);
-      if (onAnyDbg) {
-        (socket as unknown as { offAny?: (cb: (event: string, ...args: unknown[]) => void) => void }).offAny?.(
-          onAnyDbg
-        );
-      }
     };
-  }, [cid, clearAckWait, bootstrapPhase]);
+  }, [cid, bootstrapPhase]);
 
   useEffect(() => {
     if (!cid || bootstrapPhase === 'loading') return;
@@ -1279,7 +1186,6 @@ export default function MuhabbetChatScreen({
       const roleFor = (isMine ? myR : oR) || null;
       setRows((prev) => {
         if (prev.some((m) => rowIdLo(m) === id)) {
-          console.log('[chat] dedupe skip id=', id);
           return prev;
         }
         return sortRowsByCreatedAtAsc([
@@ -1305,6 +1211,7 @@ export default function MuhabbetChatScreen({
     const sub = AppState.addEventListener('change', (next) => {
       if (next !== 'active') return;
       publishSocketSessionRefresh('app_active');
+      void fetchMessages();
       void (async () => {
         try {
           const localItems = await loadMuhabbetMessagesLocal(cidNorm);
@@ -1325,7 +1232,7 @@ export default function MuhabbetChatScreen({
       })();
     });
     return () => sub.remove();
-  }, [cid, bootstrapPhase]);
+  }, [cid, bootstrapPhase, fetchMessages]);
 
   useEffect(() => {
     if (!cid) return;
@@ -1352,8 +1259,7 @@ export default function MuhabbetChatScreen({
       const det = typeof p?.detail === 'string' ? p.detail : '';
       const msg = typeof p?.message === 'string' ? p.message : '';
       const errMid = normalizeMuhabbetMessageId(p?.message_id);
-      console.log('[chat] muhabbet_error', p);
-      if (p?.code === 'text_too_long') {
+            if (p?.code === 'text_too_long') {
         Alert.alert('Mesaj çok uzun', det || `En fazla ${p?.max ?? 2000} karakter.`);
         return;
       }
@@ -1444,88 +1350,45 @@ export default function MuhabbetChatScreen({
 
   const resendMessage = useCallback(
     async (row: ChatMessageRow) => {
-      console.log('[chat-send] pressed');
       const body = (row.body || '').trim();
       const messageId = row.id;
-      if (!body) {
-        console.log('[chat-send] blocked reason=empty_body');
-        return;
-      }
-      if (!cid) {
-        console.log('[chat-send] blocked reason=missing_conversation_id');
-        return;
-      }
-      if (!messageId) {
-        console.log('[chat-send] blocked reason=missing_message_id');
-        return;
-      }
-      const socket = getOrCreateSocket();
-      console.log('[chat-send] socket_exists=', Boolean(socket));
-      console.log('[chat-send] socket_connected=', socket.connected);
-      console.log('[chat-send] socket_id=', socket.id || null);
-      console.log('[chat-send] last_registered_sid=', getLastRegisteredSocketSid());
-      console.log('[chat-send] roomJoined=', roomJoinedRef.current);
-      console.log('[chat-send] conversation_id=', cid);
-      console.log('[chat-send] message_id=', messageId);
+      if (!body || !cid || !messageId) return;
 
       setRows((prev) =>
         prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
       pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
-      console.log('[chat-send] before ensureMuhabbetSocketReady', {
-        sid: socket.id || null,
-        connected: socket.connected,
-        lastRegisteredSid: getLastRegisteredSocketSid(),
-      });
-      const ready = await ensureMuhabbetSocketReady();
-      console.log('[chat-send] after ensureMuhabbetSocketReady', { ready, sid: socket.id || null });
-      if (!ready) {
-        console.log('[chat-send] socket not ready; using rest fallback');
-        await sendMessageViaRest(messageId, body);
+      const ok = await sendMessageViaRest(messageId, body);
+      if (!ok) {
+        pendingActionRef.current = null;
         return;
       }
       try {
-        console.log('[chat-send] emit muhabbet_send');
-        scheduleAckTimeout(messageId, body);
-        socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+        const sock = getOrCreateSocket();
+        if (sock.connected) {
+          sock.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+        }
       } catch {
-        clearAckWait(messageId);
-        pendingActionRef.current = null;
-        await sendMessageViaRest(messageId, body);
+        /* noop — REST başarılı; socket opsiyonel */
       }
     },
-    [cid, clearAckWait, scheduleAckTimeout, ensureMuhabbetSocketReady, sendMessageViaRest]
+    [cid, sendMessageViaRest]
   );
 
   const send = async () => {
-    console.log('[chat-send] pressed');
     const body = draft.trim();
-    if (!body) {
-      console.log('[chat-send] blocked reason=empty_body');
-      return;
-    }
-    if (!cid) {
-      console.log('[chat-send] blocked reason=missing_conversation_id');
-      return;
-    }
-    const socket = getOrCreateSocket();
-    console.log('[chat-send] socket_exists=', Boolean(socket));
-    console.log('[chat-send] socket_connected=', socket.connected);
-    console.log('[chat-send] socket_id=', socket.id || null);
-    console.log('[chat-send] last_registered_sid=', getLastRegisteredSocketSid());
-    console.log('[chat-send] roomJoined=', roomJoinedRef.current);
-    console.log('[chat-send] conversation_id=', cid);
+    if (!body || !cid) return;
     const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
     if (!myLo) {
-      console.log('[chat-send] blocked reason=missing_user_id');
       Alert.alert('Sohbet', 'Kullanıcı bilgisi yüklenemedi.');
       return;
     }
     const messageId = normalizeMuhabbetMessageId(newClientMessageUuid());
     const roleMine = (ctx?.my_role || '').trim().toLowerCase();
     const createdIso = coerceMessageCreatedAt(undefined);
-    setRows((p) =>
-      sortRowsByCreatedAtAsc([
+    setRows((p) => {
+      if (p.some((m) => rowIdLo(m) === messageId)) return p;
+      return sortRowsByCreatedAtAsc([
         ...p,
         {
           id: messageId,
@@ -1535,36 +1398,23 @@ export default function MuhabbetChatScreen({
           out_status: 'sending',
           sender_role: roleMine || null,
         },
-      ])
-    );
+      ]);
+    });
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     setDraft('');
-    setSending(true);
-    console.log('[chat-send] message_id=', messageId);
     pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
-    console.log('[chat-send] before ensureMuhabbetSocketReady', {
-      sid: socket.id || null,
-      connected: socket.connected,
-      lastRegisteredSid: getLastRegisteredSocketSid(),
-    });
-    const ready = await ensureMuhabbetSocketReady();
-    console.log('[chat-send] after ensureMuhabbetSocketReady', { ready, sid: socket.id || null });
-    if (!ready) {
-      console.log('[chat-send] socket not ready; using rest fallback');
-      setSending(false);
-      await sendMessageViaRest(messageId, body);
+    const ok = await sendMessageViaRest(messageId, body);
+    if (!ok) {
+      pendingActionRef.current = null;
       return;
     }
     try {
-      console.log('[chat-send] emit muhabbet_send');
-      scheduleAckTimeout(messageId, body);
-      socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+      const sock = getOrCreateSocket();
+      if (sock.connected) {
+        sock.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+      }
     } catch {
-      clearAckWait(messageId);
-      pendingActionRef.current = null;
-      await sendMessageViaRest(messageId, body);
-    } finally {
-      setSending(false);
+      /* noop */
     }
   };
 
@@ -1576,13 +1426,6 @@ export default function MuhabbetChatScreen({
 
   const sendLeylekPairRequest = useCallback(async () => {
     const socket = getOrCreateSocket();
-    console.log("[leylek-pair] pressed", {
-      cid,
-      busyRef: pairRequestBusyRef.current,
-      pairRequestLoading,
-      socketConnected: socket?.connected,
-      socketId: socket?.id,
-    });
     if (!cid) return;
     if (pairRequestBusyRef.current) {
       if (pairRequestLoading) return;
@@ -1686,15 +1529,8 @@ export default function MuhabbetChatScreen({
           /* noop */
         }
       }
-      console.log('[chat] send leylek pair request conversation=', cid);
       const payload = { conversation_id: cid };
-      console.log("[leylek-pair] emit payload", payload);
       const emitSocket = getOrCreateSocket();
-      console.log("[leylek-pair] socket final", {
-        connected: emitSocket.connected,
-        disconnected: emitSocket.disconnected,
-        id: emitSocket.id,
-      });
       if (!emitSocket.connected) {
         finish();
         Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
@@ -1769,15 +1605,7 @@ export default function MuhabbetChatScreen({
     if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
     setTripConvertLoading(true);
     pendingActionRef.current = { kind: 'trip_convert_request', retryCount: 0 };
-    const beforeSocket = getOrCreateSocket();
-    console.log('[muhabbet-trip-convert] before ensure', {
-      sid: beforeSocket.id || null,
-      connected: beforeSocket.connected,
-      lastRegisteredSid: getLastRegisteredSocketSid(),
-      conversation_id: cid,
-    });
     const ready = await ensureMuhabbetSocketReady();
-    console.log('[muhabbet-trip-convert] after ensure', { ready, sid: beforeSocket.id || null });
     if (!ready) {
       setTripConvertLoading(false);
       retryPendingActionAfterReconnect();
@@ -2165,11 +1993,11 @@ export default function MuhabbetChatScreen({
               />
               <Pressable
                 onPress={() => void send()}
-                disabled={sending || !draft.trim()}
+                disabled={!draft.trim()}
                 style={({ pressed }) => [
                   styles.sendBtnWrap,
-                  (!draft.trim() || sending) && { opacity: 0.4 },
-                  pressed && draft.trim() && !sending && { opacity: 0.9, transform: [{ scale: 0.96 }] },
+                  !draft.trim() && { opacity: 0.4 },
+                  pressed && draft.trim() && { opacity: 0.9, transform: [{ scale: 0.96 }] },
                 ]}
               >
                 <LinearGradient
@@ -2178,11 +2006,7 @@ export default function MuhabbetChatScreen({
                   end={{ x: 1, y: 1 }}
                   style={styles.sendBtnGrad}
                 >
-                  {sending ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Ionicons name="arrow-up" size={22} color="#fff" />
-                  )}
+                  <Ionicons name="arrow-up" size={22} color="#fff" />
                 </LinearGradient>
               </Pressable>
             </View>

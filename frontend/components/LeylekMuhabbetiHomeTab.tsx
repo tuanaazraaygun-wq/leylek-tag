@@ -18,7 +18,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import MuhabbetWatermark from './MuhabbetWatermark';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
@@ -855,25 +854,18 @@ export default function LeylekMuhabbetiHomeTab({
             </View>
           </View>
           <View style={styles.heroLeylekAbsolute} pointerEvents="none">
-            <Svg width={254} height={254} style={styles.heroLeylekRadialSvg}>
-              <Defs>
-                <RadialGradient id="heroLeylekRadialBlend" cx="50%" cy="50%" r="55%" fx="50%" fy="50%">
-                  <Stop offset="0%" stopColor="rgba(255,255,255,0.18)" stopOpacity={1} />
-                  <Stop offset="100%" stopColor="rgba(255,255,255,0)" stopOpacity={1} />
-                </RadialGradient>
-              </Defs>
-              <Circle cx={127} cy={127} r={124} fill="url(#heroLeylekRadialBlend)" />
-            </Svg>
-            <Image source={MUHABBET_HERO_LEYLEK} style={styles.heroLeylekImg} resizeMode="contain" />
+            <View style={styles.heroLeylekColumn}>
+              <LinearGradient
+                colors={['rgba(219,234,254,0.98)', 'rgba(254,243,199,0.92)', 'rgba(251,191,36,0.28)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroLeylekBadge}
+              >
+                <Text style={styles.heroLeylekBadgeTxt}>Leylek</Text>
+              </LinearGradient>
+              <Image source={MUHABBET_HERO_LEYLEK} style={styles.heroLeylekImg} resizeMode="contain" />
+            </View>
           </View>
-          <LinearGradient
-            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.15)']}
-            locations={[0.35, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroCardCornerFog}
-            pointerEvents="none"
-          />
         </View>
 
         <View style={styles.chipsWrap}>
@@ -943,7 +935,22 @@ export default function LeylekMuhabbetiHomeTab({
               const acceptBusy = incomingBusyId === r.id && incomingBusyAction === 'accept';
               const rejectBusy = incomingBusyId === r.id && incomingBusyAction === 'reject';
               return (
-                <View key={r.id} style={styles.incomingRow}>
+                <Pressable
+                  key={r.id}
+                  style={({ pressed }) => [styles.incomingRow, pressed && { opacity: 0.97 }]}
+                  onLongPress={() => {
+                    if (incomingBusyId) return;
+                    Alert.alert('Sil', 'Bu öğeyi silmek istiyor musun?', [
+                      { text: 'Vazgeç', style: 'cancel' },
+                      {
+                        text: 'Sil',
+                        style: 'destructive',
+                        onPress: () => void respondIncomingRequest(r, 'reject'),
+                      },
+                    ]);
+                  }}
+                  delayLongPress={450}
+                >
                   <View style={styles.incomingAvatar}>
                     <Text style={styles.incomingAvatarText}>{initial}</Text>
                   </View>
@@ -966,7 +973,7 @@ export default function LeylekMuhabbetiHomeTab({
                     {acceptBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.incomingAcceptText}>Kabul</Text>}
                   </Pressable>
                   </View>
-                </View>
+                </Pressable>
               );
             })}
             {pendingIncoming > incomingRequests.length ? (
@@ -1150,26 +1157,45 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     zIndex: 5,
   },
-  heroCardCornerFog: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: '58%',
-    maxWidth: 210,
-    height: '52%',
-    minHeight: 112,
-    borderBottomRightRadius: 26,
-    zIndex: 4,
+  heroLeylekColumn: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    maxWidth: 170,
+  },
+  heroLeylekBadge: {
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59,130,246,0.28)',
+    alignSelf: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(37,99,235,0.28)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.22,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  heroLeylekBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    letterSpacing: 0.3,
   },
   heroLeylekAbsolute: {
     position: 'absolute',
-    bottom: -4,
+    top: 64,
     right: -8,
-    width: 156,
-    height: 150,
+    width: 180,
+    height: 196,
     zIndex: 3,
-    overflow: 'visible',
-    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    justifyContent: 'flex-start',
     alignItems: 'flex-end',
     ...Platform.select({
       ios: {
@@ -1182,26 +1208,19 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  heroLeylekRadialSvg: {
-    position: 'absolute',
-    right: -56,
-    bottom: -52,
-  },
   heroLeylekImg: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 132,
-    height: 132,
+    width: 165,
+    height: 165,
     backgroundColor: 'transparent',
     borderRadius: 0,
-    opacity: 0.85,
+    opacity: 0.95,
     transform: [{ scale: 1.12 }],
+    marginTop: -2,
   },
   heroContent: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 138,
+    paddingRight: 145,
     zIndex: 3,
   },
   heroEyebrow: { marginBottom: 10 },
