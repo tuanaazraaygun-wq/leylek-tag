@@ -7,7 +7,9 @@ tags.city: the requested province is matched as a word token (Turkish-normalized
 against city, pickup_city, dropoff_city, pickup_location, dropoff_location,
 route_text, note (and district). Optional ILIKE OR prefilter narrows candidates;
 Python token matching is authoritative.
-Intercity dashboard uses ride_listings (listing_scope=intercity) only — separate from dispatch tags.
+District labels use an expanded static token map per province (Phase 2) plus optional
+pickup_district / dropoff_district / district columns when present; values are validated against
+known tokens only — never raw addresses in API output.
 """
 
 from __future__ import annotations
@@ -125,6 +127,125 @@ _ANKARA_FALLBACK_REGIONS = (
 )
 _ISTANBUL_FALLBACK_REGIONS = ("Kadıköy", "Beşiktaş", "Üsküdar", "Şişli", "Bakırköy", "Taksim", "Levent")
 _IZMIR_FALLBACK_REGIONS = ("Konak", "Alsancak", "Karşıyaka", "Bornova", "Buca", "Göztepe")
+
+# Known district/neighborhood tokens per province (Phase 2). Used only after folding + word-safe matcher.
+_DISTRICT_MAP_BY_CITY: dict[str, tuple[str, ...]] = {
+    "Ankara": _ANKARA_FALLBACK_REGIONS,
+    "İstanbul": _ISTANBUL_FALLBACK_REGIONS,
+    "İzmir": _IZMIR_FALLBACK_REGIONS,
+    "Bursa": (
+        "Osmangazi",
+        "Nilüfer",
+        "Yıldırım",
+        "Mudanya",
+        "Gemlik",
+        "İnegöl",
+        "Mustafakemalpaşa",
+        "Orhangazi",
+    ),
+    "Antalya": (
+        "Muratpaşa",
+        "Kepez",
+        "Konyaaltı",
+        "Alanya",
+        "Manavgat",
+        "Lara",
+        "Döşemealtı",
+        "Aksu",
+        "Kaş",
+        "Kemer",
+    ),
+    "Adana": (
+        "Seyhan",
+        "Çukurova",
+        "Yüreğir",
+        "Sarıçam",
+        "Ceyhan",
+        "Kozan",
+        "İmamoğlu",
+        "Karataş",
+    ),
+    "Konya": (
+        "Selçuklu",
+        "Karatay",
+        "Meram",
+        "Akşehir",
+        "Ereğli",
+        "Beyşehir",
+        "Ilgın",
+        "Cihanbeyli",
+    ),
+    "Gaziantep": (
+        "Şahinbey",
+        "Şehitkamil",
+        "Nizip",
+        "İslahiye",
+        "Nurdağı",
+        "Oğuzeli",
+    ),
+    "Kayseri": (
+        "Melikgazi",
+        "Kocasinan",
+        "Talas",
+        "Develi",
+        "Yahyalı",
+        "Bünyan",
+    ),
+    "Mersin": (
+        "Akdeniz",
+        "Mezitli",
+        "Toroslar",
+        "Yenişehir",
+        "Tarsus",
+        "Erdemli",
+        "Silifke",
+        "Anamur",
+    ),
+    "Eskişehir": (
+        "Odunpazarı",
+        "Tepebaşı",
+        "Seyitgazı",
+        "Alpu",
+        "İnönü",
+    ),
+    "Samsun": (
+        "İlkadım",
+        "Atakum",
+        "Canik",
+        "Bafra",
+        "Çarşamba",
+        "Terme",
+        "Ladik",
+    ),
+    "Trabzon": (
+        "Ortahisar",
+        "Akçaabat",
+        "Yomra",
+        "Araklı",
+        "Of",
+        "Maçka",
+        "Sürmene",
+    ),
+    "Diyarbakır": (
+        "Bağlar",
+        "Kayapınar",
+        "Sur",
+        "Yenişehir",
+        "Bismil",
+        "Ergani",
+        "Çermik",
+    ),
+    "Şanlıurfa": (
+        "Haliliye",
+        "Eyyübiye",
+        "Karaköprü",
+        "Siverek",
+        "Viranşehir",
+        "Akçakale",
+        "Harran",
+    ),
+}
+
 _OTHER_FALLBACK_REGIONS = ("Merkez", "Otogar", "Üniversite", "Sanayi", "Çarşı")
 
 _DISTRICT_MERKEZ_LABEL = "Merkez"
@@ -267,23 +388,45 @@ def _requested_city_matches_tag(tag: dict, requested: str) -> bool:
 
 def _known_district_tokens_for_city(city: str) -> tuple[str, ...]:
     cn = _normalize_city_name(city)
-    if cn == "Ankara":
-        return (
-            "Yenimahalle",
-            "Bahçelievler",
-            "Keçiören",
-            "Etimesgut",
-            "Batıkent",
-            "Çankaya",
-            "Sıhhiye",
-            "Kızılay",
-            "Ulus",
-        )
-    if cn == "İstanbul":
-        return tuple(sorted(_ISTANBUL_FALLBACK_REGIONS, key=len, reverse=True))
-    if cn == "İzmir":
-        return tuple(sorted(_IZMIR_FALLBACK_REGIONS, key=len, reverse=True))
-    return ()
+    tokens = _DISTRICT_MAP_BY_CITY.get(cn, ())
+    return tuple(sorted(tokens, key=len, reverse=True))
+
+
+def _canonical_district_from_column(raw: Any, city: str) -> Optional[str]:
+    """Map DB district fields to known canonical labels only; never return raw free text."""
+    if raw is None:
+        return None
+    head = str(raw).strip().split(",")[0].strip().split("→")[0].strip()
+    if not head:
+        return None
+    bf = _fold_tr_ascii(head)
+    if not bf:
+        return None
+    for token in _known_district_tokens_for_city(city):
+        tf = _fold_tr_ascii(token)
+        if bf == tf or _fold_match_word(bf, tf):
+            return token
+    return None
+
+
+def _extract_primary_district(tag: dict, city: str) -> str:
+    """prefer district column + token map; then blob tokens; else Merkez (no raw addresses)."""
+    d_col = _canonical_district_from_column(tag.get("district"), city)
+    if d_col:
+        return d_col
+    blob_all = _tag_city_match_blob(tag)
+    hit = _district_from_known_tokens(blob_all, city)
+    if hit:
+        return hit
+    return _DISTRICT_MERKEZ_LABEL
+
+
+def _primary_label_for_activity(tag: dict, city: str) -> str:
+    """District label, or province name when district unknown (avoid repetitive Merkez-only copy)."""
+    d = _extract_primary_district(tag, city)
+    if _fold_tr_ascii(d) == _fold_tr_ascii(_DISTRICT_MERKEZ_LABEL):
+        return _normalize_city_name(city)
+    return d
 
 
 def _district_from_known_tokens(text: str, city: str) -> Optional[str]:
@@ -297,20 +440,13 @@ def _district_from_known_tokens(text: str, city: str) -> Optional[str]:
     return None
 
 
-def _extract_primary_district(tag: dict, city: str) -> str:
-    """Known districts only from configured tokens; otherwise Merkez (no raw street text)."""
-    blob_all = _tag_city_match_blob(tag)
-    hit = _district_from_known_tokens(blob_all, city)
-    if hit:
-        return hit
-    return _DISTRICT_MERKEZ_LABEL
-
-
 def _extract_pickup_drop_districts(tag: dict, city: str) -> tuple[Optional[str], Optional[str]]:
+    pu_db = _canonical_district_from_column(tag.get("pickup_district"), city)
+    do_db = _canonical_district_from_column(tag.get("dropoff_district"), city)
     pu_txt = " ".join(str(p or "").strip() for p in (tag.get("pickup_city"), tag.get("pickup_location"))).strip()
     do_txt = " ".join(str(p or "").strip() for p in (tag.get("dropoff_city"), tag.get("dropoff_location"))).strip()
-    pu = _district_from_known_tokens(pu_txt, city) if pu_txt else None
-    do = _district_from_known_tokens(do_txt, city) if do_txt else None
+    pu = pu_db if pu_db is not None else (_district_from_known_tokens(pu_txt, city) if pu_txt else None)
+    do = do_db if do_db is not None else (_district_from_known_tokens(do_txt, city) if do_txt else None)
     return pu, do
 
 
@@ -323,7 +459,7 @@ def _is_unknown_or_merkez_district(label: Optional[str]) -> bool:
 def _real_activity_copy(tag: dict, city: str) -> str:
     st = str(tag.get("status") or "").strip().lower()
     pu, do = _extract_pickup_drop_districts(tag, city)
-    primary = _extract_primary_district(tag, city)
+    locale_primary = _primary_label_for_activity(tag, city)
 
     route_ready = (
         not _is_unknown_or_merkez_district(pu)
@@ -337,13 +473,13 @@ def _real_activity_copy(tag: dict, city: str) -> str:
         return f"{pu} → {do} sefer başladı"
 
     if st in ("waiting", "pending", "offers_received"):
-        return f"{primary} bölgesinde yeni yolculuk talebi"
+        return f"{locale_primary} bölgesinde yeni yolculuk talebi"
     if st in ("matched", "accepted"):
-        return f"{primary} yönünde eşleşme başladı"
+        return f"{locale_primary} yönünde eşleşme başladı"
     if st == "in_progress":
-        return f"{primary} yolculuğu aktif"
+        return f"{locale_primary} yolculuğu aktif"
     if st == "driver_arriving":
-        return f"{primary} için sürücü yolda"
+        return f"{locale_primary} için sürücü yolda"
     return _activity_title_from_status(tag.get("status"))
 
 
@@ -382,11 +518,29 @@ _TAG_PREFILTER_COLS_FULL = (
     "note",
 )
 
+_TAG_PREFILTER_COLS_FULL_EXT = (
+    "city",
+    "pickup_city",
+    "dropoff_city",
+    "pickup_location",
+    "dropoff_location",
+    "pickup_district",
+    "dropoff_district",
+    "route_text",
+    "note",
+)
+
 _TAG_PREFILTER_COLS_NARROW = (
     "city",
     "pickup_location",
     "dropoff_location",
     "route_text",
+)
+
+
+_TAG_COLUMNS_FULL_WITH_PD = (
+    "status, city, district, created_at, matched_at, updated_at, "
+    "pickup_location, dropoff_location, pickup_city, dropoff_city, pickup_district, dropoff_district, route_text, note"
 )
 
 
@@ -400,6 +554,14 @@ _TAG_COLUMNS_NARROW = (
     "status, city, district, created_at, matched_at, updated_at, "
     "pickup_location, dropoff_location, route_text"
 )
+
+
+def _prefilter_cols_for_select(cols_sel: str) -> tuple[str, ...]:
+    if "pickup_district" in cols_sel:
+        return _TAG_PREFILTER_COLS_FULL_EXT
+    if "pickup_city" in cols_sel:
+        return _TAG_PREFILTER_COLS_FULL
+    return _TAG_PREFILTER_COLS_NARROW
 
 
 def _try_fetch_tags(
@@ -437,11 +599,12 @@ def _fetch_tags_rows(
     """
     pattern = _ilike_contains_pattern(city_for_prefilter) if city_for_prefilter else ""
 
-    for cols_sel, narrow in (
-        (_TAG_COLUMNS_FULL, False),
-        (_TAG_COLUMNS_NARROW, True),
+    for cols_sel in (
+        _TAG_COLUMNS_FULL_WITH_PD,
+        _TAG_COLUMNS_FULL,
+        _TAG_COLUMNS_NARROW,
     ):
-        pre_cols = _TAG_PREFILTER_COLS_NARROW if narrow else _TAG_PREFILTER_COLS_FULL
+        pre_cols = _prefilter_cols_for_select(cols_sel)
         if pattern:
             rows = _try_fetch_tags(sb, cols_select=cols_sel, limit=limit, pattern=pattern, pre_cols=pre_cols)
             if rows is not None and len(rows) > 0:
@@ -612,7 +775,7 @@ def build_city_live_payload(sb: Any, city_raw: str) -> dict[str, Any]:
         activities.append(
             {
                 "title": _real_activity_copy(tag, city)[:160],
-                "subtitle": _extract_primary_district(tag, city)[:120],
+                "subtitle": _primary_label_for_activity(tag, city)[:120],
                 "timeLabel": _relative_tr_label(tag.get("matched_at") or tag.get("created_at")),
                 "type": _activity_type_from_tag_status(tag.get("status")),
             }
