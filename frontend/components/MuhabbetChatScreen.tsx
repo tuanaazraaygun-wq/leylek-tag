@@ -69,6 +69,13 @@ function scheduleTripConvertPullRetries(pull: () => Promise<boolean>): void {
   }, 4000);
 }
 
+/** Yolcu modal accept sonrası GET ile doğrulama */
+function scheduleTripConvertAcceptPullRetries(pull: () => Promise<unknown>): void {
+  setTimeout(() => void pull(), 500);
+  setTimeout(() => void pull(), 1500);
+  setTimeout(() => void pull(), 4000);
+}
+
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 /** Sürücü / yolcu balon — istenen gradientler */
 const DRIVER_BUBBLE_GRAD = ['#4facfe', '#00f2fe'] as const;
@@ -223,6 +230,21 @@ function rowIdLo(m: Pick<ChatMessageRow, 'id'>): string {
   return normalizeMuhabbetMessageId(m.id);
 }
 
+function chatRowsFingerprint(items: ChatMessageRow[]): string {
+  return items
+    .map((m) =>
+      [
+        rowIdLo(m),
+        String(m.body ?? ''),
+        String(m.created_at ?? ''),
+        String(m.sender_user_id ?? ''),
+        String(m.out_status ?? ''),
+        String(m.sender_role ?? ''),
+      ].join('\u0002')
+    )
+    .join('\u0003');
+}
+
 function markMessageFailedById(rows: ChatMessageRow[], messageId: string): ChatMessageRow[] {
   const mid = normalizeMuhabbetMessageId(messageId);
   if (!mid) return rows;
@@ -344,10 +366,11 @@ export default function MuhabbetChatScreen({
   const [draft, setDraft] = useState('');
   const [tripConvertInModal, setTripConvertInModal] = useState<{ rid: string } | null>(null);
   const [tripConvertLoading, setTripConvertLoading] = useState(false);
+  const [tripConvertModalBusy, setTripConvertModalBusy] = useState(false);
   const [tripConvertState, setTripConvertState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
   /** REST reconcile ile bekleniyor; kullanıcıyı bilgilendir, kilidi zorlamaz */
   const [tripConvertStaleHint, setTripConvertStaleHint] = useState(false);
-  const [tripLockReason, setTripLockReason] = useState<string | null>(null);
+  const [, setTripLockReason] = useState<string | null>(null);
   const tripConvertStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   const optimisticTripConvertRef = useRef(false);
   const syncTripFromCtxRef = useRef<(nextCtx: ChatContext | null, myLo: string) => void>(() => {});
@@ -376,12 +399,14 @@ export default function MuhabbetChatScreen({
   const chatSessionActiveRef = useRef(true);
   const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
   const readinessInFlightRef = useRef(false);
-
-  const tripLockActive = !!tripLockReason || tripConvertState === 'pending' || tripConvertState === 'confirmed';
+  /** GET ctx trip_convert_request imzası — gereksiz modal/state yenidenlemesini keser */
+  const lastTripConvertCtxSigRef = useRef<string | null>(null);
+  const tripConvertModalActionBusyRef = useRef(false);
 
   /** iOS KeyboardAvoidingView: üst bar (~52) + peer kart (~76) + opsiyonel eşleşme şeridi */
+  const tripConvertEligibleForKeyboard = !!(ctx?.trip_convert_eligible ?? ctx?.matched_via_leylek_key);
   const keyboardVerticalOffset =
-    Platform.OS === 'ios' ? insets.top + 52 + 76 + (tripConvertEligible ? 48 : 0) : 0;
+    Platform.OS === 'ios' ? insets.top + 52 + 76 + (tripConvertEligibleForKeyboard ? 48 : 0) : 0;
   const pushSystemCard = useCallback((tone: ChatSystemCard['tone'], text: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setSystemCards((prev) => [...prev, { id, tone, text }].slice(-8));
@@ -511,7 +536,11 @@ export default function MuhabbetChatScreen({
             sender_role: m.sender_role,
           }))
         );
-        setRows(displayRows);
+        const nextFp = chatRowsFingerprint(displayRows);
+        const prevFp = chatRowsFingerprint(rowsRef.current);
+        if (nextFp !== prevFp) {
+          setRows(displayRows);
+        }
         const nextCtx = d.context || null;
         setCtx(nextCtx);
         syncTripFromCtxRef.current(nextCtx, myLo);
@@ -709,6 +738,7 @@ export default function MuhabbetChatScreen({
     if (!lo) return;
 
     if (!raw || typeof raw !== 'object') {
+      lastTripConvertCtxSigRef.current = null;
       setTripConvertStaleHint(false);
       setTripConvertLoading(false);
       setTripConvertInModal(null);
@@ -719,8 +749,16 @@ export default function MuhabbetChatScreen({
       return;
     }
 
-    optimisticTripConvertRef.current = false;
     const tcr = raw as TripConvertRequestContext;
+    const ridLo = String(tcr.id || '').trim().toLowerCase();
+    const stLo = String(tcr.status || '').trim().toLowerCase();
+    const sig = `${ridLo}|${stLo}|${tcr.pending}|${tcr.accepted}|${tcr.declined}|${tcr.is_requester}|${tcr.is_target}`;
+    if (lastTripConvertCtxSigRef.current === sig && !optimisticTripConvertRef.current) {
+      return;
+    }
+    lastTripConvertCtxSigRef.current = sig;
+
+    optimisticTripConvertRef.current = false;
 
     if (tcr.pending) {
       setTripConvertStaleHint(false);
@@ -730,8 +768,10 @@ export default function MuhabbetChatScreen({
         setTripConvertInModal(null);
         setTripLockReason('muhabbet_trip_convert_request_sent');
       } else if (tcr.is_target) {
-        const rid = String(tcr.id || '').trim().toLowerCase();
-        if (rid) setTripConvertInModal({ rid });
+        const rid = ridLo;
+        if (rid && !tripConvertModalActionBusyRef.current) {
+          setTripConvertInModal((prev) => (prev?.rid === rid ? prev : { rid }));
+        }
         setTripConvertLoading(false);
       }
       return;
@@ -934,7 +974,7 @@ export default function MuhabbetChatScreen({
       if (isDriverAppRole(myRole)) return;
       setTripConvertState('pending');
       setTripLockReason('muhabbet_trip_convert_request pending');
-      setTripConvertInModal({ rid });
+      setTripConvertInModal((prev) => (prev?.rid === rid ? prev : { rid }));
     };
     const onConvertSent = (data: { conversation_id?: string }) => {
             if (!convMatches(data)) return;
@@ -1672,40 +1712,75 @@ export default function MuhabbetChatScreen({
 
   const acceptTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;
+    if (tripConvertModalActionBusyRef.current) return;
     const requestId = tripConvertInModal.rid;
+    tripConvertModalActionBusyRef.current = true;
+    console.log(`[trip_convert_modal] action=accept requestId=${requestId} cid=${cid}`);
+    setTripConvertModalBusy(true);
+
+    optimisticTripConvertRef.current = true;
+    lastTripConvertCtxSigRef.current = null;
+    setTripConvertInModal(null);
+
     pendingActionRef.current = { kind: 'trip_convert_accept', requestId, retryCount: 0 };
-    const ready = await ensureMuhabbetSocketReady();
-    if (!ready) {
-      pendingActionRef.current = null;
-      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
-      return;
+
+    try {
+      const ready = await ensureMuhabbetSocketReady();
+      if (!ready) {
+        console.warn('[trip_convert_modal] accept aborted — socket not ready', { requestId, cid });
+        optimisticTripConvertRef.current = false;
+        Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
+        await pullMessagesFromApi();
+        return;
+      }
+      const socket = getOrCreateSocket();
+      socket.emit('muhabbet_trip_convert_accept', {
+        conversation_id: cid,
+        request_id: requestId,
+      });
+      await pullMessagesFromApi();
+      scheduleTripConvertAcceptPullRetries(() => pullMessagesFromApi());
+    } catch (e) {
+      console.warn('[trip_convert_modal] accept error', { requestId, cid, err: String(e) });
+      optimisticTripConvertRef.current = false;
+      await pullMessagesFromApi();
+    } finally {
+      tripConvertModalActionBusyRef.current = false;
+      setTripConvertModalBusy(false);
     }
-    const socket = getOrCreateSocket();
-    socket.emit('muhabbet_trip_convert_accept', {
-      conversation_id: cid,
-      request_id: requestId,
-    });
-    await pullMessagesFromApi();
-    scheduleTripConvertPullRetries(pullMessagesFromApi);
   }, [cid, ensureMuhabbetSocketReady, tripConvertInModal, pullMessagesFromApi]);
 
   const declineTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;
+    if (tripConvertModalActionBusyRef.current) return;
     const requestId = tripConvertInModal.rid;
+    tripConvertModalActionBusyRef.current = true;
+    console.log(`[trip_convert_modal] action=decline requestId=${requestId} cid=${cid}`);
+    setTripConvertModalBusy(true);
     pendingActionRef.current = { kind: 'trip_convert_decline', requestId, retryCount: 0 };
-    const ready = await ensureMuhabbetSocketReady();
-    if (!ready) {
-      pendingActionRef.current = null;
-      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
-      return;
+
+    try {
+      const ready = await ensureMuhabbetSocketReady();
+      if (!ready) {
+        console.warn('[trip_convert_modal] decline aborted — socket not ready', { requestId, cid });
+        Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
+        await pullMessagesFromApi();
+        return;
+      }
+      const socket = getOrCreateSocket();
+      socket.emit('muhabbet_trip_convert_decline', {
+        conversation_id: cid,
+        request_id: requestId,
+      });
+      await pullMessagesFromApi();
+      scheduleTripConvertPullRetries(pullMessagesFromApi);
+    } catch (e) {
+      console.warn('[trip_convert_modal] decline error', { requestId, cid, err: String(e) });
+      await pullMessagesFromApi();
+    } finally {
+      tripConvertModalActionBusyRef.current = false;
+      setTripConvertModalBusy(false);
     }
-    const socket = getOrCreateSocket();
-    socket.emit('muhabbet_trip_convert_decline', {
-      conversation_id: cid,
-      request_id: requestId,
-    });
-    await pullMessagesFromApi();
-    scheduleTripConvertPullRetries(pullMessagesFromApi);
   }, [cid, ensureMuhabbetSocketReady, tripConvertInModal, pullMessagesFromApi]);
 
   return (
@@ -1770,7 +1845,7 @@ export default function MuhabbetChatScreen({
         ) : null}
         <KeyboardAvoidingView
           style={styles.kav}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={keyboardVerticalOffset}
           enabled
         >
@@ -1783,7 +1858,7 @@ export default function MuhabbetChatScreen({
             <FlatList
               ref={listRef}
               style={styles.listFlex}
-              data={tripLockActive ? [] : rows}
+              data={rows}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="handled"
@@ -1830,14 +1905,6 @@ export default function MuhabbetChatScreen({
                           <Text style={styles.secureStatusTxt}>Sonraki adım: Anlaşmayı yolculuğa çevir</Text>
                         </View>
                       </View>
-                    </View>
-                  ) : null}
-                  {tripLockActive ? (
-                    <View style={styles.tripModeOnlyCard}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={18} color="#2563EB" />
-                      <Text style={styles.tripModeOnlyText}>
-                        Ön görüşme mesajları gizlendi. Bu ekranda yalnızca eşleşme, yolculuğa çevirme ve canlı trip durumu gösterilir.
-                      </Text>
                     </View>
                   ) : null}
                   {systemCards.map((s) => (
@@ -2011,66 +2078,88 @@ export default function MuhabbetChatScreen({
               )}
             </View>
           ) : null}
-          {!tripLockActive ? (
-            <View
-              style={[styles.composer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 10) }]}
+          <View
+            style={[styles.composer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 10) }]}
+          >
+            <TextInput
+              style={styles.input}
+              value={draft}
+              onChangeText={setDraft}
+              onFocus={() => {
+                scrollToEndThrottled(true);
+                requestAnimationFrame(() => scrollToEndThrottled(true));
+              }}
+              placeholder="Mesaj yaz…"
+              placeholderTextColor={TEXT_SECONDARY}
+              multiline
+              maxLength={1000}
+              textAlignVertical={Platform.OS === 'android' ? 'top' : undefined}
+            />
+            <Pressable
+              onPress={() => void send()}
+              disabled={!draft.trim()}
+              style={({ pressed }) => [
+                styles.sendBtnWrap,
+                !draft.trim() && { opacity: 0.4 },
+                pressed && draft.trim() && { opacity: 0.9, transform: [{ scale: 0.96 }] },
+              ]}
             >
-              <TextInput
-                style={styles.input}
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Mesaj yaz…"
-                placeholderTextColor={TEXT_SECONDARY}
-                multiline
-                maxLength={1000}
-                textAlignVertical={Platform.OS === 'android' ? 'top' : undefined}
-              />
-              <Pressable
-                onPress={() => void send()}
-                disabled={!draft.trim()}
-                style={({ pressed }) => [
-                  styles.sendBtnWrap,
-                  !draft.trim() && { opacity: 0.4 },
-                  pressed && draft.trim() && { opacity: 0.9, transform: [{ scale: 0.96 }] },
-                ]}
+              <LinearGradient
+                colors={SEND_BTN_GRAD}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sendBtnGrad}
               >
-                <LinearGradient
-                  colors={SEND_BTN_GRAD}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.sendBtnGrad}
-                >
-                  <Ionicons name="arrow-up" size={22} color="#fff" />
-                </LinearGradient>
-              </Pressable>
-            </View>
-          ) : null}
+                <Ionicons name="arrow-up" size={22} color="#fff" />
+              </LinearGradient>
+            </Pressable>
+          </View>
           </View>
         </KeyboardAvoidingView>
         <Modal
           visible={!!tripConvertInModal}
           transparent
           animationType="fade"
-          onRequestClose={declineTripConvertFromModal}
+          onRequestClose={() => {
+            if (tripConvertModalBusy) return;
+            void declineTripConvertFromModal();
+          }}
         >
           <View style={styles.pairModalRoot}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={declineTripConvertFromModal} />
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              disabled={tripConvertModalBusy}
+              onPress={() => {
+                if (tripConvertModalBusy) return;
+                void declineTripConvertFromModal();
+              }}
+            />
             <View style={styles.pairModalCard}>
               <Text style={styles.pairModalTitle}>Yolculuğa çevirme isteği</Text>
               <Text style={styles.pairModalBody}>
                 Sürücü yolculuğu başlatmak istiyor. Kabul ediyor musun?
               </Text>
               <Pressable
-                onPress={acceptTripConvertFromModal}
-                style={({ pressed }) => [styles.pairModalPri, pressed && { opacity: 0.92 }]}
+                onPress={() => void acceptTripConvertFromModal()}
+                disabled={tripConvertModalBusy}
+                style={({ pressed }) => [
+                  styles.pairModalPri,
+                  pressed && !tripConvertModalBusy && { opacity: 0.92 },
+                  tripConvertModalBusy && { opacity: 0.55 },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Evet"
               >
-                <Text style={styles.pairModalPriTxt}>Evet</Text>
+                <Text style={styles.pairModalPriTxt}>{tripConvertModalBusy ? 'İşleniyor…' : 'Evet'}</Text>
               </Pressable>
               <Pressable
-                onPress={declineTripConvertFromModal}
-                style={({ pressed }) => [styles.pairModalSec, pressed && { opacity: 0.88 }]}
+                onPress={() => void declineTripConvertFromModal()}
+                disabled={tripConvertModalBusy}
+                style={({ pressed }) => [
+                  styles.pairModalSec,
+                  pressed && !tripConvertModalBusy && { opacity: 0.88 },
+                  tripConvertModalBusy && { opacity: 0.55 },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Hayır"
               >
