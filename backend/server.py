@@ -15409,6 +15409,8 @@ class CalculatePriceRequest(BaseModel):
     driver_lat: Optional[float] = None  # Sürücü konumu (opsiyonel)
     driver_lng: Optional[float] = None
     passenger_vehicle_kind: Optional[str] = None  # car | motorcycle
+    # Yalnızca Muhabbet/Leylek teklif oluşturma — normal TAG /price/calculate gövdesi bunu göndermez
+    muhabbet_listing: Optional[bool] = False
 
 
 @api_router.post("/price/calculate")
@@ -15428,12 +15430,28 @@ async def calculate_price(request: CalculatePriceRequest):
             # Geçersiz koordinat vb.; get_route_info artık geçerli noktalarda haversine döner
             raise HTTPException(status_code=400, detail="Geçersiz koordinatlar")
 
-        trip_distance_km = float(route_info["distance_km"])
+        route_source = str(route_info.get("source") or "")
+        route_distance_km = float(route_info["distance_km"])
+        trip_distance_km = route_distance_km
+        air_km_for_log: Optional[float] = None
+        if bool(request.muhabbet_listing):
+            air_km_for_log = float(
+                haversine_distance(
+                    float(request.pickup_lat),
+                    float(request.pickup_lng),
+                    float(request.dropoff_lat),
+                    float(request.dropoff_lng),
+                )
+            )
+            # Leylek teklif: fiyat için motor çıktısı mesafesinin tabanı (normal TAG'da kullanılmaz)
+            trip_distance_km = max(route_distance_km, 3.0)
+
         estimated_minutes = int(route_info["duration_min"])
         logger.info(f"📍 Route engine ile hesaplandı: {trip_distance_km} km, {estimated_minutes} dk")
         
-        # Minimum mesafe 1 km
+        # Minimum mesafe 1 km (fiyat için kullanılan mesafe)
         trip_distance_km = max(1.0, trip_distance_km)
+        display_km = max(1.0, route_distance_km)
         estimated_minutes = max(5, estimated_minutes)  # Minimum 5 dakika
         
         # Yoğun saat kontrolü
@@ -15458,7 +15476,21 @@ async def calculate_price(request: CalculatePriceRequest):
         price = price * multiplier
 
         # Tam sayıya yuvarla (TL)
-        price_int = int(round(price))
+        price_int_raw = int(round(price))
+        price_int = price_int_raw
+        leylek_minimum_price_applied = False
+        if bool(request.muhabbet_listing):
+            leylek_minimum_price_applied = price_int_raw < 30
+            price_int = max(30, price_int_raw)
+            logger.info(
+                "[leylek_price] distanceSource=%s rawDistanceKm=%.3f routeDistanceKm=%.3f pricingDistanceKm=%.3f basePrice=%s finalSuggestedPrice=%s",
+                route_source,
+                float(air_km_for_log) if air_km_for_log is not None else 0.0,
+                route_distance_km,
+                trip_distance_km,
+                base,
+                price_int,
+            )
 
         # Range: +/- %10
         min_price = int(round(price_int * 0.9))
@@ -15467,10 +15499,10 @@ async def calculate_price(request: CalculatePriceRequest):
         
         logger.info(f"💰 Fiyat hesaplama: Yolculuk {trip_distance_km:.1f}km, {estimated_minutes}dk, {min_price}-{max_price}TL (peak={peak})")
         
-        return {
+        out = {
             "success": True,
-            "distance_km": round(trip_distance_km, 1),
-            "trip_distance_km": round(trip_distance_km, 1),
+            "distance_km": round(display_km, 1),
+            "trip_distance_km": round(display_km, 1),
             "estimated_minutes": estimated_minutes,
             "min_price": min_price,
             "max_price": max_price,
@@ -15483,6 +15515,15 @@ async def calculate_price(request: CalculatePriceRequest):
             "minimum_price": minimum,
             "multiplier": multiplier,
         }
+        if bool(request.muhabbet_listing):
+            out["distance_source"] = route_source
+            out["raw_air_distance_km"] = (
+                round(air_km_for_log, 3) if air_km_for_log is not None else None
+            )
+            out["route_distance_km"] = round(route_distance_km, 1)
+            out["pricing_distance_km"] = round(trip_distance_km, 1)
+            out["leylek_minimum_price_applied"] = leylek_minimum_price_applied
+        return out
     except Exception as e:
         logger.error(f"❌ Price calculation error: {e}")
         return {"success": False, "error": str(e)}
@@ -22893,7 +22934,11 @@ def _muhabbet_trip_conversion_context(uid: str, cid: str, *, require_driver_requ
         "dropoff_text": listing.get("to_text"),
         "dropoff_lat": listing.get("end_lat"),
         "dropoff_lng": listing.get("end_lng"),
-        "agreed_price": listing.get("price_amount"),
+        "agreed_price": (
+            _muhabbet_leylek_listing_agreed_price_floor(listing.get("price_amount"))
+            if listing_id
+            else None
+        ),
         "vehicle_kind": _canonical_vehicle_kind(listing.get("vehicle_kind")),
         "payment_method": None,
     }
@@ -23205,6 +23250,14 @@ def _muhabbet_trip_float_or_none(value):
         return None
 
 
+def _muhabbet_leylek_listing_agreed_price_floor(value) -> Optional[float]:
+    """İlan → Muhabbet trip: anlaşılan ücret tabanı (TL). Normal TAG ile ilgisi yok."""
+    f = _muhabbet_trip_float_or_none(value)
+    if f is None:
+        return None
+    return max(f, 30.0)
+
+
 def _muhabbet_trip_hydrate_source(row: dict) -> dict:
     listing_id = str((row or {}).get("listing_id") or "").strip().lower()
     match_id = str((row or {}).get("listing_match_request_id") or "").strip().lower()
@@ -23278,7 +23331,14 @@ def _muhabbet_trip_hydrate_source(row: dict) -> dict:
         "dropoff_text": _muhabbet_trip_first_value(row.get("dropoff_text"), listing.get("to_text"), listing_raw.get("to_text"), listing_raw.get("dropoff_text")),
         "dropoff_lat": dropoff_lat,
         "dropoff_lng": dropoff_lng,
-        "agreed_price": _muhabbet_trip_first_value(row.get("agreed_price"), listing.get("price_amount"), listing_raw.get("price_amount"), match_row.get("agreed_price")),
+        "agreed_price": _muhabbet_leylek_listing_agreed_price_floor(
+            _muhabbet_trip_first_value(
+                row.get("agreed_price"),
+                listing.get("price_amount"),
+                listing_raw.get("price_amount"),
+                match_row.get("agreed_price"),
+            )
+        ),
         "vehicle_kind": _canonical_vehicle_kind(_muhabbet_trip_first_value(row.get("vehicle_kind"), listing.get("vehicle_kind"), listing_raw.get("vehicle_kind"))),
         "payment_method": _canonical_passenger_payment_method(_muhabbet_trip_first_value(row.get("payment_method"), listing.get("payment_method"), listing_raw.get("payment_method"), listing_raw.get("passenger_payment_method"))),
         "route_polyline": _muhabbet_trip_first_value(row.get("route_polyline"), listing.get("route_polyline"), listing.get("overview_polyline"), listing_raw.get("route_polyline"), listing_raw.get("overview_polyline")),

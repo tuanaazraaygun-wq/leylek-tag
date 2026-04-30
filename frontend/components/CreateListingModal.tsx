@@ -275,7 +275,11 @@ export default function CreateListingModal({
 
   const [suggestedBase, setSuggestedBase] = useState<number | null>(null);
   const [priceDelta, setPriceDelta] = useState(0);
-  const [priceMeta, setPriceMeta] = useState<{ distance_km?: number; estimated_minutes?: number } | null>(null);
+  const [priceMeta, setPriceMeta] = useState<{
+    distance_km?: number;
+    estimated_minutes?: number;
+    minimum_price_applied?: boolean;
+  } | null>(null);
   const [priceCalcBusy, setPriceCalcBusy] = useState(false);
 
   const [seatsText, setSeatsText] = useState('');
@@ -787,6 +791,7 @@ export default function CreateListingModal({
           dropoff_lat: toPoint.latitude,
           dropoff_lng: toPoint.longitude,
           passenger_vehicle_kind: 'car',
+          muhabbet_listing: true,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -797,6 +802,12 @@ export default function CreateListingModal({
         estimated_minutes?: number;
         error?: string;
         detail?: string;
+        distance_source?: string;
+        raw_air_distance_km?: number | null;
+        route_distance_km?: number;
+        pricing_distance_km?: number;
+        base_price?: number;
+        leylek_minimum_price_applied?: boolean;
       };
       const distanceKm = Number(data.distance_km ?? data.trip_distance_km ?? 0);
       if (listingScope !== 'intercity' && (!res.ok || !data.success || data.suggested_price == null)) {
@@ -819,15 +830,44 @@ export default function CreateListingModal({
         Alert.alert('Öneri fiyat', msg);
         return;
       }
-      const nextSuggested =
-        listingScope === 'intercity'
-          ? calculateIntercitySuggestedPrice({ distanceKm, createRole, seatsText, passengerCountText })
-          : Math.round(Number(data.suggested_price));
+      const ds = typeof data.distance_source === 'string' ? data.distance_source : '';
+      const realRoute = ds === 'google' || ds === 'osrm';
+      const serverSuggested = Math.round(Number(data.suggested_price));
+      let minimumPriceApplied = Boolean(data.leylek_minimum_price_applied);
+      let nextSuggested: number;
+      if (listingScope === 'intercity') {
+        if (realRoute || ds === '') {
+          const fuelSuggested = calculateIntercitySuggestedPrice({
+            distanceKm,
+            createRole,
+            seatsText,
+            passengerCountText,
+          });
+          nextSuggested = Math.max(30, fuelSuggested);
+          if (fuelSuggested < 30) minimumPriceApplied = true;
+        } else {
+          nextSuggested = Math.max(30, serverSuggested);
+        }
+      } else {
+        nextSuggested = Math.max(30, serverSuggested);
+      }
+      console.warn(
+        '[leylek_price]',
+        JSON.stringify({
+          distanceSource: ds || '(legacy)',
+          rawDistanceKm: data.raw_air_distance_km,
+          routeDistanceKm: data.route_distance_km ?? distanceKm,
+          pricingDistanceKm: data.pricing_distance_km,
+          basePrice: data.base_price,
+          finalSuggestedPrice: nextSuggested,
+        }),
+      );
       setSuggestedBase(nextSuggested);
       setPriceDelta(0);
       setPriceMeta({
         distance_km: distanceKm || undefined,
         estimated_minutes: data.estimated_minutes,
+        minimum_price_applied: minimumPriceApplied,
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
@@ -1249,6 +1289,9 @@ export default function CreateListingModal({
                 <View style={styles.priceHighlight}>
                   <Text style={styles.priceHuge}>{finalPriceInt} ₺</Text>
                   <Text style={styles.priceSub}>{isIntercity ? 'Yol paylaşımı öneri fiyatı' : 'Önerilen tutar (± ile ince ayar)'}</Text>
+                  {priceMeta?.minimum_price_applied ? (
+                    <Text style={styles.priceMinimumNote}>Minimum ücret uygulandı</Text>
+                  ) : null}
                   <View style={styles.stepRow}>
                     <TouchableOpacity
                       style={styles.stepPill}
@@ -1773,6 +1816,7 @@ const styles = StyleSheet.create({
   priceHighlight: { marginTop: 14 },
   priceHuge: { fontSize: 36, fontWeight: '800', color: TEXT_PRIMARY, letterSpacing: -0.5 },
   priceSub: { marginTop: 4, fontSize: 13, color: TEXT_SECONDARY },
+  priceMinimumNote: { marginTop: 6, fontSize: 11, color: TEXT_MUTED, fontWeight: '600' },
   stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
   stepPill: {
     paddingHorizontal: 16,
