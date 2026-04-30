@@ -44,7 +44,12 @@ type Coord = { latitude: number; longitude: number };
 type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish';
 type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 type QrMode = 'boarding' | 'finish';
-type ForceFinishPrompt = { requesterUserId: string; targetUserId: string } | null;
+type ForceFinishPrompt = {
+  requesterUserId: string;
+  targetUserId: string;
+  requestId?: string;
+  timeoutAt?: string;
+} | null;
 type FinishResult = { paymentMethod: 'cash' | 'card' | null } | null;
 const TERMINAL_TRIP_STATUSES = new Set(['finished', 'cancelled', 'expired']);
 const MUHABBET_SAFE_ROUTE = '/' as Href;
@@ -61,9 +66,80 @@ function isMuhabbetTripRestOk(rest: { ok: boolean; json: Record<string, unknown>
 
 const OPTIMISTIC_LOCK_MS = 1500;
 
+type MuhabbetStateLockKey = 'call' | 'qr' | 'forceFinish' | 'payment';
+
+type MuhabbetStateLocks = Record<MuhabbetStateLockKey, number>;
+
 function optimisticLockFresh(locks: Record<string, number>, key: string, now: number): boolean {
   const t = locks[key];
   return t != null && now - t < OPTIMISTIC_LOCK_MS;
+}
+
+/** Poll / socket refresh: kilitliyken sunucu alanı geriye düşüremez */
+function mergeMuhabbetTripSessionFromPoll(
+  incoming: MuhabbetTripSession,
+  prev: MuhabbetTripSession | null,
+  optimisticLocks: Record<string, number>,
+  stateLocks: MuhabbetStateLocks,
+  now: number,
+  ctx: {
+    callState: CallState;
+    callPayload: MuhabbetTripCallSocketPayload | null;
+    qrLoading: boolean;
+  }
+): MuhabbetTripSession {
+  let merged: MuhabbetTripSession = { ...incoming };
+
+  if (prev && now < stateLocks.call) {
+    console.log('[leylek_merge_blocked]', JSON.stringify({ key: 'call' }));
+    merged = {
+      ...merged,
+      call_active: prev.call_active,
+      call_state: prev.call_state,
+      caller_id: prev.caller_id,
+      call_started_at: prev.call_started_at,
+      call_channel_name: prev.call_channel_name,
+    };
+  }
+  if (prev && now < stateLocks.qr) {
+    console.log('[leylek_merge_blocked]', JSON.stringify({ key: 'qr' }));
+    merged = {
+      ...merged,
+      boarding_qr_token: prev.boarding_qr_token,
+      boarding_qr_created_at: prev.boarding_qr_created_at,
+      boarding_qr_expires_at: prev.boarding_qr_expires_at,
+      finish_qr_token: prev.finish_qr_token,
+      qr_finish_token: prev.qr_finish_token,
+      finish_qr_created_at: prev.finish_qr_created_at,
+      finish_qr_expires_at: prev.finish_qr_expires_at,
+      qr_finish_token_created_at: prev.qr_finish_token_created_at,
+    };
+  }
+  if (prev && now < stateLocks.payment) {
+    console.log('[leylek_merge_blocked]', JSON.stringify({ key: 'payment' }));
+    merged = {
+      ...merged,
+      payment_method: prev.payment_method,
+      payment_method_selected_at: prev.payment_method_selected_at,
+    };
+  }
+  if (prev && now < stateLocks.forceFinish) {
+    console.log('[leylek_merge_blocked]', JSON.stringify({ key: 'forceFinish' }));
+    merged = {
+      ...merged,
+      force_finish_state: prev.force_finish_state,
+      forced_finish_requested_by_user_id: prev.forced_finish_requested_by_user_id,
+      forced_finish_requested_at: prev.forced_finish_requested_at,
+      forced_finish_started_at: prev.forced_finish_started_at,
+      forced_finish_timeout_at: prev.forced_finish_timeout_at,
+      forced_finish_request_id: prev.forced_finish_request_id,
+      forced_finish_confirmed_by_user_id: prev.forced_finish_confirmed_by_user_id,
+      forced_finish_confirmed_at: prev.forced_finish_confirmed_at,
+      forced_finish_other_user_response: prev.forced_finish_other_user_response,
+    };
+  }
+
+  return mergeTripSessionForStalePoll(merged, prev, optimisticLocks, now, ctx);
 }
 
 /** Poll sırasında gelen eski session, optimistic UI ile çakışmasın diye alan birleştirme */
@@ -221,13 +297,50 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const callStateRef = useRef<CallState>('idle');
   const callPayloadRef = useRef<MuhabbetTripCallSocketPayload | null>(null);
   const qrLoadingRef = useRef(false);
-  const lastSocketRefreshRef = useRef(0);
   const callOutgoingStartedAtRef = useRef(0);
+  /** sessionId:callerId — decline/end sonrası kısa süre incoming tekrarını kes */
+  const dismissedCallRef = useRef<{ key: string; until: number } | null>(null);
+  const qrCreateInFlightRef = useRef(false);
+  const refreshDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedRefreshPromiseRef = useRef<Promise<MuhabbetTripSession | null> | null>(null);
+  const callSigLoggedRef = useRef('');
+  const forceFinishSeenRef = useRef('');
+  const forceFinishDismissedRef = useRef('');
+  const forceFinishInFlightRef = useRef(false);
+  const callStartInFlightRef = useRef(false);
+  const paymentInFlightRef = useRef(false);
+  const qrModalOpenedAtRef = useRef(0);
+  const [callStartCooldownUntil, setCallStartCooldownUntil] = useState(0);
+  const [forceFinishUiTick, setForceFinishUiTick] = useState(0);
+
+  const stateLockRef = useRef<MuhabbetStateLocks>({
+    call: 0,
+    qr: 0,
+    forceFinish: 0,
+    payment: 0,
+  });
+
+  const lockState = useCallback((key: MuhabbetStateLockKey, ms = 1500) => {
+    stateLockRef.current[key] = Date.now() + ms;
+    console.log('[leylek_lock]', JSON.stringify({ key, active: true, until: stateLockRef.current[key] }));
+  }, []);
+
+  const isLocked = useCallback((key: MuhabbetStateLockKey) => Date.now() < stateLockRef.current[key], []);
+
+  const unlockState = useCallback((key: MuhabbetStateLockKey) => {
+    stateLockRef.current[key] = 0;
+    console.log('[leylek_lock]', JSON.stringify({ key, active: false }));
+  }, []);
 
   useEffect(() => {
     terminalCloseHandledSidRef.current = null;
     terminalNavigateDoneRef.current = false;
     prevTripStatusRef.current = null;
+    dismissedCallRef.current = null;
+    forceFinishSeenRef.current = '';
+    forceFinishDismissedRef.current = '';
+    stateLockRef.current = { call: 0, qr: 0, forceFinish: 0, payment: 0 };
+    setCallStartCooldownUntil(0);
     if (terminalAutoTimerRef.current) {
       clearTimeout(terminalAutoTimerRef.current);
       terminalAutoTimerRef.current = null;
@@ -363,8 +476,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setForceFinishWarningVisible(false);
       setForceFinishRequestOptimistic(false);
       clearAllOptimistic();
+      stateLockRef.current = { call: 0, qr: 0, forceFinish: 0, payment: 0 };
       callOutgoingStartedAtRef.current = 0;
       setQrLoading(false);
+      qrCreateInFlightRef.current = false;
       setCallPayload(null);
       setCallState('idle');
       setCallBusy(false);
@@ -426,11 +541,18 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             setSession((prev) => {
               if (!silent) return loadedSession;
               const now = Date.now();
-              return mergeTripSessionForStalePoll(loadedSession, prev, optimisticRef.current, now, {
-                callState: callStateRef.current,
-                callPayload: callPayloadRef.current,
-                qrLoading: qrLoadingRef.current,
-              });
+              return mergeMuhabbetTripSessionFromPoll(
+                loadedSession,
+                prev,
+                optimisticRef.current,
+                { ...stateLockRef.current },
+                now,
+                {
+                  callState: callStateRef.current,
+                  callPayload: callPayloadRef.current,
+                  qrLoading: qrLoadingRef.current,
+                }
+              );
             });
             setFinishResult({ paymentMethod: loadedSession.payment_method || null });
             return loadedSession;
@@ -442,11 +564,18 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         setSession((prev) => {
           if (!silent) return loadedSession;
           const now = Date.now();
-          return mergeTripSessionForStalePoll(loadedSession, prev, optimisticRef.current, now, {
-            callState: callStateRef.current,
-            callPayload: callPayloadRef.current,
-            qrLoading: qrLoadingRef.current,
-          });
+          return mergeMuhabbetTripSessionFromPoll(
+            loadedSession,
+            prev,
+            optimisticRef.current,
+            { ...stateLockRef.current },
+            now,
+            {
+              callState: callStateRef.current,
+              callPayload: callPayloadRef.current,
+              qrLoading: qrLoadingRef.current,
+            }
+          );
         });
         return loadedSession;
       } catch {
@@ -460,24 +589,51 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   );
 
   const refreshSessionFromServer = useCallback(
-    async (action: string): Promise<MuhabbetTripSession | null> => {
+    async (action: string, opts?: { bypassDebounce?: boolean }): Promise<MuhabbetTripSession | null> => {
       const sid = normalizeMuhabbetSessionId(sessionId);
-      console.log('[leylek_session_refresh]', JSON.stringify({ action, sessionId: sid }));
-      return await loadSession({ silent: true });
+      console.log('[leylek_session_refresh]', JSON.stringify({ action, sessionId: sid, bypass: !!opts?.bypassDebounce }));
+      const debounced =
+        !opts?.bypassDebounce &&
+        (action === 'session_poll' || (typeof action === 'string' && action.startsWith('socket_')));
+      if (!debounced) {
+        return await loadSession({ silent: true });
+      }
+      if (!debouncedRefreshPromiseRef.current) {
+        debouncedRefreshPromiseRef.current = new Promise<MuhabbetTripSession | null>((resolve) => {
+          refreshDebounceTimerRef.current = setTimeout(async () => {
+            refreshDebounceTimerRef.current = null;
+            debouncedRefreshPromiseRef.current = null;
+            try {
+              const r = await loadSession({ silent: true });
+              resolve(r);
+            } catch {
+              resolve(null);
+            }
+          }, 300);
+        });
+      }
+      return debouncedRefreshPromiseRef.current;
     },
     [loadSession, sessionId],
   );
 
   const socketRefreshSession = useCallback(
     (reason: string) => {
-      const now = Date.now();
-      if (now - lastSocketRefreshRef.current < 500) return;
-      lastSocketRefreshRef.current = now;
       console.log('[leylek_socket_refresh]', JSON.stringify({ reason }));
       void refreshSessionFromServer(reason);
     },
     [refreshSessionFromServer],
   );
+
+  useEffect(() => {
+    return () => {
+      if (refreshDebounceTimerRef.current) {
+        clearTimeout(refreshDebounceTimerRef.current);
+        refreshDebounceTimerRef.current = null;
+      }
+      debouncedRefreshPromiseRef.current = null;
+    };
+  }, []);
 
   const emitMuhabbetTripEventEnsured = useCallback(
     async (
@@ -602,20 +758,35 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     if (session && TERMINAL_TRIP_STATUSES.has(String(session.status || '').trim().toLowerCase())) {
       return;
     }
-    const pollMs = session?.call_active ? 500 : qrCodeVisible ? 700 : 1000;
+    const csPoll = String(session?.call_state || '').trim().toLowerCase();
+    const ringingLike =
+      csPoll === 'ringing' || csPoll === '';
+    const fastPoll =
+      qrLoading ||
+      (session?.call_active && ringingLike);
+    const pollMs = fastPoll ? 500 : 1200;
     const id = setInterval(() => {
       console.log(
         '[leylek_poll]',
         JSON.stringify({
           ms: pollMs,
           call_active: !!session?.call_active,
+          qr_loading: qrLoading,
           qr_open: qrCodeVisible,
         })
       );
       void refreshSessionFromServer('session_poll');
     }, pollMs);
     return () => clearInterval(id);
-  }, [qrCodeVisible, session?.call_active, session?.status, sessionId, refreshSessionFromServer]);
+  }, [
+    qrCodeVisible,
+    qrLoading,
+    session?.call_active,
+    session?.call_state,
+    session?.status,
+    sessionId,
+    refreshSessionFromServer,
+  ]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
@@ -643,6 +814,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
   useEffect(() => {
     if (!session || !myId || isTerminal) return;
+    if (isLocked('call')) return;
     const active = !!session.call_active;
     const cs = String(session.call_state || '').trim().toLowerCase();
     const callerLo = String(session.caller_id || '').trim().toLowerCase();
@@ -650,8 +822,44 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const passengerLo = String(session.passenger_id || '').trim().toLowerCase();
     const driverLo = String(session.driver_id || '').trim().toLowerCase();
     const targetLo = callerLo === passengerLo ? driverLo : callerLo === driverLo ? passengerLo : '';
+    const sidNorm = normalizeMuhabbetSessionId(session.id);
 
-    if (active && callerLo && callerLo !== myLo && (cs === 'ringing' || cs === '')) {
+    const sigLog = `${callStateRef.current}:${active}:${cs}:${callerLo}:${callBusy}`;
+    if (callSigLoggedRef.current !== sigLog) {
+      callSigLoggedRef.current = sigLog;
+      console.log(
+        '[leylek_call_state]',
+        JSON.stringify({
+          local: callStateRef.current,
+          vs_server: { active, state: cs || null, caller_id: callerLo || null },
+        })
+      );
+    }
+
+    if (cs === 'ended') {
+      if (!callBusy) {
+        setCallState('idle');
+        setCallPayload(null);
+        callOutgoingStartedAtRef.current = 0;
+      }
+      return;
+    }
+
+    const dismissKey = callerLo && sidNorm ? `${sidNorm}:${callerLo}` : '';
+    const suppressed =
+      dismissKey &&
+      dismissedCallRef.current &&
+      Date.now() < dismissedCallRef.current.until &&
+      dismissedCallRef.current.key === dismissKey;
+
+    const calleeIncomingReady =
+      active &&
+      !!callerLo &&
+      callerLo !== myLo &&
+      (cs === 'ringing' || cs === '') &&
+      !suppressed;
+
+    if (calleeIncomingReady) {
       if (callStateRef.current !== 'idle') return;
       setCallPayload({
         session_id: session.id,
@@ -679,6 +887,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       return;
     }
 
+    if (!callerLo && (cs === 'ringing' || cs === '')) {
+      return;
+    }
+
     if (cs === 'ringing' || cs === '') {
       setCallPayload({
         session_id: session.id,
@@ -690,7 +902,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (callerLo === myLo) {
         setCallState('outgoing');
       } else {
-        if (callStateRef.current !== 'idle') return;
+        if (suppressed || callStateRef.current !== 'idle') return;
         setCallState('incoming');
       }
       return;
@@ -706,10 +918,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }));
       setCallState('active');
     }
-  }, [session, myId, isTerminal, callBusy]);
+  }, [session, myId, isTerminal, callBusy, isLocked]);
 
   useEffect(() => {
     if (!session || isTerminal) return;
+    if (isLocked('qr')) return;
     const st = String(session.status || '').trim().toLowerCase();
     const boardingTok = String(session.boarding_qr_token || '').trim();
     const finishTok = String(session.finish_qr_token || session.qr_finish_token || '').trim();
@@ -734,7 +947,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrFinishToken('');
       setQrExpiresAt(null);
     }
-  }, [isDriver, isTerminal, qrLoading, session]);
+  }, [isDriver, isTerminal, isLocked, qrLoading, session]);
 
   useEffect(() => {
     if (!session || !myId || isTerminal) {
@@ -744,15 +957,52 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const ff = String(session.force_finish_state || '').trim().toLowerCase();
     const reqBy = String(session.forced_finish_requested_by_user_id || '').trim().toLowerCase();
     const myLo = myId.trim().toLowerCase();
+    const sidN = normalizeMuhabbetSessionId(session.id);
+    const rid = String(session.forced_finish_request_id || '').trim();
     if (ff === 'pending' && reqBy && reqBy !== myLo) {
-      setForceFinishPrompt({
-        requesterUserId: reqBy,
-        targetUserId: myLo,
-      });
-    } else {
-      setForceFinishPrompt(null);
+      const dedupeKey = `${sidN}:${rid || reqBy}`;
+      if (forceFinishDismissedRef.current === dedupeKey) {
+        return;
+      }
+      if (forceFinishSeenRef.current !== dedupeKey) {
+        forceFinishSeenRef.current = dedupeKey;
+        console.log(
+          '[leylek_force_finish_modal]',
+          JSON.stringify({ action: 'open', sessionId: sidN, requestId: rid || reqBy })
+        );
+        setForceFinishPrompt({
+          requesterUserId: reqBy,
+          targetUserId: myLo,
+          requestId: rid || undefined,
+          timeoutAt: session.forced_finish_timeout_at ?? undefined,
+        });
+      } else {
+        setForceFinishPrompt((prev) =>
+          prev && prev.requesterUserId === reqBy
+            ? { ...prev, timeoutAt: session.forced_finish_timeout_at ?? prev.timeoutAt }
+            : prev
+        );
+      }
+      return;
     }
+    forceFinishSeenRef.current = '';
+    forceFinishDismissedRef.current = '';
+    setForceFinishPrompt(null);
   }, [session, myId, isTerminal]);
+
+  useEffect(() => {
+    if (!forceFinishPrompt) return;
+    const id = setInterval(() => setForceFinishUiTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [forceFinishPrompt]);
+
+  const forceFinishCountdownText = useMemo(() => {
+    void forceFinishUiTick;
+    const iso = session?.forced_finish_timeout_at;
+    if (!iso || !forceFinishPrompt) return '';
+    const sec = Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 1000));
+    return sec > 0 ? `Yanıt için kalan: ${sec} sn` : 'Süre doldu — güncelleniyor';
+  }, [forceFinishPrompt, forceFinishUiTick, session?.forced_finish_timeout_at]);
 
   useEffect(() => {
     if (!session || !myId) return;
@@ -850,10 +1100,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       };
     const onTripError = (payload: { code?: string; message?: string; detail?: string }) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_error', payload);
-      setActionBusy(false);
-      setPaymentBusy(false);
-      const message = payload?.message || payload?.detail || '';
-      if (message) Alert.alert('Muhabbet yolculuk', message);
+      socketRefreshSession('socket_muhabbet_trip_error');
     };
     const onForceFinished = (payload: MuhabbetTripFinishSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_force_finished', payload);
@@ -994,8 +1241,50 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     [emitMuhabbetTripEventEnsured, emitTripCancel]
   );
 
+  const bumpCallCooldown = useCallback(() => {
+    const until = Date.now() + 5000;
+    setCallStartCooldownUntil(until);
+    setTimeout(() => {
+      setCallStartCooldownUntil((cur) => (cur === until ? 0 : cur));
+    }, 5000);
+  }, []);
+
+  const recordDismissForCall = useCallback((callerId: string | undefined) => {
+    const initiator = String(callerId || '').trim().toLowerCase();
+    const sidK = normalizeMuhabbetSessionId(sessionId);
+    if (initiator && sidK) {
+      dismissedCallRef.current = { key: `${sidK}:${initiator}`, until: Date.now() + 5000 };
+    }
+  }, [sessionId]);
+
   const startCall = useCallback(() => {
     if (isTerminal || !session) return;
+    if (isLocked('call')) {
+      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'stateLock' }));
+      return;
+    }
+    if (callBusy) {
+      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'callBusy' }));
+      return;
+    }
+    if (callStartInFlightRef.current) {
+      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'inFlight' }));
+      return;
+    }
+    const now = Date.now();
+    if (callStartCooldownUntil > 0 && now < callStartCooldownUntil) {
+      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'cooldown' }));
+      return;
+    }
+    const csServ = String(session.call_state || '').trim().toLowerCase();
+    if (
+      callStateRef.current === 'outgoing' ||
+      callStateRef.current === 'active' ||
+      (session.call_active && (csServ === 'ringing' || csServ === 'active' || csServ === ''))
+    ) {
+      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'already_ringing_or_active' }));
+      return;
+    }
     void (async () => {
       const sid = getActiveMuhabbetSessionId();
       if (!sid || !myId) {
@@ -1012,8 +1301,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         sessionId: sid,
         role: isDriver ? 'driver' : 'passenger',
       });
+      bumpCallCooldown();
       touchOptimistic('call_start');
       callOutgoingStartedAtRef.current = Date.now();
+      callStartInFlightRef.current = true;
+      lockState('call', 2000);
       setCallBusy(true);
       setCallState('outgoing');
       setCallPayload({
@@ -1037,11 +1329,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           if (sess && typeof sess === 'object') {
             setSession(sess as MuhabbetTripSession);
           }
-          await refreshSessionFromServer('call_start_rest');
+          void refreshSessionFromServer('call_start_rest', { bypassDebounce: true });
           clearOptimistic('call_start');
           callOutgoingStartedAtRef.current = 0;
           return;
         }
+        unlockState('call');
         setCallState('idle');
         setCallPayload(null);
         clearOptimistic('call_start');
@@ -1053,35 +1346,50 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           const det = typeof rest.json.detail === 'string' ? rest.json.detail : '';
           if (det) Alert.alert('Muhabbet yolculuk', det);
         } else {
-          await refreshSessionFromServer('call_start_socket_fallback');
+          void refreshSessionFromServer('call_start_socket_fallback', { bypassDebounce: true });
           clearOptimistic('call_start');
           callOutgoingStartedAtRef.current = 0;
         }
       } catch {
+        unlockState('call');
         clearOptimistic('call_start');
         callOutgoingStartedAtRef.current = 0;
         setCallState('idle');
         setCallPayload(null);
       } finally {
+        callStartInFlightRef.current = false;
         setCallBusy(false);
       }
     })();
   }, [
+    bumpCallCooldown,
+    callBusy,
+    callStartCooldownUntil,
     clearOptimistic,
     emitMuhabbetTripEventEnsured,
     getActiveMuhabbetSessionId,
     isDriver,
     isTerminal,
+    isLocked,
+    lockState,
     muhabbetTripSessionRestPost,
     myId,
     refreshSessionFromServer,
     session,
     touchOptimistic,
+    unlockState,
   ]);
 
   const selectPaymentMethod = useCallback(
     (paymentMethod: 'cash' | 'card') => {
-      if (!session || isTerminal || paymentBusy) return;
+      if (!session || isTerminal || paymentBusy || paymentInFlightRef.current) return;
+      if (isLocked('payment')) {
+        console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'payment blocked', detail: 'stateLock' }));
+        return;
+      }
+      paymentInFlightRef.current = true;
+      lockState('payment', 1500);
+      setPaymentBusy(true);
       const prevPm = session.payment_method ?? null;
       const prevSelAt = session.payment_method_selected_at ?? null;
       const optimisticAt = new Date().toISOString();
@@ -1096,7 +1404,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           : s
       );
       void (async () => {
-        setPaymentBusy(true);
+        const t0 = Date.now();
         try {
           const rest = await muhabbetTripSessionRestPost({
             action: 'payment_method_set',
@@ -1108,11 +1416,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             if (sess && typeof sess === 'object') {
               setSession(sess as MuhabbetTripSession);
             }
-            await refreshSessionFromServer('payment_method_rest');
+            void refreshSessionFromServer('payment_method_rest', { bypassDebounce: true });
             clearOptimistic('payment_method');
             setPaymentPromptVisible(false);
+            console.log('[leylek_payment_timing]', JSON.stringify({ ms: Date.now() - t0, action: 'payment_method_set', ok: true }));
+            unlockState('payment');
             return;
           }
+          clearOptimistic('payment_method');
+          unlockState('payment');
           setSession((s) =>
             s
               ? {
@@ -1122,8 +1434,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 }
               : s
           );
-          clearOptimistic('payment_method');
-          await refreshSessionFromServer('payment_method_fail');
           const okSocket = await emitMuhabbetTripEventEnsured(
             'payment_method_set',
             'muhabbet_trip_payment_method_set',
@@ -1133,15 +1443,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             { suppressConnectionRenewAlert: true }
           );
           if (okSocket) {
-            await refreshSessionFromServer('payment_method_socket_fallback');
+            void refreshSessionFromServer('payment_method_socket_fallback', { bypassDebounce: true });
             clearOptimistic('payment_method');
             setPaymentPromptVisible(false);
+            console.log('[leylek_payment_timing]', JSON.stringify({ ms: Date.now() - t0, action: 'payment_method_set_socket', ok: true }));
+            unlockState('payment');
           } else {
+            void refreshSessionFromServer('payment_method_fail', { bypassDebounce: true });
             const det = typeof rest.json.detail === 'string' ? rest.json.detail : '';
             if (det) Alert.alert('Muhabbet yolculuk', det);
+            console.log('[leylek_payment_timing]', JSON.stringify({ ms: Date.now() - t0, action: 'payment_method_set', ok: false }));
           }
         } catch {
           clearOptimistic('payment_method');
+          unlockState('payment');
           setSession((s) =>
             s
               ? {
@@ -1151,7 +1466,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 }
               : s
           );
+          console.log('[leylek_payment_timing]', JSON.stringify({ ms: Date.now() - t0, action: 'payment_method_set', ok: false, error: true }));
         } finally {
+          paymentInFlightRef.current = false;
           setPaymentBusy(false);
         }
       })();
@@ -1159,12 +1476,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     [
       clearOptimistic,
       emitMuhabbetTripEventEnsured,
+      isLocked,
       isTerminal,
+      lockState,
       muhabbetTripSessionRestPost,
       paymentBusy,
       refreshSessionFromServer,
       session,
       touchOptimistic,
+      unlockState,
     ]
   );
 
@@ -1175,6 +1495,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const snapPayload = callPayload;
       const snapState = callState;
       touchOptimistic('call_accept');
+      lockState('call', 2000);
       setCallBusy(true);
       setCallState('active');
       setCallPayload((prev) => ({ ...(prev || {}), session_id: activeSessionIdNext || prev?.session_id }));
@@ -1185,14 +1506,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           if (sess && typeof sess === 'object') {
             setSession(sess as MuhabbetTripSession);
           }
-          await refreshSessionFromServer('call_accept_rest');
+          await refreshSessionFromServer('call_accept_rest', { bypassDebounce: true });
           clearOptimistic('call_accept');
           return;
         }
         setCallState(snapState);
         setCallPayload(snapPayload);
         clearOptimistic('call_accept');
-        await refreshSessionFromServer('call_accept_fail');
+        unlockState('call');
+        await refreshSessionFromServer('call_accept_fail', { bypassDebounce: true });
         const okSocket = await emitMuhabbetTripEventEnsured(
           'call_accept',
           'muhabbet_trip_call_accept',
@@ -1200,11 +1522,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           { suppressConnectionRenewAlert: true }
         );
         if (okSocket) {
-          await refreshSessionFromServer('call_accept_socket_fallback');
+          await refreshSessionFromServer('call_accept_socket_fallback', { bypassDebounce: true });
           clearOptimistic('call_accept');
         }
       } catch {
         clearOptimistic('call_accept');
+        unlockState('call');
         setCallState(snapState);
         setCallPayload(snapPayload);
       } finally {
@@ -1220,6 +1543,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     muhabbetTripSessionRestPost,
     refreshSessionFromServer,
     touchOptimistic,
+    unlockState,
+    lockState,
   ]);
 
   const declineCall = useCallback(() => {
@@ -1227,6 +1552,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const snapPayload = callPayload;
       const snapState = callState;
       touchOptimistic('call_decline');
+      lockState('call', 2000);
       setCallBusy(true);
       setCallPayload(null);
       setCallState('idle');
@@ -1237,37 +1563,55 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           if (sess && typeof sess === 'object') {
             setSession(sess as MuhabbetTripSession);
           }
-          await refreshSessionFromServer('call_decline_rest');
+          recordDismissForCall(String(snapPayload?.caller_id || ''));
+          void refreshSessionFromServer('call_decline_rest', { bypassDebounce: true });
           clearOptimistic('call_decline');
           return;
         }
         setCallPayload(snapPayload);
         setCallState(snapState);
         clearOptimistic('call_decline');
-        await refreshSessionFromServer('call_decline_fail');
-        await emitMuhabbetTripEventEnsured(
+        unlockState('call');
+        void refreshSessionFromServer('call_decline_fail', { bypassDebounce: true });
+        const okSocket = await emitMuhabbetTripEventEnsured(
           'call_decline',
           'muhabbet_trip_call_decline',
           {},
           { showSessionMissingAlert: false, suppressConnectionRenewAlert: true }
         );
-        await refreshSessionFromServer('call_decline_socket_fallback');
-        clearOptimistic('call_decline');
+        if (okSocket) {
+          recordDismissForCall(String(snapPayload?.caller_id || ''));
+          void refreshSessionFromServer('call_decline_socket_fallback', { bypassDebounce: true });
+          clearOptimistic('call_decline');
+        }
       } catch {
         clearOptimistic('call_decline');
+        unlockState('call');
         setCallPayload(snapPayload);
         setCallState(snapState);
       } finally {
         setCallBusy(false);
       }
     })();
-  }, [callPayload, callState, clearOptimistic, emitMuhabbetTripEventEnsured, muhabbetTripSessionRestPost, refreshSessionFromServer, touchOptimistic]);
+  }, [
+    callPayload,
+    callState,
+    clearOptimistic,
+    emitMuhabbetTripEventEnsured,
+    muhabbetTripSessionRestPost,
+    recordDismissForCall,
+    refreshSessionFromServer,
+    touchOptimistic,
+    unlockState,
+    lockState,
+  ]);
 
   const endCall = useCallback(() => {
     void (async () => {
       const snapPayload = callPayload;
       const snapState = callState;
       touchOptimistic('call_end');
+      lockState('call', 2000);
       setCallBusy(true);
       setCallPayload(null);
       setCallState('idle');
@@ -1278,31 +1622,48 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           if (sess && typeof sess === 'object') {
             setSession(sess as MuhabbetTripSession);
           }
-          await refreshSessionFromServer('call_end_rest');
+          recordDismissForCall(String(snapPayload?.caller_id || sessionRef.current?.caller_id || ''));
+          void refreshSessionFromServer('call_end_rest', { bypassDebounce: true });
           clearOptimistic('call_end');
           return;
         }
         setCallPayload(snapPayload);
         setCallState(snapState);
         clearOptimistic('call_end');
-        await refreshSessionFromServer('call_end_fail');
-        await emitMuhabbetTripEventEnsured(
+        unlockState('call');
+        void refreshSessionFromServer('call_end_fail', { bypassDebounce: true });
+        const okSocket = await emitMuhabbetTripEventEnsured(
           'call_end',
           'muhabbet_trip_call_end',
           {},
           { showSessionMissingAlert: false, suppressConnectionRenewAlert: true }
         );
-        await refreshSessionFromServer('call_end_socket_fallback');
-        clearOptimistic('call_end');
+        if (okSocket) {
+          recordDismissForCall(String(snapPayload?.caller_id || sessionRef.current?.caller_id || ''));
+          void refreshSessionFromServer('call_end_socket_fallback', { bypassDebounce: true });
+          clearOptimistic('call_end');
+        }
       } catch {
         clearOptimistic('call_end');
+        unlockState('call');
         setCallPayload(snapPayload);
         setCallState(snapState);
       } finally {
         setCallBusy(false);
       }
     })();
-  }, [callPayload, callState, clearOptimistic, emitMuhabbetTripEventEnsured, muhabbetTripSessionRestPost, refreshSessionFromServer, touchOptimistic]);
+  }, [
+    callPayload,
+    callState,
+    clearOptimistic,
+    emitMuhabbetTripEventEnsured,
+    muhabbetTripSessionRestPost,
+    recordDismissForCall,
+    refreshSessionFromServer,
+    touchOptimistic,
+    unlockState,
+    lockState,
+  ]);
 
   const navigationTarget = useMemo(() => {
     if (!session) return null;
@@ -1345,14 +1706,22 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     }
     if (session.status === 'ready') {
       if (isDriver) {
+        if (qrCreateInFlightRef.current) return;
+        if (isLocked('qr')) {
+          console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'qr blocked', detail: 'stateLock' }));
+          return;
+        }
+        qrCreateInFlightRef.current = true;
+        lockState('qr', 2000);
+        touchOptimistic('boarding_qr_create');
+        setQrMode('boarding');
+        setQrFinishToken('');
+        setQrExpiresAt(null);
+        setQrLoading(true);
+        qrModalOpenedAtRef.current = Date.now();
+        setQrCodeVisible(true);
         void (async () => {
-          setActionBusy(true);
-          touchOptimistic('boarding_qr_create');
-          setQrMode('boarding');
-          setQrFinishToken('');
-          setQrExpiresAt(null);
-          setQrLoading(true);
-          setQrCodeVisible(true);
+          const t0 = Date.now();
           try {
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_create',
@@ -1366,10 +1735,25 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             ) {
               setQrFinishToken(String(rest.json.boarding_qr_token).trim().toUpperCase());
               setQrExpiresAt(typeof rest.json.expires_at === 'string' ? rest.json.expires_at : null);
-              await refreshSessionFromServer('boarding_qr_create_rest');
+              setQrLoading(false);
               clearOptimistic('boarding_qr_create');
+              void refreshSessionFromServer('boarding_qr_create_rest', { bypassDebounce: true });
+              console.log(
+                '[leylek_qr_timing]',
+                JSON.stringify({
+                  create_ms: Date.now() - t0,
+                  open_to_token_ms: Date.now() - qrModalOpenedAtRef.current,
+                  mode: 'boarding',
+                  ok: true,
+                })
+              );
+              unlockState('qr');
               return;
             }
+            if (rest.ok && rest.json.success === true) {
+              console.log('[leylek_qr_timing]', JSON.stringify({ mode: 'boarding', missing_token: true, ms: Date.now() - t0 }));
+            }
+            unlockState('qr');
             setQrCodeVisible(false);
             setQrFinishToken('');
             clearOptimistic('boarding_qr_create');
@@ -1384,16 +1768,19 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             }
             if (okSocket) {
               touchOptimistic('boarding_qr_create');
-              await refreshSessionFromServer('boarding_qr_create_socket_fallback');
+              void refreshSessionFromServer('boarding_qr_create_socket_fallback', { bypassDebounce: true });
               clearOptimistic('boarding_qr_create');
+              unlockState('qr');
             }
+            console.log('[leylek_qr_timing]', JSON.stringify({ create_ms: Date.now() - t0, mode: 'boarding', ok: false }));
           } catch {
+            unlockState('qr');
             clearOptimistic('boarding_qr_create');
             setQrCodeVisible(false);
             setQrFinishToken('');
           } finally {
+            qrCreateInFlightRef.current = false;
             setQrLoading(false);
-            setActionBusy(false);
           }
         })();
       } else {
@@ -1412,14 +1799,22 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       return;
     }
     if (isDriver) {
+      if (qrCreateInFlightRef.current) return;
+      if (isLocked('qr')) {
+        console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'qr blocked', detail: 'stateLock' }));
+        return;
+      }
+      qrCreateInFlightRef.current = true;
+      lockState('qr', 2000);
       setQrMode('finish');
       setQrFinishToken('');
       setQrExpiresAt(null);
       setQrLoading(true);
       touchOptimistic('finish_qr_create');
+      qrModalOpenedAtRef.current = Date.now();
       setQrCodeVisible(true);
       void (async () => {
-        setActionBusy(true);
+        const t0 = Date.now();
         try {
           const rest = await muhabbetTripSessionRestPost({
             action: 'finish_qr_create',
@@ -1434,10 +1829,25 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           if (rest.ok && rest.json.success === true && rawTok.trim()) {
             setQrFinishToken(rawTok.trim().toUpperCase());
             setQrExpiresAt(typeof rest.json.expires_at === 'string' ? rest.json.expires_at : null);
-            await refreshSessionFromServer('finish_qr_create_rest');
+            setQrLoading(false);
             clearOptimistic('finish_qr_create');
+            void refreshSessionFromServer('finish_qr_create_rest', { bypassDebounce: true });
+            console.log(
+              '[leylek_qr_timing]',
+              JSON.stringify({
+                create_ms: Date.now() - t0,
+                open_to_token_ms: Date.now() - qrModalOpenedAtRef.current,
+                mode: 'finish',
+                ok: true,
+              })
+            );
+            unlockState('qr');
             return;
           }
+          if (rest.ok && rest.json.success === true) {
+            console.log('[leylek_qr_timing]', JSON.stringify({ mode: 'finish', missing_token: true, ms: Date.now() - t0 }));
+          }
+          unlockState('qr');
           setQrCodeVisible(false);
           setQrFinishToken('');
           clearOptimistic('finish_qr_create');
@@ -1452,19 +1862,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           }
           if (okSocket) {
             touchOptimistic('finish_qr_create');
-            setTimeout(() => {
-              void refreshSessionFromServer('finish_qr_create_socket_fallback').finally(() =>
-                clearOptimistic('finish_qr_create')
-              );
-            }, 600);
+            void refreshSessionFromServer('finish_qr_create_socket_fallback', { bypassDebounce: true }).finally(() => {
+              clearOptimistic('finish_qr_create');
+              unlockState('qr');
+            });
           }
+          console.log('[leylek_qr_timing]', JSON.stringify({ create_ms: Date.now() - t0, mode: 'finish', ok: false }));
         } catch {
+          unlockState('qr');
           clearOptimistic('finish_qr_create');
           setQrCodeVisible(false);
           setQrFinishToken('');
         } finally {
+          qrCreateInFlightRef.current = false;
           setQrLoading(false);
-          setActionBusy(false);
         }
       })();
     } else {
@@ -1476,10 +1887,13 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     getActiveMuhabbetSessionId,
     isDriver,
     isTerminal,
+    isLocked,
+    lockState,
     muhabbetTripSessionRestPost,
     refreshSessionFromServer,
     session,
     touchOptimistic,
+    unlockState,
   ]);
 
   const confirmQrToken = useCallback(
@@ -1590,11 +2004,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   }, [isTerminal, session]);
 
   const confirmForceFinishRequest = useCallback(() => {
+    if (forceFinishInFlightRef.current) return;
+    forceFinishInFlightRef.current = true;
+    lockState('forceFinish', 2000);
+    setActionBusy(true);
     setForceFinishWarningVisible(false);
     void (async () => {
       touchOptimistic('force_finish_request');
       setForceFinishRequestOptimistic(true);
-      setActionBusy(true);
       try {
         const rest = await muhabbetTripSessionRestPost({
           action: 'force_finish_request',
@@ -1605,13 +2022,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           if (sess && typeof sess === 'object') {
             setSession(sess as MuhabbetTripSession);
           }
-          await refreshSessionFromServer('force_finish_request_rest');
+          await refreshSessionFromServer('force_finish_request_rest', { bypassDebounce: true });
           clearOptimistic('force_finish_request');
+          unlockState('forceFinish');
           return;
         }
         setForceFinishRequestOptimistic(false);
         clearOptimistic('force_finish_request');
-        await refreshSessionFromServer('force_finish_request_fail');
+        unlockState('forceFinish');
+        await refreshSessionFromServer('force_finish_request_fail', { bypassDebounce: true });
         const okSocket = await emitMuhabbetTripEventEnsured(
           'force_finish_request',
           'muhabbet_trip_force_finish_request',
@@ -1619,24 +2038,29 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           { suppressConnectionRenewAlert: true }
         );
         if (okSocket) {
-          await refreshSessionFromServer('force_finish_request_socket_fallback');
+          await refreshSessionFromServer('force_finish_request_socket_fallback', { bypassDebounce: true });
           clearOptimistic('force_finish_request');
+          unlockState('forceFinish');
         } else if (typeof rest.json.detail === 'string' && rest.json.detail) {
           Alert.alert('Muhabbet yolculuk', rest.json.detail);
         }
       } catch {
         clearOptimistic('force_finish_request');
         setForceFinishRequestOptimistic(false);
+        unlockState('forceFinish');
       } finally {
+        forceFinishInFlightRef.current = false;
         setActionBusy(false);
       }
     })();
   }, [
     clearOptimistic,
     emitMuhabbetTripEventEnsured,
+    lockState,
     muhabbetTripSessionRestPost,
     refreshSessionFromServer,
     touchOptimistic,
+    unlockState,
   ]);
 
   const respondForceFinish = useCallback(
@@ -1644,6 +2068,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const snapshot = forceFinishPrompt;
       setForceFinishPrompt(null);
       void (async () => {
+        lockState('forceFinish', 2000);
         touchOptimistic('force_finish_respond');
         setActionBusy(true);
         try {
@@ -1657,13 +2082,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             if (sess && typeof sess === 'object') {
               setSession(sess as MuhabbetTripSession);
             }
-            await refreshSessionFromServer('force_finish_respond_rest');
+            await refreshSessionFromServer('force_finish_respond_rest', { bypassDebounce: true });
             clearOptimistic('force_finish_respond');
+            unlockState('forceFinish');
             return;
           }
           setForceFinishPrompt(snapshot);
           clearOptimistic('force_finish_respond');
-          await refreshSessionFromServer('force_finish_respond_fail');
+          unlockState('forceFinish');
+          await refreshSessionFromServer('force_finish_respond_fail', { bypassDebounce: true });
           const okSocket = await emitMuhabbetTripEventEnsured(
             'force_finish_respond',
             'muhabbet_trip_force_finish_respond',
@@ -1673,13 +2100,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             { suppressConnectionRenewAlert: true }
           );
           if (okSocket) {
-            await refreshSessionFromServer('force_finish_respond_socket_fallback');
+            await refreshSessionFromServer('force_finish_respond_socket_fallback', { bypassDebounce: true });
             clearOptimistic('force_finish_respond');
+            unlockState('forceFinish');
           } else if (typeof rest.json.detail === 'string' && rest.json.detail) {
             Alert.alert('Muhabbet yolculuk', rest.json.detail);
           }
         } catch {
           clearOptimistic('force_finish_respond');
+          unlockState('forceFinish');
           setForceFinishPrompt(snapshot);
         } finally {
           setActionBusy(false);
@@ -1690,15 +2119,18 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       clearOptimistic,
       emitMuhabbetTripEventEnsured,
       forceFinishPrompt,
+      lockState,
       muhabbetTripSessionRestPost,
       refreshSessionFromServer,
       touchOptimistic,
+      unlockState,
     ]
   );
 
   const closeQrCodeModal = useCallback(() => {
     setQrCodeVisible(false);
     setQrLoading(false);
+    qrCreateInFlightRef.current = false;
     clearOptimistic('boarding_qr_create');
     clearOptimistic('finish_qr_create');
   }, [clearOptimistic]);
@@ -1791,8 +2223,13 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         navigationDisabled={!navigationTarget}
         sendingLocation={sendingLocation}
         actionBusy={actionBusy}
+        qrBusy={qrLoading}
         callState={callState}
         callBusy={callBusy}
+        callDialDisabled={
+          callState === 'idle' &&
+          (callBusy || (callStartCooldownUntil > 0 && Date.now() < callStartCooldownUntil))
+        }
         canStart={false}
         canFinish={tripInfoReady && isDriver && (session.status === 'active' || session.status === 'started')}
         onShareLocation={() => void shareLocation()}
@@ -1894,7 +2331,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             <Text style={styles.trustModalText}>
               Zorla bitirme -5 puan etkileyebilir. Karşı tarafın yanıtı kayıt altına alınır.
             </Text>
-            <Pressable style={({ pressed }) => [styles.forceButton, pressed && { opacity: 0.9 }]} onPress={confirmForceFinishRequest}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.forceButton,
+                pressed && { opacity: 0.9 },
+                actionBusy && { opacity: 0.55 },
+              ]}
+              disabled={actionBusy}
+              onPress={confirmForceFinishRequest}
+            >
               <Ionicons name="warning-outline" size={18} color="#FFFFFF" />
               <Text style={styles.trustAcceptText}>Zorla Bitirme İsteği Gönder</Text>
             </Pressable>
@@ -1908,7 +2353,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         visible={!!forceFinishPrompt}
         transparent
         animationType="fade"
-        onRequestClose={() => setForceFinishPrompt(null)}
+        onRequestClose={() => {
+          const sidN = normalizeMuhabbetSessionId(sessionId);
+          const rid = String(forceFinishPrompt?.requestId || '').trim();
+          const rq = String(forceFinishPrompt?.requesterUserId || '').trim();
+          if (sidN && (rid || rq)) {
+            forceFinishDismissedRef.current = `${sidN}:${rid || rq}`;
+          }
+          setForceFinishPrompt(null);
+        }}
       >
         <View style={styles.trustModalRoot}>
           <View style={styles.trustModalCard}>
@@ -1917,11 +2370,24 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             </View>
             <Text style={styles.trustModalTitle}>Karşı taraf zorla bitirdi</Text>
             <Text style={styles.trustModalText}>Karşı taraf yolculuğu zorla bitirdi. Yanıtınız kayıt altına alınacak ve yolculuk kapanacak.</Text>
-            <Pressable style={({ pressed }) => [styles.trustAcceptButton, pressed && { opacity: 0.9 }]} onPress={() => respondForceFinish(true)}>
+            {forceFinishCountdownText ? (
+              <Text style={[styles.trustModalText, { marginTop: 8, fontWeight: '900', color: '#0F172A' }]}>
+                {forceFinishCountdownText}
+              </Text>
+            ) : null}
+            <Pressable
+              style={({ pressed }) => [styles.trustAcceptButton, pressed && { opacity: 0.9 }, actionBusy && { opacity: 0.55 }]}
+              disabled={actionBusy}
+              onPress={() => respondForceFinish(true)}
+            >
               <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
               <Text style={styles.trustAcceptText}>Onaylıyorum</Text>
             </Pressable>
-            <Pressable style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }]} onPress={() => respondForceFinish(false)}>
+            <Pressable
+              style={({ pressed }) => [styles.trustDeclineButton, pressed && { opacity: 0.9 }, actionBusy && { opacity: 0.55 }]}
+              disabled={actionBusy}
+              onPress={() => respondForceFinish(false)}
+            >
               <Text style={styles.trustDeclineText}>Onaylamıyorum</Text>
             </Pressable>
           </View>
