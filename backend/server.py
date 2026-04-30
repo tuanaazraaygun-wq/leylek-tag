@@ -619,19 +619,23 @@ async def call_user(sid, data):
     logger.info(f"📞 Arama isteği: {caller_id} -> {receiver_id} (call_id: {call_id})")
     logger.info(f"📱 Bağlı kullanıcılar: {list(connected_users.keys())}")
     
-    # Karşı tarafın socket_id'sini bul
-    receiver_sid = connected_users.get(receiver_id)
+    receiver_sid = _connected_sid_for_user(str(receiver_id)) if receiver_id else None
     
+    _ic_payload = {
+        'call_id': call_id,
+        'caller_id': caller_id,
+        'caller_name': caller_name,
+        'channel_name': channel_name,
+        'agora_token': agora_token,
+        'call_type': call_type,
+        'target_user_id': str(receiver_id).strip(),
+    }
+    try:
+        await emit_socket_event_to_user(str(receiver_id).strip(), 'incoming_call', _ic_payload)
+    except Exception as _ice:
+        logger.warning("incoming_call emit_socket_event_to_user failed: %s", _ice)
+
     if receiver_sid:
-        # Karşı tarafa gelen arama bildirimi gönder
-        await sio.emit('incoming_call', {
-            'call_id': call_id,
-            'caller_id': caller_id,
-            'caller_name': caller_name,
-            'channel_name': channel_name,
-            'agora_token': agora_token,
-            'call_type': call_type
-        }, room=receiver_sid)
         logger.info(f"📲 Gelen arama bildirimi gönderildi: {receiver_id} (sid: {receiver_sid})")
         await sio.emit('call_ringing', {'success': True, 'receiver_online': True}, room=sid)
     else:
@@ -653,6 +657,7 @@ async def call_user(sid, data):
                     "channel_name": channel_name,
                     "agora_token": agora_token,
                     "call_type": call_type,
+                    "target_user_id": str(receiver_id).strip(),
                 }
             ))
         except Exception as push_err:
@@ -675,10 +680,22 @@ async def accept_call(sid, data):
             'call_id': call_id,
             'accepted_by': receiver_id
         }, room=caller_sid)
+    try:
+        _started = {
+            "call_id": call_id,
+            "caller_id": str(caller_id).strip() if caller_id else "",
+            "receiver_id": str(receiver_id).strip() if receiver_id else "",
+        }
+        if _started["caller_id"]:
+            await emit_socket_event_to_user(_started["caller_id"], "call_started", _started)
+        if _started["receiver_id"]:
+            await emit_socket_event_to_user(_started["receiver_id"], "call_started", _started)
+    except Exception as _cse:
+        logger.warning("accept_call call_started emit failed: %s", _cse)
 
 @sio.event
 async def reject_call(sid, data):
-    """Aramayı reddet — caller'a bildirim: sid map yerine emit_socket_event_to_user (oda fallback)."""
+    """Aramayı reddet — hem arayana hem aranan kullanıcıya call_rejected (socket senkron)."""
     call_id = data.get('call_id')
     caller_id = data.get('caller_id')
     receiver_id = data.get('receiver_id')
@@ -692,6 +709,11 @@ async def reject_call(sid, data):
             logger.warning(f"reject_call emit_socket_event_to_user failed: {emit_err}")
     else:
         logger.warning("reject_call: caller_id eksik, call_rejected gönderilemedi")
+    if receiver_id:
+        try:
+            await emit_socket_event_to_user(str(receiver_id).strip(), 'call_rejected', payload)
+        except Exception as emit_err:
+            logger.warning(f"reject_call callee emit failed: {emit_err}")
 
 @sio.event
 async def end_call(sid, data):
@@ -9684,6 +9706,7 @@ def build_call_push_payload(
     room_url: str = None,
     room_name: str = None,
     tag_id: str = None,
+    target_user_id: str = None,
 ):
     payload = {
         "type": notification_type,
@@ -9692,6 +9715,8 @@ def build_call_push_payload(
         "call_type": call_type,
     }
 
+    if target_user_id:
+        payload["target_user_id"] = str(target_user_id).strip()
     if call_id:
         payload["call_id"] = call_id
     if channel_name:
@@ -11770,6 +11795,7 @@ async def start_call(request: StartCallRequest):
                     channel_name=channel_name,
                     agora_token=receiver_token,
                     tag_id=request.tag_id,
+                    target_user_id=receiver_id,
                 )
             ))
         except Exception as push_err:
@@ -11784,13 +11810,15 @@ async def start_call(request: StartCallRequest):
                 "channel_name": channel_name,
                 "agora_token": receiver_token,
                 "call_type": request.call_type or "voice",
+                "target_user_id": str(receiver_id).strip(),
             }
             if request.tag_id:
                 incoming_payload["tag_id"] = request.tag_id
-            receiver_sid = connected_users.get(receiver_id)
-            if receiver_sid:
-                await sio.emit("incoming_call", incoming_payload, room=receiver_sid)
-                logger.info(f"📲 incoming_call socket: {receiver_id} sid={receiver_sid}")
+            try:
+                await emit_socket_event_to_user(str(receiver_id).strip(), "incoming_call", incoming_payload)
+                logger.info(f"📲 incoming_call → target_user_id={receiver_id}")
+            except Exception as _ice2:
+                logger.warning(f"⚠️ incoming_call emit_socket_event_to_user: {_ice2}")
         except Exception as sock_err:
             logger.warning(f"⚠️ incoming_call socket gönderilemedi: {sock_err}")
         
@@ -11891,8 +11919,22 @@ async def accept_call(user_id: str, call_id: str):
         if result.data:
             call = result.data[0]
             logger.info(f"✅ SUPABASE: Arama kabul edildi: {call_id}")
-            recv_uid = agora_uid_from_user_id(user_id)
             fresh_token = generate_agora_token(call["channel_name"], user_id=user_id)
+            try:
+                cid_raw = str(call.get("caller_id") or "").strip()
+                rid_raw = str(user_id).strip()
+                _started_http = {
+                    "call_id": call_id,
+                    "caller_id": cid_raw,
+                    "receiver_id": rid_raw,
+                }
+                if cid_raw:
+                    await emit_socket_event_to_user(cid_raw, "call_started", _started_http)
+                    await emit_socket_event_to_user(cid_raw, "call_accepted", {"call_id": call_id, "accepted_by": rid_raw})
+                if rid_raw:
+                    await emit_socket_event_to_user(rid_raw, "call_started", _started_http)
+            except Exception as _acc_em:
+                logger.warning("accept_call HTTP socket emit failed: %s", _acc_em)
             return {
                 "success": True,
                 "channel_name": call["channel_name"],
@@ -11971,6 +12013,12 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
             caller_id = row.get("caller_id")
             if caller_id:
                 await _emit_call_rejected_to(str(caller_id).strip(), reject_payload_base, "primary_update")
+            recv_emit = str(row.get("receiver_id") or user_id).strip()
+            if recv_emit:
+                try:
+                    await emit_socket_event_to_user(recv_emit, "call_rejected", reject_payload_base)
+                except Exception as _re:
+                    logger.warning("CALL_REJECT_EMIT_TO_RECEIVER failed: %s", _re)
         else:
             # Güncelleme 0 satır (yarış / çift reddetme / durum drift): caller temizliği için güvenli fallback
             try:
@@ -12025,6 +12073,12 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
                         await _emit_call_rejected_to(
                             str(caller_fb).strip(), reject_payload_base, "fallback_already_rejected"
                         )
+                    recv_r = str(row_fb.get("receiver_id") or "").strip()
+                    if recv_r:
+                        try:
+                            await emit_socket_event_to_user(recv_r, "call_rejected", reject_payload_base)
+                        except Exception:
+                            pass
                 elif st in ("ended", "cancelled", "missed"):
                     try:
                         logger.info(
@@ -12044,6 +12098,12 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
                         await _emit_call_rejected_to(
                             str(caller_fb).strip(), reject_payload_base, "fallback_terminal"
                         )
+                    recv_r2 = str(row_fb.get("receiver_id") or "").strip()
+                    if recv_r2:
+                        try:
+                            await emit_socket_event_to_user(recv_r2, "call_rejected", reject_payload_base)
+                        except Exception:
+                            pass
 
         return {"success": True, "call_id": call_id}
     except Exception as e:
@@ -12085,11 +12145,27 @@ async def check_call_status(user_id: str, call_id: str):
             # 90 saniyeden fazla çalıyorsa timeout (1.5 dakika)
             created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
             if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=90):
-                # Timeout - missed olarak işaretle
-                supabase.table("calls").update({
-                    "status": "missed",
-                    "ended_at": datetime.utcnow().isoformat()
-                }).eq("call_id", call_id).execute()
+                missed_upd = (
+                    supabase.table("calls")
+                    .update({
+                        "status": "missed",
+                        "ended_at": datetime.utcnow().isoformat(),
+                    })
+                    .eq("call_id", call_id)
+                    .eq("status", "ringing")
+                    .execute()
+                )
+                if missed_upd.data:
+                    try:
+                        c_uid = str(call.get("caller_id") or "").strip()
+                        r_uid = str(call.get("receiver_id") or "").strip()
+                        tp = {"call_id": call_id, "reason": "timeout"}
+                        if c_uid:
+                            await emit_socket_event_to_user(c_uid, "call_timeout", tp)
+                        if r_uid:
+                            await emit_socket_event_to_user(r_uid, "call_timeout", tp)
+                    except Exception as _te:
+                        logger.warning("call_timeout emit failed: %s", _te)
                 return {"success": True, "status": "ended", "should_close": True}
             
             return {
@@ -21791,6 +21867,53 @@ def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
         return None
 
 
+_MUHABBET_CONV_LIST_BASE_FIELDS = (
+    "id, user_a, user_b, created_at, matched_at, match_source, last_message, last_message_at, updated_at"
+)
+_MUHABBET_CONV_LIST_READ_FIELDS = "user_a_last_read_at, user_b_last_read_at"
+
+
+def _muhabbet_pg_missing_column(exc: BaseException, *needles: str) -> bool:
+    raw = str(exc)
+    low = raw.lower()
+    if "42703" in raw:
+        return True
+    if "does not exist" in low:
+        return True
+    for n in needles:
+        if n and n.lower() in low:
+            return True
+    return False
+
+
+def _muhabbet_conversations_me_query(uid: str, fetch_lim: int):
+    """(execute_result, read_columns_selected). Kolonlar yoksa taban alanlarla tekrar dene."""
+    sel_full = f"{_MUHABBET_CONV_LIST_BASE_FIELDS},{_MUHABBET_CONV_LIST_READ_FIELDS}"
+    try:
+        res = (
+            supabase.table("conversations")
+            .select(sel_full)
+            .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
+            .order("created_at", desc=True)
+            .limit(fetch_lim)
+            .execute()
+        )
+        return res, True
+    except Exception as e:
+        if _muhabbet_pg_missing_column(e, "user_a_last_read_at", "user_b_last_read_at"):
+            logger.warning("[muhabbet-conversations] read columns missing, fallback select: %s", e)
+            res = (
+                supabase.table("conversations")
+                .select(_MUHABBET_CONV_LIST_BASE_FIELDS)
+                .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
+                .order("created_at", desc=True)
+                .limit(fetch_lim)
+                .execute()
+            )
+            return res, False
+        raise
+
+
 def _muhabbet_reader_last_read_dt(conversation_row: dict, uid: str):
     uid_lo = str(uid or "").strip().lower()
     a = str(conversation_row.get("user_a") or "").strip().lower()
@@ -21804,13 +21927,23 @@ def _muhabbet_reader_last_read_dt(conversation_row: dict, uid: str):
     return _muhabbet_trip_parse_dt(raw)
 
 
-def _muhabbet_unread_count_for_member(conversation_row: dict, uid: str) -> int:
+def _muhabbet_unread_count_for_member(
+    conversation_row: dict, uid: str, *, read_columns_available: bool = True
+) -> int:
     """Karşı tarafın gönderdiği, okuma zaman damgasından sonra gelen ve silinmemiş mesaj sayısı."""
     cid = str(conversation_row.get("id") or "").strip().lower()
     uid_lo = str(uid or "").strip().lower()
     if not cid or not uid_lo:
         return 0
+    if not read_columns_available:
+        return 0
     cur_dt = _muhabbet_reader_last_read_dt(conversation_row, uid_lo)
+    if cur_dt is None:
+        cur_dt = (
+            _muhabbet_trip_parse_dt(conversation_row.get("last_message_at"))
+            or _muhabbet_trip_parse_dt(conversation_row.get("updated_at"))
+            or _muhabbet_trip_parse_dt(conversation_row.get("created_at"))
+        )
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
         res = (
@@ -21849,13 +21982,19 @@ def _muhabbet_bump_reader_cursor_to_max_iso(cid: str, reader_uid: str, candidate
     if cand_dt is None:
         return
     try:
-        cr = (
-            supabase.table("conversations")
-            .select("user_a,user_b,user_a_last_read_at,user_b_last_read_at")
-            .eq("id", cid)
-            .limit(1)
-            .execute()
-        )
+        try:
+            cr = (
+                supabase.table("conversations")
+                .select("user_a,user_b,user_a_last_read_at,user_b_last_read_at")
+                .eq("id", cid)
+                .limit(1)
+                .execute()
+            )
+        except Exception as se:
+            if _muhabbet_pg_missing_column(se, "user_a_last_read_at", "user_b_last_read_at"):
+                logger.warning("_muhabbet_bump_reader_cursor_to_max_iso: read columns missing: %s", se)
+                return
+            raise
         if not cr.data:
             return
         row = dict(cr.data[0])
@@ -22760,6 +22899,191 @@ def _muhabbet_trip_conversion_context(uid: str, cid: str, *, require_driver_requ
     }
 
 
+def _muhabbet_trip_convert_request_snapshot(uid: str, cid: str) -> dict | None:
+    """En güncel conversion request satırı; GET messages içindeki trip_convert_request ile aynı şema."""
+    uid_lo_ctx = str(uid or "").strip().lower()
+    cid = str(cid or "").strip().lower()
+    if not uid_lo_ctx or not cid:
+        return None
+    try:
+        tcr_res = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .select("id,status,requester_user_id,target_user_id,created_at,updated_at")
+            .eq("conversation_id", cid)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not tcr_res.data:
+            return None
+        trow = dict(tcr_res.data[0])
+        rid_tc = str(trow.get("id") or "").strip().lower()
+        st_tc = str(trow.get("status") or "").strip().lower()
+        req_tc = str(trow.get("requester_user_id") or "").strip().lower()
+        tgt_tc = str(trow.get("target_user_id") or "").strip().lower()
+        session_id_tc = None
+        trip_id_tc = None
+        if rid_tc:
+            try:
+                tsr = (
+                    supabase.table("muhabbet_trip_sessions")
+                    .select("id")
+                    .eq("conversion_request_id", rid_tc)
+                    .limit(1)
+                    .execute()
+                )
+                if tsr.data:
+                    sid_tc = str(tsr.data[0].get("id") or "").strip().lower()
+                    if sid_tc:
+                        session_id_tc = sid_tc
+                        trip_id_tc = sid_tc
+            except Exception as e_ts:
+                logger.warning("trip_convert_request_snapshot session lookup: %s", e_ts)
+        return {
+            "id": rid_tc,
+            "status": st_tc,
+            "requester_user_id": req_tc,
+            "target_user_id": tgt_tc,
+            "created_at": trow.get("created_at"),
+            "updated_at": trow.get("updated_at"),
+            "session_id": session_id_tc,
+            "trip_id": trip_id_tc,
+            "is_requester": req_tc == uid_lo_ctx,
+            "is_target": tgt_tc == uid_lo_ctx,
+            "pending": st_tc == "pending",
+            "accepted": st_tc == "accepted",
+            "declined": st_tc == "declined",
+        }
+    except Exception as e:
+        logger.warning("_muhabbet_trip_convert_request_snapshot: %s", e)
+        return None
+
+
+def _muhabbet_trip_convert_request_ensure_pending(uid: str, cid: str, conv_ctx: dict) -> dict:
+    """conv_ctx: _muhabbet_trip_conversion_context ok=True. Insert veya mevcut pending'i kullan."""
+    uid = str(uid or "").strip().lower()
+    cid = str(cid or "").strip().lower()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    request_id = None
+    reused = False
+    try:
+        pending_existing = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .select("id,requester_user_id")
+            .eq("conversation_id", cid)
+            .eq("status", "pending")
+            .limit(1)
+            .execute()
+        )
+        if pending_existing.data:
+            prow = dict(pending_existing.data[0])
+            request_id = str(prow.get("id") or "").strip().lower()
+            prev_req = str(prow.get("requester_user_id") or "").strip().lower()
+            uid_lo = str(uid).strip().lower()
+            if prev_req and prev_req != uid_lo:
+                return {
+                    "ok": False,
+                    "code": "pending_exists",
+                    "detail": "Bu sohbet için zaten bekleyen bir yolculuğa çevirme isteği var.",
+                }
+            reused = True
+            logger.info(
+                "[trip_convert_request_ensure] reuse pending cid=%s request_id=%s requester=%s target=%s",
+                cid,
+                request_id,
+                uid,
+                conv_ctx.get("target_user_id"),
+            )
+        else:
+            ins = (
+                supabase.table("muhabbet_trip_conversion_requests")
+                .insert(
+                    {
+                        "conversation_id": cid,
+                        "listing_id": conv_ctx.get("listing_id"),
+                        "listing_match_request_id": conv_ctx.get("listing_match_request_id"),
+                        "requester_user_id": uid,
+                        "target_user_id": conv_ctx.get("target_user_id"),
+                        "passenger_id": conv_ctx.get("passenger_id"),
+                        "driver_id": conv_ctx.get("driver_id"),
+                        "status": "pending",
+                        "city": conv_ctx.get("city"),
+                        "pickup_text": conv_ctx.get("pickup_text"),
+                        "pickup_lat": conv_ctx.get("pickup_lat"),
+                        "pickup_lng": conv_ctx.get("pickup_lng"),
+                        "dropoff_text": conv_ctx.get("dropoff_text"),
+                        "dropoff_lat": conv_ctx.get("dropoff_lat"),
+                        "dropoff_lng": conv_ctx.get("dropoff_lng"),
+                        "agreed_price": conv_ctx.get("agreed_price"),
+                        "vehicle_kind": conv_ctx.get("vehicle_kind"),
+                        "payment_method": conv_ctx.get("payment_method"),
+                        "requested_at": now_iso,
+                        "updated_at": now_iso,
+                    }
+                )
+                .execute()
+            )
+            if ins.data and ins.data[0].get("id"):
+                request_id = str(ins.data[0]["id"]).strip().lower()
+                reused = False
+                logger.info(
+                    "[trip_convert_request_ensure] inserted cid=%s request_id=%s requester=%s target=%s",
+                    cid,
+                    request_id,
+                    uid,
+                    conv_ctx.get("target_user_id"),
+                )
+            else:
+                race = (
+                    supabase.table("muhabbet_trip_conversion_requests")
+                    .select("id")
+                    .eq("conversation_id", cid)
+                    .eq("status", "pending")
+                    .limit(1)
+                    .execute()
+                )
+                if race.data:
+                    request_id = str(race.data[0].get("id") or "").strip().lower()
+                    reused = True
+                    logger.info(
+                        "[trip_convert_request_ensure] insert empty response, reuse after race cid=%s request_id=%s",
+                        cid,
+                        request_id,
+                    )
+    except Exception as insert_err:
+        logger.warning("[trip_convert_request_ensure] insert or lookup: %s", insert_err)
+        race2 = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .select("id,requester_user_id")
+            .eq("conversation_id", cid)
+            .eq("status", "pending")
+            .limit(1)
+            .execute()
+        )
+        if race2.data:
+            r2 = dict(race2.data[0])
+            request_id = str(r2.get("id") or "").strip().lower()
+            prev_req = str(r2.get("requester_user_id") or "").strip().lower()
+            if prev_req and prev_req != str(uid).strip().lower():
+                return {
+                    "ok": False,
+                    "code": "pending_exists",
+                    "detail": "Bu sohbet için zaten bekleyen bir yolculuğa çevirme isteği var.",
+                }
+            reused = True
+            logger.info(
+                "[trip_convert_request_ensure] reuse after unique/conflict cid=%s request_id=%s",
+                cid,
+                request_id,
+            )
+        else:
+            return {"ok": False, "code": "db", "detail": "İstek oluşturulamadı."}
+
+    if not request_id:
+        return {"ok": False, "code": "db", "detail": "İstek oluşturulamadı."}
+    return {"ok": True, "request_id": request_id, "reused": reused}
+
+
 async def _emit_muhabbet_trip_conversion_error(sid: str, code: str, detail: str) -> None:
     await sio.emit(
         "muhabbet_trip_convert_error",
@@ -23353,40 +23677,11 @@ async def sio_muhabbet_trip_convert_request(sid, data):
         if not ctx.get("ok"):
             await _emit_muhabbet_trip_conversion_error(sid, str(ctx.get("code") or "error"), str(ctx.get("detail") or "İstek oluşturulamadı."))
             return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        ins = (
-            supabase.table("muhabbet_trip_conversion_requests")
-            .insert(
-                {
-                    "conversation_id": cid,
-                    "listing_id": ctx.get("listing_id"),
-                    "listing_match_request_id": ctx.get("listing_match_request_id"),
-                    "requester_user_id": uid,
-                    "target_user_id": ctx.get("target_user_id"),
-                    "passenger_id": ctx.get("passenger_id"),
-                    "driver_id": ctx.get("driver_id"),
-                    "status": "pending",
-                    "city": ctx.get("city"),
-                    "pickup_text": ctx.get("pickup_text"),
-                    "pickup_lat": ctx.get("pickup_lat"),
-                    "pickup_lng": ctx.get("pickup_lng"),
-                    "dropoff_text": ctx.get("dropoff_text"),
-                    "dropoff_lat": ctx.get("dropoff_lat"),
-                    "dropoff_lng": ctx.get("dropoff_lng"),
-                    "agreed_price": ctx.get("agreed_price"),
-                    "vehicle_kind": ctx.get("vehicle_kind"),
-                    "payment_method": ctx.get("payment_method"),
-                    "requested_at": now_iso,
-                    "updated_at": now_iso,
-                }
-            )
-            .execute()
-        )
-        if not ins.data or not ins.data[0].get("id"):
-            await _emit_muhabbet_trip_conversion_error(sid, "db", "İstek oluşturulamadı.")
+        out = _muhabbet_trip_convert_request_ensure_pending(uid, cid, ctx)
+        if not out.get("ok"):
+            await _emit_muhabbet_trip_conversion_error(sid, str(out.get("code") or "error"), str(out.get("detail") or "İstek oluşturulamadı."))
             return
-        request_id = str(ins.data[0]["id"]).strip().lower()
-        logger.info("[trip_convert_request] inserted cid=%s request_id=%s requester=%s target=%s", cid, request_id, uid, ctx.get("target_user_id"))
+        request_id = str(out.get("request_id") or "").strip().lower()
         payload = {
             "request_id": request_id,
             "conversation_id": cid,
@@ -24298,17 +24593,7 @@ async def muhabbet_conversations_me(
         except Exception as e:
             logger.warning("conversations_me hides: %s", e)
         fetch_lim = min(100, lim + len(hidden_ids))
-        res = (
-            supabase.table("conversations")
-            .select(
-                "id, user_a, user_b, created_at, matched_at, match_source, last_message, last_message_at, "
-                "user_a_last_read_at, user_b_last_read_at"
-            )
-            .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
-            .order("created_at", desc=True)
-            .limit(fetch_lim)
-            .execute()
-        )
+        res, read_cols_ok = _muhabbet_conversations_me_query(uid, fetch_lim)
         logger.info("conversations_me debug query_rows=%s uid=%s", len(res.data or []), str(uid)[:96])
         logger.info("[muhabbet-conversations] query_rows=%s", len(res.data or []))
         logger.info("[muhabbet-conversations] hidden_count=%s", len(hidden_ids))
@@ -24425,7 +24710,9 @@ async def muhabbet_conversations_me(
             last_body = lm.get("last_message_body") or conv_last_body
             last_at = lm.get("last_message_at") or conv_last_at
             try:
-                unread_n = _muhabbet_unread_count_for_member(dict(c), uid)
+                unread_n = _muhabbet_unread_count_for_member(
+                    dict(c), uid, read_columns_available=read_cols_ok
+                )
             except Exception as ue:
                 logger.warning("conversations_me unread_count cid=%s err=%s", conv_id, ue)
                 unread_n = 0
@@ -24561,6 +24848,58 @@ async def muhabbet_conversation_messages_get(
                     pending_pair_request_target_id = tgt_uid or None
         except Exception as e:
             logger.warning("messages_get pending_pair_request: %s", e)
+        trip_convert_request_payload = None
+        try:
+            tcr_res = (
+                supabase.table("muhabbet_trip_conversion_requests")
+                .select("id,status,requester_user_id,target_user_id,created_at,updated_at")
+                .eq("conversation_id", cid)
+                .order("updated_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if tcr_res.data:
+                trow = dict(tcr_res.data[0])
+                rid_tc = str(trow.get("id") or "").strip().lower()
+                st_tc = str(trow.get("status") or "").strip().lower()
+                req_tc = str(trow.get("requester_user_id") or "").strip().lower()
+                tgt_tc = str(trow.get("target_user_id") or "").strip().lower()
+                uid_lo_ctx = str(uid).strip().lower()
+                session_id_tc = None
+                trip_id_tc = None
+                if rid_tc:
+                    try:
+                        tsr = (
+                            supabase.table("muhabbet_trip_sessions")
+                            .select("id")
+                            .eq("conversion_request_id", rid_tc)
+                            .limit(1)
+                            .execute()
+                        )
+                        if tsr.data:
+                            sid_tc = str(tsr.data[0].get("id") or "").strip().lower()
+                            if sid_tc:
+                                session_id_tc = sid_tc
+                                trip_id_tc = sid_tc
+                    except Exception as e_ts:
+                        logger.warning("messages_get trip_convert_request session lookup: %s", e_ts)
+                trip_convert_request_payload = {
+                    "id": rid_tc,
+                    "status": st_tc,
+                    "requester_user_id": req_tc,
+                    "target_user_id": tgt_tc,
+                    "created_at": trow.get("created_at"),
+                    "updated_at": trow.get("updated_at"),
+                    "session_id": session_id_tc,
+                    "trip_id": trip_id_tc,
+                    "is_requester": req_tc == uid_lo_ctx,
+                    "is_target": tgt_tc == uid_lo_ctx,
+                    "pending": st_tc == "pending",
+                    "accepted": st_tc == "accepted",
+                    "declined": st_tc == "declined",
+                }
+        except Exception as e:
+            logger.warning("messages_get trip_convert_request: %s", e)
         ctx = {
             "other_user_id": other_uid,
             "other_user_public_name": other_public_name,
@@ -24578,6 +24917,7 @@ async def muhabbet_conversation_messages_get(
             "pending_pair_request_direction": pending_pair_request_direction,
             "pending_pair_request_requester_id": pending_pair_request_requester_id,
             "pending_pair_request_target_id": pending_pair_request_target_id,
+            "trip_convert_request": trip_convert_request_payload,
             "ephemeral_chat": False,
         }
         msgs = _muhabbet_messages_fetch_visible_for_user(cid, uid, lim)
@@ -24826,12 +25166,80 @@ async def muhabbet_conversation_mark_read(
             patch["user_b_last_read_at"] = now_iso
         else:
             raise HTTPException(status_code=403, detail="Bu sohbetin üyesi değilsiniz")
-        supabase.table("conversations").update(patch).eq("id", cid).execute()
+        try:
+            supabase.table("conversations").update(patch).eq("id", cid).execute()
+        except Exception as ue:
+            if _muhabbet_pg_missing_column(ue, "user_a_last_read_at", "user_b_last_read_at"):
+                logger.warning(
+                    "[muhabbet-read] read columns missing; skip cursor update cid=%s err=%s",
+                    cid,
+                    ue,
+                )
+                try:
+                    supabase.table("conversations").update({"updated_at": now_iso}).eq("id", cid).execute()
+                except Exception as ue2:
+                    logger.warning("[muhabbet-read] updated_at only patch failed: %s", ue2)
+                return {"success": True, "read_cursor_skipped": True}
+            raise
         return {"success": True}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"muhabbet_conversation_mark_read: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/trip-convert/request")
+async def muhabbet_trip_convert_request_rest(
+    conversation_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yolculuğa çevirme isteği — önce DB (pending tekilleştirme); socket emit sunucudan, kopukta da kayıt oluşur."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        try:
+            uuid.UUID(cid)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Geçersiz sohbet kimliği") from e
+        ctx_conv = _muhabbet_trip_conversion_context(uid, cid, require_driver_requester=True)
+        if not ctx_conv.get("ok"):
+            raise HTTPException(
+                status_code=400,
+                detail=str(ctx_conv.get("detail") or "İstek oluşturulamadı."),
+            )
+        out = _muhabbet_trip_convert_request_ensure_pending(uid, cid, ctx_conv)
+        if not out.get("ok"):
+            code = str(out.get("code") or "")
+            detail = str(out.get("detail") or "İstek oluşturulamadı.")
+            if code == "pending_exists":
+                raise HTTPException(status_code=409, detail=detail)
+            raise HTTPException(status_code=400, detail=detail)
+        request_id = str(out.get("request_id") or "").strip().lower()
+        reused = bool(out.get("reused"))
+        payload = {
+            "request_id": request_id,
+            "conversation_id": cid,
+            "requester_user_id": uid,
+            "target_user_id": ctx_conv.get("target_user_id"),
+            "passenger_id": ctx_conv.get("passenger_id"),
+            "driver_id": ctx_conv.get("driver_id"),
+        }
+        try:
+            await emit_socket_event_to_user(
+                str(ctx_conv.get("target_user_id") or "").strip(),
+                "muhabbet_trip_convert_request",
+                payload,
+            )
+            await emit_socket_event_to_user(uid, "muhabbet_trip_convert_request_sent", payload)
+        except Exception as e:
+            logger.warning("[trip_convert_request_rest] socket emit: %s", e)
+        blob = _muhabbet_trip_convert_request_snapshot(uid, cid)
+        return {"success": True, "reused": reused, "trip_convert_request": blob}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("muhabbet_trip_convert_request_rest: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

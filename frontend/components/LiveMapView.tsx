@@ -3404,6 +3404,43 @@ export default function LiveMapView({
     driverYolcuyaGitCoordContext,
     navDriverMapCoord,
   ]);
+
+  const handleBoardingQrPress = useCallback(() => {
+    if (!onShowQRModal) return;
+    if (!boardingConfirmed && isDriver && userLocation && otherLocation) {
+      const distanceKm =
+        meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
+          ? meetingDistance
+          : null;
+      if (distanceKm == null) {
+        Alert.alert(
+          '📍 Mesafe',
+          'Yolcuya mesafe sunucudan henüz gelmedi. Bir süre sonra tekrar deneyin.',
+          [{ text: 'Tamam', style: 'default' }],
+        );
+        return;
+      }
+      const distanceMeters = distanceKm * 1000;
+      if (distanceMeters > 1000) {
+        Alert.alert(
+          '📍 Yakın değil',
+          `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : distanceKm.toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
+          [{ text: 'Tamam', style: 'default' }],
+        );
+        return;
+      }
+    }
+    onShowQRModal();
+  }, [
+    onShowQRModal,
+    boardingConfirmed,
+    isDriver,
+    userLocation,
+    otherLocation,
+    meetingDistance,
+    riderNoun,
+    passMotor,
+  ]);
   
   useEffect(() => {
     // Sürekli yanıp sönen animasyon
@@ -4787,6 +4824,31 @@ export default function LiveMapView({
   const driverNavActive = isDriver && navigationMode;
   /** Tam ekran sürücü navigasyonu: yalnızca arama + üst kart + harita */
   const driverNavImmersive = isDriver && navigationMode;
+  /** Uber/WhatsApp tarzı özet ekran — sürücü, navigasyon kapalıyken */
+  const driverRideUiModern = !!(isDriver && MapView && !driverNavImmersive);
+  /** Üst kart (~alış/hedef/yolcu satırları) + alt sheet yüksekliğine göre harita güvenli alanı */
+  const driverRideModernMapPadTop = Math.max(insets.top, 12) + 272;
+  const driverRideModernMapPadBottom = 262 + Math.max(insets.bottom, 12);
+  const driverRideModernLocateFabBottom = 268 + Math.max(insets.bottom, 10);
+  const driverTripTag = (driverYolcuyaGitCoordContext?.activeTag ?? null) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const driverPickupAddr = String(
+    driverTripTag?.pickup_location ?? driverTripTag?.pickup_address ?? '',
+  ).trim();
+  const driverDropoffAddr = String(
+    driverTripTag?.dropoff_location ??
+      driverTripTag?.dropoff_address ??
+      driverTripTag?.destination ??
+      '',
+  ).trim();
+  const driverNearPickupForQr =
+    driverRideUiModern &&
+    !boardingConfirmed &&
+    meetingDistance != null &&
+    Number.isFinite(meetingDistance) &&
+    meetingDistance <= 1.2;
   /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
   const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
   const driverMatrixNavChipGradientColors = boardingConfirmed
@@ -4854,25 +4916,51 @@ export default function LiveMapView({
       ? driverNavRouteHeadingDeg
       : 0) + getDriverNavRotationOffsetDeg(passMotor ? 'motorcycle' : 'car');
 
+  useEffect(() => {
+    if (!isDriver) return;
+    console.log('[ride_ui_modern]', {
+      driverRideUiModern,
+      boardingConfirmed,
+      hasForceEnd: typeof onForceEnd === 'function',
+      driverNavImmersive,
+      hasMapView: !!MapView,
+    });
+  }, [isDriver, driverRideUiModern, boardingConfirmed, onForceEnd, driverNavImmersive]);
+
+  useEffect(() => {
+    if (!driverRideUiModern || boardingConfirmed) return;
+    if (!onForceEnd) {
+      console.warn('[ride_ui_modern] onForceEnd missing, Zorla Bitir gizlenir');
+    }
+  }, [driverRideUiModern, boardingConfirmed, onForceEnd]);
+
+  useEffect(() => {
+    if (!__DEV__ || !driverRideUiModern || !boardingConfirmed) return;
+    console.log('[ride_ui_modern] boardingConfirmed: QR / Zorla Bitir row suppressed');
+  }, [driverRideUiModern, boardingConfirmed]);
+
   return (
     <View style={styles.container}>
       {/* 🆕 BULUTLU ARKAPLAN - Sadece üst kısım */}
-      <Image 
-        source={{ uri: isDriver 
-          ? 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&q=80'
-          : 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80'
-        }}
-        style={styles.cloudBackground}
-        resizeMode="cover"
-      />
-      {/* 🆕 Bulut renk tint'i (silince arkaplan + buton uyumu) */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.cloudTintOverlay,
-          { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
-        ]}
-      />
+      {!driverRideUiModern ? (
+        <>
+          <Image 
+            source={{ uri: isDriver 
+              ? 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&q=80'
+              : 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80'
+            }}
+            style={styles.cloudBackground}
+            resizeMode="cover"
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.cloudTintOverlay,
+              { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
+            ]}
+          />
+        </>
+      ) : null}
 
       {driverNavImmersive ? (
         <View
@@ -4932,7 +5020,14 @@ export default function LiveMapView({
                   bottom: driverNavImmersiveMapPaddingBottomPx(insets.bottom),
                   left: 12,
                 }
-              : driverNavActive
+              : driverRideUiModern
+                ? {
+                    top: driverRideModernMapPadTop,
+                    right: 12,
+                    bottom: driverRideModernMapPadBottom,
+                    left: 12,
+                  }
+                : driverNavActive
                 ? { top: 270, right: 12, bottom: 300, left: 12 }
                 : { top: 200, right: 14, bottom: 268, left: 14 }
           }
@@ -5034,8 +5129,8 @@ export default function LiveMapView({
             meetingRouteCoordinates.length > 1 && (
               <Polyline
                 coordinates={meetingRouteCoordinates}
-                strokeWidth={10}
-                strokeColor={pickupNavStroke.bright}
+                strokeWidth={7}
+                strokeColor="rgba(37, 99, 235, 0.88)"
                 lineCap="round"
                 lineJoin="round"
                 zIndex={10}
@@ -5192,13 +5287,130 @@ export default function LiveMapView({
 
       {/* Sürücü ekranında "Yolcu burada..." yazısı kaldırıldı */}
 
-      {/* ÜST BİLGİ PANELİ — buluşma / hedef / fiyat (nav modunda kompakt) */}
-      <View
-        style={[
-          styles.topInfoPanel,
-          driverNavImmersive ? { paddingTop: Math.max(insets.top, 8) + 100 } : null,
-        ]}
-      >
+      {/* ÜST BİLGİ PANELİ — sürücü özet kartı veya klasik gradient kart */}
+      {driverRideUiModern ? (
+        <View style={[styles.driverRideTopWrap, { top: Math.max(insets.top, 10) + 6 }]} pointerEvents="box-none">
+          <View style={styles.driverRideTopCard}>
+            {__DEV__ ? (
+              <View style={styles.driverRideUiDebugBadge} pointerEvents="none">
+                <Text style={styles.driverRideUiDebugBadgeText}>MODERN RIDE UI</Text>
+              </View>
+            ) : null}
+            <View style={styles.driverRideTopHeader}>
+              <View
+                style={[
+                  styles.driverRideStatusPill,
+                  boardingConfirmed ? styles.driverRideStatusPillStarted : null,
+                ]}
+              >
+                <View style={styles.driverRideStatusDot} />
+                <Text
+                  style={[
+                    styles.driverRideStatusPillText,
+                    boardingConfirmed ? styles.driverRideStatusPillTextStarted : null,
+                  ]}
+                >
+                  {boardingConfirmed ? 'Yolculuk başladı' : 'Yolculuk aktif'}
+                </Text>
+              </View>
+              <View style={styles.driverRideTopHeaderRight}>
+                <Text style={styles.driverRideLiveTag}>CANLI</Text>
+                <View style={styles.driverRideVehicleChip}>
+                  <Text style={styles.driverRideVehicleChipText}>{passMotor ? 'Motor' : 'Araba'}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.driverRideLocRow}>
+              <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconPickup]}>
+                <Ionicons name="navigate-circle" size={20} color="#15803D" />
+              </View>
+              <View style={styles.driverRideLocTextCol}>
+                <Text style={styles.driverRideSectionLabel}>Buluşma noktası</Text>
+                <Text
+                  style={styles.driverRideAddr}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.88}
+                >
+                  {driverPickupAddr || 'Alış noktası'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.driverRideLocRow, { marginTop: 12 }]}>
+              <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconDest]}>
+                <Ionicons name="flag" size={18} color="#C2410C" />
+              </View>
+              <View style={styles.driverRideLocTextCol}>
+                <Text style={styles.driverRideSectionLabel}>Hedef</Text>
+                <Text
+                  style={styles.driverRideAddr}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.88}
+                >
+                  {driverDropoffAddr || 'Varış'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.driverRideMetricsRow}>
+              <Text style={styles.driverRideMetricsText} numberOfLines={2}>
+                {showMeetingRouteCalculating || showMeetingRouteUnavailable
+                  ? 'Buluşma: hesaplanıyor…'
+                  : `Buluşma: ${formatRouteKmMin(meetingDistance, meetingDuration)}`}
+                {destinationLocation
+                  ? showDestinationRouteCalculating || showDestinationRouteUnavailable
+                    ? '  ·  Hedef: …'
+                    : `  ·  Hedef: ${formatRouteKmMin(destinationDistance, destinationDuration)}`
+                  : ''}
+              </Text>
+            </View>
+
+            <View style={styles.driverRidePriceRow}>
+              {passengerPaymentMethod ? (
+                <Text style={styles.driverRidePayHint} numberOfLines={1}>
+                  {passengerPaymentMethod === 'card' ? 'Sanal kart' : 'Nakit'}
+                </Text>
+              ) : (
+                <View style={styles.driverRidePriceRowSpacer} />
+              )}
+              {offeredPrice || price ? (
+                <View style={styles.driverRidePriceBadge}>
+                  <Text style={styles.driverRidePriceBadgeText}>₺{offeredPrice ?? price}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.driverRidePassengerRow}>
+              <View style={styles.driverRidePassengerAvatarWrap}>
+                <TripMapMarkerImage
+                  source={getPassengerMarkerImage(otherPassengerGender ?? null, otherUserId ?? null)}
+                  size={40}
+                />
+              </View>
+              <View style={styles.driverRidePassengerTextCol}>
+                <Text style={styles.driverRidePassengerLabel}>Yolcu</Text>
+                <Text
+                  style={styles.driverRidePassengerName}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {displayFirstName(otherUserName, 'Yolcu')}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.topInfoPanel,
+            driverNavImmersive ? { paddingTop: Math.max(insets.top, 8) + 100 } : null,
+          ]}
+        >
         <View
           style={[
             styles.topInfoBorder,
@@ -5492,8 +5704,8 @@ export default function LiveMapView({
           </View>
         ) : null}
 
-        {/* Sürücü matrix + Yolcuya Git (aynı satır) — kart düzeni değişmez, yalnızca alt şerit */}
-        {isDriver && !driverNavImmersive ? (
+        {/* Sürücü matrix + Yolcuya Git — modern özet ekranda alt panele taşındı */}
+        {driverRideUiModern ? null : isDriver && !driverNavImmersive ? (
           <View style={styles.driverMatchMatrixRow} pointerEvents="box-none">
             {matrixStatus ? (
               <View style={[styles.matrixContainerDriver, styles.matrixContainerDriverInRow]} pointerEvents="none">
@@ -5561,9 +5773,10 @@ export default function LiveMapView({
             ) : null}
           </View>
         ) : null}
-      </View>
+        </View>
+      )}
 
-      {driverNavImmersive && MapView ? (
+      {driverNavImmersive && MapView && !driverRideUiModern ? (
         <View style={styles.navImmersiveLayerRoot} pointerEvents="box-none">
           <View
             style={[
@@ -5605,8 +5818,156 @@ export default function LiveMapView({
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
         <View style={styles.bottomGradient}>
-          {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — aynı hat */}
-          {MapView && onCall && !driverNavImmersive ? (
+          {driverRideUiModern ? (
+            <View
+              style={[
+                styles.driverRideBottomSheet,
+                { paddingBottom: 14 + Math.max(insets.bottom, 10) },
+              ]}
+            >
+              {onCall ? (
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  style={[styles.driverRidePrimaryBtn, isCallLoading && { opacity: 0.55 }]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    void handleCall('audio');
+                  }}
+                  disabled={isCallLoading}
+                  accessibilityRole="button"
+                  accessibilityLabel="Yolcuyu ara"
+                >
+                  <LinearGradient
+                    colors={['#16A34A', '#22C55E']}
+                    style={styles.driverRidePrimaryBtnGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="call" size={22} color="#FFF" />
+                    <Text
+                      style={styles.driverRidePrimaryBtnText}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.82}
+                    >
+                      Yolcuyu Ara
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : null}
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.driverRideSecondaryBtn,
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={() => handleYolcuyaGitPress()}
+                accessibilityRole="button"
+                accessibilityLabel={driverMatrixNavChipLabel}
+              >
+                <Ionicons name="navigate" size={20} color="#334155" />
+                <Text
+                  style={styles.driverRideSecondaryBtnText}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                >
+                  Yolcuya Git
+                </Text>
+              </Pressable>
+
+              {!boardingConfirmed ? (
+                <View style={styles.driverRideSheetRow2}>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={[
+                      styles.driverRideQrBtn,
+                      driverNearPickupForQr ? styles.driverRideQrBtnProminent : null,
+                    ]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      handleBoardingQrPress();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Biniş QR göster"
+                  >
+                    <LinearGradient
+                      colors={driverNearPickupForQr ? ['#7C3AED', '#6D28D9'] : ['#8B5CF6', '#7C3AED']}
+                      style={styles.driverRideQrBtnGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="qr-code" size={20} color="#FFF" />
+                      <Text
+                        style={styles.driverRideQrBtnText}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Biniş QR Göster
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {onForceEnd ? (
+                    <TouchableOpacity
+                      style={styles.driverRideForceBtn}
+                      activeOpacity={0.82}
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                          if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                            return;
+                          }
+                          if (!tagId || String(tagId).trim() === '') {
+                            Alert.alert(
+                              'İşlem yapılamıyor',
+                              'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                            );
+                            return;
+                          }
+                          const stOpen = String(tagStatus || '').toLowerCase();
+                          if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                            Alert.alert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.');
+                            return;
+                          }
+                          setInRideSaferFeStep('choice');
+                          setInRideSaferFeVisible(true);
+                          return;
+                        }
+                        Alert.alert(
+                          '⚠️ Zorla Bitir',
+                          'Bu işlem puanınızı düşürebilir. Mümkünse QR ile tamamlayın.',
+                          [
+                            { text: 'Vazgeç', style: 'cancel' },
+                            {
+                              text: 'Zorla Bitir',
+                              style: 'destructive',
+                              onPress: () => onForceEnd?.(),
+                            },
+                          ],
+                        );
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Zorla bitir"
+                    >
+                      <Ionicons name="warning" size={18} color="#FFF" />
+                      <Text
+                        style={styles.driverRideForceBtnText}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Zorla Bitir
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — yolcu / klasik sürücü */}
+          {driverRideUiModern ? null : MapView && onCall && !driverNavImmersive ? (
             <View style={styles.tripActionBar} pointerEvents="box-none">
               <View style={styles.tripActionBarCol}>
                 {isDriver ? (
@@ -5723,8 +6084,8 @@ export default function LiveMapView({
             </View>
           ) : null}
 
-          {/* 🆕 ALT BUTONLAR — AI (eski Destek köşesi) + Bitir */}
-          {!driverNavImmersive ? (
+          {/* AI / QR / Zorla — yolcu ve klasik sürücü */}
+          {driverRideUiModern ? null : !driverNavImmersive ? (
           <View style={styles.actionButtons}>
             {onOpenLeylekZekaSupport ? (
               <Pressable
@@ -5890,6 +6251,26 @@ export default function LiveMapView({
           ) : null}
         </View>
       </View>
+
+      {driverRideUiModern ? (
+        <View
+          pointerEvents="box-none"
+          style={[styles.driverRideLocateFabWrap, { bottom: driverRideModernLocateFabBottom }]}
+        >
+          <TouchableOpacity
+            style={styles.driverRideLocateFab}
+            onPress={() => {
+              void tapButtonHaptic();
+              fitNavigationViewport(meetingRouteCoordinates);
+            }}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Konumuma göre haritayı ortala"
+          >
+            <Ionicons name="locate" size={22} color="#0f172a" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* 🆕 KULLANICI BİLGİ KARTI MODAL */}
       <Modal
@@ -7595,6 +7976,407 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
     lineHeight: 17,
+  },
+
+  driverRideTopWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 4000,
+    alignItems: 'stretch',
+    paddingHorizontal: 16,
+    pointerEvents: 'box-none',
+  },
+  driverRideTopCard: {
+    position: 'relative',
+    alignSelf: 'stretch',
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 22,
+    elevation: 9,
+  },
+  driverRideUiDebugBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 8,
+    zIndex: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(107, 33, 168, 0.92)',
+  },
+  driverRideUiDebugBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  driverRideLocRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  driverRideLocIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  driverRideLocIconPickup: {
+    backgroundColor: '#DCFCE7',
+  },
+  driverRideLocIconDest: {
+    backgroundColor: '#FFEDD5',
+  },
+  driverRideLocTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  driverRideTopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  driverRideStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  driverRideStatusPillStarted: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  driverRideStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  driverRideStatusPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.2,
+  },
+  driverRideStatusPillTextStarted: {
+    color: '#1D4ED8',
+  },
+  driverRideTopHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  driverRideLiveTag: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    color: '#DC2626',
+  },
+  driverRideVehicleChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  driverRideVehicleChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  driverRideSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  driverRideAddr: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+    lineHeight: 21,
+    flexShrink: 1,
+  },
+  driverRideMetricsRow: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  driverRideMetricsText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    lineHeight: 19,
+    flexShrink: 1,
+  },
+  driverRidePriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 12,
+    flexWrap: 'nowrap',
+  },
+  driverRidePriceRowSpacer: {
+    flex: 1,
+    minWidth: 0,
+  },
+  driverRidePriceBadge: {
+    flexShrink: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#111827',
+    marginLeft: 'auto',
+  },
+  driverRidePriceBadgeText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  driverRidePayHint: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+    flexShrink: 1,
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  driverRidePassengerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    gap: 12,
+  },
+  driverRidePassengerAvatarWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverRidePassengerTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  driverRidePassengerLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  driverRidePassengerName: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  driverRideMiniCall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#16A34A',
+  },
+  driverRideMiniCallText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  driverRideMatrixBanner: {
+    marginTop: 8,
+    maxWidth: SCREEN_WIDTH - 32,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+  },
+  driverRideMatrixBannerText: {
+    color: '#86EFAC',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
+  driverRideBottomSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 16,
+  },
+  driverRidePrimaryBtn: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 11,
+  },
+  driverRidePrimaryBtnGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 58,
+    paddingHorizontal: 12,
+  },
+  driverRidePrimaryBtnText: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#FFF',
+    flexShrink: 1,
+  },
+  driverRideSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 54,
+    paddingVertical: 0,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 11,
+  },
+  driverRideSecondaryBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#334155',
+    flexShrink: 1,
+  },
+  driverRideSheetRow2: {
+    flexDirection: 'row',
+    gap: 11,
+    alignItems: 'stretch',
+    marginBottom: 11,
+  },
+  driverRideSheetRowGrow: {
+    flex: 1,
+    minHeight: 48,
+  },
+  driverRideQrBtn: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    minHeight: 56,
+  },
+  driverRideQrBtnProminent: {
+    shadowColor: '#6D28D9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+    transform: [{ scale: 1.02 }],
+  },
+  driverRideQrBtnGrad: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 56,
+    paddingHorizontal: 8,
+  },
+  driverRideQrBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FFF',
+    flexShrink: 1,
+  },
+  driverRideForceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 8,
+    minHeight: 56,
+  },
+  driverRideForceBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#FFF',
+    flexShrink: 1,
+  },
+  driverRideAuxRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  driverRideAuxChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  driverRideAuxChipText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  driverRideLocateFabWrap: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 3500,
+    pointerEvents: 'box-none',
+  },
+  driverRideLocateFab: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
 
   navModeExitRow: {

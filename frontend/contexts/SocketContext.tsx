@@ -379,8 +379,15 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const applyIncomingCallPayload = useCallback((data: any, source: string) => {
     if (!data || data.type !== 'incoming_call') return;
     const myId = userIdRef.current;
+    const targetId = data.target_user_id != null ? String(data.target_user_id).trim() : '';
+    const myNorm = String(myId ?? '').trim().toLowerCase();
+    const targetNorm = targetId.trim().toLowerCase();
+    if (targetId && myNorm && myNorm !== targetNorm) {
+      console.log(`🔕 [SocketProvider] ${source}: incoming_call hedef dışı (target_user_id)`);
+      return;
+    }
     const callerId = data.caller_id != null ? String(data.caller_id) : '';
-    if (!callerId || (myId && callerId === String(myId))) {
+    if (!callerId || (myNorm && callerId.trim().toLowerCase() === myNorm)) {
       console.log(`🔕 [SocketProvider] ${source}: incoming_call yok sayıldı (kendi araması)`);
       return;
     }
@@ -515,7 +522,17 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const handleIncomingCall = (data: any) => {
       console.log('🔔 [SocketProvider] GELEN ARAMA (incoming_call)', data);
       const myId = userIdRef.current;
-      if (myId && data?.caller_id != null && String(data.caller_id) === String(myId)) {
+      const targetId = data?.target_user_id != null ? String(data.target_user_id).trim() : '';
+      const myNorm = String(myId ?? '').trim().toLowerCase();
+      if (targetId && myNorm && targetId.trim().toLowerCase() !== myNorm) {
+        console.log('🔕 [SocketProvider] incoming_call yok sayıldı (hedef kullanıcı değil)');
+        return;
+      }
+      if (
+        myNorm &&
+        data?.caller_id != null &&
+        String(data.caller_id).trim().toLowerCase() === myNorm
+      ) {
         console.log('🔕 [SocketProvider] incoming_call yok sayıldı (socket: arayan kendisi)');
         return;
       }

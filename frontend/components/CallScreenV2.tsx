@@ -171,7 +171,7 @@ export default function CallScreenV2({
       onJoinChannelSuccess: (_connection: RtcConnection) => {
         LOG('Kanala katılındı', { channelName, uid: myUid });
         if (mode === 'caller') {
-          setStatus('Çalıyor…');
+          setStatus('Aranıyor…');
         } else {
           setStatus('Bağlanıyor…');
         }
@@ -207,9 +207,14 @@ export default function CallScreenV2({
   const startOutgoing = useCallback(async () => {
     LOG('Giden arama (Agora ses)');
     setPhase('outgoing');
-    setStatus('Çalıyor…');
+    setStatus('Aranıyor…');
     try {
       InCallManager.start({ media: 'audio' });
+      try {
+        InCallManager.setForceSpeakerphoneOn(false);
+      } catch {
+        /* noop — bazı cihazlarda ringback daha sessiz (kulaklık/ahize) */
+      }
       InCallManager.startRingback('_DEFAULT_');
     } catch {
       /* noop */
@@ -525,7 +530,7 @@ export default function CallScreenV2({
     if (status === 'Reddedildi') {
       return { text: status, style: styles.subDanger };
     }
-    if (status === 'Çalıyor…' || status.startsWith('Çalıyor')) {
+    if (status === 'Aranıyor…' || status.startsWith('Aranıyor')) {
       return { text: status, style: styles.subRinging };
     }
     if (status === 'Görüşme süresi doldu' || status === 'Görüşme sonlandı') {

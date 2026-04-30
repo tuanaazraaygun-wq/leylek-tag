@@ -6781,7 +6781,7 @@ function PassengerDashboard({
   }, [callScreenData?.callId]);
 
   const runPassengerOutgoingCallRejectCleanup = useCallback(
-    (source: 'socket' | 'poll') => {
+    (source: 'socket' | 'poll' | 'timeout') => {
       if (passengerOutgoingCallCleanupDoneRef.current) return;
       passengerOutgoingCallCleanupDoneRef.current = true;
       try {
@@ -6811,9 +6811,11 @@ function PassengerDashboard({
       } catch {
         /* noop */
       }
-      appAlert('Reddedildi', 'Arama reddedildi', [], {
+      const title = source === 'timeout' ? 'Arama' : 'Reddedildi';
+      const msg = source === 'timeout' ? 'Karşı taraf yanıt vermedi.' : 'Arama reddedildi';
+      appAlert(title, msg, [], {
         variant: 'info',
-        autoDismissMs: 2600,
+        autoDismissMs: source === 'timeout' ? 3200 : 2600,
         cancelable: true,
       });
       closePassengerCallUi();
@@ -6822,7 +6824,12 @@ function PassengerDashboard({
           'CALL_UI_CLOSE',
           JSON.stringify({
             role: 'passenger',
-            reason: source === 'poll' ? 'call_status_poll' : 'call_rejected',
+            reason:
+              source === 'poll'
+                ? 'call_status_poll'
+                : source === 'timeout'
+                  ? 'call_timeout'
+                  : 'call_rejected',
           }),
         );
       } catch {
@@ -6920,6 +6927,11 @@ function PassengerDashboard({
     },
     onCallRejected: (data) => {
       console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
+      const rejectedBy = String((data as { rejected_by?: string })?.rejected_by ?? '').trim().toLowerCase();
+      const myLo = String(user?.id ?? '').trim().toLowerCase();
+      if (rejectedBy && myLo && rejectedBy === myLo) {
+        return;
+      }
       try {
         console.log(
           'CALL_REJECT_AUDIO_STOP',
@@ -6932,6 +6944,10 @@ function PassengerDashboard({
         /* noop */
       }
       runPassengerOutgoingCallRejectCleanup('socket');
+    },
+    onCallTimeout: () => {
+      console.log('⏱️ YOLCU - ARAMA ZAMAN AŞIMI (socket)');
+      runPassengerOutgoingCallRejectCleanup('timeout');
     },
     onCallEnded: (data) => {
       console.log('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
@@ -11403,7 +11419,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   }, [callScreenData?.callId]);
 
   const runDriverOutgoingCallRejectCleanup = useCallback(
-    (source: 'socket' | 'poll') => {
+    (source: 'socket' | 'poll' | 'timeout') => {
       if (driverOutgoingCallCleanupDoneRef.current) return;
       driverOutgoingCallCleanupDoneRef.current = true;
       try {
@@ -11433,9 +11449,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       } catch {
         /* noop */
       }
-      appAlert('Reddedildi', 'Arama reddedildi', [], {
+      const title = source === 'timeout' ? 'Arama' : 'Reddedildi';
+      const msg = source === 'timeout' ? 'Karşı taraf yanıt vermedi.' : 'Arama reddedildi';
+      appAlert(title, msg, [], {
         variant: 'info',
-        autoDismissMs: 2600,
+        autoDismissMs: source === 'timeout' ? 3200 : 2600,
         cancelable: true,
       });
       closeDriverCallUi();
@@ -11444,7 +11462,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           'CALL_UI_CLOSE',
           JSON.stringify({
             role: 'driver',
-            reason: source === 'poll' ? 'call_status_poll' : 'call_rejected',
+            reason:
+              source === 'poll'
+                ? 'call_status_poll'
+                : source === 'timeout'
+                  ? 'call_timeout'
+                  : 'call_rejected',
           }),
         );
       } catch {
@@ -11627,6 +11650,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onCallRejected: (data) => {
       console.log('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
+      const rejectedBy = String((data as { rejected_by?: string })?.rejected_by ?? '').trim().toLowerCase();
+      const myLo = String(user?.id ?? '').trim().toLowerCase();
+      if (rejectedBy && myLo && rejectedBy === myLo) {
+        return;
+      }
       try {
         console.log(
           'CALL_REJECT_AUDIO_STOP',
@@ -11643,6 +11671,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         JSON.stringify({ call_id: (data as { call_id?: string })?.call_id ?? null })
       );
       runDriverOutgoingCallRejectCleanup('socket');
+    },
+    onCallTimeout: () => {
+      console.log('⏱️ ŞOFÖR - ARAMA ZAMAN AŞIMI (socket)');
+      runDriverOutgoingCallRejectCleanup('timeout');
     },
     onCallEnded: (data) => {
       console.log('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
@@ -13900,32 +13932,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               </Text>
             </TouchableOpacity>
           ) : null}
-          {driverBoardingNearBanner &&
-          activeTag?.status === 'matched' &&
-          !activeTag?.boarding_confirmed_at ? (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => setDriverBoardingQrModalVisible(true)}
-              style={{
-                marginHorizontal: 12,
-                marginTop: 6,
-                marginBottom: 4,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 12,
-                backgroundColor: 'rgba(14,165,233,0.95)',
-                borderWidth: 1,
-                borderColor: 'rgba(125,211,252,0.6)',
-              }}
-            >
-              <Text style={{ color: '#0f172a', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
-                Yolcu yakın — biniş karekodunu göstermek için dokunun
-              </Text>
-              <Text style={{ color: '#0c4a6e', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: '600' }}>
-                Yolcu araçta olduğunda yolculuk başlar
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+          {/* Biniş yakın uyarısı — LiveMapView alt panelinde QR vurgusu ile birleştirildi */}
           {/* Sürücü haritası: otherLocationFromPickupFallback true iken buluşma metrikleri routeInfo ile OSRM çelişmez; kotasyonlu trip OSRM ile sessizce ezilmez */}
           <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
           <LiveMapView

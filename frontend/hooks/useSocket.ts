@@ -89,8 +89,10 @@ interface UseSocketProps {
   userRole?: 'passenger' | 'driver' | null;
   // Arama eventleri
   onIncomingCall?: (data: CallData) => void;
-  onCallAccepted?: (data: { call_id: string; accepted_by: string }) => void;
+  onCallAccepted?: (data: { call_id: string; accepted_by?: string }) => void;
   onCallRejected?: (data: { call_id: string; rejected_by: string }) => void;
+  /** Sunucu ringing zaman aşımı — iki taraf UI temizliği */
+  onCallTimeout?: (data: { call_id?: string; reason?: string }) => void;
   onCallEnded?: (data: { call_id: string; ended_by: string }) => void;
   onCallRinging?: (data: { success: boolean; receiver_online: boolean; reason?: string }) => void;
   // TAG eventleri
@@ -209,6 +211,7 @@ export default function useSocket({
   onIncomingCall,
   onCallAccepted,
   onCallRejected,
+  onCallTimeout,
   onCallEnded,
   onCallRinging,
   onTagCreated,
@@ -273,7 +276,7 @@ export default function useSocket({
 
   // Callback refs - dependency array'i küçültmek için
   const callbackRefs = useRef({
-    onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
+    onIncomingCall, onCallAccepted, onCallRejected, onCallTimeout, onCallEnded, onCallRinging,
       onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onDriverOnTheWay, onNewOffer,
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
@@ -286,7 +289,7 @@ export default function useSocket({
   // Callback'leri güncelle
   useEffect(() => {
     callbackRefs.current = {
-      onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
+      onIncomingCall, onCallAccepted, onCallRejected, onCallTimeout, onCallEnded, onCallRinging,
       onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onDriverOnTheWay, onNewOffer,
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
@@ -324,6 +327,16 @@ export default function useSocket({
     const handleCallRejected = (data: any) => {
       console.log('❌ [useSocket] ARAMA RED:', data);
       callbackRefs.current.onCallRejected?.(data);
+    };
+
+    const handleCallStarted = (data: any) => {
+      console.log('✅ [useSocket] CALL_STARTED:', data);
+      callbackRefs.current.onCallAccepted?.(data);
+    };
+
+    const handleCallTimeout = (data: any) => {
+      console.log('⏱️ [useSocket] CALL_TIMEOUT:', data);
+      callbackRefs.current.onCallTimeout?.(data);
     };
 
     const handleCallEnded = (data: any) => {
@@ -596,7 +609,9 @@ export default function useSocket({
     // Event listener'ları ekle
     socket.on('incoming_call', handleIncomingCall);
     socket.on('call_accepted', handleCallAccepted);
+    socket.on('call_started', handleCallStarted);
     socket.on('call_rejected', handleCallRejected);
+    socket.on('call_timeout', handleCallTimeout);
     socket.on('call_ended', handleCallEnded);
     socket.on('call_ringing', handleCallRinging);
     socket.on('call_cancelled', handleCallCancelled);
@@ -658,7 +673,9 @@ export default function useSocket({
       
       socket.off('incoming_call', handleIncomingCall);
       socket.off('call_accepted', handleCallAccepted);
+      socket.off('call_started', handleCallStarted);
       socket.off('call_rejected', handleCallRejected);
+      socket.off('call_timeout', handleCallTimeout);
       socket.off('call_ended', handleCallEnded);
       socket.off('call_ringing', handleCallRinging);
       socket.off('call_cancelled', handleCallCancelled);

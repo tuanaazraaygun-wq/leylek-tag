@@ -87,6 +87,11 @@ export default function MuhabbetTripCallScreen({
     try {
       InCallManager.start({ media: 'audio' });
       if (mode === 'outgoing') {
+        try {
+          InCallManager.setForceSpeakerphoneOn(false);
+        } catch {
+          /* noop */
+        }
         InCallManager.startRingback('_DEFAULT_');
       } else if (mode === 'incoming') {
         InCallManager.startRingtone('_DEFAULT_', [0, 650, 300, 650], 'playback', 60);

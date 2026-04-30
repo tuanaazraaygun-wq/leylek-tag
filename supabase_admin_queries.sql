@@ -286,6 +286,22 @@ LIMIT 10;
 
 
 -- =====================================================
+-- Muhabbet: conversations okuma imleri (42703 / unread_count)
+-- Bir kez çalıştırın; kolonlar zaten varsa ADD COLUMN atlanır.
+-- =====================================================
+--
+-- ALTER TABLE public.conversations
+--   ADD COLUMN IF NOT EXISTS user_a_last_read_at timestamptz NULL,
+--   ADD COLUMN IF NOT EXISTS user_b_last_read_at timestamptz NULL;
+--
+-- UPDATE public.conversations
+-- SET
+--   user_a_last_read_at = COALESCE(user_a_last_read_at, last_message_at, updated_at, created_at),
+--   user_b_last_read_at = COALESCE(user_b_last_read_at, last_message_at, updated_at, created_at)
+-- WHERE user_a_last_read_at IS NULL OR user_b_last_read_at IS NULL;
+--
+
+-- =====================================================
 -- NOT: # ile başlayan satırları çalıştırmadan önce
 -- KULLANICI_ID yerine gerçek ID yazın
 -- =====================================================
