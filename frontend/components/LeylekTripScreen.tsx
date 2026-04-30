@@ -17,6 +17,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter, type Href } from 'expo-router';
 import { getOrCreateSocket } from '../contexts/SocketContext';
+import {
+  ensureMuhabbetTripSocketReady,
+  isMuhabbetSocketRegisteredForUser,
+} from '../lib/muhabbetTripSocketEnsure';
+import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import type {
   MuhabbetTripCallSocketPayload,
@@ -53,6 +58,29 @@ function coord(lat?: number | null, lng?: number | null): Coord | null {
   const la = Number(lat);
   const lo = Number(lng);
   return Number.isFinite(la) && Number.isFinite(lo) ? { latitude: la, longitude: lo } : null;
+}
+
+function logLeylekAction(
+  action: string,
+  ctx: {
+    sessionId: string;
+    socketConnected: boolean;
+    registered: boolean;
+    role: string;
+    status: string;
+  }
+) {
+  console.log(
+    '[leylek_action]',
+    JSON.stringify({
+      action,
+      sessionId: ctx.sessionId,
+      socketConnected: ctx.socketConnected,
+      registered: ctx.registered,
+      role: ctx.role,
+      status: ctx.status,
+    })
+  );
 }
 
 function displayStatus(status?: string | null): { label: string; detail: string } {
@@ -216,6 +244,63 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
     },
     [apiBaseUrl, closeTerminalTrip, sessionId],
+  );
+
+  const emitMuhabbetTripEventEnsured = useCallback(
+    async (
+      action: string,
+      eventName: string,
+      payload: Record<string, unknown> = {},
+      opts?: { showSessionMissingAlert?: boolean }
+    ): Promise<boolean> => {
+      await loadSession({ silent: true });
+      const sidActive = getActiveMuhabbetSessionId();
+      const socket = getOrCreateSocket();
+      const role = isDriver ? 'driver' : 'passenger';
+      const st = String(session?.status || '');
+      logLeylekAction(action, {
+        sessionId: sidActive || '',
+        socketConnected: socket.connected,
+        registered: !!myId && isMuhabbetSocketRegisteredForUser(socket, myId),
+        role,
+        status: st,
+      });
+
+      if (!sidActive) {
+        if (opts?.showSessionMissingAlert !== false) {
+          Alert.alert(
+            'Yolculuk',
+            'Yolculuk oturumu hazırlanıyor, lütfen birkaç saniye sonra tekrar deneyin.'
+          );
+        }
+        return false;
+      }
+
+      notifyAuthTokenBecameAvailableForSocket();
+      const socketReady = await ensureMuhabbetTripSocketReady(myId, 3000);
+      logLeylekAction(`${action}_after_ensure`, {
+        sessionId: sidActive,
+        socketConnected: socket.connected,
+        registered: !!myId && isMuhabbetSocketRegisteredForUser(socket, myId),
+        role,
+        status: st,
+      });
+
+      if (!socketReady) {
+        Alert.alert(
+          'Muhabbet yolculuk',
+          'Bağlantı yenileniyor… Oturum güncellendi, lütfen tekrar deneyin.'
+        );
+        await loadSession({ silent: true });
+        return false;
+      }
+
+      const fullPayload = { ...payload, session_id: sidActive };
+      console.log(`[leylek-trip] emit event=${eventName} session_id=${sidActive}`, fullPayload);
+      socket.emit(eventName, fullPayload);
+      return true;
+    },
+    [getActiveMuhabbetSessionId, isDriver, loadSession, myId, session?.status],
   );
 
   useEffect(() => {
@@ -437,7 +522,37 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (!callMatches(payload)) return;
       closeTerminalTrip('muhabbet_trip_force_finished', payload.session || null);
     };
-    emitMuhabbetTripEvent('muhabbet_trip_join', {}, { showAlert: false });
+    const joinRole =
+      !myId || !session
+        ? ''
+        : String(session.driver_id || '').trim().toLowerCase() === myId.trim().toLowerCase()
+          ? 'driver'
+          : 'passenger';
+    void (async () => {
+      const sock = getOrCreateSocket();
+      logLeylekAction('muhabbet_trip_join', {
+        sessionId: activeSessionId,
+        socketConnected: sock.connected,
+        registered: !!myId && isMuhabbetSocketRegisteredForUser(sock, myId),
+        role: joinRole,
+        status: String(session?.status || ''),
+      });
+      notifyAuthTokenBecameAvailableForSocket();
+      await loadSession({ silent: true });
+      const ok = await ensureMuhabbetTripSocketReady(myId, 3000);
+      logLeylekAction('muhabbet_trip_join_after_ensure', {
+        sessionId: activeSessionId,
+        socketConnected: sock.connected,
+        registered: !!myId && isMuhabbetSocketRegisteredForUser(sock, myId),
+        role: joinRole,
+        status: String(session?.status || ''),
+      });
+      if (!ok) {
+        await loadSession({ silent: true });
+        return;
+      }
+      sock.emit('muhabbet_trip_join', { session_id: activeSessionId });
+    })();
     socket.on('muhabbet_trip_location_updated', onLocation);
     socket.on('muhabbet_trip_payment_method_set', onPaymentMethodSet);
     socket.on('muhabbet_trip_started', onStarted);
@@ -474,7 +589,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_force_finish_requested', onForceRequested);
       socket.off('muhabbet_trip_force_finished', onForceFinished);
     };
-  }, [closeTerminalTrip, emitMuhabbetTripEvent, getActiveMuhabbetSessionId, loadSession, myId, session]);
+  }, [closeTerminalTrip, getActiveMuhabbetSessionId, loadSession, myId, session]);
 
   const locations = useMemo(() => {
     if (!session) return {};
@@ -500,77 +615,96 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     }
   }, [isTerminal, myId, paymentPromptShown, session]);
 
-  const emitAction = useCallback((eventName: TripActionEvent) => {
-    setActionBusy(true);
-    if (!emitMuhabbetTripEvent(eventName)) {
-      setActionBusy(false);
-      return;
-    }
-    setTimeout(() => setActionBusy(false), 1200);
-  }, [emitMuhabbetTripEvent]);
+  const emitAction = useCallback(
+    (eventName: TripActionEvent) => {
+      void (async () => {
+        setActionBusy(true);
+        try {
+          await emitMuhabbetTripEventEnsured(`trip_${eventName}`, eventName, {});
+        } finally {
+          setActionBusy(false);
+        }
+      })();
+    },
+    [emitMuhabbetTripEventEnsured]
+  );
 
   const startCall = useCallback(() => {
     if (isTerminal || !session) return;
-    const sid = getActiveMuhabbetSessionId();
-    if (!sid) {
-      Alert.alert('Muhabbet yolculuğu', 'Yolculuk bilgisi hazırlanıyor.');
-      return;
-    }
-    console.log('[leylek_call]', {
-      callerUserId: myId,
-      sessionId: sid,
-      role: isDriver ? 'driver' : 'passenger',
-    });
-    setCallBusy(true);
-    setCallState('outgoing');
-    if (!emitMuhabbetTripEvent('muhabbet_trip_call_start')) {
-      setCallState('idle');
-      setCallBusy(false);
-      return;
-    }
-    setTimeout(() => setCallBusy(false), 1500);
-  }, [emitMuhabbetTripEvent, getActiveMuhabbetSessionId, isDriver, isTerminal, myId, session]);
+    void (async () => {
+      const sid = getActiveMuhabbetSessionId();
+      if (!sid) {
+        Alert.alert('Muhabbet yolculuğu', 'Yolculuk bilgisi hazırlanıyor.');
+        return;
+      }
+      console.log('[leylek_call]', {
+        callerUserId: myId,
+        sessionId: sid,
+        role: isDriver ? 'driver' : 'passenger',
+      });
+      setCallBusy(true);
+      setCallState('outgoing');
+      try {
+        const ok = await emitMuhabbetTripEventEnsured('start_call', 'muhabbet_trip_call_start');
+        if (!ok) {
+          setCallState('idle');
+        }
+      } finally {
+        setCallBusy(false);
+      }
+    })();
+  }, [emitMuhabbetTripEventEnsured, getActiveMuhabbetSessionId, isDriver, isTerminal, myId, session]);
 
-  const selectPaymentMethod = useCallback((paymentMethod: 'cash' | 'card') => {
-    if (!session || isTerminal || paymentBusy) return;
-    setPaymentBusy(true);
-    if (!emitMuhabbetTripEvent('muhabbet_trip_payment_method_set', { payment_method: paymentMethod })) {
-      setPaymentBusy(false);
-      return;
-    }
-    setTimeout(() => {
-      setPaymentBusy(false);
-      setPaymentPromptVisible(false);
-    }, 1000);
-  }, [emitMuhabbetTripEvent, isTerminal, paymentBusy, session]);
+  const selectPaymentMethod = useCallback(
+    (paymentMethod: 'cash' | 'card') => {
+      if (!session || isTerminal || paymentBusy) return;
+      void (async () => {
+        setPaymentBusy(true);
+        try {
+          const ok = await emitMuhabbetTripEventEnsured('payment_method_set', 'muhabbet_trip_payment_method_set', {
+            payment_method: paymentMethod,
+          });
+          if (ok) {
+            setPaymentPromptVisible(false);
+          }
+        } finally {
+          setPaymentBusy(false);
+        }
+      })();
+    },
+    [emitMuhabbetTripEventEnsured, isTerminal, paymentBusy, session]
+  );
 
   const acceptCall = useCallback(() => {
     if (!callPayload) return;
-    setCallBusy(true);
-    const activeSessionId = getActiveMuhabbetSessionId();
-    if (!emitMuhabbetTripEvent('muhabbet_trip_call_accept')) {
-      setCallBusy(false);
-      return;
-    }
-    setCallPayload((prev) => ({ ...(prev || {}), session_id: activeSessionId }));
-    setCallState('active');
-    setTimeout(() => setCallBusy(false), 900);
-    setTimeout(() => void loadSession({ silent: true }), 350);
-  }, [callPayload, emitMuhabbetTripEvent, getActiveMuhabbetSessionId, loadSession]);
+    void (async () => {
+      setCallBusy(true);
+      try {
+        const activeSessionIdNext = getActiveMuhabbetSessionId();
+        const ok = await emitMuhabbetTripEventEnsured('call_accept', 'muhabbet_trip_call_accept');
+        if (!ok) return;
+        setCallPayload((prev) => ({ ...(prev || {}), session_id: activeSessionIdNext }));
+        setCallState('active');
+        setTimeout(() => void loadSession({ silent: true }), 350);
+      } finally {
+        setCallBusy(false);
+      }
+    })();
+  }, [callPayload, emitMuhabbetTripEventEnsured, getActiveMuhabbetSessionId, loadSession]);
 
   const declineCall = useCallback(() => {
-    emitMuhabbetTripEvent('muhabbet_trip_call_decline', {}, { showAlert: false });
+    void emitMuhabbetTripEventEnsured('call_decline', 'muhabbet_trip_call_decline', {}, { showSessionMissingAlert: false });
     setCallPayload(null);
     setCallState('idle');
     setCallBusy(false);
-  }, [emitMuhabbetTripEvent]);
+  }, [emitMuhabbetTripEventEnsured]);
 
   const endCall = useCallback(() => {
-    emitMuhabbetTripEvent('muhabbet_trip_call_end', {}, { showAlert: false });
+    void emitMuhabbetTripEventEnsured('call_end', 'muhabbet_trip_call_end', {}, { showSessionMissingAlert: false });
     setCallPayload(null);
     setCallState('idle');
     setCallBusy(false);
-  }, [emitMuhabbetTripEvent]);
+  }, [emitMuhabbetTripEventEnsured]);
 
   const navigationTarget = useMemo(() => {
     if (!session) return null;
@@ -581,6 +715,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
   const navigationLabel = session?.status === 'started' || session?.status === 'active' ? 'Varışa Git' : isDriver ? 'Yolcuya Git' : 'Navigasyon';
   const openNavigation = useCallback(async () => {
+    const sid = getActiveMuhabbetSessionId();
+    const socket = getOrCreateSocket();
+    logLeylekAction('navigation_open', {
+      sessionId: sid || '',
+      socketConnected: socket.connected,
+      registered: !!myId && isMuhabbetSocketRegisteredForUser(socket, myId),
+      role: isDriver ? 'driver' : 'passenger',
+      status: String(session?.status || ''),
+    });
     if (!navigationTarget) {
       Alert.alert('Navigasyon', 'Navigasyon için gerekli konum henüz hazır değil.');
       return;
@@ -594,7 +737,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     } catch {
       await Linking.openURL(webUrl);
     }
-  }, [navigationTarget]);
+  }, [getActiveMuhabbetSessionId, isDriver, myId, navigationTarget, session?.status]);
 
   const openQrFinish = useCallback(() => {
     if (!session || isTerminal) return;
@@ -607,13 +750,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrFinishToken('');
       setQrExpiresAt(null);
       if (isDriver) {
-        setActionBusy(true);
-        if (!emitMuhabbetTripEvent('muhabbet_trip_boarding_qr_create')) {
-          setActionBusy(false);
-          return;
-        }
-        setTimeout(() => setActionBusy(false), 1500);
-        setTimeout(() => void loadSession({ silent: true }), 600);
+        void (async () => {
+          setActionBusy(true);
+          try {
+            const ok = await emitMuhabbetTripEventEnsured(
+              'boarding_qr_create',
+              'muhabbet_trip_boarding_qr_create'
+            );
+            if (ok) {
+              setTimeout(() => void loadSession({ silent: true }), 600);
+            }
+          } finally {
+            setActionBusy(false);
+          }
+        })();
       } else {
         Alert.alert(
           'Araca bindiniz mi?',
@@ -633,40 +783,51 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     setQrFinishToken('');
     setQrExpiresAt(null);
     if (isDriver) {
-      setActionBusy(true);
-      if (!emitMuhabbetTripEvent('muhabbet_trip_finish_qr_create')) {
-        setActionBusy(false);
-        return;
-      }
-      setTimeout(() => setActionBusy(false), 1500);
-      setTimeout(() => void loadSession({ silent: true }), 600);
+      void (async () => {
+        setActionBusy(true);
+        try {
+          const ok = await emitMuhabbetTripEventEnsured('finish_qr_create', 'muhabbet_trip_finish_qr_create');
+          if (ok) {
+            setTimeout(() => void loadSession({ silent: true }), 600);
+          }
+        } finally {
+          setActionBusy(false);
+        }
+      })();
     } else {
       setQrScanVisible(true);
     }
-  }, [emitMuhabbetTripEvent, getActiveMuhabbetSessionId, isDriver, isTerminal, loadSession, session]);
+  }, [emitMuhabbetTripEventEnsured, getActiveMuhabbetSessionId, isDriver, isTerminal, loadSession, session]);
 
-  const confirmQrToken = useCallback((rawToken: string) => {
-    const token = rawToken.trim().toUpperCase();
-    if (!token) {
-      Alert.alert(qrMode === 'boarding' ? 'Biniş QR' : 'QR ile Bitir', qrMode === 'boarding' ? 'Sürücünün gösterdiği kodu girin.' : 'Yolcunun gösterdiği kodu girin.');
-      return;
-    }
-    const eventName = qrMode === 'boarding' ? 'muhabbet_trip_boarding_qr_confirm' : 'muhabbet_trip_finish_qr_confirm';
-    const payload = qrMode === 'boarding'
-      ? { boarding_qr_token: token }
-      : { finish_qr_token: token };
-    setActionBusy(true);
-    if (qrMode === 'finish') {
-      Vibration.vibrate([0, 70, 55, 90]);
-    }
-    if (!emitMuhabbetTripEvent(eventName, payload)) {
-      setActionBusy(false);
-      return;
-    }
-    setQrScanVisible(false);
-    setTimeout(() => setActionBusy(false), 1500);
-    setTimeout(() => void loadSession({ silent: true }), 450);
-  }, [emitMuhabbetTripEvent, loadSession, qrMode]);
+  const confirmQrToken = useCallback(
+    (rawToken: string) => {
+      const token = rawToken.trim().toUpperCase();
+      if (!token) {
+        Alert.alert(qrMode === 'boarding' ? 'Biniş QR' : 'QR ile Bitir', qrMode === 'boarding' ? 'Sürücünün gösterdiği kodu girin.' : 'Yolcunun gösterdiği kodu girin.');
+        return;
+      }
+      const eventName = qrMode === 'boarding' ? 'muhabbet_trip_boarding_qr_confirm' : 'muhabbet_trip_finish_qr_confirm';
+      const payload =
+        qrMode === 'boarding' ? { boarding_qr_token: token } : { finish_qr_token: token };
+      void (async () => {
+        setActionBusy(true);
+        if (qrMode === 'finish') {
+          Vibration.vibrate([0, 70, 55, 90]);
+        }
+        try {
+          const actionLabel = qrMode === 'boarding' ? 'boarding_qr_confirm' : 'finish_qr_confirm';
+          const ok = await emitMuhabbetTripEventEnsured(actionLabel, eventName, payload);
+          if (ok) {
+            setQrScanVisible(false);
+            setTimeout(() => void loadSession({ silent: true }), 450);
+          }
+        } finally {
+          setActionBusy(false);
+        }
+      })();
+    },
+    [emitMuhabbetTripEventEnsured, loadSession, qrMode]
+  );
 
   const requestForceFinish = useCallback(() => {
     if (!session || isTerminal) return;
@@ -675,23 +836,32 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
   const confirmForceFinishRequest = useCallback(() => {
     setForceFinishWarningVisible(false);
-    setActionBusy(true);
-    if (!emitMuhabbetTripEvent('muhabbet_trip_force_finish_request')) {
-      setActionBusy(false);
-      return;
-    }
-    setTimeout(() => setActionBusy(false), 1500);
-  }, [emitMuhabbetTripEvent]);
+    void (async () => {
+      setActionBusy(true);
+      try {
+        await emitMuhabbetTripEventEnsured('force_finish_request', 'muhabbet_trip_force_finish_request');
+      } finally {
+        setActionBusy(false);
+      }
+    })();
+  }, [emitMuhabbetTripEventEnsured]);
 
-  const respondForceFinish = useCallback((accepted: boolean) => {
-    setForceFinishPrompt(null);
-    setActionBusy(true);
-    if (!emitMuhabbetTripEvent('muhabbet_trip_force_finish_respond', { response: accepted ? 'accepted' : 'declined' })) {
-      setActionBusy(false);
-      return;
-    }
-    setTimeout(() => setActionBusy(false), 1500);
-  }, [emitMuhabbetTripEvent]);
+  const respondForceFinish = useCallback(
+    (accepted: boolean) => {
+      setForceFinishPrompt(null);
+      void (async () => {
+        setActionBusy(true);
+        try {
+          await emitMuhabbetTripEventEnsured('force_finish_respond', 'muhabbet_trip_force_finish_respond', {
+            response: accepted ? 'accepted' : 'declined',
+          });
+        } finally {
+          setActionBusy(false);
+        }
+      })();
+    },
+    [emitMuhabbetTripEventEnsured]
+  );
 
   useEffect(() => {
     if (!session) return;

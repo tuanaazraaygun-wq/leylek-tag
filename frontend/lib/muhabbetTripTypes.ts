@@ -27,6 +27,8 @@ export type MuhabbetTripSession = {
   route_duration_min?: number | null;
   route_source?: string | null;
   route_updated_at?: string | null;
+  /** Sunucu: ready | pending | unavailable */
+  route_projection_status?: 'ready' | 'pending' | 'unavailable' | string | null;
   passenger_location_lat?: number | null;
   passenger_location_lng?: number | null;
   passenger_location_updated_at?: string | null;

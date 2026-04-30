@@ -23141,6 +23141,14 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
     """Public payload for Leylek Teklif Sende trip-like sessions only."""
     if not isinstance(row, dict):
         return {}
+    poly = row.get("route_polyline")
+    rs = str(row.get("route_source") or "").strip().lower()
+    if poly:
+        route_projection_status = "ready"
+    elif rs == "route_unavailable":
+        route_projection_status = "unavailable"
+    else:
+        route_projection_status = "pending"
     return {
         "id": row.get("id"),
         "session_id": row.get("id"),
@@ -23168,6 +23176,7 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "route_duration_min": row.get("route_duration_min"),
         "route_source": row.get("route_source"),
         "route_updated_at": row.get("route_updated_at"),
+        "route_projection_status": route_projection_status,
         "passenger_location_lat": row.get("passenger_location_lat"),
         "passenger_location_lng": row.get("passenger_location_lng"),
         "passenger_location_updated_at": row.get("passenger_location_updated_at"),
@@ -23662,45 +23671,76 @@ async def _muhabbet_trip_calculate_and_store_route(row: dict) -> dict:
     """Muhabbet-only route projection. Reads/writes only muhabbet_trip_sessions."""
     session_id = str((row or {}).get("id") or "").strip().lower()
     status = str((row or {}).get("status") or "").strip().lower()
+    pickup = (
+        _muhabbet_trip_float_or_none(row.get("pickup_lat")),
+        _muhabbet_trip_float_or_none(row.get("pickup_lng")),
+    )
+    dropoff = (
+        _muhabbet_trip_float_or_none(row.get("dropoff_lat")),
+        _muhabbet_trip_float_or_none(row.get("dropoff_lng")),
+    )
+    driver = (
+        _muhabbet_trip_float_or_none(row.get("driver_location_lat")),
+        _muhabbet_trip_float_or_none(row.get("driver_location_lng")),
+    )
+    passenger = (
+        _muhabbet_trip_float_or_none(row.get("passenger_location_lat")),
+        _muhabbet_trip_float_or_none(row.get("passenger_location_lng")),
+    )
     origin = None
     dest = None
     if status in ("started", "active"):
-        origin = (
-            _muhabbet_trip_float_or_none(row.get("driver_location_lat")),
-            _muhabbet_trip_float_or_none(row.get("driver_location_lng")),
-        )
-        dest = (
-            _muhabbet_trip_float_or_none(row.get("dropoff_lat")),
-            _muhabbet_trip_float_or_none(row.get("dropoff_lng")),
-        )
+        origin = driver if driver[0] is not None and driver[1] is not None else pickup
+        dest = dropoff
     else:
-        origin = (
-            _muhabbet_trip_float_or_none(row.get("driver_location_lat")),
-            _muhabbet_trip_float_or_none(row.get("driver_location_lng")),
-        )
-        passenger = (
-            _muhabbet_trip_float_or_none(row.get("passenger_location_lat")),
-            _muhabbet_trip_float_or_none(row.get("passenger_location_lng")),
-        )
-        pickup = (
-            _muhabbet_trip_float_or_none(row.get("pickup_lat")),
-            _muhabbet_trip_float_or_none(row.get("pickup_lng")),
-        )
+        # ready: sürücü → yolcu (veya pickup); gerçek rota yoksa kuş uçuşu polyline yazılmaz
+        origin = driver if driver[0] is not None and driver[1] is not None else pickup
         dest = passenger if passenger[0] is not None and passenger[1] is not None else pickup
     if not origin or not dest or origin[0] is None or origin[1] is None or dest[0] is None or dest[1] is None:
-        logger.info("[muhabbet_trip_route] missing coords session_id=%s", session_id)
+        logger.warning(
+            "[muhabbet_trip_route] missing coords session_id=%s status=%s origin=%s dest=%s",
+            session_id,
+            status,
+            origin,
+            dest,
+        )
         return row
     try:
         route = await get_route_info(origin[0], origin[1], dest[0], dest[1])
     except Exception as e:
         logger.warning("[muhabbet_trip_route] calculate failed session_id=%s err=%s", session_id, e)
         route = None
-    if not isinstance(route, dict) or str(route.get("source") or "").strip().lower() == "haversine_fallback":
-        logger.info("[muhabbet_trip_route] missing coords session_id=%s", session_id)
-        return row
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    def _patch_unavailable() -> dict:
+        p = {
+            "route_polyline": None,
+            "route_source": "route_unavailable",
+            "route_distance_km": None,
+            "route_duration_min": None,
+            "route_updated_at": now_iso,
+            "updated_at": now_iso,
+        }
+        try:
+            upd2 = supabase.table("muhabbet_trip_sessions").update(p).eq("id", session_id).execute()
+            return dict(upd2.data[0]) if upd2.data else {**row, **p}
+        except Exception as ue:
+            logger.warning("[muhabbet_trip_route] route_unavailable patch failed session_id=%s err=%s", session_id, ue)
+            return row
+
+    if not isinstance(route, dict):
+        logger.info("[muhabbet_trip_route] no route dict session_id=%s", session_id)
+        return _patch_unavailable()
+    src = str(route.get("source") or "").strip().lower()
+    if src == "haversine_fallback":
+        logger.info("[muhabbet_trip_route] haversine_fallback skipped session_id=%s", session_id)
+        return _patch_unavailable()
+    op = route.get("overview_polyline")
+    if not isinstance(op, str) or len(op) < 2:
+        logger.info("[muhabbet_trip_route] missing overview_polyline session_id=%s", session_id)
+        return _patch_unavailable()
     patch = {
-        "route_polyline": route.get("overview_polyline"),
+        "route_polyline": op,
         "route_distance_km": _muhabbet_trip_float_or_none(route.get("distance_km")),
         "route_duration_min": int(round(float(route.get("duration_min")))) if route.get("duration_min") is not None else None,
         "route_source": route.get("source") or "muhabbet_route",
@@ -23711,10 +23751,11 @@ async def _muhabbet_trip_calculate_and_store_route(row: dict) -> dict:
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
     out = dict(upd.data[0]) if upd.data else {**row, **patch}
     logger.info(
-        "[muhabbet_trip_route] calculated session_id=%s distance=%s duration=%s",
+        "[muhabbet_trip_route] calculated session_id=%s distance=%s duration=%s source=%s",
         session_id,
         patch.get("route_distance_km"),
         patch.get("route_duration_min"),
+        patch.get("route_source"),
     )
     return out
 
