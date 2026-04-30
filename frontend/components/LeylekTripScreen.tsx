@@ -683,6 +683,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   return (
     <View style={styles.root}>
       <LeylekTripLiveRideChrome
+        suppressFloatingTopActions
         isDriver={isDriver}
         isTerminal={isTerminal}
         roleTitle={isDriver ? 'Sürücü ekranı' : 'Yolcu ekranı'}

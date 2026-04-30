@@ -60,6 +60,8 @@ type LeylekTripLiveRideChromeProps = {
   onStart: () => void;
   onFinish: () => void;
   onCancel: () => void;
+  /** true: üstte Konum paylaş / navigasyon şeridi gösterilmez; durum chip kart içinde, aksiyonlar alta */
+  suppressFloatingTopActions?: boolean;
 };
 
 function vehicleLabel(vehicleKind?: string | null): string {
@@ -281,6 +283,15 @@ export default function LeylekTripLiveRideChrome({
                 </View>
               ) : null}
 
+              {suppressFloatingTopActions ? (
+                <View style={styles.chromeCardStatusRow}>
+                  <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
+                    <View style={styles.activeStatusDot} />
+                    <Text style={styles.activeStatusText}>Yolculuk aktif</Text>
+                  </Animated.View>
+                </View>
+              ) : null}
+
               <View style={styles.priceRow}>
                 <Text style={styles.priceLabel}>{statusLabel}</Text>
                 <View style={styles.vehiclePill}>
@@ -298,44 +309,46 @@ export default function LeylekTripLiveRideChrome({
           </LinearGradient>
         </View>
 
-        <View style={styles.routeActionRow}>
-          <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
-            <View style={styles.activeStatusDot} />
-            <Text style={styles.activeStatusText}>Yolculuk aktif</Text>
-          </Animated.View>
-          <View style={styles.routeActionCluster}>
-            <Pressable
-              onPress={canStart ? onStart : onShareLocation}
-              disabled={!tripInfoReady || (canStart && actionBusy) || sendingLocation || isTerminal}
-              style={({ pressed }) => [styles.routeMiniAction, (pressed || !tripInfoReady || sendingLocation || isTerminal) && { opacity: 0.78 }]}
-            >
-              <LinearGradient
-                colors={!tripInfoReady ? ['#64748B', '#475569'] : canStart ? ['#1D4ED8', '#2563EB'] : ['#F97316', '#EA580C']}
-                style={styles.routeMiniActionGrad}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+        {suppressFloatingTopActions ? null : (
+          <View style={styles.routeActionRow}>
+            <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
+              <View style={styles.activeStatusDot} />
+              <Text style={styles.activeStatusText}>Yolculuk aktif</Text>
+            </Animated.View>
+            <View style={styles.routeActionCluster}>
+              <Pressable
+                onPress={canStart ? onStart : onShareLocation}
+                disabled={!tripInfoReady || (canStart && actionBusy) || sendingLocation || isTerminal}
+                style={({ pressed }) => [styles.routeMiniAction, (pressed || !tripInfoReady || sendingLocation || isTerminal) && { opacity: 0.78 }]}
               >
-                {canStart && actionBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={!tripInfoReady ? 'time-outline' : canStart ? 'play' : 'locate'} size={17} color="#FFF" />}
-                <Text style={styles.routeMiniActionText}>{!tripInfoReady ? 'Hazırlanıyor' : canStart ? 'Başlat' : 'Konum Paylaş'}</Text>
-              </LinearGradient>
-            </Pressable>
-            <Pressable
-              onPress={onNavigate}
-              disabled={!tripInfoReady || navigationDisabled || isTerminal}
-              style={({ pressed }) => [styles.routeMiniAction, (pressed || !tripInfoReady || navigationDisabled || isTerminal) && { opacity: 0.78 }]}
-            >
-              <LinearGradient
-                colors={!tripInfoReady || navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
-                style={styles.routeMiniActionGrad}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                <LinearGradient
+                  colors={!tripInfoReady ? ['#64748B', '#475569'] : canStart ? ['#1D4ED8', '#2563EB'] : ['#F97316', '#EA580C']}
+                  style={styles.routeMiniActionGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  {canStart && actionBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={!tripInfoReady ? 'time-outline' : canStart ? 'play' : 'locate'} size={17} color="#FFF" />}
+                  <Text style={styles.routeMiniActionText}>{!tripInfoReady ? 'Hazırlanıyor' : canStart ? 'Başlat' : 'Konum Paylaş'}</Text>
+                </LinearGradient>
+              </Pressable>
+              <Pressable
+                onPress={onNavigate}
+                disabled={!tripInfoReady || navigationDisabled || isTerminal}
+                style={({ pressed }) => [styles.routeMiniAction, (pressed || !tripInfoReady || navigationDisabled || isTerminal) && { opacity: 0.78 }]}
               >
-                <Ionicons name="navigate" size={17} color="#FFF" />
-                <Text style={styles.routeMiniActionText}>{navigationLabel}</Text>
-              </LinearGradient>
-            </Pressable>
+                <LinearGradient
+                  colors={!tripInfoReady || navigationDisabled || isTerminal ? ['#64748B', '#475569'] : ['#F97316', '#EA580C']}
+                  style={styles.routeMiniActionGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Ionicons name="navigate" size={17} color="#FFF" />
+                  <Text style={styles.routeMiniActionText}>{navigationLabel}</Text>
+                </LinearGradient>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        )}
       </View>
 
       <View style={styles.bottomPanel}>
@@ -346,6 +359,36 @@ export default function LeylekTripLiveRideChrome({
               <Text style={[styles.finishSummaryText, finishMethod === 'qr' ? styles.finishSummaryTextQr : styles.finishSummaryTextForced]}>
                 {finishSummary}
               </Text>
+            </View>
+          ) : null}
+          {suppressFloatingTopActions ? (
+            <View style={styles.chromeSheetSecondaryActions}>
+              <Pressable
+                onPress={canStart ? onStart : onShareLocation}
+                disabled={!tripInfoReady || (canStart && actionBusy) || sendingLocation || isTerminal}
+                style={({ pressed }) => [
+                  styles.chromeSheetSecondaryBtn,
+                  (pressed || !tripInfoReady || sendingLocation || isTerminal) && { opacity: 0.78 },
+                ]}
+              >
+                <Ionicons name={!tripInfoReady ? 'time-outline' : canStart ? 'play' : 'locate'} size={16} color="#0F766E" />
+                <Text style={styles.chromeSheetSecondaryBtnText} numberOfLines={1}>
+                  {!tripInfoReady ? 'Hazırlanıyor' : canStart ? 'Başlat' : 'Konum paylaş'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={onNavigate}
+                disabled={!tripInfoReady || navigationDisabled || isTerminal}
+                style={({ pressed }) => [
+                  styles.chromeSheetSecondaryBtn,
+                  (pressed || !tripInfoReady || navigationDisabled || isTerminal) && { opacity: 0.78 },
+                ]}
+              >
+                <Ionicons name="navigate" size={16} color="#C2410C" />
+                <Text style={styles.chromeSheetSecondaryBtnText} numberOfLines={1}>
+                  {navigationLabel}
+                </Text>
+              </Pressable>
             </View>
           ) : null}
           <View style={styles.primaryActionRow} pointerEvents="box-none">
@@ -520,6 +563,36 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(20, 184, 166, 0.28)',
   },
   paymentPillText: { fontSize: 12, fontWeight: '800', color: '#0F766E' },
+  chromeCardStatusRow: {
+    marginTop: 10,
+    marginBottom: 2,
+    alignItems: 'flex-start',
+  },
+  chromeSheetSecondaryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  chromeSheetSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  chromeSheetSecondaryBtnText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#334155',
+  },
   routeActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
