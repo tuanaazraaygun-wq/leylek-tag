@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Dimensions, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
 
@@ -70,6 +70,31 @@ function decodePolyline(encoded?: string | null): Coord[] {
   return coordinates.filter(isCoord);
 }
 
+/** İki uç varsa düz segment (backend polyline yokken önizleme). */
+function computeFallbackSegment(
+  tripStarted: boolean,
+  pickup: Coord | null | undefined,
+  dropoff: Coord | null | undefined,
+  driverLocation: Coord | null | undefined,
+  passengerLocation: Coord | null | undefined,
+): Coord[] {
+  if (tripStarted) {
+    if (isCoord(driverLocation) && isCoord(dropoff)) return [driverLocation, dropoff];
+    if (isCoord(passengerLocation) && isCoord(dropoff)) return [passengerLocation, dropoff];
+    if (isCoord(pickup) && isCoord(dropoff)) return [pickup, dropoff];
+    return [];
+  }
+  if (isCoord(driverLocation)) {
+    const toPass = isCoord(passengerLocation) ? passengerLocation : null;
+    const toPickup = isCoord(pickup) ? pickup : null;
+    const legEnd = toPass || toPickup;
+    if (legEnd) return [driverLocation, legEnd];
+  }
+  if (isCoord(pickup) && isCoord(dropoff)) return [pickup, dropoff];
+  if (isCoord(driverLocation) && isCoord(passengerLocation)) return [driverLocation, passengerLocation];
+  return [];
+}
+
 function MarkerBubble({ label, color, icon }: { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }) {
   return (
     <View style={[styles.markerBubble, { borderColor: color }]}>
@@ -91,31 +116,90 @@ export default function LeylekTripMapPreview({
 }: LeylekTripMapPreviewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [routeBannerPhase, setRouteBannerPhase] = useState<'idle' | 'waiting' | 'stale'>('idle');
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const routeCoordinates = useMemo(() => decodePolyline(routePolyline), [routePolyline]);
-  const tripStarted = sessionStatus === 'started' || sessionStatus === 'finished';
+  const st = String(sessionStatus || '').trim().toLowerCase();
+  const tripStarted = st === 'started' || st === 'finished' || st === 'active';
+
+  const backendPolyReady = routeCoordinates.length >= 2;
+  const fallbackSegment = useMemo(
+    () => computeFallbackSegment(tripStarted, pickup, dropoff, driverLocation, passengerLocation),
+    [tripStarted, pickup, dropoff, driverLocation, passengerLocation],
+  );
+  const hasFallbackLine = fallbackSegment.length >= 2;
+
+  const effectivePolylineCoords = backendPolyReady ? routeCoordinates : hasFallbackLine ? fallbackSegment : [];
+
+  const wantsRoadPolyline =
+    !backendPolyReady &&
+    !hasFallbackLine &&
+    (isCoord(pickup) || isCoord(dropoff) || (isCoord(driverLocation) && (isCoord(passengerLocation) || isCoord(pickup))));
+
+  useEffect(() => {
+    console.log('[leylek_route]', {
+      pickup,
+      dropoff,
+      driverLoc: driverLocation,
+      passengerLoc: passengerLocation,
+      sessionStatus: st || sessionStatus,
+      polylineLength: routeCoordinates.length,
+      fallbackLen: fallbackSegment.length,
+    });
+  }, [
+    driverLocation,
+    dropoff,
+    fallbackSegment.length,
+    passengerLocation,
+    pickup,
+    routeCoordinates.length,
+    sessionStatus,
+    st,
+  ]);
+
+  useEffect(() => {
+    if (bannerTimerRef.current) {
+      clearTimeout(bannerTimerRef.current);
+      bannerTimerRef.current = null;
+    }
+    if (backendPolyReady || hasFallbackLine || !wantsRoadPolyline) {
+      setRouteBannerPhase('idle');
+      return;
+    }
+    setRouteBannerPhase('waiting');
+    bannerTimerRef.current = setTimeout(() => {
+      setRouteBannerPhase('stale');
+      bannerTimerRef.current = null;
+    }, 5000);
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    };
+  }, [backendPolyReady, hasFallbackLine, wantsRoadPolyline, routePolyline, sessionStatus]);
+
   const approachTarget = passengerLocation || pickup;
   const approachCoordinates = useMemo(
     () => (isCoord(driverLocation) && isCoord(approachTarget) ? [driverLocation, approachTarget] : []),
     [approachTarget, driverLocation],
   );
-  const displayRouteCoordinates = routeCoordinates.length >= 2 ? routeCoordinates : [];
-  const routeCalculating = routeCoordinates.length < 2 && (isCoord(pickup) || isCoord(dropoff) || approachCoordinates.length >= 2);
+
   const fitCoords = useMemo(() => {
     const livePair = [driverLocation, passengerLocation].filter(isCoord);
     if (livePair.length >= 2) return livePair;
-    if (tripStarted && displayRouteCoordinates.length >= 2) return displayRouteCoordinates;
+    if (effectivePolylineCoords.length >= 2) return effectivePolylineCoords;
     if (!tripStarted && approachCoordinates.length >= 2) return approachCoordinates;
     return [driverLocation, passengerLocation, pickup, dropoff, deviceLocation].filter(isCoord);
   }, [
     approachCoordinates,
     deviceLocation,
-    displayRouteCoordinates,
     driverLocation,
     dropoff,
+    effectivePolylineCoords,
     passengerLocation,
     pickup,
     tripStarted,
   ]);
+
   const center = useMemo(
     () =>
       [driverLocation, passengerLocation, pickup, dropoff, deviceLocation].filter(isCoord)[0] ||
@@ -127,9 +211,11 @@ export default function LeylekTripMapPreview({
     if (!mapReady || !mapRef.current || fitCoords.length < 1) return;
     const t = setTimeout(() => {
       try {
+        const { height: H } = Dimensions.get('window');
+        const bottomPad = Math.round(H * 0.36);
         if (fitCoords.length >= 2) {
           mapRef.current?.fitToCoordinates(fitCoords, {
-            edgePadding: { top: 96, right: 56, bottom: 156, left: 56 },
+            edgePadding: { top: Math.round(H * 0.22), right: 48, bottom: bottomPad, left: 48 },
             animated: true,
           });
         } else {
@@ -149,6 +235,11 @@ export default function LeylekTripMapPreview({
     }, 250);
     return () => clearTimeout(t);
   }, [fitCoords, mapReady]);
+
+  const polylineStroke = tripStarted ? '#EA580C' : '#047857';
+
+  const showRouteBanner =
+    wantsRoadPolyline && routeBannerPhase !== 'idle' && !backendPolyReady && !hasFallbackLine;
 
   if (Platform.OS === 'web' || !MapView) {
     return (
@@ -196,29 +287,25 @@ export default function LeylekTripMapPreview({
             <MarkerBubble label="Yolcu" color="#F97316" icon="person" />
           </Marker>
         ) : null}
-        {!tripStarted && routeCoordinates.length >= 2 ? (
+        {effectivePolylineCoords.length >= 2 ? (
           <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#047857"
-            strokeWidth={8}
-            lineJoin="round"
-            lineCap="round"
-          />
-        ) : null}
-        {tripStarted && displayRouteCoordinates.length >= 2 ? (
-          <Polyline
-            coordinates={displayRouteCoordinates}
-            strokeColor="#EA580C"
-            strokeWidth={8}
+            coordinates={effectivePolylineCoords}
+            strokeColor={backendPolyReady ? polylineStroke : '#94A3B8'}
+            strokeWidth={backendPolyReady ? 8 : 5}
+            lineDashPattern={backendPolyReady ? undefined : [10, 6]}
             lineJoin="round"
             lineCap="round"
           />
         ) : null}
       </MapView>
-      {routeCalculating ? (
-        <View style={styles.fallbackBadge} pointerEvents="none">
-          <Ionicons name="time-outline" size={13} color="#92400E" />
-          <Text style={styles.fallbackBadgeText}>Rota hesaplanıyor</Text>
+      {showRouteBanner ? (
+        <View style={[styles.fallbackBadge, routeBannerPhase === 'stale' && styles.fallbackBadgeStale]} pointerEvents="none">
+          <Ionicons name="time-outline" size={13} color={routeBannerPhase === 'stale' ? '#92400E' : '#92400E'} />
+          <Text style={styles.fallbackBadgeText}>
+            {routeBannerPhase === 'stale'
+              ? 'Rota alınamadı, konumlar güncelleniyor…'
+              : 'Rota hesaplanıyor'}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -276,8 +363,13 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderWidth: 1,
     borderColor: 'rgba(180, 83, 9, 0.25)',
+    maxWidth: Dimensions.get('window').width - 28,
+  },
+  fallbackBadgeStale: {
+    backgroundColor: 'rgba(254, 243, 199, 0.92)',
   },
   fallbackBadgeText: {
+    flexShrink: 1,
     color: '#92400E',
     fontSize: 11,
     fontWeight: '800',

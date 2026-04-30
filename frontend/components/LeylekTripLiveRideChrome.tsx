@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LeylekTripMapPreview from './LeylekTripMapPreview';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type Coord = { latitude: number; longitude: number };
 
@@ -63,6 +63,8 @@ type LeylekTripLiveRideChromeProps = {
   onCancel: () => void;
   /** true: üst floating Konum/Nav şeridini gizle; kart içi durum + alt panelde ikincil aksiyonlar (Leylek/Muhabbet teklif akışı). */
   modernLeylekOfferUi?: boolean;
+  /** Backend polyline beklenirken sar uyarıyı gösterme (biniş sonrası vb.). */
+  suppressWaitingPolylineBanner?: boolean;
 };
 
 function vehicleLabel(vehicleKind?: string | null): string {
@@ -123,6 +125,7 @@ export default function LeylekTripLiveRideChrome({
   onFinish,
   onCancel,
   modernLeylekOfferUi = false,
+  suppressWaitingPolylineBanner = false,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
@@ -228,7 +231,13 @@ export default function LeylekTripLiveRideChrome({
       </View>
 
       <View style={styles.topInfoPanel} pointerEvents="box-none">
-        <View style={[styles.topInfoBorder, modernLeylekOfferUi && styles.topInfoBorderModern]}>
+        <View
+          style={[
+            styles.topInfoBorder,
+            modernLeylekOfferUi && styles.topInfoBorderModern,
+            modernLeylekOfferUi && styles.topInfoBorderModernCompact,
+          ]}
+        >
           <LinearGradient
             colors={
               modernLeylekOfferUi
@@ -245,7 +254,7 @@ export default function LeylekTripLiveRideChrome({
                 ))}
               </View>
             ) : null}
-            <View style={styles.topCardContent}>
+            <View style={[styles.topCardContent, modernLeylekOfferUi && styles.topCardContentModernCompact]}>
               {metaTitle || metaDetail ? (
                 <View style={styles.roleMetaBlock}>
                   {metaTitle ? (
@@ -305,19 +314,12 @@ export default function LeylekTripLiveRideChrome({
                   <Ionicons name="alert-circle-outline" size={15} color="#B45309" />
                   <Text style={styles.routeWarningText}>Alış/varış konumu henüz belirlenmedi.</Text>
                 </View>
-              ) : !routePolyline ? (
-                <View style={styles.routeWarning}>
-                  <Ionicons name="time-outline" size={15} color="#B45309" />
-                  <Text style={styles.routeWarningText}>Rota hesaplanıyor</Text>
-                </View>
-              ) : null}
-
-              {modernLeylekOfferUi ? (
-                <View style={styles.chromeCardStatusRow}>
-                  <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
-                    <View style={styles.activeStatusDot} />
-                    <Text style={styles.activeStatusText}>Yolculuk aktif</Text>
-                  </Animated.View>
+              ) : !routePolyline && !suppressWaitingPolylineBanner ? (
+                <View style={[styles.routeWarning, modernLeylekOfferUi && styles.routeWarningChip]}>
+                  <Ionicons name="time-outline" size={14} color="#B45309" />
+                  <Text style={[styles.routeWarningText, modernLeylekOfferUi && styles.routeWarningTextChip]} numberOfLines={1}>
+                    Rota hesaplanıyor
+                  </Text>
                 </View>
               ) : null}
 
@@ -563,6 +565,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
+  topInfoBorderModernCompact: {
+    marginTop: 10,
+    marginBottom: 4,
+    maxHeight: SCREEN_HEIGHT * 0.28,
+  },
   roleMetaBlock: {
     marginBottom: 8,
     paddingBottom: 8,
@@ -594,7 +601,8 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '32deg' }],
   },
   topCardContent: { position: 'relative', zIndex: 2, paddingVertical: 9, paddingHorizontal: 15, borderRadius: 20 },
-  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 7 },
+  topCardContentModernCompact: { paddingVertical: 11, paddingHorizontal: 14 },
+  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   routeDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
   routeTextStack: { flex: 1, minWidth: 0 },
   routeRowTrailColumn: { alignItems: 'flex-end', gap: 8, marginLeft: 4, flexShrink: 0 },
@@ -602,12 +610,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#64748B',
     fontWeight: '700',
-    letterSpacing: 1.6,
+    letterSpacing: 1.2,
     marginBottom: 1,
     textTransform: 'uppercase',
   },
   routeValueModern: { fontSize: 17, fontWeight: '700', color: '#0F172A', letterSpacing: 0.15, marginTop: 0 },
-  routePolylineHint: { fontSize: 10, color: '#94A3B8', marginTop: 2, fontWeight: '500' },
+  routePolylineHint: { fontSize: 11, color: '#94A3B8', marginTop: 2, fontWeight: '500' },
   routeWarning: {
     marginTop: 4,
     marginBottom: 8,
@@ -623,6 +631,19 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#92400E',
     fontSize: 12,
+    fontWeight: '800',
+  },
+  routeWarningChip: {
+    marginTop: 2,
+    marginBottom: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+  },
+  routeWarningTextChip: {
+    flexGrow: 0,
+    fontSize: 11,
     fontWeight: '800',
   },
   offeredPriceBadge: {
@@ -676,7 +697,7 @@ const styles = StyleSheet.create({
   },
   paymentPillText: { fontSize: 12, fontWeight: '800', color: '#0F766E' },
   chromeCardStatusRow: {
-    marginTop: 10,
+    marginTop: 6,
     marginBottom: 2,
     alignItems: 'flex-start',
   },
