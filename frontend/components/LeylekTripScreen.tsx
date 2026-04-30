@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -132,6 +132,28 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [finishResult, setFinishResult] = useState<FinishResult>(null);
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
 
+  const terminalCloseHandledSidRef = useRef<string | null>(null);
+  const terminalNavigateDoneRef = useRef(false);
+  const terminalAutoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    terminalCloseHandledSidRef.current = null;
+    terminalNavigateDoneRef.current = false;
+    if (terminalAutoTimerRef.current) {
+      clearTimeout(terminalAutoTimerRef.current);
+      terminalAutoTimerRef.current = null;
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    return () => {
+      if (terminalAutoTimerRef.current) {
+        clearTimeout(terminalAutoTimerRef.current);
+        terminalAutoTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = TERMINAL_TRIP_STATUSES.has(String(session?.status || '').trim().toLowerCase());
 
@@ -184,28 +206,81 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const activeSessionId = getActiveMuhabbetSessionId();
   const tripInfoReady = !!activeSessionId;
 
-  const closeTerminalTrip = useCallback((eventName: string, nextSession?: MuhabbetTripSession | null) => {
-    const terminalSessionId = normalizeMuhabbetSessionId(nextSession?.id || nextSession?.session_id || sessionId);
-    const terminalStatus = String(nextSession?.status || '').trim().toLowerCase();
-    console.log(`[leylek-trip] terminal event received event=${eventName} session_id=${terminalSessionId}`);
-    if (terminalStatus) {
-      console.log(`[leylek-trip] terminal status on load status=${terminalStatus}`);
+  const navigateHomeFromTerminal = useCallback(() => {
+    if (terminalNavigateDoneRef.current) return;
+    terminalNavigateDoneRef.current = true;
+    if (terminalAutoTimerRef.current) {
+      clearTimeout(terminalAutoTimerRef.current);
+      terminalAutoTimerRef.current = null;
     }
-    setQrCodeVisible(false);
-    setQrScanVisible(false);
-    setQrFinishToken('');
-    setQrExpiresAt(null);
-    setForceFinishPrompt(null);
-    setForceFinishWarningVisible(false);
-    setCallPayload(null);
-    setCallState('idle');
-    setCallBusy(false);
-    setPaymentPromptVisible(false);
-    setPaymentBusy(false);
-    setActionBusy(false);
-    setSession(null);
-    setTimeout(() => router.replace(MUHABBET_SAFE_ROUTE), 120);
-  }, [router, sessionId]);
+    router.replace(MUHABBET_SAFE_ROUTE);
+  }, [router]);
+
+  const closeTerminalTrip = useCallback(
+    (eventName: string, nextSession?: MuhabbetTripSession | null) => {
+      const sid = normalizeMuhabbetSessionId(nextSession?.id || nextSession?.session_id || sessionId);
+      if (!sid) {
+        console.log(
+          '[leylek-trip] terminal session ignored',
+          JSON.stringify({ event: eventName, detail: 'missing_session_id' })
+        );
+        return;
+      }
+
+      if (terminalCloseHandledSidRef.current === sid) {
+        console.log(
+          '[leylek-trip] terminal session ignored',
+          JSON.stringify({ event: eventName, session_id: sid, detail: 'duplicate_closeTerminalTrip' })
+        );
+        return;
+      }
+      terminalCloseHandledSidRef.current = sid;
+
+      const terminalStatus = String(nextSession?.status || '').trim().toLowerCase();
+      console.log(
+        '[leylek-trip] terminal session closed',
+        JSON.stringify({
+          event: eventName,
+          session_id: sid,
+          status: terminalStatus || undefined,
+        })
+      );
+
+      setQrCodeVisible(false);
+      setQrScanVisible(false);
+      setQrFinishToken('');
+      setQrExpiresAt(null);
+      setForceFinishPrompt(null);
+      setForceFinishWarningVisible(false);
+      setCallPayload(null);
+      setCallState('idle');
+      setCallBusy(false);
+      setPaymentPromptVisible(false);
+      setPaymentBusy(false);
+      setActionBusy(false);
+      setSession(null);
+
+      if (terminalAutoTimerRef.current) {
+        clearTimeout(terminalAutoTimerRef.current);
+        terminalAutoTimerRef.current = null;
+      }
+      terminalNavigateDoneRef.current = false;
+
+      terminalAutoTimerRef.current = setTimeout(() => {
+        terminalAutoTimerRef.current = null;
+        navigateHomeFromTerminal();
+      }, 2800);
+
+      Alert.alert('Muhabbet yolculuğu', 'Bu yolculuk tamamlandı veya kapandı.', [
+        {
+          text: 'Tamam',
+          style: 'default',
+          onPress: () => navigateHomeFromTerminal(),
+        },
+      ]);
+    },
+    [navigateHomeFromTerminal, sessionId]
+  );
 
   const loadSession = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -231,7 +306,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         }
         const loadedStatus = String(data.session.status || '').trim().toLowerCase();
         if (TERMINAL_TRIP_STATUSES.has(loadedStatus)) {
-          console.log(`[leylek-trip] terminal status on load status=${loadedStatus}`);
           closeTerminalTrip('load', data.session);
           return;
         }
