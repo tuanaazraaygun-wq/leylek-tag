@@ -176,6 +176,16 @@ type PendingMuhabbetAction =
   | { kind: 'trip_convert_accept'; requestId: string; retryCount: number }
   | { kind: 'trip_convert_decline'; requestId: string; retryCount: number };
 
+function formatTripConvertRestDetail(detail: unknown, statusFallback: string): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((x) => (typeof x === 'object' && x && 'msg' in x ? String((x as { msg?: string }).msg) : String(x)))
+      .join(' ');
+  }
+  return statusFallback;
+}
+
 function chatInitials(nameRaw: string): string {
   const parts = String(nameRaw || '')
     .trim()
@@ -655,70 +665,10 @@ export default function MuhabbetChatScreen({
     }
   }, [cid, waitForMuhabbetJoin]);
 
-  const retryPendingActionAfterNotRegistered = useCallback(async () => {
-    const pending = pendingActionRef.current;
-    if (!pending) return false;
-    if (pending.retryCount >= 1) return false;
-    if (pending.kind === 'send_message') {
-      pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
-      await sendMessageViaRest(pending.messageId, pending.body);
-      return true;
-    }
-    const ready = await ensureMuhabbetSocketReady();
-    if (!ready) return false;
-    const socket = getOrCreateSocket();
-    if (!socket.connected) return false;
-    pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
-    if (pending.kind === 'trip_convert_request') {
-      socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
-      return true;
-    }
-    if (pending.kind === 'trip_convert_accept') {
-      socket.emit('muhabbet_trip_convert_accept', { conversation_id: cid, request_id: pending.requestId });
-      return true;
-    }
-    if (pending.kind === 'trip_convert_decline') {
-      socket.emit('muhabbet_trip_convert_decline', { conversation_id: cid, request_id: pending.requestId });
-      return true;
-    }
-    return false;
-  }, [cid, ensureMuhabbetSocketReady, sendMessageViaRest]);
-
-  const retryPendingActionAfterReconnect = useCallback(
-    (messageId?: string) => {
-      setTimeout(() => {
-        void (async () => {
-          const retried = await retryPendingActionAfterNotRegistered();
-          if (retried) return;
-          const pending = pendingActionRef.current;
-          if (messageId && pending?.kind === 'send_message' && pending.messageId === messageId) {
-            pendingActionRef.current = null;
-            void sendMessageViaRest(messageId, pending.body);
-            return;
-          }
-          if (pending && pending.kind !== 'send_message') {
-            pendingActionRef.current = null;
-          }
-        })();
-      }, 1500);
-    },
-    [retryPendingActionAfterNotRegistered, sendMessageViaRest]
-  );
-
-  useEffect(() => {
-    myIdRef.current = myId;
-  }, [myId]);
-
-  useEffect(() => {
-    ctxRef.current = ctx;
-  }, [ctx]);
-
-  useEffect(() => {
-    tripConvertStateRef.current = tripConvertState;
-  }, [tripConvertState]);
-
   const navigateToLeylekTripSession = useCallback((payload?: MuhabbetTripSessionSocketPayload | null) => {
-    const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '').trim().toLowerCase();
+    const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '')
+      .trim()
+      .toLowerCase();
     if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
       Alert.alert(
         'Yolculuk',
@@ -731,6 +681,109 @@ export default function MuhabbetChatScreen({
     tripSessionNavRef.current = sessionId;
     router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
   }, [router]);
+
+  const retryPendingActionAfterNotRegistered = useCallback(async () => {
+    const pending = pendingActionRef.current;
+    if (!pending) return false;
+    if (pending.retryCount >= 1) return false;
+    if (pending.kind === 'send_message') {
+      pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
+      await sendMessageViaRest(pending.messageId, pending.body);
+      return true;
+    }
+    if (
+      pending.kind !== 'trip_convert_request' &&
+      pending.kind !== 'trip_convert_accept' &&
+      pending.kind !== 'trip_convert_decline'
+    ) {
+      return false;
+    }
+
+    pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
+    const token = (await getPersistedAccessToken())?.trim();
+    if (!token || !cid) {
+      pendingActionRef.current = null;
+      optimisticTripConvertRef.current = false;
+      setTripConvertLoading(false);
+      Alert.alert('Yolculuğa çevir', 'Oturum bulunamadı.');
+      await pullMessagesFromApi();
+      return true;
+    }
+
+    let url: string;
+    let fetchBody: string | undefined;
+    if (pending.kind === 'trip_convert_request') {
+      url = `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/trip-convert/request`;
+    } else if (pending.kind === 'trip_convert_accept') {
+      url = `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/trip-convert/accept`;
+      fetchBody = JSON.stringify({ request_id: pending.requestId });
+    } else {
+      url = `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/trip-convert/decline`;
+      fetchBody = JSON.stringify({ request_id: pending.requestId });
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(fetchBody ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(fetchBody ? { body: fetchBody } : {}),
+      });
+      const restBody = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        session?: { id?: string; session_id?: string };
+        detail?: unknown;
+      };
+      const ok = res.ok && restBody.success === true;
+      if (ok) {
+        pendingActionRef.current = null;
+        await pullMessagesFromApi();
+        if (pending.kind === 'trip_convert_accept') {
+          const sid = String(restBody.session?.id || restBody.session?.session_id || '')
+            .trim()
+            .toLowerCase();
+          if (sid && sid !== 'undefined' && sid !== 'null') {
+            navigateToLeylekTripSession({ session_id: sid });
+          }
+          scheduleTripConvertAcceptPullRetries(() => pullMessagesFromApi());
+        } else if (pending.kind === 'trip_convert_decline') {
+          scheduleTripConvertPullRetries(pullMessagesFromApi);
+        } else {
+          scheduleTripConvertPullRetries(pullMessagesFromApi);
+        }
+        return true;
+      }
+
+      const msg = formatTripConvertRestDetail(restBody.detail, `İşlem başarısız (${res.status})`);
+      Alert.alert('Yolculuğa çevir', msg || 'İşlem başarısız.');
+      pendingActionRef.current = null;
+      optimisticTripConvertRef.current = false;
+      setTripConvertLoading(false);
+      await pullMessagesFromApi();
+      return true;
+    } catch {
+      Alert.alert('Yolculuğa çevir', 'Bağlantı hatası. Lütfen tekrar deneyin.');
+      pendingActionRef.current = null;
+      optimisticTripConvertRef.current = false;
+      setTripConvertLoading(false);
+      await pullMessagesFromApi();
+      return true;
+    }
+  }, [base, cid, navigateToLeylekTripSession, pullMessagesFromApi, sendMessageViaRest]);
+
+  useEffect(() => {
+    myIdRef.current = myId;
+  }, [myId]);
+
+  useEffect(() => {
+    ctxRef.current = ctx;
+  }, [ctx]);
+
+  useEffect(() => {
+    tripConvertStateRef.current = tripConvertState;
+  }, [tripConvertState]);
 
   syncTripFromCtxRef.current = (nextCtx, myLo) => {
     const lo = (myLo || '').trim().toLowerCase();
@@ -1043,6 +1096,7 @@ export default function MuhabbetChatScreen({
           setTripConvertState('idle');
           setTripLockReason(null);
           Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'Bağlantı hazırlanıyor. Lütfen tekrar deneyin.');
+          await pullMessagesFromApi();
         })();
         return;
       }
@@ -1053,9 +1107,11 @@ export default function MuhabbetChatScreen({
       setTripLockReason(null);
       if (data?.code === 'driver_required') {
         Alert.alert('Yolculuğa çevir', 'Bu isteği yalnızca sürücü başlatabilir.');
+        void pullMessagesFromApi();
         return;
       }
       Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'İstek gönderilemedi.');
+      void pullMessagesFromApi();
     };
     socket.on('muhabbet_trip_convert_request', onConvertRequest);
     socket.on('muhabbet_trip_convert_request_sent', onConvertSent);
@@ -1071,7 +1127,7 @@ export default function MuhabbetChatScreen({
       socket.off('muhabbet_trip_convert_declined', onConvertDeclined);
       socket.off('muhabbet_trip_convert_error', onConvertError);
     };
-  }, [cid, navigateToLeylekTripSession, pushSystemCard, retryPendingActionAfterNotRegistered]);
+  }, [cid, navigateToLeylekTripSession, pullMessagesFromApi, pushSystemCard, retryPendingActionAfterNotRegistered]);
 
   useEffect(() => {
     if (!cid || bootstrapPhase !== 'ready') return;
@@ -1649,7 +1705,11 @@ export default function MuhabbetChatScreen({
         trip_convert_request: pulled.context?.trip_convert_request ?? null,
       });
       if (!pulled.ok) {
-        retryPendingActionAfterReconnect();
+        Alert.alert(
+          'Yolculuğa çevir',
+          'Sohbet güncellenemedi. Bağlantınızı kontrol edip tekrar deneyin.'
+        );
+        await pullMessagesFromApi();
         return;
       }
       const tcr = pulled.context?.trip_convert_request;
@@ -1708,7 +1768,7 @@ export default function MuhabbetChatScreen({
       console.log('[trip_convert] 8 finally setTripConvertLoading(false)');
       setTripConvertLoading(false);
     }
-  }, [base, cid, retryPendingActionAfterReconnect, tripConvertLoading, tripConvertState, pullMessagesFromApi]);
+  }, [base, cid, tripConvertLoading, tripConvertState, pullMessagesFromApi]);
 
   const acceptTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;
@@ -1732,6 +1792,8 @@ export default function MuhabbetChatScreen({
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) {
         optimisticTripConvertRef.current = false;
+        pendingActionRef.current = null;
+        setTripConvertInModal({ rid: requestId });
         Alert.alert('Yolculuğa çevir', 'Oturum bulunamadı.');
         await pullMessagesFromApi();
         return;
@@ -1785,46 +1847,27 @@ export default function MuhabbetChatScreen({
         return;
       }
 
-      const ready = await ensureMuhabbetSocketReady();
-      if (!ready) {
-        console.warn('[trip_convert_modal] accept socket fallback aborted — not ready', { requestId, cid });
-        optimisticTripConvertRef.current = false;
-        Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
-        await pullMessagesFromApi();
-        return;
-      }
-      const socket = getOrCreateSocket();
-      socket.emit('muhabbet_trip_convert_accept', {
-        conversation_id: cid,
-        request_id: requestId,
-      });
+      const failMsg = formatTripConvertRestDetail(
+        restBody.detail,
+        httpStatus > 0 ? `Kabul edilemedi (${httpStatus})` : 'Bağlantı hatası. Lütfen tekrar deneyin.'
+      );
+      optimisticTripConvertRef.current = false;
+      pendingActionRef.current = null;
+      setTripConvertInModal({ rid: requestId });
+      Alert.alert('Yolculuğa çevir', failMsg || 'Kabul edilemedi.');
       await pullMessagesFromApi();
-      finishPullRetries();
     } catch (e) {
       console.warn('[trip_convert_modal] accept error', { requestId, cid, err: String(e) });
       optimisticTripConvertRef.current = false;
-      try {
-        const ready = await ensureMuhabbetSocketReady();
-        if (ready) {
-          getOrCreateSocket().emit('muhabbet_trip_convert_accept', {
-            conversation_id: cid,
-            request_id: requestId,
-          });
-          await pullMessagesFromApi();
-          finishPullRetries();
-        } else {
-          Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
-          await pullMessagesFromApi();
-        }
-      } catch {
-        Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
-        await pullMessagesFromApi();
-      }
+      pendingActionRef.current = null;
+      setTripConvertInModal({ rid: requestId });
+      Alert.alert('Yolculuğa çevir', 'Bağlantı hatası. Lütfen tekrar deneyin.');
+      await pullMessagesFromApi();
     } finally {
       tripConvertModalActionBusyRef.current = false;
       setTripConvertModalBusy(false);
     }
-  }, [base, cid, ensureMuhabbetSocketReady, navigateToLeylekTripSession, tripConvertInModal, pullMessagesFromApi]);
+  }, [base, cid, navigateToLeylekTripSession, tripConvertInModal, pullMessagesFromApi]);
 
   const declineTripConvertFromModal = useCallback(async () => {
     if (!cid || !tripConvertInModal) return;
@@ -1838,6 +1881,7 @@ export default function MuhabbetChatScreen({
     try {
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) {
+        pendingActionRef.current = null;
         Alert.alert('Yolculuğa çevir', 'Oturum bulunamadı.');
         await pullMessagesFromApi();
         return;
@@ -1880,44 +1924,23 @@ export default function MuhabbetChatScreen({
         return;
       }
 
-      const ready = await ensureMuhabbetSocketReady();
-      if (!ready) {
-        console.warn('[trip_convert_modal] decline socket fallback aborted — not ready', { requestId, cid });
-        Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
-        await pullMessagesFromApi();
-        return;
-      }
-      const socket = getOrCreateSocket();
-      socket.emit('muhabbet_trip_convert_decline', {
-        conversation_id: cid,
-        request_id: requestId,
-      });
+      const failMsg = formatTripConvertRestDetail(
+        restBody.detail,
+        httpStatus > 0 ? `Reddetme başarısız (${httpStatus})` : 'Bağlantı hatası. Lütfen tekrar deneyin.'
+      );
+      pendingActionRef.current = null;
+      Alert.alert('Yolculuğa çevir', failMsg || 'Reddetme başarısız.');
       await pullMessagesFromApi();
-      scheduleTripConvertPullRetries(pullMessagesFromApi);
     } catch (e) {
       console.warn('[trip_convert_modal] decline error', { requestId, cid, err: String(e) });
-      try {
-        const ready = await ensureMuhabbetSocketReady();
-        if (ready) {
-          getOrCreateSocket().emit('muhabbet_trip_convert_decline', {
-            conversation_id: cid,
-            request_id: requestId,
-          });
-          await pullMessagesFromApi();
-          scheduleTripConvertPullRetries(pullMessagesFromApi);
-        } else {
-          Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
-          await pullMessagesFromApi();
-        }
-      } catch {
-        Alert.alert('Yolculuğa çevir', 'Bağlantı yenileniyor, tekrar deneyin.');
-        await pullMessagesFromApi();
-      }
+      pendingActionRef.current = null;
+      Alert.alert('Yolculuğa çevir', 'Bağlantı hatası. Lütfen tekrar deneyin.');
+      await pullMessagesFromApi();
     } finally {
       tripConvertModalActionBusyRef.current = false;
       setTripConvertModalBusy(false);
     }
-  }, [base, cid, ensureMuhabbetSocketReady, tripConvertInModal, pullMessagesFromApi]);
+  }, [base, cid, tripConvertInModal, pullMessagesFromApi]);
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>

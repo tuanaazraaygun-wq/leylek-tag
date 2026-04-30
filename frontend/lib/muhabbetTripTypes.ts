@@ -58,6 +58,8 @@ export type MuhabbetTripSession = {
   expires_at?: string | null;
   expired_at?: string | null;
   expire_reason?: string | null;
+  /** GET ile gösterim — biniş QR gösterimi için */
+  boarding_qr_token?: string | null;
   boarding_qr_created_at?: string | null;
   boarding_qr_expires_at?: string | null;
   boarding_qr_confirmed_at?: string | null;
@@ -67,6 +69,16 @@ export type MuhabbetTripSession = {
   finish_qr_expires_at?: string | null;
   finish_qr_confirmed_at?: string | null;
   finish_qr_confirmed_by_user_id?: string | null;
+  /** Bitiş QR (sunucu finish_qr_token veya qr_finish_token) */
+  finish_qr_token?: string | null;
+  qr_finish_token?: string | null;
+  /** Sesli görüşme — REST + polling */
+  call_active?: boolean | null;
+  caller_id?: string | null;
+  call_started_at?: string | null;
+  call_state?: 'ringing' | 'active' | string | null;
+  /** Zorla bitir özeti (pending / accepted / declined) */
+  force_finish_state?: 'pending' | 'accepted' | 'declined' | string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -85,6 +97,8 @@ export type MuhabbetTripCallSocketPayload = {
   conversation_id?: string | null;
   channel_name?: string;
   caller_id?: string;
+  /** Optimistik UI — sunucu REST ile eşleştirir */
+  started_at?: string;
   target_user_id?: string;
   accepted_by_user_id?: string;
   declined_by_user_id?: string;

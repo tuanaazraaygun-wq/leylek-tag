@@ -179,3 +179,10 @@ CREATE INDEX IF NOT EXISTS idx_mts_driver_status_created
 
 COMMENT ON TABLE public.muhabbet_trip_sessions IS
   'Leylek Teklif Sende Phase 2: chat conversion sonrası trip-like oturum; normal tags/dispatch/QR/payment lifecycle kullanmaz.';
+
+-- Muhabbet sesli arama durumu (REST + polling; socket yalnız bildirim).
+ALTER TABLE public.muhabbet_trip_sessions
+  ADD COLUMN IF NOT EXISTS call_active boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS call_caller_id uuid NULL REFERENCES public.users (id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS call_started_at timestamptz NULL,
+  ADD COLUMN IF NOT EXISTS call_state text NULL;

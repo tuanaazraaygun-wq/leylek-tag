@@ -25,6 +25,9 @@ EXPO_OFFERS_CHANNEL_TYPES = frozenset(
 EXPO_MUHABBET_CHANNEL_TYPES = frozenset(
     {
         "muhabbet_message",
+        "message",
+        "trip",
+        "qr",
         "leylek_pair_match_request",
         "leylek_key_match_completed",
     }
@@ -37,6 +40,7 @@ EXPO_CALLS_CHANNEL_TYPES = frozenset(
         "missed_call",
         "call_ended",
         "call_missed",
+        "call",
     }
 )
 

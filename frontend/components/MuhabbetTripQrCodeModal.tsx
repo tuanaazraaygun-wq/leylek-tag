@@ -18,6 +18,8 @@ type MuhabbetTripQrCodeModalProps = {
   sessionId: string;
   expiresAt?: string | null;
   onClose: () => void;
+  /** REST ile token beklenirken spinner */
+  loading?: boolean;
 };
 
 function qrValue(mode: 'boarding' | 'finish', sessionId: string, token: string): string {
@@ -37,6 +39,7 @@ export default function MuhabbetTripQrCodeModal({
   sessionId,
   expiresAt,
   onClose,
+  loading = false,
 }: MuhabbetTripQrCodeModalProps) {
   const pulse = useRef(new Animated.Value(0.72)).current;
   useEffect(() => {
@@ -57,7 +60,9 @@ export default function MuhabbetTripQrCodeModal({
       ? 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda başlar.'
       : 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda tamamlanır.';
   const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null;
-  const value = token ? qrValue(mode, sessionId, token) : '';
+  const tokenReady = !!token?.trim();
+  const showQr = tokenReady && !loading;
+  const value = showQr ? qrValue(mode, sessionId, token) : '';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

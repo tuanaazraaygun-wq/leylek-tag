@@ -9979,6 +9979,43 @@ async def register_push_token_endpoint(
         return {"success": False, "detail": str(e)}
 
 
+class RegisterPushTokenBody(BaseModel):
+    """Oturumlu kullanıcı için Expo push token (Authorization: Bearer zorunlu)."""
+
+    token: str
+    platform: Optional[str] = "android"
+
+
+@api_router.post("/register-push-token")
+async def register_push_token_authenticated(
+    body: RegisterPushTokenBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    JWT ile kimliklenen kullanıcının Expo push token'ını kaydet.
+    Body: {\"token\": \"ExpoPushToken[...]\", \"platform\": \"android\" | \"ios\"}
+    """
+    raw_uid = str(authenticated_user_id or "").strip()
+    try:
+        resolved = str(await resolve_user_id(raw_uid)).strip().lower()
+    except Exception:
+        resolved = ""
+    if not resolved:
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+    tok = (body.token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="token gerekli")
+    plat = (body.platform or "android").strip().lower() or "android"
+    req = PushTokenRequest(user_id=resolved, push_token=tok, platform=plat, token_type="expo")
+    result = await register_push_token_endpoint(request=req)
+    if isinstance(result, dict) and result.get("success"):
+        return result
+    detail = (
+        str(result.get("detail") or "Kayıt başarısız") if isinstance(result, dict) else "Kayıt başarısız"
+    )
+    raise HTTPException(status_code=400, detail=detail)
+
+
 @api_router.post("/user/save-push-token")
 async def save_push_token_alias(request: PushTokenRequest):
     """Expo token kaydı — register-push-token ile aynı gövde (POST /user/save-push-token)."""
@@ -17007,8 +17044,12 @@ _PUSH_CANONICAL_EXEMPT_TYPES = frozenset(
         "call_missed",
         "test",
         "admin_push_test",
-        # Leylek Muhabbeti — conversation_id ile yönlendirme; tag_id yok
+        # Leylek Muhabbeti — conversation_id / session_id ile yönlendirme; tag_id yok
         "muhabbet_message",
+        "message",
+        "call",
+        "trip",
+        "qr",
         "leylek_pair_match_request",
         "leylek_key_match_completed",
     }
@@ -17056,6 +17097,127 @@ def _canonical_push_routing_data(data: Optional[dict]) -> dict:
     if tid_s:
         d["tag_id"] = tid_s
     return d
+
+
+def _muhabbet_user_push_first_name(user_id: Optional[str]) -> str:
+    uid = str(user_id or "").strip().lower()
+    if not uid:
+        return ""
+    try:
+        user_result = supabase.table("users").select("name").eq("id", uid).limit(1).execute()
+        if user_result.data:
+            return _push_first_name(user_result.data[0].get("name"), 12) or ""
+    except Exception:
+        pass
+    return ""
+
+
+def schedule_muhabbet_leylek_push(
+    user_id: Optional[str],
+    push_type: str,
+    *,
+    session_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    title: str,
+    body: str,
+    extra: Optional[dict] = None,
+) -> None:
+    """Muhabbet / Leylek Trip kanalı — data.type ∈ {message, call, trip, qr}; socket’a ek olarak FCM."""
+    uid = str(user_id or "").strip().lower()
+    if not uid:
+        return
+    data: dict = {
+        "type": str(push_type or "").strip().lower(),
+        "session_id": str(session_id or "").strip().lower(),
+        "conversation_id": str(conversation_id or "").strip().lower(),
+        "title": title,
+        "body": body,
+    }
+    if extra:
+        for k, v in extra.items():
+            if v is None:
+                continue
+            data[str(k)] = v
+    try:
+        asyncio.create_task(send_push_notification(uid, title, body, data))
+    except Exception as e:
+        logger.warning("[muhabbet_leylek_push] schedule failed user=%s err=%s", uid[:12], e)
+
+
+def _schedule_muhabbet_incoming_call_push(payload: dict, session_id: str, caller_uid: str) -> None:
+    target_uid = str(payload.get("target_user_id") or "").strip().lower()
+    if not target_uid:
+        return
+    nm = _muhabbet_user_push_first_name(caller_uid)
+    cid_lo = str(payload.get("conversation_id") or "").strip().lower()
+    sid = str(session_id or "").strip().lower()
+    schedule_muhabbet_leylek_push(
+        target_uid,
+        "call",
+        session_id=sid,
+        conversation_id=cid_lo,
+        title="Muhabbet araması",
+        body=f"{nm or 'Karşı taraf'} sizi arıyor",
+        extra={"caller_id": str(caller_uid).strip().lower()},
+    )
+
+
+def schedule_muhabbet_trip_convert_request_push(
+    target_user_id: Optional[str],
+    conversation_id: str,
+    request_id: str,
+    requester_user_id: str,
+) -> None:
+    nm = _muhabbet_user_push_first_name(requester_user_id) or "Sürücü"
+    cid = str(conversation_id or "").strip().lower()
+    schedule_muhabbet_leylek_push(
+        target_user_id,
+        "trip",
+        session_id=None,
+        conversation_id=cid,
+        title="Yolculuk isteği",
+        body=f"{nm} Muhabbet sohbetini yolculuğa çevirmek istiyor",
+        extra={
+            "request_id": str(request_id).strip().lower(),
+            "requester_user_id": str(requester_user_id).strip().lower(),
+        },
+    )
+
+
+def _schedule_muhabbet_boarding_qr_passenger_push(out: dict, session_id: str, driver_uid: str) -> None:
+    emit_payload = out.get("emit_payload") if isinstance(out.get("emit_payload"), dict) else {}
+    sess = emit_payload.get("session") if isinstance(emit_payload.get("session"), dict) else {}
+    passenger_id = str(sess.get("passenger_id") or "").strip().lower()
+    du = str(driver_uid or "").strip().lower()
+    cid = str(sess.get("conversation_id") or emit_payload.get("conversation_id") or "").strip().lower()
+    sid = str(session_id or "").strip().lower()
+    if passenger_id and passenger_id != du:
+        schedule_muhabbet_leylek_push(
+            passenger_id,
+            "qr",
+            session_id=sid,
+            conversation_id=cid,
+            title="Biniş QR",
+            body="Sürücü biniş QR kodunu gösterdi • Okutmak için dokunun",
+            extra={"qr_mode": "boarding"},
+        )
+
+
+def _schedule_muhabbet_finish_qr_passenger_push(next_row: dict, session_id: str, driver_uid: str) -> None:
+    passenger_id = str(next_row.get("passenger_id") or "").strip().lower()
+    du = str(driver_uid or "").strip().lower()
+    cid = str(next_row.get("conversation_id") or "").strip().lower()
+    sid = str(session_id or "").strip().lower()
+    if passenger_id and passenger_id != du:
+        schedule_muhabbet_leylek_push(
+            passenger_id,
+            "qr",
+            session_id=sid,
+            conversation_id=cid,
+            title="Bitiş QR",
+            body="Sürücü bitiş QR kodunu gösterdi • Okutmak için dokunun",
+            extra={"qr_mode": "finish"},
+        )
 
 
 def _receipt_device_not_registered(receipt: Optional[dict]) -> bool:
@@ -22448,8 +22610,11 @@ async def sio_muhabbet_send(sid, data):
                         "Yeni mesaj",
                         preview,
                         {
-                            "type": "muhabbet_message",
+                            "type": "message",
+                            "session_id": "",
                             "conversation_id": cid,
+                            "title": "Yeni mesaj",
+                            "body": preview,
                             "message_id": msg_id,
                             "sender_id": uid,
                             "text": push_text,
@@ -23338,6 +23503,25 @@ def _muhabbet_trip_passenger_upsert_for_session(session_row: dict, conversion_ro
         logger.warning("[muhabbet_trip_passengers] upsert_failed session_id=%s err=%s", sid[:12], e)
 
 
+def _muhabbet_trip_force_finish_state_public(row: dict) -> str | None:
+    """Özet zorla bitir durumu — GET ile polling (pending / accepted / declined)."""
+    if not isinstance(row, dict):
+        return None
+    st = str(row.get("status") or "").strip().lower()
+    if st in ("finished", "cancelled", "expired"):
+        return None
+    req_at = row.get("forced_finish_requested_at")
+    if not req_at:
+        return None
+    conf_at = row.get("forced_finish_confirmed_at")
+    if conf_at:
+        other = str(row.get("forced_finish_other_user_response") or "").strip().lower()
+        if other == "declined":
+            return "declined"
+        return "accepted"
+    return "pending"
+
+
 def _muhabbet_trip_session_public(row: dict) -> dict:
     """Public payload for Leylek Teklif Sende trip-like sessions only."""
     if not isinstance(row, dict):
@@ -23407,15 +23591,23 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "forced_finish_other_user_response": row.get("forced_finish_other_user_response"),
         "finish_score_delta": row.get("finish_score_delta"),
         "finish_note": row.get("finish_note"),
+        "boarding_qr_token": row.get("boarding_qr_token"),
         "boarding_qr_created_at": row.get("boarding_qr_created_at"),
         "boarding_qr_expires_at": row.get("boarding_qr_expires_at"),
         "boarding_qr_confirmed_at": row.get("boarding_qr_confirmed_at"),
         "boarding_qr_confirmed_by_user_id": row.get("boarding_qr_confirmed_by_user_id"),
+        "finish_qr_token": row.get("finish_qr_token") or row.get("qr_finish_token"),
+        "qr_finish_token": row.get("qr_finish_token"),
         "qr_finish_token_created_at": row.get("qr_finish_token_created_at"),
         "finish_qr_created_at": row.get("finish_qr_created_at"),
         "finish_qr_expires_at": row.get("finish_qr_expires_at"),
         "finish_qr_confirmed_at": row.get("finish_qr_confirmed_at"),
         "finish_qr_confirmed_by_user_id": row.get("finish_qr_confirmed_by_user_id"),
+        "call_active": bool(row.get("call_active")),
+        "caller_id": row.get("call_caller_id"),
+        "call_started_at": row.get("call_started_at"),
+        "call_state": row.get("call_state"),
+        "force_finish_state": _muhabbet_trip_force_finish_state_public(row),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
         "passenger_summary": _muhabbet_trip_passenger_summary(str(row.get("id") or ""), row),
@@ -23831,6 +24023,10 @@ async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
             "boarding_qr_token": None,
             "finish_qr_token": None,
             "qr_finish_token": None,
+            "call_active": False,
+            "call_caller_id": None,
+            "call_started_at": None,
+            "call_state": None,
             "updated_at": now_iso,
         }
         try:
@@ -24159,8 +24355,17 @@ async def sio_muhabbet_trip_convert_request(sid, data):
             "passenger_id": ctx.get("passenger_id"),
             "driver_id": ctx.get("driver_id"),
         }
-        await emit_socket_event_to_user(str(ctx.get("target_user_id") or "").strip(), "muhabbet_trip_convert_request", payload)
-        await emit_socket_event_to_user(uid, "muhabbet_trip_convert_request_sent", payload)
+        try:
+            await emit_socket_event_to_user(str(ctx.get("target_user_id") or "").strip(), "muhabbet_trip_convert_request", payload)
+            await emit_socket_event_to_user(uid, "muhabbet_trip_convert_request_sent", payload)
+        except Exception as e:
+            logger.warning("[trip_convert_request] socket emit: %s", e)
+        schedule_muhabbet_trip_convert_request_push(
+            str(ctx.get("target_user_id") or "").strip(),
+            cid,
+            request_id,
+            str(uid).strip().lower(),
+        )
     except Exception as e:
         logger.exception("muhabbet_trip_convert_request: %s", e)
         await _emit_muhabbet_trip_conversion_error(sid, "server_error", "Yolculuğa çevirme isteği işlenemedi.")
@@ -24392,14 +24597,27 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(uid: str, session_id: str, to
 
 
 async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
-    """Sesli arama başlat — karşı tarafa incoming yayını."""
+    """Sesli arama başlat — durum DB'de (REST + polling); socket yalnız bildirim."""
+    await _expire_stale_muhabbet_trip_sessions()
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
     if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
         raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
+    if bool(row.get("call_active")):
+        raise _MuhabbetTripOpError("call_in_progress", "Devam eden bir çağrı var.")
     passenger_id = str(row.get("passenger_id") or "").strip().lower()
     driver_id = str(row.get("driver_id") or "").strip().lower()
     uid_lo = str(uid).strip().lower()
     target_uid = driver_id if uid_lo == passenger_id else passenger_id
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "call_active": True,
+        "call_caller_id": uid_lo,
+        "call_started_at": now_iso,
+        "call_state": "ringing",
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
     payload = {
         "session_id": session_id,
         "conversation_id": row.get("conversation_id"),
@@ -24407,12 +24625,345 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
         "caller_id": uid_lo,
         "target_user_id": target_uid,
     }
-    return {"call": payload}
+    return {"call": payload, "session": _muhabbet_trip_session_public(next_row)}
+
+
+async def _muhabbet_trip_payment_method_set_apply(uid: str, session_id: str, payment_method_raw) -> dict:
+    pm = _canonical_passenger_payment_method(payment_method_raw)
+    if pm not in ("cash", "card"):
+        raise _MuhabbetTripOpError("bad_payment_method", "Geçerli ödeme yöntemi seçin.")
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+        raise _MuhabbetTripOpError("passenger_required", "Ödeme yöntemini yolcu seçebilir.", 403)
+    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished", "expired"):
+        raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "payment_method": pm,
+        "payment_method_selected_at": now_iso,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    logger.info("[muhabbet_trip_payment] method_set session_id=%s method=%s", session_id, pm)
+    return next_row
+
+
+async def _muhabbet_trip_finish_qr_create_apply(uid: str, session_id: str) -> tuple[dict, dict]:
+    await _expire_stale_muhabbet_trip_sessions()
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    if str(row.get("driver_id") or "").strip().lower() != uid_lo:
+        raise _MuhabbetTripOpError("driver_required", "Bitiriş QR kodunu sürücü oluşturabilir.", 403)
+    if str(row.get("status") or "").strip().lower() not in ("active", "started"):
+        raise _MuhabbetTripOpError("not_active", "Yolculuk başlamadan bitiriş QR oluşturulamaz.")
+    token = _muhabbet_trip_qr_token()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_iso = (now + timedelta(minutes=5)).isoformat()
+    patch = {
+        "finish_qr_token": token,
+        "finish_qr_created_at": now_iso,
+        "finish_qr_expires_at": expires_iso,
+        "finish_qr_confirmed_at": None,
+        "finish_qr_confirmed_by_user_id": None,
+        "qr_finish_token": token,
+        "qr_finish_token_created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    payload = {
+        "session_id": session_id,
+        "conversation_id": row.get("conversation_id"),
+        "qr_finish_token": token,
+        "finish_qr_token": token,
+        "expires_at": expires_iso,
+        "session": _muhabbet_trip_session_public(next_row),
+    }
+    return payload, next_row
+
+
+async def _muhabbet_trip_emit_finish_qr_created(payload: dict, session_id: str) -> None:
+    sid = str(session_id or "").strip().lower()
+    room = muhabbet_trip_room(sid)
+    await sio.emit("muhabbet_trip_qr_created", payload, room=room)
+    await sio.emit("muhabbet_trip_finish_qr_created", payload, room=room)
+    sess = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+    for uid in (
+        str(sess.get("passenger_id") or "").strip(),
+        str(sess.get("driver_id") or "").strip(),
+    ):
+        if uid:
+            await emit_socket_event_to_user(uid, "muhabbet_trip_qr_created", payload)
+            await emit_socket_event_to_user(uid, "muhabbet_trip_finish_qr_created", payload)
+
+
+async def _muhabbet_trip_finish_qr_confirm_apply(uid: str, session_id: str, token: str) -> dict:
+    await _expire_stale_muhabbet_trip_sessions()
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    tok = str(token or "").strip().upper()
+    if not tok:
+        raise _MuhabbetTripOpError("bad_request", "QR kodu gerekli.")
+    if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+        raise _MuhabbetTripOpError("passenger_required", "Bitiriş QR kodunu yolcu onaylayabilir.", 403)
+    if str(row.get("status") or "").strip().lower() not in ("active", "started"):
+        raise _MuhabbetTripOpError("not_active", "Oturum bu işlem için uygun değil.")
+    expected = str(row.get("finish_qr_token") or row.get("qr_finish_token") or "").strip().upper()
+    if not expected or not secrets.compare_digest(expected, tok):
+        raise _MuhabbetTripOpError("bad_qr_token", "QR kod geçersiz.")
+    if _muhabbet_trip_qr_expired(row.get("finish_qr_expires_at") or row.get("qr_finish_token_created_at")):
+        raise _MuhabbetTripOpError("expired_qr_token", "QR kodun süresi doldu.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "status": "finished",
+        "finish_method": "qr",
+        "finish_score_delta": 3,
+        "finish_note": "QR confirmed clean Muhabbet finish",
+        "finish_qr_token": None,
+        "qr_finish_token": None,
+        "finish_qr_confirmed_at": now_iso,
+        "finish_qr_confirmed_by_user_id": uid_lo,
+        "finished_at": now_iso,
+        "finished_by_user_id": uid_lo,
+        "call_active": False,
+        "call_caller_id": None,
+        "call_started_at": None,
+        "call_state": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    logger.info("[muhabbet_trip_finish] qr_finished session_id=%s score=3", session_id)
+    _muhabbet_trip_passengers_update_for_user(
+        session_id,
+        str(next_row.get("passenger_id") or ""),
+        {"status": "completed"},
+    )
+    return next_row
+
+
+async def _muhabbet_trip_cancel_apply(uid: str, session_id: str, reason: Optional[str]) -> tuple[dict, bool]:
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+        return row, False
+    reason_clean = str(reason or "").strip()[:300] or None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "status": "cancelled",
+        "cancelled_at": now_iso,
+        "cancelled_by_user_id": str(uid).strip().lower(),
+        "cancel_reason": reason_clean,
+        "call_active": False,
+        "call_caller_id": None,
+        "call_started_at": None,
+        "call_state": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    _muhabbet_trip_passengers_update_for_user(
+        session_id,
+        str(row.get("passenger_id") or ""),
+        {"status": "cancelled", "cancelled_at": now_iso},
+    )
+    return next_row, True
+
+
+async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -> tuple[dict, dict]:
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+        raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
+    uid_lo = str(uid).strip().lower()
+    target_uid = _muhabbet_trip_counterparty(row, uid_lo)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "forced_finish_requested_by_user_id": uid_lo,
+        "forced_finish_requested_at": now_iso,
+        "forced_finish_confirmed_by_user_id": None,
+        "forced_finish_confirmed_at": None,
+        "forced_finish_other_user_response": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    payload = {
+        "session_id": session_id,
+        "conversation_id": row.get("conversation_id"),
+        "requester_user_id": uid_lo,
+        "target_user_id": target_uid,
+        "session": _muhabbet_trip_session_public(next_row),
+    }
+    logger.info("[muhabbet_trip_finish] forced_requested session_id=%s by=%s", session_id, uid_lo)
+    return payload, next_row
+
+
+async def _muhabbet_trip_force_finish_request_broadcast(payload: dict, requester_uid: str, target_uid: Optional[str]) -> None:
+    for target in (requester_uid, target_uid or ""):
+        t = str(target or "").strip().lower()
+        if t:
+            await emit_socket_event_to_user(t, "muhabbet_trip_force_finish_requested", payload)
+    tu = str(target_uid or "").strip().lower()
+    if tu:
+        sid = str(payload.get("session_id") or "").strip().lower()
+        cid = str(payload.get("conversation_id") or "").strip().lower()
+        rq = str(requester_uid or "").strip().lower()
+        nm = _muhabbet_user_push_first_name(rq) or "Karşı taraf"
+        schedule_muhabbet_leylek_push(
+            tu,
+            "trip",
+            session_id=sid,
+            conversation_id=cid,
+            title="Zorla bitirme isteği",
+            body=f"{nm} yanıt bekliyor • Dokunun",
+            extra={"sub_action": "force_finish_request"},
+        )
+
+
+async def _muhabbet_trip_force_finish_respond_apply(uid: str, session_id: str, response_raw: str) -> tuple[dict, bool]:
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+        return row, False
+    uid_lo = str(uid).strip().lower()
+    rr = str(response_raw or "").strip().lower()
+    response = rr if rr in ("accepted", "declined", "timeout") else "declined"
+    requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
+    if not requester_uid:
+        requester_uid = _muhabbet_trip_counterparty(row, uid_lo)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "status": "finished",
+        "finish_method": "forced",
+        "finish_score_delta": -3,
+        "finish_note": "Forced Muhabbet finish",
+        "forced_finish_confirmed_by_user_id": uid_lo,
+        "forced_finish_confirmed_at": now_iso,
+        "forced_finish_other_user_response": response,
+        "finished_at": now_iso,
+        "finished_by_user_id": requester_uid or uid_lo,
+        "call_active": False,
+        "call_caller_id": None,
+        "call_started_at": None,
+        "call_state": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s", session_id, response)
+    await _emit_muhabbet_trip_force_finished(next_row, response, uid_lo)
+    _muhabbet_trip_passengers_update_for_user(
+        session_id,
+        str(next_row.get("passenger_id") or ""),
+        {"status": "completed"},
+    )
+    return next_row, True
+
+
+async def _muhabbet_trip_call_response_broadcast(uid: str, session_id: str, event_name: str, user_field: str) -> dict:
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch: dict = {}
+
+    if event_name == "muhabbet_trip_call_accept":
+        if not bool(row.get("call_active")):
+            raise _MuhabbetTripOpError("no_call", "Aktif çağrı yok.")
+        caller = str(row.get("call_caller_id") or "").strip().lower()
+        if not caller:
+            raise _MuhabbetTripOpError("no_call", "Aktif çağrı yok.")
+        if uid_lo == caller:
+            raise _MuhabbetTripOpError("invalid", "Çağrıyı karşı taraf kabul etmeli.")
+        cs = str(row.get("call_state") or "").strip().lower()
+        if cs == "active":
+            raise _MuhabbetTripOpError("invalid", "Çağrı zaten bağlı.")
+        patch = {"call_state": "active", "updated_at": now_iso}
+    elif event_name == "muhabbet_trip_call_decline":
+        if not bool(row.get("call_active")):
+            raise _MuhabbetTripOpError("no_call", "Aktif çağrı yok.")
+        patch = {
+            "call_active": False,
+            "call_caller_id": None,
+            "call_started_at": None,
+            "call_state": None,
+            "updated_at": now_iso,
+        }
+    else:
+        raise _MuhabbetTripOpError("bad_request", "Geçersiz çağrı olayı.")
+
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+
+    payload = {
+        "session_id": session_id,
+        "conversation_id": next_row.get("conversation_id"),
+        "channel_name": f"muhabbet_trip_{session_id}",
+        user_field: uid_lo,
+    }
+    await sio.emit(event_name, payload, room=muhabbet_trip_room(session_id))
+    passenger_id = str(next_row.get("passenger_id") or "").strip()
+    driver_id = str(next_row.get("driver_id") or "").strip()
+    for target_uid in (passenger_id, driver_id):
+        if target_uid:
+            await emit_socket_event_to_user(target_uid, event_name, payload)
+
+    return _muhabbet_trip_session_public(next_row)
+
+
+async def _muhabbet_trip_call_end_broadcast(uid: str, session_id: str) -> dict:
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if not bool(row.get("call_active")):
+        raise _MuhabbetTripOpError("no_call", "Aktif çağrı yok.")
+    patch = {
+        "call_active": False,
+        "call_caller_id": None,
+        "call_started_at": None,
+        "call_state": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+
+    payload = {
+        "session_id": session_id,
+        "conversation_id": next_row.get("conversation_id"),
+        "channel_name": f"muhabbet_trip_{session_id}",
+        "ended_by_user_id": uid_lo,
+    }
+    await sio.emit("muhabbet_trip_call_end", payload, room=muhabbet_trip_room(session_id))
+    passenger_id = str(next_row.get("passenger_id") or "").strip()
+    driver_id = str(next_row.get("driver_id") or "").strip()
+    for target_uid in (passenger_id, driver_id):
+        if target_uid:
+            await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_end", payload)
+
+    return _muhabbet_trip_session_public(next_row)
 
 
 class MuhabbetTripBoardingQrConfirmBody(BaseModel):
     boarding_qr_token: Optional[str] = None
     token: Optional[str] = None
+
+
+class MuhabbetTripPaymentMethodBody(BaseModel):
+    payment_method: str
+
+
+class MuhabbetTripCancelBody(BaseModel):
+    reason: Optional[str] = None
+
+
+class MuhabbetTripFinishQrConfirmRestBody(BaseModel):
+    finish_qr_token: Optional[str] = None
+    qr_finish_token: Optional[str] = None
+    token: Optional[str] = None
+
+
+class MuhabbetTripForceFinishRespondRestBody(BaseModel):
+    response: str
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/boarding-qr/create")
@@ -24424,6 +24975,7 @@ async def muhabbet_trip_boarding_qr_create_post(
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
         await emit_socket_event_to_user(str(uid).strip(), "muhabbet_trip_boarding_qr_created", out["emit_payload"])
+        _schedule_muhabbet_boarding_qr_passenger_push(out, session_id, str(uid).strip().lower())
         return {
             "success": True,
             "boarding_qr_token": out["boarding_qr_token"],
@@ -24467,7 +25019,164 @@ async def muhabbet_trip_call_start_post(
         await emit_socket_event_to_user(uid_lo, "muhabbet_trip_call_start", payload)
         if target_uid:
             await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
+        _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
         return {"success": True, **out}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/payment-method")
+async def muhabbet_trip_payment_method_post(
+    session_id: str,
+    body: MuhabbetTripPaymentMethodBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        next_row = await _muhabbet_trip_payment_method_set_apply(uid, session_id, body.payment_method)
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_payment_method_set")
+        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/finish-qr/create")
+async def muhabbet_trip_finish_qr_create_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        payload, next_row = await _muhabbet_trip_finish_qr_create_apply(uid, session_id)
+        await _muhabbet_trip_emit_finish_qr_created(payload, session_id)
+        _schedule_muhabbet_finish_qr_passenger_push(next_row, session_id, str(uid).strip().lower())
+        return {
+            "success": True,
+            "finish_qr_token": payload.get("finish_qr_token"),
+            "qr_finish_token": payload.get("qr_finish_token"),
+            "expires_at": payload.get("expires_at"),
+        }
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/finish-qr/confirm")
+async def muhabbet_trip_finish_qr_confirm_post(
+    session_id: str,
+    body: MuhabbetTripFinishQrConfirmRestBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    tok = str(body.finish_qr_token or body.qr_finish_token or body.token or "").strip().upper()
+    try:
+        next_row = await _muhabbet_trip_finish_qr_confirm_apply(uid, session_id, tok)
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/cancel")
+async def muhabbet_trip_cancel_post(
+    session_id: str,
+    body: MuhabbetTripCancelBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        next_row, did_cancel = await _muhabbet_trip_cancel_apply(uid, session_id, body.reason)
+        if did_cancel:
+            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_cancelled")
+        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/force-finish/request")
+async def muhabbet_trip_force_finish_request_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        payload, _nr = await _muhabbet_trip_force_finish_request_apply(uid, session_id)
+        ru = str(payload.get("requester_user_id") or "").strip().lower()
+        tu = str(payload.get("target_user_id") or "").strip().lower()
+        await _muhabbet_trip_force_finish_request_broadcast(payload, ru, tu or None)
+        return {"success": True, "session": payload.get("session")}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/force-finish/respond")
+async def muhabbet_trip_force_finish_respond_post(
+    session_id: str,
+    body: MuhabbetTripForceFinishRespondRestBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        next_row, did_finish = await _muhabbet_trip_force_finish_respond_apply(uid, session_id, body.response)
+        if did_finish:
+            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/call/accept")
+async def muhabbet_trip_call_accept_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        sess_pub = await _muhabbet_trip_call_response_broadcast(uid, session_id, "muhabbet_trip_call_accept", "accepted_by_user_id")
+        return {"success": True, "session": sess_pub}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/call/decline")
+async def muhabbet_trip_call_decline_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        sess_pub = await _muhabbet_trip_call_response_broadcast(uid, session_id, "muhabbet_trip_call_decline", "declined_by_user_id")
+        return {"success": True, "session": sess_pub}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/call/end")
+async def muhabbet_trip_call_end_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        sess_pub = await _muhabbet_trip_call_end_broadcast(uid, session_id)
+        return {"success": True, "session": sess_pub}
     except HTTPException:
         raise
     except _MuhabbetTripOpError as e:
@@ -24584,31 +25293,16 @@ async def sio_muhabbet_trip_payment_method_set(sid, data):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
     session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
-    payment_method = _canonical_passenger_payment_method(data.get("payment_method") or data.get("paymentMethod"))
-    if not uid or not session_id or payment_method not in ("cash", "card"):
-        await sio.emit("muhabbet_trip_error", {"code": "bad_payment_method", "message": "Geçerli ödeme yöntemi seçin."}, room=sid)
+    pm_raw = data.get("payment_method") or data.get("paymentMethod")
+    if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        uid_lo = str(uid).strip().lower()
-        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
-            await sio.emit("muhabbet_trip_error", {"code": "passenger_required", "message": "Ödeme yöntemini yolcu seçebilir."}, room=sid)
-            return
-        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished", "expired"):
-            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "payment_method": payment_method,
-            "payment_method_selected_at": now_iso,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        logger.info("[muhabbet_trip_payment] method_set session_id=%s method=%s", session_id, payment_method)
+        next_row = await _muhabbet_trip_payment_method_set_apply(uid, session_id, pm_raw)
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_payment_method_set")
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_payment_method_set: %s", e)
         await sio.emit("muhabbet_trip_error", {"code": "server_error", "message": "Ödeme yöntemi kaydedilemedi."}, room=sid)
@@ -24638,26 +25332,9 @@ async def sio_muhabbet_trip_cancel(sid, data):
     if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
-            return
-        reason = str(data.get("reason") or "").strip()[:300] or None
-        now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "status": "cancelled",
-            "cancelled_at": now_iso,
-            "cancelled_by_user_id": str(uid).strip().lower(),
-            "cancel_reason": reason,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        _muhabbet_trip_passengers_update_for_user(
-            session_id,
-            str(row.get("passenger_id") or ""),
-            {"status": "cancelled", "cancelled_at": now_iso},
-        )
-        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_cancelled")
+        next_row, did_cancel = await _muhabbet_trip_cancel_apply(uid, session_id, str(data.get("reason") or ""))
+        if did_cancel:
+            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_cancelled")
     except Exception as e:
         logger.warning("muhabbet_trip_cancel: %s", e)
 
@@ -24688,6 +25365,7 @@ async def sio_muhabbet_trip_boarding_qr_create(sid, data):
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
         await sio.emit("muhabbet_trip_boarding_qr_created", out["emit_payload"], room=sid)
+        _schedule_muhabbet_boarding_qr_passenger_push(out, session_id, str(uid).strip().lower())
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except _MuhabbetTripOpError as e:
@@ -24725,43 +25403,13 @@ async def sio_muhabbet_trip_qr_create(sid, data):
     if not uid or not session_id:
         return
     try:
-        await _expire_stale_muhabbet_trip_sessions()
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        uid_lo = str(uid).strip().lower()
-        if str(row.get("driver_id") or "").strip().lower() != uid_lo:
-            await sio.emit("muhabbet_trip_error", {"code": "driver_required", "message": "Bitiriş QR kodunu sürücü oluşturabilir."}, room=sid)
-            return
-        if str(row.get("status") or "").strip().lower() not in ("active", "started"):
-            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Yolculuk başlamadan bitiriş QR oluşturulamaz."}, room=sid)
-            return
-        token = _muhabbet_trip_qr_token()
-        now = datetime.now(timezone.utc)
-        now_iso = now.isoformat()
-        expires_iso = (now + timedelta(minutes=5)).isoformat()
-        patch = {
-            "finish_qr_token": token,
-            "finish_qr_created_at": now_iso,
-            "finish_qr_expires_at": expires_iso,
-            "finish_qr_confirmed_at": None,
-            "finish_qr_confirmed_by_user_id": None,
-            "qr_finish_token": token,
-            "qr_finish_token_created_at": now_iso,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "qr_finish_token": token,
-            "finish_qr_token": token,
-            "expires_at": expires_iso,
-            "session": _muhabbet_trip_session_public(next_row),
-        }
-        await sio.emit("muhabbet_trip_qr_created", payload, room=sid)
-        await sio.emit("muhabbet_trip_finish_qr_created", payload, room=sid)
+        payload, nr = await _muhabbet_trip_finish_qr_create_apply(uid, session_id)
+        await _muhabbet_trip_emit_finish_qr_created(payload, session_id)
+        _schedule_muhabbet_finish_qr_passenger_push(nr, session_id, str(uid).strip().lower())
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_qr_create: %s", e)
 
@@ -24777,46 +25425,12 @@ async def sio_muhabbet_trip_qr_confirm(sid, data):
     if not uid or not session_id or not token:
         return
     try:
-        await _expire_stale_muhabbet_trip_sessions()
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        uid_lo = str(uid).strip().lower()
-        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
-            await sio.emit("muhabbet_trip_error", {"code": "passenger_required", "message": "Bitiriş QR kodunu yolcu onaylayabilir."}, room=sid)
-            return
-        if str(row.get("status") or "").strip().lower() not in ("active", "started"):
-            return
-        expected = str(row.get("finish_qr_token") or row.get("qr_finish_token") or "").strip().upper()
-        if not expected or not secrets.compare_digest(expected, token):
-            await sio.emit("muhabbet_trip_error", {"code": "bad_qr_token", "message": "QR kod geçersiz."}, room=sid)
-            return
-        if _muhabbet_trip_qr_expired(row.get("finish_qr_expires_at") or row.get("qr_finish_token_created_at")):
-            await sio.emit("muhabbet_trip_error", {"code": "expired_qr_token", "message": "QR kodun süresi doldu."}, room=sid)
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "status": "finished",
-            "finish_method": "qr",
-            "finish_score_delta": 3,
-            "finish_note": "QR confirmed clean Muhabbet finish",
-            "finish_qr_token": None,
-            "qr_finish_token": None,
-            "finish_qr_confirmed_at": now_iso,
-            "finish_qr_confirmed_by_user_id": uid_lo,
-            "finished_at": now_iso,
-            "finished_by_user_id": uid_lo,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        logger.info("[muhabbet_trip_finish] qr_finished session_id=%s score=3", session_id)
-        _muhabbet_trip_passengers_update_for_user(
-            session_id,
-            str(next_row.get("passenger_id") or ""),
-            {"status": "completed"},
-        )
+        next_row = await _muhabbet_trip_finish_qr_confirm_apply(uid, session_id, token)
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_qr_confirm: %s", e)
 
@@ -24830,36 +25444,14 @@ async def sio_muhabbet_trip_force_finish_request(sid, data):
     if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
-            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
-            return
-        uid_lo = str(uid).strip().lower()
-        target_uid = _muhabbet_trip_counterparty(row, uid_lo)
-        now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "forced_finish_requested_by_user_id": uid_lo,
-            "forced_finish_requested_at": now_iso,
-            "forced_finish_confirmed_by_user_id": None,
-            "forced_finish_confirmed_at": None,
-            "forced_finish_other_user_response": None,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "requester_user_id": uid_lo,
-            "target_user_id": target_uid,
-            "session": _muhabbet_trip_session_public(next_row),
-        }
-        logger.info("[muhabbet_trip_finish] forced_requested session_id=%s by=%s", session_id, uid_lo)
-        for target in (uid_lo, target_uid):
-            if target:
-                await emit_socket_event_to_user(target, "muhabbet_trip_force_finish_requested", payload)
+        payload, _nr = await _muhabbet_trip_force_finish_request_apply(uid, session_id)
+        ru = str(payload.get("requester_user_id") or "").strip().lower()
+        tu = str(payload.get("target_user_id") or "").strip().lower()
+        await _muhabbet_trip_force_finish_request_broadcast(payload, ru, tu or None)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_force_finish_request: %s", e)
 
@@ -24871,40 +25463,12 @@ async def sio_muhabbet_trip_force_finish_respond(sid, data):
     uid = _muhabbet_socket_uid_from_sid(sid)
     session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
     response_raw = str(data.get("response") or "").strip().lower()
-    response = response_raw if response_raw in ("accepted", "declined", "timeout") else "declined"
     if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
-            return
-        uid_lo = str(uid).strip().lower()
-        requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
-        if not requester_uid:
-            requester_uid = _muhabbet_trip_counterparty(row, uid_lo)
-        now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "status": "finished",
-            "finish_method": "forced",
-            "finish_score_delta": -3,
-            "finish_note": "Forced Muhabbet finish",
-            "forced_finish_confirmed_by_user_id": uid_lo,
-            "forced_finish_confirmed_at": now_iso,
-            "forced_finish_other_user_response": response,
-            "finished_at": now_iso,
-            "finished_by_user_id": requester_uid or uid_lo,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s", session_id, response)
-        await _emit_muhabbet_trip_force_finished(next_row, response, uid_lo)
-        _muhabbet_trip_passengers_update_for_user(
-            session_id,
-            str(next_row.get("passenger_id") or ""),
-            {"status": "completed"},
-        )
-        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+        next_row, did_finish = await _muhabbet_trip_force_finish_respond_apply(uid, session_id, response_raw)
+        if did_finish:
+            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except Exception as e:
@@ -24926,6 +25490,7 @@ async def sio_muhabbet_trip_call_start(sid, data):
         await sio.emit("muhabbet_trip_call_start", payload, room=sid)
         if target_uid:
             await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
+        _schedule_muhabbet_incoming_call_push(payload, session_id, str(uid).strip().lower())
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except _MuhabbetTripOpError as e:
@@ -24942,19 +25507,7 @@ async def _muhabbet_trip_forward_call_response(sid, data, event_name: str, user_
     if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "channel_name": f"muhabbet_trip_{session_id}",
-            user_field: str(uid).strip().lower(),
-        }
-        await sio.emit(event_name, payload, room=muhabbet_trip_room(session_id))
-        passenger_id = str(row.get("passenger_id") or "").strip()
-        driver_id = str(row.get("driver_id") or "").strip()
-        for target_uid in (passenger_id, driver_id):
-            if target_uid:
-                await emit_socket_event_to_user(target_uid, event_name, payload)
+        await _muhabbet_trip_call_response_broadcast(uid, session_id, event_name, user_field)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except Exception as e:
@@ -25008,19 +25561,7 @@ async def sio_muhabbet_trip_call_end(sid, data):
     if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "channel_name": f"muhabbet_trip_{session_id}",
-            "ended_by_user_id": str(uid).strip().lower(),
-        }
-        await sio.emit("muhabbet_trip_call_end", payload, room=muhabbet_trip_room(session_id))
-        passenger_id = str(row.get("passenger_id") or "").strip()
-        driver_id = str(row.get("driver_id") or "").strip()
-        for target_uid in (passenger_id, driver_id):
-            if target_uid:
-                await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_end", payload)
+        await _muhabbet_trip_call_end_broadcast(uid, session_id)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except Exception as e:
@@ -25796,6 +26337,12 @@ async def muhabbet_trip_convert_request_rest(
             await emit_socket_event_to_user(uid, "muhabbet_trip_convert_request_sent", payload)
         except Exception as e:
             logger.warning("[trip_convert_request_rest] socket emit: %s", e)
+        schedule_muhabbet_trip_convert_request_push(
+            str(ctx_conv.get("target_user_id") or "").strip(),
+            cid,
+            request_id,
+            str(uid).strip().lower(),
+        )
         blob = _muhabbet_trip_convert_request_snapshot(uid, cid)
         return {"success": True, "reused": reused, "trip_convert_request": blob}
     except HTTPException:

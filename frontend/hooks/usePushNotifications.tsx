@@ -21,10 +21,43 @@ import {
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { API_BASE_URL, BACKEND_BASE_URL, isPushRegisterDebugOverlayEnabled } from '../lib/backendConfig';
 import { registerFcmTokenWithBackend } from '../lib/androidFcmPush';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 
 const API_URL = API_BASE_URL;
+
+/** Bearer ile POST /api/register-push-token — Expo push token */
+async function postRegisterExpoPushTokenCore(expoToken: string): Promise<boolean> {
+  const bearer = (await getPersistedAccessToken())?.trim();
+  if (!bearer) return false;
+  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'android';
+  try {
+    const response = await fetch(`${API_URL}/register-push-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${bearer}`,
+      },
+      body: JSON.stringify({ token: expoToken, platform }),
+    });
+    const raw = await response.text().catch(() => '');
+    let body: { success?: boolean; detail?: string } = {};
+    try {
+      body = raw ? JSON.parse(raw) : {};
+    } catch {
+      body = {};
+    }
+    const ok = !!(response.ok && body.success === true);
+    if (ok) {
+      console.log('[push_token_registered]', JSON.stringify({ platform, transport: 'expo' }));
+    }
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 function deferToNextFrame(fn: () => void) {
   InteractionManager.runAfterInteractions(() => {
@@ -52,7 +85,7 @@ export type PushRegisterDebugSnapshot = {
 
 export interface PushNotificationHook {
   pushToken: string | null;
-  tokenType: 'fcm' | null;
+  tokenType: 'expo' | 'fcm' | null;
   notification: Notifications.Notification | null;
   registerForPushNotifications: () => void;
   registerPushToken: (
@@ -163,11 +196,11 @@ export function usePushNotifications(): PushNotificationHook {
 
 type MergeDbg = (patch: Partial<PushRegisterDebugSnapshot>) => void;
 
-/** Promise dönmez; await yok; hatalar swallow; onToken(null | string) */
+/** Promise dönmez; token adımı async; onToken(token|null, kind?) */
 function runRegisterForPushNotificationsChain(
   setPushToken: (t: string | null) => void,
-  setTokenType: (t: 'fcm' | null) => void,
-  onToken: (token: string | null) => void,
+  setTokenType: (t: 'expo' | 'fcm' | null) => void,
+  onToken: (token: string | null, kind?: 'expo' | 'fcm') => void,
   mergeDebug?: MergeDbg
 ): void {
   mergeDebug?.({ chainFailReason: null });
@@ -238,31 +271,54 @@ function runRegisterForPushNotificationsChain(
         return Promise.reject(new Error('notification permission denied'));
       }
     })
-    .then(() => {
+    .then(async () => {
+      const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
+      const projectId = extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+
+      if (projectId && typeof projectId === 'string') {
+        try {
+          const res = await Notifications.getExpoPushTokenAsync({ projectId });
+          const token = res?.data;
+          if (typeof token === 'string' && token.length > 0) {
+            setPushToken(token);
+            setTokenType('expo');
+            mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
+            onToken(token, 'expo');
+            return;
+          }
+        } catch (expoErr) {
+          console.warn('[PUSH] Expo push token alınamadı:', expoErr);
+          mergeDebug?.({ chainFailReason: `expo_err:${String(expoErr)}` });
+        }
+      } else {
+        mergeDebug?.({ chainFailReason: 'missing_expo_project_id' });
+        console.warn('[PUSH] extra.eas.projectId yok — app.json / EAS projectId gerekli');
+      }
+
       if (Platform.OS !== 'android') {
-        mergeDebug?.({ tokenAcquired: false, chainFailReason: 'fcm_registration_android_only' });
+        mergeDebug?.({ tokenAcquired: false, chainFailReason: 'no_token_non_android_fallback' });
         onToken(null);
         return;
       }
-      console.log('FCM_TOKEN_FETCH_START');
-      return Notifications.getDevicePushTokenAsync()
-        .then((deviceRes) => {
-          const token = deviceRes?.data;
-          if (typeof token === 'string' && token.length > 0) {
-            console.log('FCM_TOKEN_FETCH_SUCCESS');
-            setPushToken(token);
-            setTokenType('fcm');
-            mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
-            onToken(token);
-          } else {
-            console.log('FCM_TOKEN_FETCH_ERROR', { reason: 'empty_device_token' });
-            chainFail('empty_fcm_token_data');
-          }
-        })
-        .catch((e) => {
-          console.log('FCM_TOKEN_FETCH_ERROR', { message: String(e) });
-          chainFail(e instanceof Error ? e.message : String(e));
-        });
+
+      try {
+        console.log('FCM_TOKEN_FETCH_START');
+        const deviceRes = await Notifications.getDevicePushTokenAsync();
+        const token = deviceRes?.data;
+        if (typeof token === 'string' && token.length > 0) {
+          console.log('FCM_TOKEN_FETCH_SUCCESS');
+          setPushToken(token);
+          setTokenType('fcm');
+          mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
+          onToken(token, 'fcm');
+          return;
+        }
+        console.log('FCM_TOKEN_FETCH_ERROR', { reason: 'empty_device_token' });
+      } catch (e) {
+        console.log('FCM_TOKEN_FETCH_ERROR', { message: String(e) });
+      }
+      mergeDebug?.({ tokenAcquired: false, chainFailReason: 'no_push_token' });
+      onToken(null);
     })
     .catch((e) => {
       console.warn('[PUSH] Token zinciri başarısız:', e);
@@ -291,12 +347,15 @@ const initialPushRegisterDebug = (): PushRegisterDebugSnapshot => ({
 
 function usePushNotificationsState(): PushNotificationHook {
   const [pushToken, setPushToken] = useState<string | null>(null);
-  const [tokenType, setTokenType] = useState<'fcm' | null>(null);
+  const [tokenType, setTokenType] = useState<'expo' | 'fcm' | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
   const [pushRegisterDebug, setPushRegisterDebug] = useState<PushRegisterDebugSnapshot>(initialPushRegisterDebug);
 
   const notificationListener = useRef<Notifications.Subscription | undefined>(undefined);
   const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
+  const pushTokenSubscriptionRef = useRef<Notifications.Subscription | undefined>(undefined);
+  const pendingUserIdForPushRef = useRef<string | null>(null);
+  const lastRegisteredPushRef = useRef<{ userId: string; token: string } | null>(null);
 
   const mergePushRegisterDebug = useCallback((patch: Partial<PushRegisterDebugSnapshot>) => {
     if (typeof __DEV__ === 'undefined' || !__DEV__) return;
@@ -322,7 +381,7 @@ function usePushNotificationsState(): PushNotificationHook {
   );
 
   const acquireTokenNonBlocking = useCallback(
-    (onToken: (token: string | null) => void) => {
+    (onToken: (token: string | null, kind?: 'expo' | 'fcm') => void) => {
       runRegisterForPushNotificationsChain(setPushToken, setTokenType, onToken, mergePushRegisterDebug);
     },
     [mergePushRegisterDebug]
@@ -345,8 +404,9 @@ function usePushNotificationsState(): PushNotificationHook {
         onComplete?.(false);
         return;
       }
-      acquireTokenNonBlocking((token) => {
-        if (!token) {
+      pendingUserIdForPushRef.current = userId;
+      acquireTokenNonBlocking((token, kind) => {
+        if (!token || !kind) {
           mergePushRegisterDebug({
             tokenAcquired: false,
             fetchStarted: false,
@@ -355,10 +415,53 @@ function usePushNotificationsState(): PushNotificationHook {
             fetchFailReason: 'no_device_token',
           });
           console.warn('PUSH_TOKEN_SAVE_FAIL', { userId, reason: 'no_device_token' });
-          console.warn('[PUSH] FCM token yok — backend’e gönderilmedi (userId=', userId, ')');
           onComplete?.(false);
           return;
         }
+
+        if (kind === 'expo') {
+          if (lastRegisteredPushRef.current?.userId === userId && lastRegisteredPushRef.current?.token === token) {
+            mergePushRegisterDebug({
+              tokenAcquired: true,
+              fetchStarted: true,
+              fetchDone: true,
+              fetchSuccess: true,
+              fetchFailReason: null,
+            });
+            onComplete?.(true);
+            return;
+          }
+          mergePushRegisterDebug({
+            tokenAcquired: true,
+            fetchStarted: true,
+            fetchDone: false,
+            fetchSuccess: null,
+            fetchFailReason: null,
+          });
+          void postRegisterExpoPushTokenCore(token)
+            .then((success) => {
+              if (success) {
+                lastRegisteredPushRef.current = { userId, token };
+              }
+              mergePushRegisterDebug({
+                fetchDone: true,
+                fetchSuccess: success,
+                fetchFailReason: success ? null : 'expo_register_failed',
+              });
+              onComplete?.(success);
+            })
+            .catch((err) => {
+              mergePushRegisterDebug({
+                fetchDone: true,
+                fetchSuccess: false,
+                fetchFailReason: `network:${String(err)}`,
+              });
+              console.log('PUSH_TOKEN_REGISTER_ERROR', { transport: 'expo', message: String(err) });
+              onComplete?.(false);
+            });
+          return;
+        }
+
         if (Platform.OS !== 'android') {
           mergePushRegisterDebug({
             fetchStarted: false,
@@ -378,6 +481,9 @@ function usePushNotificationsState(): PushNotificationHook {
         });
         void registerFcmTokenWithBackend(userId, token)
           .then((success) => {
+            if (success) {
+              lastRegisteredPushRef.current = { userId, token };
+            }
             mergePushRegisterDebug({
               fetchDone: true,
               fetchSuccess: success,
@@ -412,6 +518,7 @@ function usePushNotificationsState(): PushNotificationHook {
         onComplete?.(false);
         return;
       }
+      pendingUserIdForPushRef.current = userId;
       mergePushRegisterDebug({
         registerTriggered: true,
         registerTriggeredAt: Date.now(),
@@ -431,9 +538,13 @@ function usePushNotificationsState(): PushNotificationHook {
   );
 
   const removePushToken = useCallback(async (userId: string): Promise<void> => {
+    pendingUserIdForPushRef.current = null;
+    lastRegisteredPushRef.current = null;
     try {
-      await fetch(`${API_URL}/user/remove-push-token?user_id=${userId}`, {
+      const bearer = (await getPersistedAccessToken())?.trim();
+      await fetch(`${API_URL}/user/remove-push-token?user_id=${encodeURIComponent(userId)}`, {
         method: 'DELETE',
+        headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined,
       });
       setPushToken(null);
       setTokenType(null);
@@ -449,9 +560,29 @@ function usePushNotificationsState(): PushNotificationHook {
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {});
 
+    try {
+      pushTokenSubscriptionRef.current = Notifications.addPushTokenListener((ev) => {
+        const token = typeof (ev as { data?: string })?.data === 'string' ? (ev as { data: string }).data : '';
+        const uid = pendingUserIdForPushRef.current;
+        if (!token || !uid) return;
+        if (lastRegisteredPushRef.current?.userId === uid && lastRegisteredPushRef.current?.token === token) {
+          return;
+        }
+        void postRegisterExpoPushTokenCore(token).then((ok) => {
+          if (ok) {
+            lastRegisteredPushRef.current = { userId: uid, token };
+          }
+        });
+      });
+    } catch {
+      pushTokenSubscriptionRef.current = undefined;
+    }
+
     return () => {
       notificationListener.current?.remove();
       responseListener.current?.remove();
+      pushTokenSubscriptionRef.current?.remove();
+      pushTokenSubscriptionRef.current = undefined;
     };
   }, []);
 

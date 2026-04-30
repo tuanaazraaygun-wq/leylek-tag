@@ -4,12 +4,13 @@ import * as Notifications from 'expo-notifications';
 import { router, type Href } from 'expo-router';
 import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import { upsertMuhabbetMessageFromPushData } from '../lib/muhabbetMessagesStorage';
+import { refreshSessionFromServerForPush } from '../lib/muhabbetTripPushSessionPrefetch';
 
 /** Bildirim → AsyncStorage (await) → global UI event; navigate öncesi tamamlanmalı */
 export async function persistMuhabbetMessageFromNotificationData(data: unknown): Promise<void> {
   if (!data || typeof data !== 'object') return;
   const d = data as Record<string, unknown>;
-  if (String(d.type || '').trim() !== 'muhabbet_message') return;
+  if (String(d.type || '').trim() !== 'muhabbet_message' && String(d.type || '').trim() !== 'message') return;
   try {
     const summary = JSON.stringify({
       type: d.type,
@@ -156,22 +157,67 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     });
   };
 
-  /** Tıklanan muhabbet / eşleşme: önce local persist (await), sonra route */
+  /** Tıklanan muhabbet / eşleşme / Leylek trip: önce local persist (await), sonra route */
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const data = lastTappedNotificationData as Record<string, unknown> | null;
     if (!data) return;
-    const t = String(data.type || '');
+    const t = String(data.type || '')
+      .trim()
+      .toLowerCase();
     const cid = data.conversation_id != null ? String(data.conversation_id).trim() : '';
+    const sid = data.session_id != null ? String(data.session_id).trim() : '';
+
+    const tripScreenTypes = new Set(['call', 'qr']);
+    const opensTripWithSession = (tripScreenTypes.has(t) || t === 'trip') && !!sid;
+
+    if (opensTripWithSession) {
+      navigateCancelledRef.current = false;
+      void (async () => {
+        if (t === 'muhabbet_message' || t === 'message') {
+          await persistMuhabbetMessageFromNotificationData(data);
+        }
+        if (navigateCancelledRef.current) return;
+        if (sid) {
+          try {
+            await refreshSessionFromServerForPush(sid, 'push_open');
+          } catch {
+            /* prefetch başarısız olsa da rotaya gidilir */
+          }
+        }
+        if (navigateCancelledRef.current) return;
+        router.push(`/leylek-trip/${encodeURIComponent(sid)}` as Href);
+        clearLastTappedNotification();
+      })();
+      return () => {
+        navigateCancelledRef.current = true;
+      };
+    }
+
+    if (t === 'trip' && cid && !sid) {
+      navigateCancelledRef.current = false;
+      void (async () => {
+        if (navigateCancelledRef.current) return;
+        router.push(`/muhabbet-chat/${encodeURIComponent(cid)}` as Href);
+        clearLastTappedNotification();
+      })();
+      return () => {
+        navigateCancelledRef.current = true;
+      };
+    }
+
     if (
       !cid ||
-      (t !== 'muhabbet_message' && t !== 'leylek_pair_match_request' && t !== 'leylek_key_match_completed')
+      (t !== 'muhabbet_message' &&
+        t !== 'message' &&
+        t !== 'leylek_pair_match_request' &&
+        t !== 'leylek_key_match_completed')
     ) {
       return;
     }
     navigateCancelledRef.current = false;
     void (async () => {
-      if (t === 'muhabbet_message') {
+      if (t === 'muhabbet_message' || t === 'message') {
         await persistMuhabbetMessageFromNotificationData(data);
       }
       if (navigateCancelledRef.current) return;
