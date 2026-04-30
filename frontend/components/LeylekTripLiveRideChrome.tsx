@@ -60,8 +60,8 @@ type LeylekTripLiveRideChromeProps = {
   onStart: () => void;
   onFinish: () => void;
   onCancel: () => void;
-  /** true: üstte Konum paylaş / navigasyon şeridi gösterilmez; durum chip kart içinde, aksiyonlar alta */
-  suppressFloatingTopActions?: boolean;
+  /** true: üst floating Konum/Nav şeridini gizle; kart içi durum + alt panelde ikincil aksiyonlar (Leylek/Muhabbet teklif akışı). */
+  modernLeylekOfferUi?: boolean;
 };
 
 function vehicleLabel(vehicleKind?: string | null): string {
@@ -121,6 +121,7 @@ export default function LeylekTripLiveRideChrome({
   onStart,
   onFinish,
   onCancel,
+  modernLeylekOfferUi = false,
 }: LeylekTripLiveRideChromeProps) {
   const pulse = useRef(new Animated.Value(0.45)).current;
   useEffect(() => {
@@ -283,7 +284,7 @@ export default function LeylekTripLiveRideChrome({
                 </View>
               ) : null}
 
-              {suppressFloatingTopActions ? (
+              {modernLeylekOfferUi ? (
                 <View style={styles.chromeCardStatusRow}>
                   <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
                     <View style={styles.activeStatusDot} />
@@ -309,7 +310,7 @@ export default function LeylekTripLiveRideChrome({
           </LinearGradient>
         </View>
 
-        {suppressFloatingTopActions ? null : (
+        {modernLeylekOfferUi ? null : (
           <View style={styles.routeActionRow}>
             <Animated.View style={[styles.activeStatusChip, { opacity: pulse }]} pointerEvents="none">
               <View style={styles.activeStatusDot} />
@@ -361,7 +362,7 @@ export default function LeylekTripLiveRideChrome({
               </Text>
             </View>
           ) : null}
-          {suppressFloatingTopActions ? (
+          {modernLeylekOfferUi ? (
             <View style={styles.chromeSheetSecondaryActions}>
               <Pressable
                 onPress={canStart ? onStart : onShareLocation}

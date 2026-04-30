@@ -198,9 +198,11 @@ interface LiveMapViewProps {
     currentLocation?: { latitude: number; longitude: number } | null;
     activeTag?: Record<string, unknown> | null;
   } | null;
-  /** Modern üst kart (yolcu): buluşma / varış adres satırları — index `activeTag` alanlarından */
-  modernRidePickupLabel?: string;
-  modernRideDropoffLabel?: string;
+  /**
+   * Leylek Teklif / Muhabbet yolculuk ekranı — LiveMapView modern kart+sheet (varsayılan kapalı).
+   * Normal ride bu prop’u kullanmaz.
+   */
+  modernLeylekOfferUi?: boolean;
 }
 
 /**
@@ -1869,8 +1871,7 @@ export default function LiveMapView({
   onDriverEnteredDestinationNavigation,
   onDriverYolcuyaGitAttempt,
   driverYolcuyaGitCoordContext = null,
-  modernRidePickupLabel,
-  modernRideDropoffLabel,
+  modernLeylekOfferUi = false,
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -4829,11 +4830,8 @@ export default function LiveMapView({
   const driverNavActive = isDriver && navigationMode;
   /** Tam ekran sürücü navigasyonu: yalnızca arama + üst kart + harita */
   const driverNavImmersive = isDriver && navigationMode;
-  /** Uber/WhatsApp tarzı özet ekran — sürücü, navigasyon kapalıyken */
-  const driverRideUiModern = !!(isDriver && MapView && !driverNavImmersive);
-  /** Ana akış yolcu haritası — klasik üst/alt yüzen şeritleri kapatır; alt sheet ile hizalanır */
-  const passengerRideUiModern = !!(!isDriver && MapView && !driverNavImmersive);
-  const rideUiModern = driverRideUiModern || passengerRideUiModern;
+  /** Modern kart+sheet — yalnız Leylek/Muhabbet teklif akışı (`modernLeylekOfferUi`). Normal ride hep klasik. */
+  const driverRideUiModern = !!(isDriver && MapView && !driverNavImmersive && modernLeylekOfferUi);
   /** Üst kart (~alış/hedef/yolcu satırları) + alt sheet yüksekliğine göre harita güvenli alanı */
   const driverRideModernMapPadTop = Math.max(insets.top, 12) + 272;
   const driverRideModernMapPadBottom = 262 + Math.max(insets.bottom, 12);
@@ -4851,15 +4849,6 @@ export default function LiveMapView({
       driverTripTag?.destination ??
       '',
   ).trim();
-  const passengerModernPickupAddr =
-    String(modernRidePickupLabel ?? '').trim() || 'Alış noktası';
-  const passengerModernDropoffAddr =
-    String(modernRideDropoffLabel ?? '').trim() || 'Varış';
-  const rideSecondaryNavLabel = boardingConfirmed
-    ? 'Hedefe Git'
-    : isDriver
-      ? 'Yolcuya Git'
-      : 'Sürücüye Git';
   const driverNearPickupForQr =
     driverRideUiModern &&
     !boardingConfirmed &&
@@ -4934,33 +4923,33 @@ export default function LiveMapView({
       : 0) + getDriverNavRotationOffsetDeg(passMotor ? 'motorcycle' : 'car');
 
   useEffect(() => {
-    if (!rideUiModern) return;
+    if (!driverRideUiModern) return;
     console.log('[ride_ui_modern]', {
       driverRideUiModern,
-      passengerRideUiModern,
+      modernLeylekOfferUi,
       boardingConfirmed,
       hasForceEnd: typeof onForceEnd === 'function',
       driverNavImmersive,
       hasMapView: !!MapView,
     });
-  }, [rideUiModern, driverRideUiModern, passengerRideUiModern, boardingConfirmed, onForceEnd, driverNavImmersive]);
+  }, [driverRideUiModern, modernLeylekOfferUi, boardingConfirmed, onForceEnd, driverNavImmersive]);
 
   useEffect(() => {
-    if (!rideUiModern || boardingConfirmed) return;
+    if (!driverRideUiModern || boardingConfirmed) return;
     if (!onForceEnd) {
       console.warn('[ride_ui_modern] onForceEnd missing, Zorla Bitir gizlenir');
     }
-  }, [rideUiModern, boardingConfirmed, onForceEnd]);
+  }, [driverRideUiModern, boardingConfirmed, onForceEnd]);
 
   useEffect(() => {
-    if (!__DEV__ || !rideUiModern || !boardingConfirmed) return;
+    if (!__DEV__ || !driverRideUiModern || !boardingConfirmed) return;
     console.log('[ride_ui_modern] boardingConfirmed: QR / Zorla Bitir row suppressed');
-  }, [rideUiModern, boardingConfirmed]);
+  }, [driverRideUiModern, boardingConfirmed]);
 
   return (
     <View style={styles.container}>
       {/* 🆕 BULUTLU ARKAPLAN - Sadece üst kısım */}
-      {!rideUiModern ? (
+      {!driverRideUiModern ? (
         <>
           <Image 
             source={{ uri: isDriver 
@@ -5038,7 +5027,7 @@ export default function LiveMapView({
                   bottom: driverNavImmersiveMapPaddingBottomPx(insets.bottom),
                   left: 12,
                 }
-              : rideUiModern
+              : driverRideUiModern
                 ? {
                     top: driverRideModernMapPadTop,
                     right: 12,
@@ -5422,118 +5411,6 @@ export default function LiveMapView({
             </View>
           </View>
         </View>
-      ) : passengerRideUiModern ? (
-        <View style={[styles.driverRideTopWrap, { top: Math.max(insets.top, 10) + 6 }]} pointerEvents="box-none">
-          <View style={styles.driverRideTopCard}>
-            {__DEV__ ? (
-              <View style={styles.driverRideUiDebugBadge} pointerEvents="none">
-                <Text style={styles.driverRideUiDebugBadgeText}>MODERN RIDE UI</Text>
-              </View>
-            ) : null}
-            <View style={styles.driverRideTopHeader}>
-              <View
-                style={[
-                  styles.driverRideStatusPill,
-                  boardingConfirmed ? styles.driverRideStatusPillStarted : null,
-                ]}
-              >
-                <View style={styles.driverRideStatusDot} />
-                <Text
-                  style={[
-                    styles.driverRideStatusPillText,
-                    boardingConfirmed ? styles.driverRideStatusPillTextStarted : null,
-                  ]}
-                >
-                  {boardingConfirmed ? 'Yolculuk başladı' : 'Yolculuk aktif'}
-                </Text>
-              </View>
-              <View style={styles.driverRideTopHeaderRight}>
-                <Text style={styles.driverRideLiveTag}>CANLI</Text>
-                <View style={styles.driverRideVehicleChip}>
-                  <Text style={styles.driverRideVehicleChipText}>
-                    {otherTripVehicleKind === 'motorcycle' ? 'Motor' : 'Araba'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.driverRideLocRow}>
-              <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconPickup]}>
-                <Ionicons name="navigate-circle" size={20} color="#15803D" />
-              </View>
-              <View style={styles.driverRideLocTextCol}>
-                <Text style={styles.driverRideSectionLabel}>Buluşma noktası</Text>
-                <Text
-                  style={styles.driverRideAddr}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.88}
-                >
-                  {passengerModernPickupAddr}
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.driverRideLocRow, { marginTop: 12 }]}>
-              <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconDest]}>
-                <Ionicons name="flag" size={18} color="#C2410C" />
-              </View>
-              <View style={styles.driverRideLocTextCol}>
-                <Text style={styles.driverRideSectionLabel}>Hedef</Text>
-                <Text
-                  style={styles.driverRideAddr}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.88}
-                >
-                  {passengerModernDropoffAddr}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.driverRideMetricsRow}>
-              <Text style={styles.driverRideMetricsText} numberOfLines={2}>
-                {showMeetingRouteCalculating || showMeetingRouteUnavailable
-                  ? 'Buluşma: hesaplanıyor…'
-                  : `Buluşma: ${formatRouteKmMin(meetingDistance, meetingDuration)}`}
-                {destinationLocation
-                  ? showDestinationRouteCalculating || showDestinationRouteUnavailable
-                    ? '  ·  Hedef: …'
-                    : `  ·  Hedef: ${formatRouteKmMin(destinationDistance, destinationDuration)}`
-                  : ''}
-              </Text>
-            </View>
-
-            <View style={styles.driverRidePriceRow}>
-              <View style={styles.driverRidePriceRowSpacer} />
-              {offeredPrice || price ? (
-                <View style={styles.driverRidePriceBadge}>
-                  <Text style={styles.driverRidePriceBadgeText}>₺{offeredPrice ?? price}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.driverRidePassengerRow}>
-              <View style={styles.driverRidePassengerAvatarWrap}>
-                <TripMapMarkerImage
-                  source={getDriverMarkerImage(otherTripVehicleKind === 'motorcycle' ? 'motorcycle' : 'car')}
-                  size={40}
-                />
-              </View>
-              <View style={styles.driverRidePassengerTextCol}>
-                <Text style={styles.driverRidePassengerLabel}>Sürücü</Text>
-                <Text
-                  style={styles.driverRidePassengerName}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
-                  {displayFirstName(otherUserName, 'Sürücü')}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
       ) : (
         <View
           style={[
@@ -5835,7 +5712,7 @@ export default function LiveMapView({
         ) : null}
 
         {/* Sürücü matrix + Yolcuya Git — modern özet ekranda alt panele taşındı */}
-        {rideUiModern ? null : isDriver && !driverNavImmersive ? (
+        {driverRideUiModern ? null : isDriver && !driverNavImmersive ? (
           <View style={styles.driverMatchMatrixRow} pointerEvents="box-none">
             {matrixStatus ? (
               <View style={[styles.matrixContainerDriver, styles.matrixContainerDriverInRow]} pointerEvents="none">
@@ -5948,7 +5825,7 @@ export default function LiveMapView({
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
         <View style={styles.bottomGradient}>
-          {(driverRideUiModern || passengerRideUiModern) ? (
+          {driverRideUiModern ? (
             <View
               style={[
                 styles.driverRideBottomSheet,
@@ -5965,7 +5842,7 @@ export default function LiveMapView({
                   }}
                   disabled={isCallLoading}
                   accessibilityRole="button"
-                  accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
+                  accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
                     colors={['#16A34A', '#22C55E']}
@@ -5980,7 +5857,7 @@ export default function LiveMapView({
                       adjustsFontSizeToFit
                       minimumFontScale={0.82}
                     >
-                      {isDriver ? 'Yolcuyu Ara' : 'Sürücüyü Ara'}
+                      Yolcuyu Ara
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -5993,7 +5870,7 @@ export default function LiveMapView({
                 ]}
                 onPress={() => handleYolcuyaGitPress()}
                 accessibilityRole="button"
-                accessibilityLabel={rideSecondaryNavLabel}
+                accessibilityLabel={driverMatrixNavChipLabel}
               >
                 <Ionicons name="navigate" size={20} color="#334155" />
                 <Text
@@ -6002,7 +5879,7 @@ export default function LiveMapView({
                   adjustsFontSizeToFit
                   minimumFontScale={0.82}
                 >
-                  {rideSecondaryNavLabel}
+                  {driverMatrixNavChipLabel}
                 </Text>
               </Pressable>
 
@@ -6019,7 +5896,7 @@ export default function LiveMapView({
                       handleBoardingQrPress();
                     }}
                     accessibilityRole="button"
-                    accessibilityLabel={isDriver ? 'Biniş QR göster' : 'Biniş QR oku'}
+                    accessibilityLabel="Biniş QR göster"
                   >
                     <LinearGradient
                       colors={driverNearPickupForQr ? ['#7C3AED', '#6D28D9'] : ['#8B5CF6', '#7C3AED']}
@@ -6034,7 +5911,7 @@ export default function LiveMapView({
                         adjustsFontSizeToFit
                         minimumFontScale={0.82}
                       >
-                        {isDriver ? 'Biniş QR Göster' : 'Biniş QR Oku'}
+                        Biniş QR Göster
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -6097,7 +5974,7 @@ export default function LiveMapView({
           ) : null}
 
           {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — yolcu / klasik sürücü */}
-          {rideUiModern ? null : MapView && onCall && !driverNavImmersive ? (
+          {driverRideUiModern ? null : MapView && onCall && !driverNavImmersive ? (
             <View style={styles.tripActionBar} pointerEvents="box-none">
               <View style={styles.tripActionBarCol}>
                 {isDriver ? (
@@ -6215,7 +6092,7 @@ export default function LiveMapView({
           ) : null}
 
           {/* AI / QR / Zorla — yolcu ve klasik sürücü */}
-          {rideUiModern ? null : !driverNavImmersive ? (
+          {driverRideUiModern ? null : !driverNavImmersive ? (
           <View style={styles.actionButtons}>
             {onOpenLeylekZekaSupport ? (
               <Pressable
@@ -6382,7 +6259,7 @@ export default function LiveMapView({
         </View>
       </View>
 
-      {(driverRideUiModern || passengerRideUiModern) ? (
+      {driverRideUiModern ? (
         <View
           pointerEvents="box-none"
           style={[styles.driverRideLocateFabWrap, { bottom: driverRideModernLocateFabBottom }]}

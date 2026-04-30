@@ -9740,17 +9740,6 @@ function PassengerDashboard({
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
                   destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
-                  modernRidePickupLabel={String(
-                    ((activeTag ?? {}) as Record<string, unknown>).pickup_location ??
-                      ((activeTag ?? {}) as Record<string, unknown>).pickup_address ??
-                      '',
-                  ).trim()}
-                  modernRideDropoffLabel={String(
-                    ((activeTag ?? {}) as Record<string, unknown>).dropoff_location ??
-                      ((activeTag ?? {}) as Record<string, unknown>).dropoff_address ??
-                      ((activeTag ?? {}) as Record<string, unknown>).destination ??
-                      '',
-                  ).trim()}
                   isDriver={false}
                   otherTripVehicleKind={
                     /motor/i.test(String(activeTag?.driver_vehicle_kind ?? ''))
