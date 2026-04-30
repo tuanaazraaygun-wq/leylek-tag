@@ -23004,6 +23004,67 @@ def _muhabbet_trip_convert_request_snapshot(uid: str, cid: str) -> dict | None:
         return None
 
 
+def _muhabbet_trip_convert_request_snapshot_for_request(uid: str, cid: str, rid: str) -> dict | None:
+    """Belirli conversion_request id için snapshot (REST yanıtı / idempotent dönüş)."""
+    uid_lo_ctx = str(uid or "").strip().lower()
+    cid = str(cid or "").strip().lower()
+    rid = str(rid or "").strip().lower()
+    if not uid_lo_ctx or not cid or not rid:
+        return None
+    try:
+        tcr_res = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .select("id,status,requester_user_id,target_user_id,created_at,updated_at")
+            .eq("conversation_id", cid)
+            .eq("id", rid)
+            .limit(1)
+            .execute()
+        )
+        if not tcr_res.data:
+            return None
+        trow = dict(tcr_res.data[0])
+        rid_tc = str(trow.get("id") or "").strip().lower()
+        st_tc = str(trow.get("status") or "").strip().lower()
+        req_tc = str(trow.get("requester_user_id") or "").strip().lower()
+        tgt_tc = str(trow.get("target_user_id") or "").strip().lower()
+        session_id_tc = None
+        trip_id_tc = None
+        if rid_tc:
+            try:
+                tsr = (
+                    supabase.table("muhabbet_trip_sessions")
+                    .select("id")
+                    .eq("conversion_request_id", rid_tc)
+                    .limit(1)
+                    .execute()
+                )
+                if tsr.data:
+                    sid_tc = str(tsr.data[0].get("id") or "").strip().lower()
+                    if sid_tc:
+                        session_id_tc = sid_tc
+                        trip_id_tc = sid_tc
+            except Exception as e_ts:
+                logger.warning("trip_convert_request_snapshot_for_request session lookup: %s", e_ts)
+        return {
+            "id": rid_tc,
+            "status": st_tc,
+            "requester_user_id": req_tc,
+            "target_user_id": tgt_tc,
+            "created_at": trow.get("created_at"),
+            "updated_at": trow.get("updated_at"),
+            "session_id": session_id_tc,
+            "trip_id": trip_id_tc,
+            "is_requester": req_tc == uid_lo_ctx,
+            "is_target": tgt_tc == uid_lo_ctx,
+            "pending": st_tc == "pending",
+            "accepted": st_tc == "accepted",
+            "declined": st_tc == "declined",
+        }
+    except Exception as e:
+        logger.warning("_muhabbet_trip_convert_request_snapshot_for_request: %s", e)
+        return None
+
+
 def _muhabbet_trip_convert_request_ensure_pending(uid: str, cid: str, conv_ctx: dict) -> dict:
     """conv_ctx: _muhabbet_trip_conversion_context ok=True. Insert veya mevcut pending'i kullan."""
     uid = str(uid or "").strip().lower()
@@ -23760,6 +23821,158 @@ async def _muhabbet_trip_calculate_and_store_route(row: dict) -> dict:
     return out
 
 
+async def _muhabbet_trip_convert_accept_request(uid: str, conversation_id: str, request_id: str) -> dict:
+    """pending isteği kabul et veya zaten accepted ise idempotent başarı + session döndür."""
+    uid_lo = str(uid or "").strip().lower()
+    cid = str(conversation_id or "").strip().lower()
+    rid = str(request_id or "").strip().lower()
+    if not uid_lo or not cid or not rid:
+        return {
+            "ok": False,
+            "code": "bad_request",
+            "detail": "conversation_id ve request_id gerekli.",
+            "http_status": 400,
+        }
+    try:
+        ctx = _muhabbet_trip_conversion_context(uid_lo, cid)
+        if not ctx.get("ok"):
+            return {
+                "ok": False,
+                "code": str(ctx.get("code") or "error"),
+                "detail": str(ctx.get("detail") or "İstek kabul edilemedi."),
+                "http_status": 400,
+            }
+        rr = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .select("*")
+            .eq("id", rid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not rr.data:
+            return {"ok": False, "code": "not_found", "detail": "İstek bulunamadı.", "http_status": 404}
+        row = dict(rr.data[0])
+        if str(row.get("target_user_id") or "").strip().lower() != uid_lo:
+            return {"ok": False, "code": "forbidden", "detail": "Sadece karşı taraf kabul edebilir.", "http_status": 403}
+        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+            return {"ok": False, "code": "forbidden", "detail": "Sadece yolcu kabul edebilir.", "http_status": 403}
+        st = str(row.get("status") or "").strip().lower()
+        if st == "accepted":
+            session_row = _muhabbet_trip_create_or_get_session_for_request(row)
+            snap = _muhabbet_trip_convert_request_snapshot_for_request(uid_lo, cid, rid)
+            return {
+                "ok": True,
+                "idempotent": True,
+                "session": _muhabbet_trip_session_public(session_row),
+                "trip_convert_request": snap,
+            }
+        if st != "pending":
+            return {
+                "ok": False,
+                "code": "not_pending",
+                "detail": "İstek artık geçerli değil.",
+                "http_status": 409,
+            }
+        now_iso = datetime.now(timezone.utc).isoformat()
+        supabase.table("muhabbet_trip_conversion_requests").update(
+            {"status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
+        ).eq("id", rid).execute()
+        row = {**row, "status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
+        session_row = _muhabbet_trip_create_or_get_session_for_request(row)
+        logger.info("[trip_convert_accept] updated cid=%s request_id=%s target=%s", cid, rid, uid_lo)
+        payload = {
+            "request_id": rid,
+            "conversation_id": cid,
+            "session_id": session_row.get("id"),
+        }
+        await emit_socket_event_to_user(str(row.get("requester_user_id") or "").strip(), "muhabbet_trip_convert_confirmed", payload)
+        await emit_socket_event_to_user(uid_lo, "muhabbet_trip_convert_confirmed", payload)
+        await _emit_muhabbet_trip_session_ready(session_row)
+        logger.info(
+            "[trip_convert_confirmed] emitted cid=%s request_id=%s requester=%s target=%s",
+            cid,
+            rid,
+            row.get("requester_user_id"),
+            uid_lo,
+        )
+        snap = _muhabbet_trip_convert_request_snapshot_for_request(uid_lo, cid, rid)
+        return {
+            "ok": True,
+            "idempotent": False,
+            "session": _muhabbet_trip_session_public(session_row),
+            "trip_convert_request": snap,
+        }
+    except Exception as e:
+        logger.exception("_muhabbet_trip_convert_accept_request: %s", e)
+        return {"ok": False, "code": "server_error", "detail": "Yanıt işlenemedi.", "http_status": 500}
+
+
+async def _muhabbet_trip_convert_decline_request(uid: str, conversation_id: str, request_id: str) -> dict:
+    """pending isteği reddet veya zaten declined ise idempotent başarı."""
+    uid_lo = str(uid or "").strip().lower()
+    cid = str(conversation_id or "").strip().lower()
+    rid = str(request_id or "").strip().lower()
+    if not uid_lo or not cid or not rid:
+        return {"ok": False, "code": "bad_request", "detail": "conversation_id ve request_id gerekli.", "http_status": 400}
+    try:
+        ctx = _muhabbet_trip_conversion_context(uid_lo, cid)
+        if not ctx.get("ok"):
+            return {
+                "ok": False,
+                "code": str(ctx.get("code") or "error"),
+                "detail": str(ctx.get("detail") or "İstek reddedilemedi."),
+                "http_status": 400,
+            }
+        rr = (
+            supabase.table("muhabbet_trip_conversion_requests")
+            .select("*")
+            .eq("id", rid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not rr.data:
+            return {"ok": False, "code": "not_found", "detail": "İstek bulunamadı.", "http_status": 404}
+        row = dict(rr.data[0])
+        if str(row.get("target_user_id") or "").strip().lower() != uid_lo:
+            return {"ok": False, "code": "forbidden", "detail": "Sadece karşı taraf reddedebilir.", "http_status": 403}
+        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+            return {"ok": False, "code": "forbidden", "detail": "Sadece yolcu reddedebilir.", "http_status": 403}
+        st = str(row.get("status") or "").strip().lower()
+        if st == "declined":
+            snap = _muhabbet_trip_convert_request_snapshot_for_request(uid_lo, cid, rid)
+            return {"ok": True, "idempotent": True, "trip_convert_request": snap}
+        if st == "accepted":
+            return {
+                "ok": False,
+                "code": "already_accepted",
+                "detail": "İstek zaten kabul edilmiş.",
+                "http_status": 409,
+            }
+        if st != "pending":
+            return {
+                "ok": False,
+                "code": "not_pending",
+                "detail": "İstek artık geçerli değil.",
+                "http_status": 409,
+            }
+        now_iso = datetime.now(timezone.utc).isoformat()
+        supabase.table("muhabbet_trip_conversion_requests").update(
+            {"status": "declined", "responded_at": now_iso, "updated_at": now_iso}
+        ).eq("id", rid).execute()
+        await emit_socket_event_to_user(
+            str(row.get("requester_user_id") or "").strip(),
+            "muhabbet_trip_convert_declined",
+            {"request_id": rid, "conversation_id": cid},
+        )
+        snap = _muhabbet_trip_convert_request_snapshot_for_request(uid_lo, cid, rid)
+        return {"ok": True, "idempotent": False, "trip_convert_request": snap}
+    except Exception as e:
+        logger.warning("_muhabbet_trip_convert_decline_request: %s", e)
+        return {"ok": False, "code": "server_error", "detail": "Yanıt işlenemedi.", "http_status": 500}
+
+
 @sio.on("muhabbet_trip_convert_request")
 async def sio_muhabbet_trip_convert_request(sid, data):
     if not isinstance(data, dict):
@@ -23813,40 +24026,14 @@ async def sio_muhabbet_trip_convert_accept(sid, data):
         await _emit_muhabbet_trip_conversion_error(sid, "bad_request", "request_id / conversation_id gerekli.")
         return
     try:
-        ctx = _muhabbet_trip_conversion_context(uid, cid)
-        if not ctx.get("ok"):
-            await _emit_muhabbet_trip_conversion_error(sid, str(ctx.get("code") or "error"), str(ctx.get("detail") or "İstek kabul edilemedi."))
+        result = await _muhabbet_trip_convert_accept_request(uid, cid, rid)
+        if not result.get("ok"):
+            await _emit_muhabbet_trip_conversion_error(
+                sid,
+                str(result.get("code") or "error"),
+                str(result.get("detail") or "İstek kabul edilemedi."),
+            )
             return
-        rr = supabase.table("muhabbet_trip_conversion_requests").select("*").eq("id", rid).eq("conversation_id", cid).limit(1).execute()
-        if not rr.data:
-            await _emit_muhabbet_trip_conversion_error(sid, "not_found", "İstek bulunamadı.")
-            return
-        row = dict(rr.data[0])
-        if str(row.get("target_user_id") or "").strip().lower() != str(uid).strip().lower():
-            await _emit_muhabbet_trip_conversion_error(sid, "forbidden", "Sadece karşı taraf kabul edebilir.")
-            return
-        if str(row.get("passenger_id") or "").strip().lower() != str(uid).strip().lower():
-            await _emit_muhabbet_trip_conversion_error(sid, "forbidden", "Sadece yolcu kabul edebilir.")
-            return
-        if str(row.get("status") or "").strip().lower() != "pending":
-            await _emit_muhabbet_trip_conversion_error(sid, "not_pending", "İstek artık geçerli değil.")
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        supabase.table("muhabbet_trip_conversion_requests").update(
-            {"status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
-        ).eq("id", rid).execute()
-        row = {**row, "status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
-        session_row = _muhabbet_trip_create_or_get_session_for_request(row)
-        logger.info("[trip_convert_accept] updated cid=%s request_id=%s target=%s", cid, rid, uid)
-        payload = {
-            "request_id": rid,
-            "conversation_id": cid,
-            "session_id": session_row.get("id"),
-        }
-        await emit_socket_event_to_user(str(row.get("requester_user_id") or "").strip(), "muhabbet_trip_convert_confirmed", payload)
-        await emit_socket_event_to_user(uid, "muhabbet_trip_convert_confirmed", payload)
-        await _emit_muhabbet_trip_session_ready(session_row)
-        logger.info("[trip_convert_confirmed] emitted cid=%s request_id=%s requester=%s target=%s", cid, rid, row.get("requester_user_id"), uid)
     except Exception as e:
         logger.exception("muhabbet_trip_convert_accept: %s", e)
         await _emit_muhabbet_trip_conversion_error(sid, "server_error", "Yanıt işlenemedi.")
@@ -23865,28 +24052,9 @@ async def sio_muhabbet_trip_convert_decline(sid, data):
     if not rid or not cid:
         return
     try:
-        ctx = _muhabbet_trip_conversion_context(uid, cid)
-        if not ctx.get("ok"):
+        result = await _muhabbet_trip_convert_decline_request(uid, cid, rid)
+        if not result.get("ok"):
             return
-        rr = supabase.table("muhabbet_trip_conversion_requests").select("*").eq("id", rid).eq("conversation_id", cid).limit(1).execute()
-        if not rr.data:
-            return
-        row = dict(rr.data[0])
-        if str(row.get("target_user_id") or "").strip().lower() != str(uid).strip().lower():
-            return
-        if str(row.get("passenger_id") or "").strip().lower() != str(uid).strip().lower():
-            return
-        if str(row.get("status") or "").strip().lower() != "pending":
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        supabase.table("muhabbet_trip_conversion_requests").update(
-            {"status": "declined", "responded_at": now_iso, "updated_at": now_iso}
-        ).eq("id", rid).execute()
-        await emit_socket_event_to_user(
-            str(row.get("requester_user_id") or "").strip(),
-            "muhabbet_trip_convert_declined",
-            {"request_id": rid, "conversation_id": cid},
-        )
     except Exception as e:
         logger.warning("muhabbet_trip_convert_decline: %s", e)
 
@@ -25341,6 +25509,72 @@ async def muhabbet_trip_convert_request_rest(
         raise
     except Exception as e:
         logger.exception("muhabbet_trip_convert_request_rest: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/trip-convert/accept")
+async def muhabbet_trip_convert_accept_rest(
+    conversation_id: str,
+    body: dict = Body(...),
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yolcu kabulü — socket olmadan DB + oturum; idempotent (zaten accepted ise session döner)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        try:
+            uuid.UUID(cid)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Geçersiz sohbet kimliği") from e
+        rid = str(body.get("request_id") or body.get("requestId") or "").strip().lower()
+        if not rid:
+            raise HTTPException(status_code=400, detail="request_id gerekli.")
+        result = await _muhabbet_trip_convert_accept_request(uid, cid, rid)
+        if not result.get("ok"):
+            raise HTTPException(
+                status_code=int(result.get("http_status") or 400),
+                detail=str(result.get("detail") or "İstek kabul edilemedi."),
+            )
+        return {
+            "success": True,
+            "session": result.get("session"),
+            "trip_convert_request": result.get("trip_convert_request"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("muhabbet_trip_convert_accept_rest: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/trip-convert/decline")
+async def muhabbet_trip_convert_decline_rest(
+    conversation_id: str,
+    body: dict = Body(...),
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yolcu red — socket fallback için REST; idempotent (zaten declined)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id or "").strip().lower()
+        try:
+            uuid.UUID(cid)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Geçersiz sohbet kimliği") from e
+        rid = str(body.get("request_id") or body.get("requestId") or "").strip().lower()
+        if not rid:
+            raise HTTPException(status_code=400, detail="request_id gerekli.")
+        result = await _muhabbet_trip_convert_decline_request(uid, cid, rid)
+        if not result.get("ok"):
+            raise HTTPException(
+                status_code=int(result.get("http_status") or 400),
+                detail=str(result.get("detail") or "İstek reddedilemedi."),
+            )
+        return {"success": True, "trip_convert_request": result.get("trip_convert_request")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("muhabbet_trip_convert_decline_rest: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
