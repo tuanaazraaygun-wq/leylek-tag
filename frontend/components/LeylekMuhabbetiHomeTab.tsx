@@ -472,11 +472,9 @@ export default function LeylekMuhabbetiHomeTab({
     setFeedLoading(true);
     try {
       const h = { Authorization: `Bearer ${tok}` };
-      const localQ = new URLSearchParams({ city: cityQ, limit: '36', listing_scope: 'local' });
       const intercityQ = new URLSearchParams({ city: cityQ, limit: '36', listing_scope: 'intercity' });
-      const [rInc, rFeed, rFeedIntercity] = await Promise.all([
+      const [rInc, rFeed] = await Promise.all([
         fetch(`${base}/muhabbet/match-requests/incoming?status=pending&limit=50`, { headers: h }),
-        fetch(`${base}/muhabbet/listings/feed?${localQ.toString()}`, { headers: h }),
         fetch(`${base}/muhabbet/listings/feed?${intercityQ.toString()}`, { headers: h }),
       ]);
       if (rInc.status === 401 || rFeed.status === 401) {
@@ -500,21 +498,14 @@ export default function LeylekMuhabbetiHomeTab({
           viewer_driver_vehicle_kind?: string | null;
         };
         const df = (await rFeed.json().catch(() => ({}))) as FeedResponse;
-        const di = rFeedIntercity.ok ? ((await rFeedIntercity.json().catch(() => ({}))) as FeedResponse) : {};
         if (typeof df.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(df.viewer_can_act_as_driver);
-        else if (typeof di.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(di.viewer_can_act_as_driver);
-        const vkh = (df.viewer_driver_vehicle_kind || di.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+        const vkh = (df.viewer_driver_vehicle_kind || '').toString().toLowerCase();
         setViewerDriverVk(vkh === 'motorcycle' ? 'motorcycle' : vkh === 'car' ? 'car' : null);
         if (rFeed.ok && df.success && Array.isArray(df.listings)) {
-          const seen = new Set<string>();
-          const merged = [...df.listings, ...(di.success && Array.isArray(di.listings) ? di.listings : [])]
-            .filter((row) => {
-              if (!row?.id || seen.has(row.id)) return false;
-              seen.add(row.id);
-              return true;
-            })
-            .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-          const list = merged.filter((row) => {
+          const sorted = [...df.listings].sort((a, b) =>
+            String(b.created_at || '').localeCompare(String(a.created_at || '')),
+          );
+          const list = sorted.filter((row) => {
             const ls = (row.status || '').toLowerCase();
             if (ls === 'matched' || ls === 'closed' || ls === 'cancelled' || ls === 'pending_chat') return false;
             const st = (row.match_request_status || '').toLowerCase();
@@ -585,17 +576,8 @@ export default function LeylekMuhabbetiHomeTab({
     return out;
   }, [feedPreview, windowOffset]);
 
-  /** Yalnızca chip gösterimi — mevcut feed önbelleğinden türetilir (fetch/API yok). */
-  const listingScopeCounts = React.useMemo(() => {
-    let local = 0;
-    let intercity = 0;
-    for (const row of feedPreview) {
-      const sc = String(row.listing_scope || 'local').toLowerCase();
-      if (sc === 'intercity') intercity += 1;
-      else local += 1;
-    }
-    return { local, intercity, total: feedPreview.length };
-  }, [feedPreview]);
+  /** Önizleme listesi artık yalnızca şehir dışı feed — chip için toplam sayı. */
+  const listingScopeCounts = React.useMemo(() => ({ total: feedPreview.length }), [feedPreview]);
 
   const uidLo = (currentUserId || '').trim().toLowerCase();
 
@@ -830,7 +812,7 @@ export default function LeylekMuhabbetiHomeTab({
               </View>
               <Text style={styles.heroTitle}>Yolunu paylaş, teklifini oluştur</Text>
               <Text style={styles.heroSubtitle}>
-                Şehir içi kısa rotalarda ya da şehirler arası yolculuklarda sürücü ve yolcularla hızlıca eşleş.
+                Şehirler arası yolculuklarda sürücü ve yolcularla eşleş; ileri tarihli şehir dışı teklifini buradan aç.
               </Text>
               <Pressable
                 onPress={() => onOpenListingsCreate()}
@@ -881,19 +863,7 @@ export default function LeylekMuhabbetiHomeTab({
             <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
               <Ionicons name="albums-outline" size={11} color="#0369A1" />
               <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
-                {listingScopeCounts.total} açık
-              </Text>
-            </View>
-            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
-              <Ionicons name="navigate-outline" size={11} color="#15803D" />
-              <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
-                İç {listingScopeCounts.local}
-              </Text>
-            </View>
-            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
-              <Ionicons name="airplane-outline" size={11} color="#C2410C" />
-              <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
-                Arası {listingScopeCounts.intercity}
+                {listingScopeCounts.total} şehir dışı açık
               </Text>
             </View>
           </View>
@@ -915,13 +885,6 @@ export default function LeylekMuhabbetiHomeTab({
           'Kalkış ve varış şehrini seçerek uzun yol teklifi aç',
           'Uzun yol rotanı ve boş koltuğunu paylaş.',
           'Şehirler arası yolculuk talebini oluştur.',
-        )}
-        {renderCreateSection(
-          'local',
-          'Şehir içi yol paylaşımı',
-          `${selectedCity} içinde kısa mesafe teklif aç`,
-          'Rotanı ve koltuğu şehir içinde paylaş.',
-          'Şehir içinde nereye gideceğini yaz.',
         )}
         {!tok ? <Text style={styles.ctaHint}>Teklif açmak için oturum açman yeterli — butona basınca yönlendirilirsin.</Text> : null}
       </View>

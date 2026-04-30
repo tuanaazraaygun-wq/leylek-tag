@@ -341,7 +341,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [chatsUnreadTotal, setChatsUnreadTotal] = useState(0);
   const [listingCreateSignal, setListingCreateSignal] = useState(0);
   const [listingCreateRole, setListingCreateRole] = useState<'driver' | 'passenger'>('passenger');
-  const [listingCreateScope, setListingCreateScope] = useState<'local' | 'intercity'>('local');
+  const [listingCreateScope, setListingCreateScope] = useState<'local' | 'intercity'>('intercity');
   const [listingFocusId, setListingFocusId] = useState<string | null>(null);
   const [listingFocusNonce, setListingFocusNonce] = useState(0);
 
@@ -600,15 +600,15 @@ export default function LeylekMuhabbetiFaz1Screen({
   const openListingsCreate = useCallback(() => {
     if (!requireMuhabbetToken()) return;
     setListingCreateRole('passenger');
-    setListingCreateScope('local');
+    setListingCreateScope('intercity');
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
   }, [requireMuhabbetToken]);
 
-  const openListingCreateAs = useCallback((role: 'driver' | 'passenger', scope: 'local' | 'intercity' = 'local') => {
+  const openListingCreateAs = useCallback((role: 'driver' | 'passenger', _scope: 'local' | 'intercity' = 'intercity') => {
     if (!requireMuhabbetToken()) return;
     setListingCreateRole(role);
-    setListingCreateScope(scope);
+    setListingCreateScope('intercity');
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
   }, [requireMuhabbetToken]);

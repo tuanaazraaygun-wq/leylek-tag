@@ -245,7 +245,7 @@ export default function ListingsTab({
   syncVersion,
   openCreateSignal,
   initialCreateRole = 'passenger',
-  initialCreateScope = 'local',
+  initialCreateScope = 'intercity',
   requireToken,
   focusListingId = null,
   focusListingNonce = 0,
@@ -273,7 +273,6 @@ export default function ListingsTab({
   const [viewerDriverVk, setViewerDriverVk] = useState<'car' | 'motorcycle' | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [scopePickerVisible, setScopePickerVisible] = useState(false);
   const [filterPickerVisible, setFilterPickerVisible] = useState(false);
   /** Sadece UI — hangi talep listelerinin gösterileceği (API yok). */
   const [incomingListFilter, setIncomingListFilter] = useState<'all' | 'incoming_only' | 'outgoing_only'>('all');
@@ -302,24 +301,16 @@ export default function ListingsTab({
     }
     setLoadingFeed(true);
     try {
-      const localQ = new URLSearchParams({ city: cityQ, limit: '40', listing_scope: 'local' });
       const intercityQ = new URLSearchParams({ city: cityQ, limit: '40', listing_scope: 'intercity' });
       if (feedFilter === 'driver') {
-        localQ.set('role_type', 'driver');
         intercityQ.set('role_type', 'driver');
       } else if (feedFilter === 'passenger') {
-        localQ.set('role_type', 'passenger');
         intercityQ.set('role_type', 'passenger');
       }
-      const [res, intercityRes] = await Promise.all([
-        fetch(`${base}/muhabbet/listings/feed?${localQ.toString()}`, {
-          headers: authHeader(tok),
-        }),
-        fetch(`${base}/muhabbet/listings/feed?${intercityQ.toString()}`, {
-          headers: authHeader(tok),
-        }),
-      ]);
-      if (res.status === 401) {
+      const intercityRes = await fetch(`${base}/muhabbet/listings/feed?${intercityQ.toString()}`, {
+        headers: authHeader(tok),
+      });
+      if (intercityRes.status === 401) {
         console.log('[muhabbet] preserving rows during reconnect');
         return;
       }
@@ -329,28 +320,19 @@ export default function ListingsTab({
         viewer_can_act_as_driver?: boolean;
         viewer_driver_vehicle_kind?: string | null;
       };
-      const d = (await res.json().catch(() => ({}))) as FeedResponse;
-      const di = intercityRes.ok ? ((await intercityRes.json().catch(() => ({}))) as FeedResponse) : {};
-      if (typeof d.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(d.viewer_can_act_as_driver);
-      else if (typeof di.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(di.viewer_can_act_as_driver);
-      const vkFeed = (d.viewer_driver_vehicle_kind || di.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+      const di = (await intercityRes.json().catch(() => ({}))) as FeedResponse;
+      if (typeof di.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(di.viewer_can_act_as_driver);
+      const vkFeed = (di.viewer_driver_vehicle_kind || '').toString().toLowerCase();
       setViewerDriverVk(vkFeed === 'motorcycle' ? 'motorcycle' : vkFeed === 'car' ? 'car' : null);
-      if (res.ok && d.success && Array.isArray(d.listings)) {
-        const seen = new Set<string>();
-        const merged = [...d.listings, ...(di.success && Array.isArray(di.listings) ? di.listings : [])]
-          .filter((row) => {
-            if (!row?.id || seen.has(row.id)) return false;
-            seen.add(row.id);
-            return true;
-          })
-          .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-        const openOnly = merged.filter((row) => {
+      if (intercityRes.ok && di.success && Array.isArray(di.listings)) {
+        const openOnly = di.listings.filter((row) => {
           const st = (row.status || '').toLowerCase();
           if (st === 'matched' || st === 'closed' || st === 'cancelled' || st === 'pending_chat') return false;
           const m = (row.match_request_status || '').toLowerCase();
           if (m === 'accepted' && row.conversation_id) return false;
           return true;
         });
+        openOnly.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
         setListings(openOnly);
       } else {
         console.log('[muhabbet] preserving rows during reconnect');
@@ -417,17 +399,16 @@ export default function ListingsTab({
         const cityKey = (selectedCity || '').trim().toLowerCase();
         const rows = cityKey
           ? d.listings.filter((r) => {
-              const scope = String(r.listing_scope || 'local').trim().toLowerCase();
-              if (scope === 'intercity') {
-                return (
-                  String(r.origin_city || '').trim().toLowerCase() === cityKey ||
-                  String(r.destination_city || '').trim().toLowerCase() === cityKey ||
-                  String(r.city || '').trim().toLowerCase() === cityKey
-                );
-              }
-              return String(r.city || '').trim().toLowerCase() === cityKey;
+              const scope = String(r.listing_scope || '').trim().toLowerCase();
+              if (scope !== 'intercity') return false;
+              const ck = cityKey;
+              return (
+                String(r.origin_city || '').trim().toLowerCase() === ck ||
+                String(r.destination_city || '').trim().toLowerCase() === ck ||
+                String(r.city || '').trim().toLowerCase() === ck
+              );
             })
-          : d.listings;
+          : d.listings.filter((r) => String(r.listing_scope || '').trim().toLowerCase() === 'intercity');
         setMyListings(rows);
       } else {
         console.log('[muhabbet] preserving rows during reconnect');
@@ -1281,7 +1262,11 @@ export default function ListingsTab({
       <MuhabbetWatermark />
       <View style={styles.toolbar}>
         <TouchableOpacity
-          onPress={() => setScopePickerVisible(true)}
+          onPress={() => {
+            setModalInitialRole('passenger');
+            setModalInitialScope('intercity');
+            setCreateOpen(true);
+          }}
           activeOpacity={0.9}
           style={styles.newListingBtnHero}
         >
@@ -1419,71 +1404,6 @@ export default function ListingsTab({
               <Text style={styles.filterCancelTxt}>Vazgeç</Text>
             </TouchableOpacity>
           </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={scopePickerVisible} transparent animationType="fade" onRequestClose={() => setScopePickerVisible(false)}>
-        <Pressable style={styles.scopeBackdrop} onPress={() => setScopePickerVisible(false)}>
-          <Pressable style={styles.scopeSheet} onPress={(e) => e.stopPropagation?.()}>
-            <Text style={styles.scopeSheetTitle}>İşlem türü</Text>
-            <Text style={styles.scopeSheetHint}>Teklifin hangi kapsamda olacağını seç.</Text>
-            <TouchableOpacity
-              style={styles.scopeOption}
-              activeOpacity={0.88}
-              onPress={() => {
-                setModalInitialRole('passenger');
-                setModalInitialScope('intercity');
-                setScopePickerVisible(false);
-                setCreateOpen(true);
-              }}
-            >
-              <Ionicons name="trail-sign-outline" size={22} color="#C2410C" />
-              <View style={styles.scopeOptionTxt}>
-                <Text style={styles.scopeOptionTitle}>Şehir dışı</Text>
-                <Text style={styles.scopeOptionSub}>Farklı şehirlere gönderim / yolculuk</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.scopeOption}
-              activeOpacity={0.88}
-              onPress={() => {
-                setModalInitialRole('passenger');
-                setModalInitialScope('local');
-                setScopePickerVisible(false);
-                setCreateOpen(true);
-              }}
-            >
-              <Ionicons name="business-outline" size={22} color="#1D4ED8" />
-              <View style={styles.scopeOptionTxt}>
-                <Text style={styles.scopeOptionTitle}>Şehir içi</Text>
-                <Text style={styles.scopeOptionSub}>Aynı şehir içindeki gönderim / yolculuk</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.scopeOption}
-              activeOpacity={0.88}
-              onPress={() => {
-                setScopePickerVisible(false);
-                Alert.alert(
-                  'Çok yakında',
-                  'Ülkeler arası teklifler üzerinde çalışıyoruz. Yayına alındığında bu menüden açabileceksin.',
-                  [{ text: 'Tamam' }]
-                );
-              }}
-            >
-              <Ionicons name="globe-outline" size={22} color="#0369A1" />
-              <View style={styles.scopeOptionTxt}>
-                <Text style={styles.scopeOptionTitle}>Ülkeler arası</Text>
-                <Text style={styles.scopeOptionSub}>Yakında aktif olacak</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.scopeCancelBtn} onPress={() => setScopePickerVisible(false)}>
-              <Text style={styles.scopeCancelTxt}>Vazgeç</Text>
-            </TouchableOpacity>
-          </Pressable>
         </Pressable>
       </Modal>
 

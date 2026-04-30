@@ -20324,6 +20324,11 @@ async def muhabbet_listing_create(
         if opened_today >= 20:
             raise HTTPException(status_code=400, detail="Bugün en fazla 20 teklif açabilirsiniz.")
         listing_scope, c, origin_city, destination_city = _muhabbet_listing_scope_city_values(body)
+        if listing_scope != "intercity":
+            raise HTTPException(
+                status_code=400,
+                detail="Leylek Teklif Sende yalnızca şehir dışı yolculuklar içindir.",
+            )
         lrid: Optional[str] = None
         lph = (body.linked_pattern_hash or "").strip() or None
         if body.linked_user_route_id:
@@ -20514,7 +20519,7 @@ async def muhabbet_listings_feed(
             raise HTTPException(status_code=400, detail="city gerekli")
         c_key = _muhabbet_feed_city_key(c_raw)
         lim = max(1, min(int(limit or 30), 100))
-        scope = str(listing_scope or "local").strip().lower()
+        scope = str(listing_scope or "intercity").strip().lower()
         if scope not in _MUHABBET_LISTING_SCOPES:
             raise HTTPException(status_code=400, detail="Geçersiz listing_scope")
 
@@ -20530,6 +20535,17 @@ async def muhabbet_listings_feed(
                     raise HTTPException(status_code=400, detail="Geçersiz role_type")
                 query = query.eq("role_type", rt)
             return query
+
+        can_drv = _muhabbet_user_can_act_as_driver(uid)
+        viewer_vk = _muhabbet_viewer_effective_driver_vehicle_kind(uid) if can_drv else None
+        if scope == "local":
+            return {
+                "success": True,
+                "listings": [],
+                "count": 0,
+                "viewer_can_act_as_driver": can_drv,
+                "viewer_driver_vehicle_kind": viewer_vk,
+            }
 
         raw_rows: list[dict] = []
         if scope == "intercity":
@@ -20595,8 +20611,6 @@ async def muhabbet_listings_feed(
             r["conversation_id"] = m.get("conversation_id")
             r["incoming_request_count"] = int(inc_map.get(lid) or 0)
             r["muhabbet_offer_kind"] = _muhabbet_listing_offer_kind(r)
-        can_drv = _muhabbet_user_can_act_as_driver(uid)
-        viewer_vk = _muhabbet_viewer_effective_driver_vehicle_kind(uid) if can_drv else None
         return {
             "success": True,
             "listings": rows,
