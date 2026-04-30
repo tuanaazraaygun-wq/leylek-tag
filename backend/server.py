@@ -24289,6 +24289,191 @@ def _muhabbet_trip_call_payload(session_row: dict, uid: str) -> dict:
     }
 
 
+class _MuhabbetTripOpError(Exception):
+    """Muhabbet trip iş kuralları — REST ve socket aynı mesajı kullanır."""
+
+    __slots__ = ("socket_code", "message", "http_status")
+
+    def __init__(self, socket_code: str, message: str, http_status: int = 400):
+        super().__init__(message)
+        self.socket_code = socket_code
+        self.message = message
+        self.http_status = http_status
+
+
+def _muhabbet_trip_boarding_qr_deep_link(session_id: str, token: str) -> str:
+    from urllib.parse import urlencode
+
+    sid = str(session_id or "").strip().lower()
+    tok = str(token or "").strip().upper()
+    qs = urlencode(
+        {"scope": "muhabbet_trip", "mode": "boarding", "session_id": sid, "token": tok},
+        encoding="utf-8",
+    )
+    return f"leylekmuhabbet://trip-qr?{qs}"
+
+
+async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str) -> dict:
+    """Biniş QR oluşturma — DB günceller; emit_payload döner. HTTPException | _MuhabbetTripOpError."""
+    await _expire_stale_muhabbet_trip_sessions()
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    if str(row.get("driver_id") or "").strip().lower() != uid_lo:
+        raise _MuhabbetTripOpError("driver_required", "Biniş QR kodunu sürücü oluşturabilir.")
+    if str(row.get("status") or "").strip().lower() != "ready":
+        raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
+    token = _muhabbet_trip_qr_token()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_iso = (now + timedelta(minutes=5)).isoformat()
+    patch = {
+        "boarding_qr_token": token,
+        "boarding_qr_created_at": now_iso,
+        "boarding_qr_expires_at": expires_iso,
+        "boarding_qr_confirmed_at": None,
+        "boarding_qr_confirmed_by_user_id": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    qr_payload = _muhabbet_trip_boarding_qr_deep_link(session_id, token)
+    emit_payload = {
+        "session_id": session_id,
+        "conversation_id": row.get("conversation_id"),
+        "boarding_qr_token": token,
+        "expires_at": expires_iso,
+        "session": _muhabbet_trip_session_public(next_row),
+    }
+    return {
+        "boarding_qr_token": token,
+        "qr_payload": qr_payload,
+        "expires_at": expires_iso,
+        "emit_payload": emit_payload,
+        "next_row": next_row,
+    }
+
+
+async def _muhabbet_trip_boarding_qr_confirm_apply(uid: str, session_id: str, token: str) -> dict:
+    """Biniş QR onayı — yolculuk başlatır ve muhabbet_trip_started yayınlar."""
+    await _expire_stale_muhabbet_trip_sessions()
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid).strip().lower()
+    tok = str(token or "").strip().upper()
+    if not tok:
+        raise _MuhabbetTripOpError("bad_request", "QR kodu gerekli.")
+    if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
+        raise _MuhabbetTripOpError("passenger_required", "Biniş QR kodunu yolcu onaylayabilir.")
+    if str(row.get("status") or "").strip().lower() != "ready":
+        raise _MuhabbetTripOpError("not_active", "Oturum bu işlem için uygun değil.")
+    expected = str(row.get("boarding_qr_token") or "").strip().upper()
+    if not expected or not secrets.compare_digest(expected, tok):
+        raise _MuhabbetTripOpError("bad_qr_token", "QR kod geçersiz.")
+    if _muhabbet_trip_qr_expired(row.get("boarding_qr_expires_at")):
+        raise _MuhabbetTripOpError("expired_qr_token", "QR kodun süresi doldu.")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "status": "active",
+        "started_at": now_iso,
+        "boarding_qr_token": None,
+        "boarding_qr_confirmed_at": now_iso,
+        "boarding_qr_confirmed_by_user_id": uid_lo,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
+    _muhabbet_trip_passengers_update_for_user(
+        session_id,
+        str(row.get("passenger_id") or ""),
+        {"status": "onboard", "boarded_at": now_iso},
+    )
+    await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started")
+    return {"session": _muhabbet_trip_session_public(next_row)}
+
+
+async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
+    """Sesli arama başlat — karşı tarafa incoming yayını."""
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+        raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
+    passenger_id = str(row.get("passenger_id") or "").strip().lower()
+    driver_id = str(row.get("driver_id") or "").strip().lower()
+    uid_lo = str(uid).strip().lower()
+    target_uid = driver_id if uid_lo == passenger_id else passenger_id
+    payload = {
+        "session_id": session_id,
+        "conversation_id": row.get("conversation_id"),
+        "channel_name": f"muhabbet_trip_{session_id}",
+        "caller_id": uid_lo,
+        "target_user_id": target_uid,
+    }
+    return {"call": payload}
+
+
+class MuhabbetTripBoardingQrConfirmBody(BaseModel):
+    boarding_qr_token: Optional[str] = None
+    token: Optional[str] = None
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/boarding-qr/create")
+async def muhabbet_trip_boarding_qr_create_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
+        await emit_socket_event_to_user(str(uid).strip(), "muhabbet_trip_boarding_qr_created", out["emit_payload"])
+        return {
+            "success": True,
+            "boarding_qr_token": out["boarding_qr_token"],
+            "qr_payload": out["qr_payload"],
+            "expires_at": out["expires_at"],
+        }
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/boarding-qr/confirm")
+async def muhabbet_trip_boarding_qr_confirm_post(
+    session_id: str,
+    body: MuhabbetTripBoardingQrConfirmBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    tok = str(body.boarding_qr_token or body.token or "").strip().upper()
+    try:
+        sess = await _muhabbet_trip_boarding_qr_confirm_apply(uid, session_id, tok)
+        return {"success": True, **sess}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/call/start")
+async def muhabbet_trip_call_start_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    try:
+        out = await _muhabbet_trip_call_start_apply(uid, session_id)
+        payload = out["call"]
+        uid_lo = str(uid).strip().lower()
+        target_uid = str(payload.get("target_user_id") or "").strip().lower()
+        await emit_socket_event_to_user(uid_lo, "muhabbet_trip_call_start", payload)
+        if target_uid:
+            await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
+        return {"success": True, **out}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
 @sio.on("muhabbet_trip_join")
 @sio.on("join_muhabbet_trip_session")
 async def sio_join_muhabbet_trip_session(sid, data):
@@ -24501,39 +24686,12 @@ async def sio_muhabbet_trip_boarding_qr_create(sid, data):
     if not uid or not session_id:
         return
     try:
-        await _expire_stale_muhabbet_trip_sessions()
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        uid_lo = str(uid).strip().lower()
-        if str(row.get("driver_id") or "").strip().lower() != uid_lo:
-            await sio.emit("muhabbet_trip_error", {"code": "driver_required", "message": "Biniş QR kodunu sürücü oluşturabilir."}, room=sid)
-            return
-        if str(row.get("status") or "").strip().lower() != "ready":
-            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
-            return
-        token = _muhabbet_trip_qr_token()
-        now = datetime.now(timezone.utc)
-        now_iso = now.isoformat()
-        expires_iso = (now + timedelta(minutes=5)).isoformat()
-        patch = {
-            "boarding_qr_token": token,
-            "boarding_qr_created_at": now_iso,
-            "boarding_qr_expires_at": expires_iso,
-            "boarding_qr_confirmed_at": None,
-            "boarding_qr_confirmed_by_user_id": None,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "boarding_qr_token": token,
-            "expires_at": expires_iso,
-            "session": _muhabbet_trip_session_public(next_row),
-        }
-        await sio.emit("muhabbet_trip_boarding_qr_created", payload, room=sid)
+        out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
+        await sio.emit("muhabbet_trip_boarding_qr_created", out["emit_payload"], room=sid)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_boarding_qr_create: %s", e)
 
@@ -24548,41 +24706,11 @@ async def sio_muhabbet_trip_boarding_qr_confirm(sid, data):
     if not uid or not session_id or not token:
         return
     try:
-        await _expire_stale_muhabbet_trip_sessions()
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        uid_lo = str(uid).strip().lower()
-        if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
-            await sio.emit("muhabbet_trip_error", {"code": "passenger_required", "message": "Biniş QR kodunu yolcu onaylayabilir."}, room=sid)
-            return
-        if str(row.get("status") or "").strip().lower() != "ready":
-            return
-        expected = str(row.get("boarding_qr_token") or "").strip().upper()
-        if not expected or not secrets.compare_digest(expected, token):
-            await sio.emit("muhabbet_trip_error", {"code": "bad_qr_token", "message": "QR kod geçersiz."}, room=sid)
-            return
-        if _muhabbet_trip_qr_expired(row.get("boarding_qr_expires_at")):
-            await sio.emit("muhabbet_trip_error", {"code": "expired_qr_token", "message": "QR kodun süresi doldu."}, room=sid)
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "status": "active",
-            "started_at": now_iso,
-            "boarding_qr_token": None,
-            "boarding_qr_confirmed_at": now_iso,
-            "boarding_qr_confirmed_by_user_id": uid_lo,
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
-        _muhabbet_trip_passengers_update_for_user(
-            session_id,
-            str(row.get("passenger_id") or ""),
-            {"status": "onboard", "boarded_at": now_iso},
-        )
-        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started")
+        await _muhabbet_trip_boarding_qr_confirm_apply(uid, session_id, token)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_boarding_qr_confirm: %s", e)
 
@@ -24792,26 +24920,16 @@ async def sio_muhabbet_trip_call_start(sid, data):
     if not uid or not session_id:
         return
     try:
-        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
-            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
-            return
-        passenger_id = str(row.get("passenger_id") or "").strip().lower()
-        driver_id = str(row.get("driver_id") or "").strip().lower()
-        uid_lo = str(uid).strip().lower()
-        target_uid = driver_id if uid_lo == passenger_id else passenger_id
-        payload = {
-            "session_id": session_id,
-            "conversation_id": row.get("conversation_id"),
-            "channel_name": f"muhabbet_trip_{session_id}",
-            "caller_id": uid_lo,
-            "target_user_id": target_uid,
-        }
+        out = await _muhabbet_trip_call_start_apply(uid, session_id)
+        payload = out["call"]
+        target_uid = str(payload.get("target_user_id") or "").strip().lower()
         await sio.emit("muhabbet_trip_call_start", payload, room=sid)
         if target_uid:
             await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_call_start: %s", e)
 
