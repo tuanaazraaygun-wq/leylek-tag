@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LeylekTripMapPreview from './LeylekTripMapPreview';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -123,7 +124,10 @@ export default function LeylekTripLiveRideChrome({
   onCancel,
   modernLeylekOfferUi = false,
 }: LeylekTripLiveRideChromeProps) {
+  const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
+  const metaTitle = String(roleTitle || '').trim();
+  const metaDetail = String(statusDetail || '').trim();
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
@@ -190,22 +194,26 @@ export default function LeylekTripLiveRideChrome({
 
   return (
     <View style={styles.container}>
-      <Image
-        source={{
-          uri: isDriver
-            ? 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&q=80'
-            : 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80',
-        }}
-        style={styles.cloudBackground}
-        resizeMode="cover"
-      />
-      <View
-        pointerEvents="none"
-        style={[
-          styles.cloudTintOverlay,
-          { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
-        ]}
-      />
+      {!modernLeylekOfferUi ? (
+        <>
+          <Image
+            source={{
+              uri: isDriver
+                ? 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&q=80'
+                : 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80',
+            }}
+            style={styles.cloudBackground}
+            resizeMode="cover"
+          />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.cloudTintOverlay,
+              { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
+            ]}
+          />
+        </>
+      ) : null}
       <View style={styles.mapSlot}>
         <LeylekTripMapPreview
           pickup={pickup}
@@ -220,18 +228,38 @@ export default function LeylekTripLiveRideChrome({
       </View>
 
       <View style={styles.topInfoPanel} pointerEvents="box-none">
-        <View style={styles.topInfoBorder}>
+        <View style={[styles.topInfoBorder, modernLeylekOfferUi && styles.topInfoBorderModern]}>
           <LinearGradient
-            colors={['#FFFFFF', '#FAFBFC', '#F4F7FA', '#FAFBFC']}
-            locations={[0, 0.3, 0.65, 1]}
+            colors={
+              modernLeylekOfferUi
+                ? ['#FFFFFF', '#FFFFFF']
+                : ['#FFFFFF', '#FAFBFC', '#F4F7FA', '#FAFBFC']
+            }
+            locations={modernLeylekOfferUi ? [0, 1] : [0, 0.3, 0.65, 1]}
             style={styles.infoGradient}
           >
-            <View style={styles.topCardPatternRoot} pointerEvents="none">
-              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((i) => (
-                <View key={i} style={[styles.topCardStripe, { left: -72 + i * 26 }]} />
-              ))}
-            </View>
+            {!modernLeylekOfferUi ? (
+              <View style={styles.topCardPatternRoot} pointerEvents="none">
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((i) => (
+                  <View key={i} style={[styles.topCardStripe, { left: -72 + i * 26 }]} />
+                ))}
+              </View>
+            ) : null}
             <View style={styles.topCardContent}>
+              {metaTitle || metaDetail ? (
+                <View style={styles.roleMetaBlock}>
+                  {metaTitle ? (
+                    <Text style={styles.roleMetaTitle} numberOfLines={1}>
+                      {metaTitle}
+                    </Text>
+                  ) : null}
+                  {metaDetail ? (
+                    <Text style={styles.roleMetaDetail} numberOfLines={2}>
+                      {metaDetail}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
               <View style={styles.routeInfoRow}>
                 <View style={[styles.routeDot, { backgroundColor: '#22C55E' }]} />
                 <View style={styles.routeTextStack}>
@@ -353,7 +381,19 @@ export default function LeylekTripLiveRideChrome({
       </View>
 
       <View style={styles.bottomPanel}>
-        <View style={styles.bottomGradient}>
+        <View
+          style={[
+            styles.bottomGradient,
+            modernLeylekOfferUi && styles.bottomSheetModern,
+            modernLeylekOfferUi && { paddingBottom: insets.bottom + 14 },
+          ]}
+        >
+          {modernLeylekOfferUi ? (
+            <View style={styles.sheetHandleWrap}>
+              <View style={styles.sheetHandle} />
+            </View>
+          ) : null}
+
           {finishSummary ? (
             <View style={[styles.finishSummary, finishMethod === 'qr' ? styles.finishSummaryQr : styles.finishSummaryForced]}>
               <Ionicons name={finishMethod === 'qr' ? 'checkmark-circle' : 'warning'} size={16} color={finishMethod === 'qr' ? '#15803D' : '#92400E'} />
@@ -362,72 +402,118 @@ export default function LeylekTripLiveRideChrome({
               </Text>
             </View>
           ) : null}
+
           {modernLeylekOfferUi ? (
-            <View style={styles.chromeSheetSecondaryActions}>
+            <>
               <Pressable
-                onPress={canStart ? onStart : onShareLocation}
-                disabled={!tripInfoReady || (canStart && actionBusy) || sendingLocation || isTerminal}
+                onPress={handleCallPress}
+                disabled={!tripInfoReady || callBusy || isTerminal}
                 style={({ pressed }) => [
-                  styles.chromeSheetSecondaryBtn,
-                  (pressed || !tripInfoReady || sendingLocation || isTerminal) && { opacity: 0.78 },
+                  styles.modernPrimaryCall,
+                  (pressed || !tripInfoReady || callBusy || isTerminal) && styles.modernPrimaryCallPressed,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={callButtonLabel}
               >
-                <Ionicons name={!tripInfoReady ? 'time-outline' : canStart ? 'play' : 'locate'} size={16} color="#0F766E" />
-                <Text style={styles.chromeSheetSecondaryBtnText} numberOfLines={1}>
-                  {!tripInfoReady ? 'Hazırlanıyor' : canStart ? 'Başlat' : 'Konum paylaş'}
-                </Text>
+                {callBusy ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Ionicons name={callButtonIcon} size={22} color="#FFF" />
+                )}
+                <Text style={styles.modernPrimaryCallLabel}>{callButtonLabel}</Text>
               </Pressable>
+
               <Pressable
                 onPress={onNavigate}
                 disabled={!tripInfoReady || navigationDisabled || isTerminal}
                 style={({ pressed }) => [
-                  styles.chromeSheetSecondaryBtn,
+                  styles.modernSecondaryNav,
                   (pressed || !tripInfoReady || navigationDisabled || isTerminal) && { opacity: 0.78 },
                 ]}
               >
-                <Ionicons name="navigate" size={16} color="#C2410C" />
-                <Text style={styles.chromeSheetSecondaryBtnText} numberOfLines={1}>
-                  {navigationLabel}
-                </Text>
+                <Ionicons name="navigate" size={20} color="#C2410C" />
+                <Text style={styles.modernSecondaryNavLabel}>{navigationLabel}</Text>
               </Pressable>
-            </View>
-          ) : null}
-          <View style={styles.primaryActionRow} pointerEvents="box-none">
-            <Pressable
-              onPress={handleCallPress}
-              disabled={!tripInfoReady || callBusy || isTerminal}
-              style={({ pressed }) => [styles.primaryCircleButton, styles.callCircleButton, (pressed || !tripInfoReady || callBusy || isTerminal) && { opacity: 0.72 }]}
-              accessibilityRole="button"
-              accessibilityLabel={callButtonLabel}
-            >
-              {callBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={callButtonIcon} size={28} color="#FFF" />}
-              <Text style={styles.primaryCircleLabel}>{callButtonLabel}</Text>
-            </Pressable>
-          </View>
-          <View style={styles.finishActionRow}>
-            <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
-              <Pressable
-                style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
-                onPress={onQrFinish}
-                disabled={!tripInfoReady || actionBusy || isTerminal}
-              >
-                <LinearGradient colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']} style={styles.finishButtonGradient}>
-                  <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                  <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
-                </LinearGradient>
-              </Pressable>
-            </Animated.View>
-            <Pressable
-              style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy || isTerminal) && { opacity: 0.76 }]}
-              onPress={onForceFinish}
-              disabled={!tripInfoReady || actionBusy || isTerminal}
-            >
-              <LinearGradient colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
-                <Ionicons name="warning-outline" size={18} color="#FFF" />
-                <Text style={styles.finishButtonText}>Zorla Bitir</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
+
+              {!isTerminal ? (
+                <View style={styles.finishActionRow}>
+                  <Animated.View style={[styles.finishButton, qrActionActive ? { opacity: pulse } : null]}>
+                    <Pressable
+                      style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy) && { opacity: 0.76 }]}
+                      onPress={onQrFinish}
+                      disabled={!tripInfoReady || actionBusy}
+                    >
+                      <LinearGradient
+                        colors={!tripInfoReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                        style={styles.finishButtonGradient}
+                      >
+                        <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
+                        <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  </Animated.View>
+                  <Pressable
+                    style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
+                    onPress={onForceFinish}
+                    disabled={!tripInfoReady || actionBusy}
+                  >
+                    <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
+                      <Ionicons name="warning-outline" size={18} color="#FFF" />
+                      <Text style={styles.finishButtonText}>Zorla Bitir</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <View style={styles.primaryActionRow} pointerEvents="box-none">
+                <Pressable
+                  onPress={handleCallPress}
+                  disabled={!tripInfoReady || callBusy || isTerminal}
+                  style={({ pressed }) => [
+                    styles.primaryCircleButton,
+                    styles.callCircleButton,
+                    (pressed || !tripInfoReady || callBusy || isTerminal) && { opacity: 0.72 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={callButtonLabel}
+                >
+                  {callBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name={callButtonIcon} size={28} color="#FFF" />}
+                  <Text style={styles.primaryCircleLabel}>{callButtonLabel}</Text>
+                </Pressable>
+              </View>
+              <View style={styles.finishActionRow}>
+                <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
+                  <Pressable
+                    style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+                    onPress={onQrFinish}
+                    disabled={!tripInfoReady || actionBusy || isTerminal}
+                  >
+                    <LinearGradient
+                      colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                      style={styles.finishButtonGradient}
+                    >
+                      <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
+                      <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </Animated.View>
+                {!isTerminal ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
+                    onPress={onForceFinish}
+                    disabled={!tripInfoReady || actionBusy}
+                  >
+                    <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
+                      <Ionicons name="warning-outline" size={18} color="#FFF" />
+                      <Text style={styles.finishButtonText}>Zorla Bitir</Text>
+                    </LinearGradient>
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
+          )}
         </View>
       </View>
     </View>
@@ -471,6 +557,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 6,
+  },
+  topInfoBorderModern: {
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+  },
+  roleMetaBlock: {
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(148, 163, 184, 0.35)',
+  },
+  roleMetaTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  roleMetaDetail: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    lineHeight: 17,
   },
   infoGradient: { paddingVertical: 0, paddingHorizontal: 0, borderRadius: 19, overflow: 'hidden' },
   topCardPatternRoot: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
@@ -720,6 +831,71 @@ const styles = StyleSheet.create({
   driverYolcuyaGitChipLabel: { color: '#FFF', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   bottomGradient: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 18, backgroundColor: 'transparent' },
+  bottomSheetModern: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 22,
+  },
+  sheetHandleWrap: {
+    alignItems: 'center',
+    marginTop: -4,
+    marginBottom: 12,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#CBD5E1',
+  },
+  modernPrimaryCall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#16A34A',
+    borderRadius: 16,
+    minHeight: 54,
+    marginBottom: 10,
+    paddingHorizontal: 18,
+    shadowColor: '#064E3B',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  modernPrimaryCallPressed: { opacity: 0.92 },
+  modernPrimaryCallLabel: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  modernSecondaryNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    minHeight: 48,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+  },
+  modernSecondaryNavLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+    letterSpacing: 0.15,
+  },
   finishSummary: {
     marginBottom: 10,
     flexDirection: 'row',
