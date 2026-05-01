@@ -24184,6 +24184,8 @@ def _muhabbet_trip_force_finish_timeout_deadline_reached(row: dict, now: datetim
     st = str(row.get("status") or "").strip().lower()
     if st in ("cancelled", "finished", "expired"):
         return False
+    if bool(str(row.get("boarding_qr_confirmed_at") or "").strip()):
+        return False
     if row.get("forced_finish_confirmed_at"):
         return False
     if not row.get("forced_finish_requested_at"):
@@ -24214,74 +24216,64 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
     responder_uid: Optional[str],
     emit_label: str,
 ) -> dict:
-    """Karşı taraf onayı veya süre dolumu — oturumu kapatır. timeout_auto_accepted: ready+biniş yok → cancelled, aksi finished."""
+    """Biniş QR öncesi zorla bitir — karşı yanıtı veya 30 sn sonra iptal (cancelled / forced_timeout)."""
     now_iso = datetime.now(timezone.utc).isoformat()
+    sid_lo = str(session_id or "").strip().lower()
     requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
-    trip_st = str(row.get("status") or "").strip().lower()
     boarded = bool(str(row.get("boarding_qr_confirmed_at") or "").strip())
-    timeout_as_cancel = response_val == "timeout_auto_accepted" and trip_st == "ready" and not boarded
 
-    if timeout_as_cancel:
-        patch = {
-            "status": "cancelled",
-            "cancelled_at": now_iso,
-            "cancelled_by_user_id": requester_uid or None,
-            "cancel_reason": "forced_timeout",
-            "finish_method": finish_method_val,
-            "finish_score_delta": -3,
-            "finish_note": f"Forced Muhabbet finish ({response_val})",
-            "forced_finish_confirmed_by_user_id": responder_uid,
-            "forced_finish_confirmed_at": now_iso,
-            "forced_finish_other_user_response": response_val,
-            "finished_at": None,
-            "finished_by_user_id": None,
-            "call_active": False,
-            "call_caller_id": None,
-            "call_started_at": None,
-            "call_state": None,
-            "call_channel_name": None,
-            "forced_finish_started_at": None,
-            "forced_finish_timeout_at": None,
+    if boarded:
+        logger.info(
+            "[leylek_force_finish_timeout_finalize] %s",
+            json.dumps({"session_id": sid_lo, "skipped": "boarded_abort_clear"}, ensure_ascii=False),
+        )
+        patch_abort = {
+            "forced_finish_requested_by_user_id": None,
+            "forced_finish_requested_at": None,
+            "forced_finish_confirmed_by_user_id": None,
+            "forced_finish_confirmed_at": None,
+            "forced_finish_other_user_response": None,
+            "forced_finish_resolved_at": None,
             "updated_at": now_iso,
         }
-    else:
-        patch = {
-            "status": "finished",
-            "finish_method": finish_method_val,
-            "finish_score_delta": -3,
-            "finish_note": f"Forced Muhabbet finish ({response_val})",
-            "forced_finish_confirmed_by_user_id": responder_uid,
-            "forced_finish_confirmed_at": now_iso,
-            "forced_finish_other_user_response": response_val,
-            "finished_at": now_iso,
-            "finished_by_user_id": requester_uid or (responder_uid or ""),
-            "call_active": False,
-            "call_caller_id": None,
-            "call_started_at": None,
-            "call_state": None,
-            "call_channel_name": None,
-            "forced_finish_started_at": None,
-            "forced_finish_timeout_at": None,
-            "updated_at": now_iso,
-        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch_abort).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch_abort}
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
+        return next_row
+
+    patch = {
+        "status": "cancelled",
+        "cancelled_at": now_iso,
+        "cancelled_by_user_id": requester_uid or None,
+        "cancel_reason": "forced_timeout",
+        "forced_finish_confirmed_by_user_id": responder_uid,
+        "forced_finish_confirmed_at": now_iso,
+        "forced_finish_other_user_response": response_val,
+        "forced_finish_resolved_at": now_iso,
+        "call_active": False,
+        "call_caller_id": None,
+        "call_started_at": None,
+        "call_state": None,
+        "call_channel_name": None,
+        "updated_at": now_iso,
+    }
+    logger.info(
+        "[leylek_force_finish_timeout_finalize] %s",
+        json.dumps(
+            {"session_id": sid_lo, "response_val": response_val, "emit_label": emit_label, "terminal": "cancelled"},
+            ensure_ascii=False,
+        ),
+    )
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
     logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s terminal=%s", session_id, response_val, next_row.get("status"))
     await _emit_muhabbet_trip_force_finished(next_row, emit_label, responder_uid)
     await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
-    if timeout_as_cancel:
-        _muhabbet_trip_passengers_update_for_user(
-            session_id,
-            str(next_row.get("passenger_id") or ""),
-            {"status": "cancelled", "cancelled_at": now_iso},
-        )
-    else:
-        _muhabbet_trip_passengers_update_for_user(
-            session_id,
-            str(next_row.get("passenger_id") or ""),
-            {"status": "completed"},
-        )
-    sid_lo = str(session_id or "").strip().lower()
+    _muhabbet_trip_passengers_update_for_user(
+        session_id,
+        str(next_row.get("passenger_id") or ""),
+        {"status": "cancelled", "cancelled_at": now_iso},
+    )
     try:
         await notify_trip_session_updated(sid_lo, "force_finished", responder_uid or requester_uid or "")
     except Exception as ne:
@@ -24289,27 +24281,20 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
     return next_row
 
 
-async def _muhabbet_trip_force_finish_decline_resolve(session_id: str, row: dict, responder_uid: str) -> dict:
-    """Onaylamıyorum — yolculuk active kalır; istek alanları temizlenir."""
+async def _muhabbet_trip_force_finish_decline_soft(session_id: str, row: dict, responder_uid: str) -> dict:
+    """Onaylamıyorum — istek açık kalır; 30 sn sonra timeout ile iptal garantisi."""
     now_iso = datetime.now(timezone.utc).isoformat()
     responder_lo = str(responder_uid or "").strip().lower()
+    sid_lo = str(session_id or "").strip().lower()
     patch = {
         "forced_finish_other_user_response": "declined",
-        "forced_finish_resolved_at": now_iso,
-        "forced_finish_requested_by_user_id": None,
-        "forced_finish_requested_at": None,
-        "forced_finish_timeout_at": None,
-        "forced_finish_request_id": None,
-        "forced_finish_started_at": None,
-        "forced_finish_confirmed_by_user_id": None,
-        "forced_finish_confirmed_at": None,
         "updated_at": now_iso,
     }
+    logger.info("[leylek_force_finish_response_patch] session_id=%s %s", sid_lo, json.dumps(patch, ensure_ascii=False))
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-    logger.info("[muhabbet_trip_force_finish] declined session_id=%s by=%s", session_id, responder_lo)
+    logger.info("[muhabbet_trip_force_finish] declined_soft session_id=%s by=%s", session_id, responder_lo)
     await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
-    sid_lo = str(session_id or "").strip().lower()
     try:
         await notify_trip_session_updated(sid_lo, "force_finish_declined", responder_lo)
     except Exception as ne:
@@ -25088,6 +25073,12 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(uid: str, session_id: str, to
         "boarding_qr_token": None,
         "boarding_qr_confirmed_at": now_iso,
         "boarding_qr_confirmed_by_user_id": uid_lo,
+        "forced_finish_requested_by_user_id": None,
+        "forced_finish_requested_at": None,
+        "forced_finish_confirmed_by_user_id": None,
+        "forced_finish_confirmed_at": None,
+        "forced_finish_other_user_response": None,
+        "forced_finish_resolved_at": None,
         "updated_at": now_iso,
     }
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
@@ -25471,8 +25462,14 @@ async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -
         raise _MuhabbetTripOpError("not_allowed", "Bu aşamada zorla bitir kullanılamaz.")
     uid_lo = str(uid).strip().lower()
     target_uid = _muhabbet_trip_counterparty(row, uid_lo)
-    now = datetime.now(timezone.utc)
-    now_iso = now.isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if bool(str(row.get("boarding_qr_confirmed_at") or "").strip()):
+        raise _MuhabbetTripOpError(
+            "TRIP_ALREADY_STARTED",
+            "Yolculuk başladı. Güvenli kapanış için varış QR kodu ile bitirin. Bir sorun varsa Şikayet Et ile eşleşmeyi kapatabilirsiniz.",
+            409,
+        )
 
     req_at = row.get("forced_finish_requested_at")
     conf_at = row.get("forced_finish_confirmed_at")
@@ -25486,16 +25483,11 @@ async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -
             "conversation_id": row.get("conversation_id"),
             "requester_user_id": rq_stored,
             "target_user_id": cp,
-            "forced_finish_request_id": row.get("forced_finish_request_id"),
             "session": _muhabbet_trip_session_public(next_row),
             "duplicate_pending": True,
         }
         return payload, next_row, True
 
-    boarding_done = bool(row.get("boarding_qr_confirmed_at"))
-    rid = str(uuid.uuid4())
-    started_iso = now_iso if st == "ready" and not boarding_done else None
-    timeout_iso = (now + timedelta(seconds=30)).isoformat()
     patch = {
         "forced_finish_requested_by_user_id": uid_lo,
         "forced_finish_requested_at": now_iso,
@@ -25503,11 +25495,10 @@ async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -
         "forced_finish_confirmed_at": None,
         "forced_finish_other_user_response": None,
         "forced_finish_resolved_at": None,
-        "forced_finish_request_id": rid,
-        "forced_finish_started_at": started_iso,
-        "forced_finish_timeout_at": timeout_iso,
         "updated_at": now_iso,
     }
+    sid_lo = str(session_id or "").strip().lower()
+    logger.info("[leylek_force_finish_request_patch] session_id=%s %s", sid_lo, json.dumps(patch, ensure_ascii=False))
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
     payload = {
@@ -25515,7 +25506,6 @@ async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -
         "conversation_id": row.get("conversation_id"),
         "requester_user_id": uid_lo,
         "target_user_id": target_uid,
-        "forced_finish_request_id": rid,
         "session": _muhabbet_trip_session_public(next_row),
     }
     logger.info("[muhabbet_trip_finish] forced_requested session_id=%s by=%s", session_id, uid_lo)
@@ -25545,9 +25535,15 @@ async def _muhabbet_trip_force_finish_request_broadcast(payload: dict, requester
 
 
 async def _muhabbet_trip_force_finish_respond_apply(uid: str, session_id: str, response_raw: str) -> tuple[dict, bool]:
+    sid_lo = str(session_id or "").strip().lower()
+    rr_raw = str(response_raw or "").strip().lower()
+    logger.info("[leylek_force_finish_response_in] session_id=%s uid=%s response_raw=%s", sid_lo, str(uid).strip().lower()[:12], rr_raw)
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
     st = str(row.get("status") or "").strip().lower()
     if st in ("cancelled", "finished", "expired"):
+        return row, False
+    if bool(str(row.get("boarding_qr_confirmed_at") or "").strip()):
+        logger.info("[leylek_force_finish_response_patch] session_id=%s skipped_boarded", sid_lo)
         return row, False
     uid_lo = str(uid).strip().lower()
     rq = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
@@ -25557,19 +25553,19 @@ async def _muhabbet_trip_force_finish_respond_apply(uid: str, session_id: str, r
         raise _MuhabbetTripOpError("invalid", "Karşı taraf yanıt vermeli.")
     if row.get("forced_finish_confirmed_at"):
         return row, False
-    rr = str(response_raw or "").strip().lower()
-    response = rr if rr in ("accepted", "declined") else "declined"
-    if response == "accepted":
+    rr = rr_raw if rr_raw in ("accepted", "declined") else "declined"
+    if rr == "accepted":
         next_row = await _muhabbet_trip_force_finish_finalize_accept_or_timeout(
             session_id,
             row,
-            finish_method_val="forced",
+            finish_method_val="forced_timeout",
             response_val="accepted",
             responder_uid=uid_lo,
             emit_label="accepted",
         )
+        logger.info("[leylek_force_finish_response_patch] session_id=%s terminal=cancelled action=accepted", sid_lo)
         return next_row, True
-    next_row = await _muhabbet_trip_force_finish_decline_resolve(session_id, row, uid_lo)
+    next_row = await _muhabbet_trip_force_finish_decline_soft(session_id, row, uid_lo)
     return next_row, False
 
 
@@ -25986,7 +25982,7 @@ async def muhabbet_trip_force_finish_request_post(
     except _MuhabbetTripOpError as e:
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_force_finish_log("request_rest_error", sid_lo, getattr(e, "socket_code", "") or "error", ms)
-        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/force-finish/respond")
@@ -26000,8 +25996,6 @@ async def muhabbet_trip_force_finish_respond_post(
     t0 = time.perf_counter()
     try:
         next_row, did_finish = await _muhabbet_trip_force_finish_respond_apply(uid, session_id, body.response)
-        if did_finish:
-            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
         ms = int((time.perf_counter() - t0) * 1000)
         resp = str((next_row or {}).get("forced_finish_other_user_response") or body.response or "")
         _muhabbet_force_finish_log("respond_rest", sid_lo, resp, ms)
@@ -26015,7 +26009,7 @@ async def muhabbet_trip_force_finish_respond_post(
     except _MuhabbetTripOpError as e:
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_force_finish_log("respond_rest_error", sid_lo, getattr(e, "socket_code", "") or "error", ms)
-        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/call/accept")
@@ -26406,11 +26400,11 @@ async def sio_muhabbet_trip_force_finish_respond(sid, data):
     if not uid or not session_id:
         return
     try:
-        next_row, did_finish = await _muhabbet_trip_force_finish_respond_apply(uid, session_id, response_raw)
-        if did_finish:
-            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+        await _muhabbet_trip_force_finish_respond_apply(uid, session_id, response_raw)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except _MuhabbetTripOpError as e:
+        await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_force_finish_respond: %s", e)
 

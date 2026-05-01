@@ -26,6 +26,8 @@ type LeylekTripLiveRideChromeProps = {
   statusDetail: string;
   /** Zorla Bitir — yalnızca terminal veya bekleyen zorla bitir için true */
   forceFinishDisabled?: boolean;
+  /** Biniş QR sonrası — Zorla Bitir yerine/yanında gösterilen kısa bilgi */
+  forceFinishBoardedHint?: string | null;
   pickupText: string;
   dropoffText: string;
   agreedPrice?: number | string | null;
@@ -149,6 +151,7 @@ export default function LeylekTripLiveRideChrome({
   suppressWaitingPolylineBanner = false,
   peerLocationUpdatedAt = null,
   forceFinishDisabled = false,
+  forceFinishBoardedHint,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
@@ -482,35 +485,40 @@ export default function LeylekTripLiveRideChrome({
               </Pressable>
 
               {!isTerminal ? (
-                <View style={styles.finishActionRow}>
-                  <Animated.View style={[styles.finishButton, qrActionActive ? { opacity: pulse } : null]}>
+                <View style={styles.forceFinishCol}>
+                  <View style={styles.finishActionRow}>
+                    <Animated.View style={[styles.finishButton, qrActionActive ? { opacity: pulse } : null]}>
+                      <Pressable
+                        style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy) && { opacity: 0.76 }]}
+                        onPress={onQrFinish}
+                        disabled={qrBtnDisabled}
+                      >
+                        <LinearGradient
+                          colors={!tripInfoReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                          style={styles.finishButtonGradient}
+                        >
+                          <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
+                          <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                        </LinearGradient>
+                      </Pressable>
+                    </Animated.View>
                     <Pressable
-                      style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy) && { opacity: 0.76 }]}
-                      onPress={onQrFinish}
-                      disabled={qrBtnDisabled}
+                      style={({ pressed }) => [styles.finishButton, (pressed || forceFinishDisabled) && { opacity: 0.76 }]}
+                      onPress={onForceFinish}
+                      disabled={forceFinishDisabled}
                     >
                       <LinearGradient
-                        colors={!tripInfoReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                        colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
                         style={styles.finishButtonGradient}
                       >
-                        <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                        <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                        <Ionicons name="warning-outline" size={18} color="#FFF" />
+                        <Text style={styles.finishButtonText}>Zorla Bitir</Text>
                       </LinearGradient>
                     </Pressable>
-                  </Animated.View>
-                  <Pressable
-                    style={({ pressed }) => [styles.finishButton, (pressed || forceFinishDisabled) && { opacity: 0.76 }]}
-                    onPress={onForceFinish}
-                    disabled={forceFinishDisabled}
-                  >
-                    <LinearGradient
-                      colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
-                      style={styles.finishButtonGradient}
-                    >
-                      <Ionicons name="warning-outline" size={18} color="#FFF" />
-                      <Text style={styles.finishButtonText}>Zorla Bitir</Text>
-                    </LinearGradient>
-                  </Pressable>
+                  </View>
+                  {forceFinishBoardedHint ? (
+                    <Text style={styles.forceFinishBoardedHint}>{forceFinishBoardedHint}</Text>
+                  ) : null}
                 </View>
               ) : null}
             </>
@@ -537,36 +545,41 @@ export default function LeylekTripLiveRideChrome({
                   <Text style={styles.primaryCircleLabel}>{callButtonLabel}</Text>
                 </Pressable>
               </View>
-              <View style={styles.finishActionRow}>
-                <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
-                  <Pressable
-                    style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
-                    onPress={onQrFinish}
-                    disabled={qrBtnDisabled}
-                  >
-                    <LinearGradient
-                      colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
-                      style={styles.finishButtonGradient}
+              <View style={styles.forceFinishCol}>
+                <View style={styles.finishActionRow}>
+                  <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
+                    <Pressable
+                      style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+                      onPress={onQrFinish}
+                      disabled={qrBtnDisabled}
                     >
-                      <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                      <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
-                    </LinearGradient>
-                  </Pressable>
-                </Animated.View>
-                {!isTerminal ? (
-                  <Pressable
-                    style={({ pressed }) => [styles.finishButton, (pressed || forceFinishDisabled) && { opacity: 0.76 }]}
-                    onPress={onForceFinish}
-                    disabled={forceFinishDisabled}
-                  >
-                    <LinearGradient
-                      colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
-                      style={styles.finishButtonGradient}
+                      <LinearGradient
+                        colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                        style={styles.finishButtonGradient}
+                      >
+                        <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
+                        <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  </Animated.View>
+                  {!isTerminal ? (
+                    <Pressable
+                      style={({ pressed }) => [styles.finishButton, (pressed || forceFinishDisabled) && { opacity: 0.76 }]}
+                      onPress={onForceFinish}
+                      disabled={forceFinishDisabled}
                     >
-                      <Ionicons name="warning-outline" size={18} color="#FFF" />
-                      <Text style={styles.finishButtonText}>Zorla Bitir</Text>
-                    </LinearGradient>
-                  </Pressable>
+                      <LinearGradient
+                        colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
+                        style={styles.finishButtonGradient}
+                      >
+                        <Ionicons name="warning-outline" size={18} color="#FFF" />
+                        <Text style={styles.finishButtonText}>Zorla Bitir</Text>
+                      </LinearGradient>
+                    </Pressable>
+                  ) : null}
+                </View>
+                {!isTerminal && forceFinishBoardedHint ? (
+                  <Text style={styles.forceFinishBoardedHint}>{forceFinishBoardedHint}</Text>
                 ) : null}
               </View>
             </>
@@ -1064,6 +1077,16 @@ const styles = StyleSheet.create({
   },
   tripInlineChatBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.15 },
   finishActionRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 10 },
+  forceFinishCol: { width: '100%' },
+  forceFinishBoardedHint: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#CBD5E1',
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: 6,
+  },
   finishButton: { flex: 1, borderRadius: 20, overflow: 'hidden' },
   finishButtonPressable: { flex: 1, borderRadius: 20, overflow: 'hidden' },
   finishButtonGradient: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12 },
