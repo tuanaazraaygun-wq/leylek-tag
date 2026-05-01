@@ -49,6 +49,7 @@ import {
 } from '../lib/muhabbetMessagesStorage';
 import MuhabbetWatermark from './MuhabbetWatermark';
 import type { MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
+import { subscribeConversationUpdated } from '../lib/muhabbetRealtimeEvents';
 
 /** Socket sid + JWT kayıt kullanıcısı güncel mi (Muhabbet emit öncesi). */
 function isMuhabbetSocketRegisteredForUser(socket: Socket, myUserLo: string): boolean {
@@ -372,6 +373,7 @@ export default function MuhabbetChatScreen({
   const rowsRef = useRef<ChatMessageRow[]>([]);
   rowsRef.current = rows;
   const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const socketMsgPullDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctx, setCtx] = useState<ChatContext | null>(null);
   const [draft, setDraft] = useState('');
   const [tripConvertInModal, setTripConvertInModal] = useState<{ rid: string } | null>(null);
@@ -592,6 +594,7 @@ export default function MuhabbetChatScreen({
         };
         socket.on('joined_muhabbet', onJoined);
         socket.on('muhabbet_error', onErr);
+        console.log('[socket_emit]', JSON.stringify({ event: 'join_muhabbet_conversation', hasAck: true, connected: socket.connected }));
         socket.emit('join_muhabbet_conversation', { conversation_id: cid });
       });
     },
@@ -652,13 +655,22 @@ export default function MuhabbetChatScreen({
           if (!ack && !isMuhabbetSocketRegisteredForUser(socket, myLo)) return false;
         }
       }
-      let joinStatus = await waitForMuhabbetJoin(socket, 7000);
+      let joinStatus = await waitForMuhabbetJoin(socket, 1000);
+      for (let retry = 0; retry < 3 && joinStatus !== 'joined' && joinStatus !== 'forbidden'; retry++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        console.log('[socket_join]', JSON.stringify({ kind: 'muhabbet_conversation', conversation_id: cid, retry: retry + 1 }));
+        joinStatus = await waitForMuhabbetJoin(socket, 1000);
+      }
       if (joinStatus === 'joined') return true;
       if (joinStatus === 'forbidden') return false;
 
       notifyAuthTokenBecameAvailableForSocket();
       await waitForNextRegisterSuccess(socket, 16000);
-      joinStatus = await waitForMuhabbetJoin(socket, 7000);
+      joinStatus = await waitForMuhabbetJoin(socket, 1000);
+      for (let retry = 0; retry < 3 && joinStatus !== 'joined' && joinStatus !== 'forbidden'; retry++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        joinStatus = await waitForMuhabbetJoin(socket, 1000);
+      }
       return joinStatus === 'joined';
     } finally {
       readinessInFlightRef.current = false;
@@ -922,6 +934,16 @@ export default function MuhabbetChatScreen({
   }, [cid, pullMessagesFromApi]);
 
   useEffect(() => {
+    if (!cid) return;
+    const cidLo = cid.trim().toLowerCase();
+    const unsub = subscribeConversationUpdated((p) => {
+      const conv = (p.conversation_id || '').trim().toLowerCase();
+      if (conv && conv === cidLo) void pullMessagesFromApi();
+    });
+    return unsub;
+  }, [cid, pullMessagesFromApi]);
+
+  useEffect(() => {
     void loadContext();
   }, [loadContext]);
 
@@ -1012,124 +1034,6 @@ export default function MuhabbetChatScreen({
   }, [cid, loadContext, pushSystemCard]);
 
   useEffect(() => {
-    if (!cid) return;
-    const socket = getOrCreateSocket();
-    const cidLo = cid.toLowerCase();
-    const convMatches = (data: { conversation_id?: string }) => {
-      const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
-      return !!conv && conv === cidLo;
-    };
-    const onConvertRequest = (data: { conversation_id?: string; request_id?: string }) => {
-            if (!convMatches(data)) return;
-      const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
-      if (!rid) return;
-      const myRole = String(ctxRef.current?.my_role || '').trim().toLowerCase();
-      if (isDriverAppRole(myRole)) return;
-      setTripConvertState('pending');
-      setTripLockReason('muhabbet_trip_convert_request pending');
-      setTripConvertInModal((prev) => (prev?.rid === rid ? prev : { rid }));
-    };
-    const onConvertSent = (data: { conversation_id?: string }) => {
-            if (!convMatches(data)) return;
-      if (pendingActionRef.current?.kind === 'trip_convert_request') pendingActionRef.current = null;
-      optimisticTripConvertRef.current = false;
-      setTripConvertLoading(false);
-      setTripConvertState('pending');
-      setTripLockReason('muhabbet_trip_convert_request_sent');
-    };
-    const onConvertConfirmed = (data: MuhabbetTripSessionSocketPayload) => {
-            if (!convMatches(data)) return;
-      if (
-        pendingActionRef.current?.kind === 'trip_convert_request' ||
-        pendingActionRef.current?.kind === 'trip_convert_accept'
-      ) {
-        pendingActionRef.current = null;
-      }
-      setTripConvertLoading(false);
-      setTripConvertInModal(null);
-      optimisticTripConvertRef.current = false;
-      setTripConvertState('confirmed');
-      setTripLockReason('muhabbet_trip_convert_confirmed');
-      if (tripConvertStateRef.current !== 'confirmed') {
-        pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
-      }
-      navigateToLeylekTripSession(data);
-    };
-    const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
-                  if (!convMatches(data)) return;
-      if (
-        pendingActionRef.current?.kind === 'trip_convert_request' ||
-        pendingActionRef.current?.kind === 'trip_convert_accept'
-      ) {
-        pendingActionRef.current = null;
-      }
-      setTripConvertLoading(false);
-      setTripConvertInModal(null);
-      optimisticTripConvertRef.current = false;
-      setTripConvertState('confirmed');
-      setTripLockReason('muhabbet_trip_session_ready');
-      navigateToLeylekTripSession(data);
-    };
-    const onConvertDeclined = (data: { conversation_id?: string }) => {
-            if (!convMatches(data)) return;
-      if (
-        pendingActionRef.current?.kind === 'trip_convert_request' ||
-        pendingActionRef.current?.kind === 'trip_convert_decline'
-      ) {
-        pendingActionRef.current = null;
-      }
-      setTripConvertLoading(false);
-      optimisticTripConvertRef.current = false;
-      setTripConvertState('idle');
-      setTripLockReason(null);
-      pushSystemCard('orange', 'Yolculuğa çevirme isteği reddedildi.');
-      Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
-    };
-    const onConvertError = (data: { code?: string; detail?: string; message?: string }) => {
-            if (data?.code === 'not_registered') {
-        void (async () => {
-          const retried = await retryPendingActionAfterNotRegistered();
-          if (retried) return;
-          pendingActionRef.current = null;
-          setTripConvertLoading(false);
-          optimisticTripConvertRef.current = false;
-          setTripConvertState('idle');
-          setTripLockReason(null);
-          Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'Bağlantı hazırlanıyor. Lütfen tekrar deneyin.');
-          await pullMessagesFromApi();
-        })();
-        return;
-      }
-      pendingActionRef.current = null;
-      setTripConvertLoading(false);
-      optimisticTripConvertRef.current = false;
-      setTripConvertState('idle');
-      setTripLockReason(null);
-      if (data?.code === 'driver_required') {
-        Alert.alert('Yolculuğa çevir', 'Bu isteği yalnızca sürücü başlatabilir.');
-        void pullMessagesFromApi();
-        return;
-      }
-      Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'İstek gönderilemedi.');
-      void pullMessagesFromApi();
-    };
-    socket.on('muhabbet_trip_convert_request', onConvertRequest);
-    socket.on('muhabbet_trip_convert_request_sent', onConvertSent);
-    socket.on('muhabbet_trip_convert_confirmed', onConvertConfirmed);
-    socket.on('muhabbet_trip_session_ready', onSessionReady);
-    socket.on('muhabbet_trip_convert_declined', onConvertDeclined);
-    socket.on('muhabbet_trip_convert_error', onConvertError);
-    return () => {
-      socket.off('muhabbet_trip_convert_request', onConvertRequest);
-      socket.off('muhabbet_trip_convert_request_sent', onConvertSent);
-      socket.off('muhabbet_trip_convert_confirmed', onConvertConfirmed);
-      socket.off('muhabbet_trip_session_ready', onSessionReady);
-      socket.off('muhabbet_trip_convert_declined', onConvertDeclined);
-      socket.off('muhabbet_trip_convert_error', onConvertError);
-    };
-  }, [cid, navigateToLeylekTripSession, pullMessagesFromApi, pushSystemCard, retryPendingActionAfterNotRegistered]);
-
-  useEffect(() => {
     if (!cid || bootstrapPhase !== 'ready') return;
     const socket = getOrCreateSocket();
     const cidLo = cid.trim().toLowerCase();
@@ -1211,6 +1115,15 @@ export default function MuhabbetChatScreen({
       setRoomJoined(true);
     };
 
+    const scheduleBackgroundPullFromSocket = () => {
+      if (socketMsgPullDebounceRef.current) clearTimeout(socketMsgPullDebounceRef.current);
+      socketMsgPullDebounceRef.current = setTimeout(() => {
+        socketMsgPullDebounceRef.current = null;
+        console.log('[leylek_fast_path]', JSON.stringify({ chat: 'message_socket_pull_reconcile' }));
+        void pullMessagesFromApi();
+      }, 120);
+    };
+
     const onMsg = (msg: {
       conversation_id?: string;
       message_id?: string;
@@ -1230,14 +1143,15 @@ export default function MuhabbetChatScreen({
       const senderLo = String(msg?.sender_id || '')
         .trim()
         .toLowerCase();
-      const text = String(msg?.text ?? '');
-      const created = coerceMessageCreatedAt(msg?.created_at);
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       const isMine = Boolean(myLo && senderLo === myLo);
+      const text = msg?.text != null ? String(msg.text) : '';
+      const created = coerceMessageCreatedAt(msg?.created_at);
       const myR = (ctxRef.current?.my_role || '').trim().toLowerCase();
       const oR = (ctxRef.current?.other_role || '').trim().toLowerCase();
       const roleFor = (isMine ? myR : oR) || null;
 
+      console.log('[leylek_ui_instant]', JSON.stringify({ chat: 'message_socket_append', id }));
       setRows((prev) => {
         const ix = prev.findIndex((m) => rowIdLo(m) === id);
         if (ix >= 0) {
@@ -1251,7 +1165,6 @@ export default function MuhabbetChatScreen({
             sender_user_id: senderLo || cur.sender_user_id,
             created_at: created,
             sender_role: roleFor ?? cur.sender_role ?? undefined,
-            ...(isMine && cur.out_status !== 'seen' ? { out_status: 'sent' as const } : {}),
           };
           return sortRowsByCreatedAtAsc(next);
         }
@@ -1268,6 +1181,7 @@ export default function MuhabbetChatScreen({
         ]);
       });
       scrollToEndThrottled(true);
+      scheduleBackgroundPullFromSocket();
 
       if (!isMine && myLo) {
         try {
@@ -1378,6 +1292,10 @@ export default function MuhabbetChatScreen({
         clearTimeout(persistDebounceRef.current);
         persistDebounceRef.current = null;
       }
+      if (socketMsgPullDebounceRef.current) {
+        clearTimeout(socketMsgPullDebounceRef.current);
+        socketMsgPullDebounceRef.current = null;
+      }
       void persistMuhabbetChatRowsLocal(cid, rowsRef.current);
       unsubSessionRefresh();
       try {
@@ -1392,7 +1310,7 @@ export default function MuhabbetChatScreen({
       socket.off('message_seen', onSeenEvt);
       socket.off('message_deleted', onDel);
     };
-  }, [cid, bootstrapPhase, scrollToEndThrottled]);
+  }, [cid, bootstrapPhase, pullMessagesFromApi, scrollToEndThrottled]);
 
   useEffect(() => {
     if (!cid || bootstrapPhase === 'loading') return;

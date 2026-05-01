@@ -67,6 +67,10 @@ export default function MuhabbetTripCallScreen({
 }: MuhabbetTripCallScreenProps) {
   const pulse = useRef(new Animated.Value(1)).current;
   const joinKeyRef = useRef('');
+  const joinInFlightRef = useRef(false);
+  const joinRetryCountRef = useRef(0);
+  const joinRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const joinScheduleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -110,20 +114,28 @@ export default function MuhabbetTripCallScreen({
 
   const leaveCall = useCallback(async () => {
     joinKeyRef.current = '';
+    joinInFlightRef.current = false;
+    joinRetryCountRef.current = 0;
+    if (joinRetryTimeoutRef.current) {
+      clearTimeout(joinRetryTimeoutRef.current);
+      joinRetryTimeoutRef.current = null;
+    }
     setJoining(false);
     setJoined(false);
     await leaveMuhabbetAgora();
   }, []);
 
   const joinCall = useCallback(async () => {
-    const key = `${sessionId}|active`;
-    if (!visible || mode !== 'active' || !sessionId || joining || joined || joinKeyRef.current === key) return;
-    joinKeyRef.current = key;
+    if (!visible || mode !== 'active' || !sessionId || joined) return;
+    if (joinInFlightRef.current) return;
+    joinInFlightRef.current = true;
+    joinKeyRef.current = `${sessionId}|active`;
     setJoining(true);
     try {
       const token = await getPersistedAccessToken();
       if (!token) {
         joinKeyRef.current = '';
+        joinInFlightRef.current = false;
         setJoining(false);
         Alert.alert('Arama', 'Sesli görüşme için tekrar giriş yapın.');
         return;
@@ -144,6 +156,7 @@ export default function MuhabbetTripCallScreen({
       const agoraUid = Number(data.agora_uid || 0);
       if (!res.ok || !data.success || !channelName || !agoraToken || !Number.isFinite(agoraUid)) {
         joinKeyRef.current = '';
+        joinInFlightRef.current = false;
         setJoining(false);
         Alert.alert('Arama', data.detail || 'Muhabbet arama bileti alınamadı.');
         return;
@@ -152,13 +165,35 @@ export default function MuhabbetTripCallScreen({
       muhabbetAgoraVoiceService.resetCallbacks();
       muhabbetAgoraVoiceService.setCallbacks({
         onJoinChannelSuccess: () => {
+          console.log(
+            '[leylek_call_join]',
+            JSON.stringify({ state: 'active', joined: true, retry: joinRetryCountRef.current }),
+          );
+          joinRetryCountRef.current = 0;
+          joinInFlightRef.current = false;
           setJoined(true);
           setJoining(false);
         },
         onError: (_err, msg) => {
           joinKeyRef.current = '';
+          joinInFlightRef.current = false;
           setJoined(false);
           setJoining(false);
+          muhabbetAgoraVoiceService.resetJoinGate();
+          if (joinRetryCountRef.current < 1) {
+            joinRetryCountRef.current += 1;
+            console.log('[leylek_call_join]', JSON.stringify({ state: 'error', joined: false, retry: true }));
+            if (joinRetryTimeoutRef.current) {
+              clearTimeout(joinRetryTimeoutRef.current);
+            }
+            joinRetryTimeoutRef.current = setTimeout(() => {
+              joinRetryTimeoutRef.current = null;
+              void joinCall();
+            }, 450);
+            return;
+          }
+          joinRetryCountRef.current = 0;
+          console.log('[leylek_call_join]', JSON.stringify({ state: 'failed', joined: false, retry: false }));
           Alert.alert('Arama', msg || 'Muhabbet Agora bağlantı hatası.');
         },
       });
@@ -168,16 +203,34 @@ export default function MuhabbetTripCallScreen({
       muhabbetAgoraVoiceService.setMuted(muted);
     } catch {
       joinKeyRef.current = '';
+      joinInFlightRef.current = false;
       setJoined(false);
       setJoining(false);
       Alert.alert('Arama', 'Muhabbet aramasına bağlanılamadı.');
     }
-  }, [apiBaseUrl, joined, joining, mode, muted, sessionId, speakerOn, visible]);
+  }, [apiBaseUrl, joined, mode, muted, sessionId, speakerOn, visible]);
 
   useEffect(() => {
+    if (joinScheduleRef.current) {
+      clearTimeout(joinScheduleRef.current);
+      joinScheduleRef.current = null;
+    }
     if (visible && mode === 'active') {
-      void joinCall();
-      return;
+      joinRetryCountRef.current = 0;
+      joinScheduleRef.current = setTimeout(() => {
+        joinScheduleRef.current = null;
+        void joinCall();
+      }, 90);
+      return () => {
+        if (joinScheduleRef.current) {
+          clearTimeout(joinScheduleRef.current);
+          joinScheduleRef.current = null;
+        }
+        if (joinRetryTimeoutRef.current) {
+          clearTimeout(joinRetryTimeoutRef.current);
+          joinRetryTimeoutRef.current = null;
+        }
+      };
     }
     if (!visible) {
       void leaveCall();

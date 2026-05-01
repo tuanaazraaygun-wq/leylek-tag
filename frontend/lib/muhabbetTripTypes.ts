@@ -50,6 +50,9 @@ export type MuhabbetTripSession = {
   finish_method?: 'qr' | 'forced' | null;
   forced_finish_requested_by_user_id?: string | null;
   forced_finish_requested_at?: string | null;
+  forced_finish_started_at?: string | null;
+  forced_finish_timeout_at?: string | null;
+  forced_finish_request_id?: string | null;
   forced_finish_confirmed_by_user_id?: string | null;
   forced_finish_confirmed_at?: string | null;
   forced_finish_other_user_response?: 'accepted' | 'declined' | 'timeout' | null;
@@ -76,9 +79,10 @@ export type MuhabbetTripSession = {
   call_active?: boolean | null;
   caller_id?: string | null;
   call_started_at?: string | null;
-  call_state?: 'ringing' | 'active' | string | null;
+  call_state?: 'ringing' | 'active' | 'ended' | string | null;
+  call_channel_name?: string | null;
   /** Zorla bitir özeti (pending / accepted / declined) */
-  force_finish_state?: 'pending' | 'accepted' | 'declined' | string | null;
+  force_finish_state?: 'none' | 'pending' | 'accepted' | 'declined' | 'timeout' | string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };

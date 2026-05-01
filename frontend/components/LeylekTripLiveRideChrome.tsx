@@ -47,8 +47,12 @@ type LeylekTripLiveRideChromeProps = {
   navigationDisabled?: boolean;
   sendingLocation: boolean;
   actionBusy: boolean;
+  /** QR oluşturma sırasında çift basımı kes */
+  qrBusy?: boolean;
   callState: 'idle' | 'incoming' | 'outgoing' | 'active';
   callBusy: boolean;
+  /** idle iken arama — cooldown / REST sırasında */
+  callDialDisabled?: boolean;
   canStart: boolean;
   canFinish: boolean;
   onShareLocation: () => void;
@@ -65,6 +69,8 @@ type LeylekTripLiveRideChromeProps = {
   modernLeylekOfferUi?: boolean;
   /** Backend polyline beklenirken sar uyarıyı gösterme (biniş sonrası vb.). */
   suppressWaitingPolylineBanner?: boolean;
+  /** Karşı taraf marker — konum zamanı >10sn ise Pasif */
+  peerLocationUpdatedAt?: string | null;
 };
 
 function vehicleLabel(vehicleKind?: string | null): string {
@@ -77,8 +83,13 @@ function paymentLabel(paymentMethod?: 'cash' | 'card' | null): string {
   return '';
 }
 
-function locationLabel(v?: Coord | null): string {
-  return v ? 'Canlı' : 'Bekleniyor';
+function peerCoordLiveLabel(coord: Coord | null | undefined, peerUpdatedIso?: string | null): string {
+  if (!coord) return 'Bekleniyor';
+  const iso = String(peerUpdatedIso || '').trim();
+  if (!iso) return 'Canlı';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return 'Canlı';
+  return Date.now() - t > 10000 ? 'Pasif' : 'Canlı';
 }
 
 export default function LeylekTripLiveRideChrome({
@@ -110,8 +121,10 @@ export default function LeylekTripLiveRideChrome({
   navigationDisabled,
   sendingLocation,
   actionBusy,
+  qrBusy = false,
   callState,
   callBusy,
+  callDialDisabled = false,
   canStart,
   canFinish,
   onShareLocation,
@@ -126,6 +139,7 @@ export default function LeylekTripLiveRideChrome({
   onCancel,
   modernLeylekOfferUi = false,
   suppressWaitingPolylineBanner = false,
+  peerLocationUpdatedAt = null,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
@@ -163,7 +177,7 @@ export default function LeylekTripLiveRideChrome({
           ? 'radio'
           : 'call';
   const handleCallPress = () => {
-    if (callBusy || isTerminal) return;
+    if (callBusy || callDialDisabled || isTerminal) return;
     if (callState === 'incoming') {
       onJoinCall();
     } else if (callState === 'active' || callState === 'outgoing') {
@@ -277,7 +291,7 @@ export default function LeylekTripLiveRideChrome({
                     {pickupText}
                   </Text>
                   <Text style={styles.routePolylineHint} numberOfLines={1}>
-                    {locationLabel(isDriver ? passengerLocation : driverLocation)}
+                    {peerCoordLiveLabel(isDriver ? passengerLocation : driverLocation, peerLocationUpdatedAt)}
                   </Text>
                 </View>
               </View>
@@ -443,7 +457,7 @@ export default function LeylekTripLiveRideChrome({
                     <Pressable
                       style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy) && { opacity: 0.76 }]}
                       onPress={onQrFinish}
-                      disabled={!tripInfoReady || actionBusy}
+                      disabled={!tripInfoReady || actionBusy || qrBusy}
                     >
                       <LinearGradient
                         colors={!tripInfoReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
@@ -457,7 +471,7 @@ export default function LeylekTripLiveRideChrome({
                   <Pressable
                     style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
                     onPress={onForceFinish}
-                    disabled={!tripInfoReady || actionBusy}
+                    disabled={!tripInfoReady || actionBusy || qrBusy}
                   >
                     <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
                       <Ionicons name="warning-outline" size={18} color="#FFF" />
@@ -490,7 +504,7 @@ export default function LeylekTripLiveRideChrome({
                   <Pressable
                     style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
                     onPress={onQrFinish}
-                    disabled={!tripInfoReady || actionBusy || isTerminal}
+                    disabled={!tripInfoReady || actionBusy || qrBusy || isTerminal}
                   >
                     <LinearGradient
                       colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
@@ -505,7 +519,7 @@ export default function LeylekTripLiveRideChrome({
                   <Pressable
                     style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
                     onPress={onForceFinish}
-                    disabled={!tripInfoReady || actionBusy}
+                    disabled={!tripInfoReady || actionBusy || qrBusy}
                   >
                     <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
                       <Ionicons name="warning-outline" size={18} color="#FFF" />
