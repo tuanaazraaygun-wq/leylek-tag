@@ -1591,25 +1591,8 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
             offer_data.get("is_broadcast"),
             offer_data.get("is_dispatch"),
         )
-        # Baseline (26942141): önce tek sid, yoksa user_* odası — Leylek/Muhabbet emit_socket_event_to_user zinciriyle karışmaz.
-        room = _normalize_user_room(raw)
-        sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip())
-        if sid:
-            await sio.emit("new_passenger_offer", offer_data, to=sid)
-            logger.info(
-                "📤 new_passenger_offer to=sid driver=%s… tag=%s",
-                raw[:13] + ("…" if len(raw) > 13 else raw),
-                offer_data.get("tag_id"),
-            )
-        else:
-            await sio.emit("new_passenger_offer", offer_data, room=room)
-            logger.warning(
-                "📤 new_passenger_offer room-only (bu sürücü socket register yok?) "
-                "driver=%s… room=%s tag=%s",
-                raw[:13] + ("…" if len(raw) > 13 else raw),
-                room,
-                offer_data.get("tag_id"),
-            )
+        # Çoklu sekme / reconnect: tüm sid'ler + user odası (tek sid map anahtarı kaçırmasın).
+        await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
 
         # FCM: yalnız send_trip_push_and_log → send_push_notification (Expo token kullanılmaz).
         offer_tag_id = offer_data.get("tag_id")
@@ -3346,6 +3329,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
 
 async def rolling_dispatch_start(tag_id: str) -> int:
     """DB'den tag; 20 km + vehicle_kind + mesafe sırası; ilk batch + timer. Dönüş: eligible sayısı."""
+    logger.info("[normal_ride_dispatch_start] entering rolling_dispatch_start tag_id=%s", tag_id)
     await rolling_dispatch_stop(tag_id, revoke_offers=False)
     tr = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
     if not tr.data:
@@ -15923,7 +15907,15 @@ async def _create_ride_offer_execute(
             return {"success": False, "error": "Geçersiz yolcu kimliği"}
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = (payload.tag_id and str(payload.tag_id).strip()) or str(uuid.uuid4())
-        
+        logger.info(
+            "[normal_ride_create_request] tag_id=%s passenger_id=%s pickup_lat=%s pickup_lng=%s offered_price=%s",
+            tag_id,
+            str(passenger_id or "")[:96],
+            payload.pickup_lat,
+            payload.pickup_lng,
+            getattr(payload, "offered_price", None),
+        )
+
         # Yolcu bilgisi + araç tercihi (driver_details.passenger_preferred_vehicle)
         passenger_result = (
             supabase.table("users")
@@ -16091,6 +16083,13 @@ async def _create_ride_offer_execute(
             tag["distance_km"] = trip_km
             tag["estimated_minutes"] = max(1, trip_min or 1)
             logger.info(
+                "[normal_ride_create_success] tag_id=%s passenger_id=%s insert_variant=%s status=%s",
+                str(tag.get("id") or tag_id),
+                str(passenger_id or "")[:96],
+                used_variant,
+                str(tag.get("status") or "waiting"),
+            )
+            logger.info(
                 f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {payload.offered_price}TL "
                 f"(yolcu araç tercihi={passenger_pref_vehicle}, insert_variant={used_variant})"
             )
@@ -16098,7 +16097,7 @@ async def _create_ride_offer_execute(
             # Dağıtım hatası teklif oluşturmayı bozmasın (yolcu ekranında "Teklif oluşturulamadı" önlenir)
             notified = 0
             try:
-                logger.info(f"CALL rolling_dispatch_start tag={tag_id}")
+                logger.info("[normal_ride_dispatch_start] tag_id=%s", tag_id)
                 notified = await rolling_dispatch_start(tag_id)
             except Exception as dispatch_ex:
                 logger.error(f"❌ rolling_dispatch_start hata (tag kaydı başarılı): {dispatch_ex}")
@@ -16139,8 +16138,10 @@ async def _create_ride_offer_execute(
                     logger.warning("ride/create: broadcast_offer_to_all yedek hata: %s", bc_err)
             if notified == 0:
                 logger.warning(
-                    "⚠️ Teklif dağıtılamadı tag=%s (rolling=0, broadcast=0) — sürücü/konum/ yarıçap kontrolü",
+                    "[normal_ride_no_driver] tag_id=%s passenger_id=%s rolling_and_broadcast_zero=1 radius_km=%s",
                     tag_id,
+                    str(passenger_id or "")[:96],
+                    int(DISPATCH_RADIUS_KM),
                 )
                 try:
                     await sio.emit(

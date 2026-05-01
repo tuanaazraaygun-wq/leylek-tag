@@ -8560,6 +8560,19 @@ function PassengerDashboard({
         throw new Error(`Sunucu yanıtı okunamadı (${res.status})`);
       }
       console.log('CREATE RIDE RESPONSE', data);
+      try {
+        console.log(
+          '[normal_ride_create_response]',
+          JSON.stringify({
+            ok: res.ok,
+            tag_id: (data.tag as Record<string, unknown> | undefined)?.id ?? tagId,
+            eligible_driver_count: data.eligible_driver_count ?? null,
+            dispatch_mode: data.dispatch_mode ?? null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
 
       const detailRaw = data.detail;
       const detailStr = Array.isArray(detailRaw)
@@ -12730,14 +12743,38 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const tripDurN = Number(data.trip_duration_min ?? data.estimated_minutes);
         const tripDur =
           Number.isFinite(tripDurN) && tripDurN > 0 ? tripDurN : null;
+        let pLat = Number(data.pickup_lat);
+        let pLng = Number(data.pickup_lng);
+        if (!Number.isFinite(pLat) || !Number.isFinite(pLng)) {
+          try {
+            console.log(
+              '[normal_ride_driver_offer_filtered]',
+              JSON.stringify({
+                reason: 'dispatch_pending_pickup_fallback',
+                tag_id: data.tag_id ?? null,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+          const fbLat = userLocation?.latitude;
+          const fbLng = userLocation?.longitude;
+          if (Number.isFinite(Number(fbLat)) && Number.isFinite(Number(fbLng))) {
+            pLat = Number(fbLat);
+            pLng = Number(fbLng);
+          } else {
+            pLat = 0;
+            pLng = 0;
+          }
+        }
         const newRow = {
           id: data.tag_id,
           tag_id: data.tag_id,
           request_id: data.tag_id,
           passenger_id: data.passenger_id,
           passenger_name: data.passenger_name || 'Yolcu',
-          pickup_lat: data.pickup_lat,
-          pickup_lng: data.pickup_lng,
+          pickup_lat: pLat,
+          pickup_lng: pLng,
           pickup_address: data.pickup_location,
           pickup_location: data.pickup_location,
           dropoff_lat: data.dropoff_lat,
@@ -13280,14 +13317,41 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           const offN = Number(raw.offered_price ?? raw.final_price);
           const offeredPrice = Number.isFinite(offN) && offN >= 0 ? offN : 0;
 
+          let pickup_lat = Number(raw.pickup_lat);
+          let pickup_lng = Number(raw.pickup_lng);
+          if (!Number.isFinite(pickup_lat) || !Number.isFinite(pickup_lng)) {
+            try {
+              console.log(
+                '[normal_ride_driver_offer_filtered]',
+                JSON.stringify({
+                  reason: 'poll_pickup_coords_fallback_driver_location',
+                  tag_id: id,
+                  raw_pickup_lat: raw.pickup_lat ?? null,
+                  raw_pickup_lng: raw.pickup_lng ?? null,
+                }),
+              );
+            } catch {
+              /* noop */
+            }
+            const fbLat = userLocation?.latitude;
+            const fbLng = userLocation?.longitude;
+            if (Number.isFinite(Number(fbLat)) && Number.isFinite(Number(fbLng))) {
+              pickup_lat = Number(fbLat);
+              pickup_lng = Number(fbLng);
+            } else {
+              pickup_lat = 0;
+              pickup_lng = 0;
+            }
+          }
+
           const row: any = {
             id,
             tag_id: id,
             request_id: String(raw.request_id || id),
             passenger_id: String(raw.passenger_id || ''),
             passenger_name: String(raw.passenger_name || 'Yolcu'),
-            pickup_lat: Number(raw.pickup_lat),
-            pickup_lng: Number(raw.pickup_lng),
+            pickup_lat,
+            pickup_lng,
             pickup_address: String(raw.pickup_location || ''),
             pickup_location: String(raw.pickup_location || ''),
             dropoff_lat: raw.dropoff_lat != null ? Number(raw.dropoff_lat) : undefined,
@@ -13313,7 +13377,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             row.passenger_vehicle_kind =
               pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
           }
-          if (!Number.isFinite(row.pickup_lat) || !Number.isFinite(row.pickup_lng)) continue;
 
           existing.add(id);
           additions.push(row);
