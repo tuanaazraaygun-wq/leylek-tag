@@ -24,6 +24,8 @@ type LeylekTripLiveRideChromeProps = {
   roleTitle: string;
   statusLabel: string;
   statusDetail: string;
+  /** Muhabbet: Zorla Bitir QR oluşturma sırasında da kullanılabilsin (socket/modal sorunu çıkabildiğinde). */
+  forceFinishIgnoresQrBusy?: boolean;
   pickupText: string;
   dropoffText: string;
   agreedPrice?: number | string | null;
@@ -143,6 +145,7 @@ export default function LeylekTripLiveRideChrome({
   modernLeylekOfferUi = false,
   suppressWaitingPolylineBanner = false,
   peerLocationUpdatedAt = null,
+  forceFinishIgnoresQrBusy = false,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
@@ -486,7 +489,7 @@ export default function LeylekTripLiveRideChrome({
                   <Pressable
                     style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
                     onPress={onForceFinish}
-                    disabled={!tripInfoReady || actionBusy || qrBusy}
+                    disabled={!tripInfoReady || actionBusy || (!forceFinishIgnoresQrBusy && qrBusy)}
                   >
                     <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
                       <Ionicons name="warning-outline" size={18} color="#FFF" />
@@ -534,7 +537,7 @@ export default function LeylekTripLiveRideChrome({
                   <Pressable
                     style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
                     onPress={onForceFinish}
-                    disabled={!tripInfoReady || actionBusy || qrBusy}
+                    disabled={!tripInfoReady || actionBusy || (!forceFinishIgnoresQrBusy && qrBusy)}
                   >
                     <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
                       <Ionicons name="warning-outline" size={18} color="#FFF" />
