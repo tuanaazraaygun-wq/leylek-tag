@@ -2129,12 +2129,12 @@ async def notify_trip_session_updated(
         try:
             pr = (
                 supabase.table("muhabbet_trip_passengers")
-                .select("passenger_user_id")
+                .select("*")
                 .eq("session_id", sid)
                 .execute()
             )
             for pr_row in pr.data or []:
-                pu = str(pr_row.get("passenger_user_id") or "").strip().lower()
+                pu = _muhabbet_passenger_uid_from_row(dict(pr_row))
                 if pu:
                     targets.add(pu)
         except Exception as pe:
@@ -23616,27 +23616,52 @@ def _muhabbet_trip_passenger_summary(session_id: str, session_row: dict | None =
     }
 
 
+def _muhabbet_trip_passengers_uid_column() -> str:
+    """Şemada passenger_user_id yerine user_id / passenger_id kullanılıyorsa env ile seçilir."""
+    v = (os.getenv("MUHABBET_TRIP_PASSENGERS_USER_COLUMN") or "").strip()
+    return v if v else "user_id"
+
+
+def _muhabbet_passenger_uid_from_row(pr_row: dict) -> str:
+    """SELECT * sonrası yolcu kullanıcı kimliği — kolon adı ortamlar arası değişebilir."""
+    if not isinstance(pr_row, dict):
+        return ""
+    primary = _muhabbet_trip_passengers_uid_column()
+    u = str(pr_row.get(primary) or "").strip().lower()
+    if u:
+        return u
+    for key in ("passenger_user_id", "user_id", "passenger_id"):
+        if key == primary:
+            continue
+        u2 = str(pr_row.get(key) or "").strip().lower()
+        if u2:
+            return u2
+    return ""
+
+
 def _muhabbet_trip_passengers_update_for_user(session_id: str, passenger_user_id: str, patch: dict) -> None:
     sid = str(session_id or "").strip().lower()
     pid = str(passenger_user_id or "").strip().lower()
     if not sid or not pid or not patch:
         return
+    col = _muhabbet_trip_passengers_uid_column()
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         supabase.table("muhabbet_trip_passengers").update({**patch, "updated_at": now_iso}).eq(
             "session_id", sid
-        ).eq("passenger_user_id", pid).execute()
+        ).eq(col, pid).execute()
     except Exception as e:
         logger.warning(
-            "[muhabbet_trip_passengers] update_failed session_id=%s passenger=%s err=%s",
+            "[muhabbet_trip_passengers] update_failed session_id=%s passenger=%s col=%s err=%s",
             sid[:12],
             pid[:12],
+            col,
             e,
         )
 
 
 def _muhabbet_trip_passenger_upsert_for_session(session_row: dict, conversion_row: dict) -> None:
-    """Accept / session oluşturma sonrası tek yolcu üyeliği (session başına bir passenger_user_id)."""
+    """Accept / session oluşturma sonrası tek yolcu satırı. Yolcu FK kolon adı: MUHABBET_TRIP_PASSENGERS_USER_COLUMN (varsayılan user_id)."""
     sid = str((session_row or {}).get("id") or "").strip().lower()
     cid = str((session_row or {}).get("conversation_id") or (conversion_row or {}).get("conversation_id") or "").strip().lower()
     pid = str((session_row or {}).get("passenger_id") or (conversion_row or {}).get("passenger_id") or "").strip().lower()
@@ -23663,10 +23688,11 @@ def _muhabbet_trip_passenger_upsert_for_session(session_row: dict, conversion_ro
     elif boarded_at or pst in ("active", "started"):
         passenger_status = "onboard"
 
+    col = _muhabbet_trip_passengers_uid_column()
     payload: dict = {
         "session_id": sid,
         "conversation_id": cid,
-        "passenger_user_id": pid,
+        col: pid,
         "driver_user_id": did,
         "status": passenger_status,
         "updated_at": now_iso,
@@ -23696,7 +23722,7 @@ def _muhabbet_trip_passenger_upsert_for_session(session_row: dict, conversion_ro
     try:
         supabase.table("muhabbet_trip_passengers").upsert(
             payload,
-            on_conflict="session_id,passenger_user_id",
+            on_conflict=f"session_id,{col}",
         ).execute()
     except Exception as e:
         logger.warning("[muhabbet_trip_passengers] upsert_failed session_id=%s err=%s", sid[:12], e)
@@ -24179,6 +24205,52 @@ async def _emit_muhabbet_trip_force_finished(session_row: dict, response: str, r
             await emit_socket_event_to_user(target, "muhabbet_trip_force_finished", payload)
 
 
+def _muhabbet_trip_sessions_force_finish_terminal_update(
+    session_id: str,
+    patch: dict,
+    row: dict,
+    *,
+    log_ctx: str,
+) -> dict:
+    """Tam patch boş döner veya hata verirse tek minimal cancelled terminal patch (retry döngüsü yok)."""
+    sid_lo = str(session_id or "").strip().lower()
+    try:
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        if upd.data:
+            return dict(upd.data[0])
+    except Exception as e:
+        logger.warning(
+            "[muhabbet_trip_force_finish] full_patch_failed ctx=%s session_id=%s err=%s",
+            log_ctx,
+            sid_lo[:12],
+            e,
+        )
+    now_iso = str(patch.get("updated_at") or datetime.now(timezone.utc).isoformat())
+    minimal = {
+        "status": "cancelled",
+        "cancelled_at": patch.get("cancelled_at") or now_iso,
+        "call_active": False,
+        "updated_at": now_iso,
+    }
+    try:
+        upd_m = supabase.table("muhabbet_trip_sessions").update(minimal).eq("id", session_id).execute()
+        if upd_m.data:
+            logger.info(
+                "[muhabbet_trip_force_finish] minimal_terminal_patch_ok ctx=%s session_id=%s",
+                log_ctx,
+                sid_lo[:12],
+            )
+            return dict(upd_m.data[0])
+    except Exception as e2:
+        logger.warning(
+            "[muhabbet_trip_force_finish] minimal_terminal_patch_failed ctx=%s session_id=%s err=%s",
+            log_ctx,
+            sid_lo[:12],
+            e2,
+        )
+    return {**row, **minimal}
+
+
 async def _muhabbet_trip_force_finish_apply_accept_cancel(session_id: str, row: dict, responder_uid: str) -> dict:
     """Karşı taraf onayladı — biniş öncesi oturumu hemen iptal et (cancel_reason=forced_accepted)."""
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -24194,15 +24266,10 @@ async def _muhabbet_trip_force_finish_apply_accept_cancel(session_id: str, row: 
         "forced_finish_confirmed_at": now_iso,
         "forced_finish_other_user_response": "accepted",
         "call_active": False,
-        "call_caller_id": None,
-        "call_started_at": None,
-        "call_state": None,
-        "call_channel_name": None,
         "updated_at": now_iso,
     }
     logger.info("[leylek_force_finish_response_patch] session_id=%s %s", sid_lo, json.dumps(patch, ensure_ascii=False))
-    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    next_row = _muhabbet_trip_sessions_force_finish_terminal_update(session_id, patch, row, log_ctx="accept_cancel")
     try:
         await _emit_muhabbet_trip_force_finished(next_row, "accepted", uid_lo)
     except Exception as ee:
@@ -24299,10 +24366,6 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
         "forced_finish_confirmed_at": now_iso,
         "forced_finish_other_user_response": response_val,
         "call_active": False,
-        "call_caller_id": None,
-        "call_started_at": None,
-        "call_state": None,
-        "call_channel_name": None,
         "updated_at": now_iso,
     }
     logger.info(
@@ -24312,8 +24375,7 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
             ensure_ascii=False,
         ),
     )
-    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    next_row = _muhabbet_trip_sessions_force_finish_terminal_update(session_id, patch, row, log_ctx="finalize_timeout")
     logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s terminal=%s", session_id, response_val, next_row.get("status"))
     try:
         await _emit_muhabbet_trip_force_finished(next_row, emit_label, responder_uid)
@@ -24483,9 +24545,6 @@ async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
             "finish_qr_token": None,
             "qr_finish_token": None,
             "call_active": False,
-            "call_caller_id": None,
-            "call_started_at": None,
-            "call_state": None,
             "updated_at": now_iso,
         }
         try:
@@ -25225,18 +25284,13 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
         stale_reset_detail: str | None = None
         if bool(row.get("call_active")):
             age_sec = _muhabbet_call_started_at_age_seconds(row.get("call_started_at"))
+            if age_sec is None:
+                age_sec = _muhabbet_call_started_at_age_seconds(row.get("updated_at"))
             stale = age_sec is None or age_sec > 30.0
             if stale:
                 prev_caller = row.get("call_caller_id")
                 now_iso = datetime.now(timezone.utc).isoformat()
-                reset_patch = {
-                    "call_active": False,
-                    "call_caller_id": None,
-                    "call_started_at": None,
-                    "call_state": None,
-                    "call_channel_name": None,
-                    "updated_at": now_iso,
-                }
+                reset_patch = {"call_active": False, "updated_at": now_iso}
                 upd = supabase.table("muhabbet_trip_sessions").update(reset_patch).eq("id", sid_lo).execute()
                 row = dict(upd.data[0]) if upd.data else {**row, **reset_patch}
                 stale_reset_detail = "CALL_RESET_AND_RETRY"
@@ -25297,14 +25351,7 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
 
         ch_name = f"muhabbet_trip_{sid_lo}"
         now_iso = datetime.now(timezone.utc).isoformat()
-        patch = {
-            "call_active": True,
-            "call_caller_id": uid_lo,
-            "call_started_at": now_iso,
-            "call_state": "ringing",
-            "call_channel_name": ch_name,
-            "updated_at": now_iso,
-        }
+        patch = {"call_active": True, "updated_at": now_iso}
         upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid_lo).execute()
         next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
         payload = {
@@ -25476,9 +25523,6 @@ async def _muhabbet_trip_finish_qr_confirm_apply(uid: str, session_id: str, toke
         "finished_at": now_iso,
         "finished_by_user_id": uid_lo,
         "call_active": False,
-        "call_caller_id": None,
-        "call_started_at": None,
-        "call_state": None,
         "updated_at": now_iso,
     }
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
@@ -25504,9 +25548,6 @@ async def _muhabbet_trip_cancel_apply(uid: str, session_id: str, reason: Optiona
         "cancelled_by_user_id": str(uid).strip().lower(),
         "cancel_reason": reason_clean,
         "call_active": False,
-        "call_caller_id": None,
-        "call_started_at": None,
-        "call_state": None,
         "updated_at": now_iso,
     }
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
@@ -25639,22 +25680,17 @@ async def _muhabbet_trip_call_response_broadcast(uid: str, session_id: str, even
         if not bool(row.get("call_active")):
             raise _MuhabbetTripOpError("no_call", "Aktif çağrı yok.")
         caller = str(row.get("call_caller_id") or "").strip().lower()
-        if not caller:
-            raise _MuhabbetTripOpError("no_call", "Aktif çağrı yok.")
-        if uid_lo == caller:
+        if caller and uid_lo == caller:
             raise _MuhabbetTripOpError("invalid", "Çağrıyı karşı taraf kabul etmeli.")
         cs = str(row.get("call_state") or "").strip().lower()
         if cs == "active":
             raise _MuhabbetTripOpError("invalid", "Çağrı zaten bağlı.")
-        patch = {"call_state": "active", "updated_at": now_iso}
+        patch = {"updated_at": now_iso}
     elif event_name == "muhabbet_trip_call_decline":
         if not bool(row.get("call_active")):
             return _muhabbet_trip_session_public(row)
         patch = {
             "call_active": False,
-            "call_caller_id": None,
-            "call_started_at": None,
-            "call_state": "ended",
             "updated_at": now_iso,
         }
     else:
@@ -25687,9 +25723,6 @@ async def _muhabbet_trip_call_end_broadcast(uid: str, session_id: str) -> dict:
         return _muhabbet_trip_session_public(row)
     patch = {
         "call_active": False,
-        "call_caller_id": None,
-        "call_started_at": None,
-        "call_state": "ended",
         "updated_at": now_iso,
     }
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
