@@ -1,3 +1,7 @@
+/**
+ * Muhabbet Leylek trip — doğruluk kaynağı REST (`GET /muhabbet/trip-sessions/:id` ve ilgili POST’lar).
+ * Socket yalnızca `muhabbet_trip_session_updated` ile GET yenilemesini hızlandırabilir; iş sonucu socket’e bağlı olmamalıdır.
+ */
 export type MuhabbetTripStatus = 'ready' | 'started' | 'active' | 'cancelled' | 'finished' | 'expired';
 
 export type MuhabbetTripSession = {

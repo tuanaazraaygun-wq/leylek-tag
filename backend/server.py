@@ -25754,11 +25754,13 @@ async def muhabbet_trip_boarding_qr_create_post(
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
         await _muhabbet_emit_boarding_qr_created_after_apply(out, session_id, uid)
+        next_pub = _muhabbet_trip_session_public(out["next_row"])
         return {
             "success": True,
             "boarding_qr_token": out["boarding_qr_token"],
             "qr_payload": out["qr_payload"],
             "expires_at": out["expires_at"],
+            "session": next_pub,
         }
     except HTTPException:
         raise
@@ -25898,6 +25900,7 @@ async def muhabbet_trip_finish_qr_create_post(
             "finish_qr_token": payload.get("finish_qr_token"),
             "qr_finish_token": payload.get("qr_finish_token"),
             "expires_at": payload.get("expires_at"),
+            "session": _muhabbet_trip_session_public(next_row),
         }
     except HTTPException:
         raise

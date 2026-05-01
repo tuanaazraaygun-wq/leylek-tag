@@ -57,6 +57,8 @@ type LeylekTripLiveRideChromeProps = {
   callBusy: boolean;
   /** idle iken arama — cooldown / REST sırasında */
   callDialDisabled?: boolean;
+  /** Sesli görüşme geçici kapalı — düğme disabled ve “Yakında” */
+  voiceCallComingSoon?: boolean;
   canStart: boolean;
   canFinish: boolean;
   onShareLocation: () => void;
@@ -130,6 +132,7 @@ export default function LeylekTripLiveRideChrome({
   callState,
   callBusy,
   callDialDisabled = false,
+  voiceCallComingSoon = false,
   canStart,
   canFinish,
   onShareLocation,
@@ -164,8 +167,9 @@ export default function LeylekTripLiveRideChrome({
   useEffect(() => {
     console.log('[leylek-trip-ui] action layout rendered role=%s', isDriver ? 'driver' : 'passenger');
   }, [isDriver]);
-  const callButtonLabel =
-    callState === 'incoming'
+  const callButtonLabel = voiceCallComingSoon
+    ? 'Yakında'
+    : callState === 'incoming'
       ? 'Yanıtla'
       : callState === 'outgoing'
         ? 'Aranıyor'
@@ -174,8 +178,9 @@ export default function LeylekTripLiveRideChrome({
           : isDriver
             ? 'Yolcuyu Ara'
             : 'Sürücüyü Ara';
-  const callButtonIcon: keyof typeof Ionicons.glyphMap =
-    callState === 'incoming'
+  const callButtonIcon: keyof typeof Ionicons.glyphMap = voiceCallComingSoon
+    ? 'time-outline'
+    : callState === 'incoming'
       ? 'call'
       : callState === 'active'
         ? 'call'
@@ -183,6 +188,7 @@ export default function LeylekTripLiveRideChrome({
           ? 'radio'
           : 'call';
   const handleCallPress = () => {
+    if (voiceCallComingSoon) return;
     if (callBusy || callDialDisabled || isTerminal) return;
     if (callState === 'incoming') {
       onJoinCall();
@@ -441,10 +447,16 @@ export default function LeylekTripLiveRideChrome({
             <>
               <Pressable
                 onPress={handleCallPress}
-                disabled={!tripInfoReady || callBusy || isTerminal}
+                disabled={voiceCallComingSoon || !tripInfoReady || callBusy || callDialDisabled || isTerminal}
                 style={({ pressed }) => [
                   styles.modernPrimaryCall,
-                  (pressed || !tripInfoReady || callBusy || isTerminal) && styles.modernPrimaryCallPressed,
+                  (pressed ||
+                    voiceCallComingSoon ||
+                    !tripInfoReady ||
+                    callBusy ||
+                    callDialDisabled ||
+                    isTerminal) &&
+                    styles.modernPrimaryCallPressed,
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={callButtonLabel}
@@ -504,11 +516,16 @@ export default function LeylekTripLiveRideChrome({
               <View style={styles.primaryActionRow} pointerEvents="box-none">
                 <Pressable
                   onPress={handleCallPress}
-                  disabled={!tripInfoReady || callBusy || isTerminal}
+                  disabled={voiceCallComingSoon || !tripInfoReady || callBusy || callDialDisabled || isTerminal}
                   style={({ pressed }) => [
                     styles.primaryCircleButton,
                     styles.callCircleButton,
-                    (pressed || !tripInfoReady || callBusy || isTerminal) && { opacity: 0.72 },
+                    (pressed ||
+                      voiceCallComingSoon ||
+                      !tripInfoReady ||
+                      callBusy ||
+                      callDialDisabled ||
+                      isTerminal) && { opacity: 0.72 },
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel={callButtonLabel}
