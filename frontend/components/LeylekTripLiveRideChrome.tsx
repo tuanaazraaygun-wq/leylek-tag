@@ -28,6 +28,8 @@ type LeylekTripLiveRideChromeProps = {
   forceFinishDisabled?: boolean;
   /** Biniş QR sonrası — Zorla Bitir yerine/yanında gösterilen kısa bilgi */
   forceFinishBoardedHint?: string | null;
+  /** Muhabbet yolculuk: active + biniş onayı — bitiş QR actionBusy/voice ile kilitlenmez */
+  muhabbetFinishQrReady?: boolean;
   pickupText: string;
   dropoffText: string;
   agreedPrice?: number | string | null;
@@ -152,6 +154,7 @@ export default function LeylekTripLiveRideChrome({
   peerLocationUpdatedAt = null,
   forceFinishDisabled = false,
   forceFinishBoardedHint,
+  muhabbetFinishQrReady = false,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
@@ -207,7 +210,12 @@ export default function LeylekTripLiveRideChrome({
       : null;
   const paymentText = paymentLabel(paymentMethod);
   const qrBtnDisabled =
-    !tripInfoReady || actionBusy || qrBusy || !qrInteractionAllowed || isTerminal;
+    isTerminal ||
+    (!qrInteractionAllowed && !muhabbetFinishQrReady) ||
+    qrBusy ||
+    (muhabbetFinishQrReady ? false : !tripInfoReady || actionBusy);
+  /** Finish QR (muhabbet): görünümü tripInfoReady/actionBusy ile grileme */
+  const qrChromeTripReady = tripInfoReady || muhabbetFinishQrReady;
   const qrButtonLabel =
     sessionStatus === 'ready'
       ? isDriver
@@ -215,8 +223,8 @@ export default function LeylekTripLiveRideChrome({
         : 'Biniş QR Oku'
       : sessionStatus === 'active' || sessionStatus === 'started'
         ? isDriver
-          ? 'Yolculuk aktif • Hedefte QR Göster'
-          : 'Yolculuk aktif • Hedefte QR Oku'
+          ? 'Yolculuk aktif · Hedefte QR Göster'
+          : 'Yolculuk aktif · Hedefte QR Oku'
         : isDriver
           ? 'Hedefte QR Göster'
           : 'Hedefte QR Oku';
@@ -489,16 +497,21 @@ export default function LeylekTripLiveRideChrome({
                   <View style={styles.finishActionRow}>
                     <Animated.View style={[styles.finishButton, qrActionActive ? { opacity: pulse } : null]}>
                       <Pressable
-                        style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy) && { opacity: 0.76 }]}
+                        style={({ pressed }) => [
+                          styles.finishButtonPressable,
+                          (pressed || (!muhabbetFinishQrReady && actionBusy)) && { opacity: 0.76 },
+                        ]}
                         onPress={onQrFinish}
                         disabled={qrBtnDisabled}
                       >
                         <LinearGradient
-                          colors={!tripInfoReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                          colors={
+                            !qrChromeTripReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']
+                          }
                           style={styles.finishButtonGradient}
                         >
                           <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                          <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                          <Text style={styles.finishButtonText}>{qrChromeTripReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
                         </LinearGradient>
                       </Pressable>
                     </Animated.View>
@@ -549,16 +562,25 @@ export default function LeylekTripLiveRideChrome({
                 <View style={styles.finishActionRow}>
                   <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
                     <Pressable
-                      style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
+                      style={({ pressed }) => [
+                        styles.finishButtonPressable,
+                        (pressed || (!muhabbetFinishQrReady && actionBusy) || isTerminal) && { opacity: 0.76 },
+                      ]}
                       onPress={onQrFinish}
                       disabled={qrBtnDisabled}
                     >
                       <LinearGradient
-                        colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
+                        colors={
+                          !qrChromeTripReady || isTerminal
+                            ? ['#64748B', '#475569']
+                            : qrActionActive
+                              ? ['#F97316', '#EA580C']
+                              : ['#8B5CF6', '#7C3AED']
+                        }
                         style={styles.finishButtonGradient}
                       >
                         <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
-                        <Text style={styles.finishButtonText}>{tripInfoReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
+                        <Text style={styles.finishButtonText}>{qrChromeTripReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
                       </LinearGradient>
                     </Pressable>
                   </Animated.View>
