@@ -37,16 +37,10 @@ export function extractAccessTokenFromPayload(payload: TokenPayload): string {
 }
 
 export async function persistAccessToken(payload: TokenPayload): Promise<void> {
-  console.log('PERSIST_INPUT_PAYLOAD', payload);
   const token = extractAccessTokenFromPayload(payload);
-  console.log('EXTRACTED_TOKEN', token ? token.length : null);
   const raw = await getPersistedUserRaw();
   if (!raw) {
     if (token) await AsyncStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-    const flatCheck = await AsyncStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-    console.log('FLAT_KEY_AFTER_WRITE', flatCheck ? flatCheck.length : null);
-    const userCheck = await AsyncStorage.getItem(USER_JSON_STORAGE_KEY);
-    console.log('USER_JSON_AFTER_WRITE', userCheck);
   } else {
     try {
       const u = JSON.parse(raw) as Record<string, unknown>;
@@ -55,107 +49,49 @@ export async function persistAccessToken(payload: TokenPayload): Promise<void> {
         u.accessToken = token;
       }
       await setPersistedUserJson(JSON.stringify(u));
-      const flatCheck = await AsyncStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-      console.log('FLAT_KEY_AFTER_WRITE', flatCheck ? flatCheck.length : null);
-      const userCheck = await AsyncStorage.getItem(USER_JSON_STORAGE_KEY);
-      console.log('USER_JSON_AFTER_WRITE', userCheck);
     } catch {
       if (token) await AsyncStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-      const flatCheck = await AsyncStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-      console.log('FLAT_KEY_AFTER_WRITE', flatCheck ? flatCheck.length : null);
-      const userCheck = await AsyncStorage.getItem(USER_JSON_STORAGE_KEY);
-      console.log('USER_JSON_AFTER_WRITE', userCheck);
     }
   }
-
-  const storedUserRaw = await AsyncStorage.getItem(USER_JSON_STORAGE_KEY);
-  console.log('PERSIST_ACCESS_TOKEN_WRITE', {
-    keyUsed: USER_JSON_STORAGE_KEY,
-    storedUserRaw,
-  });
 
   const readBack = await readPersistedAccessTokenQuiet();
-  console.log('PERSIST_ACCESS_TOKEN_READBACK', {
-    hasToken: !!readBack,
-    length: readBack?.length ?? 0,
-  });
-  if (token && !readBack) {
-    console.log('TOKEN_STORAGE_MISMATCH', {
-      reason: 'payload_had_token_but_readBack_empty',
-      payloadTokenLen: token.length,
-      storedUserRawLen: storedUserRaw?.length ?? 0,
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    const storedLen = (await AsyncStorage.getItem(USER_JSON_STORAGE_KEY))?.length ?? 0;
+    console.log('[session_token] persist summary', {
+      extractedLen: token ? token.length : 0,
+      readBackOk: !!readBack,
+      storedUserJsonLen: storedLen,
     });
   }
-
-  const flatSnap = await AsyncStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-  let userAfterWriteHasToken = false;
-  try {
-    const rawSnap = await AsyncStorage.getItem(USER_JSON_STORAGE_KEY);
-    if (rawSnap) {
-      const parsed = JSON.parse(rawSnap) as Record<string, unknown>;
-      userAfterWriteHasToken = !!(parsed.access_token || parsed.accessToken);
-    }
-  } catch {
-    userAfterWriteHasToken = false;
+  if (token && !readBack && typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.warn('[session_token] mismatch after persist — token write/read inconsistent');
   }
-  console.log('TOKEN_FLOW_SUMMARY', {
-    extracted: token ? token.length : null,
-    flatAfterWrite: flatSnap ? 'present' : 'null',
-    userAfterWriteHasToken,
-  });
 }
 
 /**
  * Okuma: önce düz `access_token`, sonra yalnızca `user` anahtarındaki JSON.
- * waitFor / persist readback için (loglu — kök neden teşhisi).
+ * JWT konsola yazılmaz.
  */
 async function readPersistedAccessTokenQuiet(): Promise<string | null> {
-  let token: string | null = null;
-  let summaryFlat = false;
-  let tokenFromUser = false;
-
-  console.log('READ_FLAT_ATTEMPT');
   const flat = await AsyncStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-  summaryFlat = !!(flat && flat.trim());
-  if (summaryFlat) {
-    token = flat!.trim();
-    console.log('TOKEN_FROM_FLAT_KEY', token.length);
-    console.log('TOKEN_READ_SUMMARY', { flat: summaryFlat, user: tokenFromUser });
-    console.log('FINAL_TOKEN_RESULT', !!token);
-    return token;
-  }
+  const ft = flat?.trim();
+  if (ft) return ft;
 
-  console.log('READ_USER_ATTEMPT');
   const rawUser = await AsyncStorage.getItem(USER_JSON_STORAGE_KEY);
-  console.log('READ_TOKEN_RAW_USER', rawUser);
-  if (rawUser) {
-    try {
-      const parsed = JSON.parse(rawUser) as Record<string, unknown>;
-      const t = parsed.access_token || parsed.accessToken;
-      const str = typeof t === 'string' ? t.trim() : '';
-      console.log('TOKEN_FROM_USER_JSON', str ? str.length : null);
-      if (str) {
-        tokenFromUser = true;
-        token = str;
-        console.log('TOKEN_READ_SUMMARY', { flat: summaryFlat, user: tokenFromUser });
-        console.log('FINAL_TOKEN_RESULT', !!token);
-        return str;
-      }
-    } catch (e) {
-      console.log('READ_TOKEN_USER_JSON_PARSE_ERROR', String(e));
-    }
+  if (!rawUser) return null;
+  try {
+    const parsed = JSON.parse(rawUser) as Record<string, unknown>;
+    const t = parsed.access_token || parsed.accessToken;
+    const str = typeof t === 'string' ? t.trim() : '';
+    return str || null;
+  } catch {
+    return null;
   }
-
-  console.log('TOKEN_READ_SUMMARY', { flat: summaryFlat, user: tokenFromUser });
-  console.log('FINAL_TOKEN_RESULT', false);
-  return null;
 }
 
 /** Socket `register` ve korumalı istekler için — önce düz key, sonra kullanıcı JSON. */
 export async function getPersistedAccessToken(): Promise<string | null> {
-  const t = await readPersistedAccessTokenQuiet();
-  console.log('GET_TOKEN_RESULT', t ? { present: true, length: t.length } : { present: false });
-  return t;
+  return readPersistedAccessTokenQuiet();
 }
 
 function sleep(ms: number): Promise<void> {

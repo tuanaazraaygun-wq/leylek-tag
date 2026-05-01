@@ -909,7 +909,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
 
       const fullPayload = { ...payload, session_id: sidActive };
-      console.log(`[leylek-trip] emit event=${eventName} session_id=${sidActive}`, fullPayload);
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log(
+          `[leylek-trip] emit event=${eventName} session_id=${sidActive}`,
+          JSON.stringify({ payloadKeys: Object.keys(payload), session_id: sidActive })
+        );
+      }
       socket.emit(eventName, fullPayload);
       return true;
     },
@@ -955,7 +960,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
       console.log(
         '[leylek_rest_action]',
-        JSON.stringify({ action: opts.action, sessionId: sid, status: res.status, body: json })
+        JSON.stringify({
+          action: opts.action,
+          sessionId: sid,
+          status: res.status,
+          ok: res.ok,
+          success: json.success,
+          keys: Object.keys(json),
+        })
       );
       return { ok: res.ok, status: res.status, json };
     },
@@ -1391,7 +1403,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
     const legacyTripSocketRefresh = (eventLabel: string, payload?: unknown) => {
       if (__DEV__) {
-        console.log('[leylek-trip] legacy_socket_debug', JSON.stringify({ event: eventLabel, payload }));
+        const callLike = /_call_|incoming_call|agora|token/i.test(eventLabel);
+        if (callLike && payload && typeof payload === 'object') {
+          const p = payload as Record<string, unknown>;
+          console.log(
+            '[leylek-trip] legacy_socket_debug',
+            JSON.stringify({
+              event: eventLabel,
+              session_id: p.session_id ?? p.sessionId ?? null,
+              keys: Object.keys(p),
+            })
+          );
+        } else {
+          console.log('[leylek-trip] legacy_socket_debug', JSON.stringify({ event: eventLabel, payload }));
+        }
       }
       const urgent = HIGH_PRIORITY_LEGACY_TRIP_EVENTS.has(eventLabel);
       if (!urgent && !legacyTripUiIdle()) {
@@ -1424,7 +1449,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const myLo = String(myId || '').trim().toLowerCase();
       const targetLo = String(payload.target_user_id || '').trim().toLowerCase();
       const callerLo = String(payload.caller_id || '').trim().toLowerCase();
-      if (!myLo || targetLo !== myLo || callerLo === myLo) return;
+      // Arayan taraf: gelen arama / zil yok (REST + yerel outgoing yeterli)
+      if (!myLo || callerLo === myLo) return;
+      if (targetLo !== myLo) return;
       const sidNormLocal = activeSessionId;
       const dismissKey = callerLo && sidNormLocal ? `${sidNormLocal}:${callerLo}` : '';
       const suppressed =
@@ -1703,56 +1730,54 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       console.log('[leylek_ui_instant]', JSON.stringify({ flow: 'call_outgoing', actionId: callActionId }));
       try {
         const rest = await muhabbetTripSessionRestPost({ action: 'call_start', pathSuffix: 'call/start' });
-        if (
-          rest.ok &&
-          rest.json.success === true &&
-          rest.json.call &&
-          typeof rest.json.call === 'object'
-        ) {
-          if (callActionId !== latestCallActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
-            return;
-          }
-          latestCallActionIdRef.current = null;
-          setCallPayload(rest.json.call as MuhabbetTripCallSocketPayload);
-          const sess = rest.json.session;
-          if (sess && typeof sess === 'object') {
-            setSession(sess as MuhabbetTripSession);
-          }
-          void refreshSessionFromServer('call_start_rest', { bypassDebounce: true });
-          clearOptimistic('call_start');
-          callOutgoingStartedAtRef.current = 0;
-          callStartInFlightRef.current = false;
-          setCallBusy(false);
-          return;
-        }
         if (callActionId !== latestCallActionIdRef.current) {
           console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
           return;
         }
+
+        if (rest.ok && rest.json.success === true) {
+          latestCallActionIdRef.current = null;
+          const callObj = rest.json.call as MuhabbetTripCallSocketPayload | undefined;
+          const sessRaw = rest.json.session;
+          const sess = sessRaw && typeof sessRaw === 'object' ? (sessRaw as MuhabbetTripSession) : null;
+          if (callObj && typeof callObj === 'object') {
+            setCallPayload(callObj);
+          } else if (sess) {
+            const sidN = normalizeMuhabbetSessionId(sess.id);
+            const passengerLo = String(sess.passenger_id || '').trim().toLowerCase();
+            const driverLo = String(sess.driver_id || '').trim().toLowerCase();
+            const callerLo = String(sess.caller_id || myLo).trim().toLowerCase();
+            const targetLo = callerLo === passengerLo ? driverLo : passengerLo;
+            setCallPayload({
+              session_id: sidN,
+              conversation_id: sess.conversation_id ?? undefined,
+              channel_name: String(sess.call_channel_name || `muhabbet_trip_${sidN}`),
+              caller_id: callerLo,
+              target_user_id: targetLo,
+              started_at: sess.call_started_at ?? undefined,
+            });
+          }
+          if (sess) {
+            setSession(sess);
+          }
+          setCallState('outgoing');
+          callOutgoingStartedAtRef.current = Date.now();
+          void refreshSessionFromServer('call_start_rest', { bypassDebounce: true });
+          clearOptimistic('call_start');
+          unlockState('call');
+          callStartInFlightRef.current = false;
+          setCallBusy(false);
+          return;
+        }
+
         unlockState('call');
         setCallState('idle');
         setCallPayload(null);
         clearOptimistic('call_start');
         callOutgoingStartedAtRef.current = 0;
-        const okSocket = await emitMuhabbetTripEventEnsured('start_call', 'muhabbet_trip_call_start', {}, {
-          suppressConnectionRenewAlert: true,
-        });
-        if (!okSocket) {
-          const det = typeof rest.json.detail === 'string' ? rest.json.detail : '';
-          if (det) Alert.alert('Muhabbet yolculuk', det);
-        } else {
-          if (callActionId !== latestCallActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
-          } else {
-            latestCallActionIdRef.current = null;
-            callStartInFlightRef.current = false;
-            setCallBusy(false);
-            void refreshSessionFromServer('call_start_socket_fallback', { bypassDebounce: true });
-            clearOptimistic('call_start');
-            callOutgoingStartedAtRef.current = 0;
-          }
-        }
+        const det = muhabbetTripRestDetail(rest.json.detail, 'Arama başlatılamadı.');
+        if (det) Alert.alert('Muhabbet yolculuk', det);
+        void refreshSessionFromServer('call_start_rest_fail', { bypassDebounce: true });
       } catch {
         if (callActionId !== latestCallActionIdRef.current) {
           console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
@@ -1775,7 +1800,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     callBusy,
     callStartCooldownUntil,
     clearOptimistic,
-    emitMuhabbetTripEventEnsured,
     getActiveMuhabbetSessionId,
     isDriver,
     isTerminal,
@@ -1941,23 +1965,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           }
           await refreshSessionFromServer('call_accept_rest', { bypassDebounce: true });
           clearOptimistic('call_accept');
+          unlockState('call');
           return;
         }
         setCallState(snapState);
         setCallPayload(snapPayload);
         clearOptimistic('call_accept');
         unlockState('call');
-        await refreshSessionFromServer('call_accept_fail', { bypassDebounce: true });
-        const okSocket = await emitMuhabbetTripEventEnsured(
-          'call_accept',
-          'muhabbet_trip_call_accept',
-          {},
-          { suppressConnectionRenewAlert: true }
-        );
-        if (okSocket) {
-          await refreshSessionFromServer('call_accept_socket_fallback', { bypassDebounce: true });
-          clearOptimistic('call_accept');
-        }
+        const msg = muhabbetTripRestDetail(rest.json.detail, 'Çağrı kabul edilemedi.');
+        if (msg) Alert.alert('Muhabbet yolculuk', msg);
+        await refreshSessionFromServer('call_accept_rest_fail', { bypassDebounce: true });
       } catch {
         clearOptimistic('call_accept');
         unlockState('call');
@@ -1971,7 +1988,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     callPayload,
     callState,
     clearOptimistic,
-    emitMuhabbetTripEventEnsured,
     getActiveMuhabbetSessionId,
     muhabbetTripSessionRestPost,
     refreshSessionFromServer,
@@ -1999,24 +2015,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           recordDismissForCall(String(snapPayload?.caller_id || ''));
           void refreshSessionFromServer('call_decline_rest', { bypassDebounce: true });
           clearOptimistic('call_decline');
+          unlockState('call');
           return;
         }
         setCallPayload(snapPayload);
         setCallState(snapState);
         clearOptimistic('call_decline');
         unlockState('call');
-        void refreshSessionFromServer('call_decline_fail', { bypassDebounce: true });
-        const okSocket = await emitMuhabbetTripEventEnsured(
-          'call_decline',
-          'muhabbet_trip_call_decline',
-          {},
-          { showSessionMissingAlert: false, suppressConnectionRenewAlert: true }
-        );
-        if (okSocket) {
-          recordDismissForCall(String(snapPayload?.caller_id || ''));
-          void refreshSessionFromServer('call_decline_socket_fallback', { bypassDebounce: true });
-          clearOptimistic('call_decline');
-        }
+        const msg = muhabbetTripRestDetail(rest.json.detail, 'Çağrı reddedilemedi.');
+        if (msg) Alert.alert('Muhabbet yolculuk', msg);
+        void refreshSessionFromServer('call_decline_rest_fail', { bypassDebounce: true });
       } catch {
         clearOptimistic('call_decline');
         unlockState('call');
@@ -2030,7 +2038,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     callPayload,
     callState,
     clearOptimistic,
-    emitMuhabbetTripEventEnsured,
     muhabbetTripSessionRestPost,
     recordDismissForCall,
     refreshSessionFromServer,
@@ -2058,24 +2065,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           recordDismissForCall(String(snapPayload?.caller_id || sessionRef.current?.caller_id || ''));
           void refreshSessionFromServer('call_end_rest', { bypassDebounce: true });
           clearOptimistic('call_end');
+          unlockState('call');
           return;
         }
         setCallPayload(snapPayload);
         setCallState(snapState);
         clearOptimistic('call_end');
         unlockState('call');
-        void refreshSessionFromServer('call_end_fail', { bypassDebounce: true });
-        const okSocket = await emitMuhabbetTripEventEnsured(
-          'call_end',
-          'muhabbet_trip_call_end',
-          {},
-          { showSessionMissingAlert: false, suppressConnectionRenewAlert: true }
-        );
-        if (okSocket) {
-          recordDismissForCall(String(snapPayload?.caller_id || sessionRef.current?.caller_id || ''));
-          void refreshSessionFromServer('call_end_socket_fallback', { bypassDebounce: true });
-          clearOptimistic('call_end');
-        }
+        const msg = muhabbetTripRestDetail(rest.json.detail, 'Çağrı sonlandırılamadı.');
+        if (msg) Alert.alert('Muhabbet yolculuk', msg);
+        void refreshSessionFromServer('call_end_rest_fail', { bypassDebounce: true });
       } catch {
         clearOptimistic('call_end');
         unlockState('call');
@@ -2089,7 +2088,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     callPayload,
     callState,
     clearOptimistic,
-    emitMuhabbetTripEventEnsured,
     muhabbetTripSessionRestPost,
     recordDismissForCall,
     refreshSessionFromServer,
