@@ -24,8 +24,8 @@ type LeylekTripLiveRideChromeProps = {
   roleTitle: string;
   statusLabel: string;
   statusDetail: string;
-  /** Muhabbet: Zorla Bitir QR oluşturma sırasında da kullanılabilsin (socket/modal sorunu çıkabildiğinde). */
-  forceFinishIgnoresQrBusy?: boolean;
+  /** Zorla Bitir — yalnızca terminal veya bekleyen zorla bitir için true */
+  forceFinishDisabled?: boolean;
   pickupText: string;
   dropoffText: string;
   agreedPrice?: number | string | null;
@@ -148,7 +148,7 @@ export default function LeylekTripLiveRideChrome({
   modernLeylekOfferUi = false,
   suppressWaitingPolylineBanner = false,
   peerLocationUpdatedAt = null,
-  forceFinishIgnoresQrBusy = false,
+  forceFinishDisabled = false,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.45)).current;
@@ -499,11 +499,14 @@ export default function LeylekTripLiveRideChrome({
                     </Pressable>
                   </Animated.View>
                   <Pressable
-                    style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
+                    style={({ pressed }) => [styles.finishButton, (pressed || forceFinishDisabled) && { opacity: 0.76 }]}
                     onPress={onForceFinish}
-                    disabled={!tripInfoReady || actionBusy || (!forceFinishIgnoresQrBusy && qrBusy)}
+                    disabled={forceFinishDisabled}
                   >
-                    <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
+                    <LinearGradient
+                      colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
+                      style={styles.finishButtonGradient}
+                    >
                       <Ionicons name="warning-outline" size={18} color="#FFF" />
                       <Text style={styles.finishButtonText}>Zorla Bitir</Text>
                     </LinearGradient>
@@ -552,11 +555,14 @@ export default function LeylekTripLiveRideChrome({
                 </Animated.View>
                 {!isTerminal ? (
                   <Pressable
-                    style={({ pressed }) => [styles.finishButton, (pressed || !tripInfoReady || actionBusy) && { opacity: 0.76 }]}
+                    style={({ pressed }) => [styles.finishButton, (pressed || forceFinishDisabled) && { opacity: 0.76 }]}
                     onPress={onForceFinish}
-                    disabled={!tripInfoReady || actionBusy || (!forceFinishIgnoresQrBusy && qrBusy)}
+                    disabled={forceFinishDisabled}
                   >
-                    <LinearGradient colors={!tripInfoReady ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']} style={styles.finishButtonGradient}>
+                    <LinearGradient
+                      colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
+                      style={styles.finishButtonGradient}
+                    >
                       <Ionicons name="warning-outline" size={18} color="#FFF" />
                       <Text style={styles.finishButtonText}>Zorla Bitir</Text>
                     </LinearGradient>

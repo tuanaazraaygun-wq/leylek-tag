@@ -519,6 +519,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     return st === 'ready' || st === 'active' || st === 'started';
   }, [session]);
 
+  /** Terminal veya bekleyen zorla bitir dışında ana ekranda Zorla Bitir açık */
+  const forceFinishDisabled = useMemo(() => {
+    if (!session) return true;
+    const st = String(session.status || '').trim().toLowerCase();
+    if (TERMINAL_TRIP_STATUSES.has(st)) return true;
+    if (!['ready', 'active', 'started'].includes(st)) return true;
+    const ff = String(session.force_finish_state || '').trim().toLowerCase();
+    return ff === 'pending';
+  }, [session]);
+
   sessionRef.current = session;
   callStateRef.current = callState;
   callPayloadRef.current = callPayload;
@@ -2276,9 +2286,30 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   );
 
   const requestForceFinish = useCallback(() => {
-    if (!session || isTerminal) return;
+    const sid = getActiveMuhabbetSessionId() || effectiveSessionId;
+    const st = String(session?.status || '').trim().toLowerCase();
+    const ff = String(session?.force_finish_state || '').trim().toLowerCase();
+    const terminal = TERMINAL_TRIP_STATUSES.has(st);
+    const ffPending = ff === 'pending';
+    let disabledReason: string | null = null;
+    if (!session) disabledReason = 'no_session';
+    else if (terminal) disabledReason = 'terminal';
+    else if (!['ready', 'active', 'started'].includes(st)) disabledReason = 'bad_status';
+    else if (ffPending) disabledReason = 'force_finish_pending';
+
+    console.log(
+      '[leylek_force_finish_press]',
+      JSON.stringify({
+        sessionId: sid || null,
+        status: st || null,
+        forceState: ff || null,
+        terminal,
+        disabledReason,
+      })
+    );
+    if (disabledReason) return;
     setForceFinishWarningVisible(true);
-  }, [isTerminal, session]);
+  }, [effectiveSessionId, getActiveMuhabbetSessionId, session]);
 
   const confirmForceFinishRequest = useCallback(() => {
     if (forceFinishInFlightRef.current) return;
@@ -2305,10 +2336,39 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       touchOptimistic('force_finish_request');
       setForceFinishRequestOptimistic(true);
       try {
-        const rest = await muhabbetTripSessionRestPost({
-          action: 'force_finish_request',
-          pathSuffix: 'force-finish/request',
+        const sid =
+          getActiveMuhabbetSessionId() ||
+          normalizeMuhabbetSessionId(sessionRef.current?.id || sessionRef.current?.session_id) ||
+          effectiveSessionId;
+        const token = (await getPersistedAccessToken())?.trim() || '';
+        const base = apiBaseUrl.replace(/\/$/, '');
+        const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/force-finish/request`;
+        console.log('[leylek_force_finish_post]', url);
+        if (!sid || !token) {
+          if (ffReqActionId !== latestForceFinishActionIdRef.current) {
+            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_force_finish_response' }));
+            return;
+          }
+          setForceFinishRequestOptimistic(false);
+          clearOptimistic('force_finish_request');
+          unlockState('forceFinish');
+          Alert.alert('Muhabbet yolculuk', 'Oturum veya kimlik doğrulaması eksik; zorla bitir gönderilemedi.');
+          return;
+        }
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
         });
+        let json: Record<string, unknown> = {};
+        try {
+          json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        } catch {
+          json = {};
+        }
+        console.log('[leylek_force_finish_response]', JSON.stringify({ status: res.status, ok: res.ok, body: json }));
+        const rest = { ok: res.ok, status: res.status, json };
+
         if (isMuhabbetTripRestOk(rest)) {
           if (ffReqActionId !== latestForceFinishActionIdRef.current) {
             console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_force_finish_response' }));
@@ -2348,9 +2408,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
     })();
   }, [
+    apiBaseUrl,
     clearOptimistic,
+    effectiveSessionId,
+    getActiveMuhabbetSessionId,
     lockState,
-    muhabbetTripSessionRestPost,
     refreshSessionFromServer,
     touchOptimistic,
     unlockState,
@@ -2516,7 +2578,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         peerLocationUpdatedAt={
           isDriver ? session.passenger_location_updated_at ?? null : session.driver_location_updated_at ?? null
         }
-        forceFinishIgnoresQrBusy
+        forceFinishDisabled={forceFinishDisabled}
         pickupText={session.pickup_text || 'Sohbette belirlenen alış noktası'}
         dropoffText={session.dropoff_text || 'Sohbette belirlenen varış noktası'}
         agreedPrice={session.agreed_price}
@@ -2660,12 +2722,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               Zorla bitirme -5 puan etkileyebilir. Karşı tarafın yanıtı kayıt altına alınır.
             </Text>
             <Pressable
-              style={({ pressed }) => [
-                styles.forceButton,
-                pressed && { opacity: 0.9 },
-                actionBusy && { opacity: 0.55 },
-              ]}
-              disabled={actionBusy}
+              style={({ pressed }) => [styles.forceButton, pressed && { opacity: 0.9 }]}
               onPress={confirmForceFinishRequest}
             >
               <Ionicons name="warning-outline" size={18} color="#FFFFFF" />

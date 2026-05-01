@@ -25962,6 +25962,7 @@ async def muhabbet_trip_force_finish_request_post(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     sid_lo = str(session_id or "").strip().lower()
     t0 = time.perf_counter()
+    logger.info("[leylek_force_finish_request_in] session_id=%s", sid_lo)
     try:
         payload, _nr, skip = await _muhabbet_trip_force_finish_request_apply(uid, session_id)
         ru = str(payload.get("requester_user_id") or "").strip().lower()

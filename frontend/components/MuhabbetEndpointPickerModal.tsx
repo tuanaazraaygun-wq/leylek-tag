@@ -92,7 +92,20 @@ export default function MuhabbetEndpointPickerModal({
   );
 
   const cityTrim = (cityContext || city || '').trim();
-  const staticCityCenter = useMemo(() => getRegisteredCityCenter(cityTrim), [cityTrim]);
+
+  const inferredCityFromMapBias = useMemo(() => {
+    if (cityTrim) return '';
+    const lat = biasLatitude;
+    const lng = biasLongitude;
+    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return '';
+    }
+    return isLatLngWithinRegisteredCity('Ankara', lat, lng) ? 'Ankara' : '';
+  }, [cityTrim, biasLatitude, biasLongitude]);
+
+  const effectiveCityLabel = (cityTrim || inferredCityFromMapBias || '').trim();
+
+  const staticCityCenter = useMemo(() => getRegisteredCityCenter(effectiveCityLabel), [effectiveCityLabel]);
   const effectiveCityCenter = staticCityCenter ?? resolvedCityCenter;
   const searchBiasLatitude = effectiveCityCenter?.latitude ?? biasLatitude;
   const searchBiasLongitude = effectiveCityCenter?.longitude ?? biasLongitude;
@@ -107,7 +120,7 @@ export default function MuhabbetEndpointPickerModal({
 
   /** CITY_DATA dışı şehirler: harita/bias Ankara fallback'e düşmesin diye Nominatim ile merkez çöz */
   useEffect(() => {
-    if (!visible || !cityTrim) {
+    if (!visible || !effectiveCityLabel) {
       cityLookupGenRef.current += 1;
       setResolvedCityCenter(null);
       return;
@@ -120,7 +133,7 @@ export default function MuhabbetEndpointPickerModal({
     const gen = ++cityLookupGenRef.current;
     void (async () => {
       try {
-        const q = encodeURIComponent(`${cityTrim}, Türkiye`);
+        const q = encodeURIComponent(`${effectiveCityLabel}, Türkiye`);
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`;
         const response = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
         const data = (await response.json()) as { lat?: string; lon?: string }[];
@@ -137,7 +150,7 @@ export default function MuhabbetEndpointPickerModal({
         if (gen === cityLookupGenRef.current) setResolvedCityCenter(null);
       }
     })();
-  }, [visible, cityTrim, staticCityCenter]);
+  }, [visible, effectiveCityLabel, staticCityCenter]);
 
   useEffect(() => {
     if (!visible) {
@@ -148,7 +161,7 @@ export default function MuhabbetEndpointPickerModal({
     const lat = effectiveCityCenter?.latitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
     const lng = effectiveCityCenter?.longitude ?? DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
     setPin({ latitude: lat, longitude: lng });
-  }, [visible, cityTrim, effectiveCityCenter?.latitude, effectiveCityCenter?.longitude, reset]);
+  }, [visible, effectiveCityLabel, effectiveCityCenter?.latitude, effectiveCityCenter?.longitude, reset]);
 
   useEffect(() => {
     if (!visible || phase !== 'search' || !pin) return;
@@ -178,7 +191,7 @@ export default function MuhabbetEndpointPickerModal({
 
   const finalizeCommit = useCallback(
     async (address: string, lat: number, lng: number, mapPinConfirmed: boolean) => {
-      if (!isLatLngWithinRegisteredCity(cityTrim, lat, lng)) {
+      if (!isLatLngWithinRegisteredCity(effectiveCityLabel, lat, lng)) {
         Alert.alert(
           'Şehir sınırı',
           'Seçim yalnızca seçili şehir içinde olabilir. Lütfen haritada veya aramada şehir içi bir nokta seçin.',
@@ -194,7 +207,7 @@ export default function MuhabbetEndpointPickerModal({
       });
       onRequestClose();
     },
-    [cityTrim, onCommitted, onRequestClose],
+    [effectiveCityLabel, onCommitted, onRequestClose],
   );
 
   const onSearchPick = useCallback(
@@ -203,7 +216,7 @@ export default function MuhabbetEndpointPickerModal({
       const lat = Number(place.latitude);
       const lng = Number(place.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-      if (!isLatLngWithinRegisteredCity(cityTrim, lat, lng)) {
+      if (!isLatLngWithinRegisteredCity(effectiveCityLabel, lat, lng)) {
         Alert.alert('Şehir sınırı', 'Bu öneri seçili şehir dışında görünüyor. Şehir içi bir adres seçin.');
         return;
       }
@@ -224,7 +237,7 @@ export default function MuhabbetEndpointPickerModal({
         }
       });
     },
-    [cityTrim, finalizeCommit, useMap],
+    [effectiveCityLabel, finalizeCommit, useMap],
   );
 
   const onRegionComplete = useCallback((region: { latitude: number; longitude: number }) => {
@@ -268,17 +281,17 @@ export default function MuhabbetEndpointPickerModal({
         <PlacesAutocomplete
           key={acMountKey}
           placeholder="Mahalle, sokak, mekan ara…"
-          city={cityTrim}
+          city={effectiveCityLabel}
           hidePopularChips
           visualVariant="tech"
           suggestionsFirst={false}
-          strictCityBounds={!!cityTrim}
+          strictCityBounds={!!effectiveCityLabel}
           biasLatitude={searchBiasLatitude}
           biasLongitude={searchBiasLongitude}
           biasDeltaDeg={0.22}
           inputSize="large"
           predictionMaxHeightBonus={56}
-          forceCityInSearch={!!cityTrim}
+          forceCityInSearch={!!effectiveCityLabel}
           onPlaceSelected={onSearchPick}
         />
       </View>
@@ -290,7 +303,7 @@ export default function MuhabbetEndpointPickerModal({
       <View style={styles.root}>
         {EndpointMapView && useMap ? (
           <EndpointMapView
-            key={`endpoint-map-${cityTrim}-${acMountKey}`}
+            key={`endpoint-map-${effectiveCityLabel}-${acMountKey}`}
             ref={mapRef}
             style={StyleSheet.absoluteFillObject}
             provider={EndpointMapProvider}

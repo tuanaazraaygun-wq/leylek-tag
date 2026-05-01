@@ -239,6 +239,54 @@ function buildOrderedSearchVariants(
     });
 }
 
+/**
+ * Muhabbet/Leylek — Ankara bağlamında kısa sorgular (ör. Çankaya) için önce tam nitelikli varyantlar.
+ */
+function prependAnkaraQualifiedVariants(
+  rawInput: string,
+  effectiveCityKey: string | null,
+  explicitOtherKey: string | null,
+  existing: string[],
+): string[] {
+  const ankActive =
+    effectiveCityKey === 'Ankara' && (!explicitOtherKey || explicitOtherKey === 'Ankara');
+  if (!ankActive) return existing;
+
+  const head = rawInput.trim().replace(/\s+/g, ' ');
+  if (head.length < 2) return existing;
+
+  const nHead = normalizeText(head);
+  if (nHead.includes(normalizeText('Ankara'))) return existing;
+  if (/\bt[uü]rkiye\b/i.test(head) || /\bturkey\b/i.test(head)) return existing;
+
+  const extras: string[] = [
+    `${head}, Ankara, Türkiye`,
+    `${head} Mahallesi, Ankara, Türkiye`,
+    `${head} İlçesi, Ankara, Türkiye`,
+    `${foldTrAscii(head)}, Ankara, Turkey`,
+  ];
+
+  if (nHead.includes('cankaya')) {
+    extras.push(
+      'Çankaya, Ankara, Türkiye',
+      'Çankaya Mahallesi, Ankara, Türkiye',
+      'Çankaya İlçesi, Ankara, Türkiye',
+      'Cankaya, Ankara, Turkey',
+    );
+  }
+
+  const seen = new Set(existing.map((s) => normCityNeedle(s)));
+  const front: string[] = [];
+  for (const s of extras) {
+    const t = s.trim().replace(/\s+/g, ' ');
+    const k = normCityNeedle(t);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    front.push(t);
+  }
+  return [...front, ...existing];
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toR = (d: number) => (d * Math.PI) / 180;
@@ -797,6 +845,8 @@ export default function PlacesAutocomplete({
     let enteredNominatim = false;
     let anyNomRaw = false;
     let nomFinalLenBeforeCap = 0;
+    let nominatimRawTotal = 0;
+    let diagFallbackUsed = false;
     if (SHOW_PLACES_DIAG) setSearchDiag(null);
     try {
       const cityKeyHome = resolveCityDataKey(city);
@@ -804,7 +854,8 @@ export default function PlacesAutocomplete({
       const explicitOtherKey = explicitOtherMajorCityKeyFromQuery(input, cityKeyHome);
       const effectiveCityKey = explicitOtherKey || cityKeyHome;
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
-      const searchVariants = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
+      let searchVariants = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
+      searchVariants = prependAnkaraQualifiedVariants(input, effectiveCityKey, explicitOtherKey, searchVariants);
       const primarySearchQuery = searchVariants[0] || input.trim();
       const sortNeedle = effectiveCityKey || cityLabel;
         const compareRows = (a: PlaceResult, b: PlaceResult): number => {
@@ -916,6 +967,7 @@ export default function PlacesAutocomplete({
                   geoFiltered = geoMapped.filter((item) => passesSoftLocality(item, geoOpts));
                 }
                 if (geoFiltered.length === 0 && geoMapped.length > 0) {
+                  diagFallbackUsed = true;
                   geoFiltered = pickRawFallbackTop(geoMapped, input, sortNeedle, 10);
                 }
                 geoFiltered.sort(compareRows);
@@ -932,6 +984,40 @@ export default function PlacesAutocomplete({
                 if (filtered.length > 0) break googleGeo;
               } catch {
                 filtered = [];
+              }
+            }
+
+            if (filtered.length === 0 && strictCityBounds && gBias?.strictBounds) {
+              const gBiasLoose: GoogleAutocompleteBias = { ...gBias, strictBounds: false };
+              looseAuto: for (const qTry of searchVariants) {
+                acDiag('AUTOCOMPLETE_PROVIDER_START', {
+                  provider: 'google_autocomplete_loose',
+                  query: qTry,
+                  city_label: cityLabel || null,
+                  request_id: requestId,
+                });
+                const rawLoose = await googlePlacesAutocompleteMerged(qTry, apiKey, gBiasLoose);
+                if (requestId !== autocompleteRequestIdRef.current) {
+                  return;
+                }
+                if (rawLoose.length > 0) {
+                  googleRawLen = googleRawLen ?? rawLoose.length;
+                  const nextLoose = rawLoose.map(mapGooglePredictionToPlaceResult);
+                  nextLoose.sort(compareRows);
+                  const gCapLoose = widerSearch && !strictCityBounds ? 24 : strictCityBounds ? 20 : 14;
+                  filtered = nextLoose.slice(0, gCapLoose);
+                  acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+                    provider: 'google',
+                    query: qTry,
+                    city_label: cityLabel || null,
+                    raw_result_count: rawLoose.length,
+                    final_result_count: filtered.length,
+                    error_message: null,
+                    request_id: requestId,
+                    phase: 'autocomplete_loose_bounds',
+                  });
+                  break looseAuto;
+                }
               }
             }
           }
@@ -1064,6 +1150,7 @@ export default function PlacesAutocomplete({
           }
 
           if (rowsIn.length === 0 && afterTypeFilter.length > 0) {
+            diagFallbackUsed = true;
             rowsIn = pickRawFallbackTop(afterTypeFilter, input, sortNeedle, 10);
           }
 
@@ -1100,24 +1187,26 @@ export default function PlacesAutocomplete({
           request_id: requestId,
         });
 
+        const looseAccum: PlaceResult[] = [];
         if (nom.length < 5 && strictCityBounds) {
-          const looseAll: PlaceResult[] = [];
           for (const variant of searchVariants) {
             const looseRows = await runFetch(variant, false, 35);
             if (requestId !== autocompleteRequestIdRef.current) {
               return;
             }
-            looseAll.push(...looseRows);
+            looseAccum.push(...looseRows);
             anyNomRaw = anyNomRaw || looseRows.length > 0;
-            if (looseRows.length > 0 && looseAll.length >= 24) break;
+            if (looseRows.length > 0 && looseAccum.length >= 24) break;
           }
           const byId = new Map<string, PlaceResult>();
-          for (const r of [...dedupePlaceResults(pooledBounded), ...looseAll]) {
+          for (const r of [...dedupePlaceResults(pooledBounded), ...looseAccum]) {
             const id = String(r.place_id || `${r.lat},${r.lon}`);
             if (!byId.has(id)) byId.set(id, r);
           }
           nom = filterAndRank(Array.from(byId.values()));
         }
+
+        nominatimRawTotal = dedupePlaceResults([...pooledBounded, ...looseAccum]).length;
 
         const nCap = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
         nomFinalLenBeforeCap = nom.length;
@@ -1138,6 +1227,18 @@ export default function PlacesAutocomplete({
       }
 
       if (SHOW_PLACES_DIAG) {
+        console.log(
+          '[places_search_diag]',
+          JSON.stringify({
+            query: input.trim(),
+            city: (city || '').trim(),
+            variants: searchVariants,
+            googleCount: googleRawLen ?? 0,
+            nominatimCount: nominatimRawTotal,
+            filteredCount: filtered.length,
+            fallbackUsed: diagFallbackUsed,
+          }),
+        );
         if (filtered.length > 0) {
           setSearchDiag(null);
         } else {
