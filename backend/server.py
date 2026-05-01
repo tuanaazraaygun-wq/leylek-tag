@@ -23715,7 +23715,7 @@ def _muhabbet_trip_force_finish_state_public(row: dict) -> str | None:
     conf_at = row.get("forced_finish_confirmed_at")
     if conf_at:
         other = str(row.get("forced_finish_other_user_response") or "").strip().lower()
-        if other == "timeout":
+        if other in ("timeout", "timeout_auto_accepted"):
             return "timeout"
         if other == "declined":
             return "declined"
@@ -23795,6 +23795,7 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "forced_finish_started_at": row.get("forced_finish_started_at"),
         "forced_finish_timeout_at": row.get("forced_finish_timeout_at"),
         "forced_finish_request_id": row.get("forced_finish_request_id"),
+        "forced_finish_resolved_at": row.get("forced_finish_resolved_at"),
         "finish_score_delta": row.get("finish_score_delta"),
         "finish_note": row.get("finish_note"),
         "boarding_qr_token": row.get("boarding_qr_token"),
@@ -24185,23 +24186,26 @@ def _muhabbet_force_finish_log(action: str, session_id: str, state: str, ms: int
     )
 
 
-async def _muhabbet_trip_force_finish_finalize_row(
+async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
     session_id: str,
     row: dict,
-    response: str,
+    *,
+    finish_method_val: str,
+    response_val: str,
     responder_uid: Optional[str],
+    emit_label: str,
 ) -> dict:
-    """response: accepted | declined | timeout"""
+    """Karşı taraf onayı veya süre dolumu — oturumu finished yapar. response_val: accepted | timeout_auto_accepted."""
     now_iso = datetime.now(timezone.utc).isoformat()
     requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
     patch = {
         "status": "finished",
-        "finish_method": "forced",
+        "finish_method": finish_method_val,
         "finish_score_delta": -3,
-        "finish_note": f"Forced Muhabbet finish ({response})",
+        "finish_note": f"Forced Muhabbet finish ({response_val})",
         "forced_finish_confirmed_by_user_id": responder_uid,
         "forced_finish_confirmed_at": now_iso,
-        "forced_finish_other_user_response": response,
+        "forced_finish_other_user_response": response_val,
         "finished_at": now_iso,
         "finished_by_user_id": requester_uid or (responder_uid or ""),
         "call_active": False,
@@ -24214,30 +24218,72 @@ async def _muhabbet_trip_force_finish_finalize_row(
     }
     upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-    logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s", session_id, response)
-    await _emit_muhabbet_trip_force_finished(next_row, response, responder_uid)
+    logger.info("[muhabbet_trip_force_finish] finalized session_id=%s response=%s", session_id, response_val)
+    await _emit_muhabbet_trip_force_finished(next_row, emit_label, responder_uid)
     _muhabbet_trip_passengers_update_for_user(
         session_id,
         str(next_row.get("passenger_id") or ""),
         {"status": "completed"},
     )
+    sid_lo = str(session_id or "").strip().lower()
+    try:
+        await notify_trip_session_updated(sid_lo, "force_finished", responder_uid or requester_uid or "")
+    except Exception as ne:
+        logger.warning("[muhabbet_notify] force_finished notify failed: %s", ne)
+    return next_row
+
+
+async def _muhabbet_trip_force_finish_decline_resolve(session_id: str, row: dict, responder_uid: str) -> dict:
+    """Onaylamıyorum — yolculuk active kalır; istek alanları temizlenir."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    responder_lo = str(responder_uid or "").strip().lower()
+    patch = {
+        "forced_finish_other_user_response": "declined",
+        "forced_finish_resolved_at": now_iso,
+        "forced_finish_requested_by_user_id": None,
+        "forced_finish_requested_at": None,
+        "forced_finish_timeout_at": None,
+        "forced_finish_request_id": None,
+        "forced_finish_started_at": None,
+        "forced_finish_confirmed_by_user_id": None,
+        "forced_finish_confirmed_at": None,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    logger.info("[muhabbet_trip_force_finish] declined session_id=%s by=%s", session_id, responder_lo)
+    await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
+    sid_lo = str(session_id or "").strip().lower()
+    try:
+        await notify_trip_session_updated(sid_lo, "force_finish_declined", responder_lo)
+    except Exception as ne:
+        logger.warning("[muhabbet_notify] force_finish_declined notify failed: %s", ne)
     return next_row
 
 
 async def _muhabbet_trip_force_finish_process_deadlines() -> int:
-    """ready + biniş öncesi bekleyen zorla bitir — süre dolunca timeout ile kapatır."""
+    """Zorla bitir isteği + forced_finish_timeout_at dolmuş satırları timeout ile kapatır (ready/active)."""
     now = datetime.now(timezone.utc)
     done = 0
     try:
-        res = supabase.table("muhabbet_trip_sessions").select("*").eq("status", "ready").execute()
+        res = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("*")
+            .not_.is_("forced_finish_timeout_at", "null")
+            .is_("forced_finish_confirmed_at", "null")
+            .execute()
+        )
     except Exception as e:
         logger.warning("[muhabbet_trip_force_finish] deadline_select err=%s", e)
         return 0
     for raw in res.data or []:
         row = dict(raw)
-        if row.get("boarding_qr_confirmed_at"):
+        st = str(row.get("status") or "").strip().lower()
+        if st in ("cancelled", "finished", "expired"):
             continue
-        if not row.get("forced_finish_requested_at") or row.get("forced_finish_confirmed_at"):
+        if not row.get("forced_finish_requested_at"):
+            continue
+        if row.get("forced_finish_confirmed_at"):
             continue
         to = _muhabbet_trip_parse_dt(row.get("forced_finish_timeout_at"))
         if not to or to > now:
@@ -24247,10 +24293,17 @@ async def _muhabbet_trip_force_finish_process_deadlines() -> int:
             continue
         t0 = time.perf_counter()
         try:
-            await _muhabbet_trip_force_finish_finalize_row(sid, row, "timeout", None)
+            await _muhabbet_trip_force_finish_finalize_accept_or_timeout(
+                sid,
+                row,
+                finish_method_val="forced_timeout",
+                response_val="timeout_auto_accepted",
+                responder_uid=None,
+                emit_label="timeout_auto_accepted",
+            )
             done += 1
             ms = int((time.perf_counter() - t0) * 1000)
-            _muhabbet_force_finish_log("timeout_auto", sid, "timeout", ms)
+            _muhabbet_force_finish_log("timeout_auto", sid, "timeout_auto_accepted", ms)
         except Exception as e:
             logger.warning("[muhabbet_trip_force_finish] deadline_finalize session_id=%s err=%s", sid[:12], e)
     return done
@@ -24304,6 +24357,10 @@ async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
         if created_at and created_at < stale_cutoff:
             reason = "stale_ready_cleanup"
         if not reason:
+            continue
+        # Geçerli biniş QR beklenirken oturumu süre/stale ile düşürme — yolcu onayı race'e düşmesin
+        btok = str(row.get("boarding_qr_token") or "").strip()
+        if btok and not _muhabbet_trip_qr_expired(row.get("boarding_qr_expires_at")):
             continue
         patch = {
             "status": "expired",
@@ -24809,6 +24866,32 @@ def _muhabbet_trip_boarding_qr_deep_link(session_id: str, token: str) -> str:
     return f"leylekmuhabbet://trip-qr?{qs}"
 
 
+def _muhabbet_trip_boarding_confirm_reject_detail(status_raw: str) -> str:
+    """Biniş QR confirm reddi — yalnızca terminal / bilinmeyen status."""
+    st = str(status_raw or "").strip().lower()
+    if st == "expired":
+        return "Bu yolculuk süresi dolmuş."
+    if st == "cancelled":
+        return "Bu yolculuk iptal edilmiş."
+    if st == "finished":
+        return "Bu yolculuk tamamlanmış."
+    return "Bu yolculuk biniş için uygun değil."
+
+
+def _muhabbet_trip_boarding_gate_detail(status_raw: str) -> str:
+    """Biniş QR (oluştur/onay) için status reddi — istemciye gösterilir."""
+    st = str(status_raw or "").strip().lower()
+    if st == "expired":
+        return "Bu yolculuk süresi dolmuş."
+    if st == "cancelled":
+        return "Bu yolculuk iptal edilmiş."
+    if st in ("active", "started"):
+        return "Yolculuk zaten başlamış."
+    if st == "finished":
+        return "Bu yolculuk tamamlanmış."
+    return "Bu yolculuk biniş için uygun değil."
+
+
 async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str) -> dict:
     """Biniş QR oluşturma — DB günceller; emit_payload döner. HTTPException | _MuhabbetTripOpError."""
     await _expire_stale_muhabbet_trip_sessions()
@@ -24816,8 +24899,9 @@ async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str) -> 
     uid_lo = str(uid).strip().lower()
     if str(row.get("driver_id") or "").strip().lower() != uid_lo:
         raise _MuhabbetTripOpError("driver_required", "Biniş QR kodunu sürücü oluşturabilir.")
-    if str(row.get("status") or "").strip().lower() != "ready":
-        raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
+    st_row = str(row.get("status") or "").strip().lower()
+    if st_row != "ready":
+        raise _MuhabbetTripOpError("not_active", _muhabbet_trip_boarding_gate_detail(st_row))
     existing_tok = str(row.get("boarding_qr_token") or "").strip().upper()
     if existing_tok and not _muhabbet_trip_qr_expired(row.get("boarding_qr_expires_at")):
         expires_iso = str(row.get("boarding_qr_expires_at") or "")
@@ -24872,8 +24956,32 @@ async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str) -> 
     }
 
 
+async def _muhabbet_emit_boarding_qr_created_after_apply(out: dict, session_id: str, actor_uid: str) -> None:
+    """B boarding QR create (REST veya socket) sonrası oda + kullanıcılar + notify — tek davranış."""
+    ep = out["emit_payload"]
+    nr = out.get("next_row") or {}
+    sid = str(session_id or "").strip().lower()
+    trip_rm = muhabbet_trip_room(sid)
+    await sio.emit("muhabbet_trip_boarding_qr_created", ep, room=trip_rm)
+    for tgt in (str(nr.get("passenger_id") or "").strip(), str(nr.get("driver_id") or "").strip()):
+        if tgt:
+            await emit_socket_event_to_user(tgt, "muhabbet_trip_boarding_qr_created", ep)
+    logger.info(
+        "[socket_trip_event] %s",
+        json.dumps(
+            {"event": "boarding_qr_created", "session_id": sid, "targets": "trip_room+passenger+driver"},
+            ensure_ascii=False,
+        ),
+    )
+    _schedule_muhabbet_boarding_qr_passenger_push(out, sid, str(actor_uid).strip().lower())
+    try:
+        await notify_trip_session_updated(sid, "boarding_qr_created", actor_uid)
+    except Exception as ne:
+        logger.warning("[muhabbet_notify] boarding_qr_created notify failed: %s", ne)
+
+
 async def _muhabbet_trip_boarding_qr_confirm_apply(uid: str, session_id: str, token: str) -> dict:
-    """Biniş QR onayı — yolculuk başlatır ve muhabbet_trip_started yayınlar."""
+    """Biniş QR onayı — ready ise başlatır; active + zaten onaylıysa idempotent döner."""
     await _expire_stale_muhabbet_trip_sessions()
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
     uid_lo = str(uid).strip().lower()
@@ -24882,8 +24990,15 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(uid: str, session_id: str, to
         raise _MuhabbetTripOpError("bad_request", "QR kodu gerekli.")
     if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
         raise _MuhabbetTripOpError("passenger_required", "Biniş QR kodunu yolcu onaylayabilir.")
-    if str(row.get("status") or "").strip().lower() != "ready":
-        raise _MuhabbetTripOpError("not_active", "Oturum bu işlem için uygun değil.")
+    st_row = str(row.get("status") or "").strip().lower()
+    if st_row in ("cancelled", "finished", "expired"):
+        raise _MuhabbetTripOpError("not_active", _muhabbet_trip_boarding_confirm_reject_detail(st_row))
+    if st_row in ("active", "started"):
+        if str(row.get("boarding_qr_confirmed_at") or "").strip():
+            return {"session": _muhabbet_trip_session_public(row)}
+    elif st_row != "ready":
+        raise _MuhabbetTripOpError("not_active", _muhabbet_trip_boarding_confirm_reject_detail(st_row))
+
     expected = str(row.get("boarding_qr_token") or "").strip().upper()
     if not expected or not secrets.compare_digest(expected, tok):
         raise _MuhabbetTripOpError("bad_qr_token", "QR kod geçersiz.")
@@ -24921,7 +25036,7 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
     """Sesli arama başlat — durum DB'de (REST + polling); socket yalnız bildirim."""
     await _expire_stale_muhabbet_trip_sessions()
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished", "expired"):
         raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
     uid_lo = str(uid).strip().lower()
     passenger_id = str(row.get("passenger_id") or "").strip().lower()
@@ -25086,7 +25201,10 @@ async def _muhabbet_trip_finish_qr_confirm_apply(uid: str, session_id: str, toke
     if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
         raise _MuhabbetTripOpError("passenger_required", "Bitiriş QR kodunu yolcu onaylayabilir.", 403)
     if str(row.get("status") or "").strip().lower() not in ("active", "started"):
-        raise _MuhabbetTripOpError("not_active", "Oturum bu işlem için uygun değil.")
+        raise _MuhabbetTripOpError(
+            "not_active",
+            "Yolculuk henüz aktif değil; önce biniş QR ile başlatın veya hedef QR için bekleyin.",
+        )
     expected = str(row.get("finish_qr_token") or row.get("qr_finish_token") or "").strip().upper()
     if not expected or not secrets.compare_digest(expected, tok):
         raise _MuhabbetTripOpError("bad_qr_token", "QR kod geçersiz.")
@@ -25179,17 +25297,15 @@ async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -
 
     boarding_done = bool(row.get("boarding_qr_confirmed_at"))
     rid = str(uuid.uuid4())
-    timeout_iso = None
-    started_iso = None
-    if st == "ready" and not boarding_done:
-        started_iso = now_iso
-        timeout_iso = (now + timedelta(seconds=30)).isoformat()
+    started_iso = now_iso if st == "ready" and not boarding_done else None
+    timeout_iso = (now + timedelta(seconds=30)).isoformat()
     patch = {
         "forced_finish_requested_by_user_id": uid_lo,
         "forced_finish_requested_at": now_iso,
         "forced_finish_confirmed_by_user_id": None,
         "forced_finish_confirmed_at": None,
         "forced_finish_other_user_response": None,
+        "forced_finish_resolved_at": None,
         "forced_finish_request_id": rid,
         "forced_finish_started_at": started_iso,
         "forced_finish_timeout_at": timeout_iso,
@@ -25246,8 +25362,18 @@ async def _muhabbet_trip_force_finish_respond_apply(uid: str, session_id: str, r
         return row, False
     rr = str(response_raw or "").strip().lower()
     response = rr if rr in ("accepted", "declined") else "declined"
-    next_row = await _muhabbet_trip_force_finish_finalize_row(session_id, row, response, uid_lo)
-    return next_row, True
+    if response == "accepted":
+        next_row = await _muhabbet_trip_force_finish_finalize_accept_or_timeout(
+            session_id,
+            row,
+            finish_method_val="forced",
+            response_val="accepted",
+            responder_uid=uid_lo,
+            emit_label="accepted",
+        )
+        return next_row, True
+    next_row = await _muhabbet_trip_force_finish_decline_resolve(session_id, row, uid_lo)
+    return next_row, False
 
 
 async def _muhabbet_trip_call_response_broadcast(uid: str, session_id: str, event_name: str, user_field: str) -> dict:
@@ -25430,26 +25556,7 @@ async def muhabbet_trip_boarding_qr_create_post(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
-        ep = out["emit_payload"]
-        nr = out.get("next_row") or {}
-        trip_rm = muhabbet_trip_room(session_id)
-        await sio.emit("muhabbet_trip_boarding_qr_created", ep, room=trip_rm)
-        for tgt in (str(nr.get("passenger_id") or "").strip(), str(nr.get("driver_id") or "").strip()):
-            if tgt:
-                await emit_socket_event_to_user(tgt, "muhabbet_trip_boarding_qr_created", ep)
-        logger.info(
-            "[socket_trip_event] %s",
-            json.dumps(
-                {"event": "boarding_qr_created_rest", "session_id": session_id, "targets": "passenger+driver"},
-                ensure_ascii=False,
-            ),
-        )
-        _schedule_muhabbet_boarding_qr_passenger_push(out, session_id, str(uid).strip().lower())
-        sid_lo = str(session_id or "").strip().lower()
-        try:
-            await notify_trip_session_updated(sid_lo, "boarding_qr_created", uid)
-        except Exception as ne:
-            logger.warning("[muhabbet_notify] boarding_qr_created notify failed: %s", ne)
+        await _muhabbet_emit_boarding_qr_created_after_apply(out, session_id, uid)
         return {
             "success": True,
             "boarding_qr_token": out["boarding_qr_token"],
@@ -25965,8 +26072,7 @@ async def sio_muhabbet_trip_boarding_qr_create(sid, data):
         return
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
-        await sio.emit("muhabbet_trip_boarding_qr_created", out["emit_payload"], room=sid)
-        _schedule_muhabbet_boarding_qr_passenger_push(out, session_id, str(uid).strip().lower())
+        await _muhabbet_emit_boarding_qr_created_after_apply(out, session_id, uid)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except _MuhabbetTripOpError as e:
@@ -25986,6 +26092,11 @@ async def sio_muhabbet_trip_boarding_qr_confirm(sid, data):
         return
     try:
         await _muhabbet_trip_boarding_qr_confirm_apply(uid, session_id, token)
+        sid_lo = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_lo, "boarding_confirmed", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] boarding_confirmed notify failed: %s", ne)
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except _MuhabbetTripOpError as e:

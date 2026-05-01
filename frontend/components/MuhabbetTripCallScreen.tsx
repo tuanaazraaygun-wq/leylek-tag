@@ -96,7 +96,7 @@ export default function MuhabbetTripCallScreen({
         } catch {
           /* noop */
         }
-        InCallManager.startRingback('_DEFAULT_');
+        /* Muhabbet: arayan sadece “Aranıyor”; zil / ringback çalmaz */
       } else if (mode === 'incoming') {
         InCallManager.startRingtone('_DEFAULT_', [0, 650, 300, 650], 'playback', 60);
         Vibration.vibrate([0, 650, 300, 650], true);

@@ -47,15 +47,21 @@ export type MuhabbetTripSession = {
   cancel_reason?: string | null;
   finished_at?: string | null;
   finished_by_user_id?: string | null;
-  finish_method?: 'qr' | 'forced' | null;
+  finish_method?: 'qr' | 'forced' | 'forced_timeout' | null;
   forced_finish_requested_by_user_id?: string | null;
   forced_finish_requested_at?: string | null;
   forced_finish_started_at?: string | null;
   forced_finish_timeout_at?: string | null;
   forced_finish_request_id?: string | null;
+  forced_finish_resolved_at?: string | null;
   forced_finish_confirmed_by_user_id?: string | null;
   forced_finish_confirmed_at?: string | null;
-  forced_finish_other_user_response?: 'accepted' | 'declined' | 'timeout' | null;
+  forced_finish_other_user_response?:
+    | 'accepted'
+    | 'declined'
+    | 'timeout'
+    | 'timeout_auto_accepted'
+    | null;
   finish_score_delta?: number | null;
   finish_note?: string | null;
   expires_at?: string | null;

@@ -40,15 +40,17 @@ type LeylekTripLiveRideChromeProps = {
   deviceLocation?: Coord | null;
   routeDataMissing?: boolean;
   tripInfoReady?: boolean;
-  finishMethod?: 'qr' | 'forced' | null;
+  finishMethod?: 'qr' | 'forced' | 'forced_timeout' | null;
   finishScoreDelta?: number | null;
-  forcedFinishResponse?: 'accepted' | 'declined' | 'timeout' | null;
+  forcedFinishResponse?: 'accepted' | 'declined' | 'timeout' | 'timeout_auto_accepted' | null;
   navigationLabel: string;
   navigationDisabled?: boolean;
   sendingLocation: boolean;
   actionBusy: boolean;
   /** QR oluşturma sırasında çift basımı kes */
   qrBusy?: boolean;
+  /** ready / active / started dışında QR akışı kapalı (Muhabbet trip). */
+  qrInteractionAllowed?: boolean;
   callState: 'idle' | 'incoming' | 'outgoing' | 'active';
   callBusy: boolean;
   /** idle iken arama — cooldown / REST sırasında */
@@ -69,7 +71,7 @@ type LeylekTripLiveRideChromeProps = {
   modernLeylekOfferUi?: boolean;
   /** Backend polyline beklenirken sar uyarıyı gösterme (biniş sonrası vb.). */
   suppressWaitingPolylineBanner?: boolean;
-  /** Karşı taraf marker — konum zamanı >10sn ise Pasif */
+  /** Karşı taraf marker — konum zamanı >10sn ise güncelleme gecikti */
   peerLocationUpdatedAt?: string | null;
 };
 
@@ -89,7 +91,7 @@ function peerCoordLiveLabel(coord: Coord | null | undefined, peerUpdatedIso?: st
   if (!iso) return 'Canlı';
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return 'Canlı';
-  return Date.now() - t > 10000 ? 'Pasif' : 'Canlı';
+  return Date.now() - t > 10000 ? 'Güncelleme gecikti' : 'Canlı';
 }
 
 export default function LeylekTripLiveRideChrome({
@@ -122,6 +124,7 @@ export default function LeylekTripLiveRideChrome({
   sendingLocation,
   actionBusy,
   qrBusy = false,
+  qrInteractionAllowed = true,
   callState,
   callBusy,
   callDialDisabled = false,
@@ -191,21 +194,33 @@ export default function LeylekTripLiveRideChrome({
       ? `${Number(routeDistanceKm).toFixed(1)} km${routeDurationMin != null ? ` • ${Math.max(1, Math.round(Number(routeDurationMin)))} dk` : ''}`
       : null;
   const paymentText = paymentLabel(paymentMethod);
+  const qrBtnDisabled =
+    !tripInfoReady || actionBusy || qrBusy || !qrInteractionAllowed || isTerminal;
   const qrButtonLabel =
     sessionStatus === 'ready'
       ? isDriver
         ? 'Biniş QR Göster'
         : 'Biniş QR Oku'
-      : isDriver
-        ? 'Hedefte QR Göster'
-        : 'Hedefte QR Oku';
+      : sessionStatus === 'active' || sessionStatus === 'started'
+        ? isDriver
+          ? 'Yolculuk aktif • Hedefte QR Göster'
+          : 'Yolculuk aktif • Hedefte QR Oku'
+        : isDriver
+          ? 'Hedefte QR Göster'
+          : 'Hedefte QR Oku';
   const qrActionActive = sessionStatus === 'active' || sessionStatus === 'started';
   const finishSummary =
     finishMethod === 'qr'
       ? `Yolculuk QR ile tamamlandı • Puan etkisi: +${finishScoreDelta ?? 3}`
-      : finishMethod === 'forced'
+      : finishMethod === 'forced' || finishMethod === 'forced_timeout'
         ? `Yolculuk zorla bitirildi • Puan etkisi: ${finishScoreDelta ?? -5} • Karşı taraf yanıtı: ${
-            forcedFinishResponse === 'accepted' ? 'Onayladı' : forcedFinishResponse === 'declined' ? 'Onaylamadı' : 'Kaydedilmedi'
+            finishMethod === 'forced_timeout' || forcedFinishResponse === 'timeout_auto_accepted'
+              ? 'Süre doldu (otomatik)'
+              : forcedFinishResponse === 'accepted'
+                ? 'Onayladı'
+                : forcedFinishResponse === 'declined'
+                  ? 'Onaylamadı'
+                  : 'Kaydedilmedi'
           }`
         : null;
 
@@ -457,7 +472,7 @@ export default function LeylekTripLiveRideChrome({
                     <Pressable
                       style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy) && { opacity: 0.76 }]}
                       onPress={onQrFinish}
-                      disabled={!tripInfoReady || actionBusy || qrBusy}
+                      disabled={qrBtnDisabled}
                     >
                       <LinearGradient
                         colors={!tripInfoReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}
@@ -504,7 +519,7 @@ export default function LeylekTripLiveRideChrome({
                   <Pressable
                     style={({ pressed }) => [styles.finishButtonPressable, (pressed || actionBusy || isTerminal) && { opacity: 0.76 }]}
                     onPress={onQrFinish}
-                    disabled={!tripInfoReady || actionBusy || qrBusy || isTerminal}
+                    disabled={qrBtnDisabled}
                   >
                     <LinearGradient
                       colors={!tripInfoReady || isTerminal ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']}

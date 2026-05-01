@@ -20,18 +20,40 @@ type MuhabbetTripQrScanModalProps = {
   onConfirmToken: (token: string) => void | Promise<void>;
 };
 
-function extractMuhabbetQrToken(raw: string): string {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  try {
-    const url = new URL(value);
-    const scope = url.searchParams.get('scope');
-    const token = url.searchParams.get('token');
-    if (scope === 'muhabbet_trip' && token) return token.trim().toUpperCase();
-  } catch {
-    /* Manual codes and plain QR values are allowed. */
+const TOKEN_PARAM_KEYS = ['token', 'qr', 'code', 'boarding_token'] as const;
+
+/**
+ * QR içinde URL veya düz kod olabilir. Token çıkarılırken büyük/küçük harf korunur (sunucu digest öncesi normalize eder).
+ */
+function extractMuhabbetTripQrToken(raw: string): { token: string | null; parsedUrl: boolean } {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) {
+    return { token: null, parsedUrl: false };
   }
-  return value.trim().toUpperCase();
+
+  const pickFromSearchParams = (searchParams: URLSearchParams): string | null => {
+    for (const key of TOKEN_PARAM_KEYS) {
+      const v = searchParams.get(key);
+      const t = v != null ? String(v).trim() : '';
+      if (t) return t;
+    }
+    return null;
+  };
+
+  try {
+    const url = new URL(trimmed);
+    const scope = url.searchParams.get('scope');
+    const picked = pickFromSearchParams(url.searchParams);
+    if (picked) {
+      return { token: picked, parsedUrl: true };
+    }
+    if (scope === 'muhabbet_trip') {
+      return { token: null, parsedUrl: true };
+    }
+    return { token: null, parsedUrl: true };
+  } catch {
+    return { token: trimmed, parsedUrl: false };
+  }
 }
 
 export default function MuhabbetTripQrScanModal({
@@ -65,9 +87,15 @@ export default function MuhabbetTripQrScanModal({
   }, [hasPermission?.granted, requestPermission, visible]);
 
   const submitToken = useCallback(async (raw: string) => {
-    const token = extractMuhabbetQrToken(raw);
+    const { token, parsedUrl } = extractMuhabbetTripQrToken(raw);
+    const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
     if (!token) {
-      Alert.alert(mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir', 'QR kodu veya manuel kod okunamadı.');
+      Alert.alert(
+        title,
+        parsedUrl
+          ? 'QR bağlantısında geçerli bir kod bulunamadı. Kamerayı yeniden hizalayın veya kodu manuel girin.'
+          : 'QR kodu okunamadı veya boş. Tekrar deneyin veya kodu manuel girin.'
+      );
       return;
     }
     setProcessing(true);
@@ -165,7 +193,8 @@ export default function MuhabbetTripQrScanModal({
               style={styles.input}
               value={manualToken}
               onChangeText={setManualToken}
-              autoCapitalize="characters"
+              autoCapitalize="none"
+              autoCorrect={false}
               placeholder="Kodu gir"
               placeholderTextColor="#64748B"
             />

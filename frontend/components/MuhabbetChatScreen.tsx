@@ -677,22 +677,51 @@ export default function MuhabbetChatScreen({
     }
   }, [cid, waitForMuhabbetJoin]);
 
-  const navigateToLeylekTripSession = useCallback((payload?: MuhabbetTripSessionSocketPayload | null) => {
-    const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '')
-      .trim()
-      .toLowerCase();
-    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
-      Alert.alert(
-        'Yolculuk',
-        'Yolculuk oturumu hazırlanıyor, lütfen birkaç saniye sonra tekrar deneyin.'
-      );
-      return;
-    }
-    if (tripSessionNavRef.current === sessionId) return;
-    setTripLockReason('route /leylek-trip/[sessionId] is about to open');
-    tripSessionNavRef.current = sessionId;
-    router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
-  }, [router]);
+  const navigateToLeylekTripSession = useCallback(
+    async (payload?: MuhabbetTripSessionSocketPayload | null) => {
+      const sessionId = String(payload?.session_id || payload?.sessionId || payload?.session?.id || '')
+        .trim()
+        .toLowerCase();
+      if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+        Alert.alert(
+          'Yolculuk',
+          'Yolculuk oturumu hazırlanıyor, lütfen birkaç saniye sonra tekrar deneyin.'
+        );
+        return;
+      }
+      const token = (await getPersistedAccessToken())?.trim();
+      if (token) {
+        try {
+          const res = await fetch(`${base}/muhabbet/trip-sessions/${encodeURIComponent(sessionId)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const body = (await res.json().catch(() => ({}))) as {
+            success?: boolean;
+            session?: { status?: string };
+          };
+          const st = String(body.session?.status || '').trim().toLowerCase();
+          if (body.success && st && ['expired', 'cancelled', 'finished'].includes(st)) {
+            Alert.alert(
+              'Yolculuk',
+              st === 'finished'
+                ? 'Bu yolculuk tamamlanmış.'
+                : st === 'cancelled'
+                  ? 'Bu yolculuk iptal edilmiş.'
+                  : 'Bu yolculuk süresi dolmuş.'
+            );
+            return;
+          }
+        } catch {
+          /* ağ hatası — yine de rotaya git */
+        }
+      }
+      if (tripSessionNavRef.current === sessionId) return;
+      setTripLockReason('route /leylek-trip/[sessionId] is about to open');
+      tripSessionNavRef.current = sessionId;
+      router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
+    },
+    [base, router]
+  );
 
   const retryPendingActionAfterNotRegistered = useCallback(async () => {
     const pending = pendingActionRef.current;
