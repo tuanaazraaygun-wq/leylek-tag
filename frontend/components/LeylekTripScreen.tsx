@@ -336,7 +336,15 @@ function logLeylekAction(
 }
 
 function muhabbetTripRestDetail(detail: unknown, fallback: string): string {
+  if (detail === null || detail === undefined) return fallback;
   if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (typeof detail === 'object' && detail !== null && !Array.isArray(detail)) {
+    const o = detail as Record<string, unknown>;
+    const msg = o.message;
+    if (typeof msg === 'string' && msg.trim()) return msg.trim();
+    const code = o.code;
+    if (typeof code === 'string' && code.trim()) return code.trim();
+  }
   if (Array.isArray(detail) && detail.length > 0) {
     const first = detail[0];
     if (typeof first === 'string' && first.trim()) return first.trim();
@@ -593,7 +601,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   );
 
   const activeSessionId = getActiveMuhabbetSessionId();
-  const tripInfoReady = !!activeSessionId;
+  /** Çağrı başlatma dahil; sadece terminal kapalı oturumda aksiyonlar açık (QR beklemeden arama). */
+  const tripInfoReady = Boolean(session && !isTerminal);
 
   const navigateHomeFromTerminal = useCallback(() => {
     if (terminalNavigateDoneRef.current) return;
@@ -1696,15 +1705,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   }, [effectiveSessionId]);
 
   const startCall = useCallback(() => {
+    const sidPress = getActiveMuhabbetSessionId();
+    console.log('[leylek_call_start_press]', {
+      sessionId: sidPress,
+      role: isDriver ? 'driver' : 'passenger',
+      status: session?.status,
+      callBusy,
+      callState: callStateRef.current,
+    });
     if (isTerminal || !session) return;
-    if (isLocked('call')) {
-      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'stateLock' }));
-      return;
-    }
-    if (callBusy) {
-      console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'callBusy' }));
-      return;
-    }
     if (callStartInFlightRef.current) {
       console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'call duplicate blocked', detail: 'inFlight' }));
       return;
@@ -1745,8 +1754,6 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       touchOptimistic('call_start');
       callOutgoingStartedAtRef.current = Date.now();
       callStartInFlightRef.current = true;
-      lockState('call', 2000);
-      setCallBusy(true);
       setCallState('outgoing');
       setCallPayload({
         session_id: sid,
@@ -1757,32 +1764,63 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         started_at: nowIso,
       });
       console.log('[leylek_ui_instant]', JSON.stringify({ flow: 'call_outgoing', actionId: callActionId }));
+
+      const token = (await getPersistedAccessToken())?.trim() || '';
+      const base = apiBaseUrl.replace(/\/$/, '');
+      const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/call/start`;
+
       try {
-        const rest = await muhabbetTripSessionRestPost({ action: 'call_start', pathSuffix: 'call/start' });
+        console.log('[leylek_call_start_post]', url);
+        if (!token) {
+          const parsedBody = { error: 'missing_token' };
+          console.log('[leylek_call_start_response]', { status: 0, ok: false, body: parsedBody });
+          if (callActionId !== latestCallActionIdRef.current) return;
+          setCallState('idle');
+          setCallPayload(null);
+          clearOptimistic('call_start');
+          callOutgoingStartedAtRef.current = 0;
+          Alert.alert('Muhabbet yolculuk', 'Arama başlatılamadı: Oturum anahtarı bulunamadı. Tekrar giriş yapın.');
+          void refreshSessionFromServer('call_start_rest_fail', { bypassDebounce: true });
+          return;
+        }
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        let parsedBody: Record<string, unknown> = {};
+        try {
+          parsedBody = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        } catch {
+          parsedBody = {};
+        }
+        console.log('[leylek_call_start_response]', { status: res.status, ok: res.ok, body: parsedBody });
+
         if (callActionId !== latestCallActionIdRef.current) {
           console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
           return;
         }
 
-        if (rest.ok && rest.json.success === true) {
+        if (res.ok && parsedBody.success === true) {
           latestCallActionIdRef.current = null;
-          const callObj = rest.json.call as MuhabbetTripCallSocketPayload | undefined;
-          const sessRaw = rest.json.session;
+          const callObj = parsedBody.call as MuhabbetTripCallSocketPayload | undefined;
+          const sessRaw = parsedBody.session;
           const sess = sessRaw && typeof sessRaw === 'object' ? (sessRaw as MuhabbetTripSession) : null;
           if (callObj && typeof callObj === 'object') {
             setCallPayload(callObj);
           } else if (sess) {
             const sidN = normalizeMuhabbetSessionId(sess.id);
-            const passengerLo = String(sess.passenger_id || '').trim().toLowerCase();
-            const driverLo = String(sess.driver_id || '').trim().toLowerCase();
+            const passengerLoR = String(sess.passenger_id || '').trim().toLowerCase();
+            const driverLoR = String(sess.driver_id || '').trim().toLowerCase();
             const callerLo = String(sess.caller_id || myLo).trim().toLowerCase();
-            const targetLo = callerLo === passengerLo ? driverLo : passengerLo;
+            const targetLoR = callerLo === passengerLoR ? driverLoR : passengerLoR;
             setCallPayload({
               session_id: sidN,
               conversation_id: sess.conversation_id ?? undefined,
               channel_name: String(sess.call_channel_name || `muhabbet_trip_${sidN}`),
               caller_id: callerLo,
-              target_user_id: targetLo,
+              target_user_id: targetLoR,
               started_at: sess.call_started_at ?? undefined,
             });
           }
@@ -1793,38 +1831,41 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           callOutgoingStartedAtRef.current = Date.now();
           void refreshSessionFromServer('call_start_rest', { bypassDebounce: true });
           clearOptimistic('call_start');
-          unlockState('call');
-          callStartInFlightRef.current = false;
-          setCallBusy(false);
           return;
         }
 
-        unlockState('call');
         setCallState('idle');
         setCallPayload(null);
         clearOptimistic('call_start');
         callOutgoingStartedAtRef.current = 0;
-        const det = muhabbetTripRestDetail(rest.json.detail, 'Arama başlatılamadı.');
-        if (det) Alert.alert('Muhabbet yolculuk', det);
+        const detailMsg = muhabbetTripRestDetail(parsedBody.detail, '');
+        Alert.alert(
+          'Muhabbet yolculuk',
+          detailMsg ? `Arama başlatılamadı: ${detailMsg}` : 'Arama başlatılamadı.'
+        );
         void refreshSessionFromServer('call_start_rest_fail', { bypassDebounce: true });
-      } catch {
+      } catch (error) {
+        console.warn('[leylek_call_start_error]', error);
         if (callActionId !== latestCallActionIdRef.current) {
           console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
         } else {
-          unlockState('call');
           clearOptimistic('call_start');
           callOutgoingStartedAtRef.current = 0;
           setCallState('idle');
           setCallPayload(null);
+          Alert.alert(
+            'Muhabbet yolculuk',
+            `Arama başlatılamadı: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       } finally {
         if (callActionId === latestCallActionIdRef.current) {
           callStartInFlightRef.current = false;
-          setCallBusy(false);
         }
       }
     })();
   }, [
+    apiBaseUrl,
     bumpCallCooldown,
     callBusy,
     callStartCooldownUntil,
@@ -1832,14 +1873,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     getActiveMuhabbetSessionId,
     isDriver,
     isTerminal,
-    isLocked,
-    lockState,
-    muhabbetTripSessionRestPost,
     myId,
     refreshSessionFromServer,
     session,
     touchOptimistic,
-    unlockState,
   ]);
 
   const selectPaymentMethod = useCallback(
@@ -2830,8 +2867,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         callState={callState}
         callBusy={callBusy}
         callDialDisabled={
-          callState === 'idle' &&
-          (callBusy || (callStartCooldownUntil > 0 && Date.now() < callStartCooldownUntil))
+          callState === 'idle' && callStartCooldownUntil > 0 && Date.now() < callStartCooldownUntil
         }
         canStart={false}
         canFinish={tripInfoReady && isDriver && (session.status === 'active' || session.status === 'started')}

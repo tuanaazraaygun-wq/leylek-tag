@@ -24926,6 +24926,11 @@ class _MuhabbetTripOpError(Exception):
         self.http_status = http_status
 
 
+def _muhabbet_trip_api_error_detail(code: str, message: str) -> dict[str, str]:
+    """REST JSON { detail: { code, message } } — makine kodu + Türkçe kullanıcı mesajı."""
+    return {"code": code, "message": message}
+
+
 def _muhabbet_trip_boarding_qr_deep_link(session_id: str, token: str) -> str:
     from urllib.parse import urlencode
 
@@ -25122,91 +25127,165 @@ def _muhabbet_call_timing_log(action: str, session_id: str, ms: int, state: str)
 
 async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
     """Sesli arama başlat — durum DB'de (REST + polling); socket yalnız bildirim."""
-    await _expire_stale_muhabbet_trip_sessions()
-    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
-    if str(row.get("status") or "").strip().lower() in ("cancelled", "finished", "expired"):
-        raise _MuhabbetTripOpError("not_active", "Oturum aktif değil.")
-    uid_lo = str(uid).strip().lower()
-    passenger_id = str(row.get("passenger_id") or "").strip().lower()
-    driver_id = str(row.get("driver_id") or "").strip().lower()
-    target_uid = driver_id if uid_lo == passenger_id else passenger_id
+    sid_lo = str(session_id or "").strip().lower()
+    uid_prefix = str(uid or "").strip()[:8]
+    try:
+        await _expire_stale_muhabbet_trip_sessions()
+        row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
+        trip_st = str(row.get("status") or "").strip().lower()
 
-    stale_reset_detail: str | None = None
-    if bool(row.get("call_active")):
-        age_sec = _muhabbet_call_started_at_age_seconds(row.get("call_started_at"))
-        stale = age_sec is None or age_sec > 30.0
-        if stale:
-            prev_caller = row.get("call_caller_id")
-            now_iso = datetime.now(timezone.utc).isoformat()
-            reset_patch = {
-                "call_active": False,
-                "call_caller_id": None,
-                "call_started_at": None,
-                "call_state": None,
-                "call_channel_name": None,
-                "updated_at": now_iso,
-            }
-            upd = supabase.table("muhabbet_trip_sessions").update(reset_patch).eq("id", session_id).execute()
-            row = dict(upd.data[0]) if upd.data else {**row, **reset_patch}
-            stale_reset_detail = "CALL_RESET_AND_RETRY"
-            logger.info(
-                "[muhabbet_trip_call] stale_call_reset session_id=%s prev_caller=%s age_sec=%s",
-                session_id,
-                prev_caller,
-                age_sec,
+        if trip_st in ("cancelled", "finished", "expired"):
+            logger.warning(
+                "[muhabbet_call_start_reject] session_id=%s uid=%s code=not_active status=%s call_active=%s",
+                sid_lo,
+                str(uid).strip().lower()[:12],
+                trip_st,
+                bool(row.get("call_active")),
             )
-        else:
-            cs_raw = str(row.get("call_state") or "").strip().lower()
-            cs_eff = cs_raw if cs_raw else "ringing"
-            if cs_eff in ("ringing", "active"):
-                caller_existing = str(row.get("call_caller_id") or "").strip().lower()
-                if caller_existing and caller_existing != uid_lo:
-                    raise _MuhabbetTripOpError("call_in_progress", "CALL_ALREADY_ACTIVE")
-                ch = str(row.get("call_channel_name") or "").strip() or f"muhabbet_trip_{session_id}"
-                payload = {
-                    "session_id": session_id,
-                    "conversation_id": row.get("conversation_id"),
-                    "channel_name": ch,
-                    "caller_id": caller_existing or uid_lo,
-                    "target_user_id": target_uid,
-                }
-                logger.info(
-                    "[leylek_call_timing] %s",
-                    json.dumps(
-                        {"action": "call_start_noop", "session_id": session_id, "state": cs_eff, "ms": 0},
-                        ensure_ascii=False,
-                    ),
-                )
-                return {
-                    "call": payload,
-                    "session": _muhabbet_trip_session_public(row),
-                    "skip_notifications": True,
-                }
-            raise _MuhabbetTripOpError("call_in_progress", "CALL_ALREADY_ACTIVE")
+            raise _MuhabbetTripOpError(
+                "not_active",
+                "Bu yolculuk kapalı olduğu için sesli arama başlatılamaz.",
+            )
 
-    ch_name = f"muhabbet_trip_{session_id}"
-    now_iso = datetime.now(timezone.utc).isoformat()
-    patch = {
-        "call_active": True,
-        "call_caller_id": uid_lo,
-        "call_started_at": now_iso,
-        "call_state": "ringing",
-        "call_channel_name": ch_name,
-        "updated_at": now_iso,
-    }
-    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-    payload = {
-        "session_id": session_id,
-        "conversation_id": row.get("conversation_id"),
-        "channel_name": ch_name,
-        "caller_id": uid_lo,
-        "target_user_id": target_uid,
-    }
-    out: dict = {"call": payload, "session": _muhabbet_trip_session_public(next_row), "skip_notifications": False}
-    if stale_reset_detail:
-        out["detail"] = stale_reset_detail
-    return out
+        if trip_st not in ("ready", "active", "started"):
+            logger.warning(
+                "[muhabbet_call_start_reject] session_id=%s uid=%s code=bad_trip_phase status=%s",
+                sid_lo,
+                str(uid).strip().lower()[:12],
+                trip_st,
+            )
+            raise _MuhabbetTripOpError(
+                "bad_trip_phase",
+                "Binişe hazır veya yolculuk aktifken sesli arama kullanılabilir.",
+            )
+
+        uid_lo = str(uid).strip().lower()
+        passenger_id = str(row.get("passenger_id") or "").strip().lower()
+        driver_id = str(row.get("driver_id") or "").strip().lower()
+        target_uid = driver_id if uid_lo == passenger_id else passenger_id
+        if not target_uid:
+            logger.warning(
+                "[muhabbet_call_start_reject] session_id=%s uid=%s code=no_counterparty status=%s",
+                sid_lo,
+                uid_lo[:12],
+                trip_st,
+            )
+            raise _MuhabbetTripOpError(
+                "no_counterparty",
+                "Karşı taraf oturumda görünmüyor; arama başlatılamadı.",
+            )
+
+        stale_reset_detail: str | None = None
+        if bool(row.get("call_active")):
+            age_sec = _muhabbet_call_started_at_age_seconds(row.get("call_started_at"))
+            stale = age_sec is None or age_sec > 30.0
+            if stale:
+                prev_caller = row.get("call_caller_id")
+                now_iso = datetime.now(timezone.utc).isoformat()
+                reset_patch = {
+                    "call_active": False,
+                    "call_caller_id": None,
+                    "call_started_at": None,
+                    "call_state": None,
+                    "call_channel_name": None,
+                    "updated_at": now_iso,
+                }
+                upd = supabase.table("muhabbet_trip_sessions").update(reset_patch).eq("id", sid_lo).execute()
+                row = dict(upd.data[0]) if upd.data else {**row, **reset_patch}
+                stale_reset_detail = "CALL_RESET_AND_RETRY"
+                logger.info(
+                    "[muhabbet_trip_call] stale_call_reset session_id=%s prev_caller=%s age_sec=%s",
+                    sid_lo,
+                    prev_caller,
+                    age_sec,
+                )
+            else:
+                cs_raw = str(row.get("call_state") or "").strip().lower()
+                cs_eff = cs_raw if cs_raw else "ringing"
+                if cs_eff in ("ringing", "active"):
+                    caller_existing = str(row.get("call_caller_id") or "").strip().lower()
+                    if caller_existing and caller_existing != uid_lo:
+                        logger.warning(
+                            "[muhabbet_call_start_reject] session_id=%s uid=%s code=call_in_progress_peer status=%s caller=%s",
+                            sid_lo,
+                            uid_lo[:12],
+                            trip_st,
+                            caller_existing[:12],
+                        )
+                        raise _MuhabbetTripOpError(
+                            "call_in_progress",
+                            "Karşı tarafın başlattığı bir çağrı sürüyor. Önce o çağrının bitmesini bekleyin.",
+                        )
+                    ch = str(row.get("call_channel_name") or "").strip() or f"muhabbet_trip_{sid_lo}"
+                    payload = {
+                        "session_id": sid_lo,
+                        "conversation_id": row.get("conversation_id"),
+                        "channel_name": ch,
+                        "caller_id": caller_existing or uid_lo,
+                        "target_user_id": target_uid,
+                    }
+                    logger.info(
+                        "[leylek_call_timing] %s",
+                        json.dumps(
+                            {"action": "call_start_noop", "session_id": sid_lo, "state": cs_eff, "ms": 0},
+                            ensure_ascii=False,
+                        ),
+                    )
+                    return {
+                        "call": payload,
+                        "session": _muhabbet_trip_session_public(row),
+                        "skip_notifications": True,
+                    }
+                logger.warning(
+                    "[muhabbet_call_start_reject] session_id=%s uid=%s code=call_state_conflict status=%s call_state=%s",
+                    sid_lo,
+                    uid_lo[:12],
+                    trip_st,
+                    cs_raw or "(empty)",
+                )
+                raise _MuhabbetTripOpError(
+                    "call_conflict",
+                    "Çağrı kaydı şu an kullanılamıyor. Bir süre sonra tekrar deneyin.",
+                )
+
+        ch_name = f"muhabbet_trip_{sid_lo}"
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "call_active": True,
+            "call_caller_id": uid_lo,
+            "call_started_at": now_iso,
+            "call_state": "ringing",
+            "call_channel_name": ch_name,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid_lo).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        payload = {
+            "session_id": sid_lo,
+            "conversation_id": row.get("conversation_id"),
+            "channel_name": ch_name,
+            "caller_id": uid_lo,
+            "target_user_id": target_uid,
+        }
+        out: dict = {"call": payload, "session": _muhabbet_trip_session_public(next_row), "skip_notifications": False}
+        if stale_reset_detail:
+            out["detail"] = stale_reset_detail
+        return out
+    except _MuhabbetTripOpError:
+        raise
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "[muhabbet_call_start_unhandled] session_id=%s uid_prefix=%s",
+            sid_lo,
+            uid_prefix,
+        )
+        raise _MuhabbetTripOpError(
+            "call_start_failed",
+            "Sesli arama başlatılamadı. Lütfen bir süre sonra tekrar deneyin.",
+            503,
+        ) from exc
 
 
 async def _muhabbet_trip_payment_method_set_apply(uid: str, session_id: str, payment_method_raw) -> dict:
@@ -25716,6 +25795,8 @@ async def muhabbet_trip_call_start_post(
 ):
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     sid_lo = str(session_id or "").strip().lower()
+    uid_short = str(uid or "").strip().lower()[:12]
+    logger.info("[muhabbet_call_start_post] session_id=%s uid_prefix=%s", sid_lo, uid_short)
     t0 = time.perf_counter()
     sess_state = ""
     try:
@@ -25724,24 +25805,31 @@ async def muhabbet_trip_call_start_post(
         payload = out["call"]
         sess_state = str((out.get("session") or {}).get("call_state") or "")
         if not skip:
-            uid_lo = str(uid).strip().lower()
-            target_uid = str(payload.get("target_user_id") or "").strip().lower()
-            await emit_socket_event_to_user(uid_lo, "muhabbet_trip_call_start", payload)
-            if target_uid:
-                await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
-            _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
-            logger.info(
-                "[socket_trip_event] %s",
-                json.dumps(
-                    {
-                        "event": "call_start",
-                        "session_id": sid_lo,
-                        "caller": uid_lo,
-                        "target_user_id": target_uid,
-                    },
-                    ensure_ascii=False,
-                ),
-            )
+            try:
+                uid_lo = str(uid).strip().lower()
+                target_uid = str(payload.get("target_user_id") or "").strip().lower()
+                await emit_socket_event_to_user(uid_lo, "muhabbet_trip_call_start", payload)
+                if target_uid:
+                    await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
+                _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
+                logger.info(
+                    "[socket_trip_event] %s",
+                    json.dumps(
+                        {
+                            "event": "call_start",
+                            "session_id": sid_lo,
+                            "caller": uid_lo,
+                            "target_user_id": target_uid,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except Exception:
+                logger.exception(
+                    "[muhabbet_call_start_emit_failed] session_id=%s uid_prefix=%s",
+                    sid_lo,
+                    uid_short,
+                )
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_start", sid_lo, ms, sess_state or "ringing")
         try:
@@ -25749,12 +25837,23 @@ async def muhabbet_trip_call_start_post(
         except Exception as ne:
             logger.warning("[muhabbet_notify] call_started notify failed: %s", ne)
         return {"success": True, **out}
-    except HTTPException:
+    except HTTPException as he:
+        ms = int((time.perf_counter() - t0) * 1000)
+        _muhabbet_call_timing_log("call_start_http_error", sid_lo, ms, str(he.status_code))
+        logger.warning(
+            "[muhabbet_call_start_reject] session_id=%s http_status=%s detail=%s",
+            sid_lo,
+            he.status_code,
+            he.detail,
+        )
         raise
     except _MuhabbetTripOpError as e:
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_start_error", sid_lo, ms, getattr(e, "socket_code", "") or "error")
-        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+        raise HTTPException(
+            status_code=e.http_status,
+            detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message),
+        ) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/payment-method")
