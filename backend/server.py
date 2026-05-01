@@ -569,6 +569,7 @@ async def register(sid, data):
         },
         room=sid,
     )
+    logger.info("[socket_register] %s", json.dumps({"user_id": resolved_lower, "sid": sid}, ensure_ascii=False))
 
     if role == "driver":
         try:
@@ -1582,18 +1583,32 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
                 offer_data.get("tag_id"),
             )
             return False
+        logger.info(
+            "[normal_ride_emit_offer] tag_id=%s driver_id=%s is_rolling_batch=%s is_broadcast=%s is_dispatch=%s",
+            offer_data.get("tag_id"),
+            str(raw)[:96],
+            offer_data.get("is_rolling_batch"),
+            offer_data.get("is_broadcast"),
+            offer_data.get("is_dispatch"),
+        )
+        # Baseline (26942141): önce tek sid, yoksa user_* odası — Leylek/Muhabbet emit_socket_event_to_user zinciriyle karışmaz.
         room = _normalize_user_room(raw)
         sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip())
         if sid:
             await sio.emit("new_passenger_offer", offer_data, to=sid)
             logger.info(
-                f"📤 new_passenger_offer to=sid driver={raw[:13]}… tag={offer_data.get('tag_id')}"
+                "📤 new_passenger_offer to=sid driver=%s… tag=%s",
+                raw[:13] + ("…" if len(raw) > 13 else raw),
+                offer_data.get("tag_id"),
             )
         else:
             await sio.emit("new_passenger_offer", offer_data, room=room)
             logger.warning(
-                f"📤 new_passenger_offer room-only (bu sürücü socket register yok?) "
-                f"driver={raw[:13]}… room={room} tag={offer_data.get('tag_id')}"
+                "📤 new_passenger_offer room-only (bu sürücü socket register yok?) "
+                "driver=%s… room=%s tag=%s",
+                raw[:13] + ("…" if len(raw) > 13 else raw),
+                room,
+                offer_data.get("tag_id"),
             )
 
         # FCM: yalnız send_trip_push_and_log → send_push_notification (Expo token kullanılmaz).
@@ -1955,9 +1970,10 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         raw_in = str(user_id).strip()
         if not raw_in:
             return
+        canonical_lo = raw_in.lower()
         keys_to_try: set[str] = set()
         keys_to_try.add(raw_in)
-        keys_to_try.add(raw_in.lower())
+        keys_to_try.add(canonical_lo)
         resolved_uid = None
         try:
             resolved_uid = await resolve_user_id(raw_in)
@@ -1992,15 +2008,30 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 if sid:
                     all_sids.add(str(sid))
 
+        room = _normalize_user_room(str(resolved_uid or canonical_lo))
+        sid_count = len(all_sids)
         logger.info(
-            "[EMIT DEBUG] user_id=%s keys_to_try=%s resolved=%s final_sids=%s",
-            raw_in[:96],
-            sorted(keys_to_try),
-            str(resolved_uid or "")[:96],
-            sorted(all_sids),
+            "[socket_emit_user] %s",
+            json.dumps(
+                {
+                    "event": event_name,
+                    "user_id": canonical_lo[:96],
+                    "resolved": str(resolved_uid or "").lower()[:96] if resolved_uid else "",
+                    "sid_count": sid_count,
+                    "room": room,
+                    "keys": sorted(keys_to_try)[:12],
+                },
+                ensure_ascii=False,
+            ),
         )
+        if sid_count == 0:
+            logger.warning(
+                "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
+                event_name,
+                canonical_lo[:48],
+                room,
+            )
 
-        room = _normalize_user_room(str(resolved_uid or raw_in))
         if all_sids:
             for sid in all_sids:
                 try:
@@ -2012,24 +2043,144 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             except Exception as em:
                 logger.warning("%s emit room=%s err=%s", event_name, room, em)
             if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=%s room=%s", str(resolved_uid or raw_in).lower(), sorted(all_sids), room)
-            else:
-                logger.info(
-                    "📤 %s to=sids+room user=%s… count=%s room=%s tried_keys=%s",
-                    event_name,
-                    str(resolved_uid or raw_in).lower()[:13],
-                    len(all_sids),
-                    room,
-                    sorted(keys_to_try),
-                )
+                logger.info("[muhabbet_ack] sent user=%s sids=%s room=%s", canonical_lo, sorted(all_sids), room)
         else:
-            await sio.emit(event_name, payload, room=room)
+            try:
+                await sio.emit(event_name, payload, room=room)
+            except Exception as em:
+                logger.warning("%s emit room_fallback_failed room=%s err=%s", event_name, room, em)
             if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", str(resolved_uid or raw_in).lower(), room)
-            else:
-                logger.info("📤 %s room=%s (sid yok)", event_name, room)
+                logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", canonical_lo, room)
     except Exception as e:
-        logger.warning(f"{event_name} emit hatası: {e}")
+        logger.warning("%s emit hatası: %s", event_name, e)
+
+
+async def notify_conversation_updated(
+    conversation_id: str,
+    reason: str,
+    actor_user_id: Optional[str] = None,
+) -> None:
+    cid = str(conversation_id or "").strip().lower()
+    if not cid:
+        return
+    try:
+        uuid.UUID(cid)
+    except ValueError:
+        logger.warning(
+            "[muhabbet_notify] type=conversation_updated conversation_id=%s reason=%s target_user_id= err=bad_uuid",
+            cid,
+            reason,
+        )
+        return
+    try:
+        r = supabase.table("conversations").select("user_a,user_b,updated_at").eq("id", cid).limit(1).execute()
+        if not r.data:
+            logger.warning(
+                "[muhabbet_notify] type=conversation_updated conversation_id=%s reason=%s target_user_id= err=no_row",
+                cid,
+                reason,
+            )
+            return
+        row = dict(r.data[0])
+        ua = str(row.get("user_a") or "").strip().lower()
+        ub = str(row.get("user_b") or "").strip().lower()
+        version_raw = row.get("updated_at")
+        version = version_raw if version_raw else datetime.now(timezone.utc).isoformat()
+        payload = {"conversation_id": cid, "reason": reason, "version": version}
+        targets = [u for u in {ua, ub} if u]
+        for uid_tgt in targets:
+            logger.info(
+                "[muhabbet_notify] type=conversation_updated conversation_id=%s reason=%s target_user_id=%s",
+                cid,
+                reason,
+                uid_tgt[:13] if uid_tgt else "",
+            )
+            try:
+                await emit_socket_event_to_user(uid_tgt, "conversation_updated", payload)
+            except Exception as em:
+                logger.warning(
+                    "[muhabbet_notify] conversation_updated emit failed target=%s err=%s",
+                    uid_tgt[:13] if uid_tgt else "",
+                    em,
+                )
+        _ = actor_user_id
+    except Exception as e:
+        logger.warning("[muhabbet_notify] conversation_updated failed conversation_id=%s err=%s", cid, e)
+
+
+async def notify_trip_session_updated(
+    session_id: str,
+    reason: str,
+    actor_user_id: Optional[str] = None,
+) -> None:
+    sid = str(session_id or "").strip().lower()
+    if not sid:
+        return
+    try:
+        uuid.UUID(sid)
+    except ValueError:
+        logger.warning(
+            "[muhabbet_notify] type=trip_session_updated session_id=%s reason=%s target_user_id= err=bad_uuid",
+            sid,
+            reason,
+        )
+        return
+    try:
+        r = supabase.table("muhabbet_trip_sessions").select("*").eq("id", sid).limit(1).execute()
+        if not r.data:
+            logger.warning(
+                "[muhabbet_notify] type=trip_session_updated session_id=%s reason=%s target_user_id= err=no_row",
+                sid,
+                reason,
+            )
+            return
+        row = dict(r.data[0])
+        version_raw = row.get("updated_at")
+        version = version_raw if version_raw else datetime.now(timezone.utc).isoformat()
+        payload = {"session_id": sid, "reason": reason, "version": version}
+        targets: set[str] = set()
+        for k in ("passenger_id", "driver_id"):
+            u = str(row.get(k) or "").strip().lower()
+            if u:
+                targets.add(u)
+        try:
+            pr = (
+                supabase.table("muhabbet_trip_passengers")
+                .select("passenger_user_id")
+                .eq("session_id", sid)
+                .execute()
+            )
+            for pr_row in pr.data or []:
+                pu = str(pr_row.get("passenger_user_id") or "").strip().lower()
+                if pu:
+                    targets.add(pu)
+        except Exception as pe:
+            logger.debug("[muhabbet_notify] trip passengers select skipped session_id=%s err=%s", sid[:12], pe)
+
+        trip_rm = muhabbet_trip_room(sid)
+        try:
+            await sio.emit("trip_session_updated", payload, room=trip_rm)
+        except Exception as em:
+            logger.warning("[muhabbet_notify] trip_session_updated room emit failed session_id=%s err=%s", sid[:12], em)
+
+        for uid_tgt in sorted(targets):
+            logger.info(
+                "[muhabbet_notify] type=trip_session_updated session_id=%s reason=%s target_user_id=%s",
+                sid,
+                reason,
+                uid_tgt[:13] if uid_tgt else "",
+            )
+            try:
+                await emit_socket_event_to_user(uid_tgt, "trip_session_updated", payload)
+            except Exception as em:
+                logger.warning(
+                    "[muhabbet_notify] trip_session_updated emit failed target=%s err=%s",
+                    uid_tgt[:13] if uid_tgt else "",
+                    em,
+                )
+        _ = actor_user_id
+    except Exception as e:
+        logger.warning("[muhabbet_notify] trip_session_updated failed session_id=%s err=%s", sid, e)
 
 
 def _socketio_room_member_count(room: str) -> int:
@@ -2630,6 +2781,12 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
             "passenger_payment_method": merged.get("passenger_payment_method"),
         }
 
+        logger.info(
+            "[normal_ride_dispatch] tag_id=%s mode=sequential_queue driver_id=%s queue_waiting_left=%s",
+            tag_id,
+            str(driver_id)[:96],
+            sum(1 for e in queue if e.get("status") == "waiting"),
+        )
         sent_ok = await emit_new_passenger_offer_to_driver(driver_id, offer_data)
         if not sent_ok:
             logger.info(
@@ -3149,6 +3306,14 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         bseq,
         n_queue_ok,
         len(excluded),
+    )
+    logger.info(
+        "[normal_ride_dispatch] tag_id=%s batch_seq=%s eligible_total=%s sent_slots=%s vehicle_relaxed=%s",
+        tag_id,
+        bseq,
+        len(eligible),
+        n_queue_ok,
+        use_relaxed_vehicle,
     )
 
     async def _timeout_tick():
@@ -15990,6 +16155,14 @@ async def _create_ride_offer_execute(
                     pass
 
             logger.info(
+                "[normal_ride_create_response] tag_id=%s passenger_id=%s notified=%s insert_variant=%s",
+                str(tag.get("id") or tag_id),
+                str(passenger_id or "")[:96],
+                notified,
+                used_variant,
+            )
+
+            logger.info(
                 "[normal-ride-create] tag_id=%s passenger_id=%s status=%s dispatch_started=%s",
                 str(tag.get("id") or tag_id)[:96],
                 str(passenger_id or "")[:96],
@@ -22268,6 +22441,18 @@ async def _muhabbet_publish_message_after_persist(
     except Exception as e:
         logger.warning("muhabbet rest room emit failed cid=%s message_id=%s err=%s", cid, msg_id, e)
     try:
+        if recipient:
+            await emit_socket_event_to_user(recipient, "message", payload)
+        logger.info(
+            "[socket_message_publish] %s",
+            json.dumps(
+                {"conversation_id": cid, "target_user_id": recipient or "", "message_id": msg_id},
+                ensure_ascii=False,
+            ),
+        )
+    except Exception as e:
+        logger.warning("muhabbet rest user-target message emit failed: %s", e)
+    try:
         await emit_socket_event_to_user(
             sender_id,
             "message_ack",
@@ -22456,6 +22641,10 @@ async def sio_join_muhabbet_conversation(sid, data):
     await sio.enter_room(sid, room)
     await sio.emit("joined_muhabbet", {"conversation_id": cid, "room": room}, room=sid)
     logger.info("[muhabbet_join] ok sid=%s user=%s room=%s", sid, uid, room)
+    logger.info(
+        "[socket_join] %s",
+        json.dumps({"event": "join_muhabbet_conversation", "user_id": uid, "sid": sid, "room": room}, ensure_ascii=False),
+    )
 
 
 @sio.on("leave_muhabbet_conversation")
@@ -22578,6 +22767,15 @@ async def sio_muhabbet_send(sid, data):
     }
     await sio.emit("message", payload, room=room)
     logger.info("[muhabbet_send] emitted room=%s conversation_id=%s message_id=%s peers_in_room=%s", room, cid, msg_id, peer_n)
+    try:
+        if recipient:
+            await emit_socket_event_to_user(recipient, "message", payload)
+        logger.info(
+            "[socket_message_publish] %s",
+            json.dumps({"conversation_id": cid, "target_user_id": recipient or "", "message_id": msg_id}, ensure_ascii=False),
+        )
+    except Exception as e:
+        logger.warning("muhabbet_send user-target message: %s", e)
     try:
         conv_payload = {
             "conversation_id": cid,
@@ -25156,6 +25354,73 @@ class MuhabbetTripForceFinishRespondRestBody(BaseModel):
     response: str
 
 
+class MuhabbetTripLocationRestBody(BaseModel):
+    lat: float
+    lng: float
+    heading: Optional[float] = None
+    speed: Optional[float] = None
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/location")
+async def muhabbet_trip_location_rest_post(
+    session_id: str,
+    body: MuhabbetTripLocationRestBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    sid_lo = str(session_id or "").strip().lower()
+    t0 = time.perf_counter()
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
+        uid_lo = str(uid).strip().lower()
+        passenger_lo = str(row.get("passenger_id") or "").strip().lower()
+        driver_lo = str(row.get("driver_id") or "").strip().lower()
+        lat = float(body.lat)
+        lng = float(body.lng)
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise HTTPException(status_code=400, detail="Geçersiz koordinat.")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch: dict = {"updated_at": now_iso}
+        if uid_lo == driver_lo:
+            patch["driver_location_lat"] = lat
+            patch["driver_location_lng"] = lng
+            patch["driver_location_updated_at"] = now_iso
+        elif uid_lo == passenger_lo:
+            patch["passenger_location_lat"] = lat
+            patch["passenger_location_lng"] = lng
+            patch["passenger_location_updated_at"] = now_iso
+        else:
+            raise HTTPException(status_code=403, detail="Bu Muhabbet yolculuk oturumuna erişim yetkiniz yok.")
+
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid_lo).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        ms = int((time.perf_counter() - t0) * 1000)
+        logger.info(
+            "[muhabbet_location_rest] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "user_id": uid_lo[:13],
+                    "role": "driver" if uid_lo == driver_lo else "passenger",
+                    "ms": ms,
+                    "heading": body.heading,
+                    "speed": body.speed,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        try:
+            await notify_trip_session_updated(sid_lo, "location_updated", uid_lo)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] location_updated notify failed: %s", ne)
+        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[muhabbet_location_rest] failed session_id=%s err=%s", sid_lo, e)
+        raise HTTPException(status_code=500, detail="Konum güncellenemedi.") from e
+
+
 @api_router.post("/muhabbet/trip-sessions/{session_id}/boarding-qr/create")
 async def muhabbet_trip_boarding_qr_create_post(
     session_id: str,
@@ -25164,8 +25429,26 @@ async def muhabbet_trip_boarding_qr_create_post(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id)
-        await emit_socket_event_to_user(str(uid).strip(), "muhabbet_trip_boarding_qr_created", out["emit_payload"])
+        ep = out["emit_payload"]
+        nr = out.get("next_row") or {}
+        trip_rm = muhabbet_trip_room(session_id)
+        await sio.emit("muhabbet_trip_boarding_qr_created", ep, room=trip_rm)
+        for tgt in (str(nr.get("passenger_id") or "").strip(), str(nr.get("driver_id") or "").strip()):
+            if tgt:
+                await emit_socket_event_to_user(tgt, "muhabbet_trip_boarding_qr_created", ep)
+        logger.info(
+            "[socket_trip_event] %s",
+            json.dumps(
+                {"event": "boarding_qr_created_rest", "session_id": session_id, "targets": "passenger+driver"},
+                ensure_ascii=False,
+            ),
+        )
         _schedule_muhabbet_boarding_qr_passenger_push(out, session_id, str(uid).strip().lower())
+        sid_lo = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_lo, "boarding_qr_created", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] boarding_qr_created notify failed: %s", ne)
         return {
             "success": True,
             "boarding_qr_token": out["boarding_qr_token"],
@@ -25188,6 +25471,11 @@ async def muhabbet_trip_boarding_qr_confirm_post(
     tok = str(body.boarding_qr_token or body.token or "").strip().upper()
     try:
         sess = await _muhabbet_trip_boarding_qr_confirm_apply(uid, session_id, tok)
+        sid_lo = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_lo, "boarding_confirmed", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] boarding_confirmed notify failed: %s", ne)
         return {"success": True, **sess}
     except HTTPException:
         raise
@@ -25216,8 +25504,24 @@ async def muhabbet_trip_call_start_post(
             if target_uid:
                 await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
             _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
+            logger.info(
+                "[socket_trip_event] %s",
+                json.dumps(
+                    {
+                        "event": "call_start",
+                        "session_id": sid_lo,
+                        "caller": uid_lo,
+                        "target_user_id": target_uid,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_start", sid_lo, ms, sess_state or "ringing")
+        try:
+            await notify_trip_session_updated(sid_lo, "call_started", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] call_started notify failed: %s", ne)
         return {"success": True, **out}
     except HTTPException:
         raise
@@ -25237,6 +25541,11 @@ async def muhabbet_trip_payment_method_post(
     try:
         next_row = await _muhabbet_trip_payment_method_set_apply(uid, session_id, body.payment_method)
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_payment_method_set")
+        sid_pm = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_pm, "payment_method_set", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] payment_method_set notify failed: %s", ne)
         return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
     except HTTPException:
         raise
@@ -25254,6 +25563,11 @@ async def muhabbet_trip_finish_qr_create_post(
         payload, next_row = await _muhabbet_trip_finish_qr_create_apply(uid, session_id)
         await _muhabbet_trip_emit_finish_qr_created(payload, session_id)
         _schedule_muhabbet_finish_qr_passenger_push(next_row, session_id, str(uid).strip().lower())
+        sid_f = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_f, "finish_qr_created", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] finish_qr_created notify failed: %s", ne)
         return {
             "success": True,
             "finish_qr_token": payload.get("finish_qr_token"),
@@ -25277,6 +25591,11 @@ async def muhabbet_trip_finish_qr_confirm_post(
     try:
         next_row = await _muhabbet_trip_finish_qr_confirm_apply(uid, session_id, tok)
         await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+        sid_fc = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_fc, "finish_confirmed", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] finish_confirmed notify failed: %s", ne)
         return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
     except HTTPException:
         raise
@@ -25295,6 +25614,11 @@ async def muhabbet_trip_cancel_post(
         next_row, did_cancel = await _muhabbet_trip_cancel_apply(uid, session_id, body.reason)
         if did_cancel:
             await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_cancelled")
+            sid_c = str(session_id or "").strip().lower()
+            try:
+                await notify_trip_session_updated(sid_c, "cancelled", uid)
+            except Exception as ne:
+                logger.warning("[muhabbet_notify] cancelled notify failed: %s", ne)
         return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
     except HTTPException:
         raise
@@ -25320,6 +25644,10 @@ async def muhabbet_trip_force_finish_request_post(
         st_pub = str((sess or {}).get("force_finish_state") or ("duplicate" if skip else "pending"))
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_force_finish_log("request_rest", sid_lo, st_pub, ms)
+        try:
+            await notify_trip_session_updated(sid_lo, "force_finish_requested", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] force_finish_requested notify failed: %s", ne)
         return {"success": True, "session": payload.get("session"), **({"duplicate_pending": True} if skip else {})}
     except HTTPException:
         raise
@@ -25345,6 +25673,10 @@ async def muhabbet_trip_force_finish_respond_post(
         ms = int((time.perf_counter() - t0) * 1000)
         resp = str((next_row or {}).get("forced_finish_other_user_response") or body.response or "")
         _muhabbet_force_finish_log("respond_rest", sid_lo, resp, ms)
+        try:
+            await notify_trip_session_updated(sid_lo, "force_finish_responded", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] force_finish_responded notify failed: %s", ne)
         return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
     except HTTPException:
         raise
@@ -25362,6 +25694,11 @@ async def muhabbet_trip_call_accept_post(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     try:
         sess_pub = await _muhabbet_trip_call_response_broadcast(uid, session_id, "muhabbet_trip_call_accept", "accepted_by_user_id")
+        sid_ca = str(session_id or "").strip().lower()
+        try:
+            await notify_trip_session_updated(sid_ca, "call_accepted", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] call_accepted notify failed: %s", ne)
         return {"success": True, "session": sess_pub}
     except HTTPException:
         raise
@@ -25381,6 +25718,10 @@ async def muhabbet_trip_call_decline_post(
         sess_pub = await _muhabbet_trip_call_response_broadcast(uid, session_id, "muhabbet_trip_call_decline", "declined_by_user_id")
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_decline", sid_lo, ms, str((sess_pub or {}).get("call_state") or ""))
+        try:
+            await notify_trip_session_updated(sid_lo, "call_declined", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] call_declined notify failed: %s", ne)
         return {"success": True, "session": sess_pub}
     except HTTPException:
         raise
@@ -25402,6 +25743,10 @@ async def muhabbet_trip_call_end_post(
         sess_pub = await _muhabbet_trip_call_end_broadcast(uid, session_id)
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_end", sid_lo, ms, str((sess_pub or {}).get("call_state") or ""))
+        try:
+            await notify_trip_session_updated(sid_lo, "call_ended", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] call_ended notify failed: %s", ne)
         return {"success": True, "session": sess_pub}
     except HTTPException:
         raise
@@ -25437,10 +25782,14 @@ async def sio_join_muhabbet_trip_session(sid, data):
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         room = muhabbet_trip_room(session_id)
         await sio.enter_room(sid, room)
-        await sio.emit(
-            "muhabbet_trip_joined",
-            {"session_id": session_id, "room": room, "session": _muhabbet_trip_session_public(row)},
-            room=sid,
+        joined_payload = {"session_id": session_id, "room": room, "session": _muhabbet_trip_session_public(row)}
+        await sio.emit("muhabbet_trip_joined", joined_payload, room=sid)
+        logger.info(
+            "[socket_join] %s",
+            json.dumps(
+                {"event": "muhabbet_trip_join", "user_id": uid, "sid": sid, "room": room, "session_id": session_id},
+                ensure_ascii=False,
+            ),
         )
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
@@ -25510,7 +25859,30 @@ async def sio_muhabbet_trip_location_update(sid, data):
             "updated_at": now_iso,
             "session": _muhabbet_trip_session_public(next_row),
         }
-        await sio.emit("muhabbet_trip_location_updated", payload, room=muhabbet_trip_room(session_id))
+        trip_room = muhabbet_trip_room(session_id)
+        await sio.emit("muhabbet_trip_location_updated", payload, room=trip_room)
+        try:
+            bc = sum(1 for _ in sio.manager.get_participants("/", trip_room))
+        except Exception:
+            bc = -1
+        logger.info(
+            "[leylek_location] %s",
+            json.dumps(
+                {"session_id": session_id, "user_id": uid_lo, "lat": lat, "lng": lng, "broadcast_count": bc},
+                ensure_ascii=False,
+            ),
+        )
+        logger.info(
+            "[socket_join] %s",
+            json.dumps(
+                {"event": "muhabbet_trip_location_broadcast", "session_id": session_id, "room": trip_room},
+                ensure_ascii=False,
+            ),
+        )
+        for tgt in (passenger_id, driver_id):
+            tu = str(tgt or "").strip()
+            if tu:
+                await emit_socket_event_to_user(tu, "muhabbet_trip_location_updated", payload)
     except Exception as e:
         logger.warning("muhabbet_trip_location_update: %s", e)
 
@@ -26312,6 +26684,10 @@ async def muhabbet_conversation_messages_post(
             created_iso=created_iso,
             conversation_row=crow,
         )
+        try:
+            await notify_conversation_updated(cid, "message_created", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] message_created notify failed: %s", ne)
         return {
             "success": True,
             "message": {
@@ -26574,6 +26950,10 @@ async def muhabbet_trip_convert_request_rest(
             request_id,
             str(uid).strip().lower(),
         )
+        try:
+            await notify_conversation_updated(cid, "trip_convert_request", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] trip_convert_request notify failed: %s", ne)
         blob = _muhabbet_trip_convert_request_snapshot(uid, cid)
         return {"success": True, "reused": reused, "trip_convert_request": blob}
     except HTTPException:
@@ -26606,6 +26986,14 @@ async def muhabbet_trip_convert_accept_rest(
                 status_code=int(result.get("http_status") or 400),
                 detail=str(result.get("detail") or "İstek kabul edilemedi."),
             )
+        try:
+            await notify_conversation_updated(cid, "trip_convert_accepted", uid)
+            sess_pub = result.get("session") or {}
+            sid_sess = str(sess_pub.get("id") or sess_pub.get("session_id") or "").strip().lower()
+            if sid_sess:
+                await notify_trip_session_updated(sid_sess, "trip_convert_accepted", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] trip_convert_accepted notify failed: %s", ne)
         return {
             "success": True,
             "session": result.get("session"),
@@ -26641,6 +27029,10 @@ async def muhabbet_trip_convert_decline_rest(
                 status_code=int(result.get("http_status") or 400),
                 detail=str(result.get("detail") or "İstek reddedilemedi."),
             )
+        try:
+            await notify_conversation_updated(cid, "trip_convert_declined", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] trip_convert_declined notify failed: %s", ne)
         return {"success": True, "trip_convert_request": result.get("trip_convert_request")}
     except HTTPException:
         raise

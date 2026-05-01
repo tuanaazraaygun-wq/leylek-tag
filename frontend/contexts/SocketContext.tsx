@@ -17,13 +17,13 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
-import { BACKEND_BASE_URL } from '../lib/backendConfig';
+import { API_BASE_URL, BACKEND_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
 import { publishSocketSessionRefresh } from '../lib/socketSessionRefresh';
+import { emitConversationUpdated, emitTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import { useNotifications } from './NotificationContext';
 
-// REST ile aynı origin (lib/backendConfig) — ayrı sunucu = teklif görünmez
 const SOCKET_URL = BACKEND_BASE_URL;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -60,6 +60,12 @@ export function getOrCreateSocket(): Socket {
     SOCKET_URL,
     '(app.json extra.backendUrl / EXPO_PUBLIC_BACKEND_URL — API ile aynı olmalı)'
   );
+  console.log('[socket_health]', JSON.stringify({
+    tag: 'singleton_io_init',
+    socketUrl: SOCKET_URL,
+    apiUrl: API_BASE_URL,
+    devBuild: typeof __DEV__ !== 'undefined' && !!__DEV__,
+  }));
 
   singletonSocket = io(SOCKET_URL, {
     path: '/socket.io',
@@ -451,6 +457,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
       });
       scheduleSocketRegister('handle_connect_direct');
       const sid = socket.id ?? null;
+      console.log('[socket_health]', JSON.stringify({
+        tag: 'provider_connect',
+        baseUrl: BACKEND_BASE_URL,
+        connected: true,
+        id: sid,
+        userId: userIdRef.current,
+        registered: false,
+      }));
       console.log('✅ [SocketProvider] Socket bağlandı:', sid);
       setIsConnected(true);
       setIsRegistered(false);
@@ -489,6 +503,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
               ? String(data.user_id)
               : userIdRef.current;
         console.log(`[socket] registered sid=${lastRegisteredSocketSid || 'null'} user_id=${lastRegisteredSocketUserId || 'null'}`);
+        console.log('[socket_health]', JSON.stringify({
+          tag: 'registered_ack',
+          baseUrl: BACKEND_BASE_URL,
+          connected: socket.connected,
+          id: socket.id ?? null,
+          userId: lastRegisteredSocketUserId || userIdRef.current,
+          registered: true,
+        }));
         try {
           const roomUserId = lastRegisteredSocketUserId || userIdRef.current;
           if (roomUserId) {
@@ -556,6 +578,59 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
     socket.on('incoming_call', handleIncomingCall);
 
+    const onConversationUpdated = (payload: Record<string, unknown>) => {
+      console.log('[socket_receive]', JSON.stringify({ event: 'conversation_updated', payload }));
+      emitConversationUpdated({
+        conversation_id:
+          payload?.conversation_id != null ? String(payload.conversation_id).trim().toLowerCase() : undefined,
+        reason: payload?.reason != null ? String(payload.reason) : undefined,
+        version: payload?.version != null ? String(payload.version) : undefined,
+      });
+    };
+    const onTripSessionUpdated = (payload: Record<string, unknown>) => {
+      console.log('[socket_receive]', JSON.stringify({ event: 'trip_session_updated', payload }));
+      emitTripSessionUpdated({
+        session_id:
+          payload?.session_id != null ? String(payload.session_id).trim().toLowerCase() : undefined,
+        reason: payload?.reason != null ? String(payload.reason) : undefined,
+        version: payload?.version != null ? String(payload.version) : undefined,
+      });
+    };
+    socket.on('conversation_updated', onConversationUpdated);
+    socket.on('trip_session_updated', onTripSessionUpdated);
+
+    const onAnyInbound = (ev: string, ...args: unknown[]) => {
+      // TAG/new_passenger_offer burada işlenmez; useSocket dinleyicileri etkilenmez (socket.io onAny yan etki oluşturmaz).
+      if (ev === 'conversation_updated' || ev === 'trip_session_updated') {
+        return;
+      }
+      const legacyMuhabbetOrChat =
+        ev.startsWith('muhabbet') ||
+        ev.startsWith('leylek_pair') ||
+        ev.startsWith('leylek_key') ||
+        ev === 'message' ||
+        ev === 'message_ack' ||
+        ev === 'message_delivered' ||
+        ev === 'message_seen' ||
+        ev === 'message_deleted' ||
+        ev === 'joined_muhabbet';
+      if (!legacyMuhabbetOrChat) {
+        return;
+      }
+      const p = args[0];
+      let ids: Record<string, unknown> = {};
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        const o = p as Record<string, unknown>;
+        ids = {
+          session_id: o.session_id,
+          conversation_id: o.conversation_id,
+          message_id: o.message_id,
+        };
+      }
+      console.log('[socket_receive]', JSON.stringify({ kind: 'legacy_debug', event: ev, ids }));
+    };
+    socket.onAny(onAnyInbound);
+
     // Socket zaten bağlıysa `connect` bir daha tetiklenmez (ilk yükleme yarışı, Fast Refresh).
     // Her başarılı oturumda sunucuya register gitmesi için aynı yolu çalıştır.
     if (socket.connected) {
@@ -574,6 +649,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
       socket.off('reconnect', handleReconnect);
       socket.off('registered', handleRegistered);
       socket.off('incoming_call', handleIncomingCall);
+      socket.off('conversation_updated', onConversationUpdated);
+      socket.off('trip_session_updated', onTripSessionUpdated);
+      try {
+        socket.offAny(onAnyInbound);
+      } catch {
+        /* noop — bazı sürümlerde offAny yok */
+      }
       // Socket'i KAPATMIYORUZ - singleton kalıcı
     };
   }, [scheduleSocketRegister]);

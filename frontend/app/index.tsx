@@ -11212,7 +11212,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const ts = String(tagPvk).trim().toLowerCase();
         const tripVk: 'car' | 'motorcycle' =
           ts === 'motorcycle' || ts === 'motor' ? 'motorcycle' : 'car';
-        if (tripVk !== driverVehicleKind) return;
+        if (tripVk !== driverVehicleKind) {
+          try {
+            console.log(
+              '[normal_ride_driver_offer_filtered]',
+              JSON.stringify({
+                reason: 'trip_fetch_vehicle_mismatch_show_anyway',
+                tag_id: tag?.id ?? null,
+                tripVk,
+                driverVehicleKind,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+        }
       }
       setRequests(prev => {
         if (prev.some(r => r.id === tag.id)) return prev;
@@ -11707,12 +11721,24 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const tripVk: 'car' | 'motorcycle' =
           pvkS === 'motorcycle' || pvkS === 'motor' ? 'motorcycle' : 'car';
         if (tripVk !== driverVehicleKind) {
+          try {
+            console.log(
+              '[normal_ride_driver_offer_filtered]',
+              JSON.stringify({
+                reason: 'vehicle_mismatch_socket_show_anyway',
+                tag_id: data?.tag_id ?? null,
+                tripVk,
+                driverVehicleKind,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
           console.log(
-            '⚠️ ŞOFÖR: Yolcu araç tercihi bu sürücü tipiyle eşleşmiyor — listeye eklenmedi',
+            '⚠️ ŞOFÖR: Araç tipi uyarısı (kart yine listelenir):',
             tripVk,
-            driverVehicleKind
+            driverVehicleKind,
           );
-          return;
         }
       }
 
@@ -11817,6 +11843,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 visible_request_ids: vis,
               }),
             );
+            try {
+              console.log(
+                '[normal_ride_driver_offer_added]',
+                JSON.stringify({
+                  tag_id: data.tag_id,
+                  requests_len: nextList.length,
+                }),
+              );
+            } catch {
+              /* noop */
+            }
             console.log(
               JSON.stringify({
                 evt: 'DRIVER_OFFER_LIST_AFTER_SET',
@@ -12652,7 +12689,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const ps = String(pendingPvk).trim().toLowerCase();
         const tripVk: 'car' | 'motorcycle' =
           ps === 'motorcycle' || ps === 'motor' ? 'motorcycle' : 'car';
-        if (tripVk !== driverVehicleKind) return;
+        if (tripVk !== driverVehicleKind) {
+          try {
+            console.log(
+              '[normal_ride_driver_offer_filtered]',
+              JSON.stringify({
+                reason: 'dispatch_pending_vehicle_mismatch_show_anyway',
+                tag_id: data.tag_id ?? null,
+                tripVk,
+                driverVehicleKind,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+        }
       }
       setRequests((prev) => {
         if (prev.some((r) => r.id === data.tag_id)) return prev;
@@ -13185,7 +13236,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             const pvkS = String(pvkSocket).trim().toLowerCase();
             const tripVk: 'car' | 'motorcycle' =
               pvkS === 'motorcycle' || pvkS === 'motor' ? 'motorcycle' : 'car';
-            if (tripVk !== driverVehicleKind) continue;
+            if (tripVk !== driverVehicleKind) {
+              try {
+                console.log(
+                  '[normal_ride_driver_offer_filtered]',
+                  JSON.stringify({
+                    reason: 'driver_requests_poll_vehicle_mismatch_show_anyway',
+                    tag_id: id,
+                    tripVk,
+                    driverVehicleKind,
+                  }),
+                );
+              } catch {
+                /* noop */
+              }
+            }
           }
 
           const rawDrop = raw.dropoff_location;

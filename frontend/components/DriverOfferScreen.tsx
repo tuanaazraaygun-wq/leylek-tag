@@ -841,20 +841,33 @@ export default function DriverOfferScreen({
     ? Math.min(SCREEN_HEIGHT * 0.3, 240)
     : Math.min(SCREEN_HEIGHT * 0.36, 320);
 
-  /** Yolcu talebi car|motorcycle ile sürücü vehicleKind birebir eşleşmeli (sunucu + ek savunma). */
+  /** Normal TAG: teklifleri gizleme; araç uyumsuzluğu yalnızca tanılama logu (sunucu hedefli socket teklifi kartta kalsın). */
   const visibleRequests = useMemo(() => {
-    return requests.filter((req) => {
+    for (const req of requests) {
       const raw =
         (req as { passenger_vehicle_kind?: unknown }).passenger_vehicle_kind ??
         (req as { passenger_preferred_vehicle?: unknown }).passenger_preferred_vehicle;
-      if (raw === undefined || raw === null || String(raw).trim() === '') {
-        return true;
-      }
+      if (raw === undefined || raw === null || String(raw).trim() === '') continue;
       const s = String(raw).trim().toLowerCase();
       const tripVk: 'car' | 'motorcycle' =
         s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
-      return tripVk === vehicleKind;
-    });
+      if (tripVk !== vehicleKind) {
+        try {
+          console.log(
+            '[normal_ride_driver_offer_filtered]',
+            JSON.stringify({
+              reason: 'vehicle_mismatch_visibleRequests_show_anyway',
+              tag_id: (req as { tag_id?: string }).tag_id ?? (req as { id?: string }).id ?? null,
+              tripVk,
+              vehicleKind,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+      }
+    }
+    return requests;
   }, [requests, vehicleKind]);
 
   const listedTagIds = useMemo(() => {

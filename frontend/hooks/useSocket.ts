@@ -382,6 +382,19 @@ export default function useSocket({
 
     const handleNewTag = (data: any) => {
       console.log('🏷️ [useSocket] YENİ TAG:', data);
+      try {
+        console.log(
+          '[normal_ride_offer_received]',
+          JSON.stringify({
+            tag_id: data?.tag_id ?? null,
+            userRole,
+            is_rolling_batch: data?.is_rolling_batch ?? null,
+            is_broadcast: data?.is_broadcast ?? null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
       if (userRole === 'driver' && data?.tag_id) {
         try {
           console.log(
