@@ -20111,6 +20111,7 @@ class MuhabbetChatMessageCreateBody(BaseModel):
     text: Optional[str] = None
     message_type: Optional[str] = None
     audio_url: Optional[str] = None
+    audio_storage_path: Optional[str] = None
     audio_duration_ms: Optional[int] = None
     audio_mime_type: Optional[str] = None
     message_id: Optional[str] = None
@@ -22258,6 +22259,16 @@ def _muhabbet_validate_outgoing_audio_payload(
         return (False, "Ses dosyası adresi gerekli.")
     if not _muhabbet_audio_url_allowed_for_conversation(url, cid):
         return (False, "Ses dosyası bu sohbete ait değil.")
+    return _muhabbet_validate_audio_mime_duration(audio_duration_ms, audio_mime_type)
+
+
+_MUHABBET_AUDIO_BUCKET = "muhabbet-audio"
+_MUHABBET_AUDIO_SIGN_TTL_SEC = 3600
+
+
+def _muhabbet_validate_audio_mime_duration(
+    audio_duration_ms: Optional[Any], audio_mime_type: Optional[str]
+) -> tuple[bool, str]:
     try:
         dms = int(audio_duration_ms) if audio_duration_ms is not None else 0
     except (TypeError, ValueError):
@@ -22270,6 +22281,53 @@ def _muhabbet_validate_outgoing_audio_payload(
     return (True, "")
 
 
+def _muhabbet_validate_audio_storage_path(path: str, cid: str, sender_id: str) -> tuple[bool, str]:
+    raw = str(path or "").strip().strip("/")
+    if not raw or ".." in raw:
+        return (False, "Geçersiz dosya yolu.")
+    parts = [p for p in raw.split("/") if p != ""]
+    if len(parts) < 3:
+        return (False, "Ses dosyası yolu eksik.")
+    c_lo = str(cid or "").strip().lower()
+    s_lo = str(sender_id or "").strip().lower()
+    if parts[0].lower() != c_lo:
+        return (False, "Ses dosyası bu sohbete ait değil.")
+    if parts[1].lower() != s_lo:
+        return (False, "Ses dosyası gönderen kullanıcıya ait değil.")
+    return (True, "")
+
+
+def _muhabbet_signed_audio_url(storage_path: str) -> Optional[str]:
+    p = str(storage_path or "").strip().strip("/")
+    if not p:
+        return None
+    try:
+        res = supabase.storage.from_(_MUHABBET_AUDIO_BUCKET).create_signed_url(p, _MUHABBET_AUDIO_SIGN_TTL_SEC)
+        if isinstance(res, dict):
+            u = res.get("signedURL") or res.get("signedUrl") or res.get("signed_url")
+            if u:
+                return str(u).strip()
+        return None
+    except Exception as e:
+        logger.warning("[muhabbet_audio_signed_url] failed path=%s err=%s", p[:160], e)
+        return None
+
+
+def _muhabbet_audio_playback_url_from_row(row: Optional[dict]) -> Optional[str]:
+    if not row:
+        return None
+    mt = str(row.get("message_type") or "text").strip().lower()
+    if mt != "audio":
+        return None
+    asp = str(row.get("audio_storage_path") or "").strip()
+    if asp:
+        signed = _muhabbet_signed_audio_url(asp)
+        if signed:
+            return signed
+    legacy = str(row.get("audio_url") or "").strip()
+    return legacy or None
+
+
 def _muhabbet_messages_try_insert(
     cid: str,
     msg_id: str,
@@ -22279,6 +22337,7 @@ def _muhabbet_messages_try_insert(
     *,
     message_type: str = "text",
     audio_url: Optional[str] = None,
+    audio_storage_path: Optional[str] = None,
     audio_duration_ms: Optional[int] = None,
     audio_mime_type: Optional[str] = None,
 ) -> tuple[bool, str]:
@@ -22299,7 +22358,13 @@ def _muhabbet_messages_try_insert(
         "message_type": mt,
     }
     if mt == "audio":
-        row["audio_url"] = str(audio_url or "").strip()
+        asp = str(audio_storage_path or "").strip()
+        au = str(audio_url or "").strip()
+        if asp:
+            row["audio_storage_path"] = asp
+            row["audio_url"] = None
+        elif au:
+            row["audio_url"] = au
         try:
             row["audio_duration_ms"] = int(audio_duration_ms) if audio_duration_ms is not None else None
         except (TypeError, ValueError):
@@ -22339,7 +22404,9 @@ def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
     try:
         res = (
             supabase.table("muhabbet_messages")
-            .select("id,conversation_id,sender_id,text,created_at,message_type,audio_url,audio_duration_ms,audio_mime_type")
+            .select(
+                "id,conversation_id,sender_id,text,created_at,message_type,audio_url,audio_duration_ms,audio_mime_type,audio_storage_path"
+            )
             .eq("id", mid)
             .eq("conversation_id", cid)
             .limit(1)
@@ -22602,7 +22669,7 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
         res = (
             supabase.table("muhabbet_messages")
             .select(
-                "id,sender_id,text,created_at,deleted_for_user_ids,message_type,audio_url,audio_duration_ms,audio_mime_type"
+                "id,sender_id,text,created_at,deleted_for_user_ids,message_type,audio_url,audio_duration_ms,audio_mime_type,audio_storage_path"
             )
             .eq("conversation_id", cid)
             .gt("expires_at", now_iso)
@@ -22622,12 +22689,14 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
         mt = str(r.get("message_type") or "text").strip().lower()
         if mt not in ("text", "audio"):
             mt = "text"
+        asp_raw = str(r.get("audio_storage_path") or "").strip()
         row_out: dict = {
             "id": str(r.get("id") or "").strip().lower(),
             "body": r.get("text") or "",
             "sender_user_id": str(r.get("sender_id") or "").strip().lower(),
             "created_at": r.get("created_at"),
             "message_type": mt,
+            "audio_storage_path": asp_raw or None,
             "audio_url": r.get("audio_url"),
             "audio_duration_ms": r.get("audio_duration_ms"),
             "audio_mime_type": r.get("audio_mime_type"),
@@ -22636,6 +22705,13 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
             row_out["audio_url"] = None
             row_out["audio_duration_ms"] = None
             row_out["audio_mime_type"] = None
+            row_out["audio_storage_path"] = None
+        elif asp_raw:
+            signed_u = _muhabbet_signed_audio_url(asp_raw)
+            row_out["audio_url"] = signed_u or None
+        else:
+            legacy_u = str(r.get("audio_url") or "").strip()
+            row_out["audio_url"] = legacy_u or None
         out.append(row_out)
         if len(out) >= lim:
             break
@@ -22827,17 +22903,48 @@ async def sio_muhabbet_send(sid, data):
             await sio.emit("muhabbet_error", {"code": "text_too_long", "max": 2000}, room=sid)
             return
     else:
-        ok_a, err_a = _muhabbet_validate_outgoing_audio_payload(
-            cid=cid,
-            audio_url=data.get("audio_url") or data.get("audioUrl"),
-            audio_duration_ms=data.get("audio_duration_ms") if "audio_duration_ms" in data else data.get("audioDurationMs"),
-            audio_mime_type=data.get("audio_mime_type") or data.get("audioMimeType"),
-        )
-        if not ok_a:
-            logger.warning("[muhabbet_audio_message_reject] socket cid=%s err=%s", cid[:13], err_a)
+        aud_path_val = str(data.get("audio_storage_path") or data.get("audioStoragePath") or "").strip()
+        aud_url_val = str(data.get("audio_url") or data.get("audioUrl") or "").strip()
+        dur_raw = data.get("audio_duration_ms") if "audio_duration_ms" in data else data.get("audioDurationMs")
+        mime_raw = data.get("audio_mime_type") or data.get("audioMimeType")
+        if aud_path_val:
+            ok_p, err_p = _muhabbet_validate_audio_storage_path(aud_path_val, cid, uid)
+            if not ok_p:
+                logger.warning("[muhabbet_audio_message_reject] socket cid=%s err=%s", cid[:13], err_p)
+                await sio.emit(
+                    "muhabbet_error",
+                    {"code": "audio_invalid", "message": err_p, "conversation_id": cid},
+                    room=sid,
+                )
+                return
+            ok_m, err_m = _muhabbet_validate_audio_mime_duration(dur_raw, mime_raw)
+            if not ok_m:
+                logger.warning("[muhabbet_audio_message_reject] socket cid=%s err=%s", cid[:13], err_m)
+                await sio.emit(
+                    "muhabbet_error",
+                    {"code": "audio_invalid", "message": err_m, "conversation_id": cid},
+                    room=sid,
+                )
+                return
+        elif aud_url_val:
+            ok_a, err_a = _muhabbet_validate_outgoing_audio_payload(
+                cid=cid,
+                audio_url=data.get("audio_url") or data.get("audioUrl"),
+                audio_duration_ms=dur_raw,
+                audio_mime_type=mime_raw,
+            )
+            if not ok_a:
+                logger.warning("[muhabbet_audio_message_reject] socket cid=%s err=%s", cid[:13], err_a)
+                await sio.emit(
+                    "muhabbet_error",
+                    {"code": "audio_invalid", "message": err_a, "conversation_id": cid},
+                    room=sid,
+                )
+                return
+        else:
             await sio.emit(
                 "muhabbet_error",
-                {"code": "audio_invalid", "message": err_a, "conversation_id": cid},
+                {"code": "audio_invalid", "message": "Ses dosyası bilgisi gerekli.", "conversation_id": cid},
                 room=sid,
             )
             return
@@ -22878,12 +22985,15 @@ async def sio_muhabbet_send(sid, data):
     except Exception as e:
         logger.warning("muhabbet_send enter_room: %s", e)
     peer_n = _muhabbet_room_peer_count(room)
+    aud_path_s: Optional[str] = None
     aud_url_s: Optional[str] = None
     aud_dur_s: Optional[int] = None
     aud_mime_s: Optional[str] = None
+    playback_audio: Optional[str] = None
     if mt == "text":
         db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso, message_type="text")
     else:
+        aud_path_s = str(data.get("audio_storage_path") or data.get("audioStoragePath") or "").strip()
         aud_url_s = str(data.get("audio_url") or data.get("audioUrl") or "").strip()
         try:
             aud_dur_s = int(
@@ -22893,10 +23003,11 @@ async def sio_muhabbet_send(sid, data):
             aud_dur_s = 0
         aud_mime_s = str(data.get("audio_mime_type") or data.get("audioMimeType") or "").strip().lower()
         logger.info(
-            "[muhabbet_audio_message_create] socket cid=%s message_id=%s duration_ms=%s",
+            "[muhabbet_audio_message_create] socket cid=%s message_id=%s duration_ms=%s storage=%s",
             cid[:13],
             msg_id,
             aud_dur_s,
+            bool(aud_path_s),
         )
         db_ok, db_err = _muhabbet_messages_try_insert(
             cid,
@@ -22905,7 +23016,8 @@ async def sio_muhabbet_send(sid, data):
             text,
             now_iso,
             message_type="audio",
-            audio_url=aud_url_s,
+            audio_url=None if aud_path_s else aud_url_s,
+            audio_storage_path=aud_path_s if aud_path_s else None,
             audio_duration_ms=aud_dur_s,
             audio_mime_type=aud_mime_s,
         )
@@ -22923,6 +23035,9 @@ async def sio_muhabbet_send(sid, data):
             room=sid,
         )
         return
+    if mt == "audio":
+        row_sock = _muhabbet_message_fetch_by_id(cid, msg_id)
+        playback_audio = _muhabbet_audio_playback_url_from_row(row_sock)
     preview_touch = text if (mt == "text" or text) else "Sesli mesaj"
     if db_ok:
         try:
@@ -22951,7 +23066,7 @@ async def sio_muhabbet_send(sid, data):
         "message_type": mt,
     }
     if mt == "audio":
-        ack_payload["audio_url"] = aud_url_s
+        ack_payload["audio_url"] = playback_audio
         ack_payload["audio_duration_ms"] = aud_dur_s
         ack_payload["audio_mime_type"] = aud_mime_s
     try:
@@ -22969,7 +23084,7 @@ async def sio_muhabbet_send(sid, data):
         "message_type": mt,
     }
     if mt == "audio":
-        payload["audio_url"] = aud_url_s
+        payload["audio_url"] = playback_audio
         payload["audio_duration_ms"] = aud_dur_s
         payload["audio_mime_type"] = aud_mime_s
     await sio.emit("message", payload, room=room)
@@ -27920,15 +28035,29 @@ async def muhabbet_conversation_messages_post(
             if len(text_body) > 2000:
                 raise HTTPException(status_code=400, detail={"message": "Mesaj en fazla 2000 karakter olabilir"})
         else:
-            ok_a, err_a = _muhabbet_validate_outgoing_audio_payload(
-                cid=cid,
-                audio_url=msg.audio_url,
-                audio_duration_ms=msg.audio_duration_ms,
-                audio_mime_type=msg.audio_mime_type,
-            )
-            if not ok_a:
-                logger.warning("[muhabbet_audio_message_reject] rest cid=%s err=%s", cid[:13], err_a)
-                raise HTTPException(status_code=400, detail={"message": err_a})
+            asp_in = str(msg.audio_storage_path or "").strip()
+            url_in = str(msg.audio_url or "").strip()
+            if asp_in:
+                ok_p, err_p = _muhabbet_validate_audio_storage_path(asp_in, cid, uid)
+                if not ok_p:
+                    logger.warning("[muhabbet_audio_message_reject] rest cid=%s err=%s", cid[:13], err_p)
+                    raise HTTPException(status_code=400, detail={"message": err_p})
+                ok_m, err_m = _muhabbet_validate_audio_mime_duration(msg.audio_duration_ms, msg.audio_mime_type)
+                if not ok_m:
+                    logger.warning("[muhabbet_audio_message_reject] rest cid=%s err=%s", cid[:13], err_m)
+                    raise HTTPException(status_code=400, detail={"message": err_m})
+            elif url_in:
+                ok_a, err_a = _muhabbet_validate_outgoing_audio_payload(
+                    cid=cid,
+                    audio_url=msg.audio_url,
+                    audio_duration_ms=msg.audio_duration_ms,
+                    audio_mime_type=msg.audio_mime_type,
+                )
+                if not ok_a:
+                    logger.warning("[muhabbet_audio_message_reject] rest cid=%s err=%s", cid[:13], err_a)
+                    raise HTTPException(status_code=400, detail={"message": err_a})
+            else:
+                raise HTTPException(status_code=400, detail={"message": "Ses dosyası bilgisi gerekli."})
             if len(text_body) > 2000:
                 raise HTTPException(status_code=400, detail={"message": "Mesaj en fazla 2000 karakter olabilir"})
         raw_mid = msg.message_id or msg.client_message_id
@@ -27940,17 +28069,19 @@ async def muhabbet_conversation_messages_post(
         if mt == "text":
             db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text_body, now_iso, message_type="text")
         else:
-            aud_url = str(msg.audio_url or "").strip()
+            asp_post = str(msg.audio_storage_path or "").strip()
+            aud_url_post = str(msg.audio_url or "").strip()
             try:
                 aud_dur = int(msg.audio_duration_ms) if msg.audio_duration_ms is not None else 0
             except (TypeError, ValueError):
                 aud_dur = 0
             aud_mime = str(msg.audio_mime_type or "").strip().lower()
             logger.info(
-                "[muhabbet_audio_message_create] rest cid=%s message_id=%s duration_ms=%s",
+                "[muhabbet_audio_message_create] rest cid=%s message_id=%s duration_ms=%s storage=%s",
                 cid[:13],
                 msg_id,
                 aud_dur,
+                bool(asp_post),
             )
             db_ok, db_err = _muhabbet_messages_try_insert(
                 cid,
@@ -27959,7 +28090,8 @@ async def muhabbet_conversation_messages_post(
                 text_body,
                 now_iso,
                 message_type="audio",
-                audio_url=aud_url,
+                audio_url=None if asp_post else aud_url_post,
+                audio_storage_path=asp_post if asp_post else None,
                 audio_duration_ms=aud_dur,
                 audio_mime_type=aud_mime,
             )
@@ -27978,7 +28110,7 @@ async def muhabbet_conversation_messages_post(
         row_mt = str(row.get("message_type") or mt).strip().lower()
         if row_mt not in ("text", "audio"):
             row_mt = "text"
-        aud_u = row.get("audio_url") if row_mt == "audio" else None
+        playback_u = _muhabbet_audio_playback_url_from_row(row) if row_mt == "audio" else None
         aud_d = row.get("audio_duration_ms") if row_mt == "audio" else None
         aud_m = row.get("audio_mime_type") if row_mt == "audio" else None
         await _muhabbet_publish_message_after_persist(
@@ -27989,7 +28121,7 @@ async def muhabbet_conversation_messages_post(
             created_iso=created_iso,
             conversation_row=crow,
             message_type=row_mt,
-            audio_url=str(aud_u).strip() if aud_u else None,
+            audio_url=playback_u,
             audio_duration_ms=int(aud_d) if aud_d is not None and row_mt == "audio" else None,
             audio_mime_type=str(aud_m).strip().lower() if aud_m and row_mt == "audio" else None,
         )
@@ -27998,6 +28130,8 @@ async def muhabbet_conversation_messages_post(
         except Exception as ne:
             logger.warning("[muhabbet_notify] message_created notify failed: %s", ne)
         rest_mt = row_mt
+        rest_playback = _muhabbet_audio_playback_url_from_row(row) if rest_mt == "audio" else None
+        rest_asp = str(row.get("audio_storage_path") or "").strip() if rest_mt == "audio" else ""
         return {
             "success": True,
             "message": {
@@ -28006,7 +28140,8 @@ async def muhabbet_conversation_messages_post(
                 "sender_user_id": str(row.get("sender_id") or uid).strip().lower(),
                 "created_at": created_iso,
                 "message_type": rest_mt,
-                "audio_url": row.get("audio_url") if rest_mt == "audio" else None,
+                "audio_storage_path": rest_asp or None,
+                "audio_url": rest_playback if rest_mt == "audio" else None,
                 "audio_duration_ms": row.get("audio_duration_ms") if rest_mt == "audio" else None,
                 "audio_mime_type": row.get("audio_mime_type") if rest_mt == "audio" else None,
             },

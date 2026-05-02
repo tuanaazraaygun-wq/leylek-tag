@@ -26,7 +26,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import { Buffer } from 'buffer';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -120,6 +121,11 @@ const BUBBLE_SHADOW = Platform.select({
 const MUHABBET_AUDIO_BUCKET = 'muhabbet-audio';
 const MUHABBET_MAX_RECORD_MS = 30000;
 
+const _gAtob = globalThis as typeof globalThis & { atob?: (data: string) => string };
+if (typeof _gAtob.atob === 'undefined') {
+  _gAtob.atob = (b64: string) => Buffer.from(b64, 'base64').toString('binary');
+}
+
 function formatDurationClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(s / 60);
@@ -127,15 +133,14 @@ function formatDurationClock(ms: number): string {
   return `${m}:${r.toString().padStart(2, '0')}`;
 }
 
-/** RN Android: fetch(file://...) genelde başarısız; base64 okuma fallback */
+/** Base64 → ikili (globalThis.atob + Buffer polyfill üstte) */
 function base64ToUint8Array(base64: string): Uint8Array {
-  if (typeof globalThis.atob !== 'function') {
-    throw new Error('atob yok; base64 çözülemiyor');
-  }
-  const bin = globalThis.atob(base64);
-  const len = bin.length;
+  const binaryString = globalThis.atob(base64);
+  const len = binaryString.length;
   const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
   return bytes;
 }
 
@@ -166,12 +171,15 @@ async function loadAudioBodyForSupabaseUpload(audioUri: string): Promise<Blob | 
   } catch {
     const isFile = audioUri.startsWith('file:');
     if (!isFile) throw new Error('fetch failed and uri is not file://');
-    const b64 = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
+    const b64 = await FileSystem.readAsStringAsync(audioUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
     return base64ToUint8Array(b64);
   }
 }
 
 /** Android file://: SDK upload RN’de sık “Network request failed” verir; doğrudan Storage REST. */
+/** Başarılı yüklemeden sonra public URL üretmez; nesne yolu döner (backend signed URL üretir). */
 async function uploadMuhabbetAudioViaStorageRest(params: {
   supabaseUrl: string;
   anonKey: string;
@@ -180,45 +188,52 @@ async function uploadMuhabbetAudioViaStorageRest(params: {
   contentType: string;
 }): Promise<string> {
   const { supabaseUrl, anonKey, filePath, audioUri, contentType } = params;
-  const b64 = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
-  const bodyBytes = base64ToUint8Array(b64);
-  console.log('[muhabbet_audio_body_loaded]', { byteLength: bodyBytes.byteLength });
+  const base64 = await FileSystem.readAsStringAsync(audioUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  console.log('[muhabbet_audio_body_loaded]', {
+    base64Length: base64.length,
+  });
+
+  const bytes = base64ToUint8Array(base64);
 
   const encodedPath = encodeStorageObjectPath(filePath);
   const uploadUrl = `${supabaseUrl}/storage/v1/object/${MUHABBET_AUDIO_BUCKET}/${encodedPath}`;
-  const ct = contentType || 'audio/m4a';
+  const mimeType = contentType || 'audio/m4a';
 
   console.log('[muhabbet_audio_rest_upload_start]', {
-    uploadUrl,
-    byteLength: bodyBytes.byteLength,
-    contentType: ct,
+    path: encodedPath,
+    size: bytes.length,
   });
 
-  const res = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-      'Content-Type': ct,
-      'x-upsert': 'false',
-    },
-    body: bodyBytes,
-  });
+  try {
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': mimeType,
+        'x-upsert': 'false',
+      },
+      body: bytes,
+    });
 
-  const responseText = await res.text();
-  console.log('[muhabbet_audio_rest_upload_response]', {
-    status: res.status,
-    ok: res.ok,
-    text: responseText,
-  });
+    console.log('[muhabbet_audio_rest_upload_response]', {
+      status: response.status,
+    });
 
-  if (!res.ok) {
-    throw new Error(responseText || `REST upload başarısız (${res.status})`);
+    if (!response.ok) {
+      const text = await response.text();
+      console.log('[muhabbet_audio_rest_upload_error]', text);
+      throw new Error(text || `REST upload başarısız (${response.status})`);
+    }
+  } catch (err) {
+    console.log('[muhabbet_audio_upload_error]', err);
+    throw err;
   }
 
-  const publicUrl = `${supabaseUrl}/storage/v1/object/public/${MUHABBET_AUDIO_BUCKET}/${encodedPath}`;
-  console.log('[muhabbet_audio_rest_upload_success]', { publicUrl });
-  return publicUrl;
+  console.log('[muhabbet_audio_rest_upload_success]', { path: filePath });
+  return filePath;
 }
 
 export type ChatMessageRow = {
@@ -231,6 +246,8 @@ export type ChatMessageRow = {
   /** Cihazda saklanan rol (socket anında ctx’den yazılır) */
   sender_role?: string | null;
   message_type?: 'text' | 'audio';
+  /** Kalıcı Storage nesne yolu (bucket içi); oynatma için sunucunun döndürdüğü audio_url (signed) kullanılır */
+  audio_storage_path?: string | null;
   audio_url?: string | null;
   audio_duration_ms?: number | null;
   audio_mime_type?: string | null;
@@ -292,7 +309,9 @@ type PendingMuhabbetAction =
       messageId: string;
       body: string;
       retryCount: number;
-      audio?: { audio_url: string; audio_duration_ms: number; audio_mime_type: string };
+      audio?:
+        | { audio_storage_path: string; audio_duration_ms: number; audio_mime_type: string }
+        | { audio_url: string; audio_duration_ms: number; audio_mime_type: string };
     }
   | { kind: 'trip_convert_request'; retryCount: number }
   | { kind: 'trip_convert_accept'; requestId: string; retryCount: number }
@@ -381,6 +400,7 @@ function chatRowsFingerprint(items: ChatMessageRow[]): string {
         String(m.sender_role ?? ''),
         String(m.message_type ?? ''),
         String(m.audio_url ?? ''),
+        String(m.audio_storage_path ?? ''),
         String(m.audio_duration_ms ?? ''),
         String(m.audio_upload_pending ?? ''),
       ].join('\u0002')
@@ -428,6 +448,7 @@ function mergeChatRowsFromDiskWithPrev(fromDisk: ChatMessageRow[], prev: ChatMes
         out_status: 'sending',
         sender_role: p.sender_role ?? r.sender_role,
         message_type: p.message_type ?? r.message_type,
+        audio_storage_path: p.audio_storage_path ?? r.audio_storage_path,
         audio_url: p.audio_url ?? r.audio_url,
         audio_duration_ms: p.audio_duration_ms ?? r.audio_duration_ms,
         audio_mime_type: p.audio_mime_type ?? r.audio_mime_type,
@@ -596,7 +617,10 @@ export default function MuhabbetChatScreen({
     async (
       messageId: string,
       body: string,
-      audio?: { audio_url: string; audio_duration_ms: number; audio_mime_type: string } | null
+      audio?:
+        | { audio_storage_path: string; audio_duration_ms: number; audio_mime_type: string }
+        | { audio_url: string; audio_duration_ms: number; audio_mime_type: string }
+        | null
     ): Promise<boolean> => {
       const mid = normalizeMuhabbetMessageId(messageId);
       const text = String(body ?? '');
@@ -611,7 +635,11 @@ export default function MuhabbetChatScreen({
         const payload: Record<string, unknown> = { message_id: mid };
         if (audio) {
           payload.message_type = 'audio';
-          payload.audio_url = audio.audio_url;
+          if ('audio_storage_path' in audio && audio.audio_storage_path) {
+            payload.audio_storage_path = audio.audio_storage_path;
+          } else if ('audio_url' in audio && audio.audio_url) {
+            payload.audio_url = audio.audio_url;
+          }
           payload.audio_duration_ms = audio.audio_duration_ms;
           payload.audio_mime_type = audio.audio_mime_type;
           payload.body = text.trim();
@@ -638,6 +666,7 @@ export default function MuhabbetChatScreen({
             sender_user_id?: string;
             created_at?: string;
             message_type?: string;
+            audio_storage_path?: string | null;
             audio_url?: string | null;
             audio_duration_ms?: number | null;
             audio_mime_type?: string | null;
@@ -678,6 +707,12 @@ export default function MuhabbetChatScreen({
                   created_at: coerceMessageCreatedAt(serverMessage.created_at || m.created_at),
                   out_status: 'sent' as const,
                   message_type,
+                  audio_storage_path:
+                    message_type === 'audio'
+                      ? serverMessage.audio_storage_path != null && String(serverMessage.audio_storage_path).trim() !== ''
+                        ? String(serverMessage.audio_storage_path)
+                        : m.audio_storage_path
+                      : undefined,
                   audio_url:
                     message_type === 'audio'
                       ? serverMessage.audio_url != null
@@ -866,11 +901,11 @@ export default function MuhabbetChatScreen({
 
     const useAndroidFileRest = Platform.OS === 'android' && audioUri.startsWith('file:');
 
-    let publicUrl: string;
+    let uploadedPath: string;
 
     try {
       if (useAndroidFileRest) {
-        publicUrl = await uploadMuhabbetAudioViaStorageRest({
+        uploadedPath = await uploadMuhabbetAudioViaStorageRest({
           supabaseUrl,
           anonKey,
           filePath,
@@ -908,10 +943,7 @@ export default function MuhabbetChatScreen({
           return;
         }
         console.log('[muhabbet_audio_upload_done]', { path: filePath });
-        const {
-          data: { publicUrl: sdkPublicUrl },
-        } = supabase.storage.from(MUHABBET_AUDIO_BUCKET).getPublicUrl(filePath);
-        publicUrl = sdkPublicUrl;
+        uploadedPath = filePath;
       }
     } catch (e: unknown) {
       const err = e as { message?: string; name?: string; stack?: string };
@@ -928,20 +960,28 @@ export default function MuhabbetChatScreen({
       return;
     }
 
+    setRows((prev) =>
+      prev.map((m) =>
+        rowIdLo(m) === messageId
+          ? { ...m, audio_storage_path: uploadedPath, audio_upload_pending: true }
+          : m
+      )
+    );
+
     pendingActionRef.current = {
       kind: 'send_message',
       messageId,
       body: '',
       retryCount: 0,
       audio: {
-        audio_url: publicUrl,
+        audio_storage_path: uploadedPath,
         audio_duration_ms: durMs,
         audio_mime_type: mime,
       },
     };
 
     const ok = await sendMessageViaRest(messageId, '', {
-      audio_url: publicUrl,
+      audio_storage_path: uploadedPath,
       audio_duration_ms: durMs,
       audio_mime_type: mime,
     });
@@ -961,7 +1001,7 @@ export default function MuhabbetChatScreen({
           message_type: 'audio',
           text: '',
           body: '',
-          audio_url: publicUrl,
+          audio_storage_path: uploadedPath,
           audio_duration_ms: durMs,
           audio_mime_type: mime,
           message_id: messageId,
@@ -1058,6 +1098,7 @@ export default function MuhabbetChatScreen({
           sender_user_id?: string;
           created_at?: string;
           message_type?: string;
+          audio_storage_path?: string | null;
           audio_url?: string | null;
           audio_duration_ms?: number | null;
           audio_mime_type?: string | null;
@@ -1077,6 +1118,7 @@ export default function MuhabbetChatScreen({
             out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
             sender_role: m.sender_role,
             message_type: m.message_type,
+            audio_storage_path: m.audio_storage_path ?? undefined,
             audio_url: m.audio_url ?? undefined,
             audio_duration_ms: m.audio_duration_ms ?? undefined,
             audio_mime_type: m.audio_mime_type ?? undefined,
@@ -1363,6 +1405,7 @@ export default function MuhabbetChatScreen({
           out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
           sender_role: m.sender_role,
           message_type: m.message_type,
+          audio_storage_path: m.audio_storage_path ?? undefined,
           audio_url: m.audio_url ?? undefined,
           audio_duration_ms: m.audio_duration_ms ?? undefined,
           audio_mime_type: m.audio_mime_type ?? undefined,
@@ -1903,6 +1946,7 @@ export default function MuhabbetChatScreen({
               out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
               sender_role: m.sender_role,
               message_type: m.message_type,
+              audio_storage_path: m.audio_storage_path ?? undefined,
               audio_url: m.audio_url ?? undefined,
               audio_duration_ms: m.audio_duration_ms ?? undefined,
               audio_mime_type: m.audio_mime_type ?? undefined,
@@ -1956,6 +2000,18 @@ export default function MuhabbetChatScreen({
           pendingActionRef.current = null;
           if (errMid) {
             const row = rowsRef.current.find((m) => rowIdLo(m) === errMid);
+            const aspRetry = (row?.audio_storage_path || '').trim();
+            if (row?.message_type === 'audio' && aspRetry) {
+              await sendMessageViaRest(errMid, row.body || '', {
+                audio_storage_path: aspRetry,
+                audio_duration_ms: Math.min(
+                  30000,
+                  Math.max(1, Number(row.audio_duration_ms || 1))
+                ),
+                audio_mime_type: String(row.audio_mime_type || 'audio/m4a'),
+              });
+              return;
+            }
             if (row?.message_type === 'audio' && row.audio_url) {
               await sendMessageViaRest(errMid, row.body || '', {
                 audio_url: String(row.audio_url),
@@ -2045,21 +2101,29 @@ export default function MuhabbetChatScreen({
       const body = (row.body || '').trim();
       const messageId = row.id;
       if (!cid || !messageId) return;
-      const isAudio = row.message_type === 'audio' && row.audio_url;
+      const asp = (row.audio_storage_path || '').trim();
+      const legacyUrl = (row.audio_url || '').trim();
+      const isAudio = row.message_type === 'audio' && (Boolean(asp) || Boolean(legacyUrl));
       if (!isAudio && !body) return;
-      if (isAudio && !row.audio_url) return;
+      if (isAudio && !asp && !legacyUrl) return;
 
       setRows((prev) =>
         prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
       const audioPayload =
-        isAudio && row.audio_url
+        isAudio && asp
           ? {
-              audio_url: String(row.audio_url),
+              audio_storage_path: asp,
               audio_duration_ms: Math.min(30000, Math.max(1, Number(row.audio_duration_ms || 1))),
               audio_mime_type: String(row.audio_mime_type || 'audio/m4a'),
             }
-          : null;
+          : isAudio && legacyUrl
+            ? {
+                audio_url: legacyUrl,
+                audio_duration_ms: Math.min(30000, Math.max(1, Number(row.audio_duration_ms || 1))),
+                audio_mime_type: String(row.audio_mime_type || 'audio/m4a'),
+              }
+            : null;
       pendingActionRef.current = {
         kind: 'send_message',
         messageId,
@@ -2083,7 +2147,9 @@ export default function MuhabbetChatScreen({
               message_type: 'audio',
               text: body,
               body,
-              audio_url: audioPayload.audio_url,
+              ...('audio_storage_path' in audioPayload
+                ? { audio_storage_path: audioPayload.audio_storage_path }
+                : { audio_url: audioPayload.audio_url }),
               audio_duration_ms: audioPayload.audio_duration_ms,
               audio_mime_type: audioPayload.audio_mime_type,
               message_id: messageId,
@@ -2592,7 +2658,8 @@ export default function MuhabbetChatScreen({
                 const time = formatMessageTimeLabel(item.created_at);
                 const isAud =
                   item.message_type === 'audio' ||
-                  (item.audio_url != null && String(item.audio_url).trim() !== '');
+                  (item.audio_url != null && String(item.audio_url).trim() !== '') ||
+                  (item.audio_storage_path != null && String(item.audio_storage_path).trim() !== '');
                 const uploading = Boolean(item.audio_upload_pending && item.out_status === 'sending');
                 const durLabel = formatDurationClock(
                   Math.min(30000, Math.max(0, Number(item.audio_duration_ms || 0)))

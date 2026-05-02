@@ -38,6 +38,8 @@ export type StoredMuhabbetMessage = {
   out_status?: string;
   sender_role?: string | null;
   message_type?: 'text' | 'audio';
+  /** Kalıcı Storage yolu; signed `audio_url` süresi dolunca yeniden çekimde güncellenir */
+  audio_storage_path?: string | null;
   audio_url?: string | null;
   audio_duration_ms?: number | null;
   audio_mime_type?: string | null;
@@ -57,6 +59,10 @@ function normalizeStored(m: Partial<StoredMuhabbetMessage>, cidFallback: string)
     out_status: m.out_status ? String(m.out_status) : undefined,
     sender_role: m.sender_role != null && m.sender_role !== '' ? String(m.sender_role) : null,
     ...(message_type ? { message_type } : {}),
+    audio_storage_path:
+      m.audio_storage_path != null && String(m.audio_storage_path).trim() !== ''
+        ? String(m.audio_storage_path).trim()
+        : null,
     audio_url: m.audio_url != null && String(m.audio_url).trim() !== '' ? String(m.audio_url) : null,
     audio_duration_ms:
       m.audio_duration_ms != null && Number.isFinite(Number(m.audio_duration_ms))
@@ -149,6 +155,7 @@ export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): {
   out_status?: string;
   sender_role?: string | null;
   message_type?: 'text' | 'audio';
+  audio_storage_path?: string | null;
   audio_url?: string | null;
   audio_duration_ms?: number | null;
   audio_mime_type?: string | null;
@@ -161,6 +168,7 @@ export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): {
     out_status: m.out_status,
     sender_role: m.sender_role ?? undefined,
     message_type: m.message_type,
+    audio_storage_path: m.audio_storage_path ?? null,
     audio_url: m.audio_url ?? null,
     audio_duration_ms: m.audio_duration_ms ?? null,
     audio_mime_type: m.audio_mime_type ?? null,
@@ -178,6 +186,7 @@ export async function persistMuhabbetChatRowsLocal(
     out_status?: string;
     sender_role?: string | null;
     message_type?: 'text' | 'audio';
+    audio_storage_path?: string | null;
     audio_url?: string | null;
     audio_duration_ms?: number | null;
     audio_mime_type?: string | null;
@@ -198,6 +207,7 @@ export async function persistMuhabbetChatRowsLocal(
           out_status: r.out_status,
           sender_role: r.sender_role,
           message_type: r.message_type,
+          audio_storage_path: r.audio_storage_path,
           audio_url: r.audio_url,
           audio_duration_ms: r.audio_duration_ms,
           audio_mime_type: r.audio_mime_type,
@@ -217,6 +227,7 @@ export function storedMessagesFromConversationApi(
     sender_user_id?: string;
     created_at?: string;
     message_type?: string;
+    audio_storage_path?: string | null;
     audio_url?: string | null;
     audio_duration_ms?: number | null;
     audio_mime_type?: string | null;
@@ -239,6 +250,7 @@ export function storedMessagesFromConversationApi(
           text: m.body != null ? String(m.body) : '',
           created_at: coerceMessageCreatedAt(m.created_at),
           ...(message_type ? { message_type } : {}),
+          audio_storage_path: m.audio_storage_path ?? null,
           audio_url: m.audio_url ?? null,
           audio_duration_ms:
             m.audio_duration_ms != null && Number.isFinite(Number(m.audio_duration_ms))
@@ -284,6 +296,7 @@ export function mergeMuhabbetLocalWithServer(
             created_at: loc.created_at || srow.created_at,
             sender_role: loc.sender_role ?? srow.sender_role,
             message_type: srow.message_type ?? loc.message_type,
+            audio_storage_path: srow.audio_storage_path ?? loc.audio_storage_path,
             audio_url: srow.audio_url ?? loc.audio_url,
             audio_duration_ms: srow.audio_duration_ms ?? loc.audio_duration_ms,
             audio_mime_type: srow.audio_mime_type ?? loc.audio_mime_type,
@@ -302,6 +315,7 @@ export function mergeMuhabbetLocalWithServer(
             text: mergedText,
             sender_role: loc?.sender_role ?? srow.sender_role,
             message_type: srow.message_type ?? loc?.message_type,
+            audio_storage_path: srow.audio_storage_path ?? loc?.audio_storage_path ?? null,
             audio_url: srow.audio_url ?? loc?.audio_url ?? null,
             audio_duration_ms: srow.audio_duration_ms ?? loc?.audio_duration_ms ?? null,
             audio_mime_type: srow.audio_mime_type ?? loc?.audio_mime_type ?? null,
