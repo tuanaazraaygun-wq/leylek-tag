@@ -29,6 +29,7 @@ import MuhabbetEndpointPickerModal, {
   muhabbetListingMapPinFlowAvailable,
   reverseGeocodeTr,
   type MuhabbetCommittedPlace,
+  type MuhabbetIntercityPairPayload,
 } from './MuhabbetEndpointPickerModal';
 import { isLatLngWithinRegisteredCity } from './PlacesAutocomplete';
 
@@ -762,6 +763,14 @@ export default function CreateListingModal({
     [pickerField],
   );
 
+  const onIntercityPairCommitted = useCallback((payload: MuhabbetIntercityPairPayload) => {
+    setFromPoint(payload.pickup);
+    setToPoint(payload.dropoff);
+    setOriginCity(payload.originCity);
+    setDestinationCity(payload.destinationCity);
+    setPickerOpen(false);
+  }, []);
+
   const onTimeChipPress = (fn: () => void) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     fn();
@@ -1353,6 +1362,8 @@ export default function CreateListingModal({
           biasLongitude={userBias?.longitude}
           onRequestClose={() => setPickerOpen(false)}
           onCommitted={onPickerCommitted}
+          intercityPresetsEnabled={listingScope === 'intercity'}
+          onIntercityPairCommitted={listingScope === 'intercity' ? onIntercityPairCommitted : undefined}
         />
 
         <Modal visible={cityPickerOpen} transparent animationType="fade" onRequestClose={() => setCityPickerOpen(false)}>

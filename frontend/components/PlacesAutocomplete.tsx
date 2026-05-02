@@ -240,33 +240,84 @@ function buildOrderedSearchVariants(
 }
 
 /**
- * Muhabbet/Leylek — Ankara bağlamında kısa sorgular (ör. Çankaya) için önce tam nitelikli varyantlar.
+ * Muhabbet şehir dışı / uç nokta — hızlı merkez seçimleri (arama kutusu tasarımına dokunmadan).
  */
-function prependAnkaraQualifiedVariants(
+export type MuhabbetQuickPickPlace = { label: string; latitude: number; longitude: number };
+
+export function buildMuhabbetQuickPickSuggestions(effectiveCityLabel: string): MuhabbetQuickPickPlace[] {
+  const globalOrdered: MuhabbetQuickPickPlace[] = [
+    { label: 'Ankara Merkez', latitude: CITY_DATA.Ankara.lat, longitude: CITY_DATA.Ankara.lng },
+    { label: 'İstanbul (Avrupa Yakası)', latitude: 41.0369, longitude: 28.985 },
+    { label: 'İstanbul (Anadolu Yakası)', latitude: 40.9903, longitude: 29.0266 },
+    { label: 'İzmir Merkez', latitude: CITY_DATA.İzmir.lat, longitude: CITY_DATA.İzmir.lng },
+    { label: 'Bursa Merkez', latitude: CITY_DATA.Bursa.lat, longitude: CITY_DATA.Bursa.lng },
+    { label: 'Antalya Merkez', latitude: CITY_DATA.Antalya.lat, longitude: CITY_DATA.Antalya.lng },
+    { label: 'Adana Merkez', latitude: CITY_DATA.Adana.lat, longitude: CITY_DATA.Adana.lng },
+    { label: 'Konya Merkez', latitude: CITY_DATA.Konya.lat, longitude: CITY_DATA.Konya.lng },
+    { label: 'Gaziantep Merkez', latitude: CITY_DATA.Gaziantep.lat, longitude: CITY_DATA.Gaziantep.lng },
+    { label: 'Mersin Merkez', latitude: CITY_DATA.Mersin.lat, longitude: CITY_DATA.Mersin.lng },
+  ];
+
+  const seen = new Set<string>();
+  const out: MuhabbetQuickPickPlace[] = [];
+
+  const ct = effectiveCityLabel.trim();
+  const activeKey = ct ? resolveCityDataKey(ct) : null;
+  if (activeKey && CITY_DATA[activeKey]) {
+    const ml = `${activeKey} Merkez`;
+    const k = normalizeText(ml);
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push({ label: ml, latitude: CITY_DATA[activeKey].lat, longitude: CITY_DATA[activeKey].lng });
+    }
+  } else if (ct) {
+    const registered = getRegisteredCityCenter(ct);
+    if (registered) {
+      const titled =
+        ct.length > 0 ? `${ct.charAt(0).toLocaleUpperCase('tr-TR')}${ct.slice(1)} Merkez` : 'Merkez';
+      const nk = normalizeText(titled);
+      if (!seen.has(nk)) {
+        seen.add(nk);
+        out.push({ label: titled, latitude: registered.latitude, longitude: registered.longitude });
+      }
+    }
+  }
+
+  for (const r of globalOrdered) {
+    const k = normalizeText(r.label);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+
+  return out;
+}
+
+function prependCityQualifiedSearchVariants(
   rawInput: string,
   effectiveCityKey: string | null,
   explicitOtherKey: string | null,
   existing: string[],
 ): string[] {
-  const ankActive =
-    effectiveCityKey === 'Ankara' && (!explicitOtherKey || explicitOtherKey === 'Ankara');
-  if (!ankActive) return existing;
+  const cityKey = explicitOtherKey || effectiveCityKey;
+  if (!cityKey || !CITY_DATA[cityKey]) return existing;
 
   const head = rawInput.trim().replace(/\s+/g, ' ');
   if (head.length < 2) return existing;
 
+  const cityName = cityKey;
   const nHead = normalizeText(head);
-  if (nHead.includes(normalizeText('Ankara'))) return existing;
+  if (nHead.includes(normalizeText(cityName))) return existing;
   if (/\bt[uü]rkiye\b/i.test(head) || /\bturkey\b/i.test(head)) return existing;
 
   const extras: string[] = [
-    `${head}, Ankara, Türkiye`,
-    `${head} Mahallesi, Ankara, Türkiye`,
-    `${head} İlçesi, Ankara, Türkiye`,
-    `${foldTrAscii(head)}, Ankara, Turkey`,
+    `${head}, ${cityName}, Türkiye`,
+    `${head} İlçesi, ${cityName}, Türkiye`,
+    `${head} Mahallesi, ${cityName}, Türkiye`,
+    `${foldTrAscii(head)}, ${foldTrAscii(cityName)}, Turkey`,
   ];
 
-  if (nHead.includes('cankaya')) {
+  if (cityKey === 'Ankara' && nHead.includes('cankaya')) {
     extras.push(
       'Çankaya, Ankara, Türkiye',
       'Çankaya Mahallesi, Ankara, Türkiye',
@@ -274,14 +325,17 @@ function prependAnkaraQualifiedVariants(
       'Cankaya, Ankara, Turkey',
     );
   }
+  if (cityKey === 'İstanbul' && nHead.includes('fatih')) {
+    extras.push('Fatih, İstanbul, Türkiye', 'Fatih İlçesi, İstanbul, Türkiye', 'Fatih Mahallesi, İstanbul, Türkiye');
+  }
 
   const seen = new Set(existing.map((s) => normCityNeedle(s)));
   const front: string[] = [];
   for (const s of extras) {
     const t = s.trim().replace(/\s+/g, ' ');
-    const k = normCityNeedle(t);
-    if (!k || seen.has(k)) continue;
-    seen.add(k);
+    const kk = normCityNeedle(t);
+    if (!kk || seen.has(kk)) continue;
+    seen.add(kk);
     front.push(t);
   }
   return [...front, ...existing];
@@ -370,7 +424,21 @@ function passesSoftLocality(item: PlaceResult, opts: LocalityFilterOpts): boolea
 
   const t = (item.type || '').toLowerCase();
   const finer =
-    ['neighbourhood', 'suburb', 'quarter', 'road', 'residential', 'living_street', 'pedestrian'].includes(t) ||
+    [
+      'neighbourhood',
+      'suburb',
+      'quarter',
+      'road',
+      'residential',
+      'living_street',
+      'pedestrian',
+      'city',
+      'town',
+      'village',
+      'hamlet',
+      'municipality',
+      'administrative',
+    ].includes(t) ||
     t === 'house' ||
     t === 'building' ||
     (item.class || '').toLowerCase() === 'highway';
@@ -384,7 +452,7 @@ function passesSoftLocality(item: PlaceResult, opts: LocalityFilterOpts): boolea
     const dn = (item.display_name || '').toLocaleLowerCase('tr-TR');
     const words = ql.split(/\s+/).filter((w) => w.length >= 3);
     if (words.some((w) => dn.includes(w)) && pointInStoredCityBbox(lat, lon, opts.cityDataEffective.bbox)) {
-      return urbanRankTier(item) <= 6;
+      return urbanRankTier(item) <= 8;
     }
   }
 
@@ -401,8 +469,38 @@ function computeLocalSortScore(
   if (item.source === 'google') {
     const types = item.google_types || [];
     let tr = 5;
-    if (types.some((t) => ['street_address', 'route', 'premise', 'subpremise'].includes(t))) tr = 0;
-    else if (types.some((t) => ['sublocality_level_1', 'neighborhood', 'sublocality'].includes(t))) tr = 1;
+    if (
+      types.some((t) =>
+        [
+          'street_address',
+          'route',
+          'premise',
+          'subpremise',
+          'intersection',
+          'neighborhood',
+          'sublocality',
+          'sublocality_level_1',
+          'sublocality_level_2',
+          'sublocality_level_3',
+        ].includes(t),
+      )
+    )
+      tr = 0;
+    else if (
+      types.some((t) =>
+        [
+          'sublocality_level_1',
+          'sublocality_level_2',
+          'neighborhood',
+          'sublocality',
+          'locality',
+          'administrative_area_level_2',
+          'administrative_area_level_3',
+          'administrative_area_level_4',
+        ].includes(t),
+      )
+    )
+      tr = 1;
     else if (types.includes('establishment') || types.includes('point_of_interest')) tr = 2;
     const txt = (item.display_name || '').toLocaleLowerCase('tr-TR');
     const ql = queryInput.trim().toLocaleLowerCase('tr-TR');
@@ -667,7 +765,7 @@ function urbanRankTier(item: PlaceResult): number {
     return 4;
 
   if (t === 'village' || t === 'hamlet' || t === 'farm') return 5;
-  if (t === 'town' || t === 'city' || t === 'administrative') return 9;
+  if (t === 'town' || t === 'city' || t === 'administrative' || t === 'municipality') return 4;
   return 6;
 }
 
@@ -676,6 +774,7 @@ function localityDisplayRank(item: PlaceResult): number {
   const t = (item.type || '').toLowerCase();
   const c = (item.class || '').toLowerCase();
   if (['neighbourhood', 'suburb', 'quarter'].includes(t)) return 0;
+  if (['city', 'town', 'administrative', 'municipality'].includes(t)) return 0;
   if (['road', 'residential', 'living_street', 'pedestrian'].includes(t) || c === 'highway') return 1;
   if (t === 'house' || t === 'building') return 2;
   const ut = urbanRankTier(item);
@@ -745,8 +844,14 @@ interface PlacesAutocompleteProps {
   inputSize?: 'default' | 'large';
   /** Öneri listesi tavanına eklenecek piksel */
   predictionMaxHeightBonus?: number;
-  /** Muhabbet endpoint picker: şehir bağlamını metin aramasına da ekle. */
+  /** Muhabbet şehir dışı: arama metnine şehir / Türkiye varyantları eklenir */
   forceCityInSearch?: boolean;
+  /** Input ile hızlı seçim bandı arasında ek bölüm (örn. şehirden şehire) */
+  slotAboveQuickPicks?: React.ReactNode;
+  /** Muhabbet şehir dışı: kısa/boş sorguda harici koordinatlı hızlı seçimler */
+  quickPickSuggestions?: MuhabbetQuickPickPlace[];
+  /** quickPickSuggestions gösterimi için üst karakter sınırı (varsayılan 3) */
+  quickPickShowMaxQueryLength?: number;
 }
 
 export default function PlacesAutocomplete({
@@ -765,6 +870,9 @@ export default function PlacesAutocomplete({
   inputSize = 'default',
   predictionMaxHeightBonus = 0,
   forceCityInSearch = false,
+  slotAboveQuickPicks,
+  quickPickSuggestions,
+  quickPickShowMaxQueryLength = 3,
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
   const tech = visualVariant === 'tech';
@@ -795,6 +903,12 @@ export default function PlacesAutocomplete({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Artan kimlik: tamamlanan arama yanıtı yalnızca en son isteğe aitse state günceller (yarış / boş liste). */
   const autocompleteRequestIdRef = useRef(0);
+
+  const quickPickList = quickPickSuggestions ?? [];
+  const quickPickFewAutocomplete = predictions.length < 3;
+  const showQuickPicks =
+    quickPickList.length > 0 &&
+    (query.trim().length <= quickPickShowMaxQueryLength || quickPickFewAutocomplete);
 
   /** Şehir bağlamı değişince önceki şehir önerileri kalmasın (harita/bias güncellenmesiyle uyumlu). */
   useEffect(() => {
@@ -855,7 +969,7 @@ export default function PlacesAutocomplete({
       const effectiveCityKey = explicitOtherKey || cityKeyHome;
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
       let searchVariants = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
-      searchVariants = prependAnkaraQualifiedVariants(input, effectiveCityKey, explicitOtherKey, searchVariants);
+      searchVariants = prependCityQualifiedSearchVariants(input, effectiveCityKey, explicitOtherKey, searchVariants);
       const primarySearchQuery = searchVariants[0] || input.trim();
       const sortNeedle = effectiveCityKey || cityLabel;
         const compareRows = (a: PlaceResult, b: PlaceResult): number => {
@@ -1226,6 +1340,42 @@ export default function PlacesAutocomplete({
         return;
       }
 
+      if (filtered.length === 0 && input.trim().length >= 2) {
+        const silentQueries = [`${input.trim()}, İstanbul, Türkiye`, `${input.trim()}, Ankara, Türkiye`];
+        const nCapSilent =
+          widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
+        for (const sq of silentQueries) {
+          try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+              sq,
+            )}&countrycodes=tr&addressdetails=1&extratags=1&limit=${Math.max(
+              10,
+              nCapSilent,
+            )}&accept-language=tr`;
+            const response = await fetch(url, {
+              headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
+            });
+            if (!response.ok) continue;
+            const data = (await response.json()) as PlaceResult[];
+            const rows = Array.isArray(data) ? data : [];
+            if (rows.length === 0) continue;
+            if (requestId !== autocompleteRequestIdRef.current) {
+              return;
+            }
+            const rowsIn = rows.filter((item) => !['country', 'state'].includes(item.type));
+            rowsIn.sort(compareRows);
+            filtered = rowsIn.slice(0, nCapSilent);
+            if (filtered.length > 0) break;
+          } catch {
+            /* sessiz metro fallback */
+          }
+        }
+      }
+
+      if (requestId !== autocompleteRequestIdRef.current) {
+        return;
+      }
+
       if (SHOW_PLACES_DIAG) {
         console.log(
           '[places_search_diag]',
@@ -1383,6 +1533,21 @@ export default function PlacesAutocomplete({
     });
   };
 
+  const handleQuickPick = (qp: MuhabbetQuickPickPlace) => {
+    if (!tech) {
+      Keyboard.dismiss();
+    }
+    setQuery(qp.label);
+    setShowPredictions(false);
+    setShowPopular(false);
+    setPredictions([]);
+    onPlaceSelected({
+      address: qp.label,
+      latitude: qp.latitude,
+      longitude: qp.longitude,
+    });
+  };
+
   // Popüler mahalle seçimi
   const handleSelectPopular = async (placeName: string) => {
     setLoading(true);
@@ -1528,6 +1693,28 @@ export default function PlacesAutocomplete({
           </TouchableOpacity>
         )}
       </View>
+
+      {slotAboveQuickPicks}
+
+      {showQuickPicks ? (
+        <View style={[styles.quickPickWrap, tech && styles.quickPickWrapTech]}>
+          <Text style={[styles.quickPickTitle, tech && styles.quickPickTitleTech]}>Hızlı seçim</Text>
+          <View style={styles.quickPickGrid}>
+            {quickPickList.map((qp) => (
+              <TouchableOpacity
+                key={qp.label}
+                style={[styles.quickPickChip, tech && styles.quickPickChipTech]}
+                activeOpacity={0.85}
+                onPress={() => handleQuickPick(qp)}
+              >
+                <Text style={[styles.quickPickChipText, tech && styles.quickPickChipTextTech]} numberOfLines={2}>
+                  {qp.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {/* Popüler Mahalleler */}
       {showPopular && popularPlaces.length > 0 && !hidePopularChips && (
@@ -1677,6 +1864,55 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     padding: 4,
+  },
+
+  quickPickWrap: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  quickPickWrapTech: {
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+  },
+  quickPickTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 10,
+  },
+  quickPickTitleTech: {
+    color: '#E2E8F0',
+  },
+  quickPickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickPickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    maxWidth: '100%',
+  },
+  quickPickChipTech: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.45)',
+  },
+  quickPickChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4338CA',
+  },
+  quickPickChipTextTech: {
+    color: '#E0F2FE',
   },
   
   // Popüler yerler

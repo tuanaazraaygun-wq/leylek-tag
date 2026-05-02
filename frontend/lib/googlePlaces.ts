@@ -115,13 +115,21 @@ export async function googlePlacesAutocompleteMerged(
       }),
     );
   };
-  const [geo, est] = await Promise.all([
+  const [geo, est, regions, address] = await Promise.all([
     fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'geocode', bias }).catch((e) => {
       logFail('geocode', e);
       return [];
     }),
     fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'establishment', bias }).catch((e) => {
       logFail('establishment', e);
+      return [];
+    }),
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: '(regions)', bias }).catch((e) => {
+      logFail('regions', e);
+      return [];
+    }),
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'address', bias }).catch((e) => {
+      logFail('address', e);
       return [];
     }),
   ]);
@@ -132,6 +140,8 @@ export async function googlePlacesAutocompleteMerged(
   };
   geo.forEach(push);
   est.forEach(push);
+  regions.forEach(push);
+  address.forEach(push);
   return Array.from(byId.values());
 }
 
