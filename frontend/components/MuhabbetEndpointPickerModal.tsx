@@ -19,7 +19,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import PlacesAutocomplete, {
-  buildMuhabbetQuickPickSuggestions,
   getRegisteredCityCenter,
   isLatLngWithinRegisteredCity,
   type PlaceDetails,
@@ -43,86 +42,9 @@ if (Platform.OS !== 'web') {
 const SEARCH_DELTA = 0.11;
 const PIN_DELTA = 0.026;
 
-export type MuhabbetCommittedPlace = PlaceDetails & { mapPinConfirmed: boolean };
-
-export type MuhabbetIntercityPairPayload = {
-  pickup: MuhabbetCommittedPlace;
-  dropoff: MuhabbetCommittedPlace;
-  originCity: string;
-  destinationCity: string;
+export type MuhabbetCommittedPlace = PlaceDetails & {
+  mapPinConfirmed: boolean;
 };
-
-type MuhabbetIntercityPreset = {
-  label: string;
-  originCity: string;
-  destinationCity: string;
-  pickup: { address: string; latitude: number; longitude: number };
-  dropoff: { address: string; latitude: number; longitude: number };
-};
-
-const IST_AVRUPA_COORD = { latitude: 41.0369, longitude: 28.985 };
-const IST_ANADOLU_COORD = { latitude: 40.9903, longitude: 29.0266 };
-
-function buildMuhabbetIntercityPresets(): MuhabbetIntercityPreset[] {
-  const ank = getRegisteredCityCenter('Ankara');
-  const ist = getRegisteredCityCenter('İstanbul');
-  const izm = getRegisteredCityCenter('İzmir');
-  const ada = getRegisteredCityCenter('Adana');
-  const ant = getRegisteredCityCenter('Antalya');
-  const bur = getRegisteredCityCenter('Bursa');
-  if (!ank || !ist || !izm || !ada || !ant || !bur) return [];
-  return [
-    {
-      label: 'Ankara → İstanbul (Avrupa)',
-      originCity: 'Ankara',
-      destinationCity: 'İstanbul',
-      pickup: { address: 'Ankara Merkez', ...ank },
-      dropoff: { address: 'İstanbul (Avrupa Yakası)', ...IST_AVRUPA_COORD },
-    },
-    {
-      label: 'İstanbul (Avrupa) → Ankara',
-      originCity: 'İstanbul',
-      destinationCity: 'Ankara',
-      pickup: { address: 'İstanbul (Avrupa Yakası)', ...IST_AVRUPA_COORD },
-      dropoff: { address: 'Ankara Merkez', ...ank },
-    },
-    {
-      label: 'İstanbul (Anadolu) → Ankara',
-      originCity: 'İstanbul',
-      destinationCity: 'Ankara',
-      pickup: { address: 'İstanbul (Anadolu Yakası)', ...IST_ANADOLU_COORD },
-      dropoff: { address: 'Ankara Merkez', ...ank },
-    },
-    {
-      label: 'Ankara → İzmir',
-      originCity: 'Ankara',
-      destinationCity: 'İzmir',
-      pickup: { address: 'Ankara Merkez', ...ank },
-      dropoff: { address: 'İzmir Merkez', ...izm },
-    },
-    {
-      label: 'Ankara → Adana',
-      originCity: 'Ankara',
-      destinationCity: 'Adana',
-      pickup: { address: 'Ankara Merkez', ...ank },
-      dropoff: { address: 'Adana Merkez', ...ada },
-    },
-    {
-      label: 'Ankara → Antalya',
-      originCity: 'Ankara',
-      destinationCity: 'Antalya',
-      pickup: { address: 'Ankara Merkez', ...ank },
-      dropoff: { address: 'Antalya Merkez', ...ant },
-    },
-    {
-      label: 'İstanbul → Bursa',
-      originCity: 'İstanbul',
-      destinationCity: 'Bursa',
-      pickup: { address: 'İstanbul Merkez', ...ist },
-      dropoff: { address: 'Bursa Merkez', ...bur },
-    },
-  ];
-}
 
 /** Harita + Tam burası akışı bu cihazda mümkün mü (GMS + native). */
 export function muhabbetListingMapPinFlowAvailable(): boolean {
@@ -147,9 +69,6 @@ export type MuhabbetEndpointPickerModalProps = {
   biasLongitude?: number;
   onRequestClose: () => void;
   onCommitted: (place: MuhabbetCommittedPlace) => void;
-  /** Şehirler arası ilan: tek dokunuşla iki ucu ve şehir alanlarını doldurur */
-  intercityPresetsEnabled?: boolean;
-  onIntercityPairCommitted?: (payload: MuhabbetIntercityPairPayload) => void;
 };
 
 export default function MuhabbetEndpointPickerModal({
@@ -161,8 +80,6 @@ export default function MuhabbetEndpointPickerModal({
   biasLongitude,
   onRequestClose,
   onCommitted,
-  intercityPresetsEnabled = false,
-  onIntercityPairCommitted,
 }: MuhabbetEndpointPickerModalProps) {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<any>(null);
@@ -194,45 +111,7 @@ export default function MuhabbetEndpointPickerModal({
   const effectiveCityCenter = staticCityCenter ?? resolvedCityCenter;
   const searchBiasLatitude = effectiveCityCenter?.latitude ?? biasLatitude;
   const searchBiasLongitude = effectiveCityCenter?.longitude ?? biasLongitude;
-  const muhabbetQuickPicks = useMemo(() => buildMuhabbetQuickPickSuggestions(effectiveCityLabel), [effectiveCityLabel]);
-  const intercityPresets = useMemo(() => buildMuhabbetIntercityPresets(), []);
   const useMap = !!EndpointMapView && isNativeGoogleMapsSupported();
-
-  const onIntercityPresetPress = useCallback(
-    (preset: MuhabbetIntercityPreset) => {
-      if (!onIntercityPairCommitted) return;
-      void tapButtonHaptic();
-      onIntercityPairCommitted({
-        pickup: { ...preset.pickup, mapPinConfirmed: false },
-        dropoff: { ...preset.dropoff, mapPinConfirmed: false },
-        originCity: preset.originCity,
-        destinationCity: preset.destinationCity,
-      });
-      onRequestClose();
-    },
-    [onIntercityPairCommitted, onRequestClose],
-  );
-
-  const intercitySlot =
-    intercityPresetsEnabled && onIntercityPairCommitted && intercityPresets.length > 0 ? (
-      <View style={[styles.quickPickWrapTech, styles.intercitySection]}>
-        <Text style={styles.quickPickTitleTech}>Şehirden Şehire</Text>
-        <View style={styles.quickPickGrid}>
-          {intercityPresets.map((p) => (
-            <TouchableOpacity
-              key={p.label}
-              style={[styles.quickPickChipTech, styles.intercityChip]}
-              activeOpacity={0.85}
-              onPress={() => onIntercityPresetPress(p)}
-            >
-              <Text style={styles.quickPickChipTextTech} numberOfLines={2}>
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-    ) : null;
 
   const reset = useCallback(() => {
     setPhase('search');
@@ -313,7 +192,13 @@ export default function MuhabbetEndpointPickerModal({
   }, [phase, pin]);
 
   const finalizeCommit = useCallback(
-    async (address: string, lat: number, lng: number, mapPinConfirmed: boolean) => {
+    async (
+      address: string,
+      lat: number,
+      lng: number,
+      mapPinConfirmed: boolean,
+      extra?: { selectionSource?: PlaceDetails['selectionSource'] },
+    ) => {
       if (!isLatLngWithinRegisteredCity(effectiveCityLabel, lat, lng)) {
         Alert.alert(
           'Şehir sınırı',
@@ -327,6 +212,7 @@ export default function MuhabbetEndpointPickerModal({
         latitude: lat,
         longitude: lng,
         mapPinConfirmed,
+        ...(extra?.selectionSource ? { selectionSource: extra.selectionSource } : {}),
       });
       onRequestClose();
     },
@@ -335,7 +221,6 @@ export default function MuhabbetEndpointPickerModal({
 
   const onSearchPick = useCallback(
     (place: PlaceDetails) => {
-      void tapButtonHaptic();
       const lat = Number(place.latitude);
       const lng = Number(place.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -343,6 +228,29 @@ export default function MuhabbetEndpointPickerModal({
         Alert.alert('Şehir sınırı', 'Bu öneri seçili şehir dışında görünüyor. Şehir içi bir adres seçin.');
         return;
       }
+
+      if (place.selectionSource === 'merkez_chip') {
+        setPin({ latitude: lat, longitude: lng });
+        requestAnimationFrame(() => {
+          try {
+            mapRef.current?.animateToRegion?.(
+              {
+                latitude: lat,
+                longitude: lng,
+                latitudeDelta: SEARCH_DELTA,
+                longitudeDelta: SEARCH_DELTA,
+              },
+              420,
+            );
+          } catch {
+            /* ignore */
+          }
+        });
+        void finalizeCommit(place.address, lat, lng, false, { selectionSource: 'merkez_chip' });
+        return;
+      }
+
+      void tapButtonHaptic();
       if (!useMap) {
         void finalizeCommit(place.address, lat, lng, false);
         return;
@@ -415,8 +323,7 @@ export default function MuhabbetEndpointPickerModal({
           inputSize="large"
           predictionMaxHeightBonus={56}
           forceCityInSearch={!!effectiveCityLabel}
-          slotAboveQuickPicks={intercitySlot}
-          quickPickSuggestions={muhabbetQuickPicks}
+          compactMerkezChips
           onPlaceSelected={onSearchPick}
         />
       </View>
@@ -627,45 +534,4 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.45)',
   },
   geoText: { marginTop: 12, color: '#E0F2FE', fontSize: 15, fontWeight: '600' },
-  quickPickWrapTech: {
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
-  },
-  intercitySection: {
-    marginBottom: 0,
-  },
-  quickPickTitleTech: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#E2E8F0',
-    marginBottom: 10,
-  },
-  quickPickGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  quickPickChipTech: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.45)',
-    maxWidth: '100%',
-  },
-  intercityChip: {
-    flexGrow: 1,
-    flexBasis: '46%',
-  },
-  quickPickChipTextTech: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#E0F2FE',
-  },
 });

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Keyboard,
@@ -551,6 +552,92 @@ const POPULAR_PLACES: { [key: string]: string[] } = {
   'Antalya': ['Muratpaşa', 'Kepez', 'Konyaaltı', 'Lara', 'Alanya', 'Manavgat', 'Side', 'Belek'],
 };
 
+const COMPACT_MERKEZ_CHIP_MAX = 3;
+
+/** Muhabbet merkez chip → modal / listing doğrulaması için */
+export type PlaceSelectionSource = 'merkez_chip';
+
+function exactCityMerkezChips(rawQuery: string): MuhabbetQuickPickPlace[] {
+  const q = normalizeText(rawQuery.trim());
+  if (q.length < 2) return [];
+  const hits: MuhabbetQuickPickPlace[] = [];
+  for (const key of Object.keys(CITY_DATA)) {
+    if (normalizeText(key) === q) {
+      hits.push({
+        label: `${key} Merkez`,
+        latitude: CITY_DATA[key].lat,
+        longitude: CITY_DATA[key].lng,
+      });
+    }
+  }
+  hits.sort((a, b) => a.label.localeCompare(b.label, 'tr'));
+  return hits;
+}
+
+/** Tam şehir eşleşmeleri çıkarılmış kısmi eşleşmeler (öncelik 3) */
+function fallbackCityMerkezChips(
+  rawQuery: string,
+  limit: number,
+  excludeNormalizedCityKeys: Set<string>,
+): MuhabbetQuickPickPlace[] {
+  const q = normalizeText(rawQuery.trim());
+  if (q.length < 2 || limit <= 0) return [];
+  const scored: { place: MuhabbetQuickPickPlace; score: number }[] = [];
+  for (const key of Object.keys(CITY_DATA)) {
+    const nk = normalizeText(key);
+    if (excludeNormalizedCityKeys.has(nk)) continue;
+    if (nk === q) continue;
+    let score = 100;
+    if (nk.startsWith(q)) score = 1 + nk.length * 0.001;
+    else if (q.length >= 3 && nk.includes(q)) score = 10 + nk.length * 0.001;
+    else continue;
+    scored.push({
+      score,
+      place: {
+        label: `${key} Merkez`,
+        latitude: CITY_DATA[key].lat,
+        longitude: CITY_DATA[key].lng,
+      },
+    });
+  }
+  scored.sort((a, b) => a.score - b.score || a.place.label.localeCompare(b.place.label, 'tr'));
+  const seen = new Set<string>();
+  const out: MuhabbetQuickPickPlace[] = [];
+  for (const { place } of scored) {
+    const id = normalizeText(place.label);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(place);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Seçili şehir bağlamındaki popüler ilçe/mahalle adları — koordinatlar ayrıca Nominatim ile çözülür */
+function matchPopularDistrictMerkezHints(
+  rawQuery: string,
+  cityLabel: string,
+  limit: number,
+): { label: string; district: string; cityKey: string }[] {
+  if (limit <= 0) return [];
+  const cityKey = resolveCityDataKey(cityLabel.trim());
+  if (!cityKey || !POPULAR_PLACES[cityKey]) return [];
+  const q = normalizeText(rawQuery.trim());
+  if (q.length < 2) return [];
+  const scored: { label: string; district: string; cityKey: string; score: number }[] = [];
+  for (const d of POPULAR_PLACES[cityKey]) {
+    const nd = normalizeText(d);
+    let score = 100;
+    if (nd === q) score = 0;
+    else if (nd.startsWith(q)) score = 1;
+    else if (q.length >= 3 && nd.includes(q)) score = 8;
+    else continue;
+    scored.push({ label: `${d} Merkez`, district: d, cityKey, score });
+  }
+  scored.sort((a, b) => a.score - b.score || a.label.localeCompare(b.label, 'tr'));
+  return scored.slice(0, limit);
+}
+
 interface PlaceResult {
   place_id: string;
   display_name: string;
@@ -629,6 +716,8 @@ export interface PlaceDetails {
   address: string;
   latitude: number;
   longitude: number;
+  /** Muhabbet: şehir/ilçe merkez chip seçimi — Tam burası zorunluluğu muaf */
+  selectionSource?: PlaceSelectionSource;
 }
 
 function mapGooglePredictionToPlaceResult(p: GoogleAutocompletePrediction): PlaceResult {
@@ -846,8 +935,8 @@ interface PlacesAutocompleteProps {
   predictionMaxHeightBonus?: number;
   /** Muhabbet şehir dışı: arama metnine şehir / Türkiye varyantları eklenir */
   forceCityInSearch?: boolean;
-  /** Input ile hızlı seçim bandı arasında ek bölüm (örn. şehirden şehire) */
-  slotAboveQuickPicks?: React.ReactNode;
+  /** Küçük tek satır şehir / ilçe merkez önerileri (büyük hızlı seçim paneli kapalı) */
+  compactMerkezChips?: boolean;
   /** Muhabbet şehir dışı: kısa/boş sorguda harici koordinatlı hızlı seçimler */
   quickPickSuggestions?: MuhabbetQuickPickPlace[];
   /** quickPickSuggestions gösterimi için üst karakter sınırı (varsayılan 3) */
@@ -870,7 +959,7 @@ export default function PlacesAutocomplete({
   inputSize = 'default',
   predictionMaxHeightBonus = 0,
   forceCityInSearch = false,
-  slotAboveQuickPicks,
+  compactMerkezChips = false,
   quickPickSuggestions,
   quickPickShowMaxQueryLength = 3,
 }: PlacesAutocompleteProps) {
@@ -903,19 +992,106 @@ export default function PlacesAutocomplete({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Artan kimlik: tamamlanan arama yanıtı yalnızca en son isteğe aitse state günceller (yarış / boş liste). */
   const autocompleteRequestIdRef = useRef(0);
+  const districtMerkezFetchGenRef = useRef(0);
+  const districtMerkezCoordsRef = useRef<Record<string, { lat: number; lng: number }>>({});
+  const [districtMerkezCoords, setDistrictMerkezCoords] = useState<
+    Record<string, { lat: number; lng: number }>
+  >({});
+
+  const compactMerkezEntries = useMemo(() => {
+    const empty = {
+      exactCities: [] as MuhabbetQuickPickPlace[],
+      districts: [] as { label: string; district: string; cityKey: string }[],
+      fallbackCities: [] as MuhabbetQuickPickPlace[],
+    };
+    if (!compactMerkezChips || query.trim().length < 2) return empty;
+
+    const qc = query.trim();
+    const exactCities = exactCityMerkezChips(qc);
+    let budget = COMPACT_MERKEZ_CHIP_MAX;
+    const takenExact = exactCities.slice(0, budget);
+    budget -= takenExact.length;
+
+    const excludeCityNorm = new Set(
+      takenExact
+        .map((p) => {
+          const base = p.label.replace(/\s+Merkez\s*$/i, '').trim();
+          const k = resolveCityDataKey(base);
+          return normalizeText(k || base);
+        })
+        .filter(Boolean),
+    );
+
+    const districts = budget > 0 ? matchPopularDistrictMerkezHints(qc, city, budget) : [];
+    budget -= districts.length;
+
+    const fallbackCities =
+      budget > 0 ? fallbackCityMerkezChips(qc, budget, excludeCityNorm) : [];
+
+    return { exactCities: takenExact, districts, fallbackCities };
+  }, [compactMerkezChips, query, city]);
 
   const quickPickList = quickPickSuggestions ?? [];
   const quickPickFewAutocomplete = predictions.length < 3;
   const showQuickPicks =
+    !compactMerkezChips &&
     quickPickList.length > 0 &&
     (query.trim().length <= quickPickShowMaxQueryLength || quickPickFewAutocomplete);
+
+  const showCompactMerkezRow =
+    compactMerkezChips &&
+    query.trim().length >= 2 &&
+    (compactMerkezEntries.exactCities.length > 0 ||
+      compactMerkezEntries.districts.length > 0 ||
+      compactMerkezEntries.fallbackCities.length > 0);
 
   /** Şehir bağlamı değişince önceki şehir önerileri kalmasın (harita/bias güncellenmesiyle uyumlu). */
   useEffect(() => {
     autocompleteRequestIdRef.current += 1;
     setPredictions([]);
     setSearchRoundDone(false);
+    districtMerkezCoordsRef.current = {};
+    setDistrictMerkezCoords({});
   }, [city]);
+
+  useEffect(() => {
+    if (!compactMerkezChips || compactMerkezEntries.districts.length === 0) return undefined;
+    const hints = compactMerkezEntries.districts;
+    let cancelled = false;
+    const gen = ++districtMerkezFetchGenRef.current;
+    const timer = setTimeout(() => {
+      void (async () => {
+        for (const h of hints) {
+          if (cancelled || gen !== districtMerkezFetchGenRef.current) return;
+          const key = `${h.district}|${h.cityKey}`;
+          if (districtMerkezCoordsRef.current[key]) continue;
+          try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+              `${h.district}, ${h.cityKey}, Türkiye`,
+            )}&limit=1&countrycodes=tr&accept-language=tr`;
+            const response = await fetch(url, {
+              headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
+            });
+            if (!response.ok) continue;
+            const data = (await response.json()) as { lat?: string; lon?: string }[];
+            const row = Array.isArray(data) ? data[0] : undefined;
+            const lat = Number(row?.lat);
+            const lng = Number(row?.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+            if (cancelled || gen !== districtMerkezFetchGenRef.current) return;
+            districtMerkezCoordsRef.current[key] = { lat, lng };
+            setDistrictMerkezCoords((prev) => ({ ...prev, [key]: { lat, lng } }));
+          } catch {
+            /* sessiz */
+          }
+        }
+      })();
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [compactMerkezChips, compactMerkezEntries.districts]);
 
   // Debounced search
   useEffect(() => {
@@ -1533,7 +1709,7 @@ export default function PlacesAutocomplete({
     });
   };
 
-  const handleQuickPick = (qp: MuhabbetQuickPickPlace) => {
+  const handleQuickPick = (qp: MuhabbetQuickPickPlace, selectionSource?: PlaceSelectionSource) => {
     if (!tech) {
       Keyboard.dismiss();
     }
@@ -1545,6 +1721,7 @@ export default function PlacesAutocomplete({
       address: qp.label,
       latitude: qp.latitude,
       longitude: qp.longitude,
+      ...(selectionSource ? { selectionSource } : {}),
     });
   };
 
@@ -1694,7 +1871,73 @@ export default function PlacesAutocomplete({
         )}
       </View>
 
-      {slotAboveQuickPicks}
+      {showCompactMerkezRow ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.compactMerkezScroll}
+          contentContainerStyle={styles.compactMerkezScrollContent}
+        >
+          {compactMerkezEntries.exactCities.map((p) => (
+            <TouchableOpacity
+              key={`exact-${p.label}`}
+              style={[styles.compactMerkezChip, tech && styles.compactMerkezChipTech]}
+              onPress={() => handleQuickPick(p, 'merkez_chip')}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.compactMerkezChipText, tech && styles.compactMerkezChipTextTech]} numberOfLines={1}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          {compactMerkezEntries.districts.map((h) => {
+            const dk = `${h.district}|${h.cityKey}`;
+            const c = districtMerkezCoords[dk];
+            const ready = !!(c && Number.isFinite(c.lat) && Number.isFinite(c.lng));
+            const districtPlace: MuhabbetQuickPickPlace = ready
+              ? { label: h.label, latitude: c.lat, longitude: c.lng }
+              : { label: h.label, latitude: NaN, longitude: NaN };
+            return (
+              <TouchableOpacity
+                key={`dist-${h.label}`}
+                style={[styles.compactMerkezChip, tech && styles.compactMerkezChipTech]}
+                disabled={!ready}
+                onPress={() => handleQuickPick(districtPlace, 'merkez_chip')}
+                activeOpacity={0.85}
+              >
+                <View style={styles.compactMerkezChipInner}>
+                  {!ready ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={tech ? '#94A3B8' : '#64748B'}
+                      style={styles.compactMerkezChipSpinner}
+                    />
+                  ) : null}
+                  <Text
+                    style={[styles.compactMerkezChipText, tech && styles.compactMerkezChipTextTech]}
+                    numberOfLines={1}
+                  >
+                    {h.label}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          {compactMerkezEntries.fallbackCities.map((p) => (
+            <TouchableOpacity
+              key={`fb-${p.label}`}
+              style={[styles.compactMerkezChip, tech && styles.compactMerkezChipTech]}
+              onPress={() => handleQuickPick(p, 'merkez_chip')}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.compactMerkezChipText, tech && styles.compactMerkezChipTextTech]} numberOfLines={1}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : null}
 
       {showQuickPicks ? (
         <View style={[styles.quickPickWrap, tech && styles.quickPickWrapTech]}>
@@ -1864,6 +2107,47 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     padding: 4,
+  },
+
+  compactMerkezScroll: {
+    marginTop: 8,
+    maxHeight: 40,
+  },
+  compactMerkezScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 4,
+  },
+  compactMerkezChip: {
+    flexShrink: 0,
+    marginRight: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    maxWidth: 220,
+  },
+  compactMerkezChipTech: {
+    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+    borderColor: 'rgba(56, 189, 248, 0.45)',
+  },
+  compactMerkezChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4338CA',
+  },
+  compactMerkezChipTextTech: {
+    color: '#E0F2FE',
+  },
+  compactMerkezChipInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: 200,
+  },
+  compactMerkezChipSpinner: {
+    marginRight: 6,
   },
 
   quickPickWrap: {

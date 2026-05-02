@@ -524,6 +524,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     if (!session) return false;
     const st = String(session.status || '').trim().toLowerCase();
     if (st !== 'active' && st !== 'started') return false;
+    const sc = Number(session.seat_capacity ?? 1);
+    if (sc > 1) {
+      return String(session.ride_status || '').trim().toLowerCase() === 'active';
+    }
     return !!String(session.boarding_qr_confirmed_at || '').trim();
   }, [session]);
 
@@ -533,14 +537,25 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const st = String(session.status || '').trim().toLowerCase();
     if (TERMINAL_TRIP_STATUSES.has(st)) return true;
     if (!['ready', 'active', 'started'].includes(st)) return true;
-    if (!!String(session.boarding_qr_confirmed_at || '').trim()) return true;
+    const sc = Number(session.seat_capacity ?? 1);
+    const boardedMulti =
+      sc > 1 &&
+      Array.isArray(session.boarded_passenger_ids) &&
+      session.boarded_passenger_ids.length > 0;
+    const boardedSingle = sc <= 1 && !!String(session?.boarding_qr_confirmed_at || '').trim();
+    if (boardedMulti || boardedSingle) return true;
     const ff = String(session.force_finish_state || '').trim().toLowerCase();
     return ff === 'pending';
   }, [session]);
 
   const forceFinishBoardedHint = useMemo(() => {
     if (!session || isTerminal) return null;
-    if (!String(session.boarding_qr_confirmed_at || '').trim()) return null;
+    const sc = Number(session.seat_capacity ?? 1);
+    const tripStarted =
+      sc > 1
+        ? String(session.ride_status || '').trim().toLowerCase() === 'active'
+        : !!String(session.boarding_qr_confirmed_at || '').trim();
+    if (!tripStarted) return null;
     return 'Yolculuk başladı. Varış QR ile bitirin veya sorun varsa Şikayet Et kullanın.';
   }, [session, isTerminal]);
 
@@ -568,6 +583,42 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
   const chromeDisplayStatus = useMemo(() => {
     if (!session) return displayStatus(null);
+    const sc = Number(session.seat_capacity ?? 1);
+    const ms = session.multi_seat_strings;
+    const rs = String(session.ride_status || '').trim().toLowerCase();
+    if (sc > 1 && ms) {
+      const waitingLine = String(ms.accepted_line || '').trim();
+      const boardingDriver = String(ms.driver_boarding_line || '').trim();
+      const nextPass = String(ms.driver_next_passenger_line || '').trim();
+      const boardedLn = String(ms.boarded_line || '').trim();
+      const activeLn = String(ms.active_line || 'Yolculuk başladı').trim();
+      let detail = '';
+      if (rs === 'waiting') {
+        detail = waitingLine;
+      } else if (rs === 'boarding') {
+        detail = isDriver ? nextPass || boardingDriver : boardedLn;
+      } else if (rs === 'active') {
+        detail = activeLn;
+      } else if (rs === 'finished') {
+        detail = 'Yolculuk tamamlandı';
+      } else {
+        detail = String(ms.phase_line || '').trim();
+      }
+      if (session.expired_but_extendable) {
+        detail = `${detail} İlan süresi doldu. Uzatmak ister misin?`.trim();
+      }
+      const label =
+        rs === 'active'
+          ? 'Yolculuk aktif'
+          : rs === 'boarding'
+            ? 'Biniş'
+            : rs === 'finished'
+              ? 'Tamamlandı'
+              : rs === 'cancelled' || rs === 'expired'
+                ? 'Kapandı'
+                : 'Yolcu bekleniyor';
+      return { label, detail: detail.trim() };
+    }
     const boarded = !!String(session.boarding_qr_confirmed_at || '').trim();
     const st = session.status;
     if (boarded && (st === 'active' || st === 'started')) {
@@ -577,11 +628,22 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       };
     }
     return displayStatus(st);
-  }, [session]);
+  }, [session, isDriver]);
 
   const suppressChromeRouteWait =
-    !!String(session?.boarding_qr_confirmed_at || '').trim() &&
-    (session?.status === 'active' || session?.status === 'started');
+    (() => {
+      const sc = Number(session?.seat_capacity ?? 1);
+      if (sc > 1) {
+        return (
+          String(session?.ride_status || '').trim().toLowerCase() === 'active' &&
+          (session?.status === 'active' || session?.status === 'started')
+        );
+      }
+      return (
+        !!String(session?.boarding_qr_confirmed_at || '').trim() &&
+        (session?.status === 'active' || session?.status === 'started')
+      );
+    })();
 
   const getActiveMuhabbetSessionId = useCallback(() => {
     return (
@@ -1001,10 +1063,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         !session?.forced_finish_confirmed_at &&
         String(session.force_finish_state || '').trim().toLowerCase() === 'pending') ||
       forceFinishRequestOptimistic;
+    const scPoll = Number(session?.seat_capacity ?? 1);
+    const rsPoll = String(session?.ride_status || '').trim().toLowerCase();
+    const multiSeatPending = scPoll > 1 && (rsPoll === 'waiting' || rsPoll === 'boarding');
     const fastPoll =
       qrLoading ||
       (!MUHABBET_LEYLEK_VOICE_COMING_SOON && !!session?.call_active && ringingLike) ||
-      ffPending;
+      ffPending ||
+      multiSeatPending;
     const pollMs = fastPoll ? 500 : 1200;
     const id = setInterval(() => {
       console.log(
@@ -1026,6 +1092,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     session?.call_active,
     session?.call_state,
     session?.status,
+    session?.seat_capacity,
+    session?.ride_status,
     session?.forced_finish_requested_at,
     session?.forced_finish_confirmed_at,
     session?.force_finish_state,
@@ -2336,7 +2404,13 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     if (!session) disabledReason = 'no_session';
     else if (terminal) disabledReason = 'terminal';
     else if (!['ready', 'active', 'started'].includes(st)) disabledReason = 'bad_status';
-    else if (!!String(session?.boarding_qr_confirmed_at || '').trim()) disabledReason = 'boarding_confirmed';
+    else if (
+      (Number(session?.seat_capacity ?? 1) > 1 &&
+        Array.isArray(session?.boarded_passenger_ids) &&
+        session.boarded_passenger_ids.length > 0) ||
+      (Number(session?.seat_capacity ?? 1) <= 1 && !!String(session?.boarding_qr_confirmed_at || '').trim())
+    )
+      disabledReason = 'boarding_confirmed';
     else if (ffPending) disabledReason = 'force_finish_pending';
 
     console.log(

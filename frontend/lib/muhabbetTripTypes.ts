@@ -95,6 +95,34 @@ export type MuhabbetTripSession = {
   force_finish_state?: 'none' | 'pending' | 'accepted' | 'declined' | 'timeout' | string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  /** Muhabbet çoklu yolcu (1 = tekli) */
+  seat_capacity?: number | null;
+  /** Çoklu oturum fazı — status kolonundan ayrı */
+  ride_status?:
+    | 'waiting'
+    | 'boarding'
+    | 'active'
+    | 'finished'
+    | 'cancelled'
+    | 'expired'
+    | string
+    | null;
+  accepted_passenger_ids?: string[] | null;
+  boarded_passenger_ids?: string[] | null;
+  pickup_order?: string[] | null;
+  /** Çoklu koltuk: sıradaki biniş yolcusu */
+  next_pickup_user_id?: string | null;
+  next_pickup_display_name?: string | null;
+  next_pickup_location?: { lat: number; lng: number } | null;
+  multi_seat_strings?: {
+    phase_line?: string;
+    accepted_line?: string;
+    boarded_line?: string;
+    driver_boarding_line?: string;
+    driver_next_passenger_line?: string;
+    active_line?: string;
+  } | null;
+  expired_but_extendable?: boolean | null;
 };
 
 export type MuhabbetTripSessionSocketPayload = {

@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,14 +25,14 @@ import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { getGoogleMapsApiKey, googleGeocodeText } from '../lib/googlePlaces';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import MuhabbetEndpointPickerModal, {
   muhabbetListingMapPinFlowAvailable,
   reverseGeocodeTr,
   type MuhabbetCommittedPlace,
-  type MuhabbetIntercityPairPayload,
 } from './MuhabbetEndpointPickerModal';
-import { isLatLngWithinRegisteredCity } from './PlacesAutocomplete';
+import { getRegisteredCityCenter, isLatLngWithinRegisteredCity } from './PlacesAutocomplete';
 
 const HEADER_GRAD = ['#1e3a5f', '#3B82F6'] as const;
 const SCREEN_BG = '#0c1524';
@@ -189,6 +190,50 @@ function hasFiniteCoords(p: MuhabbetCommittedPlace | null): boolean {
   return Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
 }
 
+/** Harita “Tam burası” zorunluluğu: merkez chip seçimi muaf */
+function muhabbetEndpointPinVerified(p: MuhabbetCommittedPlace | null): boolean {
+  if (!p) return false;
+  if (p.selectionSource === 'merkez_chip') return true;
+  return p.mapPinConfirmed;
+}
+
+/** CITY_DATA dışı şehirler: Nominatim → Google Geocode (Muhabbet varış merkezi) */
+async function fetchCityCenterLatLngWhenNotInRegistry(cityLabel: string): Promise<{ lat: number; lng: number } | null> {
+  const t = cityLabel.trim();
+  if (!t) return null;
+  try {
+    const q = encodeURIComponent(`${t}, Türkiye`);
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1&countrycodes=tr&accept-language=tr`;
+    const response = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
+    const data = (await response.json()) as { lat?: string; lon?: string }[];
+    const row = Array.isArray(data) ? data[0] : undefined;
+    const la = Number(row?.lat);
+    const ln = Number(row?.lon);
+    if (Number.isFinite(la) && Number.isFinite(ln)) return { lat: la, lng: ln };
+  } catch {
+    /* Google’a düş */
+  }
+  const apiKey = getGoogleMapsApiKey();
+  if (!apiKey) return null;
+  try {
+    const rows = await googleGeocodeText(`${t}, Türkiye`, apiKey, null);
+    const r = rows[0];
+    if (r && Number.isFinite(r.lat) && Number.isFinite(r.lng)) return { lat: r.lat, lng: r.lng };
+  } catch {
+    /* noop */
+  }
+  return null;
+}
+
+function showMerkezChipFeedback(cityDisplay: string) {
+  const msg = `${cityDisplay} merkez seçildi`;
+  if (Platform.OS === 'android') {
+    ToastAndroid.show(msg, ToastAndroid.SHORT);
+  } else {
+    Alert.alert('', msg);
+  }
+}
+
 function parsePositiveIntText(text: string): number | null {
   const n = parseInt(String(text || '').replace(/\D/g, ''), 10);
   return !Number.isNaN(n) && n > 0 ? n : null;
@@ -260,6 +305,7 @@ export default function CreateListingModal({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [locationChoiceOpen, setLocationChoiceOpen] = useState(false);
   const [locationChoiceLoading, setLocationChoiceLoading] = useState(false);
+  const [destinationMerkezBusy, setDestinationMerkezBusy] = useState(false);
   const gpsFetchingRef = useRef(false);
   const [pickerField, setPickerField] = useState<'from' | 'to'>('from');
   const [userBias, setUserBias] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -423,13 +469,13 @@ export default function CreateListingModal({
     }
     if (!fromPoint) out.push('Nereden seçilmedi.');
     else if (!hasFiniteCoords(fromPoint)) out.push('Nereden: konum koordinatları eksik.');
-    else if (mapPinRequired && !fromPoint.mapPinConfirmed) {
+    else if (mapPinRequired && !muhabbetEndpointPinVerified(fromPoint)) {
       out.push('Nereden: Haritada “Tam burası” ile konumu doğrulamalısın.');
     }
 
     if (!toPoint) out.push('Nereye seçilmedi.');
     else if (!hasFiniteCoords(toPoint)) out.push('Nereye: konum koordinatları eksik.');
-    else if (mapPinRequired && !toPoint.mapPinConfirmed) {
+    else if (mapPinRequired && !muhabbetEndpointPinVerified(toPoint)) {
       out.push('Nereye: Haritada “Tam burası” ile konumu doğrulamalısın.');
     }
 
@@ -565,10 +611,6 @@ export default function CreateListingModal({
       }
     }
     setPickerField(field);
-    if (field === 'to') {
-      setPickerOpen(true);
-      return;
-    }
     setLocationChoiceOpen(true);
   };
 
@@ -576,6 +618,70 @@ export default function CreateListingModal({
     setLocationChoiceOpen(false);
     setPickerOpen(true);
   }, []);
+
+  /** Nereye: seçili varış şehri merkezi — Tam burası gerekmez (selectionSource merkez_chip) */
+  const commitDestinationCityCenter = useCallback(async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const dc = listingScope === 'intercity' ? destinationCity.trim() : city.trim();
+    if (!dc) {
+      Alert.alert(
+        'Şehir seç',
+        listingScope === 'intercity' ? 'Önce varış şehrini seç.' : 'Şehir bilgisi eksik.',
+      );
+      return;
+    }
+
+    const registered = getRegisteredCityCenter(dc);
+    let lat: number | undefined;
+    let lng: number | undefined;
+
+    if (registered) {
+      lat = registered.latitude;
+      lng = registered.longitude;
+    } else {
+      setDestinationMerkezBusy(true);
+      try {
+        const resolved = await fetchCityCenterLatLngWhenNotInRegistry(dc);
+        if (resolved) {
+          lat = resolved.lat;
+          lng = resolved.lng;
+        }
+      } finally {
+        setDestinationMerkezBusy(false);
+      }
+    }
+
+    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      Alert.alert(
+        'Merkez',
+        'Bu şehir merkezi otomatik bulunamadı. Başka adres seçerek devam edebilirsin.',
+      );
+      return;
+    }
+
+    if (!isLatLngWithinRegisteredCity(dc, lat, lng)) {
+      Alert.alert(
+        'Şehir sınırı',
+        'Bulunan nokta seçili şehir alanıyla uyumlu görünmüyor. “Başka adres” ile konumu seçebilirsin.',
+      );
+      return;
+    }
+
+    const addressLabel = `${dc} Merkez`;
+    const place: MuhabbetCommittedPlace = {
+      address: addressLabel,
+      latitude: lat,
+      longitude: lng,
+      mapPinConfirmed: false,
+      selectionSource: 'merkez_chip',
+    };
+    setToPoint(place);
+    setSuggestedBase(null);
+    setPriceDelta(0);
+    setPriceMeta(null);
+    setLocationChoiceOpen(false);
+    setTimeout(() => showMerkezChipFeedback(dc), 280);
+  }, [listingScope, destinationCity, city]);
 
   const commitCurrentGpsLocation = useCallback(async () => {
     if (gpsFetchingRef.current) return;
@@ -763,14 +869,6 @@ export default function CreateListingModal({
     [pickerField],
   );
 
-  const onIntercityPairCommitted = useCallback((payload: MuhabbetIntercityPairPayload) => {
-    setFromPoint(payload.pickup);
-    setToPoint(payload.dropoff);
-    setOriginCity(payload.originCity);
-    setDestinationCity(payload.destinationCity);
-    setPickerOpen(false);
-  }, []);
-
   const onTimeChipPress = (fn: () => void) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     fn();
@@ -781,7 +879,7 @@ export default function CreateListingModal({
       Alert.alert('Eksik', 'Önce nereden ve nereyi seç.');
       return;
     }
-    if (mapPinRequired && (!fromPoint.mapPinConfirmed || !toPoint.mapPinConfirmed)) {
+    if (mapPinRequired && (!muhabbetEndpointPinVerified(fromPoint) || !muhabbetEndpointPinVerified(toPoint))) {
       Alert.alert(
         'Harita doğrulaması',
         'Bu cihazda harita açıkken her iki uç için de arama sonrası “Tam burası” ile konumu onaylamalısın.',
@@ -1139,7 +1237,13 @@ export default function CreateListingModal({
                   {endpointSummary(fromPoint)}
                 </Text>
                 {fromPoint && mapPinRequired ? (
-                  <Text style={styles.rowMeta}>{fromPoint.mapPinConfirmed ? 'Harita onaylı' : 'Haritada “Tam burası” bekleniyor'}</Text>
+                  <Text style={styles.rowMeta}>
+                    {fromPoint.selectionSource === 'merkez_chip'
+                      ? 'Şehir / ilçe merkezi seçildi'
+                      : fromPoint.mapPinConfirmed
+                        ? 'Harita onaylı'
+                        : 'Haritada “Tam burası” bekleniyor'}
+                  </Text>
                 ) : null}
               </View>
               <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
@@ -1158,7 +1262,13 @@ export default function CreateListingModal({
                   {endpointSummary(toPoint)}
                 </Text>
                 {toPoint && mapPinRequired ? (
-                  <Text style={styles.rowMeta}>{toPoint.mapPinConfirmed ? 'Harita onaylı' : 'Haritada “Tam burası” bekleniyor'}</Text>
+                  <Text style={styles.rowMeta}>
+                    {toPoint.selectionSource === 'merkez_chip'
+                      ? 'Şehir / ilçe merkezi seçildi'
+                      : toPoint.mapPinConfirmed
+                        ? 'Harita onaylı'
+                        : 'Haritada “Tam burası” bekleniyor'}
+                  </Text>
                 ) : null}
               </View>
               <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
@@ -1233,7 +1343,12 @@ export default function CreateListingModal({
                 label={priceCalcBusy ? 'Hesaplanıyor…' : 'Öneri fiyat hesapla'}
                 loading={priceCalcBusy}
                 onPress={() => void calcBasePrice()}
-                disabled={!fromPoint || !toPoint || (mapPinRequired && (!fromPoint.mapPinConfirmed || !toPoint.mapPinConfirmed))}
+                disabled={
+                  !fromPoint ||
+                  !toPoint ||
+                  (mapPinRequired &&
+                    (!muhabbetEndpointPinVerified(fromPoint) || !muhabbetEndpointPinVerified(toPoint)))
+                }
                 style={{ marginTop: 12 }}
               />
               {priceMeta?.distance_km != null ? (
@@ -1311,16 +1426,19 @@ export default function CreateListingModal({
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (!locationChoiceLoading) setLocationChoiceOpen(false);
+            if (!locationChoiceLoading && !destinationMerkezBusy) setLocationChoiceOpen(false);
           }}
         >
-          <Pressable style={styles.sheetOverlay} onPress={() => !locationChoiceLoading && setLocationChoiceOpen(false)}>
+          <Pressable
+            style={styles.sheetOverlay}
+            onPress={() => !locationChoiceLoading && !destinationMerkezBusy && setLocationChoiceOpen(false)}
+          >
             <Pressable style={styles.locationChoiceSheet} onPress={(e) => e.stopPropagation()}>
               <Text style={styles.locationChoiceTitle}>Konum seç</Text>
               <Text style={styles.locationChoiceDesc}>
                 {pickerField === 'from'
                   ? 'Bulunduğun konumu kullanabilir veya farklı bir adres seçebilirsin.'
-                  : 'Gideceğin adresi arayıp seç.'}
+                  : 'Şehir merkezini tek dokunuşla seçebilir veya adres ara.'}
               </Text>
               {pickerField === 'from' ? (
                 <TouchableOpacity
@@ -1335,18 +1453,38 @@ export default function CreateListingModal({
                   </Text>
                   {locationChoiceLoading ? <ActivityIndicator size="small" color={ACCENT_ORANGE} /> : null}
                 </TouchableOpacity>
-              ) : null}
+              ) : (
+                <TouchableOpacity
+                  style={styles.locationChoiceRow}
+                  onPress={() => void commitDestinationCityCenter()}
+                  disabled={locationChoiceLoading || destinationMerkezBusy}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="location-outline" size={22} color="#2563eb" />
+                  <Text style={styles.locationChoiceRowText}>
+                    {destinationMerkezBusy ? 'Merkez aranıyor...' : 'Merkez'}
+                  </Text>
+                  {destinationMerkezBusy ? (
+                    <ActivityIndicator size="small" color="#2563eb" />
+                  ) : (
+                    <Ionicons name="chevron-forward" size={18} color={TEXT_SECONDARY} />
+                  )}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={styles.locationChoiceRow}
                 onPress={openAddressPickerModal}
-                disabled={locationChoiceLoading}
+                disabled={locationChoiceLoading || destinationMerkezBusy}
                 activeOpacity={0.85}
               >
                 <Ionicons name="map-outline" size={22} color="#2563eb" />
                 <Text style={styles.locationChoiceRowText}>Başka adres</Text>
                 <Ionicons name="chevron-forward" size={18} color={TEXT_SECONDARY} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.sheetClose} onPress={() => !locationChoiceLoading && setLocationChoiceOpen(false)}>
+              <TouchableOpacity
+                style={styles.sheetClose}
+                onPress={() => !locationChoiceLoading && !destinationMerkezBusy && setLocationChoiceOpen(false)}
+              >
                 <Text style={styles.sheetCloseText}>Vazgeç</Text>
               </TouchableOpacity>
             </Pressable>
@@ -1362,8 +1500,6 @@ export default function CreateListingModal({
           biasLongitude={userBias?.longitude}
           onRequestClose={() => setPickerOpen(false)}
           onCommitted={onPickerCommitted}
-          intercityPresetsEnabled={listingScope === 'intercity'}
-          onIntercityPairCommitted={listingScope === 'intercity' ? onIntercityPairCommitted : undefined}
         />
 
         <Modal visible={cityPickerOpen} transparent animationType="fade" onRequestClose={() => setCityPickerOpen(false)}>
