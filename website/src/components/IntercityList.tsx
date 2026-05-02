@@ -6,6 +6,7 @@ import {
   type IntercityLiveResponse,
   type IntercityLiveRoute,
 } from "@src/lib/api";
+import { ButtonLink } from "@/components/button-link";
 import { IntercityRouteModal } from "@src/components/IntercityRouteModal";
 
 function roleLabel(raw: string): string {
@@ -35,7 +36,7 @@ function RouteCard({ route, onOpen }: { route: IntercityLiveRoute; onOpen: () =>
           onOpen();
         }
       }}
-      className="group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-soft-card transition duration-300 ease-out hover:scale-[1.02] hover:border-cyan-300/25 hover:shadow-[0_0_36px_rgba(34,211,238,0.14)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60 sm:p-5"
+      className="tap-highlight group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-soft-card transition-all duration-300 ease-out hover:scale-[1.02] hover:border-cyan-300/25 hover:shadow-[0_0_36px_rgba(34,211,238,0.14)] hover:brightness-110 active:scale-[0.99] active:brightness-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60 sm:p-5"
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(34,211,238,0.09),transparent_55%)] opacity-80 transition-opacity group-hover:opacity-100" />
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -91,7 +92,6 @@ export function IntercityList() {
       try {
         const data = await fetchIntercityLive();
         if (cancelled) return;
-        console.log("INTERCITY PROXY DATA:", data);
         setPayload(data);
       } catch (e) {
         if (!cancelled) {
@@ -148,9 +148,17 @@ export function IntercityList() {
       )}
 
       {empty && (
-        <p className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-8 text-center text-base font-semibold text-slate-400">
-          Şu anda şehirler arası ilan yok
-        </p>
+        <div className="rounded-2xl border border-dashed border-cyan-400/30 bg-gradient-to-b from-white/[0.07] to-white/[0.02] px-5 py-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+          <p className="text-4xl leading-none">😔</p>
+          <p className="mt-3 text-lg font-black text-white">Henüz rota yok</p>
+          <p className="mt-2 text-base font-semibold text-white/90">Ama ilk sen başlatabilirsin 🚀</p>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-white/65">
+            Uygulamada ilanını oluştur; aynı yöne gidenlerle güvenli şekilde eşleş.
+          </p>
+          <div className="mt-6 flex justify-center">
+            <ButtonLink href="/indir">Hemen başla</ButtonLink>
+          </div>
+        </div>
       )}
 
       {!loading && !empty && routes.length > 0 && (

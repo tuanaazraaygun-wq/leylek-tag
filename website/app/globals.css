@@ -4,8 +4,10 @@
 
 :root {
   color-scheme: dark;
-  --background: #07111f;
-  --foreground: #eefbff;
+  --background: #0a1628;
+  --foreground: #f0f9ff;
+  --accent-violet: #6c63ff;
+  --accent-orange: #ff7a18;
 }
 
 * {
@@ -14,15 +16,18 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
+  overflow-x: hidden;
   background:
-    radial-gradient(circle at 15% 15%, rgba(34, 211, 238, 0.18), transparent 28rem),
-    radial-gradient(circle at 85% 0%, rgba(139, 92, 246, 0.18), transparent 24rem),
-    var(--background);
+    radial-gradient(ellipse 75% 55% at 95% 5%, rgba(0, 198, 255, 0.17), transparent 52%),
+    radial-gradient(ellipse 65% 50% at 5% 25%, rgba(108, 99, 255, 0.17), transparent 50%),
+    radial-gradient(ellipse 55% 40% at 70% 92%, rgba(67, 233, 123, 0.068), transparent 48%),
+    linear-gradient(165deg, #060d18 0%, #0a1628 38%, #140c28 100%);
   color: var(--foreground);
 }
 
@@ -39,9 +44,27 @@ a {
 @layer components {
   .glass-panel {
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
     backdrop-filter: blur(22px);
+  }
+
+  .glass-card {
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(24px);
+    transition:
+      transform 0.3s ease-out,
+      box-shadow 0.3s ease-out,
+      filter 0.3s ease-out;
+  }
+
+  .glass-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 12px 40px rgba(0, 198, 255, 0.25);
+    filter: brightness(1.08);
   }
 
   .subtle-grid {
@@ -50,6 +73,67 @@ a {
       linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
     background-size: 44px 44px;
     mask-image: linear-gradient(to bottom, black, transparent);
+  }
+
+  .live-activity-bar {
+    animation: live-activity-pulse 3.2s ease-in-out infinite;
+  }
+
+  @keyframes live-activity-pulse {
+    0%,
+    100% {
+      opacity: 0.82;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .loading-shimmer {
+    animation: leylek-shimmer-slide 1.15s linear infinite;
+  }
+
+  .shimmer-bar {
+    animation: leylek-shimmer-slide 1.8s linear infinite;
+  }
+
+  @keyframes leylek-shimmer-slide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .tap-highlight {
+    -webkit-tap-highlight-color: rgba(34, 211, 238, 0.15);
+  }
+
+  .ripple-bg:active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.35) 0%, transparent 65%);
+    opacity: 0;
+    animation: leylek-ripple 0.45s ease-out;
+    pointer-events: none;
+  }
+
+  @keyframes leylek-ripple {
+    0% {
+      opacity: 0.45;
+      transform: scale(0.85);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.15);
+    }
   }
 }
 
@@ -313,6 +397,38 @@ a {
   color: rgba(165, 214, 226, 0.96);
   text-align: center;
   line-height: 1.25;
+}
+
+@media (max-width: 767px) {
+  .leylek-intercity-mid-stack {
+    max-width: min(110px, 28vw);
+    padding: 4px 7px;
+    border-radius: 10px;
+  }
+
+  .leylek-intercity-mid-title {
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .leylek-intercity-mid-meta {
+    font-size: 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .leylek-intercity-endpoint .leylek-marker-label {
+    max-width: 110px;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .leylek-intercity-line--pulse-glow {

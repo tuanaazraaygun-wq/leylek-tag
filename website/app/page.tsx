@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { ActivityFeed } from "@/components/activity-feed";
 import { AppPreview } from "@/components/app-preview";
 import { AudienceSection } from "@/components/audience-section";
@@ -6,9 +7,12 @@ import { BetaProcess } from "@/components/beta-process";
 import { ButtonLink } from "@/components/button-link";
 import { ComparisonSection } from "@/components/comparison-section";
 import { Container } from "@/components/container";
+import { HeroEngagement } from "@/components/hero-engagement";
+import { ScrollReveal } from "@/components/scroll-reveal";
 import { FaqSection } from "@/components/faq-section";
 import { LiveMapVisual } from "@/components/live-map-visual";
 import { ModeCard } from "@/components/mode-card";
+import { RoleSelection } from "@/components/role-selection";
 import { SectionHeading } from "@/components/section-heading";
 import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
 import { TrustBadges } from "@/components/trust-badges";
@@ -43,61 +47,100 @@ const experiences = [
 export default function Home() {
   return (
     <>
-      <section className="relative overflow-hidden py-16 sm:py-24">
-        <div className="absolute inset-0 -z-10 bg-radial-glow opacity-90" />
-        <div className="subtle-grid absolute inset-x-0 top-0 -z-10 h-96 opacity-35" />
+      <section className="relative overflow-x-hidden pt-10 pb-12 md:py-24">
+        <div className="pointer-events-none absolute inset-0 -z-10 max-w-[100vw] overflow-x-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,#050b14_0%,#0a1628_42%,#120a22_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_85%_65%_at_88%_8%,rgba(0,198,255,0.272),transparent_55%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_12%_32%,rgba(108,99,255,0.255),transparent_52%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_50%_100%,rgba(0,114,255,0.102),transparent_60%)]" />
+        </div>
+        <div className="subtle-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[22rem] max-w-[100vw] overflow-x-hidden opacity-30 sm:h-[28rem] sm:opacity-35 md:h-[32rem]" />
         <Container>
-          <div className="grid items-center gap-10 lg:grid-cols-[1fr_0.9fr]">
-            <div>
-              <div className="mb-6 flex flex-wrap gap-2">
-                {featurePillars.slice(0, 4).map((pillar) => (
-                  <span
-                    key={pillar}
-                    className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-cyan-100"
-                  >
-                    {pillar}
-                  </span>
-                ))}
+          <div className="grid animate-fade-in-up grid-cols-1 items-start gap-8 md:gap-12 lg:grid-cols-2 lg:items-center lg:gap-10 xl:gap-12">
+            <div className="min-w-0">
+              <div className="mb-6 flex flex-col items-center gap-6 sm:mb-8 sm:flex-row sm:items-start">
+                <div className="relative shrink-0">
+                  <div className="absolute -inset-2 rounded-3xl bg-gradient-to-tr from-[#00C6FF] via-[#6C63FF] to-[#FF7A18] opacity-65 blur-xl" />
+                  <div className="relative rounded-2xl bg-gradient-to-br from-[#00C6FF] via-[#6C63FF] to-[#0072FF] p-[3px] shadow-xl">
+                    <Image
+                      src="/app-icon.png"
+                      alt=""
+                      width={96}
+                      height={96}
+                      className="rounded-[13px] bg-[#0a1628] object-cover [filter:drop-shadow(0_0_20px_rgba(0,198,255,0.55))_drop-shadow(0_0_28px_rgba(108,99,255,0.35))]"
+                      priority
+                    />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1 text-center sm:text-left">
+                  <div className="mb-6 flex flex-wrap justify-center gap-2 sm:justify-start">
+                    {featurePillars.slice(0, 4).map((pillar) => (
+                      <span
+                        key={pillar}
+                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-50 shadow-sm backdrop-blur-md sm:text-xs"
+                      >
+                        {pillar}
+                      </span>
+                    ))}
+                  </div>
+                  <h1 className="max-w-4xl break-words text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl md:text-6xl">
+                    Yolculuk artık sadece gitmek değil.
+                  </h1>
+                  <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
+                    İstersen hemen eşleş, istersen sohbet ederek güvenle yolculuk paylaş. Leylek Tag, aynı yöne gidenleri daha net, güvenli ve kontrollü bir deneyimde buluşturur.
+                  </p>
+                </div>
               </div>
-              <h1 className="max-w-4xl text-4xl font-black leading-[0.98] tracking-[-0.045em] text-white sm:text-6xl lg:text-7xl">
-                Yolculuk artık sadece gitmek değil.
-              </h1>
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">
-                İstersen hemen eşleş, istersen konuşarak güvenle yolculuk paylaş. Leylek Tag, aynı yöne gidenleri daha net, güvenli ve kontrollü bir deneyimde buluşturur.
-              </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <ButtonLink href="/indir">Uygulamayı İndir</ButtonLink>
-                <ButtonLink href="/sehirler-arasi" variant="secondary">
+              <div className="mt-4 flex w-full max-w-xl flex-col gap-3 sm:mt-6 sm:flex-row sm:flex-wrap sm:items-start">
+                <div className="flex w-full flex-col sm:w-auto sm:max-w-none">
+                  <ButtonLink href="/indir" className="w-full sm:w-auto sm:min-w-[200px]">
+                    Uygulamayı İndir
+                  </ButtonLink>
+                  <p className="mt-2 text-center text-xs text-white/60 sm:text-left">Ücretsiz • 30 saniyede başla</p>
+                </div>
+                <ButtonLink href="/sehirler-arasi" variant="secondary" className="w-full sm:w-auto">
                   Şehirler Arası İlanları Gör
                 </ButtonLink>
-                <ButtonLink href="/muhabbet" variant="ghost">
+                <ButtonLink href="/muhabbet" variant="ghost" className="w-full sm:w-auto">
                   Leylek Muhabbeti Keşfet
                 </ButtonLink>
               </div>
-              <div className="mt-8">
+              <div className="mt-10">
                 <TrustBadges />
               </div>
             </div>
-            <LiveMapVisual />
+            <div className="min-w-0 w-full lg:min-h-0">
+              <LiveMapVisual />
+            </div>
+          </div>
+          <div className="mt-8 min-w-0 w-full md:mt-10">
+            <HeroEngagement />
           </div>
         </Container>
       </section>
 
-      <section className="py-14">
-        <Container>
-          <div className="mb-8">
-            <SectionHeading
-              eyebrow="neden leylek tag?"
-              title="Yolculuk paylaşımında güven, kontrol ve topluluk aynı yerde."
-              description="Leylek Tag, yalnızca bir rota ekranı değil; aynı yöne gidenlerin konuşarak, doğrulayarak ve net bilgilerle anlaşabildiği modern bir topluluk deneyimidir."
-            />
-          </div>
-          <ValueProps />
-        </Container>
+      <ScrollReveal>
+        <RoleSelection />
+      </ScrollReveal>
+
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
+            <div className="mb-8">
+              <SectionHeading
+                eyebrow="neden leylek tag?"
+                title="Yolculuk paylaşımında güven, kontrol ve topluluk aynı yerde."
+                description="Leylek Tag, yalnızca bir rota ekranı değil; aynı yöne gidenlerin konuşarak, doğrulayarak ve net bilgilerle anlaşabildiği modern bir topluluk deneyimidir."
+              />
+            </div>
+            <ValueProps />
+          </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <div className="mb-8">
             <SectionHeading
               eyebrow="kimler için?"
@@ -107,23 +150,27 @@ export default function Home() {
           </div>
           <AudienceSection />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
-          <div className="grid gap-5 lg:grid-cols-[0.8fr_1fr]">
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
+          <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.8fr_1fr]">
             <ActivityFeed />
-            <div className="grid gap-5 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-3 lg:gap-8">
               {experiences.map((experience) => (
                 <ModeCard key={experience.title} {...experience} />
               ))}
             </div>
           </div>
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <div className="mb-8">
             <SectionHeading
               eyebrow="neden farklı?"
@@ -133,10 +180,12 @@ export default function Home() {
           </div>
           <ComparisonSection />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <div className="mb-8">
             <SectionHeading
               eyebrow="uygulama ön izlemesi"
@@ -146,23 +195,27 @@ export default function Home() {
           </div>
           <AppPreview />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <div className="mb-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">canlı · şehirler arası</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-100/85 sm:text-sm">canlı · şehirler arası</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Şehirler Arası Yol Paylaşımı</h2>
-            <p className="mt-3 max-w-2xl text-sm text-slate-400 sm:text-base">
+            <p className="mt-3 max-w-2xl break-words text-sm leading-relaxed text-white/80 sm:text-base">
               Güncel ilanlar api.leylektag.com üzerinden canlı olarak yüklenir.
             </p>
           </div>
           <IntercityList />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <div className="mb-8">
             <SectionHeading
               eyebrow="beta süreci"
@@ -172,16 +225,20 @@ export default function Home() {
           </div>
           <BetaProcess />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <SocialProofPlaceholder />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <section className="py-14">
-        <Container>
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
           <div className="mb-8">
             <SectionHeading
               eyebrow="sık sorulan sorular"
@@ -191,9 +248,12 @@ export default function Home() {
           </div>
           <FaqSection />
         </Container>
+        </ScrollReveal>
       </section>
 
-      <BetaCta />
+      <ScrollReveal>
+        <BetaCta />
+      </ScrollReveal>
     </>
   );
 }

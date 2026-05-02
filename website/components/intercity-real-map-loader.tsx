@@ -6,7 +6,7 @@ import type { IntercityDashboard } from "@/lib/intercity-live-data";
 const IntercityRealMap = dynamic(() => import("@/components/intercity-real-map"), {
   ssr: false,
   loading: () => (
-    <div className="flex min-h-[560px] items-center justify-center rounded-[2rem] border border-white/10 bg-slate-950/80 text-sm font-semibold text-slate-400">
+    <div className="flex h-[420px] items-center justify-center rounded-[2rem] border border-white/10 bg-slate-950/80 text-sm font-semibold text-slate-400 sm:h-[460px] md:h-[520px] lg:h-[680px]">
       Harita yükleniyor…
     </div>
   ),

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
+import { SiteActionProvider } from "@/components/site-action-context";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
@@ -69,7 +70,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07111f",
+  themeColor: "#0072FF",
 };
 
 export default function RootLayout({
@@ -81,7 +82,11 @@ export default function RootLayout({
     <html lang="tr">
       <body className={inter.className}>
         <Navbar />
-        <main>{children}</main>
+        <SiteActionProvider>
+          <main className="min-w-0 overflow-x-hidden pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0">
+            {children}
+          </main>
+        </SiteActionProvider>
         <Footer />
       </body>
     </html>

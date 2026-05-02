@@ -20,15 +20,31 @@ export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-midnight/70 shadow-[0_18px_60px_rgba(0,0,0,0.26)] backdrop-blur-2xl">
-      <Container className="flex min-h-[76px] items-center justify-between gap-5">
-        <Link href="/" className="flex items-center gap-3" aria-label="Leylek Tag ana sayfa">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-100/20 bg-white/10 shadow-glow">
-            <Image src="/logo-leylek.svg" alt="" width={38} height={38} priority />
+    <header className="sticky top-0 z-50 max-w-[100vw] overflow-x-hidden border-b border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.2)]">
+      <Container className="flex min-h-[72px] items-center justify-between gap-3 sm:min-h-[76px] sm:gap-5">
+        <Link href="/" className="flex min-h-[48px] min-w-0 items-center gap-2 sm:gap-3" aria-label="Leylek Tag ana sayfa">
+          <span className="relative shrink-0">
+            <span className="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-[#00C6FF] via-[#6C63FF] to-[#FF7A18] opacity-75 blur-md" />
+            <span className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/10 shadow-lg ring-2 ring-white/10 sm:h-14 sm:w-14">
+              <span
+                className="absolute right-1 top-1 z-10 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.85)] ring-2 ring-black/60"
+                aria-hidden="true"
+              />
+              <Image
+                src="/app-icon.png"
+                alt=""
+                width={56}
+                height={56}
+                className="h-full w-full object-cover [filter:drop-shadow(0_0_12px_rgba(0,198,255,0.5))_drop-shadow(0_0_20px_rgba(108,99,255,0.25))]"
+                priority
+              />
+            </span>
           </span>
-          <span>
-            <span className="block text-base font-black tracking-tight text-white">Leylek Tag</span>
-            <span className="block text-xs font-medium text-cyan-100/70">Yolculuk topluluğu</span>
+          <span className="min-w-0">
+            <span className="block truncate text-base font-black tracking-tight text-white">Leylek Tag</span>
+            <span className="block truncate text-[11px] font-medium text-cyan-100/70 sm:text-xs">
+              Yolculuk topluluğu
+            </span>
           </span>
         </Link>
 
@@ -54,7 +70,7 @@ export function Navbar() {
           </ButtonLink>
           <button
             type="button"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white transition hover:bg-white/15 lg:hidden"
+            className="inline-flex h-12 min-h-[48px] w-12 min-w-[48px] items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white transition-all duration-300 hover:scale-105 hover:bg-white/15 active:scale-95 lg:hidden"
             aria-label="Mobil menüyü aç"
             aria-expanded={isOpen}
             onClick={() => setIsOpen((current) => !current)}

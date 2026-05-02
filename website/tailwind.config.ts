@@ -5,10 +5,15 @@ const config: Config = {
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./lib/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       colors: {
+        accent: {
+          violet: "#6C63FF",
+          orange: "#FF7A18",
+        },
         midnight: "#07111f",
         ink: "#0b1526",
         leylek: {
@@ -26,10 +31,15 @@ const config: Config = {
         "soft-card": "0 24px 80px rgba(0, 0, 0, 0.32)",
       },
       backgroundImage: {
+        "gradient-primary": "linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)",
+        "gradient-secondary": "linear-gradient(135deg, #43E97B 0%, #38F9D7 100%)",
+        "gradient-hero":
+          "linear-gradient(165deg, #0a1628 0%, #0d2d52 45%, #1a1240 100%)",
         "radial-glow":
           "radial-gradient(circle at top left, rgba(34, 211, 238, 0.28), transparent 32%), radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.22), transparent 28%)",
       },
       animation: {
+        "fade-in-up": "fade-in-up 0.65s ease-out forwards",
         "slow-float": "slow-float 7s ease-in-out infinite",
         "pulse-soft": "pulse-soft 3s ease-in-out infinite",
         "feed-slide": "feed-slide 18s linear infinite",
@@ -37,6 +47,10 @@ const config: Config = {
         "scan-map-premium": "scan-map-premium 9s linear infinite",
       },
       keyframes: {
+        "fade-in-up": {
+          "0%": { opacity: "0", transform: "translateY(18px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
         "slow-float": {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-12px)" },

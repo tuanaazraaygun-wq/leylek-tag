@@ -178,7 +178,14 @@ type PendingMuhabbetAction =
   | { kind: 'trip_convert_decline'; requestId: string; retryCount: number };
 
 function formatTripConvertRestDetail(detail: unknown, statusFallback: string): string {
-  if (typeof detail === 'string') return detail;
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (typeof detail === 'object' && detail !== null && !Array.isArray(detail)) {
+    const o = detail as Record<string, unknown>;
+    const msg = o.message;
+    if (typeof msg === 'string' && msg.trim()) return msg.trim();
+    const c = o.code;
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
   if (Array.isArray(detail)) {
     return detail
       .map((x) => (typeof x === 'object' && x && 'msg' in x ? String((x as { msg?: string }).msg) : String(x)))
@@ -410,7 +417,6 @@ export default function MuhabbetChatScreen({
   /** Ekran mount / unmount: açıkken message_seen gönder */
   const chatSessionActiveRef = useRef(true);
   const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
-  const readinessInFlightRef = useRef(false);
   /** GET ctx trip_convert_request imzası — gereksiz modal/state yenidenlemesini keser */
   const lastTripConvertCtxSigRef = useRef<string | null>(null);
   const tripConvertModalActionBusyRef = useRef(false);
@@ -600,82 +606,6 @@ export default function MuhabbetChatScreen({
     },
     [cid]
   );
-
-  const ensureMuhabbetSocketReady = useCallback(async (): Promise<boolean> => {
-    if (!cid) return false;
-    const socket = getOrCreateSocket();
-    notifyAuthTokenBecameAvailableForSocket();
-    if (!socket.connected) {
-      try {
-        socket.connect();
-      } catch {
-        return false;
-      }
-      await new Promise<void>((resolve) => {
-        if (socket.connected) {
-          resolve();
-          return;
-        }
-        const t = setTimeout(() => resolve(), 10000);
-        const onC = () => {
-          clearTimeout(t);
-          socket.off('connect', onC);
-          resolve();
-        };
-        socket.on('connect', onC);
-      });
-    }
-    if (!socket.connected) return false;
-    let myLo = (myIdRef.current || '').trim().toLowerCase();
-    if (!myLo) {
-      try {
-        const raw = await getPersistedUserRaw();
-        if (raw) {
-          const u = JSON.parse(raw) as { id?: string };
-          if (u?.id) myLo = String(u.id).trim().toLowerCase();
-        }
-      } catch {
-        /* noop */
-      }
-    }
-    if (!myLo) return false;
-    const currentSid = socket.id || null;
-    const lastRegisteredSid = getLastRegisteredSocketSid();
-    if (currentSid && lastRegisteredSid && currentSid !== lastRegisteredSid) {
-      notifyAuthTokenBecameAvailableForSocket();
-    }
-    readinessInFlightRef.current = true;
-    try {
-      if (!isMuhabbetSocketRegisteredForUser(socket, myLo)) {
-        notifyAuthTokenBecameAvailableForSocket();
-        await waitForNextRegisterSuccess(socket, 20000);
-        if (!isMuhabbetSocketRegisteredForUser(socket, myLo)) {
-          notifyAuthTokenBecameAvailableForSocket();
-          const ack = await waitForNextRegisterSuccess(socket, 12000);
-          if (!ack && !isMuhabbetSocketRegisteredForUser(socket, myLo)) return false;
-        }
-      }
-      let joinStatus = await waitForMuhabbetJoin(socket, 1000);
-      for (let retry = 0; retry < 3 && joinStatus !== 'joined' && joinStatus !== 'forbidden'; retry++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        console.log('[socket_join]', JSON.stringify({ kind: 'muhabbet_conversation', conversation_id: cid, retry: retry + 1 }));
-        joinStatus = await waitForMuhabbetJoin(socket, 1000);
-      }
-      if (joinStatus === 'joined') return true;
-      if (joinStatus === 'forbidden') return false;
-
-      notifyAuthTokenBecameAvailableForSocket();
-      await waitForNextRegisterSuccess(socket, 16000);
-      joinStatus = await waitForMuhabbetJoin(socket, 1000);
-      for (let retry = 0; retry < 3 && joinStatus !== 'joined' && joinStatus !== 'forbidden'; retry++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        joinStatus = await waitForMuhabbetJoin(socket, 1000);
-      }
-      return joinStatus === 'joined';
-    } finally {
-      readinessInFlightRef.current = false;
-    }
-  }, [cid, waitForMuhabbetJoin]);
 
   const navigateToLeylekTripSession = useCallback(
     async (payload?: MuhabbetTripSessionSocketPayload | null) => {
@@ -1452,9 +1382,6 @@ export default function MuhabbetChatScreen({
       }
       if (p?.code === 'not_registered') {
         notifyAuthTokenBecameAvailableForSocket();
-        if (readinessInFlightRef.current && !errMid) {
-          return;
-        }
         void (async () => {
           const retried = await retryPendingActionAfterNotRegistered();
           if (retried) return;
@@ -1691,13 +1618,10 @@ export default function MuhabbetChatScreen({
       });
       if (!res.ok) {
         pendingActionRef.current = null;
-        const d = restBody.detail;
-        const msg =
-          typeof d === 'string'
-            ? d
-            : Array.isArray(d)
-              ? d.map((x) => (typeof x === 'object' && x && 'msg' in x ? String((x as { msg?: string }).msg) : String(x))).join(' ')
-              : `İstek gönderilemedi (${res.status})`;
+        const msg = formatTripConvertRestDetail(
+          restBody.detail,
+          `İstek gönderilemedi (${res.status})`
+        );
         Alert.alert('Yolculuğa çevir', msg || 'İstek gönderilemedi.');
         return;
       }

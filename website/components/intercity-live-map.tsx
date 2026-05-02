@@ -109,7 +109,7 @@ export function IntercityLiveMap() {
   const showSparseBanner = liveOk && liveSparse;
 
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/50 p-4 shadow-soft-card sm:p-5">
+    <div className="relative min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/50 p-4 shadow-soft-card sm:p-5">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_45%_20%,rgba(34,211,238,0.14),transparent_30%),radial-gradient(circle_at_75%_80%,rgba(37,99,235,0.14),transparent_28%)]" />
       <div className="relative flex min-w-0 flex-col gap-5">
         <div className="mb-0 flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -135,13 +135,17 @@ export function IntercityLiveMap() {
         <div className="min-h-0 min-w-0 space-y-3">
           {showSparseBanner ? <LiveSparseBanner variant="intercity" /> : null}
           <LiveDashboardTrustStrip />
-          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-            <IntercityRealMapLoader
-              dashboard={dashboard}
-              dataMode={mapDataMode}
-              activityHudFreshCycle={activityHudFreshCycle}
-              liveSparse={liveSparse}
-            />
+          <div className="flex w-full max-w-full min-w-0 justify-center overflow-x-hidden px-2 sm:px-0">
+            <div className="relative mx-auto w-full min-w-0 max-w-[min(100%,100vw)] overflow-x-hidden rounded-2xl">
+              <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <IntercityRealMapLoader
+                  dashboard={dashboard}
+                  dataMode={mapDataMode}
+                  activityHudFreshCycle={activityHudFreshCycle}
+                  liveSparse={liveSparse}
+                />
+              </div>
+            </div>
           </div>
         </div>
 

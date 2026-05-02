@@ -17,8 +17,14 @@ export function Footer() {
       <Container className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-start">
         <div className="max-w-2xl">
           <Link href="/" className="inline-flex items-center gap-3" aria-label="Leylek Tag ana sayfa">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-100/20 bg-white/10 shadow-glow">
-              <Image src="/logo-leylek.svg" alt="" width={38} height={38} />
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/10 shadow-md sm:h-12 sm:w-12">
+              <Image
+                src="/app-icon.png"
+                alt=""
+                width={48}
+                height={48}
+                className="h-full w-full object-cover opacity-95 [filter:drop-shadow(0_0_10px_rgba(0,198,255,0.35))]"
+              />
             </span>
             <span>
               <span className="block text-base font-black tracking-tight text-white">Leylek Tag</span>
