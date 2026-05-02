@@ -26,6 +26,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -124,6 +125,41 @@ function formatDurationClock(ms: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
+/** RN Android: fetch(file://...) genelde başarısız; base64 okuma fallback */
+function base64ToUint8Array(base64: string): Uint8Array {
+  if (typeof globalThis.atob !== 'function') {
+    throw new Error('atob yok; base64 çözülemiyor');
+  }
+  const bin = globalThis.atob(base64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * file:// için önce fetch→blob; başarısızsa (özellikle Android) dosyayı base64 okuyup Uint8Array.
+ * Supabase upload BodyInit kabul eder; Uint8Array doğrudan iletilir.
+ */
+async function loadAudioBodyForSupabaseUpload(audioUri: string): Promise<Blob | Uint8Array> {
+  const tryFetchBlob = async (): Promise<Blob> => {
+    const response = await fetch(audioUri);
+    if (!response.ok) {
+      throw new Error(`fetch audioUri failed: ${response.status}`);
+    }
+    return response.blob();
+  };
+
+  try {
+    return await tryFetchBlob();
+  } catch {
+    const isFile = audioUri.startsWith('file:');
+    if (!isFile) throw new Error('fetch failed and uri is not file://');
+    const b64 = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
+    return base64ToUint8Array(b64);
+  }
 }
 
 export type ChatMessageRow = {
@@ -758,31 +794,56 @@ export default function MuhabbetChatScreen({
       return;
     }
 
-    const path = `${cid.trim().toLowerCase()}/${myLo}/${Date.now()}.m4a`;
+    const filePath = `${cid.trim().toLowerCase()}/${myLo}/${Date.now()}.m4a`;
+    const audioUri = localUri;
+
+    console.log('[muhabbet_audio_env]', {
+      hasUrl: Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL),
+      url: process.env.EXPO_PUBLIC_SUPABASE_URL,
+      hasAnon: Boolean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
+    });
+
     try {
-      const fileRes = await fetch(localUri);
-      const blob = await fileRes.blob();
-      const { error: upErr } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(path, blob, {
-        contentType: mime,
+      const body = await loadAudioBodyForSupabaseUpload(audioUri);
+      const { error: upErr } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(filePath, body, {
+        contentType: mime || 'audio/m4a',
         upsert: false,
       });
       if (upErr) {
-        console.log('[muhabbet_audio_send_error]', { upload: String(upErr.message || upErr) });
+        console.warn('[muhabbet_audio_upload_error]', {
+          message: upErr.message,
+          name: (upErr as { name?: string }).name,
+          stack: (upErr as { stack?: string }).stack,
+          filePath,
+          audioUri,
+          mimeType: mime,
+        });
         setRows((prev) => markMessageFailedById(prev, messageId));
-        Alert.alert('Depolama', upErr.message || 'Ses dosyası yüklenemedi. Bucket oluşturulmuş mu kontrol edin.');
+        Alert.alert(
+          'Depolama',
+          upErr.message || 'Ses dosyası yüklenemedi. Bucket oluşturulmuş mu kontrol edin.'
+        );
         return;
       }
-      console.log('[muhabbet_audio_upload_done]', { path });
-    } catch (e) {
-      console.log('[muhabbet_audio_send_error]', { upload_ex: String(e) });
+      console.log('[muhabbet_audio_upload_done]', { path: filePath });
+    } catch (e: unknown) {
+      const err = e as { message?: string; name?: string; stack?: string };
+      console.warn('[muhabbet_audio_upload_error]', {
+        message: err?.message,
+        name: err?.name,
+        stack: err?.stack,
+        filePath,
+        audioUri,
+        mimeType: mime,
+      });
       setRows((prev) => markMessageFailedById(prev, messageId));
-      Alert.alert('Sesli mesaj', 'Sesli mesaj gönderilemedi.');
+      Alert.alert('Depolama', 'Ses dosyası yüklenemedi. Bağlantıyı kontrol edin.');
       return;
     }
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from(MUHABBET_AUDIO_BUCKET).getPublicUrl(path);
+    } = supabase.storage.from(MUHABBET_AUDIO_BUCKET).getPublicUrl(filePath);
 
     pendingActionRef.current = {
       kind: 'send_message',
