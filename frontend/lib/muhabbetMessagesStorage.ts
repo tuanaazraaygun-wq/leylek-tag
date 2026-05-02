@@ -37,10 +37,17 @@ export type StoredMuhabbetMessage = {
   created_at: string;
   out_status?: string;
   sender_role?: string | null;
+  message_type?: 'text' | 'audio';
+  audio_url?: string | null;
+  audio_duration_ms?: number | null;
+  audio_mime_type?: string | null;
 };
 
 function normalizeStored(m: Partial<StoredMuhabbetMessage>, cidFallback: string): StoredMuhabbetMessage {
   const cid = String(m.conversation_id || cidFallback || '').trim().toLowerCase();
+  const mtRaw = m.message_type != null ? String(m.message_type).trim().toLowerCase() : '';
+  const message_type: 'text' | 'audio' | undefined =
+    mtRaw === 'audio' ? 'audio' : mtRaw === 'text' ? 'text' : undefined;
   return {
     message_id: normalizeMuhabbetMessageId(m.message_id),
     conversation_id: cid,
@@ -49,6 +56,16 @@ function normalizeStored(m: Partial<StoredMuhabbetMessage>, cidFallback: string)
     created_at: coerceMessageCreatedAt(m.created_at),
     out_status: m.out_status ? String(m.out_status) : undefined,
     sender_role: m.sender_role != null && m.sender_role !== '' ? String(m.sender_role) : null,
+    ...(message_type ? { message_type } : {}),
+    audio_url: m.audio_url != null && String(m.audio_url).trim() !== '' ? String(m.audio_url) : null,
+    audio_duration_ms:
+      m.audio_duration_ms != null && Number.isFinite(Number(m.audio_duration_ms))
+        ? Math.round(Number(m.audio_duration_ms))
+        : null,
+    audio_mime_type:
+      m.audio_mime_type != null && String(m.audio_mime_type).trim() !== ''
+        ? String(m.audio_mime_type).trim().toLowerCase()
+        : null,
   };
 }
 
@@ -100,6 +117,8 @@ export async function upsertMuhabbetMessageFromPushData(data: Record<string, unk
   const text = data.text != null ? String(data.text) : '';
   const created_at = coerceMessageCreatedAt(data.created_at);
   const sender_role = data.sender_role != null ? String(data.sender_role) : null;
+  const mtRaw = data.message_type != null ? String(data.message_type).trim().toLowerCase() : '';
+  const message_type = mtRaw === 'audio' ? 'audio' : mtRaw === 'text' ? 'text' : undefined;
   items.push(
     normalizeStored(
       {
@@ -109,6 +128,11 @@ export async function upsertMuhabbetMessageFromPushData(data: Record<string, unk
         text,
         created_at,
         sender_role,
+        ...(message_type ? { message_type } : {}),
+        audio_url: data.audio_url != null ? String(data.audio_url) : null,
+        audio_duration_ms:
+          data.audio_duration_ms != null ? Number(data.audio_duration_ms) : null,
+        audio_mime_type: data.audio_mime_type != null ? String(data.audio_mime_type) : null,
       },
       cid
     )
@@ -124,6 +148,10 @@ export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): {
   created_at: string;
   out_status?: string;
   sender_role?: string | null;
+  message_type?: 'text' | 'audio';
+  audio_url?: string | null;
+  audio_duration_ms?: number | null;
+  audio_mime_type?: string | null;
 }[] {
   return items.map((m) => ({
     id: m.message_id,
@@ -132,6 +160,10 @@ export function storedMessagesToDisplayRows(items: StoredMuhabbetMessage[]): {
     created_at: m.created_at,
     out_status: m.out_status,
     sender_role: m.sender_role ?? undefined,
+    message_type: m.message_type,
+    audio_url: m.audio_url ?? null,
+    audio_duration_ms: m.audio_duration_ms ?? null,
+    audio_mime_type: m.audio_mime_type ?? null,
   }));
 }
 
@@ -145,6 +177,10 @@ export async function persistMuhabbetChatRowsLocal(
     created_at?: string | null;
     out_status?: string;
     sender_role?: string | null;
+    message_type?: 'text' | 'audio';
+    audio_url?: string | null;
+    audio_duration_ms?: number | null;
+    audio_mime_type?: string | null;
   }[]
 ): Promise<void> {
   const c = String(conversationId || '').trim().toLowerCase();
@@ -161,6 +197,10 @@ export async function persistMuhabbetChatRowsLocal(
           created_at: coerceMessageCreatedAt(r.created_at),
           out_status: r.out_status,
           sender_role: r.sender_role,
+          message_type: r.message_type,
+          audio_url: r.audio_url,
+          audio_duration_ms: r.audio_duration_ms,
+          audio_mime_type: r.audio_mime_type,
         },
         c
       )
@@ -171,13 +211,25 @@ export async function persistMuhabbetChatRowsLocal(
 /** GET /muhabbet/conversations/:id/messages satırları → depolama biçimi */
 export function storedMessagesFromConversationApi(
   conversationId: string,
-  apiMessages: { id?: string; body?: string; sender_user_id?: string; created_at?: string }[]
+  apiMessages: {
+    id?: string;
+    body?: string;
+    sender_user_id?: string;
+    created_at?: string;
+    message_type?: string;
+    audio_url?: string | null;
+    audio_duration_ms?: number | null;
+    audio_mime_type?: string | null;
+  }[]
 ): StoredMuhabbetMessage[] {
   const cid = String(conversationId || '').trim().toLowerCase();
   const out: StoredMuhabbetMessage[] = [];
   for (const m of apiMessages || []) {
     const id = normalizeMuhabbetMessageId(m.id);
     if (!id) continue;
+    const mtRaw = m.message_type != null ? String(m.message_type).trim().toLowerCase() : '';
+    const message_type: 'text' | 'audio' | undefined =
+      mtRaw === 'audio' ? 'audio' : mtRaw === 'text' ? 'text' : undefined;
     out.push(
       normalizeStored(
         {
@@ -186,6 +238,13 @@ export function storedMessagesFromConversationApi(
           sender_id: m.sender_user_id != null ? String(m.sender_user_id).trim().toLowerCase() : '',
           text: m.body != null ? String(m.body) : '',
           created_at: coerceMessageCreatedAt(m.created_at),
+          ...(message_type ? { message_type } : {}),
+          audio_url: m.audio_url ?? null,
+          audio_duration_ms:
+            m.audio_duration_ms != null && Number.isFinite(Number(m.audio_duration_ms))
+              ? Math.round(Number(m.audio_duration_ms))
+              : null,
+          audio_mime_type: m.audio_mime_type != null ? String(m.audio_mime_type) : null,
         },
         cid
       )
@@ -224,6 +283,10 @@ export function mergeMuhabbetLocalWithServer(
             text: (loc.text && loc.text.trim() !== '' ? loc.text : srow.text) || srow.text,
             created_at: loc.created_at || srow.created_at,
             sender_role: loc.sender_role ?? srow.sender_role,
+            message_type: srow.message_type ?? loc.message_type,
+            audio_url: srow.audio_url ?? loc.audio_url,
+            audio_duration_ms: srow.audio_duration_ms ?? loc.audio_duration_ms,
+            audio_mime_type: srow.audio_mime_type ?? loc.audio_mime_type,
           },
           srow.conversation_id
         )
@@ -238,6 +301,10 @@ export function mergeMuhabbetLocalWithServer(
             ...srow,
             text: mergedText,
             sender_role: loc?.sender_role ?? srow.sender_role,
+            message_type: srow.message_type ?? loc?.message_type,
+            audio_url: srow.audio_url ?? loc?.audio_url ?? null,
+            audio_duration_ms: srow.audio_duration_ms ?? loc?.audio_duration_ms ?? null,
+            audio_mime_type: srow.audio_mime_type ?? loc?.audio_mime_type ?? null,
             out_status:
               loc && String(loc.sender_id || '').trim().toLowerCase() === my
                 ? loc.out_status || srow.out_status
@@ -276,7 +343,13 @@ export async function getLocalConversationLastPreview(
       bestT = t;
     }
   }
-  return { text: best.text || '', created_at: best.created_at };
+  const preview =
+    best.message_type === 'audio'
+      ? best.text?.trim()
+        ? best.text
+        : 'Sesli mesaj'
+      : best.text || '';
+  return { text: preview, created_at: best.created_at };
 }
 
 /** Sohbet listesi — kullanıcı istenen ad */

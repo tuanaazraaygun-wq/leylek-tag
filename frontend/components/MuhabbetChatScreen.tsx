@@ -25,6 +25,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -50,6 +51,7 @@ import {
 import MuhabbetWatermark from './MuhabbetWatermark';
 import type { MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
 import { subscribeConversationUpdated } from '../lib/muhabbetRealtimeEvents';
+import { getSupabase } from '../lib/supabase';
 
 /** Socket sid + JWT kayıt kullanıcısı güncel mi (Muhabbet emit öncesi). */
 function isMuhabbetSocketRegisteredForUser(socket: Socket, myUserLo: string): boolean {
@@ -77,13 +79,15 @@ function scheduleTripConvertAcceptPullRetries(pull: () => Promise<unknown>): voi
   setTimeout(() => void pull(), 4000);
 }
 
-const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
+const PRIMARY_GRAD = ['#1D4ED8', '#3B82F6', '#60A5FA'] as const;
 /** Sürücü / yolcu balon — istenen gradientler */
-const DRIVER_BUBBLE_GRAD = ['#4facfe', '#00f2fe'] as const;
-const PAX_BUBBLE_GRAD = ['#f7971e', '#ffd200'] as const;
-const SEND_BTN_GRAD = ['#4facfe', '#00f2fe'] as const;
-const TEXT_PRIMARY = '#111111';
-const TEXT_SECONDARY = '#6E6E73';
+const DRIVER_BUBBLE_GRAD = ['#2563EB', '#38BDF8'] as const;
+const PAX_BUBBLE_GRAD = ['#EA580C', '#FBBF24'] as const;
+const SEND_BTN_GRAD = ['#2563EB', '#38BDF8'] as const;
+const TEXT_PRIMARY = '#0F172A';
+const TEXT_SECONDARY = '#64748B';
+const THEIRS_BUBBLE_BG = '#FFFFFF';
+const THEIRS_BUBBLE_BORDER = 'rgba(15, 23, 42, 0.08)';
 
 const INFO_PRIVACY =
   'Mesajlar güvenlik ve destek amacıyla en fazla 90 gün saklanır; ardından otomatik silinir.';
@@ -112,6 +116,16 @@ const BUBBLE_SHADOW = Platform.select({
   default: {},
 });
 
+const MUHABBET_AUDIO_BUCKET = 'muhabbet-audio';
+const MUHABBET_MAX_RECORD_MS = 30000;
+
+function formatDurationClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
 export type ChatMessageRow = {
   id: string;
   body?: string | null;
@@ -121,6 +135,12 @@ export type ChatMessageRow = {
   out_status?: OutMessageStatus;
   /** Cihazda saklanan rol (socket anında ctx’den yazılır) */
   sender_role?: string | null;
+  message_type?: 'text' | 'audio';
+  audio_url?: string | null;
+  audio_duration_ms?: number | null;
+  audio_mime_type?: string | null;
+  /** Sunucu URL gelene kadar yerel yükleme */
+  audio_upload_pending?: boolean;
 };
 
 /** GET /muhabbet/conversations/:id/messages context.trip_convert_request */
@@ -172,7 +192,13 @@ type ChatSystemCard = {
 };
 
 type PendingMuhabbetAction =
-  | { kind: 'send_message'; messageId: string; body: string; retryCount: number }
+  | {
+      kind: 'send_message';
+      messageId: string;
+      body: string;
+      retryCount: number;
+      audio?: { audio_url: string; audio_duration_ms: number; audio_mime_type: string };
+    }
   | { kind: 'trip_convert_request'; retryCount: number }
   | { kind: 'trip_convert_accept'; requestId: string; retryCount: number }
   | { kind: 'trip_convert_decline'; requestId: string; retryCount: number };
@@ -258,6 +284,10 @@ function chatRowsFingerprint(items: ChatMessageRow[]): string {
         String(m.sender_user_id ?? ''),
         String(m.out_status ?? ''),
         String(m.sender_role ?? ''),
+        String(m.message_type ?? ''),
+        String(m.audio_url ?? ''),
+        String(m.audio_duration_ms ?? ''),
+        String(m.audio_upload_pending ?? ''),
       ].join('\u0002')
     )
     .join('\u0003');
@@ -302,6 +332,11 @@ function mergeChatRowsFromDiskWithPrev(fromDisk: ChatMessageRow[], prev: ChatMes
         created_at: p.created_at ?? r.created_at,
         out_status: 'sending',
         sender_role: p.sender_role ?? r.sender_role,
+        message_type: p.message_type ?? r.message_type,
+        audio_url: p.audio_url ?? r.audio_url,
+        audio_duration_ms: p.audio_duration_ms ?? r.audio_duration_ms,
+        audio_mime_type: p.audio_mime_type ?? r.audio_mime_type,
+        audio_upload_pending: p.audio_upload_pending ?? r.audio_upload_pending,
       });
       continue;
     }
@@ -316,20 +351,41 @@ function mergeChatRowsFromDiskWithPrev(fromDisk: ChatMessageRow[], prev: ChatMes
 }
 
 function DeliveryTicks({ status }: { status: OutMessageStatus }) {
+  const wrap = { alignItems: 'center' as const, justifyContent: 'center' as const, minHeight: 14 };
   if (status === 'sending') {
-    return <Ionicons name="time-outline" size={14} color="#9CA3AF" style={{ marginLeft: 3 }} />;
+    return (
+      <View style={wrap}>
+        <Ionicons name="time-outline" size={13} color="#94A3B8" />
+      </View>
+    );
   }
   if (status === 'failed') {
-    return <Ionicons name="alert-circle-outline" size={16} color="#DC2626" style={{ marginLeft: 3 }} />;
+    return (
+      <View style={wrap}>
+        <Ionicons name="alert-circle-outline" size={14} color="#DC2626" />
+      </View>
+    );
   }
   if (status === 'sent') {
-    return <Ionicons name="checkmark" size={15} color="#9CA3AF" style={{ marginLeft: 3 }} />;
+    return (
+      <View style={wrap}>
+        <Ionicons name="checkmark" size={14} color="#94A3B8" />
+      </View>
+    );
   }
   if (status === 'delivered') {
-    return <Ionicons name="checkmark-done-outline" size={15} color="#6B7280" style={{ marginLeft: 3 }} />;
+    return (
+      <View style={wrap}>
+        <Ionicons name="checkmark-done-outline" size={14} color="#64748B" />
+      </View>
+    );
   }
   if (status === 'seen') {
-    return <Ionicons name="checkmark-done" size={15} color="#3B82F6" style={{ marginLeft: 3 }} />;
+    return (
+      <View style={wrap}>
+        <Ionicons name="checkmark-done" size={14} color="#2563EB" />
+      </View>
+    );
   }
   return null;
 }
@@ -421,6 +477,17 @@ export default function MuhabbetChatScreen({
   const lastTripConvertCtxSigRef = useRef<string | null>(null);
   const tripConvertModalActionBusyRef = useRef(false);
 
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordStartedAtRef = useRef<number>(0);
+  const [recordingActive, setRecordingActive] = useState(false);
+  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
+  const audioPlaybackRef = useRef<{ sound: Audio.Sound | null; id: string | null }>({
+    sound: null,
+    id: null,
+  });
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+
   /** iOS KeyboardAvoidingView: üst bar (~52) + peer kart (~76) + opsiyonel eşleşme şeridi */
   const tripConvertEligibleForKeyboard = !!(ctx?.trip_convert_eligible ?? ctx?.matched_via_leylek_key);
   const keyboardVerticalOffset =
@@ -431,15 +498,30 @@ export default function MuhabbetChatScreen({
   }, []);
 
   const sendMessageViaRest = useCallback(
-    async (messageId: string, body: string): Promise<boolean> => {
+    async (
+      messageId: string,
+      body: string,
+      audio?: { audio_url: string; audio_duration_ms: number; audio_mime_type: string } | null
+    ): Promise<boolean> => {
       const mid = normalizeMuhabbetMessageId(messageId);
-      const text = String(body || '').trim();
-      if (!cid || !mid || !text) return false;
+      const text = String(body ?? '');
+      if (!cid || !mid) return false;
+      if (!audio && !text.trim()) return false;
       try {
         const token = (await getPersistedAccessToken())?.trim();
         if (!token) {
           setRows((prev) => markMessageFailedById(prev, mid));
           return false;
+        }
+        const payload: Record<string, unknown> = { message_id: mid };
+        if (audio) {
+          payload.message_type = 'audio';
+          payload.audio_url = audio.audio_url;
+          payload.audio_duration_ms = audio.audio_duration_ms;
+          payload.audio_mime_type = audio.audio_mime_type;
+          payload.body = text.trim();
+        } else {
+          payload.body = text.trim();
         }
         const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages`, {
           method: 'POST',
@@ -447,7 +529,7 @@ export default function MuhabbetChatScreen({
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ body: text, message_id: mid }),
+          body: JSON.stringify(payload),
         });
         if (handleUnauthorizedAndMaybeRedirect(res)) {
           setRows((prev) => markMessageFailedById(prev, mid));
@@ -455,15 +537,30 @@ export default function MuhabbetChatScreen({
         }
         const data = (await res.json().catch(() => ({}))) as {
           success?: boolean;
-          message?: { id?: string; body?: string; sender_user_id?: string; created_at?: string };
-          detail?: string;
+          message?: {
+            id?: string;
+            body?: string;
+            sender_user_id?: string;
+            created_at?: string;
+            message_type?: string;
+            audio_url?: string | null;
+            audio_duration_ms?: number | null;
+            audio_mime_type?: string | null;
+          };
+          detail?: unknown;
         };
         if (!res.ok || !data.success) {
+          if (audio) {
+            console.log('[muhabbet_audio_send_error]', { http: res.status, detail: data.detail });
+          }
           setRows((prev) => markMessageFailedById(prev, mid));
           return false;
         }
         const serverMessage = data.message || {};
         const serverId = normalizeMuhabbetMessageId(serverMessage.id || mid) || mid;
+        const srvMt = String(serverMessage.message_type || (audio ? 'audio' : 'text')).toLowerCase();
+        const message_type: 'text' | 'audio' | undefined =
+          srvMt === 'audio' ? 'audio' : srvMt === 'text' ? 'text' : audio ? 'audio' : 'text';
         if (pendingActionRef.current?.kind === 'send_message' && pendingActionRef.current.messageId === mid) {
           pendingActionRef.current = null;
         }
@@ -485,14 +582,38 @@ export default function MuhabbetChatScreen({
                       : m.sender_user_id,
                   created_at: coerceMessageCreatedAt(serverMessage.created_at || m.created_at),
                   out_status: 'sent' as const,
+                  message_type,
+                  audio_url:
+                    message_type === 'audio'
+                      ? serverMessage.audio_url != null
+                        ? String(serverMessage.audio_url)
+                        : m.audio_url
+                      : undefined,
+                  audio_duration_ms:
+                    message_type === 'audio'
+                      ? serverMessage.audio_duration_ms != null
+                        ? Number(serverMessage.audio_duration_ms)
+                        : m.audio_duration_ms
+                      : undefined,
+                  audio_mime_type:
+                    message_type === 'audio'
+                      ? serverMessage.audio_mime_type != null
+                        ? String(serverMessage.audio_mime_type)
+                        : m.audio_mime_type
+                      : undefined,
+                  audio_upload_pending: false,
                 }
               : m
           )
         );
+        const emitPreview =
+          message_type === 'audio'
+            ? text.trim() || 'Sesli mesaj'
+            : text.trim();
         DeviceEventEmitter.emit(MUHABBET_NEW_LOCAL_MESSAGE, {
           type: 'muhabbet_message',
           conversation_id: cid,
-          text,
+          text: emitPreview,
           sender_id: myIdRef.current,
           created_at: serverMessage.created_at || new Date().toISOString(),
         });
@@ -504,6 +625,256 @@ export default function MuhabbetChatScreen({
     },
     [base, cid]
   );
+
+  const stopPlaybackIfAny = useCallback(async () => {
+    try {
+      if (audioPlaybackRef.current.sound) {
+        await audioPlaybackRef.current.sound.stopAsync();
+        await audioPlaybackRef.current.sound.unloadAsync();
+      }
+    } catch {
+      /* noop */
+    }
+    audioPlaybackRef.current = { sound: null, id: null };
+    setPlayingAudioId(null);
+  }, []);
+
+  const togglePlayAudioForRow = useCallback(
+    async (item: ChatMessageRow) => {
+      const url = item.audio_url ? String(item.audio_url).trim() : '';
+      if (!url) return;
+      if (playingAudioId === item.id && audioPlaybackRef.current.sound) {
+        await stopPlaybackIfAny();
+        return;
+      }
+      await stopPlaybackIfAny();
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+        const { sound } = await Audio.Sound.createAsync({ uri: url });
+        audioPlaybackRef.current = { sound, id: item.id };
+        setPlayingAudioId(item.id);
+        sound.setOnPlaybackStatusUpdate((st) => {
+          if (st.isLoaded && 'didJustFinish' in st && st.didJustFinish) {
+            void sound.unloadAsync().catch(() => {});
+            if (audioPlaybackRef.current.id === item.id) {
+              audioPlaybackRef.current = { sound: null, id: null };
+              setPlayingAudioId(null);
+            }
+          }
+        });
+        await sound.playAsync();
+      } catch {
+        Alert.alert('Ses', 'Ses çalınamadı.');
+      }
+    },
+    [playingAudioId, stopPlaybackIfAny]
+  );
+
+  const cancelRecording = useCallback(async () => {
+    console.log('[muhabbet_audio_record_stop]', { cancelled: true });
+    if (recordIntervalRef.current) {
+      clearInterval(recordIntervalRef.current);
+      recordIntervalRef.current = null;
+    }
+    try {
+      await recordingRef.current?.stopAndUnloadAsync();
+    } catch {
+      /* noop */
+    }
+    recordingRef.current = null;
+    setRecordingActive(false);
+    setRecordingElapsedMs(0);
+  }, []);
+
+  const finalizeRecordingAndSend = useCallback(async () => {
+    const rec = recordingRef.current;
+    if (!rec || !cid) return;
+    recordingRef.current = null;
+    if (recordIntervalRef.current) {
+      clearInterval(recordIntervalRef.current);
+      recordIntervalRef.current = null;
+    }
+    let localUri: string | null = null;
+    try {
+      await rec.stopAndUnloadAsync();
+      localUri = rec.getURI() ?? null;
+    } catch {
+      localUri = null;
+    }
+    setRecordingActive(false);
+    const elapsedRaw = Date.now() - recordStartedAtRef.current;
+    const durMs = Math.min(MUHABBET_MAX_RECORD_MS, Math.max(300, elapsedRaw));
+    setRecordingElapsedMs(0);
+    console.log('[muhabbet_audio_record_stop]', { ms: durMs });
+    if (!localUri) {
+      Alert.alert('Sesli mesaj', 'Kayıt alınamadı.');
+      return;
+    }
+    const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
+    if (!myLo) {
+      Alert.alert('Sohbet', 'Kullanıcı bilgisi yüklenemedi.');
+      return;
+    }
+    const messageId = normalizeMuhabbetMessageId(newClientMessageUuid());
+    const roleMine = (ctxRef.current?.my_role || '').trim().toLowerCase();
+    const createdIso = coerceMessageCreatedAt(undefined);
+    const mime =
+      Platform.OS === 'ios'
+        ? 'audio/m4a'
+        : localUri.toLowerCase().endsWith('.m4a')
+          ? 'audio/m4a'
+          : 'audio/mp4';
+
+    setRows((p) =>
+      sortRowsByCreatedAtAsc([
+        ...p,
+        {
+          id: messageId,
+          body: '',
+          sender_user_id: myLo,
+          created_at: createdIso,
+          out_status: 'sending',
+          sender_role: roleMine || null,
+          message_type: 'audio',
+          audio_duration_ms: durMs,
+          audio_mime_type: mime,
+          audio_upload_pending: true,
+        },
+      ])
+    );
+    scrollToEndThrottled(true);
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.log('[muhabbet_audio_send_error]', { reason: 'no_supabase' });
+      setRows((prev) => markMessageFailedById(prev, messageId));
+      Alert.alert('Depolama', 'Yükleme yapılandırması eksik (Supabase).');
+      return;
+    }
+
+    const path = `${cid.trim().toLowerCase()}/${myLo}/${Date.now()}.m4a`;
+    try {
+      const fileRes = await fetch(localUri);
+      const blob = await fileRes.blob();
+      const { error: upErr } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(path, blob, {
+        contentType: mime,
+        upsert: false,
+      });
+      if (upErr) {
+        console.log('[muhabbet_audio_send_error]', { upload: String(upErr.message || upErr) });
+        setRows((prev) => markMessageFailedById(prev, messageId));
+        Alert.alert('Depolama', upErr.message || 'Ses dosyası yüklenemedi. Bucket oluşturulmuş mu kontrol edin.');
+        return;
+      }
+      console.log('[muhabbet_audio_upload_done]', { path });
+    } catch (e) {
+      console.log('[muhabbet_audio_send_error]', { upload_ex: String(e) });
+      setRows((prev) => markMessageFailedById(prev, messageId));
+      Alert.alert('Sesli mesaj', 'Sesli mesaj gönderilemedi.');
+      return;
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(MUHABBET_AUDIO_BUCKET).getPublicUrl(path);
+
+    pendingActionRef.current = {
+      kind: 'send_message',
+      messageId,
+      body: '',
+      retryCount: 0,
+      audio: {
+        audio_url: publicUrl,
+        audio_duration_ms: durMs,
+        audio_mime_type: mime,
+      },
+    };
+
+    const ok = await sendMessageViaRest(messageId, '', {
+      audio_url: publicUrl,
+      audio_duration_ms: durMs,
+      audio_mime_type: mime,
+    });
+    if (!ok) {
+      console.log('[muhabbet_audio_send_error]', { rest: false });
+      pendingActionRef.current = null;
+      Alert.alert('Sesli mesaj', 'Sesli mesaj gönderilemedi.');
+      return;
+    }
+    console.log('[muhabbet_audio_send_done]', { messageId });
+    pendingActionRef.current = null;
+    try {
+      const sock = getOrCreateSocket();
+      if (sock.connected) {
+        sock.emit('muhabbet_send', {
+          conversation_id: cid,
+          message_type: 'audio',
+          text: '',
+          body: '',
+          audio_url: publicUrl,
+          audio_duration_ms: durMs,
+          audio_mime_type: mime,
+          message_id: messageId,
+        });
+      }
+    } catch {
+      /* noop */
+    }
+    scrollToEndThrottled(true);
+  }, [cid, myId, scrollToEndThrottled, sendMessageViaRest]);
+
+  const startRecording = useCallback(async () => {
+    if (!cid || recordingActive) return;
+    console.log('[muhabbet_audio_record_start]');
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Mikrofon', 'Sesli mesaj için mikrofon izni gerekli.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      recordingRef.current = recording;
+      recordStartedAtRef.current = Date.now();
+      setRecordingActive(true);
+      setRecordingElapsedMs(0);
+      if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
+      recordIntervalRef.current = setInterval(() => {
+        const e = Date.now() - recordStartedAtRef.current;
+        const capped = Math.min(e, MUHABBET_MAX_RECORD_MS);
+        setRecordingElapsedMs(capped);
+        if (e >= MUHABBET_MAX_RECORD_MS) {
+          if (recordIntervalRef.current) {
+            clearInterval(recordIntervalRef.current);
+            recordIntervalRef.current = null;
+          }
+          void finalizeRecordingAndSend();
+        }
+      }, 200);
+    } catch {
+      Alert.alert('Sesli mesaj', 'Kayıt başlatılamadı.');
+    }
+  }, [cid, recordingActive, finalizeRecordingAndSend]);
+
+  useEffect(() => {
+    return () => {
+      if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
+      void recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      void audioPlaybackRef.current.sound?.unloadAsync().catch(() => {});
+    };
+  }, []);
 
   /** GET mesajlar + yerel birleştirme (periyodik çekim ve ilk yükleme sonrası sync). */
   const pullMessagesFromApi = useCallback(async (): Promise<PullMessagesFromApiResult> => {
@@ -537,7 +908,16 @@ export default function MuhabbetChatScreen({
       const d = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         context?: ChatContext;
-        messages?: { id?: string; body?: string; sender_user_id?: string; created_at?: string }[];
+        messages?: {
+          id?: string;
+          body?: string;
+          sender_user_id?: string;
+          created_at?: string;
+          message_type?: string;
+          audio_url?: string | null;
+          audio_duration_ms?: number | null;
+          audio_mime_type?: string | null;
+        }[];
       };
       if (res.ok && d.success) {
         const latestLocal = await loadMuhabbetMessagesLocal(cid);
@@ -552,6 +932,10 @@ export default function MuhabbetChatScreen({
             created_at: coerceMessageCreatedAt(m.created_at),
             out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
             sender_role: m.sender_role,
+            message_type: m.message_type,
+            audio_url: m.audio_url ?? undefined,
+            audio_duration_ms: m.audio_duration_ms ?? undefined,
+            audio_mime_type: m.audio_mime_type ?? undefined,
           }))
         );
         const nextFp = chatRowsFingerprint(displayRows);
@@ -571,41 +955,6 @@ export default function MuhabbetChatScreen({
       return { ok: false, context: null };
     }
   }, [base, cid]);
-
-  const waitForMuhabbetJoin = useCallback(
-    (socket: Socket, timeoutMs: number): Promise<'joined' | 'not_registered' | 'forbidden' | 'timeout'> => {
-      return new Promise((resolve) => {
-        let settled = false;
-        const finish = (status: 'joined' | 'not_registered' | 'forbidden' | 'timeout') => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(tid);
-          socket.off('joined_muhabbet', onJoined);
-          socket.off('muhabbet_error', onErr);
-          resolve(status);
-        };
-        const tid = setTimeout(() => finish('timeout'), timeoutMs);
-        const onJoined = (p: { conversation_id?: string }) => {
-          const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
-          if (!conv || conv !== cid.toLowerCase()) return;
-          roomJoinedRef.current = true;
-          setRoomJoined(true);
-          finish('joined');
-        };
-        const onErr = (p: { code?: string; conversation_id?: string }) => {
-          const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
-          if (conv && conv !== cid.toLowerCase()) return;
-          if (p?.code === 'not_registered') finish('not_registered');
-          else if (p?.code === 'forbidden') finish('forbidden');
-        };
-        socket.on('joined_muhabbet', onJoined);
-        socket.on('muhabbet_error', onErr);
-        console.log('[socket_emit]', JSON.stringify({ event: 'join_muhabbet_conversation', hasAck: true, connected: socket.connected }));
-        socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-      });
-    },
-    [cid]
-  );
 
   const navigateToLeylekTripSession = useCallback(
     async (payload?: MuhabbetTripSessionSocketPayload | null) => {
@@ -659,7 +1008,7 @@ export default function MuhabbetChatScreen({
     if (pending.retryCount >= 1) return false;
     if (pending.kind === 'send_message') {
       pendingActionRef.current = { ...pending, retryCount: pending.retryCount + 1 } as PendingMuhabbetAction;
-      await sendMessageViaRest(pending.messageId, pending.body);
+      await sendMessageViaRest(pending.messageId, pending.body, pending.audio ?? null);
       return true;
     }
     if (
@@ -869,6 +1218,10 @@ export default function MuhabbetChatScreen({
           created_at: coerceMessageCreatedAt(m.created_at),
           out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
           sender_role: m.sender_role,
+          message_type: m.message_type,
+          audio_url: m.audio_url ?? undefined,
+          audio_duration_ms: m.audio_duration_ms ?? undefined,
+          audio_mime_type: m.audio_mime_type ?? undefined,
         }))
       );
       setRows(mapped);
@@ -1089,6 +1442,10 @@ export default function MuhabbetChatScreen({
       text?: string;
       sender_id?: string;
       created_at?: string;
+      message_type?: string;
+      audio_url?: string | null;
+      audio_duration_ms?: number | null;
+      audio_mime_type?: string | null;
     }) => {
       const conv = msg?.conversation_id != null ? String(msg.conversation_id).toLowerCase() : '';
       if (conv !== cidLo) {
@@ -1105,6 +1462,14 @@ export default function MuhabbetChatScreen({
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       const isMine = Boolean(myLo && senderLo === myLo);
       const text = msg?.text != null ? String(msg.text) : '';
+      const mtRaw = String(msg?.message_type ?? '').trim().toLowerCase();
+      const isAudio = mtRaw === 'audio';
+      const audioUrlIncoming =
+        isAudio && msg?.audio_url != null ? String(msg.audio_url).trim() : undefined;
+      const audioDurIncoming =
+        isAudio && msg?.audio_duration_ms != null ? Number(msg.audio_duration_ms) : undefined;
+      const audioMimeIncoming =
+        isAudio && msg?.audio_mime_type != null ? String(msg.audio_mime_type).trim().toLowerCase() : undefined;
       const created = coerceMessageCreatedAt(msg?.created_at);
       const myR = (ctxRef.current?.my_role || '').trim().toLowerCase();
       const oR = (ctxRef.current?.other_role || '').trim().toLowerCase();
@@ -1124,6 +1489,11 @@ export default function MuhabbetChatScreen({
             sender_user_id: senderLo || cur.sender_user_id,
             created_at: created,
             sender_role: roleFor ?? cur.sender_role ?? undefined,
+            message_type: isAudio ? 'audio' : mtRaw === 'text' ? 'text' : cur.message_type,
+            audio_url: isAudio ? audioUrlIncoming ?? cur.audio_url : cur.audio_url,
+            audio_duration_ms: isAudio ? audioDurIncoming ?? cur.audio_duration_ms : cur.audio_duration_ms,
+            audio_mime_type: isAudio ? audioMimeIncoming ?? cur.audio_mime_type : cur.audio_mime_type,
+            audio_upload_pending: isAudio ? false : cur.audio_upload_pending,
           };
           return sortRowsByCreatedAtAsc(next);
         }
@@ -1136,6 +1506,14 @@ export default function MuhabbetChatScreen({
             created_at: created,
             sender_role: roleFor,
             ...(isMine ? { out_status: 'sent' as const } : {}),
+            ...(isAudio
+              ? {
+                  message_type: 'audio' as const,
+                  audio_url: audioUrlIncoming ?? null,
+                  audio_duration_ms: Number.isFinite(audioDurIncoming as number) ? audioDurIncoming : null,
+                  audio_mime_type: audioMimeIncoming ?? null,
+                }
+              : {}),
           },
         ]);
       });
@@ -1166,7 +1544,15 @@ export default function MuhabbetChatScreen({
       }
     };
 
-    const onAck = (p: { conversation_id?: string; message_id?: string; status?: string }) => {
+    const onAck = (p: {
+      conversation_id?: string;
+      message_id?: string;
+      status?: string;
+      message_type?: string;
+      audio_url?: string | null;
+      audio_duration_ms?: number | null;
+      audio_mime_type?: string | null;
+    }) => {
       const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
       if (c && c !== cidLo) return;
       const mid = normalizeMuhabbetMessageId(p?.message_id);
@@ -1177,11 +1563,27 @@ export default function MuhabbetChatScreen({
         pendingActionRef.current = null;
       }
       const myLo = (myIdRef.current || '').trim().toLowerCase();
+      const mtAck = String(p?.message_type ?? '').trim().toLowerCase();
+      const isAudAck = mtAck === 'audio';
       setRows((prev) =>
         prev.map((m) => {
           if (rowIdLo(m) !== mid) return m;
           if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
-          return { ...m, out_status: 'sent' };
+          return {
+            ...m,
+            out_status: 'sent',
+            ...(isAudAck
+              ? {
+                  message_type: 'audio' as const,
+                  audio_url: p.audio_url != null ? String(p.audio_url) : m.audio_url,
+                  audio_duration_ms:
+                    p.audio_duration_ms != null ? Number(p.audio_duration_ms) : m.audio_duration_ms,
+                  audio_mime_type:
+                    p.audio_mime_type != null ? String(p.audio_mime_type) : m.audio_mime_type,
+                  audio_upload_pending: false,
+                }
+              : {}),
+          };
         })
       );
     };
@@ -1356,6 +1758,10 @@ export default function MuhabbetChatScreen({
               created_at: coerceMessageCreatedAt(m.created_at),
               out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
               sender_role: m.sender_role,
+              message_type: m.message_type,
+              audio_url: m.audio_url ?? undefined,
+              audio_duration_ms: m.audio_duration_ms ?? undefined,
+              audio_mime_type: m.audio_mime_type ?? undefined,
             }))
           );
           setRows((prev) => mergeChatRowsFromDiskWithPrev(fromDisk, prev));
@@ -1370,10 +1776,22 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     if (!cid) return;
     const socket = getOrCreateSocket();
-    const onMuErr = (p: { code?: string; detail?: string; message?: string; message_id?: string; conversation_id?: string; max?: number }) => {
+    const onMuErr = (p: {
+      code?: string;
+      detail?: string | { message?: string };
+      message?: string;
+      message_id?: string;
+      conversation_id?: string;
+      max?: number;
+    }) => {
       const conv = p?.conversation_id != null ? String(p.conversation_id).toLowerCase() : '';
       if (conv && conv !== cid.toLowerCase()) return;
-      const det = typeof p?.detail === 'string' ? p.detail : '';
+      const det =
+        typeof p?.detail === 'string'
+          ? p.detail
+          : typeof p?.detail === 'object' && p?.detail && 'message' in p.detail
+            ? String((p.detail as { message?: string }).message || '')
+            : '';
       const msg = typeof p?.message === 'string' ? p.message : '';
       const errMid = normalizeMuhabbetMessageId(p?.message_id);
             if (p?.code === 'text_too_long') {
@@ -1388,12 +1806,23 @@ export default function MuhabbetChatScreen({
           const pending = pendingActionRef.current;
           if (pending?.kind === 'send_message') {
             pendingActionRef.current = null;
-            await sendMessageViaRest(pending.messageId, pending.body);
+            await sendMessageViaRest(pending.messageId, pending.body, pending.audio ?? null);
             return;
           }
           pendingActionRef.current = null;
           if (errMid) {
             const row = rowsRef.current.find((m) => rowIdLo(m) === errMid);
+            if (row?.message_type === 'audio' && row.audio_url) {
+              await sendMessageViaRest(errMid, row.body || '', {
+                audio_url: String(row.audio_url),
+                audio_duration_ms: Math.min(
+                  30000,
+                  Math.max(1, Number(row.audio_duration_ms || 1))
+                ),
+                audio_mime_type: String(row.audio_mime_type || 'audio/m4a'),
+              });
+              return;
+            }
             if (row?.body) {
               await sendMessageViaRest(errMid, row.body);
               return;
@@ -1401,6 +1830,11 @@ export default function MuhabbetChatScreen({
           }
           setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
         })();
+        return;
+      }
+      if (p?.code === 'audio_invalid' || p?.code === 'bad_message_type') {
+        setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
+        Alert.alert('Sesli mesaj', msg || det || 'Sesli mesaj gönderilemedi.');
         return;
       }
       if (p?.code === 'bad_message_id') {
@@ -1466,13 +1900,30 @@ export default function MuhabbetChatScreen({
     async (row: ChatMessageRow) => {
       const body = (row.body || '').trim();
       const messageId = row.id;
-      if (!body || !cid || !messageId) return;
+      if (!cid || !messageId) return;
+      const isAudio = row.message_type === 'audio' && row.audio_url;
+      if (!isAudio && !body) return;
+      if (isAudio && !row.audio_url) return;
 
       setRows((prev) =>
         prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
-      pendingActionRef.current = { kind: 'send_message', messageId, body, retryCount: 0 };
-      const ok = await sendMessageViaRest(messageId, body);
+      const audioPayload =
+        isAudio && row.audio_url
+          ? {
+              audio_url: String(row.audio_url),
+              audio_duration_ms: Math.min(30000, Math.max(1, Number(row.audio_duration_ms || 1))),
+              audio_mime_type: String(row.audio_mime_type || 'audio/m4a'),
+            }
+          : null;
+      pendingActionRef.current = {
+        kind: 'send_message',
+        messageId,
+        body,
+        retryCount: 0,
+        ...(audioPayload ? { audio: audioPayload } : {}),
+      };
+      const ok = await sendMessageViaRest(messageId, body, audioPayload);
       if (!ok) {
         pendingActionRef.current = null;
         return;
@@ -1482,7 +1933,20 @@ export default function MuhabbetChatScreen({
       try {
         const sock = getOrCreateSocket();
         if (sock.connected) {
-          sock.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+          if (audioPayload) {
+            sock.emit('muhabbet_send', {
+              conversation_id: cid,
+              message_type: 'audio',
+              text: body,
+              body,
+              audio_url: audioPayload.audio_url,
+              audio_duration_ms: audioPayload.audio_duration_ms,
+              audio_mime_type: audioPayload.audio_mime_type,
+              message_id: messageId,
+            });
+          } else {
+            sock.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+          }
         }
       } catch {
         /* noop — REST başarılı; socket opsiyonel */
@@ -1816,7 +2280,7 @@ export default function MuhabbetChatScreen({
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
       <LinearGradient
-        colors={['#F5F7FA', '#E8EEF5', '#FAF6F0']}
+        colors={['#F8FAFC', '#EFF6FF', '#FFFDFB']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -1889,6 +2353,7 @@ export default function MuhabbetChatScreen({
               ref={listRef}
               style={styles.listFlex}
               data={rows}
+              extraData={{ playingAudioId, recordingActive }}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="handled"
@@ -1981,6 +2446,13 @@ export default function MuhabbetChatScreen({
               renderItem={({ item }) => {
                 const { mine, drv } = bubbleForMsg(item);
                 const time = formatMessageTimeLabel(item.created_at);
+                const isAud =
+                  item.message_type === 'audio' ||
+                  (item.audio_url != null && String(item.audio_url).trim() !== '');
+                const uploading = Boolean(item.audio_upload_pending && item.out_status === 'sending');
+                const durLabel = formatDurationClock(
+                  Math.min(30000, Math.max(0, Number(item.audio_duration_ms || 0)))
+                );
                 if (mine) {
                   const g = drv ? DRIVER_BUBBLE_GRAD : PAX_BUBBLE_GRAD;
                   return (
@@ -1991,15 +2463,55 @@ export default function MuhabbetChatScreen({
                             colors={g}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
-                            style={styles.bubblePad}
+                            style={[styles.bubblePad, styles.bubbleRadiusMine]}
                           >
-                            <Text
-                              style={styles.tGrad}
-                              selectable
-                              {...(Platform.OS === 'android' ? { textBreakStrategy: 'highQuality' as const } : {})}
-                            >
-                              {item.body || ''}
-                            </Text>
+                            {!isAud ? (
+                              <Text
+                                style={styles.tBubbleMine}
+                                selectable
+                                {...(Platform.OS === 'android' ? { textBreakStrategy: 'highQuality' as const } : {})}
+                              >
+                                {item.body || ''}
+                              </Text>
+                            ) : (
+                              <View style={styles.audioBubbleContentMine}>
+                                {uploading || !item.audio_url ? (
+                                  <>
+                                    <ActivityIndicator size="small" color="#fff" />
+                                    <Text style={[styles.tBubbleMine, styles.audioPrimaryLabelMine]}>
+                                      Sesli mesaj gönderiliyor...
+                                    </Text>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Pressable
+                                      onPress={() => void togglePlayAudioForRow(item)}
+                                      hitSlop={8}
+                                      accessibilityRole="button"
+                                      accessibilityLabel={playingAudioId === item.id ? 'Duraklat' : 'Oynat'}
+                                    >
+                                      <Ionicons
+                                        name={playingAudioId === item.id ? 'pause' : 'play'}
+                                        size={22}
+                                        color="#fff"
+                                      />
+                                    </Pressable>
+                                    <Text style={styles.tBubbleMine}>{durLabel}</Text>
+                                  </>
+                                )}
+                                {item.body?.trim() ? (
+                                  <Text
+                                    style={[styles.tBubbleMine, styles.audioCaptionMine]}
+                                    selectable
+                                    {...(Platform.OS === 'android'
+                                      ? { textBreakStrategy: 'highQuality' as const }
+                                      : {})}
+                                  >
+                                    {item.body}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            )}
                           </LinearGradient>
                         </View>
                         <Pressable
@@ -2028,7 +2540,6 @@ export default function MuhabbetChatScreen({
                     </View>
                   );
                 }
-                const g2 = drv ? DRIVER_BUBBLE_GRAD : PAX_BUBBLE_GRAD;
                 return (
                   <View style={styles.bubbleColTheirs}>
                     <View style={styles.bubbleRowTheirs}>
@@ -2041,20 +2552,56 @@ export default function MuhabbetChatScreen({
                         <Ionicons name="trash-outline" size={17} color="#6B7280" />
                       </Pressable>
                       <View style={[styles.bubbleShadowWrap, styles.bubbleAlignStart, styles.bubbleMax]}>
-                        <LinearGradient
-                          colors={g2}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={styles.bubblePad}
+                        <View
+                          style={[
+                            styles.bubblePadTheirs,
+                            styles.bubbleRadiusTheirs,
+                            drv ? styles.theirsStripeDriver : styles.theirsStripePax,
+                          ]}
                         >
-                          <Text
-                            style={styles.tGrad}
-                            selectable
-                            {...(Platform.OS === 'android' ? { textBreakStrategy: 'highQuality' as const } : {})}
-                          >
-                            {item.body || ''}
-                          </Text>
-                        </LinearGradient>
+                          {!isAud ? (
+                            <Text
+                              style={styles.tBubbleTheirs}
+                              selectable
+                              {...(Platform.OS === 'android' ? { textBreakStrategy: 'highQuality' as const } : {})}
+                            >
+                              {item.body || ''}
+                            </Text>
+                          ) : (
+                            <View style={styles.audioBubbleContentTheirs}>
+                              {item.audio_url ? (
+                                <>
+                                  <Pressable
+                                    onPress={() => void togglePlayAudioForRow(item)}
+                                    hitSlop={8}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={playingAudioId === item.id ? 'Duraklat' : 'Oynat'}
+                                  >
+                                    <Ionicons
+                                      name={playingAudioId === item.id ? 'pause' : 'play'}
+                                      size={22}
+                                      color={PRIMARY_GRAD[0]}
+                                    />
+                                  </Pressable>
+                                  <Text style={styles.tAudioDurTheirs}>{durLabel}</Text>
+                                </>
+                              ) : (
+                                <Text style={styles.tBubbleTheirs}>Sesli mesaj</Text>
+                              )}
+                              {item.body?.trim() ? (
+                                <Text
+                                  style={[styles.tBubbleTheirs, styles.audioCaptionTheirs]}
+                                  selectable
+                                  {...(Platform.OS === 'android'
+                                    ? { textBreakStrategy: 'highQuality' as const }
+                                    : {})}
+                                >
+                                  {item.body}
+                                </Text>
+                              ) : null}
+                            </View>
+                          )}
+                        </View>
                       </View>
                     </View>
                     {time ? <Text style={styles.tTimeTheirs}>{time}</Text> : null}
@@ -2111,38 +2658,69 @@ export default function MuhabbetChatScreen({
           <View
             style={[styles.composer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 10) }]}
           >
-            <TextInput
-              style={styles.input}
-              value={draft}
-              onChangeText={setDraft}
-              onFocus={() => {
-                scrollToEndThrottled(true);
-                requestAnimationFrame(() => scrollToEndThrottled(true));
-              }}
-              placeholder="Mesaj yaz…"
-              placeholderTextColor={TEXT_SECONDARY}
-              multiline
-              maxLength={1000}
-              textAlignVertical={Platform.OS === 'android' ? 'top' : undefined}
-            />
-            <Pressable
-              onPress={() => void send()}
-              disabled={!draft.trim()}
-              style={({ pressed }) => [
-                styles.sendBtnWrap,
-                !draft.trim() && { opacity: 0.4 },
-                pressed && draft.trim() && { opacity: 0.9, transform: [{ scale: 0.96 }] },
-              ]}
-            >
-              <LinearGradient
-                colors={SEND_BTN_GRAD}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.sendBtnGrad}
-              >
-                <Ionicons name="arrow-up" size={22} color="#fff" />
-              </LinearGradient>
-            </Pressable>
+            {recordingActive ? (
+              <View style={styles.recordBar}>
+                <Text style={styles.recordBarTitle}>
+                  Kaydediliyor {formatDurationClock(recordingElapsedMs)}
+                </Text>
+                <View style={styles.recordBarActions}>
+                  <Pressable onPress={() => void cancelRecording()} style={styles.recordBtnSec} accessibilityRole="button">
+                    <Text style={styles.recordBtnSecTxt}>İptal</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void finalizeRecordingAndSend()}
+                    style={styles.recordBtnPri}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.recordBtnPriTxt}>Durdur</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  onPress={() => void startRecording()}
+                  disabled={!cid}
+                  style={({ pressed }) => [styles.micBtn, !cid && { opacity: 0.4 }, pressed && cid && { opacity: 0.88 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sesli mesaj kaydet"
+                >
+                  <Ionicons name="mic" size={22} color={PRIMARY_GRAD[0]} />
+                </Pressable>
+                <TextInput
+                  style={styles.input}
+                  value={draft}
+                  onChangeText={setDraft}
+                  onFocus={() => {
+                    scrollToEndThrottled(true);
+                    requestAnimationFrame(() => scrollToEndThrottled(true));
+                  }}
+                  placeholder="Mesaj yaz…"
+                  placeholderTextColor={TEXT_SECONDARY}
+                  multiline
+                  maxLength={1000}
+                  textAlignVertical={Platform.OS === 'android' ? 'top' : undefined}
+                />
+                <Pressable
+                  onPress={() => void send()}
+                  disabled={!draft.trim()}
+                  style={({ pressed }) => [
+                    styles.sendBtnWrap,
+                    !draft.trim() && { opacity: 0.4 },
+                    pressed && draft.trim() && { opacity: 0.9, transform: [{ scale: 0.96 }] },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={SEND_BTN_GRAD}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.sendBtnGrad}
+                  >
+                    <Ionicons name="arrow-up" size={22} color="#fff" />
+                  </LinearGradient>
+                </Pressable>
+              </>
+            )}
           </View>
           </View>
         </KeyboardAvoidingView>
@@ -2204,8 +2782,8 @@ export default function MuhabbetChatScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#EEF1F5' },
-  wmWrap: { ...StyleSheet.absoluteFillObject, opacity: 0.4, zIndex: 0 },
+  root: { flex: 1, backgroundColor: '#ECEFF4' },
+  wmWrap: { ...StyleSheet.absoluteFillObject, opacity: 0.28, zIndex: 0 },
   layer: { flex: 1, zIndex: 1 },
   kav: { flex: 1 },
   kavInner: { flex: 1 },
@@ -2213,22 +2791,33 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   peerHeaderCard: {
-    marginHorizontal: 12,
-    marginTop: 8,
-    marginBottom: 6,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    ...BUBBLE_SHADOW,
+    gap: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15, 23, 42, 0.06)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.07,
+        shadowRadius: 12,
+      },
+      android: { elevation: 2 },
+      default: {},
+    }),
   },
-  peerAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#E5E7EB' },
-  peerAvatarFallback: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center' },
-  peerAvatarInitials: { color: '#1D4ED8', fontSize: 13, fontWeight: '800' },
-  peerName: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY },
+  peerAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E2E8F0' },
+  peerAvatarFallback: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center' },
+  peerAvatarInitials: { color: '#1D4ED8', fontSize: 14, fontWeight: '700' },
+  peerName: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY, letterSpacing: -0.2 },
   peerBadgesRow: { marginTop: 4, flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   peerRolePill: { fontSize: 10, fontWeight: '800', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
   peerRoleDriver: { color: '#1D4ED8', backgroundColor: 'rgba(37,99,235,0.14)' },
@@ -2269,7 +2858,7 @@ const styles = StyleSheet.create({
     }),
   },
   matchBadgeTxt: { flex: 1, fontSize: 13, color: '#fff', fontWeight: '700', lineHeight: 18 },
-  list: { padding: 12, paddingBottom: 8, flexGrow: 1 },
+  list: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12, flexGrow: 1 },
   connectingStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2308,39 +2897,126 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontWeight: '600',
   },
-  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '88%', marginBottom: 8 },
-  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '88%', marginBottom: 8 },
+  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '88%', marginBottom: 10 },
+  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '88%', marginBottom: 10 },
   bubbleRowMine: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-end', gap: 6 },
   bubbleRowTheirs: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 6 },
-  trashHit: { padding: 2 },
+  trashHit: { padding: 4, opacity: 0.5 },
   bubbleMax: { maxWidth: '100%', flexShrink: 1 },
-  bubbleShadowWrap: { ...BUBBLE_SHADOW, borderRadius: 18, maxWidth: '100%' },
+  bubbleShadowWrap: {
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+    borderRadius: 22,
+    maxWidth: '100%',
+  },
   bubbleAlignEnd: { alignSelf: 'flex-end' },
   bubbleAlignStart: { alignSelf: 'flex-start' },
-  bubblePad: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14, flexShrink: 1, maxWidth: '100%' },
-  tGrad: {
+  bubblePad: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    flexShrink: 1,
+    maxWidth: '100%',
+    overflow: 'hidden',
+  },
+  bubbleRadiusMine: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 5,
+  },
+  bubblePadTheirs: {
+    backgroundColor: THEIRS_BUBBLE_BG,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    flexShrink: 1,
+    maxWidth: '100%',
+  },
+  bubbleRadiusTheirs: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 5,
+  },
+  theirsStripeDriver: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: 3,
+    borderTopColor: THEIRS_BUBBLE_BORDER,
+    borderRightColor: THEIRS_BUBBLE_BORDER,
+    borderBottomColor: THEIRS_BUBBLE_BORDER,
+    borderLeftColor: 'rgba(37, 99, 235, 0.72)',
+  },
+  theirsStripePax: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: 3,
+    borderTopColor: THEIRS_BUBBLE_BORDER,
+    borderRightColor: THEIRS_BUBBLE_BORDER,
+    borderBottomColor: THEIRS_BUBBLE_BORDER,
+    borderLeftColor: 'rgba(234, 88, 12, 0.65)',
+  },
+  tBubbleMine: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 22,
-    fontWeight: '600',
+    fontWeight: '500',
     flexShrink: 1,
     alignSelf: 'stretch',
     maxWidth: '100%',
-    textShadowColor: 'rgba(0,0,0,0.12)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    letterSpacing: 0.15,
+  },
+  tBubbleTheirs: {
+    color: TEXT_PRIMARY,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    flexShrink: 1,
+    alignSelf: 'stretch',
+    maxWidth: '100%',
+    letterSpacing: 0.1,
   },
   timeRowMine: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: 4,
-    gap: 4,
+    marginTop: 5,
+    gap: 6,
+    paddingRight: 2,
   },
-  tTimeMine: { fontSize: 11, color: TEXT_SECONDARY, textAlign: 'right' },
-  resendRow: { alignSelf: 'flex-end', marginTop: 4, paddingVertical: 4, paddingHorizontal: 2 },
-  resendTxt: { fontSize: 12, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
-  tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
+  tTimeMine: {
+    fontSize: 10,
+    color: '#94A3B8',
+    textAlign: 'right',
+    fontWeight: '500',
+    letterSpacing: 0.35,
+  },
+  resendRow: {
+    alignSelf: 'flex-end',
+    marginTop: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(37,99,235,0.08)',
+  },
+  resendTxt: { fontSize: 12, fontWeight: '600', color: '#1D4ED8' },
+  tTimeTheirs: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 5,
+    marginLeft: 4,
+    fontWeight: '500',
+    letterSpacing: 0.35,
+  },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
   secureMatchCard: { marginHorizontal: 14, marginBottom: 10, borderRadius: 18, padding: 14, backgroundColor: '#F0FDF4', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(22,163,74,0.28)' },
   secureMatchHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
@@ -2452,32 +3128,83 @@ const styles = StyleSheet.create({
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(60,60,67,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderTopColor: 'rgba(15, 23, 42, 0.07)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
   },
   input: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 46,
     maxHeight: 120,
-    borderRadius: 16,
+    borderRadius: 23,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(60,60,67,0.14)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 16,
+    borderColor: 'rgba(15, 23, 42, 0.09)',
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'ios' ? 11 : 10,
+    fontSize: 15,
     color: TEXT_PRIMARY,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: '#F8FAFC',
+    fontWeight: '400',
   },
-  sendBtnWrap: { borderRadius: 22, overflow: 'hidden', ...BUBBLE_SHADOW },
+  sendBtnWrap: { borderRadius: 23, overflow: 'hidden', ...BUBBLE_SHADOW },
   sendBtnGrad: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  micBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15, 23, 42, 0.09)',
+  },
+  recordBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 46,
+    gap: 12,
+  },
+  recordBarTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  recordBarActions: { flexDirection: 'row', gap: 8 },
+  recordBtnSec: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15,23,42,0.06)',
+  },
+  recordBtnSecTxt: { fontSize: 14, fontWeight: '600', color: TEXT_SECONDARY },
+  recordBtnPri: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, backgroundColor: PRIMARY_GRAD[0] },
+  recordBtnPriTxt: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  audioBubbleContentMine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 10,
+  },
+  audioPrimaryLabelMine: { flex: 1, minWidth: 120 },
+  audioCaptionMine: { width: '100%', marginTop: 8, opacity: 0.92, fontSize: 14 },
+  audioBubbleContentTheirs: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  audioCaptionTheirs: { width: '100%', marginTop: 8, fontSize: 14 },
+  tAudioDurTheirs: { fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
 });

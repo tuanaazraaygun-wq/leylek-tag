@@ -20109,6 +20109,10 @@ class MuhabbetMatchRequestMessageBody(BaseModel):
 class MuhabbetChatMessageCreateBody(BaseModel):
     body: Optional[str] = None
     text: Optional[str] = None
+    message_type: Optional[str] = None
+    audio_url: Optional[str] = None
+    audio_duration_ms: Optional[int] = None
+    audio_mime_type: Optional[str] = None
     message_id: Optional[str] = None
     client_message_id: Optional[str] = None
 
@@ -22226,18 +22230,81 @@ def _muhabbet_conversation_member_ok(conversation_id: str, uid: str) -> bool:
         return False
 
 
-def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: str, created_iso: str) -> tuple[bool, str]:
+_MUHABBET_AUDIO_MIME_TYPES = frozenset({"audio/m4a", "audio/aac", "audio/mpeg", "audio/mp4"})
+
+
+def _muhabbet_audio_url_allowed_for_conversation(audio_url: str, cid: str) -> bool:
+    raw = str(audio_url or "").strip()
+    c = str(cid or "").strip().lower()
+    if not raw or not c:
+        return False
+    u = raw.lower()
+    if u.startswith(c):
+        return True
+    if c in u:
+        return True
+    c_compact = c.replace("-", "")
+    u_compact = u.replace("-", "")
+    if len(c_compact) >= 8 and c_compact in u_compact:
+        return True
+    return False
+
+
+def _muhabbet_validate_outgoing_audio_payload(
+    *, cid: str, audio_url: Optional[str], audio_duration_ms: Optional[Any], audio_mime_type: Optional[str]
+) -> tuple[bool, str]:
+    url = str(audio_url or "").strip()
+    if not url:
+        return (False, "Ses dosyası adresi gerekli.")
+    if not _muhabbet_audio_url_allowed_for_conversation(url, cid):
+        return (False, "Ses dosyası bu sohbete ait değil.")
+    try:
+        dms = int(audio_duration_ms) if audio_duration_ms is not None else 0
+    except (TypeError, ValueError):
+        return (False, "Ses süresi geçersiz.")
+    if dms <= 0 or dms > 30000:
+        return (False, "Ses süresi 1 ile 30000 milisaniye arasında olmalıdır.")
+    mime = str(audio_mime_type or "").strip().lower()
+    if mime not in _MUHABBET_AUDIO_MIME_TYPES:
+        return (False, "Ses dosyası biçimi desteklenmiyor.")
+    return (True, "")
+
+
+def _muhabbet_messages_try_insert(
+    cid: str,
+    msg_id: str,
+    sender_id: str,
+    text: str,
+    created_iso: str,
+    *,
+    message_type: str = "text",
+    audio_url: Optional[str] = None,
+    audio_duration_ms: Optional[int] = None,
+    audio_mime_type: Optional[str] = None,
+) -> tuple[bool, str]:
     """Kalıcı mesaj satırı; idempotent (aynı id+conversation varsa True)."""
     cid = str(cid or "").strip().lower()
     mid = str(msg_id or "").strip().lower()
     su = str(sender_id or "").strip().lower()
-    row = {
+    mt = str(message_type or "text").strip().lower()
+    if mt not in ("text", "audio"):
+        mt = "text"
+    tx = str(text or "")
+    row: dict = {
         "id": mid,
         "conversation_id": cid,
         "sender_id": su,
-        "text": text,
+        "text": tx,
         "created_at": created_iso,
+        "message_type": mt,
     }
+    if mt == "audio":
+        row["audio_url"] = str(audio_url or "").strip()
+        try:
+            row["audio_duration_ms"] = int(audio_duration_ms) if audio_duration_ms is not None else None
+        except (TypeError, ValueError):
+            row["audio_duration_ms"] = None
+        row["audio_mime_type"] = str(audio_mime_type or "").strip().lower()
     try:
         supabase.table("muhabbet_messages").insert(row).execute()
         return (True, "")
@@ -22272,7 +22339,7 @@ def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
     try:
         res = (
             supabase.table("muhabbet_messages")
-            .select("id,conversation_id,sender_id,text,created_at")
+            .select("id,conversation_id,sender_id,text,created_at,message_type,audio_url,audio_duration_ms,audio_mime_type")
             .eq("id", mid)
             .eq("conversation_id", cid)
             .limit(1)
@@ -22444,25 +22511,42 @@ async def _muhabbet_publish_message_after_persist(
     text: str,
     created_iso: str,
     conversation_row: dict,
+    message_type: str = "text",
+    audio_url: Optional[str] = None,
+    audio_duration_ms: Optional[int] = None,
+    audio_mime_type: Optional[str] = None,
 ) -> None:
     """Persist sonrası Muhabbet realtime yayını; DB insert socket sid'e bağlı değildir."""
     cid = str(cid or "").strip().lower()
     msg_id = str(msg_id or "").strip().lower()
     sender_id = str(sender_id or "").strip().lower()
+    mt = str(message_type or "text").strip().lower()
+    if mt not in ("text", "audio"):
+        mt = "text"
+    preview_txt = str(text or "").strip()
+    if mt == "audio" and not preview_txt:
+        preview_txt = "Sesli mesaj"
+    if len(preview_txt) > 2000:
+        preview_txt = preview_txt[:2000]
     a = str((conversation_row or {}).get("user_a") or "").strip().lower()
     b = str((conversation_row or {}).get("user_b") or "").strip().lower()
     recipient = b if a == sender_id else a
     try:
-        _muhabbet_touch_conversation_last_message(conversation_id=cid, text=text, now_iso=created_iso)
+        _muhabbet_touch_conversation_last_message(conversation_id=cid, text=preview_txt, now_iso=created_iso)
     except Exception as e:
         logger.warning("muhabbet rest touch conversation failed cid=%s message_id=%s err=%s", cid, msg_id, e)
-    payload = {
+    payload: dict = {
         "conversation_id": cid,
         "text": text,
         "sender_id": sender_id,
         "message_id": msg_id,
         "created_at": created_iso,
+        "message_type": mt,
     }
+    if mt == "audio":
+        payload["audio_url"] = audio_url
+        payload["audio_duration_ms"] = audio_duration_ms
+        payload["audio_mime_type"] = audio_mime_type
     try:
         await sio.emit("message", payload, room=muhabbet_room(cid))
     except Exception as e:
@@ -22479,18 +22563,24 @@ async def _muhabbet_publish_message_after_persist(
         )
     except Exception as e:
         logger.warning("muhabbet rest user-target message emit failed: %s", e)
+    ack_payload: dict = {
+        "conversation_id": cid,
+        "message_id": msg_id,
+        "status": "sent",
+        "message_type": mt,
+    }
+    if mt == "audio":
+        ack_payload["audio_url"] = audio_url
+        ack_payload["audio_duration_ms"] = audio_duration_ms
+        ack_payload["audio_mime_type"] = audio_mime_type
     try:
-        await emit_socket_event_to_user(
-            sender_id,
-            "message_ack",
-            {"conversation_id": cid, "message_id": msg_id, "status": "sent"},
-        )
+        await emit_socket_event_to_user(sender_id, "message_ack", ack_payload)
     except Exception as e:
         logger.warning("muhabbet rest ack emit failed: %s", e)
     try:
         conv_payload = {
             "conversation_id": cid,
-            "last_message_body": text,
+            "last_message_body": preview_txt,
             "last_message_at": created_iso,
             "sender_id": sender_id,
             "unread_for_user_id": recipient,
@@ -22511,7 +22601,9 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
     try:
         res = (
             supabase.table("muhabbet_messages")
-            .select("id,sender_id,text,created_at,deleted_for_user_ids")
+            .select(
+                "id,sender_id,text,created_at,deleted_for_user_ids,message_type,audio_url,audio_duration_ms,audio_mime_type"
+            )
             .eq("conversation_id", cid)
             .gt("expires_at", now_iso)
             .order("created_at", desc=True)
@@ -22527,14 +22619,24 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
         del_lo = {str(x).strip().lower() for x in del_ids if x}
         if uid_lo in del_lo:
             continue
-        out.append(
-            {
-                "id": str(r.get("id") or "").strip().lower(),
-                "body": r.get("text") or "",
-                "sender_user_id": str(r.get("sender_id") or "").strip().lower(),
-                "created_at": r.get("created_at"),
-            }
-        )
+        mt = str(r.get("message_type") or "text").strip().lower()
+        if mt not in ("text", "audio"):
+            mt = "text"
+        row_out: dict = {
+            "id": str(r.get("id") or "").strip().lower(),
+            "body": r.get("text") or "",
+            "sender_user_id": str(r.get("sender_id") or "").strip().lower(),
+            "created_at": r.get("created_at"),
+            "message_type": mt,
+            "audio_url": r.get("audio_url"),
+            "audio_duration_ms": r.get("audio_duration_ms"),
+            "audio_mime_type": r.get("audio_mime_type"),
+        }
+        if mt != "audio":
+            row_out["audio_url"] = None
+            row_out["audio_duration_ms"] = None
+            row_out["audio_mime_type"] = None
+        out.append(row_out)
         if len(out) >= lim:
             break
     try:
@@ -22555,7 +22657,7 @@ def _muhabbet_last_message_map_for_user(conversation_ids: list[str], uid: str) -
     try:
         res = (
             supabase.table("muhabbet_messages")
-            .select("conversation_id,text,created_at,deleted_for_user_ids")
+            .select("conversation_id,text,created_at,deleted_for_user_ids,message_type")
             .in_("conversation_id", cids)
             .gt("expires_at", now_iso)
             .order("created_at", desc=True)
@@ -22573,8 +22675,14 @@ def _muhabbet_last_message_map_for_user(conversation_ids: list[str], uid: str) -
         del_ids = {str(x).strip().lower() for x in (r.get("deleted_for_user_ids") or []) if x}
         if uid_lo in del_ids:
             continue
+        mt = str(r.get("message_type") or "text").strip().lower()
+        tx = str(r.get("text") or "").strip()
+        if mt == "audio" and not tx:
+            preview = "Sesli mesaj"
+        else:
+            preview = tx
         out[cid] = {
-            "last_message_body": str(r.get("text") or ""),
+            "last_message_body": preview,
             "last_message_at": r.get("created_at"),
         }
     return out
@@ -22700,12 +22808,42 @@ async def sio_muhabbet_send(sid, data):
         return
     logger.info("[muhabbet_send] user=%s sid=%s", str(uid)[:13], sid)
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
+    mt_raw = data.get("message_type") or data.get("messageType")
+    mt = str(mt_raw).strip().lower() if mt_raw not in (None, "") else "text"
+    if mt not in ("text", "audio"):
+        await sio.emit(
+            "muhabbet_error",
+            {"code": "bad_message_type", "message": "Geçersiz mesaj türü.", "conversation_id": cid},
+            room=sid,
+        )
+        return
     text = str(data.get("text") or data.get("body") or "").strip()
-    if not cid or not text:
+    if not cid:
         return
-    if len(text) > 2000:
-        await sio.emit("muhabbet_error", {"code": "text_too_long", "max": 2000}, room=sid)
-        return
+    if mt == "text":
+        if not text:
+            return
+        if len(text) > 2000:
+            await sio.emit("muhabbet_error", {"code": "text_too_long", "max": 2000}, room=sid)
+            return
+    else:
+        ok_a, err_a = _muhabbet_validate_outgoing_audio_payload(
+            cid=cid,
+            audio_url=data.get("audio_url") or data.get("audioUrl"),
+            audio_duration_ms=data.get("audio_duration_ms") if "audio_duration_ms" in data else data.get("audioDurationMs"),
+            audio_mime_type=data.get("audio_mime_type") or data.get("audioMimeType"),
+        )
+        if not ok_a:
+            logger.warning("[muhabbet_audio_message_reject] socket cid=%s err=%s", cid[:13], err_a)
+            await sio.emit(
+                "muhabbet_error",
+                {"code": "audio_invalid", "message": err_a, "conversation_id": cid},
+                room=sid,
+            )
+            return
+        if len(text) > 2000:
+            await sio.emit("muhabbet_error", {"code": "text_too_long", "max": 2000}, room=sid)
+            return
     raw_mid = data.get("message_id") if "message_id" in data else data.get("messageId")
     parsed_mid, mid_err = _muhabbet_parse_client_message_id(raw_mid)
     if mid_err:
@@ -22740,7 +22878,37 @@ async def sio_muhabbet_send(sid, data):
     except Exception as e:
         logger.warning("muhabbet_send enter_room: %s", e)
     peer_n = _muhabbet_room_peer_count(room)
-    db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso)
+    aud_url_s: Optional[str] = None
+    aud_dur_s: Optional[int] = None
+    aud_mime_s: Optional[str] = None
+    if mt == "text":
+        db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso, message_type="text")
+    else:
+        aud_url_s = str(data.get("audio_url") or data.get("audioUrl") or "").strip()
+        try:
+            aud_dur_s = int(
+                data.get("audio_duration_ms") if "audio_duration_ms" in data else data.get("audioDurationMs")
+            )
+        except (TypeError, ValueError):
+            aud_dur_s = 0
+        aud_mime_s = str(data.get("audio_mime_type") or data.get("audioMimeType") or "").strip().lower()
+        logger.info(
+            "[muhabbet_audio_message_create] socket cid=%s message_id=%s duration_ms=%s",
+            cid[:13],
+            msg_id,
+            aud_dur_s,
+        )
+        db_ok, db_err = _muhabbet_messages_try_insert(
+            cid,
+            msg_id,
+            uid,
+            text,
+            now_iso,
+            message_type="audio",
+            audio_url=aud_url_s,
+            audio_duration_ms=aud_dur_s,
+            audio_mime_type=aud_mime_s,
+        )
     logger.info("[muhabbet_send] db_insert_ok=%s conversation_id=%s message_id=%s error=%s", db_ok, cid, msg_id, db_err[:300] if db_err else "")
     if not db_ok:
         await sio.emit(
@@ -22755,11 +22923,12 @@ async def sio_muhabbet_send(sid, data):
             room=sid,
         )
         return
+    preview_touch = text if (mt == "text" or text) else "Sesli mesaj"
     if db_ok:
         try:
             _muhabbet_touch_conversation_last_message(
                 conversation_id=cid,
-                text=text,
+                text=preview_touch,
                 now_iso=now_iso,
             )
         except Exception as e:
@@ -22775,23 +22944,34 @@ async def sio_muhabbet_send(sid, data):
                 logger.info("[muhabbet-unhide] conversation_id=%s users=%s", cid, unhide_users)
         except Exception as e:
             logger.warning("muhabbet_send unhide conversation failed cid=%s err=%s", cid, e)
+    ack_payload: dict = {
+        "conversation_id": cid,
+        "message_id": msg_id,
+        "status": "sent",
+        "message_type": mt,
+    }
+    if mt == "audio":
+        ack_payload["audio_url"] = aud_url_s
+        ack_payload["audio_duration_ms"] = aud_dur_s
+        ack_payload["audio_mime_type"] = aud_mime_s
     try:
-        await emit_socket_event_to_user(
-            uid,
-            "message_ack",
-            {"conversation_id": cid, "message_id": msg_id, "status": "sent"},
-        )
+        await emit_socket_event_to_user(uid, "message_ack", ack_payload)
     except Exception as e:
         logger.warning("muhabbet_send message_ack: %s", e)
     else:
         logger.info("[muhabbet_send] ack_sent user=%s conversation_id=%s message_id=%s", str(uid)[:13], cid, msg_id)
-    payload = {
+    payload: dict = {
         "conversation_id": cid,
         "text": text,
         "sender_id": uid,
         "message_id": msg_id,
         "created_at": now_iso,
+        "message_type": mt,
     }
+    if mt == "audio":
+        payload["audio_url"] = aud_url_s
+        payload["audio_duration_ms"] = aud_dur_s
+        payload["audio_mime_type"] = aud_mime_s
     await sio.emit("message", payload, room=room)
     logger.info("[muhabbet_send] emitted room=%s conversation_id=%s message_id=%s peers_in_room=%s", room, cid, msg_id, peer_n)
     try:
@@ -22806,7 +22986,7 @@ async def sio_muhabbet_send(sid, data):
     try:
         conv_payload = {
             "conversation_id": cid,
-            "last_message_body": text,
+            "last_message_body": preview_touch,
             "last_message_at": now_iso,
             "sender_id": uid,
             "unread_for_user_id": recipient,
@@ -22827,8 +23007,12 @@ async def sio_muhabbet_send(sid, data):
                     peer_n,
                 )
             elif _muhabbet_message_push_rate_allow(ru, cid):
-                preview = text[:50] + ("…" if len(text) > 50 else "")
-                push_text = text[:400] + ("…" if len(text) > 400 else "")
+                if mt == "audio":
+                    preview = "Sesli mesaj"
+                    push_text = preview
+                else:
+                    preview = text[:50] + ("…" if len(text) > 50 else "")
+                    push_text = text[:400] + ("…" if len(text) > 400 else "")
                 asyncio.create_task(
                     send_push_notification(
                         recipient,
@@ -27725,18 +27909,60 @@ async def muhabbet_conversation_messages_post(
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         cid = str(conversation_id or "").strip().lower()
         crow = _muhabbet_conversation_for_member_or_403(cid, uid)
-        text = str(msg.body or msg.text or "").strip()
-        if not text:
-            raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
-        if len(text) > 2000:
-            raise HTTPException(status_code=400, detail="Mesaj en fazla 2000 karakter olabilir")
+        mt_raw = msg.message_type
+        mt = str(mt_raw).strip().lower() if mt_raw not in (None, "") else "text"
+        if mt not in ("text", "audio"):
+            raise HTTPException(status_code=400, detail={"message": "Geçersiz mesaj türü."})
+        text_body = str(msg.body or msg.text or "").strip()
+        if mt == "text":
+            if not text_body:
+                raise HTTPException(status_code=400, detail={"message": "Mesaj boş olamaz"})
+            if len(text_body) > 2000:
+                raise HTTPException(status_code=400, detail={"message": "Mesaj en fazla 2000 karakter olabilir"})
+        else:
+            ok_a, err_a = _muhabbet_validate_outgoing_audio_payload(
+                cid=cid,
+                audio_url=msg.audio_url,
+                audio_duration_ms=msg.audio_duration_ms,
+                audio_mime_type=msg.audio_mime_type,
+            )
+            if not ok_a:
+                logger.warning("[muhabbet_audio_message_reject] rest cid=%s err=%s", cid[:13], err_a)
+                raise HTTPException(status_code=400, detail={"message": err_a})
+            if len(text_body) > 2000:
+                raise HTTPException(status_code=400, detail={"message": "Mesaj en fazla 2000 karakter olabilir"})
         raw_mid = msg.message_id or msg.client_message_id
         parsed_mid, mid_err = _muhabbet_parse_client_message_id(raw_mid)
         if mid_err:
-            raise HTTPException(status_code=400, detail=mid_err)
+            raise HTTPException(status_code=400, detail={"message": mid_err})
         msg_id = parsed_mid or str(uuid.uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
-        db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso)
+        if mt == "text":
+            db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text_body, now_iso, message_type="text")
+        else:
+            aud_url = str(msg.audio_url or "").strip()
+            try:
+                aud_dur = int(msg.audio_duration_ms) if msg.audio_duration_ms is not None else 0
+            except (TypeError, ValueError):
+                aud_dur = 0
+            aud_mime = str(msg.audio_mime_type or "").strip().lower()
+            logger.info(
+                "[muhabbet_audio_message_create] rest cid=%s message_id=%s duration_ms=%s",
+                cid[:13],
+                msg_id,
+                aud_dur,
+            )
+            db_ok, db_err = _muhabbet_messages_try_insert(
+                cid,
+                msg_id,
+                uid,
+                text_body,
+                now_iso,
+                message_type="audio",
+                audio_url=aud_url,
+                audio_duration_ms=aud_dur,
+                audio_mime_type=aud_mime,
+            )
         if not db_ok:
             logger.warning("[muhabbet_rest_send] db_insert_failed cid=%s message_id=%s err=%s", cid, msg_id, db_err[:300] if db_err else "")
             raise HTTPException(status_code=500, detail="Mesaj gönderilemedi. Lütfen tekrar deneyin.")
@@ -27744,29 +27970,45 @@ async def muhabbet_conversation_messages_post(
             "id": msg_id,
             "conversation_id": cid,
             "sender_id": uid,
-            "text": text,
+            "text": text_body,
             "created_at": now_iso,
+            "message_type": mt,
         }
         created_iso = row.get("created_at") or now_iso
+        row_mt = str(row.get("message_type") or mt).strip().lower()
+        if row_mt not in ("text", "audio"):
+            row_mt = "text"
+        aud_u = row.get("audio_url") if row_mt == "audio" else None
+        aud_d = row.get("audio_duration_ms") if row_mt == "audio" else None
+        aud_m = row.get("audio_mime_type") if row_mt == "audio" else None
         await _muhabbet_publish_message_after_persist(
             cid=cid,
             msg_id=msg_id,
             sender_id=uid,
-            text=str(row.get("text") or text),
+            text=str(row.get("text") if row.get("text") is not None else text_body),
             created_iso=created_iso,
             conversation_row=crow,
+            message_type=row_mt,
+            audio_url=str(aud_u).strip() if aud_u else None,
+            audio_duration_ms=int(aud_d) if aud_d is not None and row_mt == "audio" else None,
+            audio_mime_type=str(aud_m).strip().lower() if aud_m and row_mt == "audio" else None,
         )
         try:
             await notify_conversation_updated(cid, "message_created", uid)
         except Exception as ne:
             logger.warning("[muhabbet_notify] message_created notify failed: %s", ne)
+        rest_mt = row_mt
         return {
             "success": True,
             "message": {
-                "id": msg_id,
-                "body": row.get("text") or text,
-                "sender_user_id": uid,
+                "id": str(row.get("id") or msg_id).strip().lower(),
+                "body": row.get("text") if row.get("text") is not None else text_body,
+                "sender_user_id": str(row.get("sender_id") or uid).strip().lower(),
                 "created_at": created_iso,
+                "message_type": rest_mt,
+                "audio_url": row.get("audio_url") if rest_mt == "audio" else None,
+                "audio_duration_ms": row.get("audio_duration_ms") if rest_mt == "audio" else None,
+                "audio_mime_type": row.get("audio_mime_type") if rest_mt == "audio" else None,
             },
         }
     except HTTPException:
