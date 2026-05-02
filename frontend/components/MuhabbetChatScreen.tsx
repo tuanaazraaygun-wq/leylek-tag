@@ -143,6 +143,15 @@ function base64ToUint8Array(base64: string): Uint8Array {
  * file:// için önce fetch→blob; başarısızsa (özellikle Android) dosyayı base64 okuyup Uint8Array.
  * Supabase upload BodyInit kabul eder; Uint8Array doğrudan iletilir.
  */
+/** Bucket içi nesne yolu: segment segment encode (UUID vb. güvenli) */
+function encodeStorageObjectPath(storageRelativePath: string): string {
+  return storageRelativePath
+    .split('/')
+    .filter((seg) => seg.length > 0)
+    .map((seg) => encodeURIComponent(seg))
+    .join('/');
+}
+
 async function loadAudioBodyForSupabaseUpload(audioUri: string): Promise<Blob | Uint8Array> {
   const tryFetchBlob = async (): Promise<Blob> => {
     const response = await fetch(audioUri);
@@ -160,6 +169,56 @@ async function loadAudioBodyForSupabaseUpload(audioUri: string): Promise<Blob | 
     const b64 = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
     return base64ToUint8Array(b64);
   }
+}
+
+/** Android file://: SDK upload RN’de sık “Network request failed” verir; doğrudan Storage REST. */
+async function uploadMuhabbetAudioViaStorageRest(params: {
+  supabaseUrl: string;
+  anonKey: string;
+  filePath: string;
+  audioUri: string;
+  contentType: string;
+}): Promise<string> {
+  const { supabaseUrl, anonKey, filePath, audioUri, contentType } = params;
+  const b64 = await FileSystem.readAsStringAsync(audioUri, { encoding: 'base64' });
+  const bodyBytes = base64ToUint8Array(b64);
+  console.log('[muhabbet_audio_body_loaded]', { byteLength: bodyBytes.byteLength });
+
+  const encodedPath = encodeStorageObjectPath(filePath);
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${MUHABBET_AUDIO_BUCKET}/${encodedPath}`;
+  const ct = contentType || 'audio/m4a';
+
+  console.log('[muhabbet_audio_rest_upload_start]', {
+    uploadUrl,
+    byteLength: bodyBytes.byteLength,
+    contentType: ct,
+  });
+
+  const res = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      'Content-Type': ct,
+      'x-upsert': 'false',
+    },
+    body: bodyBytes,
+  });
+
+  const responseText = await res.text();
+  console.log('[muhabbet_audio_rest_upload_response]', {
+    status: res.status,
+    ok: res.ok,
+    text: responseText,
+  });
+
+  if (!res.ok) {
+    throw new Error(responseText || `REST upload başarısız (${res.status})`);
+  }
+
+  const publicUrl = `${supabaseUrl}/storage/v1/object/public/${MUHABBET_AUDIO_BUCKET}/${encodedPath}`;
+  console.log('[muhabbet_audio_rest_upload_success]', { publicUrl });
+  return publicUrl;
 }
 
 export type ChatMessageRow = {
@@ -786,16 +845,11 @@ export default function MuhabbetChatScreen({
     );
     scrollToEndThrottled(true);
 
-    const supabase = getSupabase();
-    if (!supabase) {
-      console.log('[muhabbet_audio_send_error]', { reason: 'no_supabase' });
-      setRows((prev) => markMessageFailedById(prev, messageId));
-      Alert.alert('Depolama', 'Yükleme yapılandırması eksik (Supabase).');
-      return;
-    }
-
     const filePath = `${cid.trim().toLowerCase()}/${myLo}/${Date.now()}.m4a`;
     const audioUri = localUri;
+
+    const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
     console.log('[muhabbet_audio_env]', {
       hasUrl: Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL),
@@ -803,29 +857,62 @@ export default function MuhabbetChatScreen({
       hasAnon: Boolean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
     });
 
+    if (!supabaseUrl || !anonKey) {
+      console.log('[muhabbet_audio_send_error]', { reason: 'no_supabase' });
+      setRows((prev) => markMessageFailedById(prev, messageId));
+      Alert.alert('Depolama', 'Yükleme yapılandırması eksik (Supabase).');
+      return;
+    }
+
+    const useAndroidFileRest = Platform.OS === 'android' && audioUri.startsWith('file:');
+
+    let publicUrl: string;
+
     try {
-      const body = await loadAudioBodyForSupabaseUpload(audioUri);
-      const { error: upErr } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(filePath, body, {
-        contentType: mime || 'audio/m4a',
-        upsert: false,
-      });
-      if (upErr) {
-        console.warn('[muhabbet_audio_upload_error]', {
-          message: upErr.message,
-          name: (upErr as { name?: string }).name,
-          stack: (upErr as { stack?: string }).stack,
+      if (useAndroidFileRest) {
+        publicUrl = await uploadMuhabbetAudioViaStorageRest({
+          supabaseUrl,
+          anonKey,
           filePath,
           audioUri,
-          mimeType: mime,
+          contentType: mime || 'audio/m4a',
         });
-        setRows((prev) => markMessageFailedById(prev, messageId));
-        Alert.alert(
-          'Depolama',
-          upErr.message || 'Ses dosyası yüklenemedi. Bucket oluşturulmuş mu kontrol edin.'
-        );
-        return;
+      } else {
+        const supabase = getSupabase();
+        if (!supabase) {
+          throw new Error('Supabase client oluşturulamadı');
+        }
+        const body = await loadAudioBodyForSupabaseUpload(audioUri);
+        const byteLength =
+          body instanceof Blob ? body.size : (body as Uint8Array).byteLength;
+        console.log('[muhabbet_audio_body_loaded]', { byteLength });
+
+        const { error: upErr } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(filePath, body, {
+          contentType: mime || 'audio/m4a',
+          upsert: false,
+        });
+        if (upErr) {
+          console.warn('[muhabbet_audio_upload_error]', {
+            message: upErr.message,
+            name: (upErr as { name?: string }).name,
+            stack: (upErr as { stack?: string }).stack,
+            filePath,
+            audioUri,
+            mimeType: mime,
+          });
+          setRows((prev) => markMessageFailedById(prev, messageId));
+          Alert.alert(
+            'Depolama',
+            upErr.message || 'Ses dosyası yüklenemedi. Bucket oluşturulmuş mu kontrol edin.'
+          );
+          return;
+        }
+        console.log('[muhabbet_audio_upload_done]', { path: filePath });
+        const {
+          data: { publicUrl: sdkPublicUrl },
+        } = supabase.storage.from(MUHABBET_AUDIO_BUCKET).getPublicUrl(filePath);
+        publicUrl = sdkPublicUrl;
       }
-      console.log('[muhabbet_audio_upload_done]', { path: filePath });
     } catch (e: unknown) {
       const err = e as { message?: string; name?: string; stack?: string };
       console.warn('[muhabbet_audio_upload_error]', {
@@ -840,10 +927,6 @@ export default function MuhabbetChatScreen({
       Alert.alert('Depolama', 'Ses dosyası yüklenemedi. Bağlantıyı kontrol edin.');
       return;
     }
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from(MUHABBET_AUDIO_BUCKET).getPublicUrl(filePath);
 
     pendingActionRef.current = {
       kind: 'send_message',
