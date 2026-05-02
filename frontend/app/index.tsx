@@ -81,6 +81,7 @@ import {
   type TokenPayload,
 } from '../lib/sessionToken';
 import { afterAuthAccessTokenPersisted } from '../lib/authTokenPersistenceNotify';
+import { syncSupabaseSessionFromBackendResponse } from '../lib/supabaseSessionSync';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
@@ -1123,6 +1124,8 @@ export default function App() {
 
         setUser(parsedUser);
 
+        void syncSupabaseSessionFromBackendResponse(parsedUser as unknown as Record<string, unknown>);
+
         const cleanPhone = parsedUser.phone?.replace(/\D/g, '') || '';
         const isMainAdmin =
           cleanPhone === '5326497412' ||
@@ -1248,6 +1251,7 @@ export default function App() {
 
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
     await persistAccessToken(payload);
+    await syncSupabaseSessionFromBackendResponse(payload as unknown as Record<string, unknown>);
     const token = (await getPersistedAccessToken())?.trim();
     console.log('[muhabbet] auth token refresh after persist', {
       userId: userId ?? null,

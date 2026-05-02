@@ -28,7 +28,21 @@ export async function clearSessionStorage(): Promise<void> {
   ]);
 }
 
-export type TokenPayload = { access_token?: string; accessToken?: string; token?: string };
+/** Backend bazen Supabase Auth JWT çifti döner (Storage / realtime için). */
+export type TokenPayload = {
+  access_token?: string;
+  accessToken?: string;
+  token?: string;
+  supabase_access_token?: string;
+  supabase_refresh_token?: string;
+  supabaseAccessToken?: string;
+  supabaseRefreshToken?: string;
+  user?: unknown;
+  supabase?: unknown;
+  email?: string;
+  password?: string;
+  supabase_password?: string;
+};
 
 /** API yanıtlarında access_token | accessToken | token alanlarından JWT çıkarır */
 export function extractAccessTokenFromPayload(payload: TokenPayload): string {

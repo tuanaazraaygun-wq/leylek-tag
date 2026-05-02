@@ -64,6 +64,7 @@ except ModuleNotFoundError as e:
         "systemd WorkingDirectory bu klasör olmalı."
     ) from e
 
+from supabase_auth_session import attach_supabase_tokens_to_auth_payload
 from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
 from services.fcm_push_service import (
     is_fcm_configured,
@@ -5340,25 +5341,28 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
         except Exception as upd_err:
             logger.warning(f"verify_otp device update (ignored): {upd_err}")
         
-        return {
-            "success": True,
-            "message": "OTP doğrulandı",
-            "user_exists": True,
-            "has_pin": has_pin,
-            "user": {
-                "id": user["id"],
-                "phone": user["phone"],
-                "name": user.get("name", ""),
-                "role": user.get("role", "passenger"),
-                "rating": float(user.get("rating", 4.0)),
-                "total_ratings": user.get("total_ratings", 0),
-                "is_admin": user.get("is_admin", False),
-                "city": user.get("city"),
-                "gender": user.get("gender"),
-                "first_name": user.get("first_name"),
-                "last_name": user.get("last_name"),
-            }
-        }
+        return attach_supabase_tokens_to_auth_payload(
+            {
+                "success": True,
+                "message": "OTP doğrulandı",
+                "user_exists": True,
+                "has_pin": has_pin,
+                "user": {
+                    "id": user["id"],
+                    "phone": user["phone"],
+                    "name": user.get("name", ""),
+                    "role": user.get("role", "passenger"),
+                    "rating": float(user.get("rating", 4.0)),
+                    "total_ratings": user.get("total_ratings", 0),
+                    "is_admin": user.get("is_admin", False),
+                    "city": user.get("city"),
+                    "gender": user.get("gender"),
+                    "first_name": user.get("first_name"),
+                    "last_name": user.get("last_name"),
+                },
+            },
+            str(user["id"]),
+        )
     else:
         # Yeni kullanıcı
         return {
@@ -5544,26 +5548,29 @@ async def auth_test_login_bypass(request: Request):
         pass
 
     is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
-    return {
-        "success": True,
-        "access_token": issue_access_token(user["id"]),
-        "user": {
-            "id": user["id"],
-            "phone": user.get("phone") or canonical,
-            "name": user.get("name") or ("Test Yolcu" if role == "passenger" else "Test Sürücü"),
-            "first_name": user.get("first_name"),
-            "last_name": user.get("last_name"),
-            "city": user.get("city"),
-            "gender": user.get("gender"),
-            "rating": float(user.get("rating", 4.0)),
-            "total_ratings": int(user.get("total_ratings") or 0),
-            "total_trips": user.get("total_trips", 0),
-            "profile_photo": user.get("profile_photo"),
-            "driver_details": user.get("driver_details"),
-            "is_admin": is_admin,
-            "role": role,
+    return attach_supabase_tokens_to_auth_payload(
+        {
+            "success": True,
+            "access_token": issue_access_token(user["id"]),
+            "user": {
+                "id": user["id"],
+                "phone": user.get("phone") or canonical,
+                "name": user.get("name") or ("Test Yolcu" if role == "passenger" else "Test Sürücü"),
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "city": user.get("city"),
+                "gender": user.get("gender"),
+                "rating": float(user.get("rating", 4.0)),
+                "total_ratings": int(user.get("total_ratings") or 0),
+                "total_trips": user.get("total_trips", 0),
+                "profile_photo": user.get("profile_photo"),
+                "driver_details": user.get("driver_details"),
+                "is_admin": is_admin,
+                "role": role,
+            },
         },
-    }
+        str(user["id"]),
+    )
 
 
 @api_router.post("/auth/test-password-login")
@@ -5678,27 +5685,30 @@ async def auth_test_password_login(request: Request):
     tok = issue_access_token(user["id"])
     is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
     dd_pub = _driver_details_public_for_api(user)
-    return {
-        "success": True,
-        "token": tok,
-        "access_token": tok,
-        "user": {
-            "id": user["id"],
-            "phone": user.get("phone") or canonical,
-            "name": user.get("name") or ("Test Yolcu" if role == "passenger" else "Test Sürücü"),
-            "first_name": user.get("first_name"),
-            "last_name": user.get("last_name"),
-            "city": user.get("city"),
-            "gender": user.get("gender"),
-            "rating": float(user.get("rating", 4.0)),
-            "total_ratings": int(user.get("total_ratings") or 0),
-            "total_trips": user.get("total_trips", 0),
-            "profile_photo": user.get("profile_photo"),
-            "driver_details": dd_pub,
-            "is_admin": is_admin,
-            "role": role,
+    return attach_supabase_tokens_to_auth_payload(
+        {
+            "success": True,
+            "token": tok,
+            "access_token": tok,
+            "user": {
+                "id": user["id"],
+                "phone": user.get("phone") or canonical,
+                "name": user.get("name") or ("Test Yolcu" if role == "passenger" else "Test Sürücü"),
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "city": user.get("city"),
+                "gender": user.get("gender"),
+                "rating": float(user.get("rating", 4.0)),
+                "total_ratings": int(user.get("total_ratings") or 0),
+                "total_trips": user.get("total_trips", 0),
+                "profile_photo": user.get("profile_photo"),
+                "driver_details": dd_pub,
+                "is_admin": is_admin,
+                "role": role,
+            },
         },
-    }
+        str(user["id"]),
+    )
 
 
 class SetPinRequest(BaseModel):
@@ -5771,9 +5781,10 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         
         logger.info(f"✅ PIN ayarlandı: {canonical}")
         refreshed = _users_get_by_phone_flexible(canonical)
-        out = {"success": True, "message": "PIN ayarlandı"}
+        out: dict = {"success": True, "message": "PIN ayarlandı"}
         if refreshed and refreshed.get("id"):
             out["access_token"] = issue_access_token(refreshed["id"])
+            return attach_supabase_tokens_to_auth_payload(out, str(refreshed["id"]))
         return out
     except Exception as e:
         logger.error(f"Set PIN error: {e}")
@@ -5896,24 +5907,27 @@ async def verify_pin_endpoint(request: Request):
         is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
         
         logger.info(f"✅ PIN doğrulandı: {canonical}, Admin: {is_admin}, IP: {client_ip}")
-        
-        return {
-            "success": True,
-            "access_token": issue_access_token(user["id"]),
-            "user": {
-                "id": user["id"],
-                "phone": user["phone"],
-                "name": user["name"],
-                "first_name": user.get("first_name"),
-                "last_name": user.get("last_name"),
-                "city": user.get("city"),
-                "rating": float(user.get("rating", 4.0)),
-                "total_trips": user.get("total_trips", 0),
-                "profile_photo": user.get("profile_photo"),
-                "driver_details": user.get("driver_details"),
-                "is_admin": is_admin
-            }
-        }
+
+        return attach_supabase_tokens_to_auth_payload(
+            {
+                "success": True,
+                "access_token": issue_access_token(user["id"]),
+                "user": {
+                    "id": user["id"],
+                    "phone": user["phone"],
+                    "name": user["name"],
+                    "first_name": user.get("first_name"),
+                    "last_name": user.get("last_name"),
+                    "city": user.get("city"),
+                    "rating": float(user.get("rating", 4.0)),
+                    "total_trips": user.get("total_trips", 0),
+                    "profile_photo": user.get("profile_photo"),
+                    "driver_details": user.get("driver_details"),
+                    "is_admin": is_admin,
+                },
+            },
+            str(user["id"]),
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -5966,25 +5980,28 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
             logger.warning(f"⚠️ Giriş bildirimi gönderilemedi: {notif_err}")
         
         is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
-        
-        return {
-            "success": True,
-            "access_token": issue_access_token(user["id"]),
-            "user": {
-                "id": user["id"],
-                "phone": user["phone"],
-                "name": user["name"],
-                "first_name": user.get("first_name"),
-                "last_name": user.get("last_name"),
-                "city": user.get("city"),
-                "gender": user.get("gender"),
-                "rating": float(user.get("rating", 4.0)),
-                "total_trips": user.get("total_trips", 0),
-                "profile_photo": user.get("profile_photo"),
-                "driver_details": user.get("driver_details"),
-                "is_admin": is_admin
-            }
-        }
+
+        return attach_supabase_tokens_to_auth_payload(
+            {
+                "success": True,
+                "access_token": issue_access_token(user["id"]),
+                "user": {
+                    "id": user["id"],
+                    "phone": user["phone"],
+                    "name": user["name"],
+                    "first_name": user.get("first_name"),
+                    "last_name": user.get("last_name"),
+                    "city": user.get("city"),
+                    "gender": user.get("gender"),
+                    "rating": float(user.get("rating", 4.0)),
+                    "total_trips": user.get("total_trips", 0),
+                    "profile_photo": user.get("profile_photo"),
+                    "driver_details": user.get("driver_details"),
+                    "is_admin": is_admin,
+                },
+            },
+            str(user["id"]),
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -6180,24 +6197,27 @@ async def register_user(request: RegisterRequest):
             user = result.data[0]
             logger.info(f"✅ Yeni kullanıcı kaydedildi: {phone_normalized}, QR: {unique_qr_code}")
             
-            return {
-                "success": True,
-                "access_token": issue_access_token(user["id"]),
-                "user": {
-                    "id": user["id"],
-                    "phone": user["phone"],
-                    "name": user["name"],
-                    "first_name": user.get("first_name"),
-                    "last_name": user.get("last_name"),
-                    "city": user.get("city"),
-                    "gender": user.get("gender"),
-                    "rating": float(user.get("rating", 4.0)),
-                    "total_trips": 0,
-                    "personal_qr_code": unique_qr_code,
-                    "is_admin": _phone_10_for_admin_check(phone_normalized) in ADMIN_PHONE_NUMBERS
-                }
-            }
-        
+            return attach_supabase_tokens_to_auth_payload(
+                {
+                    "success": True,
+                    "access_token": issue_access_token(user["id"]),
+                    "user": {
+                        "id": user["id"],
+                        "phone": user["phone"],
+                        "name": user["name"],
+                        "first_name": user.get("first_name"),
+                        "last_name": user.get("last_name"),
+                        "city": user.get("city"),
+                        "gender": user.get("gender"),
+                        "rating": float(user.get("rating", 4.0)),
+                        "total_trips": 0,
+                        "personal_qr_code": unique_qr_code,
+                        "is_admin": _phone_10_for_admin_check(phone_normalized) in ADMIN_PHONE_NUMBERS,
+                    },
+                },
+                str(user["id"]),
+            )
+
         raise HTTPException(status_code=500, detail="Kayıt oluşturulamadı")
     except HTTPException:
         raise

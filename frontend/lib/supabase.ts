@@ -3,6 +3,7 @@
  * Real-time konum takibi ve Storage için kullanılır
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
@@ -13,6 +14,7 @@ let supabaseClient: SupabaseClient | null = null;
 
 /**
  * Supabase client'ı başlat ve döndür
+ * Auth oturumu RN'de AsyncStorage ile kalıcı olmalı (Storage RLS + uploadAudio getSession).
  */
 export function getSupabase(): SupabaseClient | null {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -22,13 +24,22 @@ export function getSupabase(): SupabaseClient | null {
 
   if (!supabaseClient) {
     supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        storage: AsyncStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+      },
       realtime: {
         params: {
           eventsPerSecond: 10,
         },
       },
     });
-    console.log('✅ Supabase client oluşturuldu');
+    console.log('✅ Supabase client oluşturuldu', {
+      supabaseUrl: SUPABASE_URL.replace(/\/+$/, ''),
+      hasAnonKey: Boolean(SUPABASE_ANON_KEY),
+    });
   }
 
   return supabaseClient;
