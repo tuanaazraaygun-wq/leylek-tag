@@ -18,8 +18,8 @@ const downloadNotes = [
     description: "Şehir içi rota odaklı güvenli eşleşme deneyimini uygulamada başlat.",
   },
   {
-    title: "Leylek Muhabbet",
-    description: "Yolculuk paylaşmadan önce konuşma ve Leylek Anahtar katmanını keşfet.",
+    title: "Leylek Teklifi",
+    description: "Şehir dışı teklifleri teklif konuşmasıyla netleştir; karşılıklı onay ve güvenli eşleşmeyi keşfet.",
   },
   {
     title: "Şehirler Arası İlanlar",
@@ -33,7 +33,7 @@ export default function DownloadPage() {
       <PageHero
         eyebrow="indir"
         title="Beta sürecindeyiz. Leylek Tag çok yakında uygulamada."
-        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, konuşma, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanacaktır."
+        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, teklif konuşması, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanacaktır."
         primaryLabel="Erken Erişim Formuna Git"
         primaryHref="#erken-erisim"
       />

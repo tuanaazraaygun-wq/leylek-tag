@@ -2,12 +2,12 @@ const rows = [
   {
     label: "Hızlı eşleşme",
     classic: "Genellikle tek akışa odaklanır",
-    leylek: "Şehir içi, sohbet ve şehirler arası akışları birlikte düşünür",
+    leylek: "Şehir içi, teklif akışı ve şehirler arası akışları birlikte düşünür",
   },
   {
-    label: "Sohbet ederek karar verme",
+    label: "Teklif konuşmasıyla karar verme",
     classic: "Karar çoğu zaman hızlı aksiyona sıkışır",
-    leylek: "Leylek Muhabbeti ile önce konuşma ve anlaşma alanı açar",
+    leylek: "Leylek Teklifi ile teklif netleştirme ve yolculuk öncesi anlaşma alanı açar",
   },
   {
     label: "Şehirler arası masraf paylaşımı",

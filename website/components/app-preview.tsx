@@ -7,10 +7,10 @@ const previews = [
     accent: "from-cyan-200 to-blue-400",
   },
   {
-    title: "Leylek Muhabbeti",
-    eyebrow: "sohbet açık",
-    primary: "Önce konuş, sonra anlaş",
-    meta: "Leylek Anahtar bekliyor",
+    title: "Leylek Teklifi",
+    eyebrow: "teklif açık",
+    primary: "Önce netleştir, sonra anlaş",
+    meta: "Eşleşme onayı bekliyor",
     accent: "from-violet-200 to-cyan-300",
   },
   {

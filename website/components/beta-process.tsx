@@ -1,7 +1,7 @@
 const steps = [
   {
     title: "Ankara’da başlıyoruz",
-    description: "İlk odak şehirde şehir içi, Leylek Muhabbeti ve şehirler arası akışları birlikte test ediyoruz.",
+    description: "İlk odak şehirde şehir içi, Leylek Teklifi ve şehirler arası akışları birlikte test ediyoruz.",
   },
   {
     title: "İlk kullanıcılarla test",

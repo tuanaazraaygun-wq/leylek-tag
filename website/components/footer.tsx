@@ -4,7 +4,7 @@ import { Container } from "@/components/container";
 
 const footerLinks = [
   { href: "/sehir-ici", label: "Hızlı Yolculuk" },
-  { href: "/muhabbet", label: "Leylek Muhabbeti" },
+  { href: "/muhabbet", label: "Leylek Teklifi" },
   { href: "/sehirler-arasi", label: "Şehirler Arası" },
   { href: "/guvenlik", label: "Güvenlik" },
   { href: "/nasil-calisir", label: "Nasıl Çalışır" },

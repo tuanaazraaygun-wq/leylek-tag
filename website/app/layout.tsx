@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     "masraf paylaşımı",
     "güvenli eşleşme",
     "aynı yöne gidenler",
-    "Leylek Muhabbeti",
+    "Leylek Teklifi",
     "boş koltuk paylaşımı",
   ],
   applicationName: "Leylek Tag",

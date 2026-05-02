@@ -9,7 +9,7 @@ import { Container } from "@/components/container";
 
 const navItems = [
   { href: "/sehir-ici", label: "Şehir İçi" },
-  { href: "/muhabbet", label: "Muhabbet" },
+  { href: "/muhabbet", label: "Leylek Teklifi" },
   { href: "/sehirler-arasi", label: "Şehirler Arası" },
   { href: "/guvenlik", label: "Güvenlik" },
   { href: "/nasil-calisir", label: "Nasıl Çalışır" },

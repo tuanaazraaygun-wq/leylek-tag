@@ -11,15 +11,15 @@ export const metadata: Metadata = {
 const steps = [
   {
     title: "1. İhtiyacını seç",
-    description: "Şehir içi hızlı eşleşme, Leylek Muhabbet veya şehirler arası yol paylaşımı akışından birini seç.",
+    description: "Şehir içi hızlı eşleşme, Leylek Teklifi veya şehirler arası yol paylaşımı akışından birini seç.",
   },
   {
     title: "2. Rota ve zamanı netleştir",
     description: "Aynı yöne gidenlerle kalkış, varış ve uygun zaman bilgilerini sade biçimde paylaş.",
   },
   {
-    title: "3. Konuş ve doğrula",
-    description: "Chat, Leylek Anahtar, QR doğrulama ve Güven Al adımlarıyla güven katmanını tamamla.",
+    title: "3. Netleştir ve doğrula",
+    description: "Teklif konuşması, teklif doğrulama, QR doğrulama ve Güven Al adımlarıyla güven katmanını tamamla.",
   },
   {
     title: "4. Yolculuğu paylaş",
@@ -33,7 +33,7 @@ export default function HowItWorksPage() {
       <PageHero
         eyebrow="nasıl çalışır"
         title="Yolculuk paylaşımı birkaç net adımda ilerler."
-        description="Leylek Tag deneyimi hızlı eşleşme, konuşarak güvenme ve şehirler arası ilan akışlarını aynı modern çatı altında toplar."
+        description="Leylek Tag deneyimi hızlı eşleşme, teklif konuşmasıyla güvenme ve şehirler arası ilan akışlarını aynı modern çatı altında toplar."
       />
       <section className="py-12">
         <Container>

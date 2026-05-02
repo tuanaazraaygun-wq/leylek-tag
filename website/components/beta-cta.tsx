@@ -15,7 +15,7 @@ export function BetaCta() {
                 İlk kullanıcılar arasında yerini al.
               </h2>
               <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/80">
-                Leylek Tag topluluğu büyürken şehir içi, Leylek Muhabbeti ve şehirler arası yolculuk paylaşımı akışlarını ilk deneyenlerden ol.
+                Leylek Tag topluluğu büyürken şehir içi, Leylek Teklifi ve şehirler arası yolculuk paylaşımı akışlarını ilk deneyenlerden ol.
               </p>
             </div>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:w-full lg:flex-col">

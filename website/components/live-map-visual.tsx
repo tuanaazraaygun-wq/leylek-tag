@@ -11,7 +11,7 @@ const floatingCards = [
     className: "left-3 top-5 max-w-[min(85vw,14rem)] sm:left-5 sm:top-7 sm:max-w-none animate-slow-float",
   },
   {
-    label: "Yeni Muhabbet başladı",
+    label: "Yeni teklif akışı başladı",
     className: "right-3 top-20 max-w-[min(85vw,12rem)] sm:right-5 sm:top-24 sm:max-w-none animate-[slow-float_8s_ease-in-out_infinite]",
   },
   {
@@ -55,7 +55,7 @@ export function LiveMapVisual() {
           <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-200/80 sm:text-xs">rota hissi</p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="min-w-0">
-              <p className="text-base font-black text-white sm:text-lg">Konuş, doğrula, paylaş</p>
+              <p className="text-base font-black text-white sm:text-lg">Netleştir, doğrula, paylaş</p>
               <p className="mt-1 text-xs leading-relaxed text-slate-300 sm:text-sm sm:leading-6">
                 QR doğrulama, Güven Al ve rota görünürlüğüyle kontrollü yolculuk paylaşımı.
               </p>

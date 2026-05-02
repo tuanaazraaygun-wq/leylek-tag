@@ -2,7 +2,7 @@ const trustBadges = [
   { label: "QR doğrulama", detail: "buluşma anında netlik" },
   { label: "Güven Al", detail: "topluluk sinyalleri" },
   { label: "Rota görünürlüğü", detail: "paylaşılan güzergah" },
-  { label: "Sohbet ile anlaşma", detail: "önce konuş, sonra karar ver" },
+  { label: "Teklifle netleştirme", detail: "detayları netleştir, sonra karar ver" },
 ];
 
 export function TrustBadges() {

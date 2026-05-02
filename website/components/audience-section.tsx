@@ -8,8 +8,8 @@ const audiences = [
     description: "Gideceği rotayı, saatini ve boş koltuk sayısını paylaşarak aynı yöne gidenlerle masraf paylaşımı yapmak isteyenler.",
   },
   {
-    title: "Önce konuşup güvenmek isteyenler",
-    description: "Leylek Muhabbeti ile yolculuk paylaşımı öncesinde sohbet ederek karar vermek isteyenler.",
+    title: "Önce teklifi netleştirip güvenmek isteyenler",
+    description: "Leylek Teklifi ile şehir dışı tekliflerini netleştirip karşılıklı onayla güvenli eşleşmek isteyenler.",
   },
   {
     title: "Topluluk içinde yolculuk planlayanlar",

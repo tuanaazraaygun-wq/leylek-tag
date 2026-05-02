@@ -31,7 +31,7 @@ export const activityFeed: ActivityItem[] = [
   },
   {
     id: "muhabbet-basladi",
-    label: "Bir Leylek Muhabbeti baslatildi",
+    label: "Bir teklif akışı başlatıldı",
     region: "Topluluk",
     tone: "emerald",
   },

@@ -7,6 +7,8 @@ type PageHeroProps = {
   description: string;
   primaryHref?: string;
   primaryLabel?: string;
+  /** Küçük güven / ek bilgi satırı (CTA’nın hemen altında). */
+  ctaHint?: string;
 };
 
 export function PageHero({
@@ -15,6 +17,7 @@ export function PageHero({
   description,
   primaryHref = "/indir",
   primaryLabel = "Uygulamayı İndir",
+  ctaHint,
 }: PageHeroProps) {
   return (
     <section className="relative overflow-hidden py-16 sm:py-24">
@@ -29,6 +32,9 @@ export function PageHero({
           <ButtonLink href={primaryHref} className="mt-8">
             {primaryLabel}
           </ButtonLink>
+          {ctaHint ? (
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400">{ctaHint}</p>
+          ) : null}
         </div>
       </Container>
     </section>

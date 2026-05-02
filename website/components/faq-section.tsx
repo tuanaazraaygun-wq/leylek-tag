@@ -2,7 +2,7 @@ const faqs = [
   {
     question: "Leylek Tag nedir?",
     answer:
-      "Leylek Tag, aynı yöne giden insanların yolculuk paylaşımı, sohbet ve güvenli eşleşme katmanlarıyla buluşmasını hedefleyen bir topluluk platformudur.",
+      "Leylek Tag, aynı yöne gidenlerin yolculuk paylaşımı, teklif konuşması ve güvenli eşleşme katmanlarıyla buluşmasını hedefleyen bir topluluk platformudur.",
   },
   {
     question: "Şehirler arası yol paylaşımı nasıl çalışır?",
@@ -10,9 +10,9 @@ const faqs = [
       "Kullanıcılar gidecekleri rota, tarih/saat, boş koltuk ve tahmini masraf paylaşımı bilgisini ilan olarak paylaşır. Canlı bağlantı uygulama içinde kullanılacaktır.",
   },
   {
-    question: "Leylek Muhabbeti nedir?",
+    question: "Leylek Teklifi nedir?",
     answer:
-      "Leylek Muhabbeti, yolculuk paylaşmadan önce sohbet ederek anlaşmayı ve sosyal güven katmanını güçlendirmeyi amaçlayan deneyimdir.",
+      "Leylek Teklifi, şehir dışı yolculuk tekliflerini konuşarak netleştirdiğiniz, karşılıklı onay ve teklif doğrulama ile güvenli eşleşmeye geçtiğiniz akıştır.",
   },
   {
     question: "Masraf paylaşımı ne demek?",
@@ -22,7 +22,7 @@ const faqs = [
   {
     question: "Güvenlik nasıl sağlanır?",
     answer:
-      "QR doğrulama, Güven Al, rota görünürlüğü, sohbet ile anlaşma ve topluluk sinyalleri güvenli eşleşme deneyimini destekler.",
+      "QR doğrulama, Güven Al, rota görünürlüğü, detayları netleştirme ve yolculuk öncesi anlaşma ile topluluk sinyalleri güvenli eşleşme deneyimini destekler.",
   },
   {
     question: "Uygulama ne zaman yayında?",

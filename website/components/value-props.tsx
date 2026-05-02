@@ -2,12 +2,12 @@ const values = [
   {
     title: "Kontrol sende",
     description:
-      "Rota, zaman, konuşma ve uygulamada gör adımları net ilerler. Yolculuk paylaşımı kararı aceleye gelmez.",
+      "Rota, zaman, teklif netleştirme ve uygulamada gör adımları net ilerler. Yolculuk paylaşımı kararı aceleye gelmez.",
   },
   {
     title: "Önce güven",
     description:
-      "QR doğrulama, Güven Al ve sohbet ile anlaşma katmanları güvenli eşleşme deneyimini destekler.",
+      "QR doğrulama, Güven Al ve yolculuk öncesi anlaşma katmanları güvenli eşleşme deneyimini destekler.",
   },
   {
     title: "Aynı yöne gidenlerle paylaşım",

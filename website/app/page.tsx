@@ -29,10 +29,10 @@ const experiences = [
     tone: "cyan" as const,
   },
   {
-    title: "Leylek Muhabbeti",
-    eyebrow: "önce konuş",
+    title: "Leylek Teklifi",
+    eyebrow: "önce teklif",
     description:
-      "Sohbet tabanlı tanışma, Leylek Anahtar ve sosyal güven katmanı ile yolculuk paylaşmadan önce anlaş.",
+      "Teklif konuşması, karşılıklı onay ve yolculuk öncesi anlaşma ile şehir dışı yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
     tone: "violet" as const,
   },
   {
@@ -87,7 +87,7 @@ export default function Home() {
                     Yolculuk artık sadece gitmek değil.
                   </h1>
                   <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
-                    İstersen hemen eşleş, istersen sohbet ederek güvenle yolculuk paylaş. Leylek Tag, aynı yöne gidenleri daha net, güvenli ve kontrollü bir deneyimde buluşturur.
+                    İstersen hemen eşleş, istersen teklif konuşmasıyla detayları netleştirerek güvenle yolculuk paylaş. Leylek Tag, aynı yöne gidenleri daha net, güvenli ve kontrollü bir deneyimde buluşturur.
                   </p>
                 </div>
               </div>
@@ -102,7 +102,7 @@ export default function Home() {
                   Şehirler Arası İlanları Gör
                 </ButtonLink>
                 <ButtonLink href="/muhabbet" variant="ghost" className="w-full sm:w-auto">
-                  Leylek Muhabbeti Keşfet
+                  Teklif Akışını Keşfet
                 </ButtonLink>
               </div>
               <div className="mt-10">
@@ -130,7 +130,7 @@ export default function Home() {
               <SectionHeading
                 eyebrow="neden leylek tag?"
                 title="Yolculuk paylaşımında güven, kontrol ve topluluk aynı yerde."
-                description="Leylek Tag, yalnızca bir rota ekranı değil; aynı yöne gidenlerin konuşarak, doğrulayarak ve net bilgilerle anlaşabildiği modern bir topluluk deneyimidir."
+                description="Leylek Tag, yalnızca bir rota ekranı değil; aynı yöne gidenlerin detayları netleştirerek, doğrulayarak ve şeffaf bilgiyle anlaşabildiği modern bir topluluk deneyimidir."
               />
             </div>
             <ValueProps />
@@ -175,7 +175,7 @@ export default function Home() {
             <SectionHeading
               eyebrow="neden farklı?"
               title="Klasik yolculuk deneyiminden daha topluluk odaklı."
-              description="Leylek Tag hızlı eşleşmeyi, sohbet ederek karar vermeyi, şehirler arası masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
+              description="Leylek Tag hızlı eşleşmeyi, teklif konuşmasıyla karar vermeyi, şehirler arası masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
             />
           </div>
           <ComparisonSection />
@@ -190,7 +190,7 @@ export default function Home() {
             <SectionHeading
               eyebrow="uygulama ön izlemesi"
               title="Üç akış, tek premium mobil deneyim."
-              description="Gerçek ekran görüntüsü kullanmadan hazırlanan bu cihaz mockup'ları şehir içi, Leylek Muhabbeti ve şehirler arası ilan deneyimini sade şekilde gösterir."
+              description="Gerçek ekran görüntüsü kullanmadan hazırlanan bu cihaz mockup'ları şehir içi, Leylek Teklifi ve şehirler arası ilan deneyimini sade şekilde gösterir."
             />
           </div>
           <AppPreview />
@@ -243,7 +243,7 @@ export default function Home() {
             <SectionHeading
               eyebrow="sık sorulan sorular"
               title="Leylek Tag hakkında merak edilenler"
-              description="Yolculuk paylaşımı, masraf paylaşımı, Leylek Muhabbeti ve güvenli eşleşme akışına dair kısa yanıtlar."
+              description="Yolculuk paylaşımı, masraf paylaşımı, Leylek Teklifi ve güvenli eşleşme akışına dair kısa yanıtlar."
             />
           </div>
           <FaqSection />

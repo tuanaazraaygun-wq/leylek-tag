@@ -102,7 +102,7 @@ export function getDemoLiveStats(): LiveStats {
 
 export async function fetchRealCityActivity(): Promise<CityActivity[]> {
   // TODO: Connect to future live city activity endpoint or socket stream.
-  // Possible sources: ride/create event, offer accepted event, muhabbet started event.
+  // Possible sources: ride/create event, offer accepted event, offer-flow started event.
   // Base URL is configured through NEXT_PUBLIC_API_BASE_URL.
   void apiConfig.apiBaseUrl;
 
@@ -120,7 +120,7 @@ export async function fetchRealRegionIntensity(): Promise<RegionIntensity[]> {
 export async function fetchRealLiveStats(): Promise<LiveStats> {
   // TODO: Connect to future live stats endpoint/socket.
   // Possible sources: ride/create event, offer accepted event,
-  // listing created event, muhabbet started event, intercity listing created event.
+  // listing created event, offer-flow started event, intercity listing created event.
   void apiConfig.apiBaseUrl;
 
   return getDemoLiveStats();
