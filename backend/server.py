@@ -23677,6 +23677,21 @@ def _muhabbet_trip_session_recipient_user_ids(row: dict) -> list[str]:
     return out
 
 
+def _muhabbet_trip_session_is_open_reusable(row: dict) -> bool:
+    """Terminal (iptal/bitti/süre) oturumları yeniden kullanılmaz; yeni conversion ile karışmasın."""
+    if not isinstance(row, dict):
+        return False
+    st = str(row.get("status") or "").strip().lower()
+    if st in ("cancelled", "finished", "expired"):
+        return False
+    if st not in ("ready", "started", "active"):
+        return False
+    rs = str(row.get("ride_status") or "waiting").strip().lower()
+    if rs in ("cancelled", "finished", "expired"):
+        return False
+    return True
+
+
 def _muhabbet_trip_open_session_for_listing_driver(listing_id: str, driver_id: str) -> dict | None:
     lid = str(listing_id or "").strip().lower()
     did = str(driver_id or "").strip().lower()
@@ -23690,10 +23705,14 @@ def _muhabbet_trip_open_session_for_listing_driver(listing_id: str, driver_id: s
             .eq("driver_id", did)
             .in_("status", ["ready", "started", "active"])
             .order("created_at", desc=False)
-            .limit(1)
+            .limit(25)
             .execute()
         )
-        return dict(res.data[0]) if res.data else None
+        for raw in res.data or []:
+            row = dict(raw)
+            if _muhabbet_trip_session_is_open_reusable(row):
+                return row
+        return None
     except Exception as e:
         logger.warning("[muhabbet_trip] open_session_lookup lid=%s err=%s", lid[:12], e)
         return None
@@ -24544,6 +24563,29 @@ async def _emit_muhabbet_trip_force_finished(session_row: dict, response: str, r
             await emit_socket_event_to_user(target, "muhabbet_trip_force_finished", payload)
 
 
+_MUHABBET_TRIP_FF_TERMINAL_PATCH_KEYS = frozenset(
+    {
+        "status",
+        "cancelled_at",
+        "cancelled_by_user_id",
+        "cancel_reason",
+        "forced_finish_confirmed_at",
+        "forced_finish_other_user_response",
+        "forced_finish_requested_by_user_id",
+        "forced_finish_requested_at",
+        "call_active",
+        "updated_at",
+        "ride_status",
+    }
+)
+
+
+def _muhabbet_trip_sessions_sanitize_force_finish_terminal_patch(patch: dict) -> dict:
+    if not isinstance(patch, dict):
+        return {}
+    return {k: v for k, v in patch.items() if k in _MUHABBET_TRIP_FF_TERMINAL_PATCH_KEYS}
+
+
 def _muhabbet_trip_sessions_force_finish_terminal_update(
     session_id: str,
     patch: dict,
@@ -24551,48 +24593,53 @@ def _muhabbet_trip_sessions_force_finish_terminal_update(
     *,
     log_ctx: str,
 ) -> dict:
-    """Tam patch boş döner veya hata verirse tek minimal cancelled terminal patch (retry döngüsü yok)."""
+    """Şema güvenli terminal patch; ride_status yoksa tek sefer ride_status olmadan dene (retry döngüsü yok)."""
     sid_lo = str(session_id or "").strip().lower()
-    try:
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-        if upd.data:
-            return dict(upd.data[0])
-    except Exception as e:
-        logger.warning(
-            "[muhabbet_trip_force_finish] full_patch_failed ctx=%s session_id=%s err=%s",
-            log_ctx,
-            sid_lo[:12],
-            e,
-        )
-    now_iso = str(patch.get("updated_at") or datetime.now(timezone.utc).isoformat())
-    minimal = {
-        "status": "cancelled",
-        "ride_status": "cancelled",
-        "cancelled_at": patch.get("cancelled_at") or now_iso,
-        "call_active": False,
-        "updated_at": now_iso,
-    }
-    try:
-        upd_m = supabase.table("muhabbet_trip_sessions").update(minimal).eq("id", session_id).execute()
-        if upd_m.data:
+    base = _muhabbet_trip_sessions_sanitize_force_finish_terminal_patch(patch)
+    if "updated_at" not in base:
+        base["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    def _try_update(p: dict) -> dict | None:
+        if not p:
+            return None
+        try:
+            upd = supabase.table("muhabbet_trip_sessions").update(p).eq("id", session_id).execute()
+            if upd.data:
+                return dict(upd.data[0])
+        except Exception as e:
+            logger.warning(
+                "[muhabbet_trip_force_finish] terminal_patch_failed ctx=%s session_id=%s err=%s",
+                log_ctx,
+                sid_lo[:12],
+                e,
+            )
+        return None
+
+    out = _try_update(base)
+    if out:
+        return out
+    if "ride_status" in base:
+        no_rs = {k: v for k, v in base.items() if k != "ride_status"}
+        out = _try_update(no_rs)
+        if out:
             logger.info(
-                "[muhabbet_trip_force_finish] minimal_terminal_patch_ok ctx=%s session_id=%s",
+                "[muhabbet_trip_force_finish] terminal_patch_no_ride_status_ok ctx=%s session_id=%s",
                 log_ctx,
                 sid_lo[:12],
             )
-            return dict(upd_m.data[0])
-    except Exception as e2:
-        logger.warning(
-            "[muhabbet_trip_force_finish] minimal_terminal_patch_failed ctx=%s session_id=%s err=%s",
-            log_ctx,
-            sid_lo[:12],
-            e2,
-        )
-    return {**row, **minimal}
+            return out
+    now_iso = str(base.get("updated_at") or datetime.now(timezone.utc).isoformat())
+    fallback = {
+        "status": "cancelled",
+        "cancelled_at": base.get("cancelled_at") or now_iso,
+        "call_active": False,
+        "updated_at": now_iso,
+    }
+    return {**row, **fallback}
 
 
 async def _muhabbet_trip_force_finish_apply_accept_cancel(session_id: str, row: dict, responder_uid: str) -> dict:
-    """Karşı taraf onayladı — biniş öncesi oturumu hemen iptal et (cancel_reason=forced_accepted)."""
+    """Karşı taraf onayladı — biniş öncesi oturumu hemen iptal et."""
     now_iso = datetime.now(timezone.utc).isoformat()
     sid_lo = str(session_id or "").strip().lower()
     requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
@@ -24602,10 +24649,11 @@ async def _muhabbet_trip_force_finish_apply_accept_cancel(session_id: str, row: 
         "ride_status": "cancelled",
         "cancelled_at": now_iso,
         "cancelled_by_user_id": requester_uid or None,
-        "cancel_reason": "forced_accepted",
-        "forced_finish_confirmed_by_user_id": uid_lo,
+        "cancel_reason": "forced_finish_before_boarding",
         "forced_finish_confirmed_at": now_iso,
         "forced_finish_other_user_response": "accepted",
+        "forced_finish_requested_by_user_id": None,
+        "forced_finish_requested_at": None,
         "call_active": False,
         "updated_at": now_iso,
     }
@@ -24669,9 +24717,9 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
     response_val: str,
     responder_uid: Optional[str],
     emit_label: str,
-    cancel_reason: str = "forced_timeout",
+    cancel_reason: str = "forced_finish_before_boarding",
 ) -> dict:
-    """Biniş QR öncesi zorla bitir — karşı yanıtı veya 30 sn sonra iptal (cancelled / forced_timeout)."""
+    """Biniş QR öncesi zorla bitir — karşı yanıtı veya 30 sn sonra iptal (cancelled)."""
     now_iso = datetime.now(timezone.utc).isoformat()
     sid_lo = str(session_id or "").strip().lower()
     requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
@@ -24704,9 +24752,10 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
         "cancelled_at": now_iso,
         "cancelled_by_user_id": requester_uid or None,
         "cancel_reason": cancel_reason,
-        "forced_finish_confirmed_by_user_id": responder_uid,
         "forced_finish_confirmed_at": now_iso,
         "forced_finish_other_user_response": response_val,
+        "forced_finish_requested_by_user_id": None,
+        "forced_finish_requested_at": None,
         "call_active": False,
         "updated_at": now_iso,
     }
@@ -24742,24 +24791,47 @@ async def _muhabbet_trip_force_finish_finalize_accept_or_timeout(
     return next_row
 
 
-async def _muhabbet_trip_force_finish_decline_soft(session_id: str, row: dict, responder_uid: str) -> dict:
-    """Onaylamıyorum — istek açık kalır; 30 sn sonra timeout ile iptal garantisi."""
+async def _muhabbet_trip_force_finish_apply_decline_terminal(session_id: str, row: dict, responder_uid: str) -> dict:
+    """Onaylamıyorum — isteği açan tarafın kararı geçerli; anında terminal iptal."""
     now_iso = datetime.now(timezone.utc).isoformat()
-    responder_lo = str(responder_uid or "").strip().lower()
     sid_lo = str(session_id or "").strip().lower()
+    responder_lo = str(responder_uid or "").strip().lower()
+    requester_uid = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
     patch = {
+        "status": "cancelled",
+        "ride_status": "cancelled",
+        "cancelled_at": now_iso,
+        "cancelled_by_user_id": requester_uid or None,
+        "cancel_reason": "forced_finish_before_boarding",
+        "forced_finish_confirmed_at": now_iso,
         "forced_finish_other_user_response": "declined",
+        "forced_finish_requested_by_user_id": None,
+        "forced_finish_requested_at": None,
+        "call_active": False,
         "updated_at": now_iso,
     }
     logger.info("[leylek_force_finish_response_patch] session_id=%s %s", sid_lo, json.dumps(patch, ensure_ascii=False))
-    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
-    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-    logger.info("[muhabbet_trip_force_finish] declined_soft session_id=%s by=%s", session_id, responder_lo)
-    await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
+    next_row = _muhabbet_trip_sessions_force_finish_terminal_update(session_id, patch, row, log_ctx="decline_terminal")
     try:
-        await notify_trip_session_updated(sid_lo, "force_finish_declined", responder_lo)
+        await _emit_muhabbet_trip_force_finished(next_row, "declined", responder_lo)
+    except Exception as ee:
+        logger.warning("[muhabbet_trip_force_finish] emit_decline_failed session_id=%s err=%s", sid_lo[:12], ee)
+    try:
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
+    except Exception as be:
+        logger.warning("[muhabbet_trip_force_finish] broadcast_decline_failed session_id=%s err=%s", sid_lo[:12], be)
+    try:
+        _muhabbet_trip_passengers_update_for_user(
+            session_id,
+            str(next_row.get("passenger_id") or ""),
+            {"status": "cancelled", "cancelled_at": now_iso},
+        )
+    except Exception as pe:
+        logger.warning("[muhabbet_trip_force_finish] passenger_decline_failed session_id=%s err=%s", sid_lo[:12], pe)
+    try:
+        await notify_trip_session_updated(sid_lo, "force_finished", responder_lo or requester_uid or "")
     except Exception as ne:
-        logger.warning("[muhabbet_notify] force_finish_declined notify failed: %s", ne)
+        logger.warning("[muhabbet_notify] force_finished notify failed: %s", ne)
     return next_row
 
 
@@ -24796,7 +24868,7 @@ async def _muhabbet_trip_force_finish_process_deadlines() -> int:
                 response_val="timeout_auto_accepted",
                 responder_uid=None,
                 emit_label="timeout_auto_accepted",
-                cancel_reason="forced_timeout",
+                cancel_reason="forced_finish_before_boarding",
             )
             done += 1
             ms = int((time.perf_counter() - t0) * 1000)
@@ -24819,7 +24891,7 @@ async def _muhabbet_trip_session_row_force_finish_timeout_if_due(session_id: str
             response_val="timeout_auto_accepted",
             responder_uid=None,
             emit_label="timeout_auto_accepted",
-            cancel_reason="forced_timeout",
+            cancel_reason="forced_finish_before_boarding",
         )
     except Exception as e:
         logger.warning("[muhabbet_trip_force_finish] row_timeout session_id=%s err=%s", sid[:12], e)
@@ -26061,7 +26133,7 @@ async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -
     if _muhabbet_trip_has_boarding_started_row(row):
         raise _MuhabbetTripOpError(
             "TRIP_ALREADY_STARTED",
-            "Yolculuk başladı. Güvenli kapanış için varış QR kodu ile bitirin. Bir sorun varsa Şikayet Et ile eşleşmeyi kapatabilirsiniz.",
+            "Yolculuk başladı. Varış QR ile bitirin veya sorun varsa Şikayet Et kullanın.",
             409,
         )
 
@@ -26135,9 +26207,12 @@ async def _muhabbet_trip_force_finish_respond_apply(uid: str, session_id: str, r
     st = str(row.get("status") or "").strip().lower()
     if st in ("cancelled", "finished", "expired"):
         return row, False
-    if bool(str(row.get("boarding_qr_confirmed_at") or "").strip()):
-        logger.info("[leylek_force_finish_response_patch] session_id=%s skipped_boarded", sid_lo)
-        return row, False
+    if _muhabbet_trip_has_boarding_started_row(row):
+        raise _MuhabbetTripOpError(
+            "TRIP_ALREADY_STARTED",
+            "Yolculuk başladı. Varış QR ile bitirin veya sorun varsa Şikayet Et kullanın.",
+            409,
+        )
     uid_lo = str(uid).strip().lower()
     rq = str(row.get("forced_finish_requested_by_user_id") or "").strip().lower()
     if not rq:
@@ -26151,8 +26226,8 @@ async def _muhabbet_trip_force_finish_respond_apply(uid: str, session_id: str, r
         next_row = await _muhabbet_trip_force_finish_apply_accept_cancel(session_id, row, uid_lo)
         logger.info("[leylek_force_finish_response_patch] session_id=%s terminal=cancelled action=accepted", sid_lo)
         return next_row, True
-    next_row = await _muhabbet_trip_force_finish_decline_soft(session_id, row, uid_lo)
-    return next_row, False
+    next_row = await _muhabbet_trip_force_finish_apply_decline_terminal(session_id, row, uid_lo)
+    return next_row, True
 
 
 async def _muhabbet_trip_call_response_broadcast(uid: str, session_id: str, event_name: str, user_field: str) -> dict:

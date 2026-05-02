@@ -500,7 +500,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const isTerminal = TERMINAL_TRIP_STATUSES.has(String(session?.status || '').trim().toLowerCase());
 
   useEffect(() => {
-    if (isTerminal) setForceFinishTimeoutNotice(false);
+    if (isTerminal) {
+      setForceFinishTimeoutNotice(false);
+      setForceFinishWarningVisible(false);
+    }
   }, [isTerminal]);
 
   useEffect(() => {
@@ -2585,6 +2588,11 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             const sess = rest.json.session;
             if (sess && typeof sess === 'object') {
               setSession(sess as MuhabbetTripSession);
+            }
+          } else {
+            const errMsg = muhabbetTripRestDetail(rest.json.detail, '');
+            if (errMsg) {
+              Alert.alert('Muhabbet yolculuk', errMsg);
             }
           }
 
