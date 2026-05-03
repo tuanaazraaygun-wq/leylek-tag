@@ -63,6 +63,8 @@ type LeylekTripLiveRideChromeProps = {
   callDialDisabled?: boolean;
   /** Sesli görüşme geçici kapalı — düğme disabled ve “Yakında” */
   voiceCallComingSoon?: boolean;
+  /** Leylek Teklifi: biniş onayı sonrası / uygun olmayan fazda yeşil arama düğmesini gizle (idle iken) */
+  voiceCallAllowed?: boolean;
   canStart: boolean;
   canFinish: boolean;
   onShareLocation: () => void;
@@ -137,6 +139,7 @@ export default function LeylekTripLiveRideChrome({
   callBusy,
   callDialDisabled = false,
   voiceCallComingSoon = false,
+  voiceCallAllowed = true,
   canStart,
   canFinish,
   onShareLocation,
@@ -173,6 +176,13 @@ export default function LeylekTripLiveRideChrome({
   useEffect(() => {
     console.log('[leylek-trip-ui] action layout rendered role=%s', isDriver ? 'driver' : 'passenger');
   }, [isDriver]);
+  const useSesliAraLabel =
+    modernLeylekOfferUi && !voiceCallComingSoon && voiceCallAllowed !== false;
+  const hideIdlePrimaryCallButton =
+    modernLeylekOfferUi &&
+    !voiceCallComingSoon &&
+    voiceCallAllowed === false &&
+    callState === 'idle';
   const callButtonLabel = voiceCallComingSoon
     ? 'Yakında'
     : callState === 'incoming'
@@ -181,9 +191,11 @@ export default function LeylekTripLiveRideChrome({
         ? 'Aranıyor'
         : callState === 'active'
           ? 'Kapat'
-          : isDriver
-            ? 'Yolcuyu Ara'
-            : 'Sürücüyü Ara';
+          : useSesliAraLabel
+            ? 'Sesli Ara'
+            : isDriver
+              ? 'Yolcuyu Ara'
+              : 'Sürücüyü Ara';
   const callButtonIcon: keyof typeof Ionicons.glyphMap = voiceCallComingSoon
     ? 'time-outline'
     : callState === 'incoming'
@@ -192,7 +204,9 @@ export default function LeylekTripLiveRideChrome({
         ? 'call'
         : callState === 'outgoing'
           ? 'radio'
-          : 'call';
+          : useSesliAraLabel
+            ? 'call'
+            : 'call';
   const handleCallPress = () => {
     if (voiceCallComingSoon) return;
     if (callBusy || callDialDisabled || isTerminal) return;
@@ -456,29 +470,33 @@ export default function LeylekTripLiveRideChrome({
 
           {modernLeylekOfferUi ? (
             <>
-              <Pressable
-                onPress={handleCallPress}
-                disabled={voiceCallComingSoon || !tripInfoReady || callBusy || callDialDisabled || isTerminal}
-                style={({ pressed }) => [
-                  styles.modernPrimaryCall,
-                  (pressed ||
-                    voiceCallComingSoon ||
-                    !tripInfoReady ||
-                    callBusy ||
-                    callDialDisabled ||
-                    isTerminal) &&
-                    styles.modernPrimaryCallPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={callButtonLabel}
-              >
-                {callBusy ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Ionicons name={callButtonIcon} size={22} color="#FFF" />
-                )}
-                <Text style={styles.modernPrimaryCallLabel}>{callButtonLabel}</Text>
-              </Pressable>
+              {!hideIdlePrimaryCallButton ? (
+                <Pressable
+                  onPress={handleCallPress}
+                  disabled={
+                    voiceCallComingSoon || !tripInfoReady || callBusy || callDialDisabled || isTerminal
+                  }
+                  style={({ pressed }) => [
+                    styles.modernPrimaryCall,
+                    (pressed ||
+                      voiceCallComingSoon ||
+                      !tripInfoReady ||
+                      callBusy ||
+                      callDialDisabled ||
+                      isTerminal) &&
+                      styles.modernPrimaryCallPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={callButtonLabel}
+                >
+                  {callBusy ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Ionicons name={callButtonIcon} size={22} color="#FFF" />
+                  )}
+                  <Text style={styles.modernPrimaryCallLabel}>{callButtonLabel}</Text>
+                </Pressable>
+              ) : null}
 
               <Pressable
                 onPress={onNavigate}
