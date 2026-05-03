@@ -3743,6 +3743,10 @@ async def startup():
         cleanup_expired_muhabbet_audio()
     except Exception:
         logger.exception("[startup] cleanup_expired_muhabbet_audio")
+    try:
+        expire_muhabbet_listing_matching_deadlines()
+    except Exception:
+        logger.exception("[startup] expire_muhabbet_listing_matching_deadlines")
     _warn_duplicate_api_routes()
     last_cleanup_time = datetime.utcnow()
     print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
@@ -6888,6 +6892,19 @@ async def admin_muhabbet_audio_cleanup_expired(admin_phone: str):
         return {"success": True, **out}
     except Exception as e:
         logger.error("admin_muhabbet_audio_cleanup_expired: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/admin/muhabbet/listings/expire-matching")
+async def admin_muhabbet_listings_expire_matching(admin_phone: str):
+    """Admin: matching_deadline_at geçmiş intercity ilanların matching_status'unu closed_expired yapar."""
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        n = expire_muhabbet_listing_matching_deadlines()
+        return {"success": True, "expired_count": n}
+    except Exception as e:
+        logger.error("admin_muhabbet_listings_expire_matching: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -19955,6 +19972,10 @@ _RIDE_LISTINGS_INSERT_COLUMN_WHITELIST = frozenset(
         "updated_at",
         "vehicle_kind",
         "expires_at",
+        "seat_capacity",
+        "matching_status",
+        "matching_deadline_at",
+        "accepted_passenger_count",
         "accepted_match_request_id",
         "accepted_user_id",
         "matched_conversation_id",
@@ -20612,7 +20633,8 @@ def _muhabbet_listing_core_insert_dict(
 ) -> dict:
     """ride_listings çekirdek kolonları (FK + rota + meta)."""
     dep = body.departure_time.isoformat() if body.departure_time else None
-    return {
+    exp_iso = _muhabbet_listing_expires_at_default_iso()
+    out = {
         owner_col: uid,
         "city": city,
         "listing_scope": listing_scope,
@@ -20632,8 +20654,13 @@ def _muhabbet_listing_core_insert_dict(
         "vehicle_kind": body.vehicle_kind or "car",
         "seat_capacity": max(1, int(getattr(body, "seat_capacity", 1) or 1)),
         "status": "active",
-        "expires_at": _muhabbet_listing_expires_at_default_iso(),
+        "expires_at": exp_iso,
     }
+    if str(listing_scope or "").strip().lower() == "intercity":
+        out["matching_status"] = "open"
+        out["accepted_passenger_count"] = 0
+        out["matching_deadline_at"] = _muhabbet_listing_matching_deadline_iso_for_create(body.departure_time, exp_iso)
+    return out
 
 
 def _muhabbet_listing_insert_payload_variants(
@@ -20901,6 +20928,73 @@ def _muhabbet_listing_offer_expired(row: Optional[dict]) -> bool:
         return False
 
 
+def _muhabbet_listing_matching_deadline_iso_for_create(
+    departure_dt: Optional[datetime],
+    expires_at_iso: str,
+) -> str:
+    """Yeni intercity ilan: kalkış + 3 saat; yoksa expires_at tabanı + 3 saat."""
+    now = datetime.now(timezone.utc)
+    if departure_dt is not None:
+        dt = departure_dt
+        if getattr(dt, "tzinfo", None) is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (dt + timedelta(hours=3)).isoformat()
+    base = _parse_iso_dt(expires_at_iso) or now
+    return (base + timedelta(hours=3)).isoformat()
+
+
+def _muhabbet_listing_feed_visible_for_matching(scope: str, r: dict) -> bool:
+    """Feed: tek koltukta matched_* ile gizleme korunur; çoklu koltukta matching kolonları kullanılır (intercity)."""
+    has_matched = bool(r.get("matched_conversation_id") or r.get("accepted_match_request_id"))
+    sc = _muhabbet_trip_seat_capacity_int(r.get("seat_capacity"))
+    scope_lo = str(scope or "intercity").strip().lower()
+    if scope_lo != "intercity" or sc <= 1:
+        return not has_matched
+    if str(r.get("status") or "").strip().lower() != "active":
+        return False
+    mst = str(r.get("matching_status") or "open").strip().lower()
+    if mst != "open":
+        return False
+    try:
+        acc_ct = int(r.get("accepted_passenger_count") or 0)
+    except Exception:
+        acc_ct = 0
+    if acc_ct >= sc:
+        return False
+    dl_raw = r.get("matching_deadline_at")
+    if dl_raw is not None and str(dl_raw).strip():
+        dlp = _parse_iso_dt(dl_raw)
+        if dlp is not None and dlp <= datetime.now(timezone.utc):
+            return False
+    return True
+
+
+def expire_muhabbet_listing_matching_deadlines() -> int:
+    """Intercity ilan: matching_deadline_at geçmiş open kayıtları closed_expired yapar (trip/session dokunulmaz)."""
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        ts = _muhabbet_listing_row_ts()
+        sel = (
+            supabase.table("ride_listings")
+            .select("id")
+            .eq("listing_scope", "intercity")
+            .eq("matching_status", "open")
+            .not_.is_("matching_deadline_at", "null")
+            .lte("matching_deadline_at", now_iso)
+            .execute()
+        )
+        ids = [str(x.get("id") or "").strip().lower() for x in (sel.data or []) if x.get("id")]
+        for lid in ids:
+            if lid:
+                supabase.table("ride_listings").update({"matching_status": "closed_expired", "updated_at": ts}).eq("id", lid).execute()
+        if ids:
+            logger.info("[muhabbet_listing_matching_expired] count=%s", len(ids))
+        return len(ids)
+    except Exception as e:
+        logger.warning("expire_muhabbet_listing_matching_deadlines: %s", e)
+        return 0
+
+
 @api_router.get("/muhabbet/listings/feed")
 async def muhabbet_listings_feed(
     city: str,
@@ -20995,10 +21089,24 @@ async def muhabbet_listings_feed(
             )
             and not _muhabbet_listing_departure_passed(r)
             and not _muhabbet_listing_offer_expired(r)
-            and not (r.get("matched_conversation_id") or r.get("accepted_match_request_id"))
+            and _muhabbet_listing_feed_visible_for_matching(scope, r)
             and str(r.get("status") or "").strip().lower() == "active"
             and str(r.get("listing_scope") or "local").strip().lower() == scope
         ][:lim]
+        if scope == "intercity":
+            multi_vis = sum(
+                1
+                for r in rows
+                if _muhabbet_trip_seat_capacity_int(r.get("seat_capacity")) > 1
+                and _muhabbet_listing_feed_visible_for_matching(scope, r)
+            )
+            if multi_vis:
+                logger.info(
+                    "[muhabbet_listing_matching_feed_visible] city=%s multi_seat_listings=%s total=%s",
+                    c_raw,
+                    multi_vis,
+                    len(rows),
+                )
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
         meta_map = _muhabbet_feed_match_request_meta_for_user(uid, lid_list)
@@ -22063,8 +22171,9 @@ def _muhabbet_apply_listing_after_match_request_accepted(
     accepted_sender_uid: str,
 ) -> None:
     """
-    Talip kabulü: ilan pending_chat + kabul alanları; feed'den düşer.
-    Aynı ilandaki diğer bekleyen talepleri iptal eder.
+    Talip kabulü: kabul alanları + accepted_passenger_count.
+    seat_capacity<=1: pending_chat (feed matched_* ile düşer).
+    çoklu koltuk intercity: kontenjan dolana kadar active + matching_status open.
     """
     lid = str(listing_id or "").strip().lower()
     rid = str(accepted_request_id or "").strip().lower()
@@ -22079,16 +22188,36 @@ def _muhabbet_apply_listing_after_match_request_accepted(
             return
         lst_row = _ride_listing_response_row(dict(lr0.data[0]))
         seat_cap = _muhabbet_trip_seat_capacity_int(lst_row.get("seat_capacity"))
+        scope = str(lst_row.get("listing_scope") or "local").strip().lower()
         accepted_cnt = _muhabbet_listing_accepted_match_count(lid)
-        full_or_single = seat_cap <= 1 or accepted_cnt >= seat_cap
+        logger.info(
+            "[muhabbet_listing_matching_count] lid=%s accepted=%s seat_cap=%s scope=%s",
+            lid[:12],
+            accepted_cnt,
+            seat_cap,
+            scope,
+        )
         patch_listing: dict = {
             "accepted_match_request_id": rid,
             "accepted_user_id": sender,
             "matched_conversation_id": cid,
+            "accepted_passenger_count": accepted_cnt,
             "updated_at": now_ts,
         }
-        if full_or_single:
-            patch_listing["status"] = "pending_chat"
+        multi_seat = seat_cap > 1
+        full_or_single = seat_cap <= 1 or accepted_cnt >= seat_cap
+        if multi_seat:
+            if accepted_cnt >= seat_cap:
+                patch_listing["status"] = "pending_chat"
+                patch_listing["matching_status"] = "full"
+                logger.info("[muhabbet_listing_matching_full] lid=%s accepted=%s seat_cap=%s", lid[:12], accepted_cnt, seat_cap)
+            else:
+                patch_listing["status"] = "active"
+                patch_listing["matching_status"] = "open"
+        else:
+            patch_listing["matching_status"] = "full"
+            if full_or_single:
+                patch_listing["status"] = "pending_chat"
         supabase.table("ride_listings").update(patch_listing).eq("id", lid).eq("status", "active").execute()
     except Exception as e:
         logger.warning("ride_listings->pending_chat lid=%s err=%s", lid[:12], e)
@@ -22223,6 +22352,16 @@ async def muhabbet_match_request_accept(
             raise HTTPException(status_code=400, detail="İlan artık eşleşme kabul edemiyor")
         if _muhabbet_listing_offer_expired(lst):
             raise HTTPException(status_code=400, detail="İlan süresi doldu")
+        scope_lst = str(lst.get("listing_scope") or "local").strip().lower()
+        if scope_lst == "intercity":
+            mst = str(lst.get("matching_status") or "open").strip().lower()
+            if mst != "open":
+                raise HTTPException(status_code=400, detail="İlan eşleşmesi kapalı.")
+            dl_raw = lst.get("matching_deadline_at")
+            if dl_raw is not None and str(dl_raw).strip():
+                dlp = _parse_iso_dt(dl_raw)
+                if dlp is not None and dlp <= datetime.now(timezone.utc):
+                    raise HTTPException(status_code=400, detail="Eşleşme süresi doldu.")
         seat_cap_match = _muhabbet_trip_seat_capacity_int(lst.get("seat_capacity"))
         if seat_cap_match > 1:
             already_acc = _muhabbet_listing_accepted_match_count(lid)
@@ -22239,6 +22378,12 @@ async def muhabbet_match_request_accept(
                 "conversation_id": conversation_id,
             }
         ).eq("id", rid).execute()
+        acc_after = _muhabbet_listing_accepted_match_count(lid)
+        if acc_after > seat_cap_match:
+            supabase.table("listing_match_requests").update(
+                {"status": "pending", "conversation_id": None, "updated_at": now_ts}
+            ).eq("id", rid).execute()
+            raise HTTPException(status_code=409, detail="Koltuk doldu")
         fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
         out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
         await _muhabbet_notify_match_accepted(sen, rec, conversation_id, lid)
