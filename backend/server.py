@@ -3739,6 +3739,10 @@ async def startup():
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()
     init_supabase()
+    try:
+        cleanup_expired_muhabbet_audio()
+    except Exception:
+        logger.exception("[startup] cleanup_expired_muhabbet_audio")
     _warn_duplicate_api_routes()
     last_cleanup_time = datetime.utcnow()
     print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
@@ -6871,6 +6875,19 @@ async def admin_muhabbet_groups_pending(admin_phone: str, limit: int = 100):
         raise
     except Exception as e:
         logger.error(f"admin_muhabbet_groups_pending: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/admin/muhabbet/audio/cleanup-expired")
+async def admin_muhabbet_audio_cleanup_expired(admin_phone: str):
+    """Admin: süresi dolmuş Muhabbet ses mesajlarını (Storage + DB) temizle."""
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        out = cleanup_expired_muhabbet_audio()
+        return {"success": True, **out}
+    except Exception as e:
+        logger.error("admin_muhabbet_audio_cleanup_expired: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -22340,6 +22357,82 @@ _MUHABBET_AUDIO_BUCKET = "muhabbet-audio"
 _MUHABBET_AUDIO_SIGN_TTL_SEC = 3600
 
 
+def _muhabbet_messages_visible_expires_or_clause(now_iso: str) -> str:
+    """PostgREST OR: görünür mesaj ↔ expires_at NULL veya gelecekte."""
+    return f"expires_at.is.null,expires_at.gt.{now_iso}"
+
+
+def cleanup_expired_muhabbet_audio() -> dict:
+    """
+    Süresi dolmuş ses mesajları: Storage dosyalarını sil, muhabbet_messages satırlarını kaldır.
+    Yalnızca message_type=audio, expires_at dolu ve expires_at <= şimdi.
+    """
+    sb = _supabase_core.get_supabase()
+    rows_deleted = 0
+    files_deleted = 0
+    errors = 0
+    if not sb:
+        logger.warning("[muhabbet_audio_cleanup] rows=0 files=0 errors=1 (supabase client missing)")
+        return {"rows_deleted": 0, "files_deleted": 0, "errors": 1}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        res = (
+            sb.table("muhabbet_messages")
+            .select("id,audio_storage_path")
+            .eq("message_type", "audio")
+            .not_.is_("expires_at", "null")
+            .lte("expires_at", now_iso)
+            .execute()
+        )
+    except Exception:
+        logger.exception("[muhabbet_audio_cleanup] select expired rows failed")
+        errors += 1
+        logger.warning(
+            "[muhabbet_audio_cleanup] rows=%s files=%s errors=%s",
+            rows_deleted,
+            files_deleted,
+            errors,
+        )
+        return {"rows_deleted": 0, "files_deleted": 0, "errors": errors}
+
+    rows_list = res.data or []
+    ids: list[str] = []
+    paths: list[str] = []
+    for r in rows_list:
+        if r.get("id"):
+            ids.append(str(r["id"]))
+        p = str(r.get("audio_storage_path") or "").strip()
+        if p:
+            paths.append(p)
+    paths = list(dict.fromkeys(paths))
+
+    if paths:
+        try:
+            sb.storage.from_(_MUHABBET_AUDIO_BUCKET).remove(paths)
+            files_deleted = len(paths)
+        except Exception:
+            logger.exception("[muhabbet_audio_cleanup] storage remove failed")
+            errors += 1
+
+    chunk_size = 100
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        try:
+            sb.table("muhabbet_messages").delete().in_("id", chunk).execute()
+            rows_deleted += len(chunk)
+        except Exception:
+            logger.exception("[muhabbet_audio_cleanup] delete chunk failed")
+            errors += 1
+
+    logger.warning(
+        "[muhabbet_audio_cleanup] rows=%s files=%s errors=%s",
+        rows_deleted,
+        files_deleted,
+        errors,
+    )
+    return {"rows_deleted": rows_deleted, "files_deleted": files_deleted, "errors": errors}
+
+
 def _muhabbet_validate_audio_mime_duration(
     audio_duration_ms: Optional[Any], audio_mime_type: Optional[str]
 ) -> tuple[bool, str]:
@@ -22444,6 +22537,13 @@ def _muhabbet_messages_try_insert(
         except (TypeError, ValueError):
             row["audio_duration_ms"] = None
         row["audio_mime_type"] = str(audio_mime_type or "").strip().lower()
+        try:
+            cdt = datetime.fromisoformat(created_iso.replace("Z", "+00:00"))
+        except Exception:
+            cdt = datetime.now(timezone.utc)
+        if cdt.tzinfo is None:
+            cdt = cdt.replace(tzinfo=timezone.utc)
+        row["expires_at"] = (cdt + timedelta(days=30)).isoformat()
     try:
         supabase.table("muhabbet_messages").insert(row).execute()
         return (True, "")
@@ -22475,6 +22575,7 @@ def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
     mid = str(msg_id or "").strip().lower()
     if not cid or not mid:
         return None
+    now_iso = datetime.now(timezone.utc).isoformat()
     try:
         res = (
             supabase.table("muhabbet_messages")
@@ -22483,6 +22584,7 @@ def _muhabbet_message_fetch_by_id(cid: str, msg_id: str) -> Optional[dict]:
             )
             .eq("id", mid)
             .eq("conversation_id", cid)
+            .or_(_muhabbet_messages_visible_expires_or_clause(now_iso))
             .limit(1)
             .execute()
         )
@@ -22575,7 +22677,7 @@ def _muhabbet_unread_count_for_member(
             supabase.table("muhabbet_messages")
             .select("sender_id,created_at,deleted_for_user_ids")
             .eq("conversation_id", cid)
-            .gt("expires_at", now_iso)
+            .or_(_muhabbet_messages_visible_expires_or_clause(now_iso))
             .neq("sender_id", uid_lo)
             .execute()
         )
@@ -22734,7 +22836,7 @@ async def _muhabbet_publish_message_after_persist(
 
 
 def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 200) -> list:
-    """expires_at > şimdi; deleted_for_user_ids içinde uid yok."""
+    """expires_at > şimdi veya NULL; deleted_for_user_ids içinde uid yok."""
     uid_lo = str(uid or "").strip().lower()
     cid = str(cid or "").strip().lower()
     lim = max(1, min(int(limit or 200), 200))
@@ -22746,7 +22848,7 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
                 "id,sender_id,text,created_at,deleted_for_user_ids,message_type,audio_url,audio_duration_ms,audio_mime_type,audio_storage_path"
             )
             .eq("conversation_id", cid)
-            .gt("expires_at", now_iso)
+            .or_(_muhabbet_messages_visible_expires_or_clause(now_iso))
             .order("created_at", desc=True)
             .limit(min(lim * 2, 400))
             .execute()
@@ -22809,7 +22911,7 @@ def _muhabbet_last_message_map_for_user(conversation_ids: list[str], uid: str) -
             supabase.table("muhabbet_messages")
             .select("conversation_id,text,created_at,deleted_for_user_ids,message_type")
             .in_("conversation_id", cids)
-            .gt("expires_at", now_iso)
+            .or_(_muhabbet_messages_visible_expires_or_clause(now_iso))
             .order("created_at", desc=True)
             .limit(min(max(600, len(cids) * 40), 3000))
             .execute()
@@ -22875,12 +22977,14 @@ def _muhabbet_message_delete_for_user_db(cid: str, mid: str, uid: str) -> str:
         uuid.UUID(uid_lo)
     except ValueError:
         return "error"
+    now_iso = datetime.now(timezone.utc).isoformat()
     try:
         r = (
             supabase.table("muhabbet_messages")
             .select("id,deleted_for_user_ids")
             .eq("id", mid)
             .eq("conversation_id", cid)
+            .or_(_muhabbet_messages_visible_expires_or_clause(now_iso))
             .limit(1)
             .execute()
         )
