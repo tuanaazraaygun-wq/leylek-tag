@@ -1251,7 +1251,7 @@ export default function App() {
 
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
     await persistAccessToken(payload);
-    await syncSupabaseSessionFromBackendResponse(payload as unknown as Record<string, unknown>);
+    await syncSupabaseSessionFromBackendResponse(payload as unknown as Record<string, unknown>); // Storage RLS: supabase_access_token + refresh
     const token = (await getPersistedAccessToken())?.trim();
     console.log('[muhabbet] auth token refresh after persist', {
       userId: userId ?? null,
@@ -1713,6 +1713,7 @@ export default function App() {
           // Kayıtlı kullanıcı - giriş yapıyor, kayıt sayfasına atma
           const loggedUser = data.user as User;
           const savedUser = await saveUser(loggedUser);
+          await persistAccessTokenAndRefreshUser(data as TokenPayload, loggedUser?.id);
           if (data.has_pin) {
             const u = savedUser as { phone?: string };
             const ten =

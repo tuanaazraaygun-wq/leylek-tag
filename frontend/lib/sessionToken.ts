@@ -62,6 +62,16 @@ export async function persistAccessToken(payload: TokenPayload): Promise<void> {
         u.access_token = token;
         u.accessToken = token;
       }
+      const sa = (payload.supabase_access_token ?? payload.supabaseAccessToken ?? '').toString().trim();
+      const sr = (payload.supabase_refresh_token ?? payload.supabaseRefreshToken ?? '').toString().trim();
+      if (sa) {
+        u.supabase_access_token = sa;
+        u.supabaseAccessToken = sa;
+      }
+      if (sr) {
+        u.supabase_refresh_token = sr;
+        u.supabaseRefreshToken = sr;
+      }
       await setPersistedUserJson(JSON.stringify(u));
     } catch {
       if (token) await AsyncStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);

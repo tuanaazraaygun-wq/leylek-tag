@@ -130,6 +130,7 @@ const uploadAudio = async (conversationId: string, fileUri: string): Promise<str
   } = await supabase.auth.getSession();
 
   if (!session) {
+    console.log('UPLOAD SESSION CHECK:', session);
     throw new Error('No Supabase session');
   }
 

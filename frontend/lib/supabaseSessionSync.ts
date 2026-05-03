@@ -75,10 +75,31 @@ export async function syncSupabaseSessionFromBackendResponse(
   if (!supabase || !raw) {
     const sb = getSupabase();
     if (sb) {
-      const { data: sessionData } = await sb.auth.getSession();
-      console.log('SUPABASE SESSION:', sessionData.session?.user?.id);
+      const { data } = await sb.auth.getSession();
+      console.log('SUPABASE SESSION USER:', data?.session?.user?.id);
     }
     return false;
+  }
+
+  const payload = raw;
+  const access =
+    str(payload.supabase_access_token) ||
+    str(payload.supabaseAccessToken);
+  const refresh =
+    str(payload.supabase_refresh_token) ||
+    str(payload.supabaseRefreshToken);
+
+  if (access && refresh) {
+    const { error } = await supabase.auth.setSession({
+      access_token: access,
+      refresh_token: refresh,
+    });
+    if (error) {
+      console.warn('[supabase_session] setSession failed:', error.message);
+    }
+    const { data } = await supabase.auth.getSession();
+    console.log('SUPABASE SESSION USER:', data?.session?.user?.id);
+    return !error;
   }
 
   const pair = extractSupabaseTokens(raw);
@@ -90,18 +111,18 @@ export async function syncSupabaseSessionFromBackendResponse(
     if (error) {
       console.warn('[supabase_session] setSession failed:', error.message);
       const fb = await trySignInWithPasswordFallback(raw);
-      const { data: sessionData } = await supabase.auth.getSession();
-      console.log('SUPABASE SESSION:', sessionData.session?.user?.id);
+      const { data } = await supabase.auth.getSession();
+      console.log('SUPABASE SESSION USER:', data?.session?.user?.id);
       return fb;
     }
-    const { data: sessionData } = await supabase.auth.getSession();
-    console.log('SUPABASE SESSION:', sessionData.session?.user?.id);
+    const { data } = await supabase.auth.getSession();
+    console.log('SUPABASE SESSION USER:', data?.session?.user?.id);
     return true;
   }
 
   const fb = await trySignInWithPasswordFallback(raw);
-  const { data: sessionData } = await supabase.auth.getSession();
-  console.log('SUPABASE SESSION:', sessionData.session?.user?.id);
+  const { data } = await supabase.auth.getSession();
+  console.log('SUPABASE SESSION USER:', data?.session?.user?.id);
   return fb;
 }
 
