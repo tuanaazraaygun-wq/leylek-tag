@@ -52,6 +52,8 @@ import MuhabbetWatermark from './MuhabbetWatermark';
 import type { MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
 import { subscribeConversationUpdated } from '../lib/muhabbetRealtimeEvents';
 import { getSupabase } from '../lib/supabase';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Buffer } from 'buffer';
 
 /** Socket sid + JWT kayıt kullanıcısı güncel mi (Muhabbet emit öncesi). */
 function isMuhabbetSocketRegisteredForUser(socket: Socket, myUserLo: string): boolean {
@@ -119,7 +121,7 @@ const BUBBLE_SHADOW = Platform.select({
 const MUHABBET_AUDIO_BUCKET = 'muhabbet-audio';
 const MUHABBET_MAX_RECORD_MS = 30000;
 
-const uploadAudio = async (conversationId: string, fileUri: string): Promise<string> => {
+const uploadAudio = async (conversationId: string, localUri: string): Promise<string> => {
   const supabase = getSupabase();
   if (!supabase) {
     throw new Error('Supabase client not configured');
@@ -134,30 +136,33 @@ const uploadAudio = async (conversationId: string, fileUri: string): Promise<str
     throw new Error('No Supabase session');
   }
 
-  const userId = session.user.id;
-
   const cid = String(conversationId || '').trim().toLowerCase();
-  const path = `${cid}/${userId}/${Date.now()}.m4a`;
+  const filePath = `${cid}/${session.user.id}/${Date.now()}.m4a`;
 
-  console.log('UPLOAD PATH:', path);
-  console.log('USER:', userId);
+  const base64 = await FileSystem.readAsStringAsync(localUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
 
-  const file = {
-    uri: fileUri,
-    name: 'audio.m4a',
-    type: 'audio/m4a',
-  };
-
-  const { error } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(path, file as any, {
-    contentType: 'audio/m4a',
+  console.log('[muhabbet_audio_upload_sdk_start]', {
+    filePath,
+    userId: session.user.id,
+    size: bytes.length,
+    contentType: 'audio/mp4',
   });
 
+  const { data, error } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(filePath, bytes, {
+    contentType: 'audio/mp4',
+    upsert: false,
+  });
+
+  console.log('[muhabbet_audio_upload_sdk_result]', { data, error });
+
   if (error) {
-    console.log('UPLOAD ERROR:', error);
     throw error;
   }
 
-  return path;
+  return filePath;
 };
 
 function formatDurationClock(ms: number): string {
