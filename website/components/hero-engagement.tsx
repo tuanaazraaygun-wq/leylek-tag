@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveActivityBar, type PulseStats } from "@/components/live-activity-bar";
 import { useSiteAction } from "@/components/site-action-context";
+import { LIVE_FLOW_PRIMARY, LIVE_FLOW_SECONDARY } from "@/lib/site-copy";
 
 const LS_ROUTE_KEY = "leylek_last_route_search";
 
@@ -145,6 +147,23 @@ function HeroSocialProof({ users }: { users: number }) {
     if (!animComplete.current) return;
     setShown(users);
   }, [users]);
+
+  if (users <= 0) {
+    return (
+      <div className="space-y-1 text-center sm:text-left">
+        <p className="text-sm font-semibold text-white/75">{LIVE_FLOW_PRIMARY}</p>
+        <p className="text-xs text-white/55">
+          <Link href="/indir" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
+            {LIVE_FLOW_SECONDARY}
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (shown < 1) {
+    return <p className="text-center text-sm font-semibold text-white/75 sm:text-left">{LIVE_FLOW_PRIMARY}</p>;
+  }
 
   return (
     <p className="text-center text-sm font-semibold text-white/75 sm:text-left">

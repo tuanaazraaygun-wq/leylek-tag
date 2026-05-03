@@ -7,9 +7,9 @@ import { Container } from "@/components/container";
 const roles = [
   {
     href: "/sehir-ici",
-    label: "Yolcu",
-    badge: "En hızlı eşleşme",
-    description: "Şehir içi yolculuk ve eşleşme akışlarını keşfet; güvenli paylaşım adımlarını incele.",
+    label: "Yolcuyum",
+    badge: "Yolculuk teklifi aç",
+    description: "Şehir içi veya şehir dışı yolculuk teklifini aç; güvenli eşleşme ve QR adımlarını incele.",
     gradient: "from-[#00C6FF]/90 to-[#0072FF]/90",
     ring: "from-[#00C6FF] to-[#0072FF]",
     hoverGlow: "hover:shadow-[0_0_48px_rgba(0,198,255,0.32)]",
@@ -25,9 +25,9 @@ const roles = [
   },
   {
     href: "/indir",
-    label: "Sürücü",
-    badge: "Ek gelir fırsatı",
-    description: "Uygulamayı indir; yolculuk teklifleri ve topluluk akışlarına sürücü olarak katıl.",
+    label: "Sürücüyüm",
+    badge: "Boş koltuğunu paylaş",
+    description: "Uygulamayı indir; boş koltuğunu şehir içi veya şehir dışı teklifle paylaş.",
     gradient: "from-[#43E97B]/90 to-[#38F9D7]/90",
     ring: "from-[#43E97B] to-[#38F9D7]",
     hoverGlow: "hover:shadow-[0_0_48px_rgba(108,99,255,0.3)]",
@@ -58,10 +58,10 @@ export function RoleSelection() {
           id="role-selection-heading"
           className="break-words text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl md:text-4xl"
         >
-          Bugün nasıl ilerlemek istersiniz?
+          Bugün nasıl teklif oluşturmak istersin?
         </h2>
         <p className="mx-auto mt-3 max-w-lg break-words text-base leading-relaxed text-white/80 sm:text-lg">
-          Rolünü seç; sana uygun yolculuk paylaşımı içeriğine hızlıca geç.
+          Rolünü seç; yolculuk teklifi veya boş koltuk paylaşımına uygun akışa geç.
         </p>
         <div className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-6 md:max-w-none md:grid-cols-2 md:gap-8">
           {roles.map((role) => {

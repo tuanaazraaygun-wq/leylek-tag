@@ -102,7 +102,7 @@ export function IntercityLiveMap() {
     };
   }, []);
 
-  const label = wantLiveData && liveOk ? "Canlı veri" : "Demo görünüm · Gerçek veriye hazır";
+  const label = wantLiveData && liveOk ? "Canlı veri" : "Canlı veriye hazırlanıyor";
   const mapDataMode = liveOk ? "live" : "demo";
 
   const liveSparse = useMemo(() => Boolean(dashboard.uiHints?.liveSparse), [dashboard.uiHints?.liveSparse]);
@@ -114,9 +114,9 @@ export function IntercityLiveMap() {
       <div className="relative flex min-w-0 flex-col gap-5">
         <div className="mb-0 flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">şehirler arası komuta paneli</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">şehirler arası rota ağı</p>
             <h2 className="mt-2 text-2xl font-black tracking-[-0.03em] text-white sm:text-3xl">
-              Boş koltuk paylaşımı için Türkiye rota haritası
+              Canlı şehir dışı teklif görünümü
             </h2>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -152,11 +152,11 @@ export function IntercityLiveMap() {
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200/70">rota panosu</p>
-              <p className="mt-1 text-lg font-black text-white">Öne çıkan şehirler arası ilanlar</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200/70">aktif rota teklifleri</p>
+              <p className="mt-1 text-lg font-black text-white">Öne çıkan şehir dışı teklifler</p>
             </div>
             <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              Bugün açılan rota · <InlineStatNumber value={dashboard.stats.routesOpenedToday} />
+              Bugün açılan teklif · <InlineStatNumber value={dashboard.stats.routesOpenedToday} />
             </span>
           </div>
 
@@ -198,7 +198,7 @@ export function IntercityLiveMap() {
 
         <div className="mt-1 grid min-w-0 gap-3 border-t border-white/10 pt-5 sm:grid-cols-2 lg:grid-cols-4">
           <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3">
-            <p className="text-[11px] font-semibold text-slate-500">Aktif ilan</p>
+            <p className="text-[11px] font-semibold text-slate-500">Aktif şehir dışı teklif</p>
             <p className="mt-1 text-xl font-black text-white">
               <InlineStatNumber value={dashboard.stats.activeListings} />
             </p>
@@ -210,13 +210,13 @@ export function IntercityLiveMap() {
             </p>
           </div>
           <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3">
-            <p className="text-[11px] font-semibold text-slate-500">Bugün açılan rota</p>
+            <p className="text-[11px] font-semibold text-slate-500">Bugün açılan teklif</p>
             <p className="mt-1 text-xl font-black text-cyan-100">
               <InlineStatNumber value={dashboard.stats.routesOpenedToday} />
             </p>
           </div>
           <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3">
-            <p className="text-[11px] font-semibold text-slate-500">En yoğun hat</p>
+            <p className="text-[11px] font-semibold text-slate-500">En yoğun rota</p>
             <p className="mt-1 truncate text-sm font-black text-white">{dashboard.stats.busiestLine}</p>
           </div>
         </div>

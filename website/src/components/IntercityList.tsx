@@ -7,7 +7,18 @@ import {
   type IntercityLiveRoute,
 } from "@src/lib/api";
 import { ButtonLink } from "@/components/button-link";
+import { EMPTY_STATS_DISPLAY } from "@/lib/site-copy";
 import { IntercityRouteModal } from "@src/components/IntercityRouteModal";
+
+function summaryStatLooksEmpty(v: string): boolean {
+  const t = v.trim();
+  return t === "" || t === "0" || t === "—";
+}
+
+function formatSummaryStat(v: string | undefined): string {
+  const t = (v ?? "").trim();
+  return summaryStatLooksEmpty(t) ? EMPTY_STATS_DISPLAY : t;
+}
 
 function roleLabel(raw: string): string {
   const t = raw.trim().toLowerCase();
@@ -117,12 +128,20 @@ export function IntercityList() {
       {stats && !loading && !error && (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Aktif ilan</p>
-            <p className="mt-1 text-2xl font-black tabular-nums text-white">{stats.activeListings}</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Aktif şehir dışı teklif</p>
+            <p
+              className={`mt-1 text-white ${formatSummaryStat(stats.activeListings) === EMPTY_STATS_DISPLAY ? "text-sm font-bold leading-snug text-white/90 sm:text-base" : "text-2xl font-black tabular-nums"}`}
+            >
+              {formatSummaryStat(stats.activeListings)}
+            </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">En yoğun hat</p>
-            <p className="mt-1 truncate text-lg font-black text-cyan-100">{stats.busiestRoute || "—"}</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">En yoğun rota</p>
+            <p
+              className={`mt-1 text-cyan-100 ${formatSummaryStat(stats.busiestRoute) === EMPTY_STATS_DISPLAY ? "text-sm font-bold leading-snug line-clamp-3 sm:text-base" : "truncate text-lg font-black"}`}
+            >
+              {formatSummaryStat(stats.busiestRoute)}
+            </p>
           </div>
         </div>
       )}

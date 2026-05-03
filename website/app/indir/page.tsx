@@ -19,7 +19,7 @@ const downloadNotes = [
   },
   {
     title: "Leylek Teklifi",
-    description: "Şehir dışı teklifleri teklif konuşmasıyla netleştir; karşılıklı onay ve güvenli eşleşmeyi keşfet.",
+    description: "Şehir dışı teklifleri teklif görüşmesiyle netleştir; karşılıklı onay ve güvenli eşleşmeyi keşfet.",
   },
   {
     title: "Şehirler Arası İlanlar",
@@ -33,7 +33,7 @@ export default function DownloadPage() {
       <PageHero
         eyebrow="indir"
         title="Beta sürecindeyiz. Leylek Tag çok yakında uygulamada."
-        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, teklif konuşması, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanacaktır."
+        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, teklif görüşmesi, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanacaktır."
         primaryLabel="Erken Erişim Formuna Git"
         primaryHref="#erken-erisim"
       />

@@ -260,7 +260,7 @@ export default function RealCityMap({
     return districts.find((district) => district.name === name) ?? districts[0];
   }
 
-  const heatBadge = dataMode === "live" ? "canlı" : "demo";
+  const heatBadge = dataMode === "live" ? "canlı" : "özet";
 
   const outerMapClass =
     `relative h-full min-h-[640px] overflow-hidden rounded-[2rem] ${liveSparse ? "ring-1 ring-cyan-400/10 shadow-[inset_0_0_80px_rgba(34,211,238,0.04)]" : ""}`;

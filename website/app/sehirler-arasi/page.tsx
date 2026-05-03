@@ -23,8 +23,8 @@ export default function IntercityPage() {
           <div className="flex min-w-0 flex-col gap-6 lg:gap-10">
             <SectionHeading
               eyebrow="şehirler arası dashboard"
-              title="Türkiye genelinde uzun rota ve boş koltuk paylaşımı görünümü"
-              description="Bu panel örnek gösterimle çalışır. Gerçek ilan verisi bağlandığında şehirler arası yolculuk paylaşımı ve masraf paylaşımı akışı aynı mimari üzerinden beslenecek."
+              title="Türkiye genelinde şehir dışı teklif ve güvenli eşleşme görünümü"
+              description="Şehirler arası rota ağı üzerinden aktif teklifleri ve yoğun hatları izleyin. Canlı bağlantı aktif olduğunda özet otomatik güncellenir."
             />
             <div className="min-w-0 max-w-full overflow-hidden">
               <IntercityLiveMap />

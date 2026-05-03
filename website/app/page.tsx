@@ -18,12 +18,14 @@ import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
 import { TrustBadges } from "@/components/trust-badges";
 import { ValueProps } from "@/components/value-props";
 import { featurePillars } from "@/lib/mock-data";
+import { HeroTrustStrip } from "@/components/hero-trust-strip";
+import { HomeLivePulse } from "@/components/home-live-pulse";
 import { IntercityList } from "@src/components/IntercityList";
 
 const experiences = [
   {
     title: "Hızlı Yolculuk",
-    eyebrow: "şehir içi",
+    eyebrow: "şehir içi teklif",
     description:
       "Rota görünürlüğü, QR doğrulama ve Güven Al adımlarıyla şehir içinde kontrollü güvenli eşleşme.",
     tone: "cyan" as const,
@@ -32,12 +34,12 @@ const experiences = [
     title: "Leylek Teklifi",
     eyebrow: "önce teklif",
     description:
-      "Teklif konuşması, karşılıklı onay ve yolculuk öncesi anlaşma ile şehir dışı yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
+      "Teklif görüşmesi, karşılıklı onay ve yolculuk öncesi anlaşma ile şehir dışı yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
     tone: "violet" as const,
   },
   {
     title: "Şehirler Arası",
-    eyebrow: "boş koltuk paylaşımı",
+    eyebrow: "şehir dışı teklif",
     description:
       "Aynı yöne gidenler için tarih, saat, boş koltuk ve tahmini masraf paylaşımı bilgisiyle ilan deneyimi.",
     tone: "blue" as const,
@@ -60,7 +62,7 @@ export default function Home() {
             <div className="min-w-0">
               <div className="mb-6 flex flex-col items-center gap-6 sm:mb-8 sm:flex-row sm:items-start">
                 <div className="relative shrink-0">
-                  <div className="absolute -inset-2 rounded-3xl bg-gradient-to-tr from-[#00C6FF] via-[#6C63FF] to-[#FF7A18] opacity-65 blur-xl" />
+                  <div className="absolute -inset-2 rounded-3xl bg-gradient-to-tr from-[#00C6FF] via-[#6C63FF] to-[#FF7A18] opacity-50 blur-lg" />
                   <div className="relative rounded-2xl bg-gradient-to-br from-[#00C6FF] via-[#6C63FF] to-[#0072FF] p-[3px] shadow-xl">
                     <Image
                       src="/app-icon.png"
@@ -84,10 +86,10 @@ export default function Home() {
                     ))}
                   </div>
                   <h1 className="max-w-4xl break-words text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl md:text-6xl">
-                    Yolculuk artık sadece gitmek değil.
+                    Aynı yöne gidenlerle eşleş, yolculuğu güvenle paylaş.
                   </h1>
                   <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
-                    İstersen hemen eşleş, istersen teklif konuşmasıyla detayları netleştirerek güvenle yolculuk paylaş. Leylek Tag, aynı yöne gidenleri daha net, güvenli ve kontrollü bir deneyimde buluşturur.
+                    Leylek Tag, yolcu ve sürücülerin şehir içi ve şehir dışı yolculuk tekliflerini netleştirip karşılıklı onayla güvenli eşleşmesini sağlar.
                   </p>
                 </div>
               </div>
@@ -96,15 +98,21 @@ export default function Home() {
                   <ButtonLink href="/indir" className="w-full sm:w-auto sm:min-w-[200px]">
                     Uygulamayı İndir
                   </ButtonLink>
-                  <p className="mt-2 text-center text-xs text-white/60 sm:text-left">Ücretsiz • 30 saniyede başla</p>
                 </div>
-                <ButtonLink href="/sehirler-arasi" variant="secondary" className="w-full sm:w-auto">
-                  Şehirler Arası İlanları Gör
-                </ButtonLink>
-                <ButtonLink href="/muhabbet" variant="ghost" className="w-full sm:w-auto">
+                <ButtonLink href="/muhabbet" variant="secondary" className="w-full sm:w-auto">
                   Teklif Akışını Keşfet
                 </ButtonLink>
+                <ButtonLink href="/sehirler-arasi" variant="ghost" className="w-full sm:w-auto">
+                  Şehirler Arası İlanları Gör
+                </ButtonLink>
               </div>
+              <p className="mt-3 max-w-xl text-center text-[11px] leading-relaxed text-white/58 sm:text-left sm:text-xs">
+                Ücretsiz • 30 saniyede teklif oluştur • Gerçek zamanlı eşleşme
+              </p>
+              <p className="mt-4 max-w-xl text-center text-xs leading-relaxed text-white/55 sm:text-left">
+                Ücretsiz • Güvenli eşleşme • QR ile kontrollü yolculuk
+              </p>
+              <HeroTrustStrip />
               <div className="mt-10">
                 <TrustBadges />
               </div>
@@ -113,6 +121,7 @@ export default function Home() {
               <LiveMapVisual />
             </div>
           </div>
+          <HomeLivePulse />
           <div className="mt-8 min-w-0 w-full md:mt-10">
             <HeroEngagement />
           </div>
@@ -175,7 +184,7 @@ export default function Home() {
             <SectionHeading
               eyebrow="neden farklı?"
               title="Klasik yolculuk deneyiminden daha topluluk odaklı."
-              description="Leylek Tag hızlı eşleşmeyi, teklif konuşmasıyla karar vermeyi, şehirler arası masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
+              description="Leylek Tag hızlı eşleşmeyi, teklif görüşmesiyle karar vermeyi, şehirler arası masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
             />
           </div>
           <ComparisonSection />

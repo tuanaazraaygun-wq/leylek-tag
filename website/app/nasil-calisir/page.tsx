@@ -10,20 +10,24 @@ export const metadata: Metadata = {
 
 const steps = [
   {
-    title: "1. İhtiyacını seç",
-    description: "Şehir içi hızlı eşleşme, Leylek Teklifi veya şehirler arası yol paylaşımı akışından birini seç.",
+    eyebrow: "Adım 1",
+    title: "Teklif oluştur",
+    description: "Yolcu veya sürücü olarak şehir içi ya da dışı teklifini aç.",
   },
   {
-    title: "2. Rota ve zamanı netleştir",
-    description: "Aynı yöne gidenlerle kalkış, varış ve uygun zaman bilgilerini sade biçimde paylaş.",
+    eyebrow: "Adım 2",
+    title: "Detayları netleştir",
+    description: "Rota, zaman ve koşulları teklif görüşmesinde netleştir.",
   },
   {
-    title: "3. Netleştir ve doğrula",
-    description: "Teklif konuşması, teklif doğrulama, QR doğrulama ve Güven Al adımlarıyla güven katmanını tamamla.",
+    eyebrow: "Adım 3",
+    title: "Karşılıklı onayla eşleş",
+    description: "İki taraf onaylayınca güvenli eşleşme tamamlanır.",
   },
   {
-    title: "4. Yolculuğu paylaş",
-    description: "Boş koltuk paylaşımı ve tahmini masraf paylaşımı bilgileriyle planını uygulamada sürdür.",
+    eyebrow: "Adım 4",
+    title: "Yolculuğa başla",
+    description: "QR ile doğrula; kontrollü şekilde yola çık.",
   },
 ];
 
@@ -32,14 +36,14 @@ export default function HowItWorksPage() {
     <>
       <PageHero
         eyebrow="nasıl çalışır"
-        title="Yolculuk paylaşımı birkaç net adımda ilerler."
-        description="Leylek Tag deneyimi hızlı eşleşme, teklif konuşmasıyla güvenme ve şehirler arası ilan akışlarını aynı modern çatı altında toplar."
+        title="Dört adımda tekliften yolculuğa."
+        description="Teklifini aç, detayları netleştir, karşılıklı onayla eşleş; QR ile güvenli şekilde yola çık."
       />
       <section className="py-12">
         <Container>
           <div className="grid gap-5 md:grid-cols-2">
             {steps.map((step) => (
-              <FeatureCard key={step.title} {...step} eyebrow="adım" />
+              <FeatureCard key={step.title} title={step.title} description={step.description} eyebrow={step.eyebrow} />
             ))}
           </div>
         </Container>

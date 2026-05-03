@@ -105,9 +105,11 @@ export function CityLiveMap() {
     };
   }, [selectedCity]);
 
-  const label = wantLiveData && dataSource === "live" ? "Canlı veri" : "Demo görünüm · Gerçek veriye hazır";
+  const label = wantLiveData && dataSource === "live" ? "Canlı veri" : "Canlı veriye hazırlanıyor";
   const mapHudSubtitle =
-    dataSource === "live" ? "Harita görünümü · Canlı yoğunluk katmanı" : "Harita görünümü · Demo görünüm";
+    dataSource === "live"
+      ? "Harita görünümü · Canlı şehir içi teklif yoğunluğu"
+      : "Bölgesel şehir içi teklif görünümü · Güvenli eşleşme akışı";
 
   const liveSparse = useMemo(() => Boolean(dashboard.uiHints?.liveSparse), [dashboard.uiHints?.liveSparse]);
   const showSparseBanner = dataSource === "live" && liveSparse;

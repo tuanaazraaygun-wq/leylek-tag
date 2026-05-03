@@ -216,7 +216,7 @@ function demoDashboard(): IntercityDashboard {
   const telemetry: IntercityTelemetry = {
     busiestLine: stats.busiestLine,
     averageSuggestedCost: "720 ₺",
-    disclaimer: "Demo görünüm · gerçek ilan verisine hazır",
+    disclaimer: "Özet şehir dışı teklif görünümü · Canlı bağlantıyla güncellenir",
   };
 
   return {
@@ -366,7 +366,7 @@ function mergeIntercityFromApi(data: PublicIntercityResponse): IntercityDashboar
   const telemetry: IntercityTelemetry = {
     busiestLine: stats.busiestLine,
     averageSuggestedCost: averageSuggestedCostFromRoutes(routes),
-    disclaimer: "Demo görünüm · gerçek ilan verisine hazır",
+    disclaimer: "Canlı şehir dışı teklif özeti · Rota verisi bağlandığında güncellenir",
   };
 
   return { routes, stats, activityFeed, routeInfoPreviews, telemetry, uiHints: { liveSparse } };

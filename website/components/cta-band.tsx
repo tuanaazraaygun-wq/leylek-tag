@@ -13,7 +13,7 @@ export function CtaBand() {
                 Aynı yöne gidenlerle güvenli eşleşmeyi keşfet.
               </h2>
               <p className="mt-4 max-w-2xl text-slate-300">
-                Leylek Tag, yolculuk paylaşımı fikrini teklif konuşması, doğrulama ve topluluk güveniyle bir araya getirir.
+                Leylek Tag, yolculuk paylaşımı fikrini teklif görüşmesi, doğrulama ve topluluk güveniyle bir araya getirir.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">

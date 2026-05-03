@@ -23,7 +23,7 @@ export const LiveSparseBanner = memo(function LiveSparseBanner({ variant }: { va
   return (
     <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-r from-cyan-400/[0.06] to-transparent px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
       <p className="text-sm font-bold text-cyan-50">{title}</p>
-      <p className="mt-1 text-[11px] font-semibold text-slate-400">Demo görünüm · gerçek veriye hazır</p>
+      <p className="mt-1 text-[11px] font-semibold text-slate-400">Özet görünüm · Canlı bağlantıyla güncellenir</p>
     </div>
   );
 });
@@ -57,7 +57,7 @@ export const IntercityMapLegend = memo(function IntercityMapLegend() {
       <ul className="space-y-2 text-[10px] font-semibold text-slate-300 sm:text-[11px]">
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--steady" aria-hidden />
-          <span>Aktif ilan</span>
+          <span>Aktif şehir dışı teklif</span>
         </li>
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--matching" aria-hidden />

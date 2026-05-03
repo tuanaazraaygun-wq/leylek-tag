@@ -1,13 +1,14 @@
 const trustBadges = [
-  { label: "QR doğrulama", detail: "buluşma anında netlik" },
-  { label: "Güven Al", detail: "topluluk sinyalleri" },
-  { label: "Rota görünürlüğü", detail: "paylaşılan güzergah" },
-  { label: "Teklifle netleştirme", detail: "detayları netleştir, sonra karar ver" },
+  { label: "Karşılıklı onayla eşleşme", detail: "iki taraf onayı olmadan yolculuk başlamaz" },
+  { label: "Yolculuk öncesi netleştirme", detail: "masraf, rota ve zaman şeffaf" },
+  { label: "QR ile biniş ve varış", detail: "kontrollü yolculuk başlangıcı" },
+  { label: "Şikayet ve güvenlik", detail: "topluluk güvenlik akışı" },
+  { label: "Minimal kişisel bilgi", detail: "gereksiz paylaşım olmadan teklif süreci" },
 ];
 
 export function TrustBadges() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {trustBadges.map((badge) => (
         <div
           key={badge.label}

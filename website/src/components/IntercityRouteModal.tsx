@@ -2,7 +2,18 @@
 
 import { useEffect, useId, useRef } from "react";
 import { ButtonLink } from "@/components/button-link";
+import { EMPTY_STATS_DISPLAY } from "@/lib/site-copy";
 import type { IntercityLiveRoute, IntercityLiveStats } from "@src/lib/api";
+
+function summaryStatLooksEmpty(v: string): boolean {
+  const t = v.trim();
+  return t === "" || t === "0" || t === "—";
+}
+
+function formatSummaryStat(v: string | undefined): string {
+  const t = (v ?? "").trim();
+  return summaryStatLooksEmpty(t) ? EMPTY_STATS_DISPLAY : t;
+}
 
 function roleSentence(raw: string): string {
   const t = raw.trim().toLowerCase();
@@ -117,11 +128,11 @@ export function IntercityRouteModal({ open, onClose, route, stats }: Props) {
             <div className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
               <p className="text-[11px] leading-relaxed text-slate-500">
                 <span className="font-semibold text-slate-400">Platform genelindeki şehirler arası aktif ilan sayısı: </span>
-                <span className="tabular-nums text-slate-300">{stats.activeListings}</span>
+                <span className="text-slate-300">{formatSummaryStat(stats.activeListings)}</span>
               </p>
               <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
                 <span className="font-semibold text-slate-400">En yoğun hat: </span>
-                <span className="text-slate-300">{stats.busiestRoute || "—"}</span>
+                <span className="text-slate-300">{formatSummaryStat(stats.busiestRoute)}</span>
               </p>
             </div>
           )}

@@ -5,7 +5,7 @@ const rows = [
     leylek: "Şehir içi, teklif akışı ve şehirler arası akışları birlikte düşünür",
   },
   {
-    label: "Teklif konuşmasıyla karar verme",
+    label: "Teklif görüşmesiyle karar verme",
     classic: "Karar çoğu zaman hızlı aksiyona sıkışır",
     leylek: "Leylek Teklifi ile teklif netleştirme ve yolculuk öncesi anlaşma alanı açar",
   },
