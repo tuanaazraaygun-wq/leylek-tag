@@ -50,8 +50,10 @@ def mint_supabase_session_tokens(user_id: str) -> Tuple[Optional[str], Optional[
         )
     except Exception as e:
         msg = str(e).lower()
-        if "already" not in msg and "registered" not in msg and "exists" not in msg and "duplicate" not in msg:
-            logger.debug("supabase create_user: %s", e)
+        if "already" in msg or "registered" in msg or "exists" in msg or "duplicate" in msg:
+            pass
+        else:
+            logger.exception("mint_supabase_session: create_user failed (non-duplicate error)")
 
     try:
         link = sb.auth.admin.generate_link({"type": "magiclink", "email": email})
@@ -59,9 +61,13 @@ def mint_supabase_session_tokens(user_id: str) -> Tuple[Optional[str], Optional[
         auth_res = sb.auth.verify_otp({"token_hash": hashed, "type": "magiclink"})
         if auth_res.session:
             return auth_res.session.access_token, auth_res.session.refresh_token
-        logger.warning("mint_supabase_session: verify_otp returned no session")
-    except Exception as e:
-        logger.warning("mint_supabase_session failed: %s", e)
+        logger.warning(
+            "mint_supabase_session: verify_otp returned no session; user_id=%s auth_res=%r",
+            uid,
+            auth_res,
+        )
+    except Exception:
+        logger.exception("mint_supabase_session: generate_link or verify_otp failed")
     return None, None
 
 
@@ -72,7 +78,11 @@ def attach_supabase_tokens_to_auth_payload(payload: dict, user_id: Optional[str]
     try:
         a, r = mint_supabase_session_tokens(str(user_id))
         if a and r:
-            payload = {**payload, "supabase_access_token": a, "supabase_refresh_token": r}
-    except Exception as e:
-        logger.warning("attach_supabase_tokens: %s", e)
+            return {**payload, "supabase_access_token": a, "supabase_refresh_token": r}
+        logger.warning(
+            "attach_supabase_tokens: mint returned empty tokens user_id=%s",
+            user_id,
+        )
+    except Exception:
+        logger.exception("attach_supabase_tokens failed user_id=%s", user_id)
     return payload

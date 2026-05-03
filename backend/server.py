@@ -65,6 +65,18 @@ except ModuleNotFoundError as e:
     ) from e
 
 from supabase_auth_session import attach_supabase_tokens_to_auth_payload
+
+
+def _finalize_auth_response_payload(payload: dict, user_id: str) -> dict:
+    """Leylek yanıtına supabase_access_token / supabase_refresh_token ekler; dönmeden loglar."""
+    out = attach_supabase_tokens_to_auth_payload(payload, user_id)
+    logger.warning(
+        "[auth_response_tokens] user_id=%s has_supabase_access=%s has_supabase_refresh=%s",
+        user_id,
+        bool(out.get("supabase_access_token")),
+        bool(out.get("supabase_refresh_token")),
+    )
+    return out
 from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
 from services.fcm_push_service import (
     is_fcm_configured,
@@ -5341,12 +5353,13 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
         except Exception as upd_err:
             logger.warning(f"verify_otp device update (ignored): {upd_err}")
         
-        return attach_supabase_tokens_to_auth_payload(
+        return _finalize_auth_response_payload(
             {
                 "success": True,
                 "message": "OTP doğrulandı",
                 "user_exists": True,
                 "has_pin": has_pin,
+                "access_token": issue_access_token(user["id"]),
                 "user": {
                     "id": user["id"],
                     "phone": user["phone"],
@@ -5548,7 +5561,7 @@ async def auth_test_login_bypass(request: Request):
         pass
 
     is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
-    return attach_supabase_tokens_to_auth_payload(
+    return _finalize_auth_response_payload(
         {
             "success": True,
             "access_token": issue_access_token(user["id"]),
@@ -5685,7 +5698,7 @@ async def auth_test_password_login(request: Request):
     tok = issue_access_token(user["id"])
     is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
     dd_pub = _driver_details_public_for_api(user)
-    return attach_supabase_tokens_to_auth_payload(
+    return _finalize_auth_response_payload(
         {
             "success": True,
             "token": tok,
@@ -5784,7 +5797,7 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         out: dict = {"success": True, "message": "PIN ayarlandı"}
         if refreshed and refreshed.get("id"):
             out["access_token"] = issue_access_token(refreshed["id"])
-            return attach_supabase_tokens_to_auth_payload(out, str(refreshed["id"]))
+            return _finalize_auth_response_payload(out, str(refreshed["id"]))
         return out
     except Exception as e:
         logger.error(f"Set PIN error: {e}")
@@ -5908,7 +5921,7 @@ async def verify_pin_endpoint(request: Request):
         
         logger.info(f"✅ PIN doğrulandı: {canonical}, Admin: {is_admin}, IP: {client_ip}")
 
-        return attach_supabase_tokens_to_auth_payload(
+        return _finalize_auth_response_payload(
             {
                 "success": True,
                 "access_token": issue_access_token(user["id"]),
@@ -5981,7 +5994,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         
         is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
 
-        return attach_supabase_tokens_to_auth_payload(
+        return _finalize_auth_response_payload(
             {
                 "success": True,
                 "access_token": issue_access_token(user["id"]),
@@ -6197,7 +6210,7 @@ async def register_user(request: RegisterRequest):
             user = result.data[0]
             logger.info(f"✅ Yeni kullanıcı kaydedildi: {phone_normalized}, QR: {unique_qr_code}")
             
-            return attach_supabase_tokens_to_auth_payload(
+            return _finalize_auth_response_payload(
                 {
                     "success": True,
                     "access_token": issue_access_token(user["id"]),
