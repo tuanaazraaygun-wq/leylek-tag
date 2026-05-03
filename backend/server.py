@@ -3634,7 +3634,7 @@ def validate_turkish_phone(phone: str) -> tuple[bool, str]:
     
     return True, cleaned
 
-# Initialize Supabase (global `supabase` = _supabase_core.get_supabase(), service role only)
+# Initialize Supabase (global `supabase` = DB client; auth mint ayrı instance — supabase_client)
 supabase: Client = None
 
 
@@ -3643,7 +3643,7 @@ def init_supabase():
     _supabase_core.init_supabase()
     supabase = _supabase_core.get_supabase()
     if supabase:
-        logger.info("✅ Supabase bağlantısı başarılı (tek client, SERVICE_ROLE_KEY)")
+        logger.info("✅ Supabase bağlantısı başarılı (DB client SERVICE_ROLE_KEY; verify_otp ayrı)")
     else:
         logger.error(
             "❌ Supabase başlatılamadı: SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY "
@@ -21160,13 +21160,54 @@ async def muhabbet_listing_match_request(
             "updated_at": _muhabbet_listing_row_ts(),
             "actor_intent": actor_intent,
         }
+        sb_ins = _supabase_core.get_supabase()
+        if not sb_ins:
+            raise HTTPException(status_code=503, detail="Veritabanı bağlantısı yok")
+        if actor_intent == "driver":
+            log_driver_id, log_passenger_id = uid, owner
+        else:
+            log_driver_id, log_passenger_id = owner, uid
+        logger.info(
+            "[listing_match_request_insert] driver_id=%s listing_id=%s passenger_id=%s",
+            log_driver_id,
+            lid,
+            log_passenger_id,
+        )
         try:
-            ins = supabase.table("listing_match_requests").insert(ins_row).execute()
+            ins = sb_ins.table("listing_match_requests").insert(ins_row).execute()
         except Exception as ins_exc:
             err_s = str(ins_exc).lower()
+            exc_extra = {
+                "repr": repr(ins_exc),
+                "args": getattr(ins_exc, "args", None),
+                "message": getattr(ins_exc, "message", None),
+                "details": getattr(ins_exc, "details", None),
+                "code": getattr(ins_exc, "code", None),
+            }
+            logger.error(
+                "[listing_match_request_insert] supabase error: %r extra=%s",
+                ins_exc,
+                exc_extra,
+                exc_info=True,
+            )
             if "actor_intent" in err_s or "column" in err_s:
                 ins_row.pop("actor_intent", None)
-                ins = supabase.table("listing_match_requests").insert(ins_row).execute()
+                try:
+                    ins = sb_ins.table("listing_match_requests").insert(ins_row).execute()
+                except Exception as ins_exc2:
+                    logger.error(
+                        "[listing_match_request_insert] supabase error (retry): %r extra=%s",
+                        ins_exc2,
+                        {
+                            "repr": repr(ins_exc2),
+                            "args": getattr(ins_exc2, "args", None),
+                            "message": getattr(ins_exc2, "message", None),
+                            "details": getattr(ins_exc2, "details", None),
+                            "code": getattr(ins_exc2, "code", None),
+                        },
+                        exc_info=True,
+                    )
+                    raise
             else:
                 raise
         if not ins.data:

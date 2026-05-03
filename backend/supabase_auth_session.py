@@ -4,7 +4,7 @@ Supabase Auth oturumu (access + refresh JWT): `users.id` ile `auth.users` içind
 Akış: admin.create_user (id sabit, synthetic email) → admin.generate_link(magiclink)
 → auth.verify_otp(token_hash) → Session.
 
-Backend tek client `get_supabase()` (service role) kullanır.
+`get_supabase_auth_session_client()` — verify_otp burada; tablo işleri `get_supabase()` ile (kirlenme yok).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import logging
 import uuid
 from typing import Optional, Tuple
 
-from supabase_client import get_supabase
+from supabase_client import get_supabase_auth_session_client
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +27,9 @@ def synthetic_email_for_user_id(user_id: str) -> str:
 
 def mint_supabase_session_tokens(user_id: str) -> Tuple[Optional[str], Optional[str]]:
     """users.id ile Supabase Auth oturumu üret; başarısızsa (None, None)."""
-    sb = get_supabase()
+    sb = get_supabase_auth_session_client()
     if not sb:
-        logger.warning("mint_supabase_session: Supabase client not initialized")
+        logger.warning("mint_supabase_session: Supabase auth-session client not initialized")
         return None, None
     uid = str(user_id).strip().lower()
     try:

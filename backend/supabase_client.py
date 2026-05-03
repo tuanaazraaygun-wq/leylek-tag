@@ -34,14 +34,17 @@ SUPABASE_SERVICE_ROLE_KEY = _strip_env(
     os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or os.getenv("SUPABASE_SERVICE_KEY", "")
 )
 
-# Tek backend client (service role)
-_backend_client: Optional[Client] = None
+# İki ayrı service-role instance: verify_otp kullanıcı JWT'si ile PostgREST'i kirletir (RLS).
+# Tablo/storage işlemleri yalnız _db_client üzerinden; verify_otp yalnız _auth_session_client'ta.
+_db_client: Optional[Client] = None
+_auth_session_client: Optional[Client] = None
 
 
 def init_supabase() -> bool:
-    """Service role ile tek client oluşturur. Anon key ile client açılmaz."""
-    global _backend_client
-    _backend_client = None
+    """İki ayrı service-role client: DB (RLS bypass) ve auth mint (verify_otp izole)."""
+    global _db_client, _auth_session_client
+    _db_client = None
+    _auth_session_client = None
 
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         logger.error(
@@ -51,8 +54,11 @@ def init_supabase() -> bool:
         return False
 
     try:
-        _backend_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        logger.info("✅ Supabase service role client hazır (create_client URL + SERVICE_ROLE_KEY)")
+        _db_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        _auth_session_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        logger.info(
+            "✅ Supabase service role: DB client + auth-session client (ayrı instance, RLS kirlenmesi yok)"
+        )
         return True
     except Exception as e:
         logger.exception("❌ Supabase create_client hatası: %s", e)
@@ -60,13 +66,18 @@ def init_supabase() -> bool:
 
 
 def get_supabase() -> Optional[Client]:
-    """Sunucu tarafı DML için tek client (service role)."""
-    return _backend_client
+    """PostgREST / Storage — service role; bu client üzerinde verify_otp/sign_in çağırma."""
+    return _db_client
+
+
+def get_supabase_auth_session_client() -> Optional[Client]:
+    """Yalnız mint_supabase_session_tokens: admin + verify_otp. DB için get_supabase() kullan."""
+    return _auth_session_client
 
 
 def get_supabase_admin() -> Client | None:
-    """Geriye uyumluluk: storage/admin işlemleri için aynı service role client."""
-    return _backend_client
+    """Geriye uyumluluk: storage/admin işlemleri için DB service role client."""
+    return _db_client
 
 
 # ==================== STORAGE FUNCTIONS ====================
