@@ -82,6 +82,7 @@ import {
 } from '../lib/sessionToken';
 import { afterAuthAccessTokenPersisted } from '../lib/authTokenPersistenceNotify';
 import { syncSupabaseSessionFromBackendResponse } from '../lib/supabaseSessionSync';
+import { getSupabase } from '../lib/supabase';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
@@ -1713,7 +1714,18 @@ export default function App() {
           // Kayıtlı kullanıcı - giriş yapıyor, kayıt sayfasına atma
           const loggedUser = data.user as User;
           const savedUser = await saveUser(loggedUser);
+
+          console.log('OTP RESPONSE:', data);
+
           await persistAccessTokenAndRefreshUser(data as TokenPayload, loggedUser?.id);
+          await syncSupabaseSessionFromBackendResponse(data);
+
+          const sb = getSupabase();
+          if (sb) {
+            const { data: sess } = await sb.auth.getSession();
+            console.log('SESSION AFTER OTP:', sess?.session?.user?.id);
+          }
+
           if (data.has_pin) {
             const u = savedUser as { phone?: string };
             const ten =
@@ -1753,7 +1765,18 @@ export default function App() {
               if (registerData.success && registerData.user) {
                 await saveUser(registerData.user);
                 console.log('USER_SAVED', registerData.user);
+
+                console.log('OTP RESPONSE:', registerData);
+
                 await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
+                await syncSupabaseSessionFromBackendResponse(registerData);
+
+                const sbReg = getSupabase();
+                if (sbReg) {
+                  const { data: sessReg } = await sbReg.auth.getSession();
+                  console.log('SESSION AFTER OTP:', sessReg?.session?.user?.id);
+                }
+
                 await afterAuthAccessTokenPersisted(registerData.user.id);
                 appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
