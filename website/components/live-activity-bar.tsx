@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { LIVE_FLOW_PRIMARY } from "@/lib/site-copy";
+import { LIVE_FLOW_BAR_EMPTY } from "@/lib/site-copy";
 
 export type PulseStats = { searching: number; routes: number; users: number };
 
@@ -35,7 +35,7 @@ export function LiveActivityBar({ stats }: { stats: PulseStats }) {
         className="live-activity-bar mt-6 border-y border-white/[0.06] py-3 text-center text-xs font-semibold text-white/70 sm:mt-8 sm:text-left sm:text-sm"
         aria-live="polite"
       >
-        {LIVE_FLOW_PRIMARY}
+        {LIVE_FLOW_BAR_EMPTY}
       </div>
     );
   }

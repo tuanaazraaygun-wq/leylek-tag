@@ -430,7 +430,7 @@ export function getCityActivities(city: string): CityActivity[] {
     {
       id: "found-passenger",
       title: `${regions[3]?.name ?? first.name} → ${second.name} yolcu bulundu`,
-      subtitle: "Yerel yolculuk paylaşımı hazırlanıyor",
+      subtitle: "Yerel yolculuk paylaşımı süreçte netleşiyor",
       time: "1 dk önce",
       type: "trip",
     },

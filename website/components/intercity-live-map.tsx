@@ -7,6 +7,7 @@ import { IntercityRealMapLoader } from "@/components/intercity-real-map-loader";
 import { LiveDashboardTrustStrip, LiveSparseBanner } from "@/components/live-dashboard-chrome";
 import { hasApiBaseUrl } from "@/lib/config";
 import { getIntercityDashboard, loadIntercityDashboard, type IntercityDashboard } from "@/lib/intercity-live-data";
+import { displayRouteStatus } from "@/lib/route-status-display";
 
 const wantLiveData = process.env.NEXT_PUBLIC_USE_REAL_LIVE_DATA === "true";
 
@@ -102,7 +103,7 @@ export function IntercityLiveMap() {
     };
   }, []);
 
-  const label = wantLiveData && liveOk ? "Canlı veri" : "Canlı veriye hazırlanıyor";
+  const label = wantLiveData && liveOk ? "Canlı veri" : "Şu anda teklifler analiz ediliyor";
   const mapDataMode = liveOk ? "live" : "demo";
 
   const liveSparse = useMemo(() => Boolean(dashboard.uiHints?.liveSparse), [dashboard.uiHints?.liveSparse]);
@@ -186,7 +187,9 @@ export function IntercityLiveMap() {
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
                   <span className="rounded-lg bg-white/[0.06] px-2 py-1 text-slate-300">{route.seats} boş koltuk</span>
                   <span className="rounded-lg bg-cyan-400/10 px-2 py-1 font-black text-cyan-100">{route.suggestedCost}</span>
-                  <span className="rounded-lg bg-white/[0.06] px-2 py-1 text-slate-400">{route.status}</span>
+                  <span className="rounded-lg bg-white/[0.06] px-2 py-1 text-slate-400">
+                    {displayRouteStatus(route.status)}
+                  </span>
                 </div>
                 <ButtonLink href="/indir" variant="secondary" className="mt-4 w-full py-2 text-xs">
                   Uygulamada Gör

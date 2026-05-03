@@ -216,7 +216,7 @@ function demoDashboard(): IntercityDashboard {
   const telemetry: IntercityTelemetry = {
     busiestLine: stats.busiestLine,
     averageSuggestedCost: "720 ₺",
-    disclaimer: "Özet şehir dışı teklif görünümü · Canlı bağlantıyla güncellenir",
+    disclaimer: "Özet şehir dışı teklif görünümü · Aktif bağlantıyla güncellenir",
   };
 
   return {

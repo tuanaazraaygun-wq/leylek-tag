@@ -105,7 +105,7 @@ export function CityLiveMap() {
     };
   }, [selectedCity]);
 
-  const label = wantLiveData && dataSource === "live" ? "Canlı veri" : "Canlı veriye hazırlanıyor";
+  const label = wantLiveData && dataSource === "live" ? "Canlı veri" : "Şu anda teklifler analiz ediliyor";
   const mapHudSubtitle =
     dataSource === "live"
       ? "Harita görünümü · Canlı şehir içi teklif yoğunluğu"

@@ -7,6 +7,7 @@ import {
   type IntercityLiveRoute,
 } from "@src/lib/api";
 import { ButtonLink } from "@/components/button-link";
+import { displayRouteStatus } from "@/lib/route-status-display";
 import { EMPTY_STATS_DISPLAY } from "@/lib/site-copy";
 import { IntercityRouteModal } from "@src/components/IntercityRouteModal";
 
@@ -68,7 +69,7 @@ function RouteCard({ route, onOpen }: { route: IntercityLiveRoute; onOpen: () =>
           <span
             className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${statusBadgeClass(route.status)}`}
           >
-            {route.status || "—"}
+            {displayRouteStatus(route.status)}
           </span>
         </div>
       </div>

@@ -17,8 +17,8 @@ export const LiveDashboardTrustStrip = memo(function LiveDashboardTrustStrip({ c
 export const LiveSparseBanner = memo(function LiveSparseBanner({ variant }: { variant: "city" | "intercity" }) {
   const title =
     variant === "city"
-      ? "Bu şehir için canlı akış hazırlanıyor"
-      : "Şehirler arası canlı akış hazırlanıyor";
+      ? "Bu şehir için teklifler analiz ediliyor"
+      : "Şehirler arası teklifler analiz ediliyor";
 
   return (
     <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-r from-cyan-400/[0.06] to-transparent px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
@@ -65,7 +65,7 @@ export const IntercityMapLegend = memo(function IntercityMapLegend() {
         </li>
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--soon" aria-hidden />
-          <span>Yakında</span>
+          <span>Süreçte</span>
         </li>
       </ul>
     </div>

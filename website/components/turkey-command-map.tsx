@@ -74,7 +74,7 @@ export function TurkeyCommandMap({
   heatDots = [],
   mode,
 }: TurkeyCommandMapProps) {
-  const busiestRoute = routes[0] ? `${routes[0].from.name} → ${routes[0].to.name}` : "hazırlanıyor";
+  const busiestRoute = routes[0] ? `${routes[0].from.name} → ${routes[0].to.name}` : "Teklifler analiz ediliyor";
 
   return (
     <section className="relative min-h-[640px] overflow-hidden rounded-[2rem] border border-cyan-200/15 bg-[#030b18] shadow-[0_0_120px_rgba(34,211,238,0.16)]">

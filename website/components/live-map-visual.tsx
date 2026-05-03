@@ -15,7 +15,7 @@ const floatingCards = [
     className: "right-3 top-20 max-w-[min(85vw,12rem)] sm:right-5 sm:top-24 sm:max-w-none animate-[slow-float_8s_ease-in-out_infinite]",
   },
   {
-    label: "Şehir içi eşleşme hazırlanıyor",
+    label: "Şehir içi eşleşmeler analiz ediliyor",
     className: "left-4 bottom-24 max-w-[min(85vw,13rem)] sm:left-8 sm:bottom-28 sm:max-w-none animate-[slow-float_9s_ease-in-out_infinite]",
   },
 ];

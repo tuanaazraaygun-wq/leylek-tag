@@ -19,7 +19,10 @@ import { TrustBadges } from "@/components/trust-badges";
 import { ValueProps } from "@/components/value-props";
 import { featurePillars } from "@/lib/mock-data";
 import { HeroTrustStrip } from "@/components/hero-trust-strip";
+import { HomeFourSteps } from "@/components/home-four-steps";
 import { HomeLivePulse } from "@/components/home-live-pulse";
+import { MobileStickyCta } from "@/components/mobile-sticky-cta";
+import { SectionMidCta } from "@/components/section-mid-cta";
 import { IntercityList } from "@src/components/IntercityList";
 
 const experiences = [
@@ -49,6 +52,7 @@ const experiences = [
 export default function Home() {
   return (
     <>
+      <MobileStickyCta />
       <section className="relative overflow-x-hidden pt-10 pb-12 md:py-24">
         <div className="pointer-events-none absolute inset-0 -z-10 max-w-[100vw] overflow-x-hidden">
           <div className="absolute inset-0 bg-[linear-gradient(180deg,#050b14_0%,#0a1628_42%,#120a22_100%)]" />
@@ -91,27 +95,33 @@ export default function Home() {
                   <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
                     Leylek Tag, yolcu ve sürücülerin şehir içi ve şehir dışı yolculuk tekliflerini netleştirip karşılıklı onayla güvenli eşleşmesini sağlar.
                   </p>
+                  <p className="mt-4 text-center text-sm font-semibold text-white/75 sm:text-left">
+                    Her gün yeni yolculuklar oluşturuluyor
+                  </p>
+                  <p className="mt-2 text-center text-sm font-bold leading-snug text-amber-200/95 sm:text-left">
+                    İlk eşleşmeler için erken erişim avantajını kaçırma
+                  </p>
                 </div>
               </div>
-              <div className="mt-4 flex w-full max-w-xl flex-col gap-3 sm:mt-6 sm:flex-row sm:flex-wrap sm:items-start">
+              <div className="mt-5 flex w-full max-w-xl flex-col gap-3 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-start">
                 <div className="flex w-full flex-col sm:w-auto sm:max-w-none">
-                  <ButtonLink href="/indir" className="w-full sm:w-auto sm:min-w-[200px]">
-                    Uygulamayı İndir
+                  <ButtonLink href="/indir" className="w-full px-5 text-center sm:w-auto sm:min-w-[220px] sm:text-[0.8125rem]">
+                    Teklif Oluşturmaya Başla
                   </ButtonLink>
+                  <p className="mt-2 text-center text-[11px] font-semibold leading-relaxed text-white/58 sm:text-left sm:text-xs">
+                    Ücretsiz • 30 saniyede teklif oluştur • Anında eşleşme
+                  </p>
+                  <p className="mt-2 text-center text-xs text-white/60 sm:text-left">
+                    Şu anda kullanıcılar yeni rotalar oluşturuyor
+                  </p>
                 </div>
                 <ButtonLink href="/muhabbet" variant="secondary" className="w-full sm:w-auto">
-                  Teklif Akışını Keşfet
+                  İlk teklifini oluştur
                 </ButtonLink>
                 <ButtonLink href="/sehirler-arasi" variant="ghost" className="w-full sm:w-auto">
                   Şehirler Arası İlanları Gör
                 </ButtonLink>
               </div>
-              <p className="mt-3 max-w-xl text-center text-[11px] leading-relaxed text-white/58 sm:text-left sm:text-xs">
-                Ücretsiz • 30 saniyede teklif oluştur • Gerçek zamanlı eşleşme
-              </p>
-              <p className="mt-4 max-w-xl text-center text-xs leading-relaxed text-white/55 sm:text-left">
-                Ücretsiz • Güvenli eşleşme • QR ile kontrollü yolculuk
-              </p>
               <HeroTrustStrip />
               <div className="mt-10">
                 <TrustBadges />
@@ -122,15 +132,27 @@ export default function Home() {
             </div>
           </div>
           <HomeLivePulse />
-          <div className="mt-8 min-w-0 w-full md:mt-10">
+          <div id="hero-yol" className="scroll-mt-28 mt-8 min-w-0 w-full md:mt-10">
             <HeroEngagement />
           </div>
+          <a
+            href="#nasil-calisir-flow"
+            className="mt-4 block text-center text-xs text-white/50 animate-pulse motion-reduce:animate-none sm:text-left"
+          >
+            ↓ Nasıl çalıştığını gör
+          </a>
         </Container>
       </section>
 
       <ScrollReveal>
+        <HomeFourSteps />
+      </ScrollReveal>
+
+      <ScrollReveal>
         <RoleSelection />
       </ScrollReveal>
+
+      <SectionMidCta />
 
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
@@ -162,6 +184,8 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
+      <SectionMidCta />
+
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
@@ -192,6 +216,8 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
+      <SectionMidCta />
+
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
@@ -199,7 +225,7 @@ export default function Home() {
             <SectionHeading
               eyebrow="uygulama ön izlemesi"
               title="Üç akış, tek premium mobil deneyim."
-              description="Gerçek ekran görüntüsü kullanmadan hazırlanan bu cihaz mockup'ları şehir içi, Leylek Teklifi ve şehirler arası ilan deneyimini sade şekilde gösterir."
+              description="Gerçek ekran görüntüsü kullanılmadan tasarlanan cihaz çerçeveleri şehir içi, Leylek Teklifi ve şehirler arası ilan akışını sade şekilde gösterir."
             />
           </div>
           <AppPreview />
@@ -222,13 +248,15 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
+      <SectionMidCta />
+
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
           <div className="mb-8">
             <SectionHeading
               eyebrow="beta süreci"
-              title="Önce kontrollü test, sonra daha geniş topluluk."
+              title="Önce kontrollü beta, sonra daha geniş topluluk."
               description="Leylek Tag’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
             />
           </div>
@@ -244,6 +272,8 @@ export default function Home() {
         </Container>
         </ScrollReveal>
       </section>
+
+      <SectionMidCta />
 
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>

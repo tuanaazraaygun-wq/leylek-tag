@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { EMPTY_STATS_DISPLAY, LIVE_FLOW_PRIMARY, LIVE_FLOW_SECONDARY } from "@/lib/site-copy";
+import { EMPTY_STATS_DISPLAY, LIVE_FLOW_ANALYZING, LIVE_FLOW_SECONDARY } from "@/lib/site-copy";
 import { fetchIntercityLive, type IntercityLiveStats } from "@src/lib/api";
 
 function statLooksEmpty(v: string): boolean {
@@ -86,7 +86,7 @@ export function HomeLivePulse() {
         </div>
       ) : (
         <div className="space-y-2 rounded-2xl border border-white/10 bg-slate-950/50 px-4 py-4 text-sm leading-relaxed text-slate-400">
-          <p className="font-semibold text-slate-300">{LIVE_FLOW_PRIMARY}</p>
+          <p className="font-semibold text-slate-300">{LIVE_FLOW_ANALYZING}</p>
           <p>
             <Link href="/indir" className="font-semibold text-cyan-200/85 underline-offset-2 hover:underline">
               {LIVE_FLOW_SECONDARY}

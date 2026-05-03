@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { ButtonLink } from "@/components/button-link";
+import { displayRouteStatus } from "@/lib/route-status-display";
 import { EMPTY_STATS_DISPLAY } from "@/lib/site-copy";
 import type { IntercityLiveRoute, IntercityLiveStats } from "@src/lib/api";
 
@@ -103,7 +104,7 @@ export function IntercityRouteModal({ open, onClose, route, stats }: Props) {
             <span
               className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${statusBadgeClass(route.status)}`}
             >
-              {route.status || "—"}
+              {displayRouteStatus(route.status)}
             </span>
           </div>
 

@@ -32,8 +32,8 @@ export default function DownloadPage() {
     <>
       <PageHero
         eyebrow="indir"
-        title="Beta sürecindeyiz. Leylek Tag çok yakında uygulamada."
-        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, teklif görüşmesi, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanacaktır."
+        title="Beta sürecindeyiz. Leylek Tag mobil deneyimde süreçte aktifleşiyor."
+        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, teklif görüşmesi, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanır."
         primaryLabel="Erken Erişim Formuna Git"
         primaryHref="#erken-erisim"
       />
@@ -43,15 +43,15 @@ export default function DownloadPage() {
             <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-center">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">mobil deneyim</p>
-                <h2 className="mt-4 text-3xl font-black leading-tight text-white">Mağaza bağlantıları yayına hazırlanıyor</h2>
+                <h2 className="mt-4 text-3xl font-black leading-tight text-white">Mağaza bağlantıları yayına süreçte bağlanıyor</h2>
                 <p className="mt-4 leading-7 text-slate-300">
-                  App Store ve Google Play bağlantıları yayına alındığında bu alan doğrudan resmi indirme sayfalarına bağlanacak. Test beta erişimi için erken erişim formunu kullanabilirsin.
+                  App Store ve Google Play bağlantıları yayına alındığında bu alan doğrudan resmi indirme sayfalarına bağlanır. Beta erişimi için erken erişim formunu kullanabilirsin.
                 </p>
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                  <StoreButton eyebrow="yakında" label="App Store" />
-                  <StoreButton eyebrow="yakında" label="Google Play" />
+                  <StoreButton eyebrow="süreçte" label="App Store" />
+                  <StoreButton eyebrow="süreçte" label="Google Play" />
                   <ButtonLink href="#erken-erisim" variant="secondary">
-                    Test beta için haber ver
+                    Beta için haber ver
                   </ButtonLink>
                 </div>
               </div>
