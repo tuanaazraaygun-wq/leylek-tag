@@ -26396,6 +26396,18 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
                 "Binişe hazır veya yolculuk aktifken sesli arama kullanılabilir.",
             )
 
+        boarding_raw = row.get("boarding_qr_confirmed_at")
+        if boarding_raw is not None and str(boarding_raw).strip():
+            logger.warning(
+                "[muhabbet_call_start_reject] session_id=%s uid=%s code=muhabbet_boarding_comm_closed",
+                sid_lo,
+                str(uid).strip().lower()[:12],
+            )
+            raise _MuhabbetTripOpError(
+                "muhabbet_boarding_comm_closed",
+                "Biniş onayından sonra bu aşamada sesli arama kullanılamaz.",
+            )
+
         uid_lo = str(uid).strip().lower()
         passenger_id = str(row.get("passenger_id") or "").strip().lower()
         driver_id = str(row.get("driver_id") or "").strip().lower()

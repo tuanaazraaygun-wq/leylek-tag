@@ -2,7 +2,7 @@
  * Muhabbet 1:1 sohbet — mesaj metni sunucuda saklanır (REST POST); Socket.IO isteğe bağlı realtime için.
  * Gönderim ana yolu: POST /muhabbet/conversations/{id}/messages (socket zorunlu değil).
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -49,8 +49,13 @@ import {
   storedMessagesToDisplayRows,
 } from '../lib/muhabbetMessagesStorage';
 import MuhabbetWatermark from './MuhabbetWatermark';
-import type { MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
-import { subscribeConversationUpdated } from '../lib/muhabbetRealtimeEvents';
+import MuhabbetTripCallScreen from './MuhabbetTripCallScreen';
+import type {
+  MuhabbetTripCallSocketPayload,
+  MuhabbetTripSession,
+  MuhabbetTripSessionSocketPayload,
+} from '../lib/muhabbetTripTypes';
+import { subscribeConversationUpdated, subscribeTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import { getSupabase } from '../lib/supabase';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Buffer } from 'buffer';
@@ -269,6 +274,36 @@ function formatTripConvertRestDetail(detail: unknown, statusFallback: string): s
   }
   return statusFallback;
 }
+
+function normalizeMuhabbetSessionId(value?: string | null): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function isMuhabbetTripRestOk(rest: { ok: boolean; json: Record<string, unknown> }): boolean {
+  return rest.ok && rest.json.success === true;
+}
+
+function muhabbetTripRestDetail(detail: unknown, fallback: string): string {
+  if (detail === null || detail === undefined) return fallback;
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (typeof detail === 'object' && detail !== null && !Array.isArray(detail)) {
+    const o = detail as Record<string, unknown>;
+    const msg = o.message;
+    if (typeof msg === 'string' && msg.trim()) return msg.trim();
+    const code = o.code;
+    if (typeof code === 'string' && code.trim()) return code.trim();
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (typeof first === 'string' && first.trim()) return first.trim();
+    if (first && typeof first === 'object' && 'msg' in first && typeof (first as { msg?: string }).msg === 'string') {
+      return String((first as { msg: string }).msg).trim();
+    }
+  }
+  return fallback;
+}
+
+type ChatTripCallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 
 function chatInitials(nameRaw: string): string {
   const parts = String(nameRaw || '')
@@ -528,6 +563,14 @@ export default function MuhabbetChatScreen({
   /** GET ctx trip_convert_request imzası — gereksiz modal/state yenidenlemesini keser */
   const lastTripConvertCtxSigRef = useRef<string | null>(null);
   const tripConvertModalActionBusyRef = useRef(false);
+
+  const [linkedTripSession, setLinkedTripSession] = useState<MuhabbetTripSession | null>(null);
+  const [chatCallState, setChatCallState] = useState<ChatTripCallState>('idle');
+  const [chatCallPayload, setChatCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
+  const chatCallStateRef = useRef<ChatTripCallState>('idle');
+  const chatCallPayloadRef = useRef<MuhabbetTripCallSocketPayload | null>(null);
+  const chatCallStartInFlightRef = useRef(false);
+  const latestChatCallActionIdRef = useRef<string | null>(null);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1063,6 +1106,94 @@ export default function MuhabbetChatScreen({
     },
     [base, router]
   );
+
+  const refreshLinkedTripSession = useCallback(async () => {
+    const eligible = !!(
+      ctxRef.current?.trip_convert_eligible ?? ctxRef.current?.matched_via_leylek_key
+    );
+    if (!eligible || !cid) {
+      setLinkedTripSession(null);
+      return;
+    }
+    const token = (await getPersistedAccessToken())?.trim();
+    if (!token) return;
+    const cidLo = cid.trim().toLowerCase();
+
+    const tcr = ctxRef.current?.trip_convert_request;
+    const sidFromConvert =
+      tcr?.accepted && tcr?.session_id ? normalizeMuhabbetSessionId(tcr.session_id) : '';
+
+    const fetchSessionById = async (sid: string): Promise<MuhabbetTripSession | null> => {
+      if (!sid) return null;
+      try {
+        const res = await fetch(`${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const j = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          session?: MuhabbetTripSession;
+        };
+        if (!res.ok || !j.success || !j.session) return null;
+        const conv = String(j.session.conversation_id || '').trim().toLowerCase();
+        if (conv && conv !== cidLo) return null;
+        return j.session;
+      } catch {
+        return null;
+      }
+    };
+
+    if (sidFromConvert) {
+      const s = await fetchSessionById(sidFromConvert);
+      if (s) {
+        setLinkedTripSession(s);
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch(`${base}/muhabbet/trip-sessions/active`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        session?: MuhabbetTripSession | null;
+      };
+      if (!res.ok || !j.success || !j.session) {
+        setLinkedTripSession(null);
+        return;
+      }
+      const conv = String(j.session.conversation_id || '').trim().toLowerCase();
+      if (conv && conv === cidLo) {
+        setLinkedTripSession(j.session);
+        return;
+      }
+    } catch {
+      /* noop */
+    }
+    setLinkedTripSession(null);
+  }, [base, cid]);
+
+  useEffect(() => {
+    chatCallStateRef.current = chatCallState;
+  }, [chatCallState]);
+  useEffect(() => {
+    chatCallPayloadRef.current = chatCallPayload;
+  }, [chatCallPayload]);
+
+  useEffect(() => {
+    void refreshLinkedTripSession();
+  }, [ctx, refreshLinkedTripSession]);
+
+  useEffect(() => {
+    const unsub = subscribeTripSessionUpdated(() => {
+      const eligible = !!(
+        ctxRef.current?.trip_convert_eligible ?? ctxRef.current?.matched_via_leylek_key
+      );
+      if (!eligible) return;
+      void refreshLinkedTripSession();
+    });
+    return unsub;
+  }, [refreshLinkedTripSession]);
 
   const retryPendingActionAfterNotRegistered = useCallback(async () => {
     const pending = pendingActionRef.current;
@@ -1737,6 +1868,82 @@ export default function MuhabbetChatScreen({
   }, [cid, bootstrapPhase, pullMessagesFromApi, scrollToEndThrottled]);
 
   useEffect(() => {
+    if (!cid || bootstrapPhase !== 'ready') return;
+    const socket = getOrCreateSocket();
+    const cidLo = cid.trim().toLowerCase();
+
+    const matchesConv = (p: { conversation_id?: string | null }) => {
+      const c = String(p?.conversation_id || '').trim().toLowerCase();
+      return !!c && c === cidLo;
+    };
+
+    const onIncoming = (p: MuhabbetTripCallSocketPayload) => {
+      console.log(
+        '[muhabbet_chat_call_incoming]',
+        JSON.stringify({ session_id: p.session_id, conversation_id: p.conversation_id })
+      );
+      if (!matchesConv(p)) return;
+      const sid = normalizeMuhabbetSessionId(p.session_id || p.sessionId);
+      setChatCallPayload((prev) => ({
+        ...(prev || {}),
+        ...p,
+        session_id: sid,
+      }));
+      setChatCallState('incoming');
+      void refreshLinkedTripSession();
+    };
+
+    const onAccept = (p: MuhabbetTripCallSocketPayload) => {
+      console.log('[muhabbet_chat_call_accept]', JSON.stringify({ session_id: p.session_id }));
+      if (!matchesConv(p)) return;
+      const sid = normalizeMuhabbetSessionId(p.session_id || p.sessionId || chatCallPayloadRef.current?.session_id);
+      setChatCallPayload((prev) => ({
+        ...(prev || {}),
+        ...p,
+        session_id: sid || prev?.session_id,
+      }));
+      setChatCallState('active');
+      void refreshLinkedTripSession();
+    };
+
+    const onDecline = (p: MuhabbetTripCallSocketPayload & { declined_by_user_id?: string }) => {
+      console.log('[muhabbet_chat_call_decline]', JSON.stringify({ session_id: p.session_id }));
+      if (!matchesConv(p)) return;
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
+      const declinedBy = String(p.declined_by_user_id || '').trim().toLowerCase();
+      const callerLo = String(chatCallPayloadRef.current?.caller_id || p.caller_id || '')
+        .trim()
+        .toLowerCase();
+      if (myLo && declinedBy && callerLo && myLo === callerLo && declinedBy !== myLo) {
+        Alert.alert('Muhabbet', 'Arama reddedildi');
+      }
+      setChatCallState('idle');
+      setChatCallPayload(null);
+      void refreshLinkedTripSession();
+    };
+
+    const onEnd = (p: MuhabbetTripCallSocketPayload) => {
+      console.log('[muhabbet_chat_call_end]', JSON.stringify({ session_id: p.session_id }));
+      if (!matchesConv(p)) return;
+      setChatCallState('idle');
+      setChatCallPayload(null);
+      void refreshLinkedTripSession();
+    };
+
+    socket.on('muhabbet_trip_call_incoming', onIncoming);
+    socket.on('muhabbet_trip_call_accept', onAccept);
+    socket.on('muhabbet_trip_call_decline', onDecline);
+    socket.on('muhabbet_trip_call_end', onEnd);
+
+    return () => {
+      socket.off('muhabbet_trip_call_incoming', onIncoming);
+      socket.off('muhabbet_trip_call_accept', onAccept);
+      socket.off('muhabbet_trip_call_decline', onDecline);
+      socket.off('muhabbet_trip_call_end', onEnd);
+    };
+  }, [cid, bootstrapPhase, refreshLinkedTripSession]);
+
+  useEffect(() => {
     if (!cid || bootstrapPhase === 'loading') return;
     if (persistDebounceRef.current) clearTimeout(persistDebounceRef.current);
     persistDebounceRef.current = setTimeout(() => {
@@ -2110,6 +2317,247 @@ export default function MuhabbetChatScreen({
   const chatHeaderPhoto = (ctx?.other_user_profile_photo_url || '').trim();
   const tripConvertEligible = !!(ctx?.trip_convert_eligible ?? ctx?.matched_via_leylek_key);
 
+  const muhabbetTripRestPostForSession = useCallback(
+    async (
+      sessionId: string,
+      opts: { action: string; pathSuffix: string; body?: Record<string, unknown> }
+    ): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> => {
+      const sid = normalizeMuhabbetSessionId(sessionId);
+      const token = (await getPersistedAccessToken())?.trim() || '';
+      if (!sid || !token) {
+        return { ok: false, status: 0, json: {} };
+      }
+      const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/${opts.pathSuffix}`;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(opts.body ?? {}),
+        });
+        let json: Record<string, unknown> = {};
+        try {
+          json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        } catch {
+          json = {};
+        }
+        return { ok: res.ok, status: res.status, json };
+      } catch {
+        return { ok: false, status: -1, json: {} };
+      }
+    },
+    [base]
+  );
+
+  const showSesliAraButton = useMemo(() => {
+    if (!tripConvertEligible || !linkedTripSession) return false;
+    const st = String(linkedTripSession.status || '').trim().toLowerCase();
+    if (!['ready', 'started', 'active'].includes(st)) return false;
+    if (String(linkedTripSession.boarding_qr_confirmed_at || '').trim()) return false;
+    return true;
+  }, [tripConvertEligible, linkedTripSession]);
+
+  const startChatTripCall = useCallback(() => {
+    const sid = normalizeMuhabbetSessionId(linkedTripSession?.id);
+    const myLo = (myId || '').trim().toLowerCase();
+    console.log('[muhabbet_chat_call_start]', JSON.stringify({ sessionId: sid, hasSession: !!linkedTripSession }));
+    if (!sid || !linkedTripSession || !myLo) {
+      Alert.alert('Muhabbet', 'Yolculuk bilgisi hazırlanıyor.');
+      return;
+    }
+    if (chatCallStartInFlightRef.current) return;
+    if (chatCallStateRef.current !== 'idle') return;
+    const st = String(linkedTripSession.status || '').trim().toLowerCase();
+    if (!['ready', 'started', 'active'].includes(st)) return;
+    if (String(linkedTripSession.boarding_qr_confirmed_at || '').trim()) return;
+
+    void (async () => {
+      const passengerLo = String(linkedTripSession.passenger_id || '').trim().toLowerCase();
+      const driverLo = String(linkedTripSession.driver_id || '').trim().toLowerCase();
+      const targetLo = myLo === passengerLo ? driverLo : passengerLo;
+      const callActionId = `chat_call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      latestChatCallActionIdRef.current = callActionId;
+      chatCallStartInFlightRef.current = true;
+      setChatCallState('outgoing');
+      const nowIso = new Date().toISOString();
+      setChatCallPayload({
+        session_id: sid,
+        conversation_id: linkedTripSession.conversation_id ?? undefined,
+        channel_name: `muhabbet_trip_${sid}`,
+        caller_id: myLo,
+        target_user_id: targetLo,
+        started_at: nowIso,
+      });
+
+      const token = (await getPersistedAccessToken())?.trim() || '';
+      const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/call/start`;
+      try {
+        if (!token) {
+          if (latestChatCallActionIdRef.current !== callActionId) return;
+          setChatCallState('idle');
+          setChatCallPayload(null);
+          chatCallStartInFlightRef.current = false;
+          Alert.alert('Muhabbet', 'Arama başlatılamadı: Oturum anahtarı bulunamadı.');
+          return;
+        }
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        let parsedBody: Record<string, unknown> = {};
+        try {
+          parsedBody = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        } catch {
+          parsedBody = {};
+        }
+        if (latestChatCallActionIdRef.current !== callActionId) return;
+        if (res.ok && parsedBody.success === true) {
+          latestChatCallActionIdRef.current = null;
+          chatCallStartInFlightRef.current = false;
+          const callObj = parsedBody.call as MuhabbetTripCallSocketPayload | undefined;
+          const sessRaw = parsedBody.session;
+          const sess =
+            sessRaw && typeof sessRaw === 'object' ? (sessRaw as MuhabbetTripSession) : null;
+          if (callObj && typeof callObj === 'object') {
+            setChatCallPayload(callObj);
+          } else if (sess) {
+            const sidN = normalizeMuhabbetSessionId(sess.id);
+            const passengerLoR = String(sess.passenger_id || '').trim().toLowerCase();
+            const driverLoR = String(sess.driver_id || '').trim().toLowerCase();
+            const callerLo = String(sess.caller_id || myLo).trim().toLowerCase();
+            const targetLoR = callerLo === passengerLoR ? driverLoR : passengerLoR;
+            setChatCallPayload({
+              session_id: sidN,
+              conversation_id: sess.conversation_id ?? undefined,
+              channel_name: String(sess.call_channel_name || `muhabbet_trip_${sidN}`),
+              caller_id: callerLo,
+              target_user_id: targetLoR,
+              started_at: sess.call_started_at ?? undefined,
+            });
+          }
+          if (sess) {
+            setLinkedTripSession(sess);
+          }
+          setChatCallState('outgoing');
+          void refreshLinkedTripSession();
+          return;
+        }
+        setChatCallState('idle');
+        setChatCallPayload(null);
+        const detailMsg = muhabbetTripRestDetail(parsedBody.detail, '');
+        Alert.alert(
+          'Muhabbet',
+          detailMsg ? `Arama başlatılamadı: ${detailMsg}` : 'Arama başlatılamadı.'
+        );
+        void refreshLinkedTripSession();
+      } catch (e) {
+        if (latestChatCallActionIdRef.current !== callActionId) return;
+        setChatCallState('idle');
+        setChatCallPayload(null);
+        Alert.alert('Muhabbet', `Arama başlatılamadı: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        if (latestChatCallActionIdRef.current === callActionId) {
+          chatCallStartInFlightRef.current = false;
+        }
+      }
+    })();
+  }, [base, linkedTripSession, myId, refreshLinkedTripSession]);
+
+  const acceptChatTripCall = useCallback(() => {
+    const sid = normalizeMuhabbetSessionId(
+      linkedTripSession?.id || chatCallPayload?.session_id || chatCallPayload?.sessionId
+    );
+    if (!sid) return;
+    void (async () => {
+      const snapPayload = chatCallPayload;
+      const snapState = chatCallState;
+      setChatCallState('active');
+      setChatCallPayload((prev) => ({ ...(prev || {}), session_id: sid }));
+      try {
+        const rest = await muhabbetTripRestPostForSession(sid, {
+          action: 'call_accept',
+          pathSuffix: 'call/accept',
+        });
+        if (isMuhabbetTripRestOk(rest)) {
+          const sess = rest.json.session;
+          if (sess && typeof sess === 'object') {
+            setLinkedTripSession(sess as MuhabbetTripSession);
+          }
+          void refreshLinkedTripSession();
+          return;
+        }
+        setChatCallState(snapState);
+        setChatCallPayload(snapPayload);
+        const msg = muhabbetTripRestDetail(rest.json.detail, 'Çağrı kabul edilemedi.');
+        if (msg) Alert.alert('Muhabbet', msg);
+        void refreshLinkedTripSession();
+      } catch {
+        setChatCallState(snapState);
+        setChatCallPayload(snapPayload);
+      }
+    })();
+  }, [
+    chatCallPayload,
+    chatCallState,
+    linkedTripSession?.id,
+    muhabbetTripRestPostForSession,
+    refreshLinkedTripSession,
+  ]);
+
+  const declineChatTripCall = useCallback(() => {
+    const sid = normalizeMuhabbetSessionId(
+      linkedTripSession?.id || chatCallPayload?.session_id || chatCallPayload?.sessionId
+    );
+    if (!sid) return;
+    void (async () => {
+      try {
+        const rest = await muhabbetTripRestPostForSession(sid, {
+          action: 'call_decline',
+          pathSuffix: 'call/decline',
+        });
+        if (isMuhabbetTripRestOk(rest)) {
+          const sess = rest.json.session;
+          if (sess && typeof sess === 'object') {
+            setLinkedTripSession(sess as MuhabbetTripSession);
+          }
+        }
+      } finally {
+        setChatCallState('idle');
+        setChatCallPayload(null);
+        void refreshLinkedTripSession();
+      }
+    })();
+  }, [chatCallPayload, linkedTripSession?.id, muhabbetTripRestPostForSession, refreshLinkedTripSession]);
+
+  const endChatTripCall = useCallback(() => {
+    const sid = normalizeMuhabbetSessionId(
+      linkedTripSession?.id || chatCallPayload?.session_id || chatCallPayload?.sessionId
+    );
+    if (!sid) {
+      setChatCallState('idle');
+      setChatCallPayload(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const rest = await muhabbetTripRestPostForSession(sid, {
+          action: 'call_end',
+          pathSuffix: 'call/end',
+        });
+        if (isMuhabbetTripRestOk(rest)) {
+          const sess = rest.json.session;
+          if (sess && typeof sess === 'object') {
+            setLinkedTripSession(sess as MuhabbetTripSession);
+          }
+        }
+      } finally {
+        setChatCallState('idle');
+        setChatCallPayload(null);
+        void refreshLinkedTripSession();
+      }
+    })();
+  }, [chatCallPayload, linkedTripSession?.id, muhabbetTripRestPostForSession, refreshLinkedTripSession]);
+
   const bubbleForMsg = (item: ChatMessageRow) => {
     const mine = myId && String(item.sender_user_id || '').toLowerCase() === myId;
     const srStored = (item.sender_role && String(item.sender_role).trim()) || '';
@@ -2363,6 +2811,13 @@ export default function MuhabbetChatScreen({
     }
   }, [base, cid, tripConvertInModal, pullMessagesFromApi]);
 
+  const activeTripCallSessionId = normalizeMuhabbetSessionId(
+    linkedTripSession?.id || chatCallPayload?.session_id || chatCallPayload?.sessionId
+  );
+  const tripCallScreenVisible = chatCallState !== 'idle' && !!activeTripCallSessionId;
+  const tripCallScreenMode: 'outgoing' | 'incoming' | 'active' =
+    chatCallState === 'active' ? 'active' : chatCallState === 'incoming' ? 'incoming' : 'outgoing';
+
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
       <LinearGradient
@@ -2421,6 +2876,19 @@ export default function MuhabbetChatScreen({
                 Teklif eşleşmesi tamam — güzergâh ve ücreti sohbette netleştirin
               </Text>
             </View>
+          </View>
+        ) : null}
+        {showSesliAraButton ? (
+          <View style={styles.voiceCallStrip} accessibilityRole="toolbar">
+            <Pressable
+              onPress={startChatTripCall}
+              style={styles.voiceCallBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Sesli ara"
+            >
+              <Ionicons name="call" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.voiceCallBtnTxt}>Sesli Ara</Text>
+            </Pressable>
           </View>
         ) : null}
         <KeyboardAvoidingView
@@ -2863,6 +3331,17 @@ export default function MuhabbetChatScreen({
             </View>
           </View>
         </Modal>
+        <MuhabbetTripCallScreen
+          visible={tripCallScreenVisible}
+          mode={tripCallScreenMode}
+          apiBaseUrl={base}
+          sessionId={activeTripCallSessionId}
+          peerName={chatHeaderTitle}
+          peerRoleLabel={chatHeaderRole}
+          onAccept={acceptChatTripCall}
+          onDecline={declineChatTripCall}
+          onCancel={endChatTripCall}
+        />
       </View>
     </SafeAreaView>
   );
@@ -2945,6 +3424,21 @@ const styles = StyleSheet.create({
     }),
   },
   matchBadgeTxt: { flex: 1, fontSize: 13, color: '#fff', fontWeight: '700', lineHeight: 18 },
+  voiceCallStrip: {
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    alignItems: 'stretch',
+  },
+  voiceCallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  voiceCallBtnTxt: { color: '#fff', fontSize: 16, fontWeight: '800' },
   list: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12, flexGrow: 1 },
   connectingStrip: {
     flexDirection: 'row',
