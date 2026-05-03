@@ -139,6 +139,9 @@ export type MuhabbetTripCallSocketPayload = {
   conversation_id?: string | null;
   channel_name?: string;
   caller_id?: string;
+  callee_id?: string;
+  /** Sunucu canonical: session:start_ts veya session benzersizliği */
+  call_id?: string;
   /** Optimistik UI — sunucu REST ile eşleştirir */
   started_at?: string;
   target_user_id?: string;
@@ -146,6 +149,8 @@ export type MuhabbetTripCallSocketPayload = {
   declined_by_user_id?: string;
   joined_user_id?: string;
   ended_by_user_id?: string;
+  /** Backend: driver | passenger */
+  ended_by_role?: string;
   agora_app_id?: string;
   agora_token?: string;
   agora_uid?: number;

@@ -57,7 +57,7 @@ type LeylekTripLiveRideChromeProps = {
   qrBusy?: boolean;
   /** ready / active / started dışında QR akışı kapalı (Muhabbet trip). */
   qrInteractionAllowed?: boolean;
-  callState: 'idle' | 'incoming' | 'outgoing' | 'active';
+  callState: 'idle' | 'starting' | 'incoming' | 'outgoing' | 'active';
   callBusy: boolean;
   /** idle iken arama — cooldown / REST sırasında */
   callDialDisabled?: boolean;
@@ -189,26 +189,29 @@ export default function LeylekTripLiveRideChrome({
       ? 'Yanıtla'
       : callState === 'outgoing'
         ? 'Aranıyor'
-        : callState === 'active'
-          ? 'Kapat'
-          : useSesliAraLabel
-            ? 'Sesli Ara'
-            : isDriver
-              ? 'Yolcuyu Ara'
-              : 'Sürücüyü Ara';
+        : callState === 'starting'
+          ? 'Bağlanıyor'
+          : callState === 'active'
+            ? 'Kapat'
+            : useSesliAraLabel
+              ? 'Sesli Ara'
+              : isDriver
+                ? 'Yolcuyu Ara'
+                : 'Sürücüyü Ara';
   const callButtonIcon: keyof typeof Ionicons.glyphMap = voiceCallComingSoon
     ? 'time-outline'
     : callState === 'incoming'
       ? 'call'
       : callState === 'active'
         ? 'call'
-        : callState === 'outgoing'
+        : callState === 'outgoing' || callState === 'starting'
           ? 'radio'
           : useSesliAraLabel
             ? 'call'
             : 'call';
   const handleCallPress = () => {
     if (voiceCallComingSoon) return;
+    if (callState === 'starting') return;
     if (callBusy || callDialDisabled || isTerminal) return;
     if (callState === 'incoming') {
       onJoinCall();
