@@ -26425,8 +26425,8 @@ def _muhabbet_trip_call_canonical_payload(
     }
 
 
-def _muhabbet_trip_reset_stale_call_row_dict(sid_lo: str, row: dict, *, reason: str) -> dict:
-    """Biniş öncesi eski çağrı veya declined/ended kalıntısını temizle."""
+def _muhabbet_trip_reset_stale_call_row_dict(sid_lo: str, row: dict, *, reason: str) -> None:
+    """Biniş öncesi eski çağrı veya declined/ended kalıntısını temizle. Çağıran refetch ile doğrular."""
     now_iso = datetime.now(timezone.utc).isoformat()
     reset_patch = {
         "call_active": False,
@@ -26436,17 +26436,29 @@ def _muhabbet_trip_reset_stale_call_row_dict(sid_lo: str, row: dict, *, reason: 
         "updated_at": now_iso,
     }
     try:
-        upd = supabase.table("muhabbet_trip_sessions").update(reset_patch).eq("id", sid_lo).execute()
-        out = dict(upd.data[0]) if upd.data else {**row, **reset_patch}
+        supabase.table("muhabbet_trip_sessions").update(reset_patch).eq("id", sid_lo).execute()
         logger.info(
             "[muhabbet_call_start_apply] reset_call_fields session_id=%s reason=%s",
             sid_lo,
             reason,
         )
-        return out
     except Exception as ex:
         logger.warning("_muhabbet_trip_reset_stale_call_row_dict session_id=%s err=%s", sid_lo, ex)
-        return {**row, **reset_patch}
+        raise _MuhabbetTripOpError(
+            "call_start_failed",
+            "Sesli arama başlatılamadı — oturum güncellenemedi.",
+            503,
+        ) from ex
+
+
+def _muhabbet_trip_verify_call_start_persisted_ringing(row: dict, caller_uid: str) -> bool:
+    """Yeni başlatılan çağrı DB'de ringing + aktif olarak kesin mi."""
+    uid_lo = str(caller_uid or "").strip().lower()
+    if not bool(row.get("call_active")):
+        return False
+    if str(row.get("call_caller_id") or "").strip().lower() != uid_lo:
+        return False
+    return str(row.get("call_state") or "").strip().lower() == "ringing"
 
 
 async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
@@ -26538,10 +26550,12 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
             cs_raw = str(row.get("call_state") or "").strip().lower()
 
             if stale:
-                row = _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="stale_age")
+                _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="stale_age")
                 stale_reset_detail = "CALL_RESET_AND_RETRY"
+                row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
             elif cs_raw in ("declined", "ended"):
-                row = _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="terminal_call_state")
+                _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="terminal_call_state")
+                row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
             elif cs_raw in ("ringing", "active") or cs_raw == "":
                 caller_existing = str(row.get("call_caller_id") or "").strip().lower()
                 cs_eff = cs_raw if cs_raw else "ringing"
@@ -26563,16 +26577,23 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
                     cs_eff,
                 )
                 canon_dup = _muhabbet_trip_call_canonical_payload(row, callee_uid_hint=target_uid)
+                logger.info(
+                    "[muhabbet_call_start_emit_blocked_reason] session_id=%s reason=duplicate_same_caller",
+                    sid_lo,
+                )
                 return {
                     "call": canon_dup,
                     "session": _muhabbet_trip_session_public(row),
                     "skip_notifications": True,
+                    "emit_allowed": False,
                 }
             else:
-                row = _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="unknown_call_state")
+                _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="unknown_call_state")
+                row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
 
         if bool(row.get("call_active")):
-            row = _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="force_clean_before_start")
+            _muhabbet_trip_reset_stale_call_row_dict(sid_lo, row, reason="force_clean_before_start")
+            row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         patch = {
@@ -26584,11 +26605,40 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
             "updated_at": now_iso,
         }
         upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid_lo).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        if not upd.data:
+            logger.warning(
+                "[muhabbet_call_start_reject] session_id=%s code=persist_empty_response uid_prefix=%s",
+                sid_lo,
+                uid_prefix,
+            )
+        next_row = _muhabbet_trip_session_for_member_or_403(sid_lo, uid)
+        if not _muhabbet_trip_verify_call_start_persisted_ringing(next_row, uid_lo):
+            logger.error(
+                "[muhabbet_call_start_emit_blocked_reason] session_id=%s reason=persist_verify_failed call_active=%s state=%s caller_match=%s",
+                sid_lo,
+                bool(next_row.get("call_active")),
+                str(next_row.get("call_state") or ""),
+                str(next_row.get("call_caller_id") or "").strip().lower() == uid_lo,
+            )
+            raise _MuhabbetTripOpError(
+                "call_start_failed",
+                "Sesli arama başlatılamadı — durum doğrulanamadı.",
+                503,
+            )
         canon = _muhabbet_trip_call_canonical_payload(next_row, callee_uid_hint=target_uid)
-        out: dict = {"call": canon, "session": _muhabbet_trip_session_public(next_row), "skip_notifications": False}
+        out: dict = {
+            "call": canon,
+            "session": _muhabbet_trip_session_public(next_row),
+            "skip_notifications": False,
+            "emit_allowed": True,
+        }
         if stale_reset_detail:
             out["detail"] = stale_reset_detail
+        logger.info(
+            "[muhabbet_call_start_emit_allowed] session_id=%s persisted_ringing=1 caller_prefix=%s",
+            sid_lo,
+            uid_lo[:12],
+        )
         return out
     except _MuhabbetTripOpError:
         raise
@@ -27213,12 +27263,20 @@ async def muhabbet_trip_call_start_post(
     try:
         out = await _muhabbet_trip_call_start_apply(uid, session_id)
         skip = bool(out.pop("skip_notifications", False))
+        emit_allowed = bool(out.pop("emit_allowed", False))
         payload = out["call"]
         sess_state = str((out.get("session") or {}).get("call_state") or "")
-        if not skip:
+        should_emit = bool(emit_allowed and not skip)
+        if should_emit:
             try:
                 uid_lo = str(uid).strip().lower()
                 target_uid = str(payload.get("callee_id") or payload.get("target_user_id") or "").strip().lower()
+                logger.info(
+                    "[muhabbet_call_start_emit_allowed] session_id=%s phase=rest_socket caller_prefix=%s callee_prefix=%s",
+                    sid_lo,
+                    uid_lo[:12],
+                    target_uid[:12] if target_uid else "",
+                )
                 logger.info(
                     "[muhabbet_call_emit_start_ack] session_id=%s to_caller=%s",
                     sid_lo,
@@ -27245,15 +27303,36 @@ async def muhabbet_trip_call_start_post(
                         ensure_ascii=False,
                     ),
                 )
-            except Exception:
+            except Exception as ex:
                 logger.exception(
                     "[muhabbet_call_start_emit_failed] session_id=%s uid_prefix=%s",
                     sid_lo,
                     uid_short,
                 )
+                logger.info(
+                    "[muhabbet_call_start_emit_blocked_reason] session_id=%s reason=socket_emit_exception err=%s",
+                    sid_lo,
+                    type(ex).__name__,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=_muhabbet_trip_api_error_detail(
+                        "call_start_failed",
+                        "Sesli arama bildirimi gönderilemedi. Lütfen tekrar deneyin.",
+                    ),
+                ) from ex
+        else:
+            blk = "duplicate_same_caller" if skip else "not_persisted_or_skip"
+            logger.info(
+                "[muhabbet_call_start_emit_blocked_reason] session_id=%s reason=%s emit_allowed=%s skip=%s",
+                sid_lo,
+                blk,
+                emit_allowed,
+                skip,
+            )
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_start", sid_lo, ms, sess_state or "ringing")
-        if not skip:
+        if should_emit:
             try:
                 await notify_trip_session_updated(sid_lo, "call_started", uid)
             except Exception as ne:
@@ -27272,6 +27351,11 @@ async def muhabbet_trip_call_start_post(
     except _MuhabbetTripOpError as e:
         ms = int((time.perf_counter() - t0) * 1000)
         _muhabbet_call_timing_log("call_start_error", sid_lo, ms, getattr(e, "socket_code", "") or "error")
+        logger.info(
+            "[muhabbet_call_start_emit_blocked_reason] session_id=%s reason=apply_op_error code=%s",
+            sid_lo,
+            e.socket_code,
+        )
         raise HTTPException(
             status_code=e.http_status,
             detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message),
@@ -27849,28 +27933,51 @@ async def sio_muhabbet_trip_call_start(sid, data):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
     session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    sid_lo = str(session_id or "").strip().lower()
     if not uid or not session_id:
         return
     try:
         out = await _muhabbet_trip_call_start_apply(uid, session_id)
         skip = bool(out.pop("skip_notifications", False))
+        emit_allowed = bool(out.pop("emit_allowed", False))
         payload = out["call"]
         uid_lo = str(uid).strip().lower()
         target_uid = str(payload.get("callee_id") or payload.get("target_user_id") or "").strip().lower()
-        if not skip:
-            logger.info("[muhabbet_call_emit_start_ack] session_id=%s to_caller_socket=%s", str(session_id).strip().lower(), uid_lo[:12])
+        should_emit = bool(emit_allowed and not skip)
+        if should_emit:
+            logger.info(
+                "[muhabbet_call_start_emit_allowed] session_id=%s phase=sio_socket caller_prefix=%s callee_prefix=%s",
+                sid_lo,
+                uid_lo[:12],
+                target_uid[:12] if target_uid else "",
+            )
+            logger.info("[muhabbet_call_emit_start_ack] session_id=%s to_caller_socket=%s", sid_lo, uid_lo[:12])
             await sio.emit("muhabbet_trip_call_start", payload, room=sid)
             if target_uid and target_uid != uid_lo:
                 logger.info(
                     "[muhabbet_call_emit_incoming] session_id=%s to_callee=%s",
-                    str(session_id).strip().lower(),
+                    sid_lo,
                     target_uid[:12],
                 )
                 await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
             _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
+        else:
+            blk = "duplicate_same_caller" if skip else "emit_not_allowed_or_skip"
+            logger.info(
+                "[muhabbet_call_start_emit_blocked_reason] session_id=%s phase=sio reason=%s emit_allowed=%s skip=%s",
+                sid_lo,
+                blk,
+                emit_allowed,
+                skip,
+            )
     except HTTPException as e:
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except _MuhabbetTripOpError as e:
+        logger.info(
+            "[muhabbet_call_start_emit_blocked_reason] session_id=%s phase=sio reason=op_error code=%s",
+            sid_lo,
+            e.socket_code,
+        )
         await sio.emit("muhabbet_trip_error", {"code": e.socket_code, "message": e.message}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_call_start: %s", e)
