@@ -1216,6 +1216,14 @@ DISPATCH_WAVE_DB_STATE = os.getenv("DISPATCH_WAVE_DB_STATE", "").strip().lower()
     "on",
 )
 
+# Phase 2A: structured dispatch score logs only (no sort/filter behavior change).
+DISPATCH_SCORE_LOGS = os.getenv("DISPATCH_SCORE_LOGS", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # tag_id -> asyncio.Task (dalga süresi: varsayılan 30 sn)
 rolling_dispatch_tasks: dict = {}
 # tag_id -> rolling state (in-memory): full_tag, current_batch, batch_seq, excluded_driver_ids,
@@ -1305,6 +1313,76 @@ def _dispatch_env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _dispatch_score_log_phase2a(
+    *,
+    phase: str,
+    tag_id: Optional[str],
+    radius_km: float,
+    vehicle_filter: bool,
+    eligible_drivers: list,
+    top_slice: Optional[list] = None,
+) -> None:
+    """Phase 2A — shadow score logging only; does not affect ordering."""
+    if not DISPATCH_SCORE_LOGS:
+        return
+    try:
+        if phase == "before_sort":
+            logger.info(
+                "[dispatch_score] %s",
+                json.dumps(
+                    {
+                        "phase": "before_sort",
+                        "tag_id": tag_id,
+                        "eligible_count": len(eligible_drivers),
+                        "radius_km": float(radius_km),
+                        "vehicle_filter": vehicle_filter,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+            return
+        vm_base = 1.0 if vehicle_filter else 0.5
+        for rank_current, row in enumerate(top_slice or [], start=1):
+            did = row.get("driver_id")
+            d_km = float(row.get("distance_km", 0) or 0)
+            rating = float(row.get("rating", 4.0) or 4.0)
+            d_norm = min(d_km / float(radius_km), 1.0) if radius_km > 0 else 1.0
+            r_norm = max(0.0, min(1.0, (rating - 3.0) / 2.0))
+            acceptance_rate = None
+            penalty = None
+            fairness = None
+            acc_v = 0.0 if acceptance_rate is None else float(acceptance_rate)
+            pen_v = 0.0 if penalty is None else float(penalty)
+            fair_v = 0.0 if fairness is None else float(fairness)
+            score_shadow = (
+                0.55 * (1.0 - d_norm)
+                + 0.20 * r_norm
+                + 0.15 * vm_base
+                + 0.05 * acc_v
+                - 0.05 * pen_v
+                + 0.05 * fair_v
+            )
+            payload = {
+                "phase": "after_sort",
+                "tag_id": tag_id,
+                "driver_id": did,
+                "distance_km": round(d_km, 4),
+                "distance_norm": round(d_norm, 6),
+                "rating": rating,
+                "rating_norm": round(r_norm, 6),
+                "vehicle_match": vm_base,
+                "acceptance_rate": acceptance_rate,
+                "penalty": penalty,
+                "fairness": fairness,
+                "score_shadow": round(score_shadow, 6),
+                "rank_current": rank_current,
+            }
+            logger.info("[dispatch_score] %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as exc:
+        logger.warning("[dispatch_score] log_error phase=%s exc=%s", phase, repr(exc))
+
+
 async def find_eligible_drivers(
     pickup_lat: float,
     pickup_lng: float,
@@ -1313,6 +1391,7 @@ async def find_eligible_drivers(
     radius_km: Optional[float] = None,
     *,
     vehicle_filter: bool = True,
+    tag_id: Optional[str] = None,
 ) -> list:
     """
     Uygun sürücüleri bul ve öncelik sırasına göre sırala
@@ -1419,7 +1498,22 @@ async def find_eligible_drivers(
                     "rating": drv.get("rating", 4.0) or 4.0,
                 }
             )
+        _dispatch_score_log_phase2a(
+            phase="before_sort",
+            tag_id=tag_id,
+            radius_km=r_km,
+            vehicle_filter=vehicle_filter,
+            eligible_drivers=eligible_drivers,
+        )
         eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
+        _dispatch_score_log_phase2a(
+            phase="after_sort",
+            tag_id=tag_id,
+            radius_km=r_km,
+            vehicle_filter=vehicle_filter,
+            eligible_drivers=eligible_drivers,
+            top_slice=eligible_drivers[:20],
+        )
         logger.info(
             "[MATCH] final_included driver_ids=%s count=%d pickup=(%.5f,%.5f)",
             [e["driver_id"] for e in eligible_drivers],
@@ -1509,6 +1603,7 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
             tag_data.get("pickup_lng", 0),
             exclude_ids=excl,
             passenger_vehicle_kind=pref,
+            tag_id=tag_id,
         )
         
         if not drivers:
@@ -3405,6 +3500,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         passenger_vehicle_kind=pref,
         radius_km=DISPATCH_RADIUS_KM,
         vehicle_filter=not use_relaxed_vehicle,
+        tag_id=tag_id,
     )
     if (
         not eligible
@@ -3418,6 +3514,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             passenger_vehicle_kind=pref,
             radius_km=DISPATCH_RADIUS_KM,
             vehicle_filter=False,
+            tag_id=tag_id,
         )
         if eligible:
             state["relax_vehicle_on_empty"] = True
@@ -3815,6 +3912,7 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         exclude_ids=[passenger_id] if passenger_id else [],
         passenger_vehicle_kind=passenger_pref,
         radius_km=DISPATCH_RADIUS_KM,
+        tag_id=tag_id,
     )
     if not eligible and _dispatch_env_flag("DISPATCH_RELAX_VEHICLE_ON_EMPTY"):
         logger.warning(
@@ -3828,6 +3926,7 @@ async def rolling_dispatch_start(tag_id: str) -> int:
             passenger_vehicle_kind=passenger_pref,
             radius_km=DISPATCH_RADIUS_KM,
             vehicle_filter=False,
+            tag_id=tag_id,
         )
         if eligible:
             relax_used = True
