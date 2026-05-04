@@ -1,29 +1,32 @@
 import type { Metadata } from "next";
 import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
+import { DownloadAppFlowPreview } from "@/components/download-app-flow-preview";
+import { DownloadPageTrust } from "@/components/download-page-trust";
+import { DownloadWebAppCompare } from "@/components/download-web-app-compare";
 import { EarlyAccessForm } from "@/components/early-access-form";
 import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 import { StoreButton } from "@/components/store-button";
 
 export const metadata: Metadata = {
-  title: "Uygulamayı İndir ve Beta Süreci",
+  title: "Uygulamayı Aç | Leylek Tag",
   description:
-    "Leylek Tag beta süreci, uygulama indirme hazırlığı ve erken erişim formu. Yolculuk paylaşımı topluluğuna ilk katılanlardan ol.",
+    "Canlı teklifler, güvenli eşleşme ve QR ile yolculuk kontrolü Leylek Tag uygulamasında. Webde keşfet, gerçek eşleşmeyi uygulamada başlat.",
 };
 
 const downloadNotes = [
   {
-    title: "Hızlı Yolculuk",
-    description: "Şehir içi rota odaklı güvenli eşleşme deneyimini uygulamada başlat.",
+    title: "Teklif ve rotalar",
+    description: "Uygulamada teklifini oluştur; şehir içi veya şehir dışı akışta sürdür.",
   },
   {
-    title: "Leylek Teklifi",
-    description: "Şehir dışı teklifleri teklif görüşmesiyle netleştir; karşılıklı onay ve güvenli eşleşmeyi keşfet.",
+    title: "Eşleşme ve görüşme",
+    description: "Karşılıklı onay ve güvenli teklif görüşmesi adımlarını mobil deneyimde tamamla.",
   },
   {
-    title: "Şehirler Arası İlanlar",
-    description: "Boş koltuk paylaşımı ve masraf paylaşımı ilanlarını uygulamada görüntüle.",
+    title: "QR ile yolculuk",
+    description: "Biniş ve kontrol QR doğrulamasıyla uygulama içinde yönetilir.",
   },
 ];
 
@@ -31,26 +34,48 @@ export default function DownloadPage() {
   return (
     <>
       <PageHero
-        eyebrow="indir"
-        title="Beta sürecindeyiz. Leylek Tag mobil deneyimde süreçte aktifleşiyor."
-        description="Web sitesi keşif ve erken erişim alanıdır. Güvenli eşleşme, teklif görüşmesi, doğrulama ve uygulamada gör adımları mobil deneyimde tamamlanır."
-        primaryLabel="Erken Erişim Formuna Git"
-        primaryHref="#erken-erisim"
+        eyebrow="uygulama"
+        title="Gerçek eşleşme uygulamada başlar"
+        description="Canlı teklifler, güvenli eşleşme ve QR ile yolculuk kontrolü Leylek Tag uygulamasında seni bekliyor."
+        primaryHref="#indir-magaza"
+        primaryLabel="Uygulamayı Aç"
+        secondaryHref="#indir-magaza"
+        secondaryLabel="İndirme Seçeneklerini Gör"
+        ctaHint="Web ile akışı keşfet; teklif ve eşleşme için uygulamaya geç."
       />
-      <section className="py-12">
+
+      <section className="border-y border-white/[0.06] bg-white/[0.02] py-10 sm:py-12">
         <Container>
-          <div className="glass-panel rounded-[2rem] p-8 sm:p-10">
-            <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-center">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">mobil deneyim</p>
-                <h2 className="mt-4 text-3xl font-black leading-tight text-white">Mağaza bağlantıları yayına süreçte bağlanıyor</h2>
-                <p className="mt-4 leading-7 text-slate-300">
-                  App Store ve Google Play bağlantıları yayına alındığında bu alan doğrudan resmi indirme sayfalarına bağlanır. Beta erişimi için erken erişim formunu kullanabilirsin.
+          <DownloadPageTrust />
+        </Container>
+      </section>
+
+      <DownloadWebAppCompare />
+
+      <DownloadAppFlowPreview />
+
+      <section id="indir-magaza" className="scroll-mt-28 py-12 sm:py-16">
+        <Container>
+          <div className="glass-panel rounded-[2rem] p-6 sm:p-10">
+            <div className="grid gap-10 lg:grid-cols-[1fr_0.95fr] lg:items-start">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">indirme</p>
+                <h2 className="mt-4 text-3xl font-black leading-tight text-white sm:text-4xl">
+                  Mağaza bağlantıları yayına süreçte bağlanıyor
+                </h2>
+                <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
+                  App Store ve Google Play bağlantıları aktifleştikinde tek dokunuşla resmi sayfaya gideceksin. Şimdilik
+                  erken erişim formuyla bildirim alabilirsin.
                 </p>
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <p className="mt-4 text-sm font-semibold text-emerald-200/90">
+                  İlk kullanıcılar teklif akışını keşfediyor — sen de sıraya katıl.
+                </p>
+                <div className="mt-8 flex w-full max-w-md flex-col gap-4">
                   <StoreButton eyebrow="süreçte" label="App Store" />
                   <StoreButton eyebrow="süreçte" label="Google Play" />
-                  <ButtonLink href="#erken-erisim" variant="secondary">
+                </div>
+                <div className="mt-6">
+                  <ButtonLink href="#erken-erisim" variant="secondary" className="w-full sm:w-auto sm:min-w-[240px]">
                     Beta için haber ver
                   </ButtonLink>
                 </div>
@@ -65,14 +90,14 @@ export default function DownloadPage() {
         </Container>
       </section>
 
-      <section id="erken-erisim" className="py-12">
+      <section id="erken-erisim" className="scroll-mt-28 py-12 sm:py-16">
         <Container>
-          <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
-            <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">beta süreci</p>
-              <h2 className="mt-4 text-3xl font-black leading-tight text-white">İlk kullanıcılar arasında yerini al.</h2>
+          <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
+            <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">erken erişim</p>
+              <h2 className="mt-4 text-3xl font-black leading-tight text-white">Uygulama açıldığında haber verelim.</h2>
               <p className="mt-4 text-sm leading-7 text-slate-300">
-                Erken erişim formu şimdilik yalnızca yerel başarı mesajı gösterir. Canlı kayıt bağlantısı launch backend hazır olduğunda eklenecektir.
+                Form yerel olarak gönderim onayı gösterir; ürün yayına yaklaştıkça seni bilgilendiririz.
               </p>
             </div>
             <EarlyAccessForm />

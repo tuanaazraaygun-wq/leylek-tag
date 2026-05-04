@@ -27,7 +27,8 @@ type MuhabbetTripCallScreenProps = {
   onCancel: () => void;
 };
 
-function stopCallAudio() {
+function stopCallAudio(reason = 'stop_call_audio') {
+  console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason }));
   Vibration.cancel();
   try {
     InCallManager.stopRingtone();
@@ -76,9 +77,67 @@ export default function MuhabbetTripCallScreen({
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
 
+  /** Zil / titreşim yalnızca callee incoming — outgoing/active/starting asla */
   useEffect(() => {
     if (!visible) {
-      stopCallAudio();
+      Vibration.cancel();
+      try {
+        InCallManager.stopRingtone();
+      } catch {
+        /* noop */
+      }
+      console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason: 'not_visible' }));
+      return;
+    }
+    if (mode !== 'incoming') {
+      Vibration.cancel();
+      try {
+        InCallManager.stopRingtone();
+      } catch {
+        /* noop */
+      }
+      console.log('[muhabbet_call_ringtone_skip_non_incoming]', JSON.stringify({ mode }));
+      return () => {
+        Vibration.cancel();
+        try {
+          InCallManager.stopRingtone();
+        } catch {
+          /* noop */
+        }
+        console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason: 'effect_cleanup_non_incoming', mode }));
+      };
+    }
+
+    console.log('[muhabbet_call_ringtone_start]', JSON.stringify({ mode }));
+    try {
+      InCallManager.startRingtone('_DEFAULT_', [0, 650, 300, 650], 'playback', 60);
+      Vibration.vibrate([0, 650, 300, 650], true);
+    } catch {
+      /* noop */
+    }
+    return () => {
+      Vibration.cancel();
+      try {
+        InCallManager.stopRingtone();
+      } catch {
+        /* noop */
+      }
+      console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason: 'leave_incoming_or_remount', mode }));
+    };
+  }, [visible, mode]);
+
+  useEffect(() => {
+    if (!visible) {
+      try {
+        InCallManager.stopRingback();
+      } catch {
+        /* noop */
+      }
+      try {
+        InCallManager.stop();
+      } catch {
+        /* noop */
+      }
       return;
     }
     const anim = Animated.loop(
@@ -96,19 +155,20 @@ export default function MuhabbetTripCallScreen({
         } catch {
           /* noop */
         }
-        /* Muhabbet: arayan sadece “Aranıyor”; zil / ringback çalmaz */
-      } else if (mode === 'incoming') {
-        InCallManager.startRingtone('_DEFAULT_', [0, 650, 300, 650], 'playback', 60);
-        Vibration.vibrate([0, 650, 300, 650], true);
-      } else {
+      } else if (mode === 'active') {
         InCallManager.setForceSpeakerphoneOn(speakerOn);
+      } else if (mode === 'incoming') {
+        try {
+          InCallManager.setForceSpeakerphoneOn(false);
+        } catch {
+          /* noop */
+        }
       }
     } catch {
       /* noop */
     }
     return () => {
       anim.stop();
-      stopCallAudio();
     };
   }, [mode, pulse, speakerOn, visible]);
 
@@ -251,18 +311,18 @@ export default function MuhabbetTripCallScreen({
   }, [speakerOn]);
 
   const accept = useCallback(() => {
-    stopCallAudio();
+    stopCallAudio('accept');
     onAccept();
   }, [onAccept]);
 
   const decline = useCallback(() => {
-    stopCallAudio();
+    stopCallAudio('decline');
     void leaveCall();
     onDecline();
   }, [leaveCall, onDecline]);
 
   const cancel = useCallback(() => {
-    stopCallAudio();
+    stopCallAudio('cancel_or_end');
     void leaveCall();
     onCancel();
   }, [leaveCall, onCancel]);

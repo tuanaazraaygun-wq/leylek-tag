@@ -20948,7 +20948,14 @@ def _muhabbet_listing_feed_visible_for_matching(scope: str, r: dict) -> bool:
     has_matched = bool(r.get("matched_conversation_id") or r.get("accepted_match_request_id"))
     sc = _muhabbet_trip_seat_capacity_int(r.get("seat_capacity"))
     scope_lo = str(scope or "intercity").strip().lower()
-    if scope_lo != "intercity" or sc <= 1:
+    if scope_lo != "intercity":
+        return not has_matched
+    if sc <= 1:
+        if str(r.get("status") or "").strip().lower() != "active":
+            return False
+        mst_1 = str(r.get("matching_status") or "open").strip().lower()
+        if mst_1 != "open":
+            return False
         return not has_matched
     if str(r.get("status") or "").strip().lower() != "active":
         return False
@@ -20993,6 +21000,29 @@ def expire_muhabbet_listing_matching_deadlines() -> int:
     except Exception as e:
         logger.warning("expire_muhabbet_listing_matching_deadlines: %s", e)
         return 0
+
+
+_MUHABBET_LISTING_MATCHING_TERMINAL_FOR_CLOSE_IDEMPOTENT = frozenset(
+    {"closed_manual", "closed_expired", "full"}
+)
+
+
+def _muhabbet_listing_matching_summary_dict(row: dict) -> dict:
+    """ride_listings satırından UI özeti; matching_open yalnızca matching_status kolonuna göre."""
+    sc = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
+    try:
+        acc = int(row.get("accepted_passenger_count") or 0)
+    except Exception:
+        acc = 0
+    acc = max(0, min(acc, sc))
+    empty_seats = max(0, sc - acc)
+    mst = str(row.get("matching_status") or "open").strip().lower()
+    return {
+        "accepted_passengers": acc,
+        "seat_capacity": sc,
+        "empty_seats": empty_seats,
+        "matching_open": mst == "open",
+    }
 
 
 @api_router.get("/muhabbet/listings/feed")
@@ -21253,6 +21283,16 @@ async def muhabbet_listing_match_request(
             )
         if _muhabbet_listing_offer_expired(lst):
             raise HTTPException(status_code=400, detail="Bu ilanın süresi doldu; yeni talep gönderilemez")
+        scope_mr = str(lst.get("listing_scope") or "local").strip().lower()
+        if scope_mr == "intercity":
+            mst_mr = str(lst.get("matching_status") or "open").strip().lower()
+            if mst_mr != "open":
+                if mst_mr == "full":
+                    raise HTTPException(status_code=400, detail="Bu ilan için yolcu kontenjanı dolu.")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Bu teklif yeni yolcu alımına kapatıldı.",
+                )
         offer_kind = _muhabbet_listing_offer_kind(lst)
         can_drv = _muhabbet_user_can_act_as_driver(uid)
         raw_ai = getattr(body, "actor_intent", None)
@@ -21411,6 +21451,71 @@ async def muhabbet_listing_lifecycle(
         raise HTTPException(status_code=400, detail="Geçersiz ilan kimliği") from None
     except Exception as e:
         logger.error("muhabbet_listing_lifecycle: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/listings/{listing_id}/matching/close")
+async def muhabbet_listing_matching_close(
+    listing_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Şehirler arası ilan: yeni yolcu eşleşmesini kapatır (matching_status=closed_manual).
+    Kabul edilmiş yolcular / trip oturumları / sohbetler değişmez; pending istekler iptal edilmez.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        lid = str(listing_id).strip().lower()
+        uuid.UUID(lid)
+        lr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        if not lr.data:
+            raise HTTPException(status_code=404, detail="İlan bulunamadı")
+        row = _ride_listing_response_row(dict(lr.data[0]))
+        if _ride_listing_creator_uid(row) != uid:
+            logger.info("[muhabbet_listing_matching_close_forbidden] lid=%s uid=%s", lid[:12], str(uid)[:12])
+            raise HTTPException(status_code=403, detail="Yalnızca kendi ilanınız için kullanılabilir")
+        if str(row.get("listing_scope") or "local").strip().lower() != "intercity":
+            raise HTTPException(status_code=400, detail="Bu işlem yalnızca şehirler arası ilanlar için geçerlidir.")
+        mst = str(row.get("matching_status") or "open").strip().lower()
+        if mst in _MUHABBET_LISTING_MATCHING_TERMINAL_FOR_CLOSE_IDEMPOTENT:
+            logger.info("[muhabbet_listing_matching_close_idempotent] lid=%s matching_status=%s", lid[:12], mst)
+            try:
+                _enrich_ride_listings_creators([row])
+            except Exception:
+                pass
+            return {
+                "success": True,
+                "listing": row,
+                "matching_summary": _muhabbet_listing_matching_summary_dict(row),
+            }
+        now_ts = _muhabbet_listing_row_ts()
+        supabase.table("ride_listings").update({"matching_status": "closed_manual", "updated_at": now_ts}).eq("id", lid).eq(
+            "matching_status", "open"
+        ).execute()
+        fr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        if not fr.data:
+            raise HTTPException(status_code=404, detail="İlan bulunamadı")
+        out = _ride_listing_response_row(dict(fr.data[0]))
+        omst = str(out.get("matching_status") or "open").strip().lower()
+        if omst != "closed_manual":
+            logger.info("[muhabbet_listing_matching_close_idempotent] lid=%s matching_status=%s", lid[:12], omst)
+        else:
+            logger.info("[muhabbet_listing_matching_close] lid=%s uid=%s", lid[:12], str(uid)[:12])
+        try:
+            _enrich_ride_listings_creators([out])
+        except Exception:
+            pass
+        return {
+            "success": True,
+            "listing": out,
+            "matching_summary": _muhabbet_listing_matching_summary_dict(out),
+        }
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz ilan kimliği") from None
+    except Exception as e:
+        logger.error("muhabbet_listing_matching_close: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -22356,7 +22461,12 @@ async def muhabbet_match_request_accept(
         if scope_lst == "intercity":
             mst = str(lst.get("matching_status") or "open").strip().lower()
             if mst != "open":
-                raise HTTPException(status_code=400, detail="İlan eşleşmesi kapalı.")
+                if mst == "full":
+                    raise HTTPException(status_code=400, detail="Bu ilan için yolcu kontenjanı dolu.")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Bu teklif yeni yolcu alımına kapatıldı.",
+                )
             dl_raw = lst.get("matching_deadline_at")
             if dl_raw is not None and str(dl_raw).strip():
                 dlp = _parse_iso_dt(dl_raw)

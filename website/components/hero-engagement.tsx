@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { LiveActivityBar, type PulseStats } from "@/components/live-activity-bar";
+import { useEffect, useRef, useState } from "react";
 import { useSiteAction } from "@/components/site-action-context";
 import { LIVE_FLOW_ANALYZING, LIVE_FLOW_PRIMARY, LIVE_FLOW_SECONDARY } from "@/lib/site-copy";
 
@@ -10,45 +9,32 @@ const LS_ROUTE_KEY = "leylek_last_route_search";
 
 const ROUTE_SUGGESTIONS = ["İstanbul → Ankara", "İzmir → İstanbul", "Bursa → Antalya"] as const;
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n));
-}
-
-function jitter(prev: number, min: number, max: number, step = 2) {
-  const delta = Math.floor(Math.random() * (step * 2 + 1)) - step;
-  return clamp(prev + delta, min, max);
-}
-
-function usePulseStats() {
-  const [stats, setStats] = useState<PulseStats>({ searching: 12, routes: 3, users: 128 });
-
-  const tick = useCallback(() => {
-    setStats((s) => ({
-      searching: jitter(s.searching, 9, 18),
-      routes: jitter(s.routes, 1, 6, 1),
-      users: jitter(s.users, 118, 142, 3),
-    }));
-  }, []);
-
-  useEffect(() => {
-    let id: ReturnType<typeof setTimeout>;
-    const loop = () => {
-      tick();
-      id = setTimeout(loop, 3000 + Math.random() * 1000);
-    };
-    id = setTimeout(loop, 2800 + Math.random() * 800);
-    return () => clearTimeout(id);
-  }, [tick]);
-
-  return stats;
-}
-
 function persistRouteLabel(label: string) {
   try {
     localStorage.setItem(LS_ROUTE_KEY, JSON.stringify({ label }));
   } catch {
     /* ignore */
   }
+}
+
+function HeroDiscoveryHint() {
+  return (
+    <div
+      className="live-activity-bar mt-6 flex flex-col gap-2 border-y border-white/[0.06] py-3 text-center text-xs font-semibold text-white/72 sm:mt-8 sm:flex-row sm:flex-wrap sm:justify-start sm:gap-x-4 sm:gap-y-1 sm:text-left sm:text-sm"
+      aria-live="polite"
+    >
+      <span className="text-white/85">İlk kullanıcılar teklif akışını keşfediyor</span>
+      <span className="hidden text-white/35 sm:inline" aria-hidden>
+        •
+      </span>
+      <span>
+        Web: keşif · Uygulama:{" "}
+        <Link href="/indir" className="font-bold text-cyan-200/95 underline-offset-2 hover:underline">
+          gerçek eşleşme
+        </Link>
+      </span>
+    </div>
+  );
 }
 
 function HeroDestinationInput() {
@@ -159,79 +145,36 @@ function HeroDestinationInput() {
           Son araman: <span className="font-semibold text-white/80">{remembered}</span>
         </p>
       ) : null}
-      <p className="mt-3 text-xs leading-relaxed text-orange-300/80">
-        ⚡ En iyi eşleşmeler genelde 2-3 dakika içinde doluyor
+      <p className="mt-3 text-xs leading-relaxed text-orange-300/85">
+        Teklif ve eşleşme adımlarını tamamlamak için{" "}
+        <Link href="/indir" className="font-bold text-orange-200 underline-offset-2 hover:underline">
+          uygulamaya geç
+        </Link>
+        .
       </p>
     </div>
   );
 }
 
-function HeroSocialProof({ users }: { users: number }) {
-  const [shown, setShown] = useState(0);
-  const animComplete = useRef(false);
-  const initialGoal = useRef(users);
-  const usersRef = useRef(users);
-  usersRef.current = users;
-
-  useEffect(() => {
-    const goal = initialGoal.current;
-    let start: number | null = null;
-    const dur = 1300;
-    const ease = (p: number) => 1 - (1 - p) ** 2;
-    let raf = 0;
-
-    const frame = (t: number) => {
-      if (start === null) start = t;
-      const p = Math.min(1, (t - start) / dur);
-      setShown(Math.round(goal * ease(p)));
-      if (p < 1) {
-        raf = requestAnimationFrame(frame);
-      } else {
-        animComplete.current = true;
-        setShown(usersRef.current);
-      }
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  useEffect(() => {
-    if (!animComplete.current) return;
-    setShown(users);
-  }, [users]);
-
-  if (users <= 0) {
-    return (
-      <div className="space-y-1 text-center sm:text-left">
-        <p className="text-sm font-semibold text-white/75">{LIVE_FLOW_PRIMARY}</p>
-        <p className="text-xs text-white/55">
-          <Link href="/indir" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
-            {LIVE_FLOW_SECONDARY}
-          </Link>
-        </p>
-      </div>
-    );
-  }
-
-  if (shown < 1) {
-    return <p className="text-center text-sm font-semibold text-white/75 sm:text-left">{LIVE_FLOW_PRIMARY}</p>;
-  }
-
+function HeroSocialProofQualitative() {
   return (
-    <p className="text-center text-sm font-semibold text-white/75 sm:text-left">
-      Bugün <span className="tabular-nums text-lg font-black text-cyan-100">{shown}</span> kişi yol buldu
-    </p>
+    <div className="space-y-1 text-center sm:text-left">
+      <p className="text-sm font-semibold text-white/78">{LIVE_FLOW_PRIMARY}</p>
+      <p className="text-xs text-white/55">
+        <Link href="/indir" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
+          {LIVE_FLOW_SECONDARY}
+        </Link>
+      </p>
+    </div>
   );
 }
 
 export function HeroEngagement() {
-  const stats = usePulseStats();
-
   return (
     <div className="space-y-4">
       <HeroDestinationInput />
-      <HeroSocialProof users={stats.users} />
-      <LiveActivityBar stats={stats} />
+      <HeroSocialProofQualitative />
+      <HeroDiscoveryHint />
     </div>
   );
 }

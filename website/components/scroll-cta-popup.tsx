@@ -1,13 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useSiteAction } from "@/components/site-action-context";
 
 const SESSION_KEY = "leylek_scroll_cta_done";
 
 export function ScrollCtaPopup() {
   const [open, setOpen] = useState(false);
-  const { triggerProgress } = useSiteAction();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -21,7 +20,7 @@ export function ScrollCtaPopup() {
       const doc = document.documentElement;
       const maxScroll = doc.scrollHeight - window.innerHeight;
       if (maxScroll <= 0) return;
-      if (window.scrollY / maxScroll >= 0.5) {
+      if (window.scrollY / maxScroll >= 0.7) {
         setOpen(true);
         try {
           sessionStorage.setItem(SESSION_KEY, "1");
@@ -59,18 +58,18 @@ export function ScrollCtaPopup() {
           ✕
         </button>
         <p id="scroll-cta-title" className="pr-8 text-base font-bold leading-snug text-white">
-          Yolunu şimdi bulmak ister misin?
+          Yolunu gerçekten bulmak ister misin?
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            triggerProgress();
-            setOpen(false);
-          }}
-          className="ripple-bg tap-highlight mt-5 w-full rounded-full bg-gradient-to-br from-[#00C6FF] to-[#0072FF] py-3 text-sm font-bold text-white shadow-lg shadow-cyan-500/25 transition hover:brightness-110 active:scale-[0.96]"
+        <p className="mt-2 text-sm leading-relaxed text-slate-400">
+          Gerçek eşleşme ve QR adımları uygulamada tamamlanır.
+        </p>
+        <Link
+          href="/indir#indir-magaza"
+          className="ripple-bg tap-highlight mt-5 flex min-h-[48px] w-full items-center justify-center rounded-full bg-gradient-to-br from-[#00C6FF] to-[#0072FF] text-sm font-bold text-white shadow-lg shadow-cyan-500/25 transition hover:brightness-110 active:scale-[0.96]"
+          onClick={() => setOpen(false)}
         >
-          Hemen başla
-        </button>
+          Uygulamayı aç
+        </Link>
       </div>
     </div>
   );

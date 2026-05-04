@@ -7,6 +7,8 @@ type PageHeroProps = {
   description: string;
   primaryHref?: string;
   primaryLabel?: string;
+  secondaryHref?: string;
+  secondaryLabel?: string;
   /** Küçük güven / ek bilgi satırı (CTA’nın hemen altında). */
   ctaHint?: string;
 };
@@ -17,6 +19,8 @@ export function PageHero({
   description,
   primaryHref = "/indir",
   primaryLabel = "Uygulamayı İndir",
+  secondaryHref,
+  secondaryLabel,
   ctaHint,
 }: PageHeroProps) {
   return (
@@ -29,9 +33,16 @@ export function PageHero({
             {title}
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">{description}</p>
-          <ButtonLink href={primaryHref} className="mt-8">
-            {primaryLabel}
-          </ButtonLink>
+          <div className="mt-8 flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <ButtonLink href={primaryHref} className="w-full sm:w-auto sm:min-w-[200px]">
+              {primaryLabel}
+            </ButtonLink>
+            {secondaryHref && secondaryLabel ? (
+              <ButtonLink href={secondaryHref} variant="secondary" className="w-full sm:w-auto sm:min-w-[200px]">
+                {secondaryLabel}
+              </ButtonLink>
+            ) : null}
+          </div>
           {ctaHint ? (
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400">{ctaHint}</p>
           ) : null}
