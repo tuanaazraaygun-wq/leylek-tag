@@ -782,6 +782,7 @@ export default function DriverOfferScreen({
   const [mapCityGrid, setMapCityGrid] = useState<DriverMapCityGridCell[]>([]);
   const [mapDriverCity, setMapDriverCity] = useState('');
   const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: 20 });
+  const [mapExpanded, setMapExpanded] = useState(false);
   const driverPulseScale = useRef(new Animated.Value(1)).current;
   const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
   const driverPulse2Scale = useRef(new Animated.Value(1)).current;
@@ -837,9 +838,16 @@ export default function DriverOfferScreen({
     };
   }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
 
-  const mapSectionHeight = embedded
-    ? Math.min(SCREEN_HEIGHT * 0.3, 240)
-    : Math.min(SCREEN_HEIGHT * 0.36, 320);
+  const mapSectionHeight = useMemo(() => {
+    if (mapExpanded) {
+      return embedded
+        ? Math.min(SCREEN_HEIGHT * 0.48, 390)
+        : Math.min(SCREEN_HEIGHT * 0.55, 460);
+    }
+    return embedded
+      ? Math.min(SCREEN_HEIGHT * 0.3, 240)
+      : Math.min(SCREEN_HEIGHT * 0.36, 320);
+  }, [embedded, mapExpanded]);
 
   /** Normal TAG: teklifleri gizleme; araç uyumsuzluğu yalnızca tanılama logu (sunucu hedefli socket teklifi kartta kalsın). */
   const visibleRequests = useMemo(() => {
@@ -1102,7 +1110,14 @@ export default function DriverOfferScreen({
   const body = (
     <>
       <View style={styles.mapCardShell}>
-        <View style={[styles.mapContainer, styles.mapContainerSolid, { height: mapSectionHeight }]}>
+        <View
+          style={[
+            styles.mapContainer,
+            styles.mapContainerSolid,
+            mapExpanded && styles.mapContainerSolidExpanded,
+            { height: mapSectionHeight },
+          ]}
+        >
           {renderMap()}
           <View style={styles.mapDimOverlay} pointerEvents="none" />
           <View style={styles.mapTopOverlay} pointerEvents="box-none">
@@ -1127,6 +1142,22 @@ export default function DriverOfferScreen({
             </Text>
           </View>
         </View>
+        <TouchableOpacity
+          style={styles.mapExpandToggle}
+          onPress={() => setMapExpanded((v) => !v)}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel={mapExpanded ? 'Haritayı küçült' : 'Haritayı göster'}
+        >
+          <Ionicons
+            name={mapExpanded ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color="#BAE6FD"
+          />
+          <Text style={styles.mapExpandToggleText}>
+            {mapExpanded ? 'Haritayı küçült' : 'Haritayı göster'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Yolcu İstekleri Listesi - Alt %65 */}
@@ -1142,25 +1173,39 @@ export default function DriverOfferScreen({
             pointerEvents="none"
           />
         ) : null}
-        <View style={styles.listHeader}>
+        <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
           <View style={styles.listHeaderTopRow}>
             <View style={styles.listHeaderAccentDot} />
-            <Text style={styles.listTitle}>Yakındaki İstekler</Text>
+            <Text style={[styles.listTitle, mapExpanded && styles.listTitleMapExpanded]}>
+              Yakındaki İstekler
+            </Text>
           </View>
         </View>
 
         {visibleRequests.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyStateCard}>
-              <View style={[styles.emptyIconRing, isMotor && styles.emptyIconRingMotor]}>
+          <View style={[styles.emptyState, mapExpanded && styles.emptyStateMapExpanded]}>
+            <View style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}>
+              <View
+                style={[
+                  styles.emptyIconRing,
+                  mapExpanded && styles.emptyIconRingMapExpanded,
+                  isMotor && styles.emptyIconRingMotor,
+                ]}
+              >
                 {isMotor ? (
-                  <MaterialCommunityIcons name="motorbike" size={56} color="#86EFAC" />
+                  <MaterialCommunityIcons
+                    name="motorbike"
+                    size={mapExpanded ? 48 : 56}
+                    color="#86EFAC"
+                  />
                 ) : (
-                  <Ionicons name="car-outline" size={52} color="#38BDF8" />
+                  <Ionicons name="car-outline" size={mapExpanded ? 44 : 52} color="#38BDF8" />
                 )}
               </View>
-              <Text style={styles.emptyTitle}>Teklif bekleniyor</Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}>
+                Teklif bekleniyor
+              </Text>
+              <Text style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}>
                 Çevrimiçi kaldığınızda talepler burada belirir. Haritada {mapHud.radius} km içindeki yolcu talepleri ve yakındaki kullanıcılar gösterilir.
               </Text>
             </View>
@@ -1182,7 +1227,7 @@ export default function DriverOfferScreen({
                 setGlobalAcceptFrozen={setGlobalAcceptFrozen}
               />
             )}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, mapExpanded && styles.listContentMapExpanded]}
             showsVerticalScrollIndicator={false}
           />
         )}
@@ -1215,6 +1260,33 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: SCREEN_WIDTH,
     paddingHorizontal: 12,
+  },
+  mapContainerSolidExpanded: {
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+    shadowOpacity: 0.48,
+    shadowRadius: 22,
+    elevation: 16,
+  },
+  mapExpandToggle: {
+    marginTop: 8,
+    marginBottom: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.28)',
+  },
+  mapExpandToggleText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#E0F2FE',
+    letterSpacing: 0.2,
   },
   mapDimOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1587,6 +1659,15 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
     letterSpacing: -0.35,
   },
+  listHeaderMapExpanded: {
+    paddingTop: 10,
+    paddingBottom: 8,
+    paddingHorizontal: 14,
+  },
+  listTitleMapExpanded: {
+    fontSize: 17,
+    letterSpacing: -0.25,
+  },
   listSubtitle: {
     fontSize: 13,
     color: 'rgba(255, 255, 255, 0.7)',
@@ -1597,12 +1678,23 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 28,
   },
+  listContentMapExpanded: {
+    paddingTop: 2,
+    paddingBottom: 18,
+    paddingHorizontal: 14,
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 20,
+  },
+  emptyStateMapExpanded: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    justifyContent: 'flex-start',
+    paddingTop: 8,
   },
   emptyStateCard: {
     width: '100%',
@@ -1621,6 +1713,12 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
+  emptyStateCardMapExpanded: {
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    maxWidth: 380,
+  },
   emptyIconRing: {
     width: 100,
     height: 100,
@@ -1635,6 +1733,12 @@ const styles = StyleSheet.create({
   emptyIconRingMotor: {
     backgroundColor: 'rgba(34, 197, 94, 0.12)',
     borderColor: 'rgba(134, 239, 172, 0.4)',
+  },
+  emptyIconRingMapExpanded: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    marginBottom: 2,
   },
   emptyTitle: {
     fontSize: 23,
@@ -1652,6 +1756,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
     letterSpacing: 0.1,
+  },
+  emptyTitleMapExpanded: {
+    fontSize: 19,
+    marginTop: 12,
+  },
+  emptySubtitleMapExpanded: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 8,
   },
 
   // Card
