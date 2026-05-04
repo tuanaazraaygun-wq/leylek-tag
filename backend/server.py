@@ -3142,6 +3142,7 @@ def _tag_dispatch_state_shadow_upsert_start(
                 "batch_seq": 0,
                 "offered_driver_ids": [],
                 "excluded_driver_ids": [],
+                "current_batch": [],
                 "relax_vehicle_on_empty": relax_vehicle_on_empty,
                 "wave_deadline": wave_deadline_s,
                 "next_wave_at": next_wave_s,
@@ -3151,8 +3152,9 @@ def _tag_dispatch_state_shadow_upsert_start(
             on_conflict="tag_id",
         ).execute()
         logger.info(
-            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s",
+            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s current_batch_count=%s",
             tag_id,
+            0,
             0,
             0,
         )
@@ -3169,6 +3171,8 @@ def _tag_dispatch_state_shadow_update_batch(
     *,
     batch_seq: int,
     offered_union_ids: list[str],
+    current_batch_ids: list[str],
+    excluded_driver_ids: list[str],
 ) -> None:
     wave_deadline_s, next_wave_s = _tag_dispatch_state_shadow_wave_deadline_iso()
     try:
@@ -3176,16 +3180,20 @@ def _tag_dispatch_state_shadow_update_batch(
             {
                 "batch_seq": batch_seq,
                 "offered_driver_ids": offered_union_ids,
+                "excluded_driver_ids": excluded_driver_ids,
+                "current_batch": current_batch_ids,
                 "wave_deadline": wave_deadline_s,
                 "next_wave_at": next_wave_s,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("tag_id", tag_id).execute()
+        _cb_n = len(current_batch_ids)
         logger.info(
-            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s",
+            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s current_batch_count=%s",
             tag_id,
             batch_seq,
             len(offered_union_ids),
+            _cb_n,
         )
     except Exception as e:
         logger.warning(
@@ -3205,10 +3213,11 @@ def _tag_dispatch_state_shadow_delete(
     try:
         supabase.table("tag_dispatch_state").delete().eq("tag_id", tag_id).execute()
         logger.info(
-            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s",
+            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s current_batch_count=%s",
             tag_id,
             log_batch_seq,
             log_offered_count,
+            0,
         )
     except Exception as e:
         logger.warning(
@@ -3537,6 +3546,8 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             tag_id,
             batch_seq=bseq,
             offered_union_ids=sorted(_offered_union),
+            current_batch_ids=list(next_batch_ids),
+            excluded_driver_ids=sorted(excluded),
         )
 
     _tag_dispatch_obs_log(
@@ -3882,6 +3893,302 @@ async def rolling_dispatch_start(tag_id: str) -> int:
     return len(eligible)
 
 
+def _wave_deadline_from_dispatch_state_row(raw: Any) -> Optional[datetime]:
+    """Parse wave_deadline from DB / JSON to timezone-aware UTC."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        dt = raw
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _jsonb_driver_ids_to_set(val: Any) -> set[str]:
+    if val is None:
+        return set()
+    if isinstance(val, str):
+        try:
+            val = json.loads(val)
+        except Exception:
+            return set()
+    if not isinstance(val, list):
+        return set()
+    out: set[str] = set()
+    for x in val:
+        if x is None:
+            continue
+        s = str(x).strip().lower()
+        if s:
+            out.add(s)
+    return out
+
+
+def _jsonb_to_current_batch_list(val: Any) -> list[str]:
+    if val is None:
+        return []
+    if isinstance(val, str):
+        try:
+            val = json.loads(val)
+        except Exception:
+            return []
+    if not isinstance(val, list):
+        return []
+    out: list[str] = []
+    for x in val:
+        if x is None:
+            continue
+        s = str(x).strip().lower()
+        if s:
+            out.append(s)
+    return out
+
+
+async def _rolling_dispatch_full_tag_from_tags_row(row: dict) -> Optional[dict]:
+    """Same full_tag shape as rolling_dispatch_start; None if pickup invalid/missing."""
+    passenger_id = row.get("passenger_id")
+    if passenger_id:
+        passenger_id = await resolve_user_id(passenger_id)
+    passenger_name = row.get("passenger_name") or "Yolcu"
+    passenger_pref = _canonical_vehicle_kind(row.get("passenger_preferred_vehicle"))
+    prow_row = None
+    if passenger_id:
+        try:
+            prow = (
+                supabase.table("users")
+                .select("name, driver_details")
+                .eq("id", passenger_id)
+                .limit(1)
+                .execute()
+            )
+            if prow.data:
+                prow_row = prow.data[0]
+                passenger_name = prow_row.get("name") or passenger_name
+                if passenger_pref is None:
+                    passenger_pref = _passenger_preferred_vehicle_from_row(prow_row)
+        except Exception:
+            pass
+    passenger_pref = passenger_pref or "car"
+
+    pickup_lat = row.get("pickup_lat")
+    pickup_lng = row.get("pickup_lng")
+    if pickup_lat is None or pickup_lng is None:
+        return None
+    try:
+        pickup_lat_f = float(pickup_lat)
+        pickup_lng_f = float(pickup_lng)
+    except (TypeError, ValueError):
+        return None
+
+    raw_drop = row.get("dropoff_location")
+    drop_loc_str = str(raw_drop).strip() if raw_drop is not None and str(raw_drop).strip() else ""
+    if not drop_loc_str:
+        _dlat, _dlng = row.get("dropoff_lat"), row.get("dropoff_lng")
+        if _dlat is not None and _dlng is not None:
+            try:
+                drop_loc_str = f"Hedef ({float(_dlat):.4f}, {float(_dlng):.4f})"
+            except (TypeError, ValueError):
+                drop_loc_str = "Haritadan seçilen hedef"
+        else:
+            drop_loc_str = "Hedef belirtilmedi"
+
+    return {
+        "passenger_id": passenger_id,
+        "passenger_name": passenger_name,
+        "pickup_lat": pickup_lat_f,
+        "pickup_lng": pickup_lng_f,
+        "pickup_location": row.get("pickup_location"),
+        "dropoff_lat": row.get("dropoff_lat"),
+        "dropoff_lng": row.get("dropoff_lng"),
+        "dropoff_location": drop_loc_str,
+        "final_price": row.get("final_price"),
+        "offered_price": row.get("final_price"),
+        "distance_km": row.get("distance_km", 0),
+        "estimated_minutes": row.get("estimated_minutes", 0),
+        "trip_distance_km": row.get("distance_km", 0),
+        "trip_duration_min": row.get("estimated_minutes", 0),
+        "passenger_preferred_vehicle": passenger_pref,
+        "passenger_payment_method": row.get("passenger_payment_method"),
+    }
+
+
+async def _recover_rolling_immediate_batch(tag_id: str) -> None:
+    try:
+        if tag_id not in rolling_dispatch_index:
+            return
+        tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
+        if not tr.data or tr.data[0].get("status") != "waiting":
+            await rolling_dispatch_stop(tag_id, revoke_offers=False)
+            return
+        await rolling_dispatch_batch(tag_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as ex:
+        logger.warning(
+            "[tag_dispatch_recover] immediate_batch tag_id=%s exc=%s",
+            tag_id,
+            repr(ex),
+        )
+
+
+async def _recover_rolling_sleep_then_batch(tag_id: str, delay_s: float) -> None:
+    try:
+        await asyncio.sleep(delay_s)
+        if tag_id not in rolling_dispatch_index:
+            return
+        tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
+        if not tr.data or tr.data[0].get("status") != "waiting":
+            await rolling_dispatch_stop(tag_id, revoke_offers=False)
+            return
+        await rolling_dispatch_batch(tag_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as ex:
+        logger.warning(
+            "[tag_dispatch_recover] scheduled_batch tag_id=%s exc=%s",
+            tag_id,
+            repr(ex),
+        )
+
+
+async def _tag_dispatch_state_recover_on_startup() -> None:
+    """
+    Phase 1C: restore rolling_dispatch_index from tag_dispatch_state + tags after process restart.
+    In-memory dispatch remains authoritative during runtime; DB is checkpoint only.
+    """
+    if not DISPATCH_WAVE_DB_STATE or not supabase:
+        return
+    try:
+        ds = supabase.table("tag_dispatch_state").select("*").execute()
+    except Exception as exc:
+        logger.warning(
+            "[tag_dispatch_recover] tag_dispatch_state select exc=%s", repr(exc)
+        )
+        return
+
+    candidates = list(ds.data or [])
+    logger.info("[tag_dispatch_recover_start] tag_dispatch_state_rows=%s", len(candidates))
+    if not candidates:
+        return
+
+    raw_ids = list({str(r.get("tag_id")).strip() for r in candidates if r.get("tag_id")})
+    if not raw_ids:
+        return
+
+    try:
+        tr = supabase.table("tags").select("*").in_("id", raw_ids).execute()
+    except Exception as exc:
+        logger.warning("[tag_dispatch_recover] tags select exc=%s", repr(exc))
+        return
+
+    waiting_normal: dict[str, dict] = {}
+    for t in tr.data or []:
+        if t.get("status") != "waiting":
+            continue
+        if t.get("type") != TAG_TYPE_NORMAL:
+            continue
+        tid_k = t.get("id")
+        if tid_k is None:
+            continue
+        waiting_normal[str(tid_k).strip()] = t
+
+    for drow in candidates:
+        tag_id = drow.get("tag_id")
+        if tag_id is None:
+            continue
+        tag_id = str(tag_id).strip()
+        row = waiting_normal.get(tag_id)
+        if not row:
+            continue
+
+        try:
+            bseq = int(drow.get("batch_seq") or 0)
+        except (TypeError, ValueError):
+            logger.info(
+                "[tag_dispatch_recover] skip_invalid_batch_seq tag_id=%s", tag_id
+            )
+            continue
+        if bseq < 0:
+            logger.info(
+                "[tag_dispatch_recover] skip_invalid_batch_seq tag_id=%s batch_seq=%s",
+                tag_id,
+                bseq,
+            )
+            continue
+
+        wave_deadline = _wave_deadline_from_dispatch_state_row(drow.get("wave_deadline"))
+        if wave_deadline is None:
+            logger.info(
+                "[tag_dispatch_recover] skip_missing_wave_deadline tag_id=%s", tag_id
+            )
+            continue
+
+        full_tag = await _rolling_dispatch_full_tag_from_tags_row(row)
+        if not full_tag:
+            logger.info(
+                "[tag_dispatch_recover] skip_missing_pickup_coords tag_id=%s", tag_id
+            )
+            continue
+
+        offered_s = _jsonb_driver_ids_to_set(drow.get("offered_driver_ids"))
+        excluded_s = _jsonb_driver_ids_to_set(drow.get("excluded_driver_ids"))
+        cur_batch = _jsonb_to_current_batch_list(drow.get("current_batch"))
+        relax = bool(drow.get("relax_vehicle_on_empty"))
+
+        rolling_dispatch_index[tag_id] = {
+            "full_tag": full_tag,
+            "current_batch": cur_batch,
+            "batch_seq": bseq,
+            "excluded_driver_ids": excluded_s,
+            "offered_driver_ids": offered_s,
+            "relax_vehicle_on_empty": relax,
+        }
+
+        logger.info(
+            "[tag_dispatch_recovered] tag_id=%s batch_seq=%s offered_count=%s current_batch_count=%s",
+            tag_id,
+            bseq,
+            len(offered_s),
+            len(cur_batch),
+        )
+
+        now = datetime.now(timezone.utc)
+        remaining = (wave_deadline - now).total_seconds()
+
+        old_t = rolling_dispatch_tasks.pop(tag_id, None)
+        if old_t is not None and not old_t.done():
+            try:
+                old_t.cancel()
+            except Exception:
+                pass
+
+        if remaining <= 0:
+            logger.info("[tag_dispatch_recover_fire_immediate] tag_id=%s", tag_id)
+            task = asyncio.create_task(_recover_rolling_immediate_batch(tag_id))
+        else:
+            logger.info(
+                "[tag_dispatch_recover_scheduled] tag_id=%s remaining_s=%.3f",
+                tag_id,
+                remaining,
+            )
+            task = asyncio.create_task(
+                _recover_rolling_sleep_then_batch(tag_id, remaining)
+            )
+        rolling_dispatch_tasks[tag_id] = task
+
+
 async def handle_dispatch_accept(tag_id: str, driver_id: str):
     """
     Sürücü dispatch teklifini kabul etti
@@ -4141,6 +4448,10 @@ async def startup():
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()
     init_supabase()
+    try:
+        await _tag_dispatch_state_recover_on_startup()
+    except Exception:
+        logger.exception("[tag_dispatch_recover] startup recovery failed")
     try:
         cleanup_expired_muhabbet_audio()
     except Exception:
