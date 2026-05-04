@@ -838,16 +838,14 @@ export default function DriverOfferScreen({
     };
   }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
 
-  const mapSectionHeight = useMemo(() => {
-    if (mapExpanded) {
-      return embedded
-        ? Math.min(SCREEN_HEIGHT * 0.48, 390)
-        : Math.min(SCREEN_HEIGHT * 0.55, 460);
+  useEffect(() => {
+    if (!mapExpanded) {
+      setMapReady(false);
     }
-    return embedded
-      ? Math.min(SCREEN_HEIGHT * 0.3, 240)
-      : Math.min(SCREEN_HEIGHT * 0.36, 320);
-  }, [embedded, mapExpanded]);
+  }, [mapExpanded]);
+
+  /** Genişletilmiş harita yüksekliği — canlı harita yalnızca mapExpanded iken mount edilir */
+  const mapExpandedHeight = Math.min(SCREEN_HEIGHT * 0.42, 360);
 
   /** Normal TAG: teklifleri gizleme; araç uyumsuzluğu yalnızca tanılama logu (sunucu hedefli socket teklifi kartta kalsın). */
   const visibleRequests = useMemo(() => {
@@ -1110,44 +1108,12 @@ export default function DriverOfferScreen({
   const body = (
     <>
       <View style={styles.mapCardShell}>
-        <View
-          style={[
-            styles.mapContainer,
-            styles.mapContainerSolid,
-            mapExpanded && styles.mapContainerSolidExpanded,
-            { height: mapSectionHeight },
-          ]}
-        >
-          {renderMap()}
-          <View style={styles.mapDimOverlay} pointerEvents="none" />
-          <View style={styles.mapTopOverlay} pointerEvents="box-none">
-            <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
-              <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
-            </TouchableOpacity>
-            <View style={styles.mapNameCardWrap} pointerEvents="none">
-              <View style={styles.mapNameCard}>
-                <Text style={styles.mapNameText}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
-                <View style={styles.mapRatingRow}>
-                  <Ionicons name="star" size={14} color="#FBBF24" />
-                  <Text style={styles.mapRatingText}>{displayRating}</Text>
-                </View>
-              </View>
-            </View>
-            <View style={styles.mapTopSpacer} />
-          </View>
-          <View style={styles.mapHud} pointerEvents="none">
-            <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
-            <Text style={styles.mapHudText}>
-              Talep {mapHud.seeking} · {mapHud.radius} km
-            </Text>
-          </View>
-        </View>
         <TouchableOpacity
-          style={styles.mapExpandToggle}
+          style={[styles.mapExpandToggle, mapExpanded && styles.mapExpandToggleWithMapBelow]}
           onPress={() => setMapExpanded((v) => !v)}
           activeOpacity={0.88}
           accessibilityRole="button"
-          accessibilityLabel={mapExpanded ? 'Haritayı küçült' : 'Haritayı göster'}
+          accessibilityLabel={mapExpanded ? 'Haritayı gizle' : 'Haritayı göster'}
         >
           <Ionicons
             name={mapExpanded ? 'chevron-up' : 'chevron-down'}
@@ -1155,9 +1121,44 @@ export default function DriverOfferScreen({
             color="#BAE6FD"
           />
           <Text style={styles.mapExpandToggleText}>
-            {mapExpanded ? 'Haritayı küçült' : 'Haritayı göster'}
+            {mapExpanded ? 'Haritayı gizle' : 'Haritayı göster'}
           </Text>
         </TouchableOpacity>
+
+        {mapExpanded ? (
+          <View
+            style={[
+              styles.mapContainer,
+              styles.mapContainerSolid,
+              styles.mapContainerSolidExpanded,
+              { height: mapExpandedHeight },
+            ]}
+          >
+            {renderMap()}
+            <View style={styles.mapDimOverlay} pointerEvents="none" />
+            <View style={styles.mapTopOverlay} pointerEvents="box-none">
+              <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
+                <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
+              </TouchableOpacity>
+              <View style={styles.mapNameCardWrap} pointerEvents="none">
+                <View style={styles.mapNameCard}>
+                  <Text style={styles.mapNameText}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
+                  <View style={styles.mapRatingRow}>
+                    <Ionicons name="star" size={14} color="#FBBF24" />
+                    <Text style={styles.mapRatingText}>{displayRating}</Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.mapTopSpacer} />
+            </View>
+            <View style={styles.mapHud} pointerEvents="none">
+              <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
+              <Text style={styles.mapHudText}>
+                Talep {mapHud.seeking} · {mapHud.radius} km
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {/* Yolcu İstekleri Listesi - Alt %65 */}
@@ -1287,6 +1288,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#E0F2FE',
     letterSpacing: 0.2,
+  },
+  mapExpandToggleWithMapBelow: {
+    marginBottom: 8,
   },
   mapDimOverlay: {
     ...StyleSheet.absoluteFillObject,
