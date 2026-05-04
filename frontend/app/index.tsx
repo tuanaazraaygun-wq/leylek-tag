@@ -1228,6 +1228,18 @@ export default function App() {
           next.access_token = t;
           next.accessToken = t;
         }
+        const psa = prev.supabase_access_token ?? prev.supabaseAccessToken;
+        const psr = prev.supabase_refresh_token ?? prev.supabaseRefreshToken;
+        if (typeof psa === 'string' && psa.trim() && !next.supabase_access_token && !next.supabaseAccessToken) {
+          const t = psa.trim();
+          next.supabase_access_token = t;
+          next.supabaseAccessToken = t;
+        }
+        if (typeof psr === 'string' && psr.trim() && !next.supabase_refresh_token && !next.supabaseRefreshToken) {
+          const t = psr.trim();
+          next.supabase_refresh_token = t;
+          next.supabaseRefreshToken = t;
+        }
       } catch {
         /* yalnızca userData yaz */
       }
@@ -1259,14 +1271,26 @@ export default function App() {
       tokenReady: !!token,
     });
     if (!token) return;
+    const p = payload as Record<string, unknown>;
+    const sa = String(p.supabase_access_token ?? p.supabaseAccessToken ?? '').trim();
+    const sr = String(p.supabase_refresh_token ?? p.supabaseRefreshToken ?? '').trim();
     setUser((prev) => {
       if (!prev) return prev;
       console.log('[auth] preserving token on setUser=true', true);
-      return {
-        ...prev,
+      const merged: Record<string, unknown> = {
+        ...(prev as unknown as Record<string, unknown>),
         access_token: token,
         accessToken: token,
       };
+      if (sa) {
+        merged.supabase_access_token = sa;
+        merged.supabaseAccessToken = sa;
+      }
+      if (sr) {
+        merged.supabase_refresh_token = sr;
+        merged.supabaseRefreshToken = sr;
+      }
+      return merged as unknown as User;
     });
   };
 
@@ -1718,7 +1742,6 @@ export default function App() {
           console.log('OTP RESPONSE:', data);
 
           await persistAccessTokenAndRefreshUser(data as TokenPayload, loggedUser?.id);
-          await syncSupabaseSessionFromBackendResponse(data);
 
           const sb = getSupabase();
           if (sb) {
@@ -1769,7 +1792,6 @@ export default function App() {
                 console.log('OTP RESPONSE:', registerData);
 
                 await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
-                await syncSupabaseSessionFromBackendResponse(registerData);
 
                 const sbReg = getSupabase();
                 if (sbReg) {

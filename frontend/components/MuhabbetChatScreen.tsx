@@ -29,6 +29,7 @@ import { Audio } from 'expo-av';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
+import { syncSupabaseSessionFromBackendResponse } from '../lib/supabaseSessionSync';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import {
   getLastRegisteredSocketSid,
@@ -132,13 +133,42 @@ const uploadAudio = async (conversationId: string, localUri: string): Promise<st
     throw new Error('Supabase client not configured');
   }
 
-  const {
+  let {
     data: { session },
   } = await supabase.auth.getSession();
 
   if (!session) {
-    console.log('UPLOAD SESSION CHECK:', session);
-    throw new Error('No Supabase session');
+    let persistHasBackendJwt = false;
+    let persistHasSa = false;
+    let persistHasSr = false;
+    let persistUserId = '';
+    let persistRole = '';
+    try {
+      const raw = await getPersistedUserRaw();
+      if (raw) {
+        const u = JSON.parse(raw) as Record<string, unknown>;
+        persistUserId = String(u.id || '').trim();
+        persistRole = String(u.role || '').trim();
+        persistHasBackendJwt = !!String(u.access_token || u.accessToken || '').trim();
+        persistHasSa = !!String(u.supabase_access_token || u.supabaseAccessToken || '').trim();
+        persistHasSr = !!String(u.supabase_refresh_token || u.supabaseRefreshToken || '').trim();
+        await syncSupabaseSessionFromBackendResponse(u);
+      }
+    } catch {
+      /* ignore rehydrate errors */
+    }
+    const again = await supabase.auth.getSession();
+    session = again.data.session;
+    if (!session) {
+      console.log('[muhabbet_audio_session_missing]', {
+        userId: persistUserId || null,
+        role: persistRole || null,
+        persistedBackendJwt: persistHasBackendJwt,
+        storedHasSupabaseAccess: persistHasSa,
+        storedHasSupabaseRefresh: persistHasSr,
+      });
+      throw new Error('No Supabase session');
+    }
   }
 
   const cid = String(conversationId || '').trim().toLowerCase();

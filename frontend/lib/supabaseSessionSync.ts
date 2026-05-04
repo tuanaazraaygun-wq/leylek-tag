@@ -7,7 +7,7 @@ import { getSupabase } from './supabase';
 export async function syncSupabaseSessionFromBackendResponse(payload: any) {
   const supabase = getSupabase();
   if (!supabase) {
-    console.log('NO SUPABASE CLIENT');
+    console.log('[supabase_session_sync] no client');
     return;
   }
 
@@ -15,21 +15,30 @@ export async function syncSupabaseSessionFromBackendResponse(payload: any) {
 
   const refresh = payload?.supabase_refresh_token || payload?.supabaseRefreshToken;
 
-  console.log('SUPABASE TOKENS:', { access, refresh });
+  const accessLen = typeof access === 'string' ? access.length : 0;
+  const refreshLen = typeof refresh === 'string' ? refresh.length : 0;
+  console.log('[supabase_session_sync]', {
+    hasAccess: !!access,
+    hasRefresh: !!refresh,
+    accessLen,
+    refreshLen,
+  });
 
   if (!access || !refresh) {
-    console.log('NO SUPABASE TOKENS FOUND');
+    console.log('[supabase_session_sync] missing tokens in payload');
     return;
   }
 
-  const { data, error } = await supabase.auth.setSession({
+  const { error } = await supabase.auth.setSession({
     access_token: access,
     refresh_token: refresh,
   });
 
-  console.log('SET SESSION RESULT:', { data, error });
+  if (error) {
+    console.warn('[supabase_session_sync] setSession error', error.message);
+  }
 
   const { data: sess } = await supabase.auth.getSession();
 
-  console.log('FINAL SESSION USER:', sess?.session?.user?.id);
+  console.log('[supabase_session_sync] session user id', sess?.session?.user?.id ?? null);
 }

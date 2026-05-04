@@ -70,7 +70,7 @@ from supabase_auth_session import attach_supabase_tokens_to_auth_payload
 def _finalize_auth_response_payload(payload: dict, user_id: str) -> dict:
     """Leylek yanıtına supabase_access_token / supabase_refresh_token ekler; dönmeden loglar."""
     out = attach_supabase_tokens_to_auth_payload(payload, user_id)
-    logger.warning(
+    logger.info(
         "[auth_response_tokens] user_id=%s has_supabase_access=%s has_supabase_refresh=%s",
         user_id,
         bool(out.get("supabase_access_token")),
