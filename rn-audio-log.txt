@@ -1,0 +1,367 @@
+--------- beginning of main
+05-04 05:58:00.491 11212 11275 I ReactNativeJS: 📱 [SocketProvider] App aktif oldu
+05-04 05:58:00.491 11212 11275 I ReactNativeJS: 📱 [SocketProvider] Arka planda 24 saniye kaldı
+05-04 05:58:00.491 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'app_foreground',
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.491 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   reason: 'app_foreground',
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.491 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.523 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.523 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.523 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.523 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.524 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.524 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.524 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.524 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.524 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.525 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.525 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.525 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.526 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.526 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.526 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.529 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.529 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.529 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.529 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:00.529 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:00.583 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   reason: 'app_foreground',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.583 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:00.583 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.583 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.583 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:00.584 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.584 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.584 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:00.585 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.585 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:00.585 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.585 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.585 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_USER', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   attempt: 0 }
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: 'SOCKET REGISTER EMIT', 'ff96adc4-f2db-44e6-893a-da4f7202bca9'
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: [socket] register emit sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:00.588 11212 11275 I ReactNativeJS: 'REGISTER_EMIT_PAYLOAD', { user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmZjk2YWRjNC1mMmRiLTQ0ZTYtODkzYS1kYTRmNzIwMmJjYTkiLCJpYXQiOjE3Nzc4NjMxNzksImV4cCI6MTc4NTYzOTE3OSwidHlwIjoibGV5bGVrX2FjY2VzcyJ9.hlt1imrnzJv0KlAfCX1aL8K0nKX5xWPbmqfby2bR3dc',
+05-04 05:58:00.588 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:00.701 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:01.530 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:01.530 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.530 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.530 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.531 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.531 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.531 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.531 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.545 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.545 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.545 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.545 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.545 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.546 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:01.546 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.546 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.546 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:01.548 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.548 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.548 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.548 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.548 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.549 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_USER', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.549 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.549 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.549 11212 11275 I ReactNativeJS:   attempt: 0 }
+05-04 05:58:01.549 11212 11275 I ReactNativeJS: 'SOCKET REGISTER EMIT', 'ff96adc4-f2db-44e6-893a-da4f7202bca9'
+05-04 05:58:01.549 11212 11275 I ReactNativeJS: [socket] register emit sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:01.550 11212 11275 I ReactNativeJS: 'REGISTER_EMIT_PAYLOAD', { user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.550 11212 11275 I ReactNativeJS:   token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmZjk2YWRjNC1mMmRiLTQ0ZTYtODkzYS1kYTRmNzIwMmJjYTkiLCJpYXQiOjE3Nzc4NjMxNzksImV4cCI6MTc4NTYzOTE3OSwidHlwIjoibGV5bGVrX2FjY2VzcyJ9.hlt1imrnzJv0KlAfCX1aL8K0nKX5xWPbmqfby2bR3dc',
+05-04 05:58:01.550 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.664 11212 11275 I ReactNativeJS: [muhabbet_audio_record_start]
+05-04 05:58:01.688 11212 11275 I ReactNativeJS: 📱 [SocketProvider] App arka plana alındı
+05-04 05:58:01.796 11212 11275 I ReactNativeJS: 📱 [SocketProvider] App aktif oldu
+05-04 05:58:01.796 11212 11275 I ReactNativeJS: 📱 [SocketProvider] Arka planda 0 saniye kaldı
+05-04 05:58:01.796 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'app_foreground',
+05-04 05:58:01.796 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.796 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.796 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.797 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.797 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.797 11212 11275 I ReactNativeJS:   reason: 'app_foreground',
+05-04 05:58:01.797 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.797 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.835 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.835 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.835 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.835 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.835 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.837 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.837 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.837 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:01.837 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:01.837 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:01.882 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   reason: 'app_foreground',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.882 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:01.882 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.882 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.882 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:01.883 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.883 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.883 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:01.884 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.884 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.884 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:01.885 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:01.885 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_USER', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   attempt: 0 }
+05-04 05:58:01.885 11212 11275 I ReactNativeJS: 'SOCKET REGISTER EMIT', 'ff96adc4-f2db-44e6-893a-da4f7202bca9'
+05-04 05:58:01.885 11212 11275 I ReactNativeJS: [socket] register emit sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:01.885 11212 11275 I ReactNativeJS: 'REGISTER_EMIT_PAYLOAD', { user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmZjk2YWRjNC1mMmRiLTQ0ZTYtODkzYS1kYTRmNzIwMmJjYTkiLCJpYXQiOjE3Nzc4NjMxNzksImV4cCI6MTc4NTYzOTE3OSwidHlwIjoibGV5bGVrX2FjY2VzcyJ9.hlt1imrnzJv0KlAfCX1aL8K0nKX5xWPbmqfby2bR3dc',
+05-04 05:58:01.885 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:02.221 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:02.245 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:02.562 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:02.622 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_ACK', { success: true,
+05-04 05:58:02.622 11212 11275 I ReactNativeJS:   room: 'user_ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.622 11212 11275 I ReactNativeJS:   user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.622 11212 11275 I ReactNativeJS:   resolved_user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9' }
+05-04 05:58:02.622 11212 11275 I ReactNativeJS: [socket] registered sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:02.622 11212 11275 I ReactNativeJS: '[socket_health]', '{"tag":"registered_ack","baseUrl":"https://api.leylektag.com","connected":true,"id":"eWJkaPxKqD4aaBNpAAAD","userId":"ff96adc4-f2db-44e6-893a-da4f7202bca9","registered":true}'
+05-04 05:58:02.622 11212 11275 I ReactNativeJS: [socket] user room joined user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:02.823 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:02.827 11212 11275 I ReactNativeJS: '[push_token_registered]', '{"platform":"android","transport":"expo"}'
+05-04 05:58:02.847 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:02.847 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:02.847 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:02.848 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_START', { reason: 'auth_token_became_available',
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   connected: true,
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:02.848 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   waitingForPersistedToken: true,
+05-04 05:58:02.848 11212 11275 I ReactNativeJS:   maxWaitMs: 4750 }
+05-04 05:58:02.856 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:02.856 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_SKIP', { reason: 'stale_schedule_generation_after_token',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   connected: true }
+05-04 05:58:02.856 11212 11275 I ReactNativeJS: 'SCHEDULE_REGISTER_TOKEN_RESULT', { hasToken: true,
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:02.856 11212 11275 I ReactNativeJS:   waitedForPersistedToken: true }
+05-04 05:58:02.857 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_USER', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.857 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:02.857 11212 11275 I ReactNativeJS:   reason: 'auth_token_became_available',
+05-04 05:58:02.857 11212 11275 I ReactNativeJS:   attempt: 0 }
+05-04 05:58:02.857 11212 11275 I ReactNativeJS: 'SOCKET REGISTER EMIT', 'ff96adc4-f2db-44e6-893a-da4f7202bca9'
+05-04 05:58:02.857 11212 11275 I ReactNativeJS: [socket] register emit sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:02.857 11212 11275 I ReactNativeJS: 'REGISTER_EMIT_PAYLOAD', { user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:02.857 11212 11275 I ReactNativeJS:   token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmZjk2YWRjNC1mMmRiLTQ0ZTYtODkzYS1kYTRmNzIwMmJjYTkiLCJpYXQiOjE3Nzc4NjMxNzksImV4cCI6MTc4NTYzOTE3OSwidHlwIjoibGV5bGVrX2FjY2VzcyJ9.hlt1imrnzJv0KlAfCX1aL8K0nKX5xWPbmqfby2bR3dc',
+05-04 05:58:02.857 11212 11275 I ReactNativeJS:   role: 'passenger' }
+05-04 05:58:03.963 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:04.022 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_ACK', { success: true,
+05-04 05:58:04.022 11212 11275 I ReactNativeJS:   room: 'user_ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.022 11212 11275 I ReactNativeJS:   user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.022 11212 11275 I ReactNativeJS:   resolved_user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9' }
+05-04 05:58:04.022 11212 11275 I ReactNativeJS: [socket] registered sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:04.022 11212 11275 I ReactNativeJS: '[socket_health]', '{"tag":"registered_ack","baseUrl":"https://api.leylektag.com","connected":true,"id":"eWJkaPxKqD4aaBNpAAAD","userId":"ff96adc4-f2db-44e6-893a-da4f7202bca9","registered":true}'
+05-04 05:58:04.022 11212 11275 I ReactNativeJS: [socket] user room joined user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:04.055 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:04.093 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:04.143 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_ACK', { success: true,
+05-04 05:58:04.143 11212 11275 I ReactNativeJS:   room: 'user_ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.143 11212 11275 I ReactNativeJS:   user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.143 11212 11275 I ReactNativeJS:   resolved_user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9' }
+05-04 05:58:04.143 11212 11275 I ReactNativeJS: [socket] registered sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:04.143 11212 11275 I ReactNativeJS: '[socket_health]', '{"tag":"registered_ack","baseUrl":"https://api.leylektag.com","connected":true,"id":"eWJkaPxKqD4aaBNpAAAD","userId":"ff96adc4-f2db-44e6-893a-da4f7202bca9","registered":true}'
+05-04 05:58:04.143 11212 11275 I ReactNativeJS: [socket] user room joined user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:04.537 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:04.574 11212 11275 I ReactNativeJS: '[socket_receive]', '{"kind":"legacy_debug","event":"joined_muhabbet","ids":{"conversation_id":"9e2315d4-cf2f-414a-aa7e-b1c076ddf7db"}}'
+05-04 05:58:04.623 11212 11275 I ReactNativeJS: '[muhabbet_audio_record_stop]', { ms: 2649 }
+05-04 05:58:04.654 11212 11275 I ReactNativeJS: 'FRONTEND_SOCKET_REGISTER_ACK', { success: true,
+05-04 05:58:04.654 11212 11275 I ReactNativeJS:   room: 'user_ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.654 11212 11275 I ReactNativeJS:   user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.654 11212 11275 I ReactNativeJS:   resolved_user_id: 'ff96adc4-f2db-44e6-893a-da4f7202bca9' }
+05-04 05:58:04.654 11212 11275 I ReactNativeJS: [socket] registered sid=eWJkaPxKqD4aaBNpAAAD user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:04.654 11212 11275 I ReactNativeJS: '[socket_health]', '{"tag":"registered_ack","baseUrl":"https://api.leylektag.com","connected":true,"id":"eWJkaPxKqD4aaBNpAAAD","userId":"ff96adc4-f2db-44e6-893a-da4f7202bca9","registered":true}'
+05-04 05:58:04.655 11212 11275 I ReactNativeJS: [socket] user room joined user_id=ff96adc4-f2db-44e6-893a-da4f7202bca9
+05-04 05:58:04.664 11212 11275 I ReactNativeJS: '[supabase_session_sync]', { hasAccess: false,
+05-04 05:58:04.664 11212 11275 I ReactNativeJS:   hasRefresh: false,
+05-04 05:58:04.664 11212 11275 I ReactNativeJS:   accessLen: 0,
+05-04 05:58:04.664 11212 11275 I ReactNativeJS:   refreshLen: 0 }
+05-04 05:58:04.664 11212 11275 I ReactNativeJS: [supabase_session_sync] missing tokens in payload
+05-04 05:58:04.666 11212 11275 I ReactNativeJS: '[muhabbet_audio_session_missing]', { userId: 'ff96adc4-f2db-44e6-893a-da4f7202bca9',
+05-04 05:58:04.666 11212 11275 I ReactNativeJS:   role: 'passenger',
+05-04 05:58:04.666 11212 11275 I ReactNativeJS:   persistedBackendJwt: true,
+05-04 05:58:04.666 11212 11275 I ReactNativeJS:   storedHasSupabaseAccess: false,
+05-04 05:58:04.666 11212 11275 I ReactNativeJS:   storedHasSupabaseRefresh: false }
+05-04 05:58:04.666 11212 11275 W ReactNativeJS: '[muhabbet_audio_upload_error]', [Error: No Supabase session]
+05-04 05:58:10.591 11212 11275 I ReactNativeJS: 'VirtualizedList: You have a large list that is slow to update - make sure your renderItem function renders components that follow React performance best practices like PureComponent, shouldComponentUpdate, etc.', { dt: 4992, prevDt: 580, contentLength: 2363.636474609375 }
