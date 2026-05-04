@@ -3960,23 +3960,38 @@ def get_authenticated_user_id_from_authorization(
 
 async def resolve_user_id(user_id: str) -> str:
     """
-    JWT sub/auth_id -> users.id (UUID) eşlemesi.
-    Yalnızca users.id döner; bulunamazsa None.
+    İstemci user_id (public.users.id veya auth_id/JWT sub) -> kanonik users.id (lower UUID).
+
+    Önce doğrudan PK eşlemesi, sonra auth_id (mevcut davranış). Bulunamazsa None.
     """
     if not user_id:
+        logger.info("[resolve_user_id] raw= resolved= via=none (empty)")
         return None
 
     raw = str(user_id).strip()
     if not raw:
+        logger.info("[resolve_user_id] raw= resolved= via=none (whitespace)")
         return None
+
+    try:
+        by_pk = supabase.table("users").select("id").eq("id", raw).limit(1).execute()
+        if by_pk.data:
+            rid = str(by_pk.data[0]["id"]).strip().lower()
+            logger.info("[resolve_user_id] raw=%s resolved=%s via=id", raw[:96], rid[:96])
+            return rid
+    except Exception as e:
+        logger.warning("resolve_user_id id lookup error: %s", e)
 
     try:
         result = supabase.table("users").select("id").eq("auth_id", raw).limit(1).execute()
         if result.data:
-            return str(result.data[0]["id"]).strip().lower()
+            rid = str(result.data[0]["id"]).strip().lower()
+            logger.info("[resolve_user_id] raw=%s resolved=%s via=auth_id", raw[:96], rid[:96])
+            return rid
     except Exception as e:
         logger.warning("resolve_user_id auth_id lookup error: %s", e)
 
+    logger.info("[resolve_user_id] raw=%s resolved= via=none", raw[:96])
     return None
 
 

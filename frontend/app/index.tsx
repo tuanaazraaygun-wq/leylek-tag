@@ -6182,6 +6182,13 @@ function PassengerDashboard({
   const insets = useSafeAreaInsets();
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
+  /** loadActiveTag yarışları için güncel tag (koruma dalında kullanılır) */
+  const passengerActiveTagSnapshotRef = useRef<Tag | null>(null);
+  /** GET active-tag geçici null: 1. vuruşta ertele + 500ms retry; 2. vuruşta temizle */
+  const passengerActiveTagNullStreakRef = useRef(0);
+  useEffect(() => {
+    passengerActiveTagSnapshotRef.current = activeTag;
+  }, [activeTag]);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
@@ -7535,6 +7542,7 @@ function PassengerDashboard({
       const data = await response.json();
       
       if (data.success && data.tag) {
+        passengerActiveTagNullStreakRef.current = 0;
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
           if (forceEndLockRef.current) {
@@ -7642,6 +7650,43 @@ function PassengerDashboard({
         if (forceEndLockRef.current) {
           logPollingSkippedForceEndLock('passenger', 'loadActiveTag_else_branch');
           return;
+        }
+        const PASSENGER_ACTIVE_TAG_NULL_GUARD = new Set([
+          'waiting',
+          'pending',
+          'offers_received',
+          'matched',
+          'in_progress',
+        ]);
+        const prevSnap = passengerActiveTagSnapshotRef.current;
+        const prevSt = String(prevSnap?.status ?? '')
+          .trim()
+          .toLowerCase();
+        const nullGuardActive =
+          !!prevSnap && PASSENGER_ACTIVE_TAG_NULL_GUARD.has(prevSt);
+        if (data.success === true && !data.tag && nullGuardActive) {
+          passengerActiveTagNullStreakRef.current += 1;
+          if (passengerActiveTagNullStreakRef.current === 1) {
+            console.log('PASSENGER_ACTIVE_TAG_NULL_DEFERRED', {
+              priorTagId: prevSnap?.id ?? null,
+              priorStatus: prevSnap?.status ?? null,
+              streak: passengerActiveTagNullStreakRef.current,
+              userId: user?.id ?? null,
+            });
+            setTimeout(() => {
+              void loadActiveTag();
+            }, 500);
+            return;
+          }
+          console.log('PASSENGER_ACTIVE_TAG_NULL_CONFIRMED_CLEAR', {
+            priorTagId: prevSnap?.id ?? null,
+            priorStatus: prevSnap?.status ?? null,
+            streak: passengerActiveTagNullStreakRef.current,
+            userId: user?.id ?? null,
+          });
+          passengerActiveTagNullStreakRef.current = 0;
+        } else {
+          passengerActiveTagNullStreakRef.current = 0;
         }
         setActiveTag((prev) => {
           if (data.success === true && !data.tag) {
