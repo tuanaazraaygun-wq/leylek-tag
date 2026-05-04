@@ -3121,6 +3121,103 @@ async def _dispatch_queue_insert_after_emit(
         return False
 
 
+def _tag_dispatch_state_shadow_wave_deadline_iso() -> tuple[str, str]:
+    """wave_deadline / next_wave_at: now + rolling batch timeout (ISO UTC)."""
+    t = datetime.now(timezone.utc) + timedelta(
+        seconds=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS)
+    )
+    iso = t.isoformat()
+    return iso, iso
+
+
+def _tag_dispatch_state_shadow_upsert_start(
+    tag_id: str, *, relax_vehicle_on_empty: bool
+) -> None:
+    """Phase 1B shadow write only — in-memory dispatch remains source of truth."""
+    wave_deadline_s, next_wave_s = _tag_dispatch_state_shadow_wave_deadline_iso()
+    try:
+        supabase.table("tag_dispatch_state").upsert(
+            {
+                "tag_id": tag_id,
+                "batch_seq": 0,
+                "offered_driver_ids": [],
+                "excluded_driver_ids": [],
+                "relax_vehicle_on_empty": relax_vehicle_on_empty,
+                "wave_deadline": wave_deadline_s,
+                "next_wave_at": next_wave_s,
+                "schema_version": 1,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="tag_id",
+        ).execute()
+        logger.info(
+            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s",
+            tag_id,
+            0,
+            0,
+        )
+    except Exception as e:
+        logger.warning(
+            "[tag_dispatch_state_write_failed] place=upsert_start tag_id=%s exc=%s",
+            tag_id,
+            repr(e),
+        )
+
+
+def _tag_dispatch_state_shadow_update_batch(
+    tag_id: str,
+    *,
+    batch_seq: int,
+    offered_union_ids: list[str],
+) -> None:
+    wave_deadline_s, next_wave_s = _tag_dispatch_state_shadow_wave_deadline_iso()
+    try:
+        supabase.table("tag_dispatch_state").update(
+            {
+                "batch_seq": batch_seq,
+                "offered_driver_ids": offered_union_ids,
+                "wave_deadline": wave_deadline_s,
+                "next_wave_at": next_wave_s,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("tag_id", tag_id).execute()
+        logger.info(
+            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s",
+            tag_id,
+            batch_seq,
+            len(offered_union_ids),
+        )
+    except Exception as e:
+        logger.warning(
+            "[tag_dispatch_state_write_failed] place=update_batch tag_id=%s batch_seq=%s exc=%s",
+            tag_id,
+            batch_seq,
+            repr(e),
+        )
+
+
+def _tag_dispatch_state_shadow_delete(
+    tag_id: str,
+    *,
+    log_batch_seq: int = 0,
+    log_offered_count: int = 0,
+) -> None:
+    try:
+        supabase.table("tag_dispatch_state").delete().eq("tag_id", tag_id).execute()
+        logger.info(
+            "[tag_dispatch_state_write] tag_id=%s batch_seq=%s offered_count=%s",
+            tag_id,
+            log_batch_seq,
+            log_offered_count,
+        )
+    except Exception as e:
+        logger.warning(
+            "[tag_dispatch_state_write_failed] place=delete tag_id=%s exc=%s",
+            tag_id,
+            repr(e),
+        )
+
+
 async def rolling_dispatch_stop(
     tag_id: str,
     *,
@@ -3186,6 +3283,27 @@ async def rolling_dispatch_stop(
             except Exception:
                 pass
     await _expire_dispatch_queue_rows_for_tag(tag_id)
+    logger.info(
+        "[tag_dispatch_state_shadow_enter] place=stop tag_id=%s flag=%s",
+        tag_id,
+        DISPATCH_WAVE_DB_STATE,
+    )
+    if DISPATCH_WAVE_DB_STATE:
+        _log_bseq = 0
+        _log_oc = 0
+        if _st_obs:
+            try:
+                _log_bseq = int(_st_obs.get("batch_seq") or 0)
+            except (TypeError, ValueError):
+                _log_bseq = 0
+            if _obs_offered_n is not None:
+                try:
+                    _log_oc = int(_obs_offered_n)
+                except (TypeError, ValueError):
+                    _log_oc = 0
+        _tag_dispatch_state_shadow_delete(
+            tag_id, log_batch_seq=_log_bseq, log_offered_count=_log_oc
+        )
 
 
 async def rolling_dispatch_batch(tag_id: str) -> None:
@@ -3406,6 +3524,20 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     bseq = state["batch_seq"]
 
     state["current_batch"] = list(next_batch_ids)
+
+    logger.info(
+        "[tag_dispatch_state_shadow_enter] place=batch tag_id=%s flag=%s batch_seq=%s",
+        tag_id,
+        DISPATCH_WAVE_DB_STATE,
+        bseq,
+    )
+    if DISPATCH_WAVE_DB_STATE:
+        _offered_union = set(offered_driver_ids) | set(next_batch_ids)
+        _tag_dispatch_state_shadow_update_batch(
+            tag_id,
+            batch_seq=bseq,
+            offered_union_ids=sorted(_offered_union),
+        )
 
     _tag_dispatch_obs_log(
         "rolling_dispatch_batch",
@@ -3737,6 +3869,15 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
         reason="pipeline_ready_first_wave",
     )
+    logger.info(
+        "[tag_dispatch_state_shadow_enter] place=start tag_id=%s flag=%s",
+        tag_id,
+        DISPATCH_WAVE_DB_STATE,
+    )
+    if DISPATCH_WAVE_DB_STATE:
+        _tag_dispatch_state_shadow_upsert_start(
+            tag_id, relax_vehicle_on_empty=relax_used
+        )
     await rolling_dispatch_batch(tag_id)
     return len(eligible)
 
