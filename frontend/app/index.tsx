@@ -603,7 +603,7 @@ class RuntimeBoundary extends React.Component<
 export default function App() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const roleSelectBreakpoints = useMemo(
     () => ({
       isCompact: windowHeight < 760,
@@ -708,6 +708,100 @@ export default function App() {
   /** Eşleşme sonrası QR’sız çıkışta rol ekranında 3 sn kırmızı şerit */
   const [roleSelectTripExitBanner, setRoleSelectTripExitBanner] = useState<string | null>(null);
   const roleSelectBannerShimmer = useRef(new Animated.Value(1)).current;
+
+  /** Role-select Phase B — görsel giriş (yan etki yok; sıralama/state değiştirmez) */
+  const roleCardPassengerTranslateX = useRef(new Animated.Value(-26)).current;
+  const roleCardPassengerOpacity = useRef(new Animated.Value(0)).current;
+  const roleCardDriverTranslateX = useRef(new Animated.Value(26)).current;
+  const roleCardDriverOpacity = useRef(new Animated.Value(0)).current;
+  const roleVehiclePanelOpacity = useRef(new Animated.Value(0)).current;
+  const roleVehiclePanelTranslateY = useRef(new Animated.Value(12)).current;
+  const roleVehiclePanelEnteredRef = useRef(false);
+
+  useEffect(() => {
+    if (screen !== 'role-select') {
+      roleCardPassengerTranslateX.setValue(-26);
+      roleCardPassengerOpacity.setValue(0);
+      roleCardDriverTranslateX.setValue(26);
+      roleCardDriverOpacity.setValue(0);
+      roleVehiclePanelEnteredRef.current = false;
+      roleVehiclePanelOpacity.setValue(0);
+      roleVehiclePanelTranslateY.setValue(12);
+      return;
+    }
+    roleCardPassengerTranslateX.setValue(-26);
+    roleCardPassengerOpacity.setValue(0);
+    roleCardDriverTranslateX.setValue(26);
+    roleCardDriverOpacity.setValue(0);
+    const raf = requestAnimationFrame(() => {
+      Animated.stagger(
+        88,
+        [
+          Animated.parallel([
+            Animated.timing(roleCardPassengerTranslateX, {
+              toValue: 0,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(roleCardPassengerOpacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.parallel([
+            Animated.timing(roleCardDriverTranslateX, {
+              toValue: 0,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(roleCardDriverOpacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]
+      ).start();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== 'role-select') {
+      roleVehiclePanelEnteredRef.current = false;
+      roleVehiclePanelOpacity.setValue(0);
+      roleVehiclePanelTranslateY.setValue(12);
+      return;
+    }
+    if (!selectedRole) {
+      roleVehiclePanelEnteredRef.current = false;
+      roleVehiclePanelOpacity.setValue(0);
+      roleVehiclePanelTranslateY.setValue(12);
+      return;
+    }
+    if (roleVehiclePanelEnteredRef.current) {
+      return;
+    }
+    roleVehiclePanelEnteredRef.current = true;
+    roleVehiclePanelOpacity.setValue(0);
+    roleVehiclePanelTranslateY.setValue(12);
+    const raf = requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(roleVehiclePanelOpacity, {
+          toValue: 1,
+          duration: 360,
+          useNativeDriver: true,
+        }),
+        Animated.timing(roleVehiclePanelTranslateY, {
+          toValue: 0,
+          duration: 360,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [screen, selectedRole]);
 
   useEffect(() => {
     if (!roleSelectTripExitBanner) return undefined;
@@ -3280,6 +3374,10 @@ export default function App() {
     };
 
     const rs = roleSelectBreakpoints;
+    const roleSelectContentWide = windowWidth >= 428 && !rs.isVeryCompact;
+    const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
+    const roleStep1Done = !!selectedRole;
+    const roleStep2Done = !!rideVehicleKind;
     const passengerIconSize = rs.isVeryCompact ? 30 : rs.isCompact ? 34 : 40;
     const driverCarIconSize = rs.isVeryCompact ? 28 : rs.isCompact ? 31 : 34;
     const driverBikeIconSize = rs.isVeryCompact ? 24 : rs.isCompact ? 28 : 30;
@@ -3348,6 +3446,8 @@ export default function App() {
               styles.roleSelectScrollContent,
               rs.isVeryCompact && styles.roleSelectScrollContentVery,
               rs.isCompact && !rs.isVeryCompact && styles.roleSelectScrollContentCompact,
+              styles.roleSelectScrollContentSteps,
+              rs.isVeryCompact && styles.roleSelectScrollContentVeryFooter,
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -3359,15 +3459,138 @@ export default function App() {
                 styles.roleMainContentInScroll,
                 rs.isVeryCompact && styles.roleMainContentVery,
                 rs.isCompact && !rs.isVeryCompact && styles.roleMainContentCompact,
+                roleSelectContentWide && styles.roleMainContentMaxWidth,
               ]}
             >
+              <View
+                style={[
+                  styles.roleStepIndicatorWrap,
+                  rs.isVeryCompact && styles.roleStepIndicatorWrapVery,
+                  rs.isCompact && !rs.isVeryCompact && styles.roleStepIndicatorWrapCompact,
+                ]}
+              >
+                <View style={styles.roleStepIndicatorRow}>
+                  <View style={styles.roleStepSegment}>
+                    <View
+                      style={[
+                        styles.roleStepCircle,
+                        roleActiveStep === 1 && styles.roleStepCircleActive,
+                        roleStep1Done && roleActiveStep !== 1 && styles.roleStepCircleDone,
+                      ]}
+                    >
+                      {roleStep1Done ? (
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color="#FFF" />
+                      ) : (
+                        <Text style={[styles.roleStepCircleText, roleActiveStep === 1 && styles.roleStepCircleTextActive]}>1</Text>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.roleStepLabel,
+                        rs.isVeryCompact && styles.roleStepLabelVery,
+                        roleActiveStep === 1 && styles.roleStepLabelActive,
+                        roleStep1Done && styles.roleStepLabelDone,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      Rolünü seç
+                    </Text>
+                  </View>
+                  <View style={[styles.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
+                  <View style={styles.roleStepSegment}>
+                    <View
+                      style={[
+                        styles.roleStepCircle,
+                        roleActiveStep === 2 && styles.roleStepCircleActive,
+                        roleStep2Done && roleActiveStep !== 2 && styles.roleStepCircleDone,
+                        !roleStep1Done && styles.roleStepCircleMuted,
+                      ]}
+                    >
+                      {roleStep2Done ? (
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color="#FFF" />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.roleStepCircleText,
+                            roleActiveStep === 2 && styles.roleStepCircleTextActive,
+                            !roleStep1Done && styles.roleStepCircleTextMuted,
+                          ]}
+                        >
+                          2
+                        </Text>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.roleStepLabel,
+                        rs.isVeryCompact && styles.roleStepLabelVery,
+                        roleActiveStep === 2 && styles.roleStepLabelActive,
+                        roleStep2Done && styles.roleStepLabelDone,
+                        !roleStep1Done && styles.roleStepLabelMuted,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      Araç tipini seç
+                    </Text>
+                  </View>
+                  <View style={[styles.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
+                  <View style={styles.roleStepSegment}>
+                    <View
+                      style={[
+                        styles.roleStepCircle,
+                        roleActiveStep === 3 && styles.roleStepCircleActive,
+                        !rideVehicleKind && styles.roleStepCircleMuted,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.roleStepCircleText,
+                          roleActiveStep === 3 && styles.roleStepCircleTextActive,
+                          !rideVehicleKind && styles.roleStepCircleTextMuted,
+                        ]}
+                      >
+                        3
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.roleStepLabel,
+                        rs.isVeryCompact && styles.roleStepLabelVery,
+                        roleActiveStep === 3 && styles.roleStepLabelActive,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      Devam Et
+                    </Text>
+                  </View>
+                </View>
+                <Text
+                  style={[
+                    styles.roleStepHelper,
+                    rs.isVeryCompact && styles.roleStepHelperVery,
+                    rs.isCompact && !rs.isVeryCompact && styles.roleStepHelperCompact,
+                  ]}
+                >
+                  Önce rolünü, sonra araç tipini seç.
+                </Text>
+              </View>
               <View
                 style={[
                   styles.roleCardsRow,
                   rs.isVeryCompact && styles.roleCardsRowVery,
                   rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
+                  roleSelectContentWide && styles.roleCardsRowWide,
                 ]}
               >
+                <Animated.View
+                  style={[
+                    styles.roleCardAnimatedWrap,
+                    {
+                      opacity: roleCardPassengerOpacity,
+                      transform: [{ translateX: roleCardPassengerTranslateX }],
+                    },
+                  ]}
+                >
                 <TouchableOpacity
                   style={[
                     styles.roleCardCompact,
@@ -3413,7 +3636,17 @@ export default function App() {
                     </View>
                   )}
                 </TouchableOpacity>
+                </Animated.View>
 
+                <Animated.View
+                  style={[
+                    styles.roleCardAnimatedWrap,
+                    {
+                      opacity: roleCardDriverOpacity,
+                      transform: [{ translateX: roleCardDriverTranslateX }],
+                    },
+                  ]}
+                >
                 <TouchableOpacity
                   style={[
                     styles.roleCardCompact,
@@ -3466,9 +3699,19 @@ export default function App() {
                     </View>
                   )}
                 </TouchableOpacity>
+                </Animated.View>
               </View>
 
               {selectedRole && (
+                <Animated.View
+                  style={[
+                    styles.roleVehicleAnimatedWrap,
+                    {
+                      opacity: roleVehiclePanelOpacity,
+                      transform: [{ translateY: roleVehiclePanelTranslateY }],
+                    },
+                  ]}
+                >
                 <View style={styles.roleVehicleSection}>
                   <View
                     style={[
@@ -3483,9 +3726,7 @@ export default function App() {
                         rs.isVeryCompact && styles.roleVehiclePromptVery,
                       ]}
                     >
-                      {selectedRole === 'passenger'
-                        ? 'Nasıl bir araç çağırmak istersiniz?'
-                        : 'Ne ile yolculuk yapıyorsunuz?'}
+                      Araç tipini seç
                     </Text>
                     <View
                       style={[
@@ -3552,6 +3793,7 @@ export default function App() {
                     </View>
                   </View>
                 </View>
+                </Animated.View>
               )}
             </View>
           </ScrollView>
@@ -3561,6 +3803,7 @@ export default function App() {
               styles.roleBottomFooterColumn,
               rs.isVeryCompact && styles.roleBottomFooterColumnVery,
               rs.isCompact && !rs.isVeryCompact && styles.roleBottomFooterColumnCompact,
+              roleSelectContentWide && styles.roleBottomFooterColumnWide,
             ]}
           >
             <RoleSelectLeylekAIFloating />
@@ -18975,10 +19218,152 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   roleSelectScrollContentCompact: {
-    paddingBottom: 4,
+    paddingBottom: 8,
   },
   roleSelectScrollContentVery: {
-    paddingBottom: 2,
+    paddingBottom: 10,
+  },
+  roleSelectScrollContentSteps: {
+    paddingBottom: 20,
+  },
+  roleSelectScrollContentVeryFooter: {
+    paddingBottom: 28,
+  },
+  roleMainContentMaxWidth: {
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  roleCardAnimatedWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  roleVehicleAnimatedWrap: {
+    width: '100%',
+  },
+  roleCardsRowWide: {
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+  },
+  roleBottomFooterColumnWide: {
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  roleStepIndicatorWrap: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  roleStepIndicatorWrapCompact: {
+    marginBottom: 12,
+  },
+  roleStepIndicatorWrapVery: {
+    marginBottom: 5,
+  },
+  roleStepIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  roleStepSegment: {
+    flex: 1,
+    alignItems: 'center',
+    minWidth: 0,
+    paddingHorizontal: 2,
+  },
+  roleStepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  roleStepCircleActive: {
+    borderColor: '#0284C7',
+    backgroundColor: '#E0F2FE',
+    shadowColor: '#0369a1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  roleStepCircleDone: {
+    borderColor: '#059669',
+    backgroundColor: '#10B981',
+  },
+  roleStepCircleMuted: {
+    opacity: 0.45,
+  },
+  roleStepCircleText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#475569',
+  },
+  roleStepCircleTextActive: {
+    color: '#0369A1',
+  },
+  roleStepCircleTextMuted: {
+    color: '#94A3B8',
+  },
+  roleStepLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'center',
+    lineHeight: 14,
+    letterSpacing: -0.2,
+  },
+  roleStepLabelVery: {
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: -0.15,
+  },
+  roleStepLabelActive: {
+    color: '#0F172A',
+    fontWeight: '900',
+  },
+  roleStepLabelDone: {
+    color: '#047857',
+  },
+  roleStepLabelMuted: {
+    color: '#94A3B8',
+  },
+  roleStepDash: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(148, 163, 184, 0.45)',
+    alignSelf: 'center',
+    marginTop: 15,
+  },
+  roleStepDashVery: {
+    width: 8,
+    marginTop: 13,
+  },
+  roleStepHelper: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(15, 23, 42, 0.72)',
+    textAlign: 'center',
+    lineHeight: 18,
+    letterSpacing: -0.1,
+  },
+  roleStepHelperCompact: {
+    fontSize: 12,
+    marginTop: 10,
+    lineHeight: 16,
+  },
+  roleStepHelperVery: {
+    fontSize: 11,
+    marginTop: 8,
+    lineHeight: 15,
   },
   roleMainContentInScroll: {
     flex: 0,
@@ -18999,8 +19384,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   roleCardsRowVery: {
-    marginBottom: 10,
-    gap: 8,
+    marginBottom: 7,
+    gap: 7,
   },
   roleCardCompactTight: {
     paddingVertical: 16,
@@ -19074,8 +19459,8 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumnVery: {
     paddingTop: 0,
-    paddingBottom: 12,
-    gap: 6,
+    paddingBottom: 14,
+    gap: 5,
     paddingHorizontal: 14,
   },
   roleContinueBtnOuterCompact: {
