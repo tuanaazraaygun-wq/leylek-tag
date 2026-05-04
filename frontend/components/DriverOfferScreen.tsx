@@ -471,183 +471,170 @@ function RequestCard({
       : tripDuration != null && Number.isFinite(Number(tripDuration))
         ? Math.max(1, Math.round(Number(tripDuration)))
         : null;
+  const passengerRatingRaw = Number(
+    (request as { passenger_rating?: unknown; rating?: unknown }).passenger_rating ??
+      (request as { passenger_rating?: unknown; rating?: unknown }).rating,
+  );
+  const passengerRatingText =
+    Number.isFinite(passengerRatingRaw) && passengerRatingRaw > 0
+      ? passengerRatingRaw.toFixed(1)
+      : '—';
+  const rideDurationText = tripRoadShowFailedUi && tripDurationMinNumber == null
+    ? '—'
+    : tripDurationMinNumber != null
+      ? `${tripDurationMinNumber} dk`
+      : '—';
+  const routeDistanceText = tripRoadShowLoading
+    ? '—'
+    : tripRoadShowFailedUi
+      ? '—'
+      : `${tripDistanceKmText} km`;
 
   return (
     <Animated.View style={[styles.reqCard, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-      <View style={styles.reqTopRow}>
-        <View style={styles.reqAvatar}>
-          <Ionicons name="person" size={18} color={COLORS.primary} />
-        </View>
-        <View style={styles.reqMidCol}>
-          <Text style={styles.reqPassengerName} numberOfLines={1} ellipsizeMode="tail">
-            {request.passenger_name?.split(' ')[0] || 'Yolcu'}
-          </Text>
-          <View style={styles.reqPillRow}>
-            <View style={styles.reqNewPill}>
-              <Text style={styles.reqNewPillText}>Yeni teklif</Text>
+      <View style={styles.reqMainRow}>
+        <View style={styles.reqContentCol}>
+          <View style={styles.reqTopLine}>
+            <Text style={styles.reqPriceText}>{request.offered_price || 0} ₺</Text>
+            <Text style={styles.reqMetaText}>
+              {distanceToPassenger} km | {rideDurationText}
+            </Text>
+          </View>
+
+          <View style={styles.reqSecondLine}>
+            <View style={styles.reqPassengerChip}>
+              <Ionicons name="person-circle-outline" size={14} color="#C8D3E0" />
+              <Text style={styles.reqPassengerName} numberOfLines={1} ellipsizeMode="tail">
+                {request.passenger_name?.split(' ')[0] || 'Yolcu'}
+              </Text>
+            </View>
+            <View style={styles.reqRatingChip}>
+              <Ionicons name="star" size={12} color="#FACC15" />
+              <Text style={styles.reqRatingText}>{passengerRatingText}</Text>
+            </View>
+            {request.passenger_payment_method === 'card' ? (
+              <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
+                <Text style={styles.reqPaymentPillText}>Sanal kart</Text>
+              </View>
+            ) : request.passenger_payment_method === 'cash' ? (
+              <View style={[styles.reqPaymentPill, styles.reqPaymentPillCash]}>
+                <Text style={styles.reqPaymentPillText}>Nakit</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.reqRouteBlock}>
+            <View style={styles.reqRouteLine}>
+              <View style={[styles.reqDot, styles.reqDotPickup]} />
+              <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
+                {pickupLineFromRequest(request)}
+              </Text>
+            </View>
+            <View style={styles.reqRouteLine}>
+              <View style={[styles.reqDot, styles.reqDotDropoff]} />
+              <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
+                {dropoffLineFromRequest(request)}
+              </Text>
             </View>
           </View>
         </View>
-        <View style={styles.reqPriceBadge}>
-          <Text style={styles.reqPriceText}>{request.offered_price || 0} ₺</Text>
-        </View>
-      </View>
 
-      <View style={styles.reqRouteBlock}>
-        <View style={styles.reqRouteLine}>
-          <View style={[styles.reqDot, { backgroundColor: '#22C55E' }]} />
-          <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
-            {pickupLineFromRequest(request)}
-          </Text>
-        </View>
-        <View style={styles.reqRouteLine}>
-          <View style={[styles.reqDot, { backgroundColor: '#EF4444' }]} />
-          <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
-            {dropoffLineFromRequest(request)}
-          </Text>
-        </View>
-      </View>
+        <View style={styles.reqActionsCol}>
+          <TouchableOpacity style={styles.reqDismissBtn} onPress={onDismiss}>
+            <Text style={styles.reqDismissText}>Geç</Text>
+          </TouchableOpacity>
 
-      <View style={styles.reqChipsRow}>
-        <View style={styles.reqChip}>
-          <Ionicons name="time-outline" size={11} color={COLORS.textSecondary} />
-          <Text style={styles.reqChipText}>
-            {typeof timeToPassengerDisplay === 'number' ? `${timeToPassengerDisplay} dk` : String(timeToPassengerDisplay)}
-            <Text style={styles.reqChipMuted}> · yolcuya</Text>
-          </Text>
-        </View>
-        <View style={styles.reqChip}>
-          <Ionicons name="car-outline" size={11} color={COLORS.textSecondary} />
-          <Text style={styles.reqChipText}>{distanceToPassenger} km</Text>
-        </View>
-        <View style={[styles.reqChip, styles.reqChipGrow]}>
-          <Ionicons name="speedometer-outline" size={11} color={COLORS.textSecondary} />
-          {tripRoadShowLoading ? (
-            <TripRouteCalculatingInline compact />
-          ) : tripRoadShowFailedUi && tripDurationMinNumber == null ? (
-            <Text style={styles.reqChipText}>Rota yok</Text>
-          ) : tripDurationMinNumber != null ? (
-            <Text style={styles.reqChipText}>
-              {`${tripDurationMinNumber} dk`}
-              <Text style={styles.reqChipMuted}> · yolculuk</Text>
-            </Text>
-          ) : (
-            <Text style={styles.reqChipText}>—</Text>
-          )}
-        </View>
-        <View style={styles.reqChip}>
-          <Ionicons name="map-outline" size={11} color={COLORS.textSecondary} />
-          {tripRoadShowLoading ? (
-            <Text style={styles.reqChipText}>…</Text>
-          ) : (
-            <Text style={styles.reqChipText}>
-              {tripRoadShowFailedUi ? '—' : `${tripDistanceKmText} km`}
-            </Text>
-          )}
-        </View>
-        {request.passenger_payment_method === 'card' ? (
-          <View style={styles.reqChip}>
-            <Ionicons name="card-outline" size={11} color="#1D4ED8" />
-            <Text style={[styles.reqChipText, styles.reqChipPayCard]}>Sanal kart</Text>
-          </View>
-        ) : request.passenger_payment_method === 'cash' ? (
-          <View style={styles.reqChip}>
-            <Ionicons name="cash-outline" size={11} color="#047857" />
-            <Text style={[styles.reqChipText, styles.reqChipPayCash]}>Nakit</Text>
-          </View>
-        ) : null}
-        <View style={styles.reqChip}>
-          <Text style={styles.reqChipText}>
-            {request.passenger_vehicle_kind === 'motorcycle' ? '🏍️ Motor' : '🚗 Araç'}
-          </Text>
-        </View>
-      </View>
+          <TouchableOpacity
+            style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
+            onPress={async () => {
+              if (accepting || globalAcceptFrozen) return;
 
-      <View style={styles.reqActionsRow}>
-        <TouchableOpacity style={styles.reqDismissBtn} onPress={onDismiss}>
-          <Text style={styles.reqDismissText}>Geç</Text>
-        </TouchableOpacity>
+              const tagIdForAccept = String(request.tag_id || request.id || '').trim();
+              const userId = String(driverId || '').trim();
 
-        <TouchableOpacity
-          style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
-          onPress={async () => {
-            if (accepting || globalAcceptFrozen) return;
-
-            const tagIdForAccept = String(request.tag_id || request.id || '').trim();
-            const userId = String(driverId || '').trim();
-
-            if (!tagIdForAccept || !userId) {
-              Alert.alert('Hata', 'Eksik bilgi');
-              return;
-            }
-
-            setGlobalAcceptFrozen(true);
-            setAccepting(true);
-            try {
-              playTapSound?.();
-              const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
-              const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag_id: tagIdForAccept, driver_id: userId }),
-              });
-              const rawText = await res.text();
-              let body: Record<string, unknown> | null = null;
-              try {
-                body = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
-              } catch {
-                body = null;
-              }
-              console.log('[driver/accept-offer]', res.status, rawText?.slice?.(0, 500) || rawText);
-
-              if (res.ok && body && body.success === true) {
-                const m = (body.match as Record<string, unknown> | undefined) || body;
-                onDriverAcceptMatch?.({
-                  ...m,
-                  pickup_distance_km:
-                    m.pickup_distance_km ?? request.pickup_distance_km,
-                  pickup_eta_min: m.pickup_eta_min ?? request.pickup_eta_min,
-                  trip_distance_km:
-                    m.trip_distance_km ?? request.trip_distance_km,
-                  trip_duration_min:
-                    m.trip_duration_min ?? request.trip_duration_min,
-                });
+              if (!tagIdForAccept || !userId) {
+                Alert.alert('Hata', 'Eksik bilgi');
                 return;
               }
 
-              setGlobalAcceptFrozen(false);
+              setGlobalAcceptFrozen(true);
+              setAccepting(true);
+              try {
+                playTapSound?.();
+                const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ tag_id: tagIdForAccept, driver_id: userId }),
+                });
+                const rawText = await res.text();
+                let body: Record<string, unknown> | null = null;
+                try {
+                  body = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
+                } catch {
+                  body = null;
+                }
+                console.log('[driver/accept-offer]', res.status, rawText?.slice?.(0, 500) || rawText);
 
-              let errMsg = '';
-              if (body) {
-                const d = (body as { detail?: unknown }).detail;
-                const m = (body as { message?: unknown }).message;
-                errMsg = [d, m]
-                  .map((x) => (x != null && String(x).trim() ? String(x).trim() : ''))
-                  .find(Boolean) || '';
+                if (res.ok && body && body.success === true) {
+                  const m = (body.match as Record<string, unknown> | undefined) || body;
+                  onDriverAcceptMatch?.({
+                    ...m,
+                    pickup_distance_km:
+                      m.pickup_distance_km ?? request.pickup_distance_km,
+                    pickup_eta_min: m.pickup_eta_min ?? request.pickup_eta_min,
+                    trip_distance_km:
+                      m.trip_distance_km ?? request.trip_distance_km,
+                    trip_duration_min:
+                      m.trip_duration_min ?? request.trip_duration_min,
+                  });
+                  return;
+                }
+
+                setGlobalAcceptFrozen(false);
+
+                let errMsg = '';
+                if (body) {
+                  const d = (body as { detail?: unknown }).detail;
+                  const m = (body as { message?: unknown }).message;
+                  errMsg = [d, m]
+                    .map((x) => (x != null && String(x).trim() ? String(x).trim() : ''))
+                    .find(Boolean) || '';
+                }
+                if (!errMsg) {
+                  errMsg =
+                    res.status === 409
+                      ? 'Bu çağrı artık müsait değil veya başka sürücüye düştü.'
+                      : `Sunucu yanıtı: ${res.status}`;
+                }
+                Alert.alert('Eşleşme olmadı', errMsg);
+              } catch (e) {
+                console.error('[driver/accept-offer] fetch', e);
+                setGlobalAcceptFrozen(false);
+                Alert.alert('Hata', 'Bağlantı hatası. Lütfen tekrar deneyin.');
+              } finally {
+                setAccepting(false);
               }
-              if (!errMsg) {
-                errMsg =
-                  res.status === 409
-                    ? 'Bu çağrı artık müsait değil veya başka sürücüye düştü.'
-                    : `Sunucu yanıtı: ${res.status}`;
-              }
-              Alert.alert('Eşleşme olmadı', errMsg);
-            } catch (e) {
-              console.error('[driver/accept-offer] fetch', e);
-              setGlobalAcceptFrozen(false);
-              Alert.alert('Hata', 'Bağlantı hatası. Lütfen tekrar deneyin.');
-            } finally {
-              setAccepting(false);
-            }
-          }}
-          disabled={accepting || globalAcceptFrozen}
-        >
-          {accepting ? (
-            <ActivityIndicator size="small" color="#FFF" />
-          ) : (
-            <Text style={styles.reqAcceptBtnText}>Kabul Et →</Text>
-          )}
-        </TouchableOpacity>
+            }}
+            disabled={accepting || globalAcceptFrozen}
+          >
+            {accepting ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <Text style={styles.reqAcceptBtnText}>Kabul Et</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+      <View style={styles.reqBottomMetaRow}>
+        {tripRoadShowLoading ? (
+          <TripRouteCalculatingInline compact />
+        ) : (
+          <Text style={styles.reqBottomMetaText}>Rota: {routeDistanceText}</Text>
+        )}
+        <Text style={styles.reqBottomMetaText}>
+          {typeof timeToPassengerDisplay === 'number' ? `${timeToPassengerDisplay} dk yolcuya` : '— yolcuya'}
+        </Text>
       </View>
     </Animated.View>
   );
@@ -1187,7 +1174,7 @@ export default function DriverOfferScreen({
           </View>
         ) : (
           <FlatList
-            data={visibleRequests}
+            data={visibleRequests.slice(0, 20)}
             keyExtractor={(item, index) => item.id || item.request_id || index.toString()}
             renderItem={({ item, index }) => (
               <RequestCard
@@ -1785,160 +1772,149 @@ const styles = StyleSheet.create({
 
   // Normal TAG — gelen talep kartı (kompakt premium)
   reqCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderRadius: 23,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 10,
+    backgroundColor: '#071426',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 152,
+    marginTop: 8,
     borderWidth: Platform.OS === 'android' ? 1 : StyleSheet.hairlineWidth,
-    borderColor: 'rgba(226, 232, 240, 0.95)',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.26,
     shadowRadius: 12,
-    elevation: 5,
+    elevation: 6,
   },
-  reqTopRow: {
+  reqMainRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
-  reqAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EBF5FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  reqMidCol: {
+  reqContentCol: {
     flex: 1,
     minWidth: 0,
-    marginLeft: 10,
+    paddingRight: 10,
   },
-  reqPassengerName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  reqPillRow: {
+  reqTopLine: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-    gap: 6,
-  },
-  reqNewPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#E0F2FE',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  reqNewPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#0369A1',
-    letterSpacing: 0.2,
-  },
-  reqPriceBadge: {
-    marginLeft: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    alignItems: 'baseline',
+    gap: 8,
   },
   reqPriceText: {
-    fontSize: 15,
+    fontSize: 26,
+    lineHeight: 30,
     fontWeight: '800',
-    color: COLORS.text,
+    color: '#4ADE80',
+  },
+  reqMetaText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  reqSecondLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+    flexWrap: 'wrap',
+  },
+  reqPassengerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: 120,
+  },
+  reqPassengerName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  reqRatingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(250, 204, 21, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  reqRatingText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  reqPaymentPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  reqPaymentPillCard: {
+    backgroundColor: 'rgba(37, 99, 235, 0.18)',
+    borderColor: 'rgba(96, 165, 250, 0.45)',
+  },
+  reqPaymentPillCash: {
+    backgroundColor: 'rgba(22, 163, 74, 0.18)',
+    borderColor: 'rgba(74, 222, 128, 0.45)',
+  },
+  reqPaymentPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#E2E8F0',
+    letterSpacing: 0.2,
   },
   reqRouteBlock: {
-    marginTop: 10,
-    gap: 6,
+    marginTop: 8,
+    gap: 5,
   },
   reqRouteLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   reqDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  reqDotPickup: {
+    backgroundColor: '#22C55E',
+  },
+  reqDotDropoff: {
+    backgroundColor: '#EF4444',
   },
   reqRouteText: {
     flex: 1,
     minWidth: 0,
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  reqChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    gap: 6,
-    alignItems: 'center',
-  },
-  reqChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    maxWidth: '100%',
-  },
-  reqChipGrow: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  reqChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  reqChipMuted: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '500',
-    color: COLORS.textSecondary,
+    color: '#CBD5E1',
   },
-  reqChipPayCard: {
-    color: '#1D4ED8',
-  },
-  reqChipPayCash: {
-    color: '#047857',
-  },
-  reqActionsRow: {
-    flexDirection: 'row',
+  reqActionsCol: {
+    width: 84,
+    justifyContent: 'space-between',
     gap: 8,
-    marginTop: 12,
-    alignItems: 'stretch',
   },
   reqDismissBtn: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 10,
-    borderRadius: 12,
+    minHeight: 40,
+    backgroundColor: '#1F2937',
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.28)',
   },
   reqDismissText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#CBD5E1',
   },
   reqAcceptBtn: {
-    flex: 2,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    minHeight: 44,
-    borderRadius: 12,
+    flex: 1,
+    minHeight: 40,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1946,9 +1922,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#CBD5E1',
   },
   reqAcceptBtnText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFF',
+  },
+  reqBottomMetaRow: {
+    marginTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(148, 163, 184, 0.28)',
+    paddingTop: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reqBottomMetaText: {
+    flexShrink: 1,
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#94A3B8',
   },
 
   // Offer Section (Eski - artık kullanılmıyor)
