@@ -1208,6 +1208,14 @@ except (TypeError, ValueError):
 SEQUENTIAL_DISPATCH_RADIUS_KM = DISPATCH_RADIUS_KM
 BROADCAST_RADIUS_KM = DISPATCH_RADIUS_KM
 
+# Rolling-wave DB persistence (tag_dispatch_state); default off until wired in a later phase.
+DISPATCH_WAVE_DB_STATE = os.getenv("DISPATCH_WAVE_DB_STATE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # tag_id -> asyncio.Task (dalga süresi: varsayılan 30 sn)
 rolling_dispatch_tasks: dict = {}
 # tag_id -> rolling state (in-memory): full_tag, current_batch, batch_seq, excluded_driver_ids,
@@ -4029,6 +4037,10 @@ async def startup():
         BATCH_SIZE,
         DISPATCH_TIMEOUT,
         DISPATCH_RADIUS_KM,
+    )
+    logger.info(
+        "[tag_dispatch_state] enabled=%s",
+        "true" if DISPATCH_WAVE_DB_STATE else "false",
     )
 
 # Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
