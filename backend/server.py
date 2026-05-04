@@ -1224,6 +1224,14 @@ DISPATCH_SCORE_LOGS = os.getenv("DISPATCH_SCORE_LOGS", "").strip().lower() in (
     "on",
 )
 
+# Phase 2B: sort eligible drivers by composite score (same weights as Phase 2A shadow); default off.
+DISPATCH_SCORE_SORT = os.getenv("DISPATCH_SCORE_SORT", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # tag_id -> asyncio.Task (dalga süresi: varsayılan 30 sn)
 rolling_dispatch_tasks: dict = {}
 # tag_id -> rolling state (in-memory): full_tag, current_batch, batch_seq, excluded_driver_ids,
@@ -1313,6 +1321,26 @@ def _dispatch_env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _dispatch_score_shadow_compute(
+    row: dict, *, radius_km: float, vehicle_filter: bool
+) -> float:
+    """Phase 2A/2B composite score (acceptance/penalty/fairness placeholders = 0)."""
+    d_km = float(row.get("distance_km", 0) or 0)
+    rating = float(row.get("rating", 4.0) or 4.0)
+    d_norm = min(d_km / float(radius_km), 1.0) if radius_km > 0 else 1.0
+    r_norm = max(0.0, min(1.0, (rating - 3.0) / 2.0))
+    vm_base = 1.0 if vehicle_filter else 0.5
+    acc_v = pen_v = fair_v = 0.0
+    return (
+        0.55 * (1.0 - d_norm)
+        + 0.20 * r_norm
+        + 0.15 * vm_base
+        + 0.05 * acc_v
+        - 0.05 * pen_v
+        + 0.05 * fair_v
+    )
+
+
 def _dispatch_score_log_phase2a(
     *,
     phase: str,
@@ -1322,7 +1350,7 @@ def _dispatch_score_log_phase2a(
     eligible_drivers: list,
     top_slice: Optional[list] = None,
 ) -> None:
-    """Phase 2A — shadow score logging only; does not affect ordering."""
+    """Phase 2A — shadow score logging only; ordering controlled by DISPATCH_SCORE_SORT."""
     if not DISPATCH_SCORE_LOGS:
         return
     try:
@@ -1352,16 +1380,8 @@ def _dispatch_score_log_phase2a(
             acceptance_rate = None
             penalty = None
             fairness = None
-            acc_v = 0.0 if acceptance_rate is None else float(acceptance_rate)
-            pen_v = 0.0 if penalty is None else float(penalty)
-            fair_v = 0.0 if fairness is None else float(fairness)
-            score_shadow = (
-                0.55 * (1.0 - d_norm)
-                + 0.20 * r_norm
-                + 0.15 * vm_base
-                + 0.05 * acc_v
-                - 0.05 * pen_v
-                + 0.05 * fair_v
+            score_shadow = _dispatch_score_shadow_compute(
+                row, radius_km=radius_km, vehicle_filter=vehicle_filter
             )
             payload = {
                 "phase": "after_sort",
@@ -1398,7 +1418,7 @@ async def find_eligible_drivers(
     Kriterler: online, aktif paket, mesafe içinde
     Araç talebi (car) / motorcycle katı eşleşmesi; sürücüde vehicle_kind yoksa eff=car.
     vehicle_filter=False: mesafe/online dışında araç tipi eşleşmesi atlanır (yedek tarama).
-    Sıralama: mesafe (yakın), rating (yüksek)
+    Sıralama: varsayılan mesafe (yakın), rating (yüksek); DISPATCH_SCORE_SORT=1 ise bileşik skor (tie-break: mesafe, rating).
     """
     try:
         r_km = float(radius_km) if radius_km is not None else float(SEQUENTIAL_DISPATCH_RADIUS_KM)
@@ -1505,7 +1525,16 @@ async def find_eligible_drivers(
             vehicle_filter=vehicle_filter,
             eligible_drivers=eligible_drivers,
         )
-        eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
+        if DISPATCH_SCORE_SORT:
+            eligible_drivers.sort(
+                key=lambda x: (
+                    -_dispatch_score_shadow_compute(x, radius_km=r_km, vehicle_filter=vehicle_filter),
+                    float(x["distance_km"]),
+                    -float(x.get("rating") or 4.0),
+                )
+            )
+        else:
+            eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
         _dispatch_score_log_phase2a(
             phase="after_sort",
             tag_id=tag_id,
