@@ -714,9 +714,10 @@ export default function App() {
   const roleCardPassengerOpacity = useRef(new Animated.Value(0)).current;
   const roleCardDriverTranslateX = useRef(new Animated.Value(26)).current;
   const roleCardDriverOpacity = useRef(new Animated.Value(0)).current;
-  const roleVehiclePanelOpacity = useRef(new Animated.Value(0)).current;
-  const roleVehiclePanelTranslateY = useRef(new Animated.Value(12)).current;
-  const roleVehiclePanelEnteredRef = useRef(false);
+  const vehicleCarTranslateX = useRef(new Animated.Value(-28)).current;
+  const vehicleCarOpacity = useRef(new Animated.Value(0)).current;
+  const vehicleMotoTranslateX = useRef(new Animated.Value(28)).current;
+  const vehicleMotoOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (screen !== 'role-select') {
@@ -724,9 +725,13 @@ export default function App() {
       roleCardPassengerOpacity.setValue(0);
       roleCardDriverTranslateX.setValue(26);
       roleCardDriverOpacity.setValue(0);
-      roleVehiclePanelEnteredRef.current = false;
-      roleVehiclePanelOpacity.setValue(0);
-      roleVehiclePanelTranslateY.setValue(12);
+      vehicleCarTranslateX.setValue(-28);
+      vehicleCarOpacity.setValue(0);
+      vehicleMotoTranslateX.setValue(28);
+      vehicleMotoOpacity.setValue(0);
+      return;
+    }
+    if (selectedRole) {
       return;
     }
     roleCardPassengerTranslateX.setValue(-26);
@@ -765,40 +770,57 @@ export default function App() {
       ).start();
     });
     return () => cancelAnimationFrame(raf);
-  }, [screen]);
+  }, [screen, selectedRole]);
 
   useEffect(() => {
     if (screen !== 'role-select') {
-      roleVehiclePanelEnteredRef.current = false;
-      roleVehiclePanelOpacity.setValue(0);
-      roleVehiclePanelTranslateY.setValue(12);
+      vehicleCarTranslateX.setValue(-28);
+      vehicleCarOpacity.setValue(0);
+      vehicleMotoTranslateX.setValue(28);
+      vehicleMotoOpacity.setValue(0);
       return;
     }
     if (!selectedRole) {
-      roleVehiclePanelEnteredRef.current = false;
-      roleVehiclePanelOpacity.setValue(0);
-      roleVehiclePanelTranslateY.setValue(12);
+      vehicleCarTranslateX.setValue(-28);
+      vehicleCarOpacity.setValue(0);
+      vehicleMotoTranslateX.setValue(28);
+      vehicleMotoOpacity.setValue(0);
       return;
     }
-    if (roleVehiclePanelEnteredRef.current) {
-      return;
-    }
-    roleVehiclePanelEnteredRef.current = true;
-    roleVehiclePanelOpacity.setValue(0);
-    roleVehiclePanelTranslateY.setValue(12);
+    vehicleCarTranslateX.setValue(-28);
+    vehicleCarOpacity.setValue(0);
+    vehicleMotoTranslateX.setValue(28);
+    vehicleMotoOpacity.setValue(0);
     const raf = requestAnimationFrame(() => {
-      Animated.parallel([
-        Animated.timing(roleVehiclePanelOpacity, {
-          toValue: 1,
-          duration: 360,
-          useNativeDriver: true,
-        }),
-        Animated.timing(roleVehiclePanelTranslateY, {
-          toValue: 0,
-          duration: 360,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      Animated.stagger(
+        88,
+        [
+          Animated.parallel([
+            Animated.timing(vehicleCarTranslateX, {
+              toValue: 0,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(vehicleCarOpacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.parallel([
+            Animated.timing(vehicleMotoTranslateX, {
+              toValue: 0,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(vehicleMotoOpacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]
+      ).start();
     });
     return () => cancelAnimationFrame(raf);
   }, [screen, selectedRole]);
@@ -3574,227 +3596,254 @@ export default function App() {
                   Önce rolünü, sonra araç tipini seç.
                 </Text>
               </View>
-              <View
-                style={[
-                  styles.roleCardsRow,
-                  rs.isVeryCompact && styles.roleCardsRowVery,
-                  rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
-                  roleSelectContentWide && styles.roleCardsRowWide,
-                ]}
-              >
-                <Animated.View
-                  style={[
-                    styles.roleCardAnimatedWrap,
-                    {
-                      opacity: roleCardPassengerOpacity,
-                      transform: [{ translateX: roleCardPassengerTranslateX }],
-                    },
-                  ]}
-                >
-                <TouchableOpacity
-                  style={[
-                    styles.roleCardCompact,
-                    rs.isVeryCompact && styles.roleCardCompactVery,
-                    rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
-                    selectedRole === 'passenger' && styles.roleCardSelected,
-                  ]}
-                  onPress={async () => {
-                    handleRoleSelect('passenger');
-                  }}
-                  activeOpacity={0.88}
-                >
+              <View style={styles.roleDeckSlot}>
+                {!selectedRole ? (
                   <View
                     style={[
-                      styles.roleIconCircle,
-                      rs.isVeryCompact && styles.roleIconCircleVery,
-                      rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
-                      selectedRole === 'passenger' && styles.roleIconCircleActive,
+                      styles.roleCardsRow,
+                      rs.isVeryCompact && styles.roleCardsRowVery,
+                      rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
+                      roleSelectContentWide && styles.roleCardsRowWide,
                     ]}
                   >
-                    <MaterialCommunityIcons
-                      name="account-supervisor-circle"
-                      size={passengerIconSize}
-                      color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'}
-                    />
-                  </View>
-                  <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>
-                    Yolcu
-                  </Text>
-                  <Text
-                    style={[
-                      styles.roleCardDesc,
-                      rs.isVeryCompact && styles.roleCardDescVery,
-                      selectedRole === 'passenger' && styles.roleCardDescActive,
-                    ]}
-                    numberOfLines={2}
-                  >
-                    Sürücülere teklif gönder
-                  </Text>
-                  {selectedRole === 'passenger' && (
-                    <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                      <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
-                    </View>
-                  )}
-                </TouchableOpacity>
-                </Animated.View>
-
-                <Animated.View
-                  style={[
-                    styles.roleCardAnimatedWrap,
-                    {
-                      opacity: roleCardDriverOpacity,
-                      transform: [{ translateX: roleCardDriverTranslateX }],
-                    },
-                  ]}
-                >
-                <TouchableOpacity
-                  style={[
-                    styles.roleCardCompact,
-                    rs.isVeryCompact && styles.roleCardCompactVery,
-                    rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
-                    selectedRole === 'driver' && styles.roleCardSelected,
-                  ]}
-                  onPress={async () => {
-                    handleRoleSelect('driver');
-                  }}
-                  activeOpacity={0.88}
-                >
-                  <View
-                    style={[
-                      styles.roleIconCircle,
-                      rs.isVeryCompact && styles.roleIconCircleVery,
-                      rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
-                      selectedRole === 'driver' && styles.roleIconCircleActive,
-                    ]}
-                  >
-                    <View style={styles.roleDriverIconsRow}>
-                      <MaterialCommunityIcons
-                        name="car-side"
-                        size={driverCarIconSize}
-                        color={selectedRole === 'driver' ? '#FFF' : '#2563EB'}
-                      />
-                      <MaterialCommunityIcons
-                        name="motorbike"
-                        size={driverBikeIconSize}
-                        color={selectedRole === 'driver' ? '#E9D5FF' : '#7C3AED'}
-                      />
-                    </View>
-                  </View>
-                  <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>
-                    Sürücü
-                  </Text>
-                  <Text
-                    style={[
-                      styles.roleCardDesc,
-                      rs.isVeryCompact && styles.roleCardDescVery,
-                      selectedRole === 'driver' && styles.roleCardDescActive,
-                    ]}
-                    numberOfLines={2}
-                  >
-                    Yolculardan teklif al
-                  </Text>
-                  {selectedRole === 'driver' && (
-                    <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                      <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
-                    </View>
-                  )}
-                </TouchableOpacity>
-                </Animated.View>
-              </View>
-
-              {selectedRole && (
-                <Animated.View
-                  style={[
-                    styles.roleVehicleAnimatedWrap,
-                    {
-                      opacity: roleVehiclePanelOpacity,
-                      transform: [{ translateY: roleVehiclePanelTranslateY }],
-                    },
-                  ]}
-                >
-                <View style={styles.roleVehicleSection}>
-                  <View
-                    style={[
-                      styles.roleVehicleSectionInner,
-                      rs.isVeryCompact && styles.roleVehicleSectionInnerVery,
-                      rs.isCompact && !rs.isVeryCompact && styles.roleVehicleSectionInnerCompact,
-                    ]}
-                  >
-                    <Text
+                    <Animated.View
                       style={[
-                        styles.roleVehiclePrompt,
-                        rs.isVeryCompact && styles.roleVehiclePromptVery,
+                        styles.roleCardAnimatedWrap,
+                        {
+                          opacity: roleCardPassengerOpacity,
+                          transform: [{ translateX: roleCardPassengerTranslateX }],
+                        },
                       ]}
                     >
-                      Araç tipini seç
-                    </Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.roleCardCompact,
+                          rs.isVeryCompact && styles.roleCardCompactVery,
+                          rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
+                          selectedRole === 'passenger' && styles.roleCardSelected,
+                        ]}
+                        onPress={async () => {
+                          handleRoleSelect('passenger');
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        <View
+                          style={[
+                            styles.roleIconCircle,
+                            rs.isVeryCompact && styles.roleIconCircleVery,
+                            rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
+                            selectedRole === 'passenger' && styles.roleIconCircleActive,
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="account-supervisor-circle"
+                            size={passengerIconSize}
+                            color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'}
+                          />
+                        </View>
+                        <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>
+                          Yolcu
+                        </Text>
+                        <Text
+                          style={[
+                            styles.roleCardDesc,
+                            rs.isVeryCompact && styles.roleCardDescVery,
+                            selectedRole === 'passenger' && styles.roleCardDescActive,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          Sürücülere teklif gönder
+                        </Text>
+                        {selectedRole === 'passenger' && (
+                          <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </Animated.View>
+
+                    <Animated.View
+                      style={[
+                        styles.roleCardAnimatedWrap,
+                        {
+                          opacity: roleCardDriverOpacity,
+                          transform: [{ translateX: roleCardDriverTranslateX }],
+                        },
+                      ]}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          styles.roleCardCompact,
+                          rs.isVeryCompact && styles.roleCardCompactVery,
+                          rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
+                          selectedRole === 'driver' && styles.roleCardSelected,
+                        ]}
+                        onPress={async () => {
+                          handleRoleSelect('driver');
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        <View
+                          style={[
+                            styles.roleIconCircle,
+                            rs.isVeryCompact && styles.roleIconCircleVery,
+                            rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
+                            selectedRole === 'driver' && styles.roleIconCircleActive,
+                          ]}
+                        >
+                          <View style={styles.roleDriverIconsRow}>
+                            <MaterialCommunityIcons
+                              name="car-side"
+                              size={driverCarIconSize}
+                              color={selectedRole === 'driver' ? '#FFF' : '#2563EB'}
+                            />
+                            <MaterialCommunityIcons
+                              name="motorbike"
+                              size={driverBikeIconSize}
+                              color={selectedRole === 'driver' ? '#E9D5FF' : '#7C3AED'}
+                            />
+                          </View>
+                        </View>
+                        <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>
+                          Sürücü
+                        </Text>
+                        <Text
+                          style={[
+                            styles.roleCardDesc,
+                            rs.isVeryCompact && styles.roleCardDescVery,
+                            selectedRole === 'driver' && styles.roleCardDescActive,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          Yolculardan teklif al
+                        </Text>
+                        {selectedRole === 'driver' && (
+                          <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </Animated.View>
+                  </View>
+                ) : (
+                  <View style={styles.roleDeckVehicleStack}>
                     <View
                       style={[
-                        styles.roleVehicleRow,
-                        rs.isVeryCompact && styles.roleVehicleRowVery,
+                        styles.roleDeckVehicleHeader,
+                        rs.isVeryCompact && styles.roleDeckVehicleHeaderVery,
                       ]}
                     >
-                      <TouchableOpacity
+                      <Text
                         style={[
-                          styles.roleVehicleChip,
-                          rs.isVeryCompact && styles.roleVehicleChipVery,
-                          rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
-                          rideVehicleKind === 'car' && styles.roleVehicleChipActive,
+                          styles.roleDeckVehicleTitle,
+                          rs.isVeryCompact && styles.roleDeckVehicleTitleVery,
                         ]}
+                        numberOfLines={1}
+                      >
+                        {selectedRole === 'passenger' ? 'Yolcu' : 'Sürücü'} seçildi
+                      </Text>
+                      <TouchableOpacity
                         onPress={() => {
                           roleScreenHaptic();
-                          setRideVehicleKind('car');
+                          setSelectedRole(null);
+                          setRideVehicleKind(null);
                         }}
-                        activeOpacity={0.85}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.75}
                       >
-                        <MaterialCommunityIcons
-                          name="car-side"
-                          size={vehicleChipIconSize}
-                          color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
-                        />
-                        <Text
-                          style={[
-                            styles.roleVehicleChipText,
-                            rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
-                            rs.isVeryCompact && styles.roleVehicleChipTextVery,
-                          ]}
-                        >
-                          Araba
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[
-                          styles.roleVehicleChip,
-                          rs.isVeryCompact && styles.roleVehicleChipVery,
-                          rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
-                          rideVehicleKind === 'motorcycle' && styles.roleVehicleChipActiveMotor,
-                        ]}
-                        onPress={() => {
-                          roleScreenHaptic();
-                          setRideVehicleKind('motorcycle');
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <MaterialCommunityIcons
-                          name="motorbike"
-                          size={vehicleChipIconSize}
-                          color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
-                        />
-                        <Text
-                          style={[
-                            styles.roleVehicleChipText,
-                            rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
-                            rs.isVeryCompact && styles.roleVehicleChipTextVery,
-                          ]}
-                        >
-                          Motor
-                        </Text>
+                        <Text style={styles.roleDeckChangeRole}>Rolü değiştir</Text>
                       </TouchableOpacity>
                     </View>
+                    <View
+                      style={[
+                        styles.roleCardsRow,
+                        rs.isVeryCompact && styles.roleCardsRowVery,
+                        rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
+                        roleSelectContentWide && styles.roleCardsRowWide,
+                      ]}
+                    >
+                      <Animated.View
+                        style={[
+                          styles.roleCardAnimatedWrap,
+                          {
+                            opacity: vehicleCarOpacity,
+                            transform: [{ translateX: vehicleCarTranslateX }],
+                          },
+                        ]}
+                      >
+                        <TouchableOpacity
+                          style={[
+                            styles.roleVehicleChip,
+                            rs.isVeryCompact && styles.roleVehicleChipVery,
+                            rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
+                            styles.roleVehicleChipDeck,
+                            rideVehicleKind === 'car' && styles.roleVehicleChipActive,
+                          ]}
+                          onPress={() => {
+                            roleScreenHaptic();
+                            setRideVehicleKind('car');
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <MaterialCommunityIcons
+                            name="car-side"
+                            size={vehicleChipIconSize}
+                            color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
+                          />
+                          <Text
+                            style={[
+                              styles.roleVehicleChipText,
+                              rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
+                              rs.isVeryCompact && styles.roleVehicleChipTextVery,
+                            ]}
+                          >
+                            Araba
+                          </Text>
+                        </TouchableOpacity>
+                      </Animated.View>
+                      <Animated.View
+                        style={[
+                          styles.roleCardAnimatedWrap,
+                          {
+                            opacity: vehicleMotoOpacity,
+                            transform: [{ translateX: vehicleMotoTranslateX }],
+                          },
+                        ]}
+                      >
+                        <TouchableOpacity
+                          style={[
+                            styles.roleVehicleChip,
+                            rs.isVeryCompact && styles.roleVehicleChipVery,
+                            rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
+                            styles.roleVehicleChipDeck,
+                            rideVehicleKind === 'motorcycle' && styles.roleVehicleChipActiveMotor,
+                          ]}
+                          onPress={() => {
+                            roleScreenHaptic();
+                            setRideVehicleKind('motorcycle');
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <MaterialCommunityIcons
+                            name="motorbike"
+                            size={vehicleChipIconSize}
+                            color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                          />
+                          <Text
+                            style={[
+                              styles.roleVehicleChipText,
+                              rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
+                              rs.isVeryCompact && styles.roleVehicleChipTextVery,
+                            ]}
+                          >
+                            Motor
+                          </Text>
+                        </TouchableOpacity>
+                      </Animated.View>
+                    </View>
                   </View>
-                </View>
-                </Animated.View>
-              )}
+                )}
+              </View>
             </View>
           </ScrollView>
 
@@ -19238,8 +19287,42 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  roleVehicleAnimatedWrap: {
+  roleDeckSlot: {
     width: '100%',
+  },
+  roleDeckVehicleStack: {
+    width: '100%',
+  },
+  roleDeckVehicleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+    gap: 8,
+  },
+  roleDeckVehicleHeaderVery: {
+    marginBottom: 6,
+  },
+  roleDeckVehicleTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#334155',
+    letterSpacing: -0.2,
+  },
+  roleDeckVehicleTitleVery: {
+    fontSize: 12,
+  },
+  roleDeckChangeRole: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0284C7',
+    letterSpacing: -0.15,
+  },
+  roleVehicleChipDeck: {
+    alignSelf: 'stretch',
   },
   roleCardsRowWide: {
     width: '100%',
@@ -19421,23 +19504,6 @@ const styles = StyleSheet.create({
     top: -6,
     right: -6,
     borderWidth: 3,
-  },
-  roleVehicleSectionInnerCompact: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-  },
-  roleVehicleSectionInnerVery: {
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 18,
-  },
-  roleVehiclePromptVery: {
-    fontSize: 12,
-    marginBottom: 10,
-    lineHeight: 16,
-  },
-  roleVehicleRowVery: {
-    gap: 8,
   },
   roleVehicleChipCompact: {
     paddingVertical: 12,
@@ -19685,40 +19751,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  roleVehicleSection: {
-    width: '100%',
-    marginTop: 6,
-    marginBottom: 8,
-    paddingHorizontal: 0,
-  },
-  /** Araç seçimi — panel içinde gruplama (Phase 3) */
-  roleVehicleSectionInner: {
-    width: '100%',
-    borderRadius: 22,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    elevation: 6,
-  },
-  roleVehiclePrompt: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
-    textAlign: 'center',
-    marginBottom: 16,
-    letterSpacing: -0.2,
-  },
-  roleVehicleRow: {
-    flexDirection: 'row',
-    gap: 14,
-    justifyContent: 'center',
   },
   roleVehicleChip: {
     flex: 1,
