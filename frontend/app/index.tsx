@@ -3309,7 +3309,9 @@ export default function App() {
             
             <View style={styles.roleTopTitleWrap}>
               <View style={styles.roleTopTitlePill}>
-                <Text style={styles.roleTopTitle}>Bugün nasıl ilerlemek{'\n'}istersiniz?</Text>
+                <Text style={styles.roleTopTitle}>
+                  Bugün nasıl ilerlemek{'\n'}istersiniz?
+                </Text>
               </View>
             </View>
             
@@ -3318,7 +3320,7 @@ export default function App() {
                 <Ionicons name="settings-outline" size={22} color="#3FA9F5" />
               </TouchableOpacity>
             ) : (
-              <View style={styles.roleTopBarSpacer} />
+              <View style={styles.roleExitBtn} pointerEvents="none" />
             )}
           </View>
 
@@ -3347,7 +3349,7 @@ export default function App() {
                 </Text>
                 {selectedRole === 'passenger' && (
                   <View style={styles.roleCheckBadge}>
-                    <Ionicons name="checkmark-circle" size={22} color="#FFF" />
+                    <Ionicons name="checkmark-circle" size={26} color="#FFF" />
                   </View>
                 )}
               </TouchableOpacity>
@@ -3376,7 +3378,7 @@ export default function App() {
                 </Text>
                 {selectedRole === 'driver' && (
                   <View style={styles.roleCheckBadge}>
-                    <Ionicons name="checkmark-circle" size={22} color="#FFF" />
+                    <Ionicons name="checkmark-circle" size={26} color="#FFF" />
                   </View>
                 )}
               </TouchableOpacity>
@@ -3446,15 +3448,27 @@ export default function App() {
             <RoleSelectLeylekAIFloating />
             <TouchableOpacity
               style={[
-                styles.roleContinueBtnLarge,
+                styles.roleContinueBtnOuter,
                 (!selectedRole || !rideVehicleKind) && styles.roleContinueBtnDisabled,
               ]}
               onPress={handleContinue}
               disabled={!selectedRole || !rideVehicleKind}
               activeOpacity={0.9}
             >
-              <Text style={styles.roleContinueTextLarge}>Devam Et</Text>
-              <Ionicons name="arrow-forward-circle" size={30} color="#FFF" />
+              {selectedRole && rideVehicleKind ? (
+                <LinearGradient
+                  colors={['#38BDF8', '#0EA5E9', '#0284C7', '#0369A1']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.roleContinueBtnGradientFill}
+                />
+              ) : (
+                <View style={[StyleSheet.absoluteFillObject, styles.roleContinueBtnDisabledFill]} />
+              )}
+              <View style={styles.roleContinueBtnContent} pointerEvents="box-none">
+                <Text style={styles.roleContinueTextLarge}>Devam Et</Text>
+                <Ionicons name="arrow-forward-circle" size={30} color="#FFF" />
+              </View>
             </TouchableOpacity>
 
             <View style={styles.roleSeparatorCompact}>
@@ -3464,23 +3478,42 @@ export default function App() {
             </View>
 
             <TouchableOpacity
-              style={styles.communityBtnCompact}
+              style={styles.communityBtnOuter}
               onPress={async () => {
                 roleScreenHaptic();
                 setScreen('community');
               }}
               activeOpacity={0.88}
             >
-              <View style={styles.communityLogoBox}>
-                <Ionicons name="chatbubbles" size={28} color="#FFF" />
-              </View>
-              <View style={styles.communityTextBox}>
-                <Text style={styles.communityBtnTitleProminent}>Leylek Teklif Sende</Text>
-                <Text style={styles.communityBtnSubProminent}>Şehir topluluğuna katıl</Text>
-              </View>
-              <View style={styles.communityArrow}>
-                <Ionicons name="chevron-forward" size={20} color="#FFF" />
-              </View>
+              <LinearGradient
+                colors={['#1e1b4b', '#312e81', '#1e3a8a', '#172554']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.communityBtnGradient}
+              >
+                <View style={styles.communityBadgeYeni} pointerEvents="none">
+                  <Text style={styles.communityBadgeYeniText}>YENİ</Text>
+                </View>
+                <View style={styles.communityBtnRow}>
+                  <View style={styles.communityIconRouteBox}>
+                    <MaterialCommunityIcons name="routes" size={28} color="#E0E7FF" />
+                  </View>
+                  <View style={styles.communityTextBox}>
+                    <Text style={styles.communityBtnTitleProminent}>Leylek Teklif Sende</Text>
+                    <Text style={styles.communityBtnSubProminent}>
+                      Şehirler arası yolculuklara katıl
+                    </Text>
+                  </View>
+                  <LinearGradient
+                    colors={['#6366F1', '#4F46E5', '#2563EB']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.communityArrowPremium}
+                  >
+                    <Ionicons name="chevron-forward" size={22} color="#FFF" />
+                  </LinearGradient>
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -18771,48 +18804,57 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   roleTopTitlePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderRadius: 18,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.65)',
+    backgroundColor: 'rgba(255, 255, 255, 0.82)',
+    borderRadius: 22,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
     maxWidth: '100%',
     alignSelf: 'center',
     shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 8,
   },
   roleExitBtn: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
   },
   roleTopTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '900',
     color: '#0F172A',
     textAlign: 'center',
-    lineHeight: 22,
-    letterSpacing: -0.3,
+    lineHeight: 24,
+    letterSpacing: -0.35,
   },
   roleAdminBtn: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
-  },
-  /** Üst bar denge — admin yokken çıkış ile simetrik genişlik */
-  roleTopBarSpacer: {
-    width: 44,
-    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
   },
   roleMainContent: {
     flex: 1,
@@ -18891,17 +18933,17 @@ const styles = StyleSheet.create({
   /** Araç seçimi — panel içinde gruplama (Phase 3) */
   roleVehicleSectionInner: {
     width: '100%',
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderRadius: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
     shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 6,
   },
   roleVehiclePrompt: {
     fontSize: 14,
@@ -18998,42 +19040,50 @@ const styles = StyleSheet.create({
   },
   roleCheckBadge: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    top: -8,
+    right: -8,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#0284C7',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
+    borderWidth: 4,
     borderColor: '#FFF',
     shadowColor: '#0c4a6e',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 12,
   },
-  /** Rol ekranı — ~%30 daha büyük, yatayda biraz daha geniş (footer padding) */
-  roleContinueBtnLarge: {
+  /** Rol ekranı — gradient dolgu + dış çerçeve (disabled aynı ifade) */
+  roleContinueBtnOuter: {
+    overflow: 'hidden',
+    borderRadius: 26,
+    minHeight: 64,
+    alignSelf: 'stretch',
+    shadowColor: '#0369a1',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.48,
+    shadowRadius: 24,
+    elevation: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  roleContinueBtnGradientFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  roleContinueBtnContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0284C7',
-    borderRadius: 20,
     paddingVertical: 20,
     paddingHorizontal: 24,
-    minHeight: 60,
     gap: 14,
-    marginBottom: 0,
-    alignSelf: 'stretch',
-    shadowColor: '#075985',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.55)',
+    zIndex: 1,
+  },
+  roleContinueBtnDisabledFill: {
+    backgroundColor: '#94A3B8',
   },
   roleContinueTextLarge: {
     fontSize: 23,
@@ -19048,14 +19098,12 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   roleContinueBtnDisabled: {
-    backgroundColor: '#94A3B8',
     borderColor: '#CBD5E1',
-    borderWidth: 2,
     shadowOpacity: 0,
     shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
     elevation: 0,
-    opacity: 0.88,
+    opacity: 0.92,
   },
   roleSeparator: {
     flexDirection: 'row',
@@ -19064,14 +19112,71 @@ const styles = StyleSheet.create({
   },
   roleSeparatorLine: {
     flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(148, 163, 184, 0.55)',
+    height: 1,
+    backgroundColor: 'rgba(148, 163, 184, 0.35)',
   },
   roleSeparatorText: {
-    paddingHorizontal: 14,
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '600',
+    paddingHorizontal: 16,
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  communityBtnOuter: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    alignSelf: 'stretch',
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(129, 140, 248, 0.45)',
+  },
+  communityBtnGradient: {
+    paddingVertical: 20,
+    paddingHorizontal: 18,
+    position: 'relative',
+  },
+  communityBadgeYeni: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(236, 72, 153, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    shadowColor: '#831843',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 2,
+  },
+  communityBadgeYeniText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFF',
+    letterSpacing: 0.6,
+  },
+  communityBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  communityIconRouteBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(199, 210, 254, 0.35)',
   },
   communityBtnCompact: {
     flexDirection: 'row',
@@ -19142,6 +19247,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#3FA9F5',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  communityArrowPremium: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    shadowColor: '#312e81',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
   // Eski stiller (uyumluluk için)
   roleTopBar: {
