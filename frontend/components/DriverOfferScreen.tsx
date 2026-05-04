@@ -473,131 +473,103 @@ function RequestCard({
         : null;
 
   return (
-    <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-      {/* Üst Kısım - Yolcu Bilgisi */}
-      <View style={styles.cardHeader}>
-        <View style={styles.passengerInfo}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={20} color={COLORS.primary} />
-          </View>
-          <View style={styles.passengerDetails}>
-            <Text style={styles.passengerName}>{request.passenger_name?.split(' ')[0] || 'Yolcu'}</Text>
-            <Text style={styles.timeAgo}>Yeni teklif</Text>
-            {request.passenger_vehicle_kind === 'motorcycle' ? (
-              <Text style={{ fontSize: 11, color: '#15803d', fontWeight: '700', marginTop: 2 }}>🏍️ Motor talebi</Text>
-            ) : (
-              <Text style={{ fontSize: 11, color: '#0369a1', fontWeight: '700', marginTop: 2 }}>🚗 Araç talebi</Text>
-            )}
-            {request.passenger_payment_method === 'card' ? (
-              <View style={styles.paymentBadge}>
-                <Ionicons name="card-outline" size={12} color="#1D4ED8" />
-                <Text style={styles.paymentBadgeText}>Sanal kart</Text>
-              </View>
-            ) : request.passenger_payment_method === 'cash' ? (
-              <View style={[styles.paymentBadge, styles.paymentBadgeCash]}>
-                <Ionicons name="cash-outline" size={12} color="#047857" />
-                <Text style={[styles.paymentBadgeText, styles.paymentBadgeTextCash]}>Nakit</Text>
-              </View>
-            ) : null}
+    <Animated.View style={[styles.reqCard, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+      <View style={styles.reqTopRow}>
+        <View style={styles.reqAvatar}>
+          <Ionicons name="person" size={18} color={COLORS.primary} />
+        </View>
+        <View style={styles.reqMidCol}>
+          <Text style={styles.reqPassengerName} numberOfLines={1} ellipsizeMode="tail">
+            {request.passenger_name?.split(' ')[0] || 'Yolcu'}
+          </Text>
+          <View style={styles.reqPillRow}>
+            <View style={styles.reqNewPill}>
+              <Text style={styles.reqNewPillText}>Yeni teklif</Text>
+            </View>
           </View>
         </View>
-        {/* 🆕 MARTI TAG - Yolcunun Teklif Ettiği Fiyat */}
-        <View style={styles.priceTagContainer}>
-          <Text style={styles.priceTagLabel}>Teklif</Text>
-          <Text style={styles.priceTagValue}>{request.offered_price || 0} ₺</Text>
+        <View style={styles.reqPriceBadge}>
+          <Text style={styles.reqPriceText}>{request.offered_price || 0} ₺</Text>
         </View>
       </View>
 
-      {/* Konum Bilgileri */}
-      <View style={styles.locationSection}>
-        {/* Nereden */}
-        <View style={styles.locationRow}>
-          <View style={[styles.locationDot, { backgroundColor: COLORS.success }]} />
-          <View style={styles.locationTextContainer}>
-            <Text style={styles.locationLabel}>Nereden</Text>
-            <Text style={styles.locationText} numberOfLines={2}>
-              {pickupLineFromRequest(request)}
-            </Text>
-          </View>
-          <View style={styles.distanceBadge}>
-            <Ionicons name="car" size={12} color={COLORS.primary} />
-            <Text style={styles.distanceText}>{distanceToPassenger} km</Text>
-          </View>
+      <View style={styles.reqRouteBlock}>
+        <View style={styles.reqRouteLine}>
+          <View style={[styles.reqDot, { backgroundColor: '#22C55E' }]} />
+          <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
+            {pickupLineFromRequest(request)}
+          </Text>
         </View>
-
-        {/* Çizgi */}
-        <View style={styles.locationLine} />
-
-        {/* Nereye */}
-        <View style={styles.locationRow}>
-          <View style={[styles.locationDot, { backgroundColor: COLORS.secondary }]} />
-          <View style={styles.locationTextContainer}>
-            <Text style={styles.locationLabel}>Nereye</Text>
-            <Text style={styles.locationText} numberOfLines={2}>
-              {dropoffLineFromRequest(request)}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.distanceBadge,
-              tripRoadShowLoading ? { minWidth: 118, alignItems: 'flex-end' } : null,
-            ]}
-          >
-            <Ionicons name="navigate" size={12} color={COLORS.secondary} />
-            {tripRoadShowLoading ? (
-              <TripRouteCalculatingInline compact />
-            ) : tripRoadShowFailedUi ? (
-              <Text style={styles.distanceText}>—</Text>
-            ) : (
-              <Text style={styles.distanceText}>{tripDistanceKmText} km</Text>
-            )}
-          </View>
+        <View style={styles.reqRouteLine}>
+          <View style={[styles.reqDot, { backgroundColor: '#EF4444' }]} />
+          <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
+            {dropoffLineFromRequest(request)}
+          </Text>
         </View>
       </View>
 
-      {/* Mesafe ve Süre Bilgileri - BÜYÜK VE BELİRGİN */}
-      <View style={styles.statsRow}>
-        <View style={styles.statItem}>
-          <Ionicons name="time-outline" size={20} color="#3FA9F5" />
-          <View>
-            <Text style={styles.statValueBig}>
-              {timeToPassengerDisplay}
-              {typeof timeToPassengerDisplay === 'number' ? ' dk' : ''}
-            </Text>
-            <Text style={styles.statLabelBig}>yolcuya</Text>
-          </View>
+      <View style={styles.reqChipsRow}>
+        <View style={styles.reqChip}>
+          <Ionicons name="time-outline" size={11} color={COLORS.textSecondary} />
+          <Text style={styles.reqChipText}>
+            {typeof timeToPassengerDisplay === 'number' ? `${timeToPassengerDisplay} dk` : String(timeToPassengerDisplay)}
+            <Text style={styles.reqChipMuted}> · yolcuya</Text>
+          </Text>
         </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Ionicons name="speedometer-outline" size={20} color="#FF6B35" />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            {tripRoadShowLoading ? (
-              <TripRouteCalculatingInline compact />
-            ) : (
-              <Text style={styles.statValueBig}>
-                {tripRoadShowFailedUi && tripDurationMinNumber == null
-                  ? 'Rota bilgisi alınamadı'
-                  : tripDurationMinNumber != null
-                    ? `${tripDurationMinNumber} dk`
-                    : '—'}
-              </Text>
-            )}
-            <Text style={styles.statLabelBig}>yolculuk</Text>
+        <View style={styles.reqChip}>
+          <Ionicons name="car-outline" size={11} color={COLORS.textSecondary} />
+          <Text style={styles.reqChipText}>{distanceToPassenger} km</Text>
+        </View>
+        <View style={[styles.reqChip, styles.reqChipGrow]}>
+          <Ionicons name="speedometer-outline" size={11} color={COLORS.textSecondary} />
+          {tripRoadShowLoading ? (
+            <TripRouteCalculatingInline compact />
+          ) : tripRoadShowFailedUi && tripDurationMinNumber == null ? (
+            <Text style={styles.reqChipText}>Rota yok</Text>
+          ) : tripDurationMinNumber != null ? (
+            <Text style={styles.reqChipText}>
+              {`${tripDurationMinNumber} dk`}
+              <Text style={styles.reqChipMuted}> · yolculuk</Text>
+            </Text>
+          ) : (
+            <Text style={styles.reqChipText}>—</Text>
+          )}
+        </View>
+        <View style={styles.reqChip}>
+          <Ionicons name="map-outline" size={11} color={COLORS.textSecondary} />
+          {tripRoadShowLoading ? (
+            <Text style={styles.reqChipText}>…</Text>
+          ) : (
+            <Text style={styles.reqChipText}>
+              {tripRoadShowFailedUi ? '—' : `${tripDistanceKmText} km`}
+            </Text>
+          )}
+        </View>
+        {request.passenger_payment_method === 'card' ? (
+          <View style={styles.reqChip}>
+            <Ionicons name="card-outline" size={11} color="#1D4ED8" />
+            <Text style={[styles.reqChipText, styles.reqChipPayCard]}>Sanal kart</Text>
           </View>
+        ) : request.passenger_payment_method === 'cash' ? (
+          <View style={styles.reqChip}>
+            <Ionicons name="cash-outline" size={11} color="#047857" />
+            <Text style={[styles.reqChipText, styles.reqChipPayCash]}>Nakit</Text>
+          </View>
+        ) : null}
+        <View style={styles.reqChip}>
+          <Text style={styles.reqChipText}>
+            {request.passenger_vehicle_kind === 'motorcycle' ? '🏍️ Motor' : '🚗 Araç'}
+          </Text>
         </View>
       </View>
 
-      {/* 🆕 MARTI TAG - Kabul Et / Geç Butonları */}
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={styles.dismissButton}
-          onPress={onDismiss}
-        >
-          <Text style={styles.dismissButtonText}>Geç</Text>
+      <View style={styles.reqActionsRow}>
+        <TouchableOpacity style={styles.reqDismissBtn} onPress={onDismiss}>
+          <Text style={styles.reqDismissText}>Geç</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
-          style={[styles.acceptButton, accepting && styles.acceptButtonDisabled]}
+          style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
           onPress={async () => {
             if (accepting || globalAcceptFrozen) return;
 
@@ -673,7 +645,7 @@ function RequestCard({
           {accepting ? (
             <ActivityIndicator size="small" color="#FFF" />
           ) : (
-            <Text style={styles.acceptButtonText}>Kabul Et</Text>
+            <Text style={styles.reqAcceptBtnText}>Kabul Et →</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -1811,211 +1783,161 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
-  // Card
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+  // Normal TAG — gelen talep kartı (kompakt premium)
+  reqCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderRadius: 23,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 10,
+    borderWidth: Platform.OS === 'android' ? 1 : StyleSheet.hairlineWidth,
+    borderColor: 'rgba(226, 232, 240, 0.95)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  passengerInfo: {
+  reqTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  reqAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#EBF5FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  passengerDetails: {
+  reqMidCol: {
+    flex: 1,
+    minWidth: 0,
     marginLeft: 10,
   },
-  passengerName: {
+  reqPassengerName: {
     fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  reqPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    gap: 6,
+  },
+  reqNewPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  reqNewPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0369A1',
+    letterSpacing: 0.2,
+  },
+  reqPriceBadge: {
+    marginLeft: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  reqPriceText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  reqRouteBlock: {
+    marginTop: 10,
+    gap: 6,
+  },
+  reqRouteLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reqDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  reqRouteText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.text,
   },
-  timeAgo: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 1,
+  reqChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+    gap: 6,
+    alignItems: 'center',
   },
-  paymentBadge: {
+  reqChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    alignSelf: 'flex-start',
-    marginTop: 6,
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: '#DBEAFE',
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#93C5FD',
+    borderColor: '#E2E8F0',
+    maxWidth: '100%',
   },
-  paymentBadgeCash: {
-    backgroundColor: '#D1FAE5',
-    borderColor: '#6EE7B7',
+  reqChipGrow: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
-  paymentBadgeText: {
+  reqChipText: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  reqChipMuted: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+  },
+  reqChipPayCard: {
     color: '#1D4ED8',
   },
-  paymentBadgeTextCash: {
+  reqChipPayCash: {
     color: '#047857',
   },
-  dismissBtn: {
-    padding: 8,
-  },
-
-  // Location
-  locationSection: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  locationRow: {
+  reqActionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-  },
-  locationDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  locationLine: {
-    width: 2,
-    height: 16,
-    backgroundColor: '#E2E8F0',
-    marginLeft: 4,
-    marginVertical: 4,
-  },
-  locationTextContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  locationLabel: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  locationText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: COLORS.text,
-    marginTop: 2,
-  },
-  distanceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  distanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginLeft: 4,
-  },
-
-  // Stats - BÜYÜK VE BELİRGİN
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    backgroundColor: '#0D1B2A',
-    borderRadius: 12,
-    padding: 14,
-  },
-  statItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
+    marginTop: 12,
+    alignItems: 'stretch',
   },
-  statText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginLeft: 6,
-  },
-  statValueBig: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  statLabelBig: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: COLORS.border,
-  },
-
-  // 🆕 MARTI TAG - Fiyat Etiketi ve Butonlar
-  priceTagContainer: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  priceTagLabel: {
-    fontSize: 10,
-    color: '#FFF',
-    opacity: 0.9,
-    textAlign: 'center',
-  },
-  priceTagValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFF',
-    textAlign: 'center',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  dismissButton: {
+  reqDismissBtn: {
     flex: 1,
     backgroundColor: '#F1F5F9',
-    paddingVertical: 17,
+    paddingVertical: 10,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  dismissButtonText: {
-    fontSize: 16,
+  reqDismissText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#64748B',
   },
-  acceptButton: {
+  reqAcceptBtn: {
     flex: 2,
     backgroundColor: COLORS.primary,
-    paddingVertical: 17,
-    minHeight: 52,
+    paddingVertical: 10,
+    minHeight: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2023,9 +1945,9 @@ const styles = StyleSheet.create({
   acceptButtonDisabled: {
     backgroundColor: '#CBD5E1',
   },
-  acceptButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  reqAcceptBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
     color: '#FFF',
   },
 
