@@ -1195,10 +1195,10 @@ if os.getenv("DISPATCH_VEHICLE_FILTER_DISABLED", "").strip().lower() in ("1", "t
 # Rolling batch: bellek + dispatch_queue tablosu (sürücü polling / çoklu worker toleransı)
 BATCH_SIZE = 5
 try:
-    _rbt = float(os.getenv("DISPATCH_BATCH_TIMEOUT_SECONDS", "20").strip().replace(",", "."))
+    _rbt = float(os.getenv("DISPATCH_BATCH_TIMEOUT_SECONDS", "30").strip().replace(",", "."))
     ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = max(15.0, min(60.0, _rbt))
 except (TypeError, ValueError):
-    ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = 20.0
+    ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = 30.0
 DISPATCH_TIMEOUT = int(round(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS))
 try:
     _dr = float(os.getenv("DISPATCH_RADIUS_KM", "20").strip().replace(",", "."))
@@ -1208,10 +1208,51 @@ except (TypeError, ValueError):
 SEQUENTIAL_DISPATCH_RADIUS_KM = DISPATCH_RADIUS_KM
 BROADCAST_RADIUS_KM = DISPATCH_RADIUS_KM
 
-# tag_id -> asyncio.Task (20s zamanlayıcı)
+# tag_id -> asyncio.Task (dalga süresi: varsayılan 30 sn)
 rolling_dispatch_tasks: dict = {}
-# tag_id -> rolling state (in-memory): full_tag, current_batch, batch_seq, excluded_driver_ids, relax_vehicle_on_empty
+# tag_id -> rolling state (in-memory): full_tag, current_batch, batch_seq, excluded_driver_ids,
+# offered_driver_ids (bu döngüde dalga ile gösterilmiş sürücüler — sıradaki dalgada önce gösterilmemişler seçilir; kalmazsa döngü sıfırlanır),
+# relax_vehicle_on_empty
 rolling_dispatch_index: dict = {}
+
+
+def _tag_dispatch_obs_log(
+    event: str,
+    *,
+    tag_id: Optional[str] = None,
+    passenger_id: Optional[str] = None,
+    batch_seq: Optional[Any] = None,
+    driver_ids: Optional[Any] = None,
+    current_batch: Optional[Any] = None,
+    offered_count: Optional[int] = None,
+    radius_km: Optional[float] = None,
+    timeout_s: Optional[Any] = None,
+    reason: Optional[str] = None,
+) -> None:
+    """
+    Phase 0 — Normal TAG dispatch/matching structured logs (JSON tek satır).
+    Yan etki yok; mevcut davranışı değiştirmez.
+    """
+    try:
+        pid = None
+        if passenger_id is not None and str(passenger_id).strip() != "":
+            pid = str(passenger_id).strip()[:128]
+        payload = {
+            "event": event,
+            "tag_id": str(tag_id) if tag_id is not None else None,
+            "passenger_id": pid,
+            "batch_seq": batch_seq,
+            "driver_ids": driver_ids,
+            "current_batch": current_batch,
+            "offered_count": offered_count,
+            "radius_km": radius_km,
+            "timeout_s": timeout_s,
+            "reason": reason,
+        }
+        logger.info("[tag_dispatch] %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as _obs_e:
+        logger.info("[tag_dispatch] event=%s log_error=%s", event, _obs_e)
+
 
 # Sürücüye aynı tag teklif FCM: socket register + set-ride-vehicle-kind + reconnect kısa aralıkta aynı push'u tetikleyebilir.
 _offer_push_dedupe_lock = asyncio.Lock()
@@ -3079,6 +3120,34 @@ async def rolling_dispatch_stop(
     except_driver_id: Optional[str] = None,
 ) -> None:
     """Zamanlayıcıyı durdur, rolling state'i sil; isteğe bağlı batch'e remove_offer."""
+    _st_obs = rolling_dispatch_index.get(tag_id)
+    _obs_pid = None
+    _obs_offered_n = None
+    if _st_obs:
+        try:
+            _obs_pid = (_st_obs.get("full_tag") or {}).get("passenger_id")
+            _oid = _st_obs.get("offered_driver_ids")
+            _obs_offered_n = len(_oid) if isinstance(_oid, set) else len(_oid or [])
+        except Exception:
+            pass
+    _tag_dispatch_obs_log(
+        "rolling_dispatch_stop",
+        tag_id=str(tag_id),
+        passenger_id=str(_obs_pid) if _obs_pid else None,
+        batch_seq=(_st_obs.get("batch_seq") if _st_obs else None),
+        driver_ids=(_st_obs.get("current_batch") if _st_obs else None),
+        current_batch=(_st_obs.get("current_batch") if _st_obs else None),
+        offered_count=_obs_offered_n,
+        radius_km=float(DISPATCH_RADIUS_KM),
+        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+        reason=("revoke_offers" if revoke_offers else "timer_only"),
+    )
+    if revoke_offers:
+        logger.info(
+            "[rolling_dispatch_wave_accept_stop] tag=%s except_driver_id=%s",
+            tag_id,
+            str(except_driver_id or "")[:96],
+        )
     old = rolling_dispatch_tasks.pop(tag_id, None)
     if old is not None and not old.done():
         try:
@@ -3091,6 +3160,19 @@ async def rolling_dispatch_stop(
         for did in st.get("current_batch") or []:
             if ex and str(did).strip().lower() == ex:
                 continue
+            _oo = st.get("offered_driver_ids")
+            _tag_dispatch_obs_log(
+                "remove_offer_emit",
+                tag_id=str(tag_id),
+                passenger_id=(st.get("full_tag") or {}).get("passenger_id"),
+                batch_seq=st.get("batch_seq"),
+                driver_ids=[str(did)],
+                current_batch=st.get("current_batch"),
+                offered_count=(len(_oo) if _oo is not None else 0),
+                radius_km=float(DISPATCH_RADIUS_KM),
+                timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                reason="rolling_dispatch_stop_revoke",
+            )
             try:
                 await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
             except Exception:
@@ -3100,9 +3182,9 @@ async def rolling_dispatch_stop(
 
 async def rolling_dispatch_batch(tag_id: str) -> None:
     """
-    Pickup + anlık konumlara göre yeniden hesaplanan en yakın BATCH_SIZE uygun sürücü (kalıcı excluded).
-    Önceki batch ile kıyas: yalnız çıkan sürücülere remove_offer; hem dalgalarda kalanlara dokunulmaz
-    (gereksiz remove+offer flicker önlemi). DISPATCH_TIMEOUT sn sonra tag waiting ise dalga tekrarlanır.
+    Dalga başına BATCH_SIZE (5) sürücü; yarıçap DISPATCH_RADIUS_KM; süre ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS (varsayılan 30 sn).
+    Önce henüz bu döngüde gösterilmemiş uygun sürücüler seçilir; kalan yoksa offered_driver_ids sıfırlanıp baştan dönülür.
+    Önceki batch ile kıyas: yalnız çıkan sürücülere remove_offer. Kabul: tags atomik güncelleme + rolling_dispatch_stop (değişmez).
     """
     state = rolling_dispatch_index.get(tag_id)
     if not state:
@@ -3140,6 +3222,23 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     else:
         excluded = {str(x).strip().lower() for x in excluded_raw if x}
     state["excluded_driver_ids"] = excluded
+
+    offered_raw = state.get("offered_driver_ids") or set()
+    if isinstance(offered_raw, set):
+        offered_driver_ids: set[str] = {str(x).strip().lower() for x in offered_raw if x}
+    else:
+        offered_driver_ids = {str(x).strip().lower() for x in offered_raw if x}
+
+    if prev_batch:
+        for _pid in prev_batch:
+            offered_driver_ids.add(_pid)
+        logger.info(
+            "[rolling_dispatch_wave] tag=%s prev_batch_committed=%s offered_total=%s",
+            tag_id,
+            prev_batch,
+            len(offered_driver_ids),
+        )
+    state["offered_driver_ids"] = offered_driver_ids
 
     passenger_id = tag_data.get("passenger_id")
     exclude_ids: list = []
@@ -3196,7 +3295,21 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             len(excluded),
             use_relaxed_vehicle,
         )
+        _bseq_ex = int(state.get("batch_seq") or 0)
         for did in prev_batch:
+            logger.info("[rolling_dispatch_wave_remove] tag=%s driver_id=%s reason=exhausted", tag_id, did)
+            _tag_dispatch_obs_log(
+                "remove_offer_emit",
+                tag_id=str(tag_id),
+                passenger_id=tag_data.get("passenger_id"),
+                batch_seq=_bseq_ex,
+                driver_ids=[str(did)],
+                current_batch=prev_batch,
+                offered_count=len(offered_driver_ids),
+                radius_km=float(DISPATCH_RADIUS_KM),
+                timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                reason="rolling_wave_eligible_empty_remove",
+            )
             try:
                 await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
             except Exception:
@@ -3206,6 +3319,18 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         if pid:
             try:
                 pid_r = await resolve_user_id(str(pid).strip())
+                _tag_dispatch_obs_log(
+                    "dispatch_exhausted",
+                    tag_id=str(tag_id),
+                    passenger_id=pid,
+                    batch_seq=_bseq_ex,
+                    driver_ids=None,
+                    current_batch=prev_batch,
+                    offered_count=len(offered_driver_ids),
+                    radius_km=float(DISPATCH_RADIUS_KM),
+                    timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                    reason="rolling_batch_no_eligible_redispatch",
+                )
                 await sio.emit(
                     "dispatch_exhausted",
                     {"tag_id": tag_id, "message": "Yakında uygun sürücü kalmadı"},
@@ -3215,23 +3340,77 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
                 logger.warning("[DISPATCH_BATCH] tag=%s dispatch_exhausted_emit_err=%s", tag_id, ex)
         return
 
-    batch_entries = eligible[:BATCH_SIZE]
+    cycle_reset_this_wave = False
+    unoffered_entries = [
+        e
+        for e in eligible
+        if str(e.get("driver_id", "")).strip().lower() not in offered_driver_ids
+    ]
+    if not unoffered_entries:
+        logger.info(
+            "[rolling_dispatch_wave_cycle_reset] tag=%s reason=no_unoffered_remaining eligible=%s offered_before_clear=%s",
+            tag_id,
+            len(eligible),
+            len(offered_driver_ids),
+        )
+        offered_driver_ids.clear()
+        state["offered_driver_ids"] = offered_driver_ids
+        cycle_reset_this_wave = True
+        unoffered_entries = list(eligible)
+
+    batch_entries = unoffered_entries[:BATCH_SIZE]
     next_batch_ids = [str(e["driver_id"]).strip().lower() for e in batch_entries]
     prev_set = set(prev_batch)
     next_set = set(next_batch_ids)
 
+    logger.info(
+        "[rolling_dispatch_wave] tag=%s batch_driver_ids=%s cycle_reset=%s wave_unoffered_pool=%s eligible_total=%s",
+        tag_id,
+        next_batch_ids,
+        cycle_reset_this_wave,
+        len(unoffered_entries),
+        len(eligible),
+    )
+
+    _closing_wave_seq = int(state.get("batch_seq") or 0)
     for did in prev_set - next_set:
+        logger.info("[rolling_dispatch_wave_remove] tag=%s driver_id=%s", tag_id, did)
+        _tag_dispatch_obs_log(
+            "remove_offer_emit",
+            tag_id=str(tag_id),
+            passenger_id=tag_data.get("passenger_id"),
+            batch_seq=_closing_wave_seq,
+            driver_ids=[str(did)],
+            current_batch=list(prev_batch),
+            offered_count=len(offered_driver_ids),
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="rolling_wave_transition_remove",
+        )
         try:
             await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
         except Exception:
             pass
 
-    newly_arrived_set = next_set - prev_set
+    newly_arrived_set = next_set if cycle_reset_this_wave else (next_set - prev_set)
 
     state["batch_seq"] = int(state.get("batch_seq") or 0) + 1
     bseq = state["batch_seq"]
 
     state["current_batch"] = list(next_batch_ids)
+
+    _tag_dispatch_obs_log(
+        "rolling_dispatch_batch",
+        tag_id=str(tag_id),
+        passenger_id=tag_data.get("passenger_id"),
+        batch_seq=bseq,
+        driver_ids=list(next_batch_ids),
+        current_batch=list(next_batch_ids),
+        offered_count=len(offered_driver_ids),
+        radius_km=float(DISPATCH_RADIUS_KM),
+        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+        reason=("cycle_reset_wave" if cycle_reset_this_wave else "wave_selected"),
+    )
 
     logger.info(
         "[DISPATCH_BATCH] tag=%s event=batch_start batch_seq=%s driver_ids=%s eligible_total=%s "
@@ -3360,11 +3539,26 @@ async def rolling_dispatch_start(tag_id: str) -> int:
     tr = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
     if not tr.data:
         logger.warning(f"rolling_dispatch_start: tag yok veya okunamadı tag_id={tag_id}")
+        _tag_dispatch_obs_log(
+            "rolling_dispatch_start",
+            tag_id=str(tag_id),
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="no_tag_row",
+        )
         return 0
     row = tr.data[0]
     if row.get("status") != "waiting":
         logger.warning(
             f"rolling_dispatch_start: tag status≠waiting (status={row.get('status')!r}) tag_id={tag_id}"
+        )
+        _tag_dispatch_obs_log(
+            "rolling_dispatch_start",
+            tag_id=str(tag_id),
+            passenger_id=str(row.get("passenger_id") or "") or None,
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="status_not_waiting",
         )
         return 0
     passenger_id = row.get("passenger_id")
@@ -3391,11 +3585,28 @@ async def rolling_dispatch_start(tag_id: str) -> int:
             pass
     passenger_pref = passenger_pref or "car"
 
+    _tag_dispatch_obs_log(
+        "rolling_dispatch_start",
+        tag_id=str(tag_id),
+        passenger_id=str(passenger_id) if passenger_id else None,
+        radius_km=float(DISPATCH_RADIUS_KM),
+        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+        reason="entered",
+    )
+
     pickup_lat = row.get("pickup_lat")
     pickup_lng = row.get("pickup_lng")
     if pickup_lat is None or pickup_lng is None:
         logger.warning(
             f"rolling_dispatch_start: pickup koordinat eksik tag_id={tag_id} lat={pickup_lat} lng={pickup_lng}"
+        )
+        _tag_dispatch_obs_log(
+            "rolling_dispatch_start",
+            tag_id=str(tag_id),
+            passenger_id=str(passenger_id) if passenger_id else None,
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="pickup_coords_missing",
         )
         return 0
     try:
@@ -3404,6 +3615,14 @@ async def rolling_dispatch_start(tag_id: str) -> int:
     except (TypeError, ValueError):
         logger.warning(
             f"rolling_dispatch_start: pickup koordinat sayısal değil tag_id={tag_id} lat={pickup_lat!r} lng={pickup_lng!r}"
+        )
+        _tag_dispatch_obs_log(
+            "rolling_dispatch_start",
+            tag_id=str(tag_id),
+            passenger_id=str(passenger_id) if passenger_id else None,
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="pickup_coords_invalid",
         )
         return 0
 
@@ -3469,6 +3688,14 @@ async def rolling_dispatch_start(tag_id: str) -> int:
             f"araç tipi eşleşmesi (yolcu {passenger_pref!r}); isteğe bağlı DISPATCH_RELAX_VEHICLE_ON_EMPTY=1 veya DISPATCH_RADIUS_KM artırın. "
             f"Teklifler ayrıca dispatch_queue + socket ile gider; uvicorn server:socket_app ve mümkünse --workers 1 önerilir."
         )
+        _tag_dispatch_obs_log(
+            "rolling_dispatch_start",
+            tag_id=str(tag_id),
+            passenger_id=str(passenger_id) if passenger_id else None,
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="zero_eligible",
+        )
         return 0
 
     rolling_dispatch_index[tag_id] = {
@@ -3476,6 +3703,7 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         "current_batch": [],
         "batch_seq": 0,
         "excluded_driver_ids": set(),
+        "offered_driver_ids": set(),
         "relax_vehicle_on_empty": relax_used,
     }
     logger.info(
@@ -3488,6 +3716,18 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         DISPATCH_RADIUS_KM,
         [e["driver_id"] for e in eligible],
         relax_used,
+    )
+    _tag_dispatch_obs_log(
+        "rolling_dispatch_start",
+        tag_id=str(tag_id),
+        passenger_id=str(passenger_id) if passenger_id else None,
+        driver_ids=[str(e["driver_id"]) for e in eligible],
+        offered_count=0,
+        current_batch=[],
+        batch_seq=0,
+        radius_km=float(DISPATCH_RADIUS_KM),
+        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+        reason="pipeline_ready_first_wave",
     )
     await rolling_dispatch_batch(tag_id)
     return len(eligible)
@@ -8898,6 +9138,15 @@ async def driver_accept_offer_http(
                     current_status=row.get("status"),
                     row_driver_id=row.get("driver_id"),
                 )
+                _tag_dispatch_obs_log(
+                    "driver_accept_already_taken",
+                    tag_id=str(tid),
+                    passenger_id=str(passenger_id_busy) if passenger_id_busy else None,
+                    driver_ids=[str(resolved_driver_id)],
+                    radius_km=float(DISPATCH_RADIUS_KM),
+                    timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                    reason="driver_accept_offer_http",
+                )
                 raise HTTPException(
                     status_code=409, detail="Bu teklif artık mevcut değil veya eşleştirilemez"
                 )
@@ -8908,6 +9157,16 @@ async def driver_accept_offer_http(
                 tag_id=tid,
                 driver_id=resolved_driver_id,
             )
+
+        _tag_dispatch_obs_log(
+            "driver_accept_success",
+            tag_id=str(tid),
+            passenger_id=str(passenger_id_busy) if passenger_id_busy else None,
+            driver_ids=[str(resolved_driver_id)],
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="driver_accept_offer_http",
+        )
 
         try:
             await rolling_dispatch_stop(
@@ -15011,6 +15270,15 @@ async def handle_driver_accept_offer(sid, data):
                     current_status=row.get("status"),
                     row_driver_id=row.get("driver_id"),
                 )
+                _tag_dispatch_obs_log(
+                    "driver_accept_already_taken",
+                    tag_id=str(tid),
+                    passenger_id=str(passenger_id_busy) if passenger_id_busy else None,
+                    driver_ids=[str(resolved_driver_id)],
+                    radius_km=float(DISPATCH_RADIUS_KM),
+                    timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                    reason="driver_accept_offer_socket",
+                )
                 await sio.emit(
                     "offer_accepted_error",
                     {
@@ -15028,6 +15296,16 @@ async def handle_driver_accept_offer(sid, data):
                 tag_id=tid,
                 driver_id=resolved_driver_id,
             )
+
+        _tag_dispatch_obs_log(
+            "driver_accept_success",
+            tag_id=str(tid),
+            passenger_id=str(passenger_id_busy) if passenger_id_busy else None,
+            driver_ids=[str(resolved_driver_id)],
+            radius_km=float(DISPATCH_RADIUS_KM),
+            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+            reason="driver_accept_offer_socket",
+        )
 
         logger.info(
             f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id}"
@@ -16243,6 +16521,14 @@ async def _create_ride_offer_execute(
             notified = 0
             try:
                 logger.info("[normal_ride_dispatch_start] tag_id=%s", tag_id)
+                _tag_dispatch_obs_log(
+                    "ride_create_dispatch_start",
+                    tag_id=str(tag.get("id") or tag_id),
+                    passenger_id=str(passenger_id or "") or None,
+                    radius_km=float(DISPATCH_RADIUS_KM),
+                    timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                    reason="before_rolling_dispatch_start",
+                )
                 notified = await rolling_dispatch_start(tag_id)
             except Exception as dispatch_ex:
                 logger.error(f"❌ rolling_dispatch_start hata (tag kaydı başarılı): {dispatch_ex}")
@@ -16289,6 +16575,14 @@ async def _create_ride_offer_execute(
                     int(DISPATCH_RADIUS_KM),
                 )
                 try:
+                    _tag_dispatch_obs_log(
+                        "dispatch_exhausted",
+                        tag_id=str(tag_id),
+                        passenger_id=str(passenger_id or "") or None,
+                        radius_km=float(DISPATCH_RADIUS_KM),
+                        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+                        reason="ride_create_no_drivers_after_rolling_and_broadcast",
+                    )
                     await sio.emit(
                         "dispatch_exhausted",
                         {
