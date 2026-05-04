@@ -38,7 +38,7 @@ const TIP_FADE_MS = 320;
 const FAB_SIZE = 54;
 const TOOLTIP_MAX_W = 280;
 
-export type LeylekAIFloatingPosition = 'center-bottom' | 'top-left';
+export type LeylekAIFloatingPosition = 'center-bottom' | 'top-left' | 'driver-waiting';
 
 export type LeylekAIFloatingProps = {
   position: LeylekAIFloatingPosition;
@@ -207,11 +207,20 @@ export default function LeylekAIFloating({ position, message }: LeylekAIFloating
           zIndex: 50,
           alignItems: 'flex-start',
         }
-      : {
-          width: '100%',
-          alignItems: 'center',
-          marginBottom: Spacing.sm,
-        };
+      : position === 'driver-waiting'
+        ? {
+            /** Normal TAG sürücü bekleme: harita satırının altı, liste başlığı hizası — kart fiyatıyla çakışmayı önler */
+            position: 'absolute',
+            left: 14,
+            top: Math.max(insets.top, 8) + 76,
+            zIndex: 50,
+            alignItems: 'flex-start',
+          }
+        : {
+            width: '100%',
+            alignItems: 'center',
+            marginBottom: Spacing.sm,
+          };
 
   return (
     <View pointerEvents="box-none" style={rootStyle}>

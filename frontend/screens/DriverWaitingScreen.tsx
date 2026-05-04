@@ -46,5 +46,5 @@ export function DriverWaitingLeylekAIFloating({
     return `${city} içinde yoğun bölgeleri öğrenmek ister misin?`;
   }, [profileCity, addressContext]);
 
-  return <LeylekAIFloating position="top-left" message={message} />;
+  return <LeylekAIFloating position="driver-waiting" message={message} />;
 }

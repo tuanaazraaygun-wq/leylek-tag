@@ -9448,18 +9448,52 @@ function PassengerDashboard({
       __paxFn('tapButtonHaptic', tapButtonHaptic);
       await tapButtonHaptic();
     } catch (_) {}
+
+    let address = 'Seçilen konum';
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=tr`;
       const response = await fetch(url, {
         headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
       });
-      const data = await response.json();
-      const address =
-        data?.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      if (!response.ok) {
+        console.warn(
+          '[destination_reverse_geocode_failed]',
+          JSON.stringify({
+            lat: Number(latitude.toFixed(5)),
+            lng: Number(longitude.toFixed(5)),
+            error: `http_${response.status}`,
+          }),
+        );
+      } else {
+        const data = (await response.json()) as { display_name?: string };
+        const dn = data?.display_name;
+        if (typeof dn === 'string' && dn.trim()) {
+          address = dn.trim();
+        } else {
+          console.warn(
+            '[destination_reverse_geocode_failed]',
+            JSON.stringify({
+              lat: Number(latitude.toFixed(5)),
+              lng: Number(longitude.toFixed(5)),
+              error: 'missing_display_name',
+            }),
+          );
+        }
+      }
+    } catch (e) {
+      console.warn(
+        '[destination_reverse_geocode_failed]',
+        JSON.stringify({
+          lat: Number(latitude.toFixed(5)),
+          lng: Number(longitude.toFixed(5)),
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    }
+
+    try {
       __paxFn('commitDestinationFromMap', commitDestinationFromMap);
       await commitDestinationFromMap(address, latitude, longitude);
-    } catch {
-      appAlert('Hata', 'Adres okunamadı. Haritayı kaydırıp tekrar deneyin.');
     } finally {
       setDestinationPickerGeocoding(false);
     }
