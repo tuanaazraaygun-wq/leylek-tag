@@ -603,6 +603,14 @@ class RuntimeBoundary extends React.Component<
 export default function App() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const roleSelectBreakpoints = useMemo(
+    () => ({
+      isCompact: windowHeight < 760,
+      isVeryCompact: windowHeight < 700,
+    }),
+    [windowHeight],
+  );
   const loginLayout = useLoginAuthLayout();
   const leylekChrome = useLeylekZekaChrome();
   const [user, setUser] = useState<User | null>(null);
@@ -3271,6 +3279,16 @@ export default function App() {
       }
     };
 
+    const rs = roleSelectBreakpoints;
+    const passengerIconSize = rs.isVeryCompact ? 30 : rs.isCompact ? 34 : 40;
+    const driverCarIconSize = rs.isVeryCompact ? 28 : rs.isCompact ? 31 : 34;
+    const driverBikeIconSize = rs.isVeryCompact ? 24 : rs.isCompact ? 28 : 30;
+    const roleCheckIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
+    const vehicleChipIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
+    const continueArrowIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
+    const communityRoutesIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 28;
+    const communityChevronSize = rs.isVeryCompact ? 18 : rs.isCompact ? 20 : 22;
+
     return (
       <ImageBackground 
         source={require('../assets/images/role-background.png')} 
@@ -3324,131 +3342,233 @@ export default function App() {
             )}
           </View>
 
-          {/* Ana İçerik - Flex ile tam ekran */}
-          <View style={styles.roleMainContent}>
-            {/* Rol Kartları - Yan yana */}
-            <View style={styles.roleCardsRow}>
-              {/* Yolcu */}
-              <TouchableOpacity
-                style={[styles.roleCardCompact, selectedRole === 'passenger' && styles.roleCardSelected]}
-                onPress={async () => { handleRoleSelect('passenger'); }}
-                activeOpacity={0.88}
+          <ScrollView
+            style={styles.roleSelectScroll}
+            contentContainerStyle={[
+              styles.roleSelectScrollContent,
+              rs.isVeryCompact && styles.roleSelectScrollContentVery,
+              rs.isCompact && !rs.isVeryCompact && styles.roleSelectScrollContentCompact,
+            ]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
+          >
+            <View
+              style={[
+                styles.roleMainContent,
+                styles.roleMainContentInScroll,
+                rs.isVeryCompact && styles.roleMainContentVery,
+                rs.isCompact && !rs.isVeryCompact && styles.roleMainContentCompact,
+              ]}
+            >
+              <View
+                style={[
+                  styles.roleCardsRow,
+                  rs.isVeryCompact && styles.roleCardsRowVery,
+                  rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
+                ]}
               >
-                <View style={[styles.roleIconCircle, selectedRole === 'passenger' && styles.roleIconCircleActive]}>
-                  <MaterialCommunityIcons name="account-supervisor-circle" size={40} color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'} />
-                </View>
-                <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>Yolcu</Text>
-                <Text
+                <TouchableOpacity
                   style={[
-                    styles.roleCardDesc,
-                    selectedRole === 'passenger' && styles.roleCardDescActive,
+                    styles.roleCardCompact,
+                    rs.isVeryCompact && styles.roleCardCompactVery,
+                    rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
+                    selectedRole === 'passenger' && styles.roleCardSelected,
                   ]}
-                  numberOfLines={2}
+                  onPress={async () => {
+                    handleRoleSelect('passenger');
+                  }}
+                  activeOpacity={0.88}
                 >
-                  Sürücülere teklif gönder
-                </Text>
-                {selectedRole === 'passenger' && (
-                  <View style={styles.roleCheckBadge}>
-                    <Ionicons name="checkmark-circle" size={26} color="#FFF" />
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Sürücü */}
-              <TouchableOpacity
-                style={[styles.roleCardCompact, selectedRole === 'driver' && styles.roleCardSelected]}
-                onPress={async () => { handleRoleSelect('driver'); }}
-                activeOpacity={0.88}
-              >
-                <View style={[styles.roleIconCircle, selectedRole === 'driver' && styles.roleIconCircleActive]}>
-                  <View style={styles.roleDriverIconsRow}>
-                    <MaterialCommunityIcons name="car-side" size={34} color={selectedRole === 'driver' ? '#FFF' : '#2563EB'} />
-                    <MaterialCommunityIcons name="motorbike" size={30} color={selectedRole === 'driver' ? '#E9D5FF' : '#7C3AED'} />
-                  </View>
-                </View>
-                <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>Sürücü</Text>
-                <Text
-                  style={[
-                    styles.roleCardDesc,
-                    selectedRole === 'driver' && styles.roleCardDescActive,
-                  ]}
-                  numberOfLines={2}
-                >
-                  Yolculardan teklif al
-                </Text>
-                {selectedRole === 'driver' && (
-                  <View style={styles.roleCheckBadge}>
-                    <Ionicons name="checkmark-circle" size={26} color="#FFF" />
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {selectedRole && (
-              <View style={styles.roleVehicleSection}>
-                <View style={styles.roleVehicleSectionInner}>
-                <Text style={styles.roleVehiclePrompt}>
-                  {selectedRole === 'passenger'
-                    ? 'Nasıl bir araç çağırmak istersiniz?'
-                    : 'Ne ile yolculuk yapıyorsunuz?'}
-                </Text>
-                <View style={styles.roleVehicleRow}>
-                  <TouchableOpacity
-                    style={[styles.roleVehicleChip, rideVehicleKind === 'car' && styles.roleVehicleChipActive]}
-                    onPress={() => {
-                      roleScreenHaptic();
-                      setRideVehicleKind('car');
-                    }}
-                    activeOpacity={0.85}
+                  <View
+                    style={[
+                      styles.roleIconCircle,
+                      rs.isVeryCompact && styles.roleIconCircleVery,
+                      rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
+                      selectedRole === 'passenger' && styles.roleIconCircleActive,
+                    ]}
                   >
                     <MaterialCommunityIcons
-                      name="car-side"
-                      size={26}
-                      color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
+                      name="account-supervisor-circle"
+                      size={passengerIconSize}
+                      color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'}
                     />
-                    <Text
-                      style={[
-                        styles.roleVehicleChipText,
-                        rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
-                      ]}
-                    >
-                      Araba
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.roleVehicleChip, rideVehicleKind === 'motorcycle' && styles.roleVehicleChipActiveMotor]}
-                    onPress={() => {
-                      roleScreenHaptic();
-                      setRideVehicleKind('motorcycle');
-                    }}
-                    activeOpacity={0.85}
+                  </View>
+                  <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>
+                    Yolcu
+                  </Text>
+                  <Text
+                    style={[
+                      styles.roleCardDesc,
+                      rs.isVeryCompact && styles.roleCardDescVery,
+                      selectedRole === 'passenger' && styles.roleCardDescActive,
+                    ]}
+                    numberOfLines={2}
                   >
-                    <MaterialCommunityIcons
-                      name="motorbike"
-                      size={26}
-                      color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
-                    />
-                    <Text
-                      style={[
-                        styles.roleVehicleChipText,
-                        rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
-                      ]}
-                    >
-                      Motor
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                </View>
+                    Sürücülere teklif gönder
+                  </Text>
+                  {selectedRole === 'passenger' && (
+                    <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                      <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.roleCardCompact,
+                    rs.isVeryCompact && styles.roleCardCompactVery,
+                    rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
+                    selectedRole === 'driver' && styles.roleCardSelected,
+                  ]}
+                  onPress={async () => {
+                    handleRoleSelect('driver');
+                  }}
+                  activeOpacity={0.88}
+                >
+                  <View
+                    style={[
+                      styles.roleIconCircle,
+                      rs.isVeryCompact && styles.roleIconCircleVery,
+                      rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
+                      selectedRole === 'driver' && styles.roleIconCircleActive,
+                    ]}
+                  >
+                    <View style={styles.roleDriverIconsRow}>
+                      <MaterialCommunityIcons
+                        name="car-side"
+                        size={driverCarIconSize}
+                        color={selectedRole === 'driver' ? '#FFF' : '#2563EB'}
+                      />
+                      <MaterialCommunityIcons
+                        name="motorbike"
+                        size={driverBikeIconSize}
+                        color={selectedRole === 'driver' ? '#E9D5FF' : '#7C3AED'}
+                      />
+                    </View>
+                  </View>
+                  <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>
+                    Sürücü
+                  </Text>
+                  <Text
+                    style={[
+                      styles.roleCardDesc,
+                      rs.isVeryCompact && styles.roleCardDescVery,
+                      selectedRole === 'driver' && styles.roleCardDescActive,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    Yolculardan teklif al
+                  </Text>
+                  {selectedRole === 'driver' && (
+                    <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                      <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
+                    </View>
+                  )}
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
 
-          {/* Devam Et + Leylek Teklif Sende — altta, arka plandaki görsel daha görünür kalsın */}
-          <View style={styles.roleBottomFooterColumn}>
+              {selectedRole && (
+                <View style={styles.roleVehicleSection}>
+                  <View
+                    style={[
+                      styles.roleVehicleSectionInner,
+                      rs.isVeryCompact && styles.roleVehicleSectionInnerVery,
+                      rs.isCompact && !rs.isVeryCompact && styles.roleVehicleSectionInnerCompact,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.roleVehiclePrompt,
+                        rs.isVeryCompact && styles.roleVehiclePromptVery,
+                      ]}
+                    >
+                      {selectedRole === 'passenger'
+                        ? 'Nasıl bir araç çağırmak istersiniz?'
+                        : 'Ne ile yolculuk yapıyorsunuz?'}
+                    </Text>
+                    <View
+                      style={[
+                        styles.roleVehicleRow,
+                        rs.isVeryCompact && styles.roleVehicleRowVery,
+                      ]}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          styles.roleVehicleChip,
+                          rs.isVeryCompact && styles.roleVehicleChipVery,
+                          rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
+                          rideVehicleKind === 'car' && styles.roleVehicleChipActive,
+                        ]}
+                        onPress={() => {
+                          roleScreenHaptic();
+                          setRideVehicleKind('car');
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <MaterialCommunityIcons
+                          name="car-side"
+                          size={vehicleChipIconSize}
+                          color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
+                        />
+                        <Text
+                          style={[
+                            styles.roleVehicleChipText,
+                            rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
+                            rs.isVeryCompact && styles.roleVehicleChipTextVery,
+                          ]}
+                        >
+                          Araba
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.roleVehicleChip,
+                          rs.isVeryCompact && styles.roleVehicleChipVery,
+                          rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
+                          rideVehicleKind === 'motorcycle' && styles.roleVehicleChipActiveMotor,
+                        ]}
+                        onPress={() => {
+                          roleScreenHaptic();
+                          setRideVehicleKind('motorcycle');
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <MaterialCommunityIcons
+                          name="motorbike"
+                          size={vehicleChipIconSize}
+                          color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                        />
+                        <Text
+                          style={[
+                            styles.roleVehicleChipText,
+                            rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
+                            rs.isVeryCompact && styles.roleVehicleChipTextVery,
+                          ]}
+                        >
+                          Motor
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+
+          <View
+            style={[
+              styles.roleBottomFooterColumn,
+              rs.isVeryCompact && styles.roleBottomFooterColumnVery,
+              rs.isCompact && !rs.isVeryCompact && styles.roleBottomFooterColumnCompact,
+            ]}
+          >
             <RoleSelectLeylekAIFloating />
             <TouchableOpacity
               style={[
                 styles.roleContinueBtnOuter,
+                rs.isVeryCompact && styles.roleContinueBtnOuterVery,
+                rs.isCompact && !rs.isVeryCompact && styles.roleContinueBtnOuterCompact,
                 (!selectedRole || !rideVehicleKind) && styles.roleContinueBtnDisabled,
               ]}
               onPress={handleContinue}
@@ -3465,13 +3585,32 @@ export default function App() {
               ) : (
                 <View style={[StyleSheet.absoluteFillObject, styles.roleContinueBtnDisabledFill]} />
               )}
-              <View style={styles.roleContinueBtnContent} pointerEvents="box-none">
-                <Text style={styles.roleContinueTextLarge}>Devam Et</Text>
-                <Ionicons name="arrow-forward-circle" size={30} color="#FFF" />
+              <View
+                style={[
+                  styles.roleContinueBtnContent,
+                  rs.isVeryCompact && styles.roleContinueBtnContentVery,
+                  rs.isCompact && !rs.isVeryCompact && styles.roleContinueBtnContentCompact,
+                ]}
+                pointerEvents="box-none"
+              >
+                <Text
+                  style={[
+                    styles.roleContinueTextLarge,
+                    rs.isVeryCompact && styles.roleContinueTextLargeVery,
+                  ]}
+                >
+                  Devam Et
+                </Text>
+                <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color="#FFF" />
               </View>
             </TouchableOpacity>
 
-            <View style={styles.roleSeparatorCompact}>
+            <View
+              style={[
+                styles.roleSeparatorCompact,
+                rs.isVeryCompact && styles.roleSeparatorCompactVery,
+              ]}
+            >
               <View style={styles.roleSeparatorLine} />
               <Text style={styles.roleSeparatorText}>veya</Text>
               <View style={styles.roleSeparatorLine} />
@@ -3489,18 +3628,43 @@ export default function App() {
                 colors={['#1e1b4b', '#312e81', '#1e3a8a', '#172554']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={styles.communityBtnGradient}
+                style={[
+                  styles.communityBtnGradient,
+                  rs.isVeryCompact && styles.communityBtnGradientVery,
+                  rs.isCompact && !rs.isVeryCompact && styles.communityBtnGradientCompact,
+                ]}
               >
-                <View style={styles.communityBadgeYeni} pointerEvents="none">
+                <View
+                  style={[styles.communityBadgeYeni, rs.isVeryCompact && styles.communityBadgeYeniVery]}
+                  pointerEvents="none"
+                >
                   <Text style={styles.communityBadgeYeniText}>YENİ</Text>
                 </View>
-                <View style={styles.communityBtnRow}>
-                  <View style={styles.communityIconRouteBox}>
-                    <MaterialCommunityIcons name="routes" size={28} color="#E0E7FF" />
+                <View style={[styles.communityBtnRow, rs.isVeryCompact && styles.communityBtnRowVery]}>
+                  <View
+                    style={[
+                      styles.communityIconRouteBox,
+                      rs.isVeryCompact && styles.communityIconRouteBoxVery,
+                    ]}
+                  >
+                    <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="#E0E7FF" />
                   </View>
                   <View style={styles.communityTextBox}>
-                    <Text style={styles.communityBtnTitleProminent}>Leylek Teklif Sende</Text>
-                    <Text style={styles.communityBtnSubProminent}>
+                    <Text
+                      style={[
+                        styles.communityBtnTitleProminent,
+                        rs.isVeryCompact && styles.communityBtnTitleProminentVery,
+                        rs.isCompact && !rs.isVeryCompact && styles.communityBtnTitleProminentCompact,
+                      ]}
+                    >
+                      Leylek Teklif Sende
+                    </Text>
+                    <Text
+                      style={[
+                        styles.communityBtnSubProminent,
+                        rs.isVeryCompact && styles.communityBtnSubProminentVery,
+                      ]}
+                    >
                       Şehirler arası yolculuklara katıl
                     </Text>
                   </View>
@@ -3508,9 +3672,12 @@ export default function App() {
                     colors={['#6366F1', '#4F46E5', '#2563EB']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={styles.communityArrowPremium}
+                    style={[
+                      styles.communityArrowPremium,
+                      rs.isVeryCompact && styles.communityArrowPremiumVery,
+                    ]}
                   >
-                    <Ionicons name="chevron-forward" size={22} color="#FFF" />
+                    <Ionicons name="chevron-forward" size={communityChevronSize} color="#FFF" />
                   </LinearGradient>
                 </View>
               </LinearGradient>
@@ -18763,6 +18930,182 @@ const styles = StyleSheet.create({
   roleSelectionSafe: {
     flex: 1,
     width: '100%',
+  },
+  /** Rol seçimi — küçük ekran / düşük yükseklik (ScrollView + breakpoint stilleri) */
+  roleSelectScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  roleSelectScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 8,
+  },
+  roleSelectScrollContentCompact: {
+    paddingBottom: 4,
+  },
+  roleSelectScrollContentVery: {
+    paddingBottom: 2,
+  },
+  roleMainContentInScroll: {
+    flex: 0,
+    flexGrow: 0,
+  },
+  roleMainContentCompact: {
+    paddingTop: 10,
+    paddingBottom: 8,
+    paddingHorizontal: 18,
+  },
+  roleMainContentVery: {
+    paddingTop: 6,
+    paddingBottom: 4,
+    paddingHorizontal: 14,
+  },
+  roleCardsRowCompact: {
+    marginBottom: 14,
+    gap: 10,
+  },
+  roleCardsRowVery: {
+    marginBottom: 10,
+    gap: 8,
+  },
+  roleCardCompactTight: {
+    paddingVertical: 16,
+    paddingHorizontal: 6,
+    maxHeight: 228,
+  },
+  roleCardCompactVery: {
+    paddingVertical: 11,
+    paddingHorizontal: 4,
+    maxHeight: 198,
+    minHeight: 118,
+  },
+  roleIconCircleCompact: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    marginBottom: 8,
+  },
+  roleIconCircleVery: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginBottom: 6,
+  },
+  roleCardDescVery: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  roleCheckBadgeVery: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    top: -6,
+    right: -6,
+    borderWidth: 3,
+  },
+  roleVehicleSectionInnerCompact: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  roleVehicleSectionInnerVery: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+  },
+  roleVehiclePromptVery: {
+    fontSize: 12,
+    marginBottom: 10,
+    lineHeight: 16,
+  },
+  roleVehicleRowVery: {
+    gap: 8,
+  },
+  roleVehicleChipCompact: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  roleVehicleChipVery: {
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+  },
+  roleVehicleChipTextVery: {
+    fontSize: 13,
+  },
+  roleBottomFooterColumnCompact: {
+    paddingTop: 2,
+    paddingBottom: 18,
+    gap: 8,
+    paddingHorizontal: 18,
+  },
+  roleBottomFooterColumnVery: {
+    paddingTop: 0,
+    paddingBottom: 12,
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  roleContinueBtnOuterCompact: {
+    minHeight: 56,
+    borderRadius: 22,
+  },
+  roleContinueBtnOuterVery: {
+    minHeight: 50,
+    borderRadius: 20,
+  },
+  roleContinueBtnContentCompact: {
+    paddingVertical: 17,
+    gap: 11,
+  },
+  roleContinueBtnContentVery: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    gap: 8,
+  },
+  roleContinueTextLargeVery: {
+    fontSize: 19,
+    letterSpacing: 0.25,
+  },
+  roleSeparatorCompactVery: {
+    marginVertical: 2,
+  },
+  communityBtnGradientCompact: {
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+  },
+  communityBtnGradientVery: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  communityBadgeYeniVery: {
+    top: 7,
+    right: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  communityBtnRowVery: {
+    paddingTop: 0,
+  },
+  communityIconRouteBoxVery: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  communityBtnTitleProminentCompact: {
+    fontSize: 18,
+  },
+  communityBtnTitleProminentVery: {
+    fontSize: 15,
+    letterSpacing: 0.05,
+  },
+  communityBtnSubProminentVery: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  communityArrowPremiumVery: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
   /** Trip uyarısı — Phase 1: üst alanı sadeleştirmek için margin + tipografi StyleSheet’te */
   roleSelectBannerWrap: {
