@@ -1193,6 +1193,18 @@ export default function DriverOfferScreen({
             showsVerticalScrollIndicator={false}
           />
         )}
+        <View style={styles.aiFloatingWrapper} pointerEvents="box-none">
+          <TouchableOpacity style={styles.aiFloatingBadge} activeOpacity={0.9}>
+            <LinearGradient
+              colors={['#7C3AED', '#2563EB']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.aiFloatingBadgeGradient}
+            >
+              <Text style={styles.aiFloatingBadgeText}>AI</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </ImageBackground>
     </View>
   );
@@ -1941,6 +1953,41 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
     color: '#94A3B8',
+  },
+  aiFloatingWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 90,
+    alignItems: 'center',
+    zIndex: 30,
+    elevation: 10,
+  },
+  aiFloatingBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#312E81',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+  },
+  aiFloatingBadgeGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  aiFloatingBadgeText: {
+    color: '#E0E7FF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
 
   // Offer Section (Eski - artık kullanılmıyor)
