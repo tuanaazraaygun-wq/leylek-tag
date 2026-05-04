@@ -970,7 +970,7 @@ export default function DriverOfferScreen({
     if (Platform.OS === 'web' || !MapView) {
       return (
         <View style={styles.mapFallback}>
-          <Ionicons name="map" size={40} color={COLORS.primary} />
+          <Ionicons name="map" size={40} color="#38BDF8" />
           <Text style={styles.mapFallbackText}>
             Talep {mapHud.seeking} · {mapHud.radius} km
           </Text>
@@ -1101,28 +1101,31 @@ export default function DriverOfferScreen({
 
   const body = (
     <>
-      <View style={[styles.mapContainer, styles.mapContainerSolid, { height: mapSectionHeight }]}>
-        {renderMap()}
-        <View style={styles.mapTopOverlay} pointerEvents="box-none">
-          <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
-            <Ionicons name="chevron-back" size={26} color="#0F172A" />
-          </TouchableOpacity>
-          <View style={styles.mapNameCardWrap} pointerEvents="none">
-            <View style={styles.mapNameCard}>
-              <Text style={styles.mapNameText}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
-              <View style={styles.mapRatingRow}>
-                <Ionicons name="star" size={15} color="#F59E0B" />
-                <Text style={styles.mapRatingText}>{displayRating}</Text>
+      <View style={styles.mapCardShell}>
+        <View style={[styles.mapContainer, styles.mapContainerSolid, { height: mapSectionHeight }]}>
+          {renderMap()}
+          <View style={styles.mapDimOverlay} pointerEvents="none" />
+          <View style={styles.mapTopOverlay} pointerEvents="box-none">
+            <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
+              <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
+            </TouchableOpacity>
+            <View style={styles.mapNameCardWrap} pointerEvents="none">
+              <View style={styles.mapNameCard}>
+                <Text style={styles.mapNameText}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
+                <View style={styles.mapRatingRow}>
+                  <Ionicons name="star" size={14} color="#FBBF24" />
+                  <Text style={styles.mapRatingText}>{displayRating}</Text>
+                </View>
               </View>
             </View>
+            <View style={styles.mapTopSpacer} />
           </View>
-          <View style={styles.mapTopSpacer} />
-        </View>
-        <View style={styles.mapHud} pointerEvents="none">
-          <Ionicons name="radio-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
-          <Text style={styles.mapHudText}>
-            Talep {mapHud.seeking} · {mapHud.radius} km
-          </Text>
+          <View style={styles.mapHud} pointerEvents="none">
+            <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
+            <Text style={styles.mapHudText}>
+              Talep {mapHud.seeking} · {mapHud.radius} km
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -1140,20 +1143,27 @@ export default function DriverOfferScreen({
           />
         ) : null}
         <View style={styles.listHeader}>
-          <Text style={styles.listTitle}>Yakındaki İstekler</Text>
+          <View style={styles.listHeaderTopRow}>
+            <View style={styles.listHeaderAccentDot} />
+            <Text style={styles.listTitle}>Yakındaki İstekler</Text>
+          </View>
         </View>
 
         {visibleRequests.length === 0 ? (
           <View style={styles.emptyState}>
-            {isMotor ? (
-              <MaterialCommunityIcons name="motorbike" size={64} color="#86EFAC" />
-            ) : (
-              <Ionicons name="car-outline" size={60} color="#CBD5E1" />
-            )}
-            <Text style={styles.emptyTitle}>Teklif bekleniyor</Text>
-            <Text style={styles.emptySubtitle}>
-              Çevrimiçi kaldığınızda talepler burada belirir. Haritada {mapHud.radius} km içindeki yolcu talepleri ve yakındaki kullanıcılar gösterilir.
-            </Text>
+            <View style={styles.emptyStateCard}>
+              <View style={[styles.emptyIconRing, isMotor && styles.emptyIconRingMotor]}>
+                {isMotor ? (
+                  <MaterialCommunityIcons name="motorbike" size={56} color="#86EFAC" />
+                ) : (
+                  <Ionicons name="car-outline" size={52} color="#38BDF8" />
+                )}
+              </View>
+              <Text style={styles.emptyTitle}>Teklif bekleniyor</Text>
+              <Text style={styles.emptySubtitle}>
+                Çevrimiçi kaldığınızda talepler burada belirir. Haritada {mapHud.radius} km içindeki yolcu talepleri ve yakındaki kullanıcılar gösterilir.
+              </Text>
+            </View>
           </View>
         ) : (
           <FlatList
@@ -1199,34 +1209,48 @@ const styles = StyleSheet.create({
   containerEmbedded: {
     minHeight: 0,
   },
-  
+
+  mapCardShell: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: SCREEN_WIDTH,
+    paddingHorizontal: 12,
+  },
+  mapDimOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.12)',
+    zIndex: 2,
+  },
+
   mapTopOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: 8,
-    paddingHorizontal: 8,
+    paddingTop: 10,
+    paddingHorizontal: 4,
     flexDirection: 'row',
     alignItems: 'flex-start',
     zIndex: 6,
   },
   mapBackFab: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 250, 252, 0.14)',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
   },
   mapTopSpacer: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
   },
   mapNameCardWrap: {
     flex: 1,
@@ -1235,46 +1259,59 @@ const styles = StyleSheet.create({
   },
   mapNameCard: {
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(15, 23, 42, 0.1)',
-    maxWidth: SCREEN_WIDTH * 0.62,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.28)',
+    maxWidth: SCREEN_WIDTH * 0.58,
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 10,
   },
   mapNameText: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#F8FAFC',
+    letterSpacing: -0.2,
   },
   mapRatingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
-    gap: 4,
+    marginTop: 3,
+    gap: 5,
   },
   mapRatingText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: '800',
+    color: '#E2E8F0',
+    fontVariant: ['tabular-nums'],
   },
 
-  // Map (yükseklik runtime'da mapSectionHeight ile verilir)
+  // Map (yükseklik mapCardShell üzerinden mapSectionHeight ile verilir)
   mapContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 0,
   },
   mapContainerSolid: {
     width: '100%',
+    flex: 1,
     overflow: 'hidden',
-    backgroundColor: '#CBD5E1',
+    borderRadius: 20,
+    backgroundColor: '#0b1220',
     position: 'relative',
+    borderWidth: 1.5,
+    borderColor: 'rgba(51, 65, 85, 0.65)',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.38,
+    shadowRadius: 18,
+    elevation: 12,
   },
   mapBackgroundImage: {
     resizeMode: 'cover',
@@ -1284,37 +1321,48 @@ const styles = StyleSheet.create({
   },
   mapHud: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
+    bottom: 12,
+    left: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    maxWidth: '88%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    elevation: 3,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 14,
+    maxWidth: '92%',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.25)',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 6,
+  },
+  mapHudRadioIcon: {
+    marginRight: 8,
   },
   mapHudText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: '800',
+    color: '#E2E8F0',
     flexShrink: 1,
+    letterSpacing: 0.2,
+    fontVariant: ['tabular-nums'],
   },
   mapFallback: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#0f172a',
   },
   mapFallbackText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
-    marginTop: 8,
+    fontWeight: '700',
+    color: '#94A3B8',
+    marginTop: 10,
+    letterSpacing: 0.2,
   },
   mapOverlay: {
     position: 'absolute',
@@ -1394,19 +1442,24 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 23,
     borderWidth: 2,
-    borderColor: 'rgba(63, 169, 245, 0.9)',
+    borderColor: 'rgba(56, 189, 248, 0.85)',
     backgroundColor: 'transparent',
   },
   driverPulseRingOuter: {
-    borderColor: 'rgba(14, 165, 233, 0.45)',
+    borderColor: 'rgba(14, 165, 233, 0.5)',
     borderWidth: 1.5,
   },
   driverMarker: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#0284C7',
     padding: 8,
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 3,
-    borderColor: '#FFF',
+    borderColor: '#F8FAFC',
+    shadowColor: '#0369a1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+    elevation: 6,
   },
   cityHeatWrap: {
     width: 72,
@@ -1431,9 +1484,14 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#DC2626',
+    backgroundColor: '#EF4444',
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderColor: 'rgba(248, 250, 252, 0.95)',
+    shadowColor: '#7f1d1d',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 4,
   },
   passengerMarker: {
     backgroundColor: COLORS.secondary,
@@ -1443,57 +1501,91 @@ const styles = StyleSheet.create({
     borderColor: '#FFF',
   },
   passengerMarkerSeeking: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#EA580C',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 4,
+    borderWidth: 2.5,
+    borderColor: '#F8FAFC',
+    shadowColor: '#7c2d12',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 6,
   },
   passengerMarkerSeekingListed: {
     backgroundColor: '#059669',
+    borderColor: '#ECFDF5',
+    shadowColor: '#064e3b',
   },
   passengerMarkerLight: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(248, 250, 252, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#94A3B8',
+    borderWidth: 1.5,
+    borderColor: 'rgba(100, 116, 139, 0.55)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 5,
   },
   passengerMarkerLightDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#64748B',
+    backgroundColor: '#475569',
   },
 
   // List
   listContainer: {
     flex: 1,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    overflow: 'hidden',
   },
   listBackgroundImage: {
     resizeMode: 'cover',
   },
   listHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    backgroundColor: 'rgba(13, 27, 42, 0.85)',
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148, 163, 184, 0.18)',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  listHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  listHeaderAccentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#38BDF8',
+    shadowColor: '#38BDF8',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 4,
   },
   listTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#F8FAFC',
+    letterSpacing: -0.35,
   },
   listSubtitle: {
     fontSize: 13,
@@ -1509,19 +1601,57 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  emptyStateCard: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    alignItems: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 22,
+    borderRadius: 22,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(148, 163, 184, 0.22)',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  emptyIconRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderWidth: 2,
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  emptyIconRingMotor: {
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    borderColor: 'rgba(134, 239, 172, 0.4)',
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: 16,
+    fontSize: 23,
+    fontWeight: '900',
+    color: '#F8FAFC',
+    marginTop: 18,
+    textAlign: 'center',
+    letterSpacing: -0.4,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 15,
+    lineHeight: 23,
+    fontWeight: '600',
+    color: '#CBD5E1',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 12,
+    letterSpacing: 0.1,
   },
 
   // Card

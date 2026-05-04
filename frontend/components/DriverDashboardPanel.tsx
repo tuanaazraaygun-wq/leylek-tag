@@ -6,13 +6,10 @@ import {
   StyleSheet,
   ActivityIndicator,
   Animated,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
-
-const { width } = Dimensions.get('window');
 
 interface DriverDashboardPanelProps {
   userId: string;
@@ -216,20 +213,23 @@ export default function DriverDashboardPanel({
 
   const panelHeight = expandAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [80, 150],
+    outputRange: [92, 186],
   });
 
   return (
     <Animated.View style={[styles.container, { height: panelHeight }]}>
       <LinearGradient
-        colors={['rgba(26, 26, 46, 0.98)', 'rgba(26, 26, 46, 0.95)']}
+        colors={['#0c1222', '#151b2e', '#1a1f35', '#12182a']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
+        <View style={styles.gradientInnerStroke} pointerEvents="none" />
         {/* Üst Satır - Her zaman görünür */}
-        <TouchableOpacity style={styles.topRow} onPress={onExpandToggle} activeOpacity={0.8}>
-          {/* Kalan Süre */}
+        <TouchableOpacity style={styles.topRow} onPress={onExpandToggle} activeOpacity={0.85}>
+          {/* Çevrimiçi süre */}
           <View style={styles.timeBox}>
-            <Ionicons name="time-outline" size={16} color={data.active_time.is_active ? '#10B981' : '#9CA3AF'} />
+            <Ionicons name="time-outline" size={17} color={data.active_time.is_active ? '#34D399' : '#94A3B8'} />
             <Text style={[styles.timeText, !data.active_time.is_active && styles.timeTextInactive]}>
               {data.active_time.is_active
                 ? /ücret/i.test(remainingText)
@@ -239,7 +239,7 @@ export default function DriverDashboardPanel({
             </Text>
           </View>
 
-          {/* Bugünkü Kazanç */}
+          {/* Bugünkü kazanç */}
           <View style={styles.earningsBox}>
             <Text style={styles.earningsLabel}>Bugün</Text>
             <Text style={styles.earningsValue}>{data.today.earnings} ₺</Text>
@@ -261,39 +261,44 @@ export default function DriverDashboardPanel({
             )}
           </TouchableOpacity>
 
-          {/* Expand Icon */}
-          <Ionicons 
-            name={expanded ? 'chevron-up' : 'chevron-down'} 
-            size={20} 
-            color="#9CA3AF" 
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={22}
+            color="#CBD5E1"
             style={styles.expandIcon}
           />
         </TouchableOpacity>
 
-        {/* Genişletilmiş İçerik */}
         {expanded && (
           <View style={styles.expandedContent}>
-            {/* İstatistikler */}
             <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Ionicons name="car-outline" size={18} color="#3FA9F5" />
+              <View style={styles.statColumn}>
+                <View style={styles.statIconWrap}>
+                  <Ionicons name="car-outline" size={20} color="#38BDF8" />
+                </View>
                 <Text style={styles.statValue}>{data.today.trips_count}</Text>
-                <Text style={styles.statLabel}>Bugün</Text>
+                <Text style={styles.statLabel}>Bugünkü sefer</Text>
               </View>
-              
+
               <View style={styles.statDivider} />
-              
-              <View style={styles.statItem}>
-                <Ionicons name="calendar-outline" size={18} color="#8B5CF6" />
+
+              <View style={styles.statColumn}>
+                <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
+                  <Ionicons name="wallet-outline" size={20} color="#C4B5FD" />
+                </View>
                 <Text style={styles.statValue}>{data.weekly.earnings} ₺</Text>
-                <Text style={styles.statLabel}>Bu Hafta</Text>
+                <Text style={styles.statLabel}>Haftalık kazanç</Text>
               </View>
-              
+
               <View style={styles.statDivider} />
-              
-              <View style={styles.statItem}>
-                <Ionicons name="star" size={18} color="#F59E0B" />
-                <Text style={styles.statValue}>{(Number.isFinite(data.stats.rating) ? data.stats.rating : 5).toFixed(1)}</Text>
+
+              <View style={styles.statColumn}>
+                <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
+                  <Ionicons name="star" size={20} color="#FBBF24" />
+                </View>
+                <Text style={styles.statValue}>
+                  {(Number.isFinite(data.stats.rating) ? data.stats.rating : 5).toFixed(1)}
+                </Text>
                 <Text style={styles.statLabel}>Puan</Text>
               </View>
             </View>
@@ -306,121 +311,181 @@ export default function DriverDashboardPanel({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 12,
-    marginTop: 8,
-    borderRadius: 16,
+    marginHorizontal: 10,
+    marginTop: 6,
+    borderRadius: 22,
     overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    elevation: 14,
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
   },
   gradient: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: 'rgba(148, 163, 184, 0.22)',
+  },
+  gradientInnerStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
+    margin: 1,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    gap: 8,
   },
   timeBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    paddingVertical: 8,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.35)',
+    maxWidth: '34%',
   },
   timeText: {
-    color: '#10B981',
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 5,
+    color: '#6EE7B7',
+    fontSize: 13,
+    fontWeight: '800',
+    marginLeft: 6,
     fontVariant: ['tabular-nums'],
+    letterSpacing: 0.2,
   },
   timeTextInactive: {
-    color: '#9CA3AF',
+    color: '#94A3B8',
   },
   earningsBox: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   earningsLabel: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: '#94A3B8',
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   earningsValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: 'white',
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#F8FAFC',
+    marginTop: 2,
+    letterSpacing: -0.3,
   },
   onlineBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    minWidth: 72,
+    borderWidth: 1,
   },
   onlineBtnActive: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#059669',
+    borderColor: 'rgba(167, 243, 208, 0.55)',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 6,
   },
   onlineBtnInactive: {
-    backgroundColor: '#4B5563',
+    backgroundColor: 'rgba(51, 65, 85, 0.95)',
+    borderColor: 'rgba(148, 163, 184, 0.35)',
   },
   onlineDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#9CA3AF',
-    marginRight: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#94A3B8',
+    marginRight: 6,
   },
   onlineDotActive: {
-    backgroundColor: 'white',
+    backgroundColor: '#ECFDF5',
   },
   onlineText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   expandIcon: {
-    marginLeft: 8,
+    marginLeft: 2,
+    opacity: 0.95,
   },
   expandedContent: {
-    paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 2,
   },
   statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginBottom: 12,
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.15)',
   },
-  statItem: {
+  statColumn: {
     alignItems: 'center',
     flex: 1,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 4,
+  },
+  statIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.28)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statIconWrapViolet: {
+    backgroundColor: 'rgba(139, 92, 246, 0.14)',
+    borderColor: 'rgba(196, 181, 253, 0.28)',
+  },
+  statIconWrapAmber: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(251, 191, 36, 0.35)',
   },
   statValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'white',
-    marginTop: 4,
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#F8FAFC',
+    marginTop: 0,
+    letterSpacing: -0.2,
   },
   statLabel: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 2,
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 4,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.2,
   },
   statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(148, 163, 184, 0.25)',
+    marginVertical: 4,
   },
 });
