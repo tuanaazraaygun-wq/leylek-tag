@@ -37,10 +37,10 @@ export default function DownloadPage() {
         eyebrow="uygulama"
         title="Gerçek eşleşme uygulamada başlar"
         description="Canlı teklifler, güvenli eşleşme ve QR ile yolculuk kontrolü Leylek Tag uygulamasında seni bekliyor."
-        primaryHref="#indir-magaza"
+        primaryHref="/indir#indir-magaza"
         primaryLabel="Uygulamayı Aç"
-        secondaryHref="#indir-magaza"
-        secondaryLabel="İndirme Seçeneklerini Gör"
+        secondaryHref="/indir#uygulama-akisi"
+        secondaryLabel="Uygulama Akışını Gör"
         ctaHint="Web ile akışı keşfet; teklif ve eşleşme için uygulamaya geç."
       />
 
