@@ -29,10 +29,6 @@ import { Audio } from 'expo-av';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
-import {
-  repairSupabaseSessionWithBackendRefresh,
-  syncSupabaseSessionFromBackendResponse,
-} from '../lib/supabaseSessionSync';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import {
   getLastRegisteredSocketSid,
@@ -60,9 +56,7 @@ import type {
   MuhabbetTripSessionSocketPayload,
 } from '../lib/muhabbetTripTypes';
 import { subscribeConversationUpdated, subscribeTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
-import { getSupabase } from '../lib/supabase';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Buffer } from 'buffer';
 
 /** Socket sid + JWT kayıt kullanıcısı güncel mi (Muhabbet emit öncesi). */
 function isMuhabbetSocketRegisteredForUser(socket: Socket, myUserLo: string): boolean {
@@ -127,103 +121,57 @@ const BUBBLE_SHADOW = Platform.select({
   default: {},
 });
 
-const MUHABBET_AUDIO_BUCKET = 'muhabbet-audio';
 const MUHABBET_MAX_RECORD_MS = 30000;
 
-const uploadAudio = async (apiBase: string, conversationId: string, localUri: string): Promise<string> => {
-  const supabase = getSupabase();
-  if (!supabase) {
-    throw new Error('Supabase client not configured');
-  }
-
+const uploadAudio = async (
+  apiBase: string,
+  conversationId: string,
+  localUri: string,
+  durationMs: number,
+  mimeType: string
+): Promise<string> => {
   const base = apiBase.replace(/\/$/, '');
-
-  let {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    try {
-      const raw = await getPersistedUserRaw();
-      if (raw) {
-        const u = JSON.parse(raw) as Record<string, unknown>;
-        await syncSupabaseSessionFromBackendResponse(u);
-      }
-    } catch {
-      /* ignore rehydrate errors */
-    }
-    session = (await supabase.auth.getSession()).data.session;
-  }
-
-  if (!session) {
-    console.log('[muhabbet_audio_supabase_refresh_start]', { reason: 'getSession_empty' });
-    const ok = await repairSupabaseSessionWithBackendRefresh(base);
-    if (ok) {
-      console.log('[muhabbet_audio_supabase_refresh_success]', { ok: true });
-    } else {
-      console.log('[muhabbet_audio_supabase_refresh_failed]', { ok: false });
-    }
-    session = (await supabase.auth.getSession()).data.session;
-    const { data: after } = await supabase.auth.getSession();
-    console.log('[muhabbet_audio_session_after_refresh]', { hasSession: !!after.session });
-  }
-
-  if (!session) {
-    let persistHasBackendJwt = false;
-    let persistHasSa = false;
-    let persistHasSr = false;
-    let persistUserId = '';
-    let persistRole = '';
-    try {
-      const raw = await getPersistedUserRaw();
-      if (raw) {
-        const u = JSON.parse(raw) as Record<string, unknown>;
-        persistUserId = String(u.id || '').trim();
-        persistRole = String(u.role || '').trim();
-        persistHasBackendJwt = !!String(u.access_token || u.accessToken || '').trim();
-        persistHasSa = !!String(u.supabase_access_token || u.supabaseAccessToken || '').trim();
-        persistHasSr = !!String(u.supabase_refresh_token || u.supabaseRefreshToken || '').trim();
-      }
-    } catch {
-      /* ignore */
-    }
-    console.log('[muhabbet_audio_session_missing]', {
-      userId: persistUserId || null,
-      role: persistRole || null,
-      persistedBackendJwt: persistHasBackendJwt,
-      storedHasSupabaseAccess: persistHasSa,
-      storedHasSupabaseRefresh: persistHasSr,
-    });
-    throw new Error('No Supabase session');
-  }
-
   const cid = String(conversationId || '').trim().toLowerCase();
-  const filePath = `${cid}/${session.user.id}/${Date.now()}.m4a`;
-
-  const base64 = await FileSystem.readAsStringAsync(localUri, {
+  const token = (await getPersistedAccessToken())?.trim();
+  if (!token) {
+    throw new Error('Oturum gerekli');
+  }
+  const b64 = await FileSystem.readAsStringAsync(localUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  const bytes = Uint8Array.from(Buffer.from(base64, 'base64'));
-
-  console.log('[muhabbet_audio_upload_sdk_start]', {
-    filePath,
-    userId: session.user.id,
-    size: bytes.length,
-    contentType: 'audio/mp4',
+  const url = `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/audio/upload`;
+  console.log('[muhabbet_audio_upload_backend_start]', { cid: cid.slice(0, 13), durationMs, mimeType });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      base64: b64,
+      mime_type: mimeType,
+      duration_ms: durationMs,
+    }),
   });
-
-  const { data, error } = await supabase.storage.from(MUHABBET_AUDIO_BUCKET).upload(filePath, bytes, {
-    contentType: 'audio/mp4',
-    upsert: false,
-  });
-
-  console.log('[muhabbet_audio_upload_sdk_result]', { data, error });
-
-  if (error) {
-    throw error;
+  if (handleUnauthorizedAndMaybeRedirect(res)) {
+    throw new Error('Oturum süresi doldu');
   }
-
-  return filePath;
+  const data = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    audio_storage_path?: string;
+    detail?: unknown;
+  };
+  if (!res.ok || !data.success || !data.audio_storage_path) {
+    const d = data.detail;
+    const detail =
+      typeof d === 'string'
+        ? d
+        : d && typeof d === 'object' && d !== null && 'message' in d
+          ? String((d as { message?: unknown }).message)
+          : res.statusText;
+    throw new Error(detail || 'Ses dosyası yüklenemedi');
+  }
+  return String(data.audio_storage_path);
 };
 
 function formatDurationClock(ms: number): string {
@@ -918,7 +866,7 @@ export default function MuhabbetChatScreen({
     let uploadedPath: string;
 
     try {
-      uploadedPath = await uploadAudio(base, cid, localUri);
+      uploadedPath = await uploadAudio(base, cid, localUri, durMs, mime);
     } catch (e: unknown) {
       const detail =
         e !== null &&

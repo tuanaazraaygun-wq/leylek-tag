@@ -2156,6 +2156,12 @@ async def notify_trip_session_updated(
 
         trip_rm = muhabbet_trip_room(sid)
         try:
+            logger.info(
+                "[muhabbet_trip_state] endpoint=socket_update session_id=%s reason=%s target_user_id=%s",
+                sid,
+                "trip_session_updated",
+                "room",
+            )
             await sio.emit("trip_session_updated", payload, room=trip_rm)
         except Exception as em:
             logger.warning("[muhabbet_notify] trip_session_updated room emit failed session_id=%s err=%s", sid[:12], em)
@@ -2166,6 +2172,12 @@ async def notify_trip_session_updated(
                 sid,
                 reason,
                 uid_tgt[:13] if uid_tgt else "",
+            )
+            logger.info(
+                "[muhabbet_trip_state] endpoint=socket_update session_id=%s reason=%s target_user_id=%s",
+                sid,
+                f"trip_session_updated:{reason}",
+                uid_tgt,
             )
             try:
                 await emit_socket_event_to_user(uid_tgt, "trip_session_updated", payload)
@@ -20267,6 +20279,12 @@ class MuhabbetChatMessageCreateBody(BaseModel):
         return t
 
 
+class MuhabbetChatAudioUploadBody(BaseModel):
+    base64: str
+    mime_type: str
+    duration_ms: int
+
+
 async def _muhabbet_listing_uid(authenticated_user_id: str) -> str:
     """JWT sub → users.id UUID. FK ride_listings ilişkisi için mutlaka geçerli UUID dönmeli."""
     resolved = await resolve_user_id(authenticated_user_id)
@@ -22676,6 +22694,15 @@ def _muhabbet_validate_outgoing_audio_payload(
 
 _MUHABBET_AUDIO_BUCKET = "muhabbet-audio"
 _MUHABBET_AUDIO_SIGN_TTL_SEC = 3600
+_MUHABBET_AUDIO_BACKEND_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+_MUHABBET_AUDIO_BACKEND_UPLOAD_MIME = frozenset({"audio/mp4", "audio/m4a", "audio/aac"})
+
+
+def _muhabbet_ensure_audio_bucket() -> None:
+    try:
+        supabase.storage.create_bucket(_MUHABBET_AUDIO_BUCKET, {"public": False})
+    except Exception:
+        pass
 
 
 def _muhabbet_messages_visible_expires_or_clause(now_iso: str) -> str:
@@ -25450,9 +25477,22 @@ async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: 
         "conversation_id": session_row.get("conversation_id"),
         "session": _muhabbet_trip_session_public(session_row),
     }
+    sid_log = str(session_row.get("id") or "").strip().lower()
+    logger.info(
+        "[muhabbet_trip_state] endpoint=socket_update session_id=%s reason=%s target_user_id=%s",
+        sid_log,
+        event_name,
+        "room",
+    )
     await sio.emit(event_name, payload, room=muhabbet_trip_room(str(session_row.get("id") or "")))
     for uid in _muhabbet_trip_session_recipient_user_ids(session_row):
         if uid:
+            logger.info(
+                "[muhabbet_trip_state] endpoint=socket_update session_id=%s reason=%s target_user_id=%s",
+                sid_log,
+                event_name,
+                uid,
+            )
             await emit_socket_event_to_user(uid, event_name, payload)
 
 
@@ -25509,6 +25549,18 @@ def _muhabbet_trip_sessions_force_finish_terminal_update(
     base = _muhabbet_trip_sessions_sanitize_force_finish_terminal_patch(patch)
     if "updated_at" not in base:
         base["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    if base.get("status") is not None:
+        logger.info(
+            "[muhabbet_trip_state] endpoint=expiry session_id=%s conversation_id=%s listing_id=%s old_status=%s old_ride_status=%s new_status=%s reason=%s",
+            sid_lo,
+            str(row.get("conversation_id") or ""),
+            str(row.get("listing_id") or ""),
+            str(row.get("status") or ""),
+            str(row.get("ride_status") or ""),
+            str(base.get("status") or ""),
+            log_ctx,
+        )
 
     def _try_update(p: dict) -> dict | None:
         if not p:
@@ -25853,6 +25905,15 @@ async def _muhabbet_trip_cancel_waiting_no_board_30s() -> None:
             "call_active": False,
             "updated_at": now_iso,
         }
+        logger.info(
+            "[muhabbet_trip_state] endpoint=expiry session_id=%s conversation_id=%s listing_id=%s old_status=%s old_ride_status=%s new_status=%s reason=waiting_no_board_30s",
+            session_id,
+            str(row.get("conversation_id") or ""),
+            str(row.get("listing_id") or ""),
+            str(row.get("status") or ""),
+            str(row.get("ride_status") or ""),
+            str(patch.get("status") or ""),
+        )
         try:
             upd = (
                 supabase.table("muhabbet_trip_sessions")
@@ -25925,6 +25986,16 @@ async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
             "call_active": False,
             "updated_at": now_iso,
         }
+        logger.info(
+            "[muhabbet_trip_state] endpoint=expiry session_id=%s conversation_id=%s listing_id=%s old_status=%s old_ride_status=%s new_status=%s reason=%s",
+            session_id,
+            str(row.get("conversation_id") or ""),
+            str(row.get("listing_id") or ""),
+            str(row.get("status") or ""),
+            str(row.get("ride_status") or ""),
+            str(patch.get("status") or ""),
+            reason,
+        )
         try:
             upd = (
                 supabase.table("muhabbet_trip_sessions")
@@ -26374,6 +26445,17 @@ async def muhabbet_trip_session_active_get(
         if not candidates:
             return {"success": True, "session": None}
         candidates.sort(key=lambda x: str(x.get("updated_at") or x.get("created_at") or ""), reverse=True)
+        sel = candidates[0]
+        logger.info(
+            "[muhabbet_trip_state] endpoint=active user_id=%s selected_session_id=%s conversation_id=%s listing_id=%s status=%s ride_status=%s candidate_count=%s",
+            uid_lo,
+            str(sel.get("id") or ""),
+            str(sel.get("conversation_id") or ""),
+            str(sel.get("listing_id") or ""),
+            str(sel.get("status") or ""),
+            str(sel.get("ride_status") or ""),
+            len(candidates),
+        )
         return {"success": True, "session": _muhabbet_trip_session_public(candidates[0])}
     except Exception as e:
         logger.warning("muhabbet_trip_session_active_get: %s", e)
@@ -26390,6 +26472,16 @@ async def muhabbet_trip_session_get(
     await _expire_stale_muhabbet_trip_sessions()
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
     row = await _muhabbet_trip_session_row_force_finish_timeout_if_due(session_id, row)
+    sid = str(session_id or "").strip().lower()
+    logger.info(
+        "[muhabbet_trip_state] endpoint=get_session session_id=%s user_id=%s conversation_id=%s listing_id=%s status=%s ride_status=%s reason=before_return",
+        sid,
+        str(uid or ""),
+        str(row.get("conversation_id") or ""),
+        str(row.get("listing_id") or ""),
+        str(row.get("status") or ""),
+        str(row.get("ride_status") or ""),
+    )
     return {"success": True, "session": _muhabbet_trip_session_public(row)}
 
 
@@ -28795,6 +28887,91 @@ async def muhabbet_conversation_messages_get(
     except Exception as e:
         logger.error(f"muhabbet_conversation_messages_get: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/audio/upload")
+async def muhabbet_conversation_audio_upload(
+    conversation_id: str,
+    body: MuhabbetChatAudioUploadBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Ses dosyasını Supabase Storage'a sunucu anahtarıyla yükler; mesaj şeması değişmez."""
+    cid_lo = str(conversation_id or "").strip().lower()
+    logger.info("[muhabbet_audio_backend_upload_start] conversation_id=%s", cid_lo[:13])
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = cid_lo
+        _muhabbet_conversation_for_member_or_403(cid, uid)
+
+        mime_lo = str(body.mime_type or "").strip().lower()
+        if mime_lo not in _MUHABBET_AUDIO_BACKEND_UPLOAD_MIME:
+            logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=bad_mime", cid_lo[:13])
+            raise HTTPException(status_code=400, detail="Desteklenmeyen ses biçimi.")
+
+        try:
+            dms = int(body.duration_ms)
+        except (TypeError, ValueError):
+            dms = 0
+        if dms <= 0 or dms > 30000:
+            logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=bad_duration", cid_lo[:13])
+            raise HTTPException(status_code=400, detail="Ses süresi 1 ile 30000 milisaniye arasında olmalıdır.")
+
+        b64 = str(body.base64 or "").strip()
+        if not b64:
+            logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=empty_payload", cid_lo[:13])
+            raise HTTPException(status_code=400, detail="Ses verisi gerekli.")
+
+        max_b64_chars = (_MUHABBET_AUDIO_BACKEND_UPLOAD_MAX_BYTES * 4) // 3 + 8
+        if len(b64) > max_b64_chars:
+            logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=payload_too_large", cid_lo[:13])
+            raise HTTPException(status_code=400, detail="Dosya boyutu sınırı aşıldı.")
+
+        try:
+            raw = base64.b64decode(b64, validate=True)
+        except Exception:
+            logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=bad_base64", cid_lo[:13])
+            raise HTTPException(status_code=400, detail="Geçersiz base64 verisi.")
+
+        if len(raw) > _MUHABBET_AUDIO_BACKEND_UPLOAD_MAX_BYTES:
+            logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=decoded_too_large", cid_lo[:13])
+            raise HTTPException(status_code=400, detail="Dosya boyutu sınırı aşıldı.")
+
+        ts = int(datetime.now(timezone.utc).timestamp() * 1000)
+        storage_path = f"{cid}/{uid}/{ts}.m4a"
+        content_type = mime_lo if mime_lo != "audio/m4a" else "audio/mp4"
+
+        _muhabbet_ensure_audio_bucket()
+        try:
+            supabase.storage.from_(_MUHABBET_AUDIO_BUCKET).upload(
+                path=storage_path,
+                file=raw,
+                file_options={"content-type": content_type, "upsert": "false"},
+            )
+        except Exception as e:
+            logger.warning(
+                "[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=storage_upload err=%s",
+                cid_lo[:13],
+                e,
+            )
+            raise HTTPException(status_code=500, detail="Ses dosyası yüklenemedi.") from e
+
+        logger.info(
+            "[muhabbet_audio_backend_upload_success] conversation_id=%s bytes=%s path_tail=%s",
+            cid_lo[:13],
+            len(raw),
+            storage_path[-48:] if len(storage_path) > 48 else storage_path,
+        )
+        return {
+            "success": True,
+            "audio_storage_path": storage_path,
+            "audio_mime_type": mime_lo,
+            "audio_duration_ms": dms,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[muhabbet_audio_backend_upload_failed] conversation_id=%s reason=unexpected err=%s", cid_lo[:13], e)
+        raise HTTPException(status_code=500, detail="Ses dosyası yüklenemedi.") from e
 
 
 @api_router.post("/muhabbet/conversations/{conversation_id}/messages")
