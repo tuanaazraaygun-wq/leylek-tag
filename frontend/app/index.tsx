@@ -81,7 +81,10 @@ import {
   type TokenPayload,
 } from '../lib/sessionToken';
 import { afterAuthAccessTokenPersisted } from '../lib/authTokenPersistenceNotify';
-import { syncSupabaseSessionFromBackendResponse } from '../lib/supabaseSessionSync';
+import {
+  repairSupabaseSessionWithBackendRefresh,
+  syncSupabaseSessionFromBackendResponse,
+} from '../lib/supabaseSessionSync';
 import { getSupabase } from '../lib/supabase';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
@@ -1125,7 +1128,16 @@ export default function App() {
 
         setUser(parsedUser);
 
-        void syncSupabaseSessionFromBackendResponse(parsedUser as unknown as Record<string, unknown>);
+        void (async () => {
+          await syncSupabaseSessionFromBackendResponse(parsedUser as unknown as Record<string, unknown>);
+          const pp = parsedUser as unknown as Record<string, unknown>;
+          const hasSb =
+            !!(pp.supabase_access_token || pp.supabaseAccessToken) &&
+            !!(pp.supabase_refresh_token || pp.supabaseRefreshToken);
+          if (!hasSb) {
+            await repairSupabaseSessionWithBackendRefresh(API_URL);
+          }
+        })();
 
         const cleanPhone = parsedUser.phone?.replace(/\D/g, '') || '';
         const isMainAdmin =
@@ -1265,6 +1277,13 @@ export default function App() {
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
     await persistAccessToken(payload);
     await syncSupabaseSessionFromBackendResponse(payload as unknown as Record<string, unknown>); // Storage RLS: supabase_access_token + refresh
+    const pauth = payload as Record<string, unknown>;
+    const hasSb =
+      !!(pauth.supabase_access_token || pauth.supabaseAccessToken) &&
+      !!(pauth.supabase_refresh_token || pauth.supabaseRefreshToken);
+    if (!hasSb) {
+      await repairSupabaseSessionWithBackendRefresh(API_URL);
+    }
     const token = (await getPersistedAccessToken())?.trim();
     console.log('[muhabbet] auth token refresh after persist', {
       userId: userId ?? null,

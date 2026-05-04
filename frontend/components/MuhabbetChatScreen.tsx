@@ -29,7 +29,10 @@ import { Audio } from 'expo-av';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
-import { syncSupabaseSessionFromBackendResponse } from '../lib/supabaseSessionSync';
+import {
+  repairSupabaseSessionWithBackendRefresh,
+  syncSupabaseSessionFromBackendResponse,
+} from '../lib/supabaseSessionSync';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import {
   getLastRegisteredSocketSid,
@@ -127,15 +130,43 @@ const BUBBLE_SHADOW = Platform.select({
 const MUHABBET_AUDIO_BUCKET = 'muhabbet-audio';
 const MUHABBET_MAX_RECORD_MS = 30000;
 
-const uploadAudio = async (conversationId: string, localUri: string): Promise<string> => {
+const uploadAudio = async (apiBase: string, conversationId: string, localUri: string): Promise<string> => {
   const supabase = getSupabase();
   if (!supabase) {
     throw new Error('Supabase client not configured');
   }
 
+  const base = apiBase.replace(/\/$/, '');
+
   let {
     data: { session },
   } = await supabase.auth.getSession();
+
+  if (!session) {
+    try {
+      const raw = await getPersistedUserRaw();
+      if (raw) {
+        const u = JSON.parse(raw) as Record<string, unknown>;
+        await syncSupabaseSessionFromBackendResponse(u);
+      }
+    } catch {
+      /* ignore rehydrate errors */
+    }
+    session = (await supabase.auth.getSession()).data.session;
+  }
+
+  if (!session) {
+    console.log('[muhabbet_audio_supabase_refresh_start]', { reason: 'getSession_empty' });
+    const ok = await repairSupabaseSessionWithBackendRefresh(base);
+    if (ok) {
+      console.log('[muhabbet_audio_supabase_refresh_success]', { ok: true });
+    } else {
+      console.log('[muhabbet_audio_supabase_refresh_failed]', { ok: false });
+    }
+    session = (await supabase.auth.getSession()).data.session;
+    const { data: after } = await supabase.auth.getSession();
+    console.log('[muhabbet_audio_session_after_refresh]', { hasSession: !!after.session });
+  }
 
   if (!session) {
     let persistHasBackendJwt = false;
@@ -152,23 +183,18 @@ const uploadAudio = async (conversationId: string, localUri: string): Promise<st
         persistHasBackendJwt = !!String(u.access_token || u.accessToken || '').trim();
         persistHasSa = !!String(u.supabase_access_token || u.supabaseAccessToken || '').trim();
         persistHasSr = !!String(u.supabase_refresh_token || u.supabaseRefreshToken || '').trim();
-        await syncSupabaseSessionFromBackendResponse(u);
       }
     } catch {
-      /* ignore rehydrate errors */
+      /* ignore */
     }
-    const again = await supabase.auth.getSession();
-    session = again.data.session;
-    if (!session) {
-      console.log('[muhabbet_audio_session_missing]', {
-        userId: persistUserId || null,
-        role: persistRole || null,
-        persistedBackendJwt: persistHasBackendJwt,
-        storedHasSupabaseAccess: persistHasSa,
-        storedHasSupabaseRefresh: persistHasSr,
-      });
-      throw new Error('No Supabase session');
-    }
+    console.log('[muhabbet_audio_session_missing]', {
+      userId: persistUserId || null,
+      role: persistRole || null,
+      persistedBackendJwt: persistHasBackendJwt,
+      storedHasSupabaseAccess: persistHasSa,
+      storedHasSupabaseRefresh: persistHasSr,
+    });
+    throw new Error('No Supabase session');
   }
 
   const cid = String(conversationId || '').trim().toLowerCase();
@@ -892,7 +918,7 @@ export default function MuhabbetChatScreen({
     let uploadedPath: string;
 
     try {
-      uploadedPath = await uploadAudio(cid, localUri);
+      uploadedPath = await uploadAudio(base, cid, localUri);
     } catch (e: unknown) {
       const detail =
         e !== null &&
@@ -960,7 +986,7 @@ export default function MuhabbetChatScreen({
       /* noop */
     }
     scrollToEndThrottled(true);
-  }, [cid, myId, scrollToEndThrottled, sendMessageViaRest]);
+  }, [base, cid, myId, scrollToEndThrottled, sendMessageViaRest]);
 
   const startRecording = useCallback(async () => {
     if (!cid || recordingActive) return;

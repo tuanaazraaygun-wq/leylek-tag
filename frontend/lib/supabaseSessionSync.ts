@@ -2,7 +2,46 @@
  * Supabase Auth session from backend-issued tokens (verify-otp / login payloads).
  */
 
+import { getPersistedAccessToken, persistAccessToken } from './sessionToken';
 import { getSupabase } from './supabase';
+
+/**
+ * Leylek JWT ile POST /auth/supabase-session/refresh — AsyncStorage'da Supabase çifti yoksa veya süresi geçmişse.
+ */
+export async function repairSupabaseSessionWithBackendRefresh(apiBase: string): Promise<boolean> {
+  const base = apiBase.replace(/\/$/, '');
+  const jwt = (await getPersistedAccessToken())?.trim();
+  if (!jwt) {
+    return false;
+  }
+  try {
+    const r = await fetch(`${base}/auth/supabase-session/refresh`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/json',
+      },
+    });
+    const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    const ok =
+      r.ok &&
+      j.success === true &&
+      typeof j.supabase_access_token === 'string' &&
+      typeof j.supabase_refresh_token === 'string';
+    if (!ok) {
+      return false;
+    }
+    await persistAccessToken({
+      access_token: jwt,
+      supabase_access_token: String(j.supabase_access_token),
+      supabase_refresh_token: String(j.supabase_refresh_token),
+    });
+    await syncSupabaseSessionFromBackendResponse(j);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function syncSupabaseSessionFromBackendResponse(payload: any) {
   const supabase = getSupabase();

@@ -29,13 +29,19 @@ def mint_supabase_session_tokens(user_id: str) -> Tuple[Optional[str], Optional[
     """users.id ile Supabase Auth oturumu üret; başarısızsa (None, None)."""
     sb = get_supabase_auth_session_client()
     if not sb:
-        logger.warning("mint_supabase_session: Supabase auth-session client not initialized")
+        logger.warning(
+            "[supabase_token_mint_failed] user_id=%s error=no_auth_session_client",
+            str(user_id).strip().lower()[:36],
+        )
         return None, None
     uid = str(user_id).strip().lower()
     try:
         uuid.UUID(uid)
     except Exception:
-        logger.warning("mint_supabase_session: invalid user id %s", uid[:32])
+        logger.warning(
+            "[supabase_token_mint_failed] user_id=%s error=invalid_uuid",
+            str(user_id)[:64],
+        )
         return None, None
 
     email = synthetic_email_for_user_id(uid)
@@ -62,12 +68,16 @@ def mint_supabase_session_tokens(user_id: str) -> Tuple[Optional[str], Optional[
         if auth_res.session:
             return auth_res.session.access_token, auth_res.session.refresh_token
         logger.warning(
-            "mint_supabase_session: verify_otp returned no session; user_id=%s auth_res=%r",
+            "[supabase_token_mint_failed] user_id=%s error=verify_otp_no_session",
             uid,
-            auth_res,
         )
-    except Exception:
-        logger.exception("mint_supabase_session: generate_link or verify_otp failed")
+    except Exception as ex:
+        logger.warning(
+            "[supabase_token_mint_failed] user_id=%s error=%s",
+            uid,
+            str(ex),
+            exc_info=True,
+        )
     return None, None
 
 
@@ -80,9 +90,14 @@ def attach_supabase_tokens_to_auth_payload(payload: dict, user_id: Optional[str]
         if a and r:
             return {**payload, "supabase_access_token": a, "supabase_refresh_token": r}
         logger.warning(
-            "attach_supabase_tokens: mint returned empty tokens user_id=%s",
+            "[supabase_token_mint_failed] user_id=%s error=mint_returned_empty",
             user_id,
         )
-    except Exception:
-        logger.exception("attach_supabase_tokens failed user_id=%s", user_id)
+    except Exception as ex:
+        logger.warning(
+            "[supabase_token_mint_failed] user_id=%s error=%s",
+            user_id,
+            str(ex),
+            exc_info=True,
+        )
     return payload

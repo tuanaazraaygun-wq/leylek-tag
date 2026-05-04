@@ -64,15 +64,16 @@ except ModuleNotFoundError as e:
         "systemd WorkingDirectory bu klasör olmalı."
     ) from e
 
-from supabase_auth_session import attach_supabase_tokens_to_auth_payload
+from supabase_auth_session import attach_supabase_tokens_to_auth_payload, mint_supabase_session_tokens
 
 
-def _finalize_auth_response_payload(payload: dict, user_id: str) -> dict:
+def _finalize_auth_response_payload(payload: dict, user_id: str, *, path: str = "") -> dict:
     """Leylek yanıtına supabase_access_token / supabase_refresh_token ekler; dönmeden loglar."""
     out = attach_supabase_tokens_to_auth_payload(payload, user_id)
     logger.info(
-        "[auth_response_tokens] user_id=%s has_supabase_access=%s has_supabase_refresh=%s",
+        "[auth_response_tokens] user_id=%s path=%s has_supabase_access=%s has_supabase_refresh=%s",
         user_id,
+        path or "?",
         bool(out.get("supabase_access_token")),
         bool(out.get("supabase_refresh_token")),
     )
@@ -5398,6 +5399,7 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
                 },
             },
             str(user["id"]),
+            path="/auth/verify-otp",
         )
     else:
         # Yeni kullanıcı
@@ -5606,6 +5608,7 @@ async def auth_test_login_bypass(request: Request):
             },
         },
         str(user["id"]),
+        path="/auth/test-login-bypass",
     )
 
 
@@ -5744,6 +5747,7 @@ async def auth_test_password_login(request: Request):
             },
         },
         str(user["id"]),
+        path="/auth/test-password-login",
     )
 
 
@@ -5820,7 +5824,7 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         out: dict = {"success": True, "message": "PIN ayarlandı"}
         if refreshed and refreshed.get("id"):
             out["access_token"] = issue_access_token(refreshed["id"])
-            return _finalize_auth_response_payload(out, str(refreshed["id"]))
+            return _finalize_auth_response_payload(out, str(refreshed["id"]), path="/auth/set-pin")
         return out
     except Exception as e:
         logger.error(f"Set PIN error: {e}")
@@ -5963,6 +5967,7 @@ async def verify_pin_endpoint(request: Request):
                 },
             },
             str(user["id"]),
+            path="/auth/verify-pin",
         )
     except HTTPException:
         raise
@@ -6037,6 +6042,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
                 },
             },
             str(user["id"]),
+            path="/auth/login",
         )
     except HTTPException:
         raise
@@ -6252,6 +6258,7 @@ async def register_user(request: RegisterRequest):
                     },
                 },
                 str(user["id"]),
+                path="/auth/register",
             )
 
         raise HTTPException(status_code=500, detail="Kayıt oluşturulamadı")
@@ -6260,6 +6267,50 @@ async def register_user(request: RegisterRequest):
     except Exception as e:
         logger.error(f"Register error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/auth/supabase-session/refresh")
+async def auth_supabase_session_refresh(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Leylek JWT ile Supabase Auth çifti üret (Storage RLS / SDK upload).
+    Kayıtlı kullanıcıda AsyncStorage'da token kaybı olduğunda istemci onarımı için.
+    """
+    uid = str(authenticated_user_id or "").strip().lower()
+    try:
+        a, r = mint_supabase_session_tokens(uid)
+        if not a or not r:
+            logger.error(
+                "[supabase_token_mint_failed] user_id=%s path=/auth/supabase-session/refresh error=no_tokens_from_mint",
+                uid,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Supabase oturumu oluşturulamadı. Bir süre sonra tekrar deneyin.",
+            )
+        logger.info(
+            "[auth_response_tokens] user_id=%s path=/auth/supabase-session/refresh has_supabase_access=True has_supabase_refresh=True",
+            uid,
+        )
+        return {
+            "success": True,
+            "supabase_access_token": a,
+            "supabase_refresh_token": r,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "[supabase_token_mint_failed] user_id=%s path=/auth/supabase-session/refresh error=%s",
+            uid,
+            str(e),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase oturumu oluşturulamadı.",
+        ) from e
+
 
 # ==================== USER ENDPOINTS ====================
 
