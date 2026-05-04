@@ -130,6 +130,8 @@ export type MuhabbetTripSessionSocketPayload = {
   sessionId?: string;
   request_id?: string;
   conversation_id?: string;
+  /** Örn. force_ended — muhabbet_trip_session_updated ile gelebilir */
+  reason?: string | null;
   session?: MuhabbetTripSession;
 };
 

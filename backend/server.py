@@ -25471,12 +25471,19 @@ async def _muhabbet_create_trip_session_after_leylek_key_accept(
         return None
 
 
-async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: str = "muhabbet_trip_session_updated") -> None:
+async def _broadcast_muhabbet_trip_session_state(
+    session_row: dict,
+    event_name: str = "muhabbet_trip_session_updated",
+    *,
+    socket_reason: Optional[str] = None,
+) -> None:
     payload = {
         "session_id": session_row.get("id"),
         "conversation_id": session_row.get("conversation_id"),
         "session": _muhabbet_trip_session_public(session_row),
     }
+    if socket_reason:
+        payload["reason"] = socket_reason
     sid_log = str(session_row.get("id") or "").strip().lower()
     logger.info(
         "[muhabbet_trip_state] endpoint=socket_update session_id=%s reason=%s target_user_id=%s",
@@ -26948,6 +26955,12 @@ async def _muhabbet_trip_call_start_apply(uid: str, session_id: str) -> dict:
 
         ch_name = str(row.get("call_channel_name") or "").strip() or f"muhabbet_trip_{sid_lo}"
         logger.info(
+            "[muhabbet_intercity_call_start] session_id=%s caller_id=%s callee_id=%s",
+            sid_lo,
+            uid_lo,
+            str(target_uid).strip().lower(),
+        )
+        logger.info(
             "[muhabbet_call_start_apply] session_id=%s caller_prefix=%s callee_prefix=%s",
             sid_lo,
             uid_lo[:12],
@@ -27262,6 +27275,110 @@ async def _muhabbet_trip_cancel_apply(uid: str, session_id: str, reason: Optiona
         {"status": "cancelled", "cancelled_at": now_iso},
     )
     return next_row, True
+
+
+async def _muhabbet_trip_force_end_before_boarding_apply(uid: str, session_id: str) -> tuple[dict, bool]:
+    """Biniş QR onayı yokken tek taraflı anında iptal; karşı onay beklemez. (row, did_cancel)."""
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    if _muhabbet_trip_session_row_terminal_status(row):
+        return dict(row), False
+    if _muhabbet_trip_has_boarding_started_row(row):
+        raise _MuhabbetTripOpError(
+            "TRIP_ALREADY_STARTED",
+            "Yolculuk başladı. Varış QR ile bitirin veya Şikayet Et kullanın.",
+            409,
+        )
+    st = str(row.get("status") or "").strip().lower()
+    if st not in ("ready", "active", "started"):
+        raise _MuhabbetTripOpError("not_allowed", "Bu aşamada zorla bitir kullanılamaz.", 400)
+    uid_lo = str(uid).strip().lower()
+    sid_lo = str(session_id or "").strip().lower()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "status": "cancelled",
+        "ride_status": "cancelled",
+        "cancelled_at": now_iso,
+        "cancelled_by_user_id": uid_lo,
+        "cancel_reason": "force_ended_before_boarding",
+        "call_active": False,
+        "call_state": "ended",
+        "call_caller_id": None,
+        "call_started_at": None,
+        "forced_finish_requested_by_user_id": None,
+        "forced_finish_requested_at": None,
+        "forced_finish_confirmed_by_user_id": None,
+        "forced_finish_confirmed_at": None,
+        "forced_finish_other_user_response": None,
+        "forced_finish_started_at": None,
+        "forced_finish_timeout_at": None,
+        "forced_finish_request_id": None,
+        "forced_finish_resolved_at": None,
+        "updated_at": now_iso,
+    }
+    logger.info(
+        "[muhabbet_intercity_force_end] phase=apply session_id=%s actor=%s",
+        sid_lo[:13],
+        uid_lo[:13],
+    )
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid_lo).execute()
+    next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    try:
+        _muhabbet_trip_passengers_update_for_user(
+            sid_lo,
+            str(next_row.get("passenger_id") or ""),
+            {"status": "cancelled", "cancelled_at": now_iso},
+        )
+    except Exception as pe:
+        logger.warning("[muhabbet_intercity_force_end] passenger_row_update_failed session_id=%s err=%s", sid_lo[:12], pe)
+    return next_row, True
+
+
+async def _muhabbet_trip_emit_force_ended(next_row: dict, actor_uid: str) -> None:
+    """Trip oda + tüm üyelere anında force_ended; ardından session_updated (reason)."""
+    sid = str(next_row.get("id") or "").strip().lower()
+    if not sid:
+        return
+    pub = _muhabbet_trip_session_public(next_row)
+    payload = {
+        "session_id": sid,
+        "conversation_id": next_row.get("conversation_id"),
+        "reason": "force_ended",
+        "session": pub,
+    }
+    actor_lo = str(actor_uid or "").strip().lower()
+    trip_rm = muhabbet_trip_room(sid)
+    n_room = _socketio_room_member_count(trip_rm)
+    logger.info(
+        "[muhabbet_intercity_force_end_emit] phase=trip_room session_id=%s actor=%s sid_count=%s",
+        sid[:13],
+        actor_lo[:13] if actor_lo else "",
+        n_room,
+    )
+    try:
+        await sio.emit("muhabbet_trip_force_ended", payload, room=trip_rm)
+    except Exception as e:
+        logger.warning("[muhabbet_intercity_force_end_emit] trip_room_failed session_id=%s err=%s", sid[:12], e)
+    for uid_tgt in _muhabbet_trip_session_recipient_user_ids(next_row):
+        if not uid_tgt:
+            continue
+        logger.info(
+            "[muhabbet_intercity_force_end_emit] phase=user session_id=%s target_user_id=%s",
+            sid[:13],
+            uid_tgt[:13],
+        )
+        try:
+            await emit_socket_event_to_user(uid_tgt, "muhabbet_trip_force_ended", payload)
+        except Exception as e:
+            logger.warning(
+                "[muhabbet_intercity_force_end_emit] user_emit_failed session_id=%s target=%s err=%s",
+                sid[:12],
+                uid_tgt[:12],
+                e,
+            )
+    try:
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated", socket_reason="force_ended")
+    except Exception as e:
+        logger.warning("[muhabbet_intercity_force_end_emit] broadcast_failed session_id=%s err=%s", sid[:12], e)
 
 
 async def _muhabbet_trip_force_finish_request_apply(uid: str, session_id: str) -> tuple[dict, dict, bool]:
@@ -27691,6 +27808,11 @@ async def muhabbet_trip_call_start_post(
                     target_uid[:12] if target_uid else "",
                 )
                 logger.info(
+                    "[muhabbet_intercity_call_emit_ack] session_id=%s caller_id=%s",
+                    sid_lo,
+                    uid_lo,
+                )
+                logger.info(
                     "[muhabbet_call_emit_start_ack] session_id=%s to_caller=%s",
                     sid_lo,
                     uid_lo[:12],
@@ -27698,11 +27820,32 @@ async def muhabbet_trip_call_start_post(
                 await emit_socket_event_to_user(uid_lo, "muhabbet_trip_call_start", payload)
                 if target_uid and target_uid != uid_lo:
                     logger.info(
+                        "[muhabbet_intercity_call_emit_incoming] session_id=%s callee_id=%s phase=user_room",
+                        sid_lo,
+                        target_uid,
+                    )
+                    logger.info(
                         "[muhabbet_call_emit_incoming] session_id=%s to_callee=%s",
                         sid_lo,
                         target_uid[:12],
                     )
                     await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
+                    try:
+                        trip_rm_in = muhabbet_trip_room(sid_lo)
+                        n_in = _socketio_room_member_count(trip_rm_in)
+                        logger.info(
+                            "[muhabbet_intercity_call_emit_incoming] session_id=%s callee_id=%s phase=trip_room sid_count=%s",
+                            sid_lo,
+                            target_uid,
+                            n_in,
+                        )
+                        await sio.emit("muhabbet_trip_call_incoming", payload, room=trip_rm_in)
+                    except Exception as tre:
+                        logger.warning(
+                            "[muhabbet_intercity_call_emit_incoming] trip_room_failed session_id=%s err=%s",
+                            sid_lo[:12],
+                            tre,
+                        )
                 _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
                 logger.info(
                     "[socket_trip_event] %s",
@@ -27869,6 +28012,29 @@ async def muhabbet_trip_cancel_post(
         raise
     except _MuhabbetTripOpError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/force-end-before-boarding")
+async def muhabbet_trip_force_end_before_boarding_post(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Biniş onayı öncesi anında iptal — karşı taraf onayı beklemez."""
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    sid_lo = str(session_id or "").strip().lower()
+    try:
+        next_row, did_cancel = await _muhabbet_trip_force_end_before_boarding_apply(uid, session_id)
+        if did_cancel:
+            await _muhabbet_trip_emit_force_ended(next_row, uid)
+            try:
+                await notify_trip_session_updated(sid_lo, "force_ended_before_boarding", uid)
+            except Exception as ne:
+                logger.warning("[muhabbet_notify] force_ended_before_boarding notify failed: %s", ne)
+        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/force-finish/request")
@@ -28364,15 +28530,41 @@ async def sio_muhabbet_trip_call_start(sid, data):
                 uid_lo[:12],
                 target_uid[:12] if target_uid else "",
             )
+            logger.info(
+                "[muhabbet_intercity_call_emit_ack] session_id=%s caller_id=%s phase=socket_sid",
+                sid_lo,
+                uid_lo,
+            )
             logger.info("[muhabbet_call_emit_start_ack] session_id=%s to_caller_socket=%s", sid_lo, uid_lo[:12])
             await sio.emit("muhabbet_trip_call_start", payload, room=sid)
             if target_uid and target_uid != uid_lo:
+                logger.info(
+                    "[muhabbet_intercity_call_emit_incoming] session_id=%s callee_id=%s phase=user_room",
+                    sid_lo,
+                    target_uid,
+                )
                 logger.info(
                     "[muhabbet_call_emit_incoming] session_id=%s to_callee=%s",
                     sid_lo,
                     target_uid[:12],
                 )
                 await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
+                try:
+                    trip_rm_sio = muhabbet_trip_room(sid_lo)
+                    n_sio = _socketio_room_member_count(trip_rm_sio)
+                    logger.info(
+                        "[muhabbet_intercity_call_emit_incoming] session_id=%s callee_id=%s phase=trip_room sid_count=%s",
+                        sid_lo,
+                        target_uid,
+                        n_sio,
+                    )
+                    await sio.emit("muhabbet_trip_call_incoming", payload, room=trip_rm_sio)
+                except Exception as tre:
+                    logger.warning(
+                        "[muhabbet_intercity_call_emit_incoming] trip_room_failed session_id=%s err=%s",
+                        sid_lo[:12],
+                        tre,
+                    )
             _schedule_muhabbet_incoming_call_push(payload, session_id, uid_lo)
         else:
             blk = "duplicate_same_caller" if skip else "emit_not_allowed_or_skip"
