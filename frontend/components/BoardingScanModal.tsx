@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   View,
@@ -28,6 +28,8 @@ type Props = {
 };
 
 export type BoardingScanModalProps = Props;
+const BOARDING_SCAN_DEDUPE_WINDOW_MS = 1500;
+const BOARDING_SCAN_RESCAN_COOLDOWN_MS = 900;
 
 export default function BoardingScanModal({
   visible,
@@ -40,11 +42,15 @@ export default function BoardingScanModal({
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const lastScanRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
+  const cooldownUntilRef = useRef<number>(0);
 
   useEffect(() => {
     if (visible) {
       setScanned(false);
       setProcessing(false);
+      cooldownUntilRef.current = 0;
+      lastScanRef.current = { data: '', ts: 0 };
       if (!hasPermission?.granted) {
         void requestPermission();
       }
@@ -103,13 +109,29 @@ export default function BoardingScanModal({
             onClose();
           }
         } else {
-          Alert.alert('Biniş doğrulanamadı', json.detail || 'Tekrar deneyin');
+          const detail = (json.detail || '').toLowerCase();
+          const expiredOrInvalid =
+            detail.includes('süresi dolmuş') ||
+            detail.includes('geçersiz') ||
+            detail.includes('kullanılmış');
+          if (expiredOrInvalid) {
+            cooldownUntilRef.current = Date.now() + BOARDING_SCAN_RESCAN_COOLDOWN_MS;
+            Alert.alert('Biniş doğrulanamadı', 'Sürücüden yeni biniş kodu isteyin.');
+          } else {
+            Alert.alert('Biniş doğrulanamadı', json.detail || 'Tekrar deneyin');
+          }
         }
-      } catch (e) {
+      } catch {
         Alert.alert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
       } finally {
         setProcessing(false);
-        setScanned(false);
+        const now = Date.now();
+        const delay = Math.max(0, cooldownUntilRef.current - now);
+        if (delay > 0) {
+          setTimeout(() => setScanned(false), delay);
+        } else {
+          setScanned(false);
+        }
       }
     },
     [latitude, longitude, onVerified, onClose, tagId],
@@ -118,10 +140,17 @@ export default function BoardingScanModal({
   const onBarcodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
       if (scanned || processing) return;
+      if (Date.now() < cooldownUntilRef.current) return;
       const d = (data || '').trim();
       if (!d.startsWith('leylektag://board')) {
         return;
       }
+      const now = Date.now();
+      const prev = lastScanRef.current;
+      if (prev.data === d && now - prev.ts < BOARDING_SCAN_DEDUPE_WINDOW_MS) {
+        return;
+      }
+      lastScanRef.current = { data: d, ts: now };
       setScanned(true);
       await verifyBoarding(d);
     },
