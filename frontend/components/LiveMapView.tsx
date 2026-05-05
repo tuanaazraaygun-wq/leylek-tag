@@ -162,7 +162,12 @@ interface LiveMapViewProps {
   }) => Promise<{ ok: true } | { ok: false; message: string }>;
   onAutoComplete?: () => void;
   onShowEndTripModal?: () => void;
-  onShowQRModal?: () => void;  // 🆕 QR Modal aç
+  /** Trip-end QR (`QRTripEndModal` / `leylektag://end`) — yalnız biniş doğrulandıktan sonra */
+  onShowQRModal?: () => void;
+  /** Normal TAG: biniş öncesi sürücü — `DriverBoardingQRModal` */
+  onShowBoardingQRModal?: () => void;
+  /** Normal TAG: biniş öncesi yolcu — `BoardingScanModal` */
+  onShowBoardingScanModal?: () => void;
   /** Sürücü haritasında: yolcu araç/motor tercihi (marker ve uyarı metinleri) */
   otherTripVehicleKind?: 'car' | 'motorcycle';
   /** Sürücü: yolcunun teklifte seçtiği ödeme */
@@ -1855,7 +1860,9 @@ export default function LiveMapView({
   onInRideComplaintForceEnd,
   onAutoComplete,
   onShowEndTripModal,
-  onShowQRModal,  // 🆕
+  onShowQRModal,
+  onShowBoardingQRModal,
+  onShowBoardingScanModal,
   otherTripVehicleKind = 'car',
   passengerPaymentMethod,
   onNavigationModeChange,
@@ -3411,34 +3418,44 @@ export default function LiveMapView({
     navDriverMapCoord,
   ]);
 
-  const handleBoardingQrPress = useCallback(() => {
-    if (!onShowQRModal) return;
-    if (!boardingConfirmed && isDriver && userLocation && otherLocation) {
-      const distanceKm =
-        meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
-          ? meetingDistance
-          : null;
-      if (distanceKm == null) {
-        Alert.alert(
-          '📍 Mesafe',
-          'Yolcuya mesafe sunucudan henüz gelmedi. Bir süre sonra tekrar deneyin.',
-          [{ text: 'Tamam', style: 'default' }],
-        );
-        return;
-      }
-      const distanceMeters = distanceKm * 1000;
-      if (distanceMeters > 1000) {
-        Alert.alert(
-          '📍 Yakın değil',
-          `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : distanceKm.toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
-          [{ text: 'Tamam', style: 'default' }],
-        );
-        return;
-      }
+  /** Biniş QR (sürücü gösterir / yolcu tarar) vs yol sonu QR — `boardingConfirmed` ile ayrılır */
+  const handlePrimaryTripQrPress = useCallback(() => {
+    if (boardingConfirmed) {
+      onShowQRModal?.();
+      return;
     }
-    onShowQRModal();
+    if (isDriver) {
+      if (userLocation && otherLocation) {
+        const distanceKm =
+          meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
+            ? meetingDistance
+            : null;
+        if (distanceKm == null) {
+          Alert.alert(
+            '📍 Mesafe',
+            'Yolcuya mesafe sunucudan henüz gelmedi. Bir süre sonra tekrar deneyin.',
+            [{ text: 'Tamam', style: 'default' }],
+          );
+          return;
+        }
+        const distanceMeters = distanceKm * 1000;
+        if (distanceMeters > 1000) {
+          Alert.alert(
+            '📍 Yakın değil',
+            `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : distanceKm.toFixed(1) + ' km'} uzakta.\n\nBiniş karekodu için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
+            [{ text: 'Tamam', style: 'default' }],
+          );
+          return;
+        }
+      }
+      onShowBoardingQRModal?.();
+      return;
+    }
+    onShowBoardingScanModal?.();
   }, [
     onShowQRModal,
+    onShowBoardingQRModal,
+    onShowBoardingScanModal,
     boardingConfirmed,
     isDriver,
     userLocation,
@@ -4805,6 +4822,35 @@ export default function LiveMapView({
   const pickupNavStroke = pickupNavRouteStrokeColors(navRouteTrafficLevel);
   const destNavStroke = destinationNavRouteStrokeColors(navRouteTrafficLevel);
 
+  /** Bunlar `Platform.OS === 'web' || !MapView` erken dönüşünden önce tanımlanmalı (hooks sırası). */
+  const driverNavActive = isDriver && navigationMode;
+  const driverNavImmersive = isDriver && navigationMode;
+  const driverRideUiModern = !!(isDriver && MapView && !driverNavImmersive && modernLeylekOfferUi);
+
+  useEffect(() => {
+    if (!driverRideUiModern) return;
+    console.log('[ride_ui_modern]', {
+      driverRideUiModern,
+      modernLeylekOfferUi,
+      boardingConfirmed,
+      hasForceEnd: typeof onForceEnd === 'function',
+      driverNavImmersive,
+      hasMapView: !!MapView,
+    });
+  }, [driverRideUiModern, modernLeylekOfferUi, boardingConfirmed, onForceEnd, driverNavImmersive]);
+
+  useEffect(() => {
+    if (!driverRideUiModern || boardingConfirmed) return;
+    if (!onForceEnd) {
+      console.warn('[ride_ui_modern] onForceEnd missing, Zorla Bitir gizlenir');
+    }
+  }, [driverRideUiModern, boardingConfirmed, onForceEnd]);
+
+  useEffect(() => {
+    if (!__DEV__ || !driverRideUiModern || !boardingConfirmed) return;
+    console.log('[ride_ui_modern] boardingConfirmed: trip end QR row (modern sheet)');
+  }, [driverRideUiModern, boardingConfirmed]);
+
   // Web fallback
   if (Platform.OS === 'web' || !MapView) {
     return (
@@ -4827,11 +4873,6 @@ export default function LiveMapView({
     );
   }
 
-  const driverNavActive = isDriver && navigationMode;
-  /** Tam ekran sürücü navigasyonu: yalnızca arama + üst kart + harita */
-  const driverNavImmersive = isDriver && navigationMode;
-  /** Modern kart+sheet — yalnız Leylek/Muhabbet teklif akışı (`modernLeylekOfferUi`). Normal ride hep klasik. */
-  const driverRideUiModern = !!(isDriver && MapView && !driverNavImmersive && modernLeylekOfferUi);
   /** Üst kart (~alış/hedef/yolcu satırları) + alt sheet yüksekliğine göre harita güvenli alanı */
   const driverRideModernMapPadTop = Math.max(insets.top, 12) + 272;
   const driverRideModernMapPadBottom = 262 + Math.max(insets.bottom, 12);
@@ -4921,30 +4962,6 @@ export default function LiveMapView({
     (typeof driverNavRouteHeadingDeg === 'number' && Number.isFinite(driverNavRouteHeadingDeg)
       ? driverNavRouteHeadingDeg
       : 0) + getDriverNavRotationOffsetDeg(passMotor ? 'motorcycle' : 'car');
-
-  useEffect(() => {
-    if (!driverRideUiModern) return;
-    console.log('[ride_ui_modern]', {
-      driverRideUiModern,
-      modernLeylekOfferUi,
-      boardingConfirmed,
-      hasForceEnd: typeof onForceEnd === 'function',
-      driverNavImmersive,
-      hasMapView: !!MapView,
-    });
-  }, [driverRideUiModern, modernLeylekOfferUi, boardingConfirmed, onForceEnd, driverNavImmersive]);
-
-  useEffect(() => {
-    if (!driverRideUiModern || boardingConfirmed) return;
-    if (!onForceEnd) {
-      console.warn('[ride_ui_modern] onForceEnd missing, Zorla Bitir gizlenir');
-    }
-  }, [driverRideUiModern, boardingConfirmed, onForceEnd]);
-
-  useEffect(() => {
-    if (!__DEV__ || !driverRideUiModern || !boardingConfirmed) return;
-    console.log('[ride_ui_modern] boardingConfirmed: QR / Zorla Bitir row suppressed');
-  }, [driverRideUiModern, boardingConfirmed]);
 
   return (
     <View style={styles.container}>
@@ -5883,23 +5900,110 @@ export default function LiveMapView({
                 </Text>
               </Pressable>
 
-              {!boardingConfirmed ? (
+              {boardingConfirmed ? (
+                <View style={styles.driverRideSheetRow2}>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.driverRideQrBtn}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      onShowQRModal?.();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Yol paylaşımını bitir — yol sonu QR"
+                  >
+                    <LinearGradient
+                      colors={['#8B5CF6', '#7C3AED']}
+                      style={styles.driverRideQrBtnGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Ionicons name="qr-code" size={20} color="#FFF" />
+                      <Text
+                        style={styles.driverRideQrBtnText}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Yol Paylaşımını Bitir
+                      </Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {onForceEnd ? (
+                    <TouchableOpacity
+                      style={styles.driverRideForceBtn}
+                      activeOpacity={0.82}
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                          if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                            return;
+                          }
+                          if (!tagId || String(tagId).trim() === '') {
+                            Alert.alert(
+                              'İşlem yapılamıyor',
+                              'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                            );
+                            return;
+                          }
+                          const stOpen = String(tagStatus || '').toLowerCase();
+                          if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                            Alert.alert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.');
+                            return;
+                          }
+                          setInRideSaferFeStep('choice');
+                          setInRideSaferFeVisible(true);
+                          return;
+                        }
+                        Alert.alert(
+                          '⚠️ Zorla Bitir',
+                          'Bu işlem puanınızı düşürebilir. Mümkünse QR ile tamamlayın.',
+                          [
+                            { text: 'Vazgeç', style: 'cancel' },
+                            {
+                              text: 'Zorla Bitir',
+                              style: 'destructive',
+                              onPress: () => onForceEnd?.(),
+                            },
+                          ],
+                        );
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Zorla bitir"
+                    >
+                      <Ionicons name="warning" size={18} color="#FFF" />
+                      <Text
+                        style={styles.driverRideForceBtnText}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                      >
+                        Zorla Bitir
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : (
                 <View style={styles.driverRideSheetRow2}>
                   <TouchableOpacity
                     activeOpacity={0.82}
                     style={[
                       styles.driverRideQrBtn,
-                      driverNearPickupForQr ? styles.driverRideQrBtnProminent : null,
+                      driverNearPickupForQr ? styles.driverRideQrBtnProminentBoarding : null,
                     ]}
                     onPress={() => {
                       void tapButtonHaptic();
-                      handleBoardingQrPress();
+                      handlePrimaryTripQrPress();
                     }}
                     accessibilityRole="button"
                     accessibilityLabel="Biniş QR göster"
                   >
                     <LinearGradient
-                      colors={driverNearPickupForQr ? ['#7C3AED', '#6D28D9'] : ['#8B5CF6', '#7C3AED']}
+                      colors={
+                        driverNearPickupForQr
+                          ? ['#F59E0B', '#D97706']
+                          : ['#FBBF24', '#F59E0B']
+                      }
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
@@ -5969,7 +6073,7 @@ export default function LiveMapView({
                     </TouchableOpacity>
                   ) : null}
                 </View>
-              ) : null}
+              )}
             </View>
           ) : null}
 
@@ -6161,52 +6265,36 @@ export default function LiveMapView({
               </TouchableOpacity>
             )}
 
-            {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile + KONUM KONTROLÜ */}
+            {/* Biniş QR (amber) · yol sonu QR (mor) — `handlePrimaryTripQrPress` */}
             <Animated.View style={{ 
               transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.98, 1.02] }) }]
             }}>
               <TouchableOpacity 
                 style={styles.qrEndButton} 
                 onPress={() => {
-                  // Pickup öncesi: sürücü–yolcu meeting mesafesi + 1 km. Biniş sonrası meetingDistance güvenilir değil; finish QR engellenmesin.
-                  if (!boardingConfirmed && isDriver && userLocation && otherLocation) {
-                    const distanceKm =
-                      meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
-                        ? meetingDistance
-                        : null;
-                    if (distanceKm == null) {
-                      Alert.alert(
-                        '📍 Mesafe',
-                        'Yolcuya mesafe sunucudan henüz gelmedi. Bir süre sonra tekrar deneyin.',
-                        [{ text: 'Tamam', style: 'default' }],
-                      );
-                      return;
-                    }
-                    const distanceMeters = distanceKm * 1000;
-
-                    if (distanceMeters > 1000) {
-                      // Yolcu 1km'den uzakta - QR gösterme
-                      Alert.alert(
-                        '📍 Yakın değil',
-                        `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : distanceKm.toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
-                        [{ text: 'Tamam', style: 'default' }]
-                      );
-                      return;
-                    }
-                  }
-                  // Yolcu yakında veya konum bilgisi yok - QR göster
-                  onShowQRModal?.();
+                  void tapButtonHaptic();
+                  handlePrimaryTripQrPress();
                 }}
                 activeOpacity={0.7}
               >
                 <LinearGradient
-                  colors={['#8B5CF6', '#7C3AED']}
+                  colors={
+                    boardingConfirmed
+                      ? ['#8B5CF6', '#7C3AED']
+                      : ['#FBBF24', '#F59E0B']
+                  }
                   style={styles.qrEndButtonGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
                   <Ionicons name="qr-code" size={18} color="#FFF" />
-                  <Text style={styles.qrEndButtonText}>Yol Paylaşımını Bitir</Text>
+                  <Text style={styles.qrEndButtonText}>
+                    {boardingConfirmed
+                      ? 'Yol Paylaşımını Bitir'
+                      : isDriver
+                        ? 'Biniş QR Göster'
+                        : 'Biniş Kodunu Tara'}
+                  </Text>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
@@ -8304,6 +8392,14 @@ const styles = StyleSheet.create({
     shadowColor: '#6D28D9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+    transform: [{ scale: 1.02 }],
+  },
+  driverRideQrBtnProminentBoarding: {
+    shadowColor: '#B45309',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
     shadowRadius: 10,
     elevation: 10,
     transform: [{ scale: 1.02 }],

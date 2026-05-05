@@ -10461,6 +10461,7 @@ function PassengerDashboard({
                   }}
                   otherUserDetails={otherUserDetails || undefined}
                   onShowQRModal={() => setShowQRModal(true)}
+                  onShowBoardingScanModal={() => setPassengerBoardingScanVisible(true)}
                   onCall={async (type) => {
                     await startTripCallAsPassenger(type);
                   }}
@@ -14794,6 +14795,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             onNavigationModeChange={setDriverLiveMapNavigationMode}
             otherUserDetails={otherUserDetails || undefined}
             onShowQRModal={() => setShowQRModal(true)}
+            onShowBoardingQRModal={() => setDriverBoardingQrModalVisible(true)}
             onCall={async (type) => {
               await startTripCallAsDriver(type);
             }}
