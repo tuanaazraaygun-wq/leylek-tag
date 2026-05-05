@@ -10068,6 +10068,8 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "dropoff_lat": float(tag["dropoff_lat"]) if tag.get("dropoff_lat") is not None else None,
                 "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") is not None else None,
                 "status": tag["status"],
+                "started_at": tag.get("started_at"),
+                "boarding_confirmed_at": tag.get("boarding_confirmed_at"),
                 "final_price": fp_f,
                 "offered_price": fp_f,
                 "distance_km": dk_f,
