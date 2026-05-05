@@ -3138,7 +3138,6 @@ export default function LiveMapView({
   const [passengerEtaTick, setPassengerEtaTick] = useState(0);
 
   const passMotor = otherTripVehicleKind === 'motorcycle';
-  const riderNoun = passMotor ? 'Motor yolcusu' : 'Yolcu';
 
   const tripCompassSpin = useRef(new Animated.Value(0)).current;
   const tripCompassRotate = tripCompassSpin.interpolate({
@@ -3418,52 +3417,18 @@ export default function LiveMapView({
     navDriverMapCoord,
   ]);
 
-  /** Biniş QR (sürücü gösterir / yolcu tarar) vs yol sonu QR — `boardingConfirmed` ile ayrılır */
+  /** Biniş QR (sürücü gösterir / yolcu tarar) vs yol sonu QR — `boardingConfirmed` ile ayrılır. Biniş QR mesafeye bağlanmaz. */
   const handlePrimaryTripQrPress = useCallback(() => {
     if (boardingConfirmed) {
       onShowQRModal?.();
       return;
     }
     if (isDriver) {
-      if (userLocation && otherLocation) {
-        const distanceKm =
-          meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
-            ? meetingDistance
-            : null;
-        if (distanceKm == null) {
-          Alert.alert(
-            '📍 Mesafe',
-            'Yolcuya mesafe sunucudan henüz gelmedi. Bir süre sonra tekrar deneyin.',
-            [{ text: 'Tamam', style: 'default' }],
-          );
-          return;
-        }
-        const distanceMeters = distanceKm * 1000;
-        if (distanceMeters > 1000) {
-          Alert.alert(
-            '📍 Yakın değil',
-            `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : distanceKm.toFixed(1) + ' km'} uzakta.\n\nBiniş karekodu için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
-            [{ text: 'Tamam', style: 'default' }],
-          );
-          return;
-        }
-      }
       onShowBoardingQRModal?.();
       return;
     }
     onShowBoardingScanModal?.();
-  }, [
-    onShowQRModal,
-    onShowBoardingQRModal,
-    onShowBoardingScanModal,
-    boardingConfirmed,
-    isDriver,
-    userLocation,
-    otherLocation,
-    meetingDistance,
-    riderNoun,
-    passMotor,
-  ]);
+  }, [onShowQRModal, onShowBoardingQRModal, onShowBoardingScanModal, boardingConfirmed, isDriver]);
   
   useEffect(() => {
     // Sürekli yanıp sönen animasyon
