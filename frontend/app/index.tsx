@@ -3446,9 +3446,23 @@ export default function App() {
             </TouchableOpacity>
             
             <View style={styles.roleTopTitleWrap}>
-              <View style={styles.roleTopTitlePill}>
-                <Text style={styles.roleTopTitle}>
-                  Bugün nasıl ilerlemek{'\n'}istersiniz?
+              <View
+                style={[
+                  styles.roleTopTitlePill,
+                  rs.isCompact && !rs.isVeryCompact && styles.roleTopTitlePillCompact,
+                  rs.isVeryCompact && styles.roleTopTitlePillVery,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.roleTopTitle,
+                    rs.isCompact && !rs.isVeryCompact && styles.roleTopTitleCompact,
+                    rs.isVeryCompact && styles.roleTopTitleVery,
+                  ]}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  Bugün nasıl ilerlemek istersiniz?
                 </Text>
               </View>
             </View>
@@ -3592,6 +3606,8 @@ export default function App() {
                     rs.isVeryCompact && styles.roleStepHelperVery,
                     rs.isCompact && !rs.isVeryCompact && styles.roleStepHelperCompact,
                   ]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
                 >
                   Önce rolünü, sonra araç tipini seç.
                 </Text>
@@ -3932,11 +3948,18 @@ export default function App() {
                 >
                   <Text style={styles.communityBadgeYeniText}>YENİ</Text>
                 </View>
-                <View style={[styles.communityBtnRow, rs.isVeryCompact && styles.communityBtnRowVery]}>
+                <View
+                  style={[
+                    styles.communityBtnRow,
+                    rs.isVeryCompact && styles.communityBtnRowVery,
+                    rs.isCompact && !rs.isVeryCompact && styles.communityBtnRowCompact,
+                  ]}
+                >
                   <View
                     style={[
                       styles.communityIconRouteBox,
                       rs.isVeryCompact && styles.communityIconRouteBoxVery,
+                      rs.isCompact && !rs.isVeryCompact && styles.communityIconRouteBoxCompact,
                     ]}
                   >
                     <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="#E0E7FF" />
@@ -3948,6 +3971,8 @@ export default function App() {
                         rs.isVeryCompact && styles.communityBtnTitleProminentVery,
                         rs.isCompact && !rs.isVeryCompact && styles.communityBtnTitleProminentCompact,
                       ]}
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
                     >
                       Leylek Teklif Sende
                     </Text>
@@ -3955,7 +3980,10 @@ export default function App() {
                       style={[
                         styles.communityBtnSubProminent,
                         rs.isVeryCompact && styles.communityBtnSubProminentVery,
+                        rs.isCompact && !rs.isVeryCompact && styles.communityBtnSubProminentCompact,
                       ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
                     >
                       Şehirler arası yolculuklara katıl
                     </Text>
@@ -3967,6 +3995,7 @@ export default function App() {
                     style={[
                       styles.communityArrowPremium,
                       rs.isVeryCompact && styles.communityArrowPremiumVery,
+                      rs.isCompact && !rs.isVeryCompact && styles.communityArrowPremiumCompact,
                     ]}
                   >
                     <Ionicons name="chevron-forward" size={communityChevronSize} color="#FFF" />
@@ -19276,7 +19305,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   roleSelectScrollContentVeryFooter: {
-    paddingBottom: 28,
+    paddingBottom: 22,
   },
   roleMainContentMaxWidth: {
     maxWidth: 440,
@@ -19444,9 +19473,10 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   roleStepHelperVery: {
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 8,
-    lineHeight: 15,
+    lineHeight: 14,
+    letterSpacing: -0.12,
   },
   roleMainContentInScroll: {
     flex: 0,
@@ -19519,14 +19549,14 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumnCompact: {
     paddingTop: 2,
-    paddingBottom: 18,
-    gap: 8,
+    paddingBottom: 16,
+    gap: 7,
     paddingHorizontal: 18,
   },
   roleBottomFooterColumnVery: {
     paddingTop: 0,
-    paddingBottom: 14,
-    gap: 5,
+    paddingBottom: 12,
+    gap: 4,
     paddingHorizontal: 14,
   },
   roleContinueBtnOuterCompact: {
@@ -19554,12 +19584,12 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   communityBtnGradientCompact: {
-    paddingVertical: 15,
-    paddingHorizontal: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   communityBtnGradientVery: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   communityBadgeYeniVery: {
     top: 7,
@@ -19570,27 +19600,48 @@ const styles = StyleSheet.create({
   communityBtnRowVery: {
     paddingTop: 0,
   },
+  communityBtnRowCompact: {
+    paddingTop: 0,
+    alignItems: 'center',
+  },
   communityIconRouteBoxVery: {
     width: 44,
     height: 44,
     borderRadius: 22,
   },
+  communityIconRouteBoxCompact: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+  },
   communityBtnTitleProminentCompact: {
-    fontSize: 18,
+    fontSize: 17,
+    lineHeight: 22,
   },
   communityBtnTitleProminentVery: {
-    fontSize: 15,
+    fontSize: 14,
     letterSpacing: 0.05,
+    lineHeight: 18,
   },
   communityBtnSubProminentVery: {
+    fontSize: 11,
+    marginTop: 1,
+    lineHeight: 14,
+  },
+  communityBtnSubProminentCompact: {
     fontSize: 12,
     marginTop: 2,
-    lineHeight: 16,
+    lineHeight: 15,
   },
   communityArrowPremiumVery: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  communityArrowPremiumCompact: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   /** Trip uyarısı — Phase 1: üst alanı sadeleştirmek için margin + tipografi StyleSheet’te */
   roleSelectBannerWrap: {
@@ -19668,6 +19719,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     letterSpacing: -0.35,
+  },
+  roleTopTitleCompact: {
+    fontSize: 16,
+    lineHeight: 21,
+    letterSpacing: -0.32,
+  },
+  roleTopTitleVery: {
+    fontSize: 14,
+    lineHeight: 18,
+    letterSpacing: -0.28,
+  },
+  roleTopTitlePillCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  roleTopTitlePillVery: {
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 18,
   },
   roleAdminBtn: {
     width: 46,
@@ -20005,6 +20076,8 @@ const styles = StyleSheet.create({
   communityTextBox: {
     flex: 1,
     marginLeft: 12,
+    minWidth: 0,
+    justifyContent: 'center',
   },
   communityBtnTitle: {
     fontSize: 17,
