@@ -9,6 +9,7 @@ import {
   Animated,
   AppState,
   DeviceEventEmitter,
+  Easing,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -57,6 +58,7 @@ import type {
 } from '../lib/muhabbetTripTypes';
 import { subscribeConversationUpdated, subscribeTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import * as FileSystem from 'expo-file-system/legacy';
+import { tapButtonHaptic } from '../utils/touchHaptics';
 
 /** Socket sid + JWT kayıt kullanıcısı güncel mi (Muhabbet emit öncesi). */
 function isMuhabbetSocketRegisteredForUser(socket: Socket, myUserLo: string): boolean {
@@ -564,9 +566,43 @@ export default function MuhabbetChatScreen({
   /** Ekran mount / unmount: açıkken message_seen gönder */
   const chatSessionActiveRef = useRef(true);
   const pendingActionRef = useRef<PendingMuhabbetAction | null>(null);
+  const tripConvertRequestInFlightRef = useRef(false);
   /** GET ctx trip_convert_request imzası — gereksiz modal/state yenidenlemesini keser */
   const lastTripConvertCtxSigRef = useRef<string | null>(null);
   const tripConvertModalActionBusyRef = useRef(false);
+
+  const tripConvertModalBackdropOpacity = useRef(new Animated.Value(0)).current;
+  const tripConvertModalCardTranslateY = useRef(new Animated.Value(36)).current;
+  const tripConvertModalCardScale = useRef(new Animated.Value(0.96)).current;
+
+  useEffect(() => {
+    if (!tripConvertInModal) return;
+    tripConvertModalBackdropOpacity.setValue(0);
+    tripConvertModalCardTranslateY.setValue(36);
+    tripConvertModalCardScale.setValue(0.96);
+    const entrance = Animated.parallel([
+      Animated.timing(tripConvertModalBackdropOpacity, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(tripConvertModalCardTranslateY, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(tripConvertModalCardScale, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+    entrance.start();
+    return () => entrance.stop();
+  }, [tripConvertInModal]);
 
   const [linkedTripSession, setLinkedTripSession] = useState<MuhabbetTripSession | null>(null);
   const [chatCallState, setChatCallState] = useState<ChatTripCallState>('idle');
@@ -2596,9 +2632,45 @@ export default function MuhabbetChatScreen({
   };
 
   const sendTripConvertRequest = useCallback(async () => {
-    if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
+    console.log('TRIP_CONVERT_PRESS', JSON.stringify({
+      conversation_id: cid || null,
+      trip_convert_state: tripConvertState,
+      loading: tripConvertLoading,
+      ts: new Date().toISOString(),
+    }));
+    if (!cid) {
+      console.log('TRIP_CONVERT_DUPLICATE_PRESS_IGNORED', JSON.stringify({
+        reason: 'missing_conversation_id',
+        ts: new Date().toISOString(),
+      }));
+      return;
+    }
+    if (tripConvertRequestInFlightRef.current) {
+      console.log('TRIP_CONVERT_DUPLICATE_PRESS_IGNORED', JSON.stringify({
+        reason: 'inflight_ref_lock',
+        conversation_id: cid,
+        ts: new Date().toISOString(),
+      }));
+      return;
+    }
+    if (tripConvertLoading || tripConvertState !== 'idle') {
+      console.log('TRIP_CONVERT_DUPLICATE_PRESS_IGNORED', JSON.stringify({
+        reason: tripConvertLoading ? 'loading_state' : 'trip_convert_state_not_idle',
+        conversation_id: cid,
+        trip_convert_state: tripConvertState,
+        loading: tripConvertLoading,
+        ts: new Date().toISOString(),
+      }));
+      return;
+    }
+    tripConvertRequestInFlightRef.current = true;
     setTripConvertLoading(true);
+    let requestOutcome: 'success' | 'guarded' | 'error' = 'guarded';
     try {
+      console.log('TRIP_CONVERT_REQUEST_START', JSON.stringify({
+        conversation_id: cid,
+        ts: new Date().toISOString(),
+      }));
       console.log('[trip_convert] 1 before initial pullMessagesFromApi');
       const pulled = await pullMessagesFromApi();
       console.log('[trip_convert] 2 after initial pullMessagesFromApi', {
@@ -2606,6 +2678,11 @@ export default function MuhabbetChatScreen({
         trip_convert_request: pulled.context?.trip_convert_request ?? null,
       });
       if (!pulled.ok) {
+        console.log('TRIP_CONVERT_REQUEST_ERROR', JSON.stringify({
+          conversation_id: cid,
+          reason: 'preflight_pull_failed',
+          ts: new Date().toISOString(),
+        }));
         Alert.alert(
           'Yolculuğa çevir',
           'Sohbet güncellenemedi. Bağlantınızı kontrol edip tekrar deneyin.'
@@ -2616,12 +2693,18 @@ export default function MuhabbetChatScreen({
       const tcr = pulled.context?.trip_convert_request;
       if (tcr?.pending === true && tcr.is_requester === true) {
         pendingActionRef.current = null;
+        requestOutcome = 'guarded';
         return;
       }
 
       console.log('[trip_convert] 3 before REST POST trip-convert/request');
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) {
+        console.log('TRIP_CONVERT_REQUEST_ERROR', JSON.stringify({
+          conversation_id: cid,
+          reason: 'missing_token',
+          ts: new Date().toISOString(),
+        }));
         Alert.alert('Yolculuğa çevir', 'Oturum bulunamadı.');
         return;
       }
@@ -2644,6 +2727,12 @@ export default function MuhabbetChatScreen({
         trip_convert_request: restBody.trip_convert_request ?? null,
       });
       if (!res.ok) {
+        console.log('TRIP_CONVERT_REQUEST_ERROR', JSON.stringify({
+          conversation_id: cid,
+          reason: 'request_failed',
+          status: res.status,
+          ts: new Date().toISOString(),
+        }));
         pendingActionRef.current = null;
         const msg = formatTripConvertRestDetail(
           restBody.detail,
@@ -2654,6 +2743,7 @@ export default function MuhabbetChatScreen({
       }
 
       pendingActionRef.current = null;
+      requestOutcome = 'success';
       console.log('[trip_convert] 5 client: no socket.emit (server notifies passenger via REST handler)');
       console.log('[trip_convert] 6 (skipped) no client socket.emit before/after');
       const pulledAfter = await pullMessagesFromApi();
@@ -2662,7 +2752,22 @@ export default function MuhabbetChatScreen({
         trip_convert_request: pulledAfter.context?.trip_convert_request ?? null,
       });
       scheduleTripConvertPullRetries(pullMessagesFromApi);
+    } catch (e) {
+      console.log('TRIP_CONVERT_REQUEST_ERROR', JSON.stringify({
+        conversation_id: cid,
+        reason: 'unexpected_exception',
+        error: e instanceof Error ? e.message : String(e),
+        ts: new Date().toISOString(),
+      }));
+      requestOutcome = 'error';
+      throw e;
     } finally {
+      tripConvertRequestInFlightRef.current = false;
+      console.log('TRIP_CONVERT_REQUEST_DONE', JSON.stringify({
+        conversation_id: cid,
+        outcome: requestOutcome,
+        ts: new Date().toISOString(),
+      }));
       console.log('[trip_convert] 8 finally setTripConvertLoading(false)');
       setTripConvertLoading(false);
     }
@@ -3205,9 +3310,21 @@ export default function MuhabbetChatScreen({
                 <>
                   <Pressable
                     onPress={sendTripConvertRequest}
+                    onPressIn={() => {
+                      if (tripConvertLoading || tripConvertState === 'pending') return;
+                      void tapButtonHaptic();
+                    }}
                     disabled={tripConvertLoading || tripConvertState === 'pending'}
                     style={({ pressed }) => [
                       styles.convertPlanButton,
+                      {
+                        transform: [
+                          {
+                            scale:
+                              pressed && !tripConvertLoading && tripConvertState !== 'pending' ? 0.97 : 1,
+                          },
+                        ],
+                      },
                       (pressed || tripConvertLoading || tripConvertState === 'pending') && { opacity: 0.86 },
                     ]}
                     accessibilityRole="button"
@@ -3311,13 +3428,21 @@ export default function MuhabbetChatScreen({
         <Modal
           visible={!!tripConvertInModal}
           transparent
-          animationType="fade"
+          animationType="none"
           onRequestClose={() => {
             if (tripConvertModalBusy) return;
             void declineTripConvertFromModal();
           }}
         >
-          <View style={styles.pairModalRoot}>
+          <View style={[styles.pairModalRoot, { paddingBottom: Math.max(insets.bottom, 14) + 10 }]}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFillObject,
+                styles.pairModalBackdropTint,
+                { opacity: tripConvertModalBackdropOpacity },
+              ]}
+            />
             <Pressable
               style={StyleSheet.absoluteFill}
               disabled={tripConvertModalBusy}
@@ -3326,16 +3451,33 @@ export default function MuhabbetChatScreen({
                 void declineTripConvertFromModal();
               }}
             />
-            <View style={styles.pairModalCard}>
+            <Animated.View
+              style={[
+                styles.pairModalCard,
+                {
+                  transform: [{ translateY: tripConvertModalCardTranslateY }, { scale: tripConvertModalCardScale }],
+                },
+              ]}
+            >
+              <View style={styles.pairModalIconWrap}>
+                <Ionicons name="shield-checkmark" size={22} color="#1D4ED8" />
+              </View>
               <Text style={styles.pairModalTitle}>Yolculuğa çevirme isteği</Text>
               <Text style={styles.pairModalBody}>
                 Sürücü yolculuğu başlatmak istiyor. Kabul ediyor musun?
               </Text>
               <Pressable
                 onPress={() => void acceptTripConvertFromModal()}
+                onPressIn={() => {
+                  if (tripConvertModalBusy) return;
+                  void tapButtonHaptic();
+                }}
                 disabled={tripConvertModalBusy}
                 style={({ pressed }) => [
                   styles.pairModalPri,
+                  {
+                    transform: [{ scale: pressed && !tripConvertModalBusy ? 0.97 : 1 }],
+                  },
                   pressed && !tripConvertModalBusy && { opacity: 0.92 },
                   tripConvertModalBusy && { opacity: 0.55 },
                 ]}
@@ -3346,9 +3488,16 @@ export default function MuhabbetChatScreen({
               </Pressable>
               <Pressable
                 onPress={() => void declineTripConvertFromModal()}
+                onPressIn={() => {
+                  if (tripConvertModalBusy) return;
+                  void tapButtonHaptic();
+                }}
                 disabled={tripConvertModalBusy}
                 style={({ pressed }) => [
                   styles.pairModalSec,
+                  {
+                    transform: [{ scale: pressed && !tripConvertModalBusy ? 0.97 : 1 }],
+                  },
                   pressed && !tripConvertModalBusy && { opacity: 0.88 },
                   tripConvertModalBusy && { opacity: 0.55 },
                 ]}
@@ -3357,7 +3506,7 @@ export default function MuhabbetChatScreen({
               >
                 <Text style={styles.pairModalSecTxt}>Hayır</Text>
               </Pressable>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
         <MuhabbetTripCallScreen
@@ -3654,9 +3803,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(22,163,74,0.16)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 14,
+      },
+      android: { elevation: 10 },
+      default: {},
+    }),
   },
   tripConvertStickyConfirmed: {
     flexDirection: 'row',
@@ -3676,7 +3835,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(148,163,184,0.16)',
   },
   tripConvertWaitingTxt: { color: '#475569', fontSize: 14, fontWeight: '800', textAlign: 'center' },
-  convertPlanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: '#16A34A' },
+  convertPlanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: '#16A34A',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#15803d',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.28,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
   convertPlanButtonTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   tripConvertStaleTxt: {
     marginTop: 8,
@@ -3704,33 +3881,70 @@ const styles = StyleSheet.create({
   keyCtaTxt: { color: '#fff', fontSize: 15, fontWeight: '800' },
   pairModalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+  },
+  pairModalBackdropTint: {
+    backgroundColor: 'rgba(15,23,42,0.52)',
   },
   pairModalCard: {
     backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 20,
+    borderRadius: 22,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
     zIndex: 2,
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15, 23, 42, 0.06)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.22,
+        shadowRadius: 28,
+      },
+      android: { elevation: 18 },
+      default: {},
+    }),
   },
-  pairModalTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
-  pairModalBody: { marginTop: 10, fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22 },
+  pairModalIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(37,99,235,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(37,99,235,0.18)',
+  },
+  pairModalTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, textAlign: 'center', letterSpacing: -0.3 },
+  pairModalBody: { marginTop: 8, fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22, textAlign: 'center' },
   pairModalPri: {
-    marginTop: 18,
+    marginTop: 20,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: '#16A34A',
     alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#15803d',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.22,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
   },
   pairModalPriTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
   pairModalSec: {
     marginTop: 10,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: 'rgba(60,60,67,0.1)',
     alignItems: 'center',
   },
