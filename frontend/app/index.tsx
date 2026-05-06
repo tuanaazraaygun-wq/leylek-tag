@@ -8060,25 +8060,70 @@ function PassengerDashboard({
 
   // ❌ ESKİ POLLING KALDIRILDI - Supabase Realtime ile değiştirildi (yukarıda)
 
+  const getPassengerPollIntervalMs = useCallback(() => {
+    const statusRaw = String(activeTag?.status ?? '').trim().toLowerCase();
+    const hasBoardingSignals = Boolean(activeTag?.boarding_confirmed_at || activeTag?.started_at);
+    if (statusRaw === 'matched' || statusRaw === 'in_progress' || hasBoardingSignals) {
+      return 2000;
+    }
+    if (
+      statusRaw === 'waiting' ||
+      statusRaw === 'searching' ||
+      statusRaw === 'pending' ||
+      statusRaw === 'requested' ||
+      statusRaw === 'new'
+    ) {
+      return 3500;
+    }
+    // Güvenli fallback: mevcut davranışa yakın kal.
+    return 2000;
+  }, [activeTag?.status, activeTag?.boarding_confirmed_at, activeTag?.started_at]);
+
+  const shouldSkipPassengerPollingTick = useCallback(() => {
+    const statusRaw = String(activeTag?.status ?? '').trim().toLowerCase();
+    if (!statusRaw) return false;
+    return statusRaw === 'cancelled' || statusRaw === 'completed';
+  }, [activeTag?.status]);
+
   useEffect(() => {
     console.log('🔄 Yolcu polling başlatıldı');
     isPollingActiveRef.current = true;
     loadActiveTag();
-    
+
+    const intervalMs = getPassengerPollIntervalMs();
+    console.log('PAX_POLL_INTERVAL_MS', {
+      interval_ms: intervalMs,
+      status: activeTag?.status ?? null,
+      boarding_confirmed: !!activeTag?.boarding_confirmed_at,
+      started_at: activeTag?.started_at ?? null,
+    });
+
     pollingIntervalRef.current = setInterval(() => {
       // 🔥 Polling aktif değilse çalıştırma
       if (!isPollingActiveRef.current) {
-        console.log('🔄 Polling durdurulmuş, skip...');
+        console.log('PAX_POLL_SKIP_REASON', { reason: 'polling_inactive' });
         return;
       }
       if (forceEndLockRef.current) {
+        console.log('PAX_POLL_SKIP_REASON', { reason: 'force_end_lock' });
         logPollingSkippedForceEndLock('passenger', 'active_tag_interval_tick');
         return;
       }
+      if (shouldSkipPassengerPollingTick()) {
+        console.log('PAX_POLL_SKIP_REASON', {
+          reason: 'terminal_status',
+          status: activeTag?.status ?? null,
+        });
+        return;
+      }
+      console.log('PAX_POLL_TICK', {
+        interval_ms: intervalMs,
+        status: activeTag?.status ?? null,
+      });
       console.log('🔄 Yolcu TAG ve teklifler yükleniyor...');
       loadActiveTag();
-    }, 2000); // Her 2 saniyede bir kontrol et
-    
+    }, intervalMs);
+
     return () => {
       console.log('🔄 Yolcu polling durduruldu');
       isPollingActiveRef.current = false;
@@ -8087,7 +8132,14 @@ function PassengerDashboard({
         pollingIntervalRef.current = null;
       }
     };
-  }, [user?.id]);
+  }, [
+    user?.id,
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    activeTag?.started_at,
+    getPassengerPollIntervalMs,
+    shouldSkipPassengerPollingTick,
+  ]);
 
   const loadActiveTag = async () => {
     if (forceEndLockRef.current) {
