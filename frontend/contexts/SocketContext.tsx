@@ -354,6 +354,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
         } else {
           console.log('FRONTEND_SOCKET_REGISTER_RETRY', { userId: uid, role, reason, attempt });
         }
+        console.log('SOCKET_REGISTER', JSON.stringify({
+          user_id: uid ?? null,
+          socket_connected: sock.connected,
+          reason: reason ?? null,
+          ts: new Date().toISOString(),
+        }));
         registerAckOkRef.current = false;
         const registerPayload = { user_id: uid, token, role };
         console.log('SOCKET REGISTER EMIT', uid);
@@ -384,27 +390,54 @@ export function SocketProvider({ children }: SocketProviderProps) {
   /** Push / bildirim / socket: aynı payload şeması; arayan === ben ise yok say */
   const applyIncomingCallPayload = useCallback((data: any, source: string) => {
     if (!data || data.type !== 'incoming_call') return;
+    const sessionId = data?.session_id != null ? String(data.session_id) : null;
     const myId = userIdRef.current;
     const targetId = data.target_user_id != null ? String(data.target_user_id).trim() : '';
     const myNorm = String(myId ?? '').trim().toLowerCase();
     const targetNorm = targetId.trim().toLowerCase();
     if (targetId && myNorm && myNorm !== targetNorm) {
       console.log(`🔕 [SocketProvider] ${source}: incoming_call hedef dışı (target_user_id)`);
+      console.log('CALL_IGNORED_REASON', JSON.stringify({
+        call_id: data?.call_id != null ? String(data.call_id) : null,
+        session_id: sessionId,
+        reason: 'target_user_mismatch',
+        ts: new Date().toISOString(),
+      }));
       return;
     }
     const callerId = data.caller_id != null ? String(data.caller_id) : '';
     if (!callerId || (myNorm && callerId.trim().toLowerCase() === myNorm)) {
       console.log(`🔕 [SocketProvider] ${source}: incoming_call yok sayıldı (kendi araması)`);
+      console.log('CALL_IGNORED_REASON', JSON.stringify({
+        call_id: data?.call_id != null ? String(data.call_id) : null,
+        session_id: sessionId,
+        reason: !callerId ? 'missing_caller_id' : 'self_call',
+        ts: new Date().toISOString(),
+      }));
       return;
     }
     const callId = data.call_id != null ? String(data.call_id) : '';
     const channelName = data.channel_name != null ? String(data.channel_name) : '';
     if (!callId || !channelName) {
       console.warn(`⚠️ [SocketProvider] ${source}: call_id / channel_name eksik`);
+      console.log('CALL_IGNORED_REASON', JSON.stringify({
+        call_id: callId || null,
+        session_id: sessionId,
+        reason: 'missing_call_or_channel',
+        ts: new Date().toISOString(),
+      }));
       return;
     }
     const prev = incomingCallDataRef.current;
-    if (prev?.callId === callId && prev?.callerId === callerId) return;
+    if (prev?.callId === callId && prev?.callerId === callerId) {
+      console.log('CALL_IGNORED_REASON', JSON.stringify({
+        call_id: callId,
+        session_id: sessionId,
+        reason: 'duplicate_incoming_payload',
+        ts: new Date().toISOString(),
+      }));
+      return;
+    }
 
     const rawType = data.call_type || 'audio';
     const callType: 'audio' | 'video' = rawType === 'video' ? 'video' : 'audio';
@@ -417,6 +450,20 @@ export function SocketProvider({ children }: SocketProviderProps) {
       agoraToken: data.agora_token != null ? String(data.agora_token) : '',
       tagId: data.tag_id != null ? String(data.tag_id) : '',
     };
+    console.log('CALL_RECEIVE', JSON.stringify({
+      call_id: callId || null,
+      session_id: sessionId,
+      receiver_user: myNorm || null,
+      source: 'global',
+      ts: new Date().toISOString(),
+    }));
+    console.log('CALL_UI_OPENED', JSON.stringify({
+      call_id: callId || null,
+      session_id: sessionId,
+      screen: 'global_incoming_call_state',
+      opened_via: `global_${source}`,
+      ts: new Date().toISOString(),
+    }));
     console.log(`🔔 [SocketProvider] Gelen arama state güncellendi (${source})`, callId);
     setIncomingCallData(newCallData);
     incomingCallDataRef.current = newCallData;
@@ -487,6 +534,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     const handleReconnect = (attemptNumber: number) => {
       console.log('🔄 [SocketProvider] Reconnect başarılı, attempt:', attemptNumber);
+      console.log('SOCKET_RECONNECT', JSON.stringify({
+        user_id: userIdRef.current ?? null,
+        attempt: Number.isFinite(Number(attemptNumber)) ? Number(attemptNumber) : null,
+        ts: new Date().toISOString(),
+      }));
       setIsRegistered(false);
       scheduleSocketRegister('socket_reconnect');
     };
@@ -543,11 +595,19 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // 🔥 GELEN ARAMA - DİREKT DİNLE!
     const handleIncomingCall = (data: any) => {
       console.log('🔔 [SocketProvider] GELEN ARAMA (incoming_call)', data);
+      const callId = data?.call_id != null ? String(data.call_id) : null;
+      const sessionId = data?.session_id != null ? String(data.session_id) : null;
       const myId = userIdRef.current;
       const targetId = data?.target_user_id != null ? String(data.target_user_id).trim() : '';
       const myNorm = String(myId ?? '').trim().toLowerCase();
       if (targetId && myNorm && targetId.trim().toLowerCase() !== myNorm) {
         console.log('🔕 [SocketProvider] incoming_call yok sayıldı (hedef kullanıcı değil)');
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'target_user_mismatch',
+          ts: new Date().toISOString(),
+        }));
         return;
       }
       if (
@@ -556,6 +616,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
         String(data.caller_id).trim().toLowerCase() === myNorm
       ) {
         console.log('🔕 [SocketProvider] incoming_call yok sayıldı (socket: arayan kendisi)');
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'self_call',
+          ts: new Date().toISOString(),
+        }));
         return;
       }
       const currentData = incomingCallDataRef.current;
@@ -571,7 +637,20 @@ export function SocketProvider({ children }: SocketProviderProps) {
         agoraToken: data.agora_token || currentData?.agoraToken || '',
         tagId: data.tag_id || currentData?.tagId || '',
       };
-
+      console.log('CALL_RECEIVE', JSON.stringify({
+        call_id: newCallData.callId || null,
+        session_id: sessionId,
+        receiver_user: myNorm || null,
+        source: 'global',
+        ts: new Date().toISOString(),
+      }));
+      console.log('CALL_UI_OPENED', JSON.stringify({
+        call_id: newCallData.callId || null,
+        session_id: sessionId,
+        screen: 'global_incoming_call_state',
+        opened_via: 'global_socket_incoming_call',
+        ts: new Date().toISOString(),
+      }));
       setIncomingCallData(newCallData);
       incomingCallDataRef.current = newCallData;
       setIncomingCallPresentToken((n) => n + 1);

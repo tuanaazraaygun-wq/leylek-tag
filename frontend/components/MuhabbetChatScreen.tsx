@@ -1882,11 +1882,29 @@ export default function MuhabbetChatScreen({
     };
 
     const onIncoming = (p: MuhabbetTripCallSocketPayload) => {
+      const callId = p?.call_id != null ? String(p.call_id) : null;
+      const sessionId = p?.session_id != null ? String(p.session_id) : p?.sessionId != null ? String(p.sessionId) : null;
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
       console.log(
         '[muhabbet_chat_call_incoming]',
         JSON.stringify({ session_id: p.session_id, conversation_id: p.conversation_id })
       );
-      if (!matchesConv(p)) return;
+      console.log('CALL_RECEIVE', JSON.stringify({
+        call_id: callId,
+        session_id: sessionId,
+        receiver_user: myLo || null,
+        source: 'chat',
+        ts: new Date().toISOString(),
+      }));
+      if (!matchesConv(p)) {
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'conversation_mismatch',
+          ts: new Date().toISOString(),
+        }));
+        return;
+      }
       const sid = normalizeMuhabbetSessionId(p.session_id || p.sessionId);
       setChatCallPayload((prev) => ({
         ...(prev || {}),
@@ -1894,6 +1912,13 @@ export default function MuhabbetChatScreen({
         session_id: sid,
       }));
       setChatCallState('incoming');
+      console.log('CALL_UI_OPENED', JSON.stringify({
+        call_id: callId,
+        session_id: sid || sessionId,
+        screen: 'MuhabbetChatScreen',
+        opened_via: 'chat_listener',
+        ts: new Date().toISOString(),
+      }));
       void refreshLinkedTripSession();
     };
 

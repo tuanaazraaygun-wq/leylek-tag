@@ -2180,6 +2180,44 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
 
         room = _normalize_user_room(str(resolved_uid or canonical_lo))
         sid_count = len(all_sids)
+        room_member_count = _socketio_room_member_count(room)
+        payload_dict = payload if isinstance(payload, dict) else {}
+        call_id = payload_dict.get("call_id")
+        session_id = payload_dict.get("session_id")
+        if event_name.startswith("muhabbet_trip_call_") or event_name in ("incoming_call", "call_started", "call_accepted", "call_rejected", "call_timeout"):
+            logger.info(
+                "TARGET_SID_COUNT %s",
+                json.dumps(
+                    {
+                        "call_id": str(call_id) if call_id is not None else None,
+                        "session_id": str(session_id) if session_id is not None else None,
+                        "target_user": canonical_lo or None,
+                        "sid_count": sid_count,
+                        "room_member_count": room_member_count,
+                        "resolved_user_id": str(resolved_uid).strip().lower() if resolved_uid else None,
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            logger.info(
+                "CALL_EMIT %s",
+                json.dumps(
+                    {
+                        "call_id": str(call_id) if call_id is not None else None,
+                        "session_id": str(session_id) if session_id is not None else None,
+                        "event": event_name,
+                        "from_user": (
+                            str(payload_dict.get("caller_id")).strip().lower()
+                            if payload_dict.get("caller_id") is not None
+                            else None
+                        ),
+                        "to_user": canonical_lo or None,
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
         logger.info(
             "[socket_emit_user] %s",
             json.dumps(
@@ -2188,6 +2226,7 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                     "user_id": canonical_lo[:96],
                     "resolved": str(resolved_uid or "").lower()[:96] if resolved_uid else "",
                     "sid_count": sid_count,
+                    "room_member_count": room_member_count,
                     "room": room,
                     "keys": sorted(keys_to_try)[:12],
                 },
@@ -28552,6 +28591,20 @@ async def _muhabbet_trip_call_response_broadcast(uid: str, session_id: str, even
     payload["conversation_id"] = next_row.get("conversation_id")
     payload["channel_name"] = ch
     payload[user_field] = uid_lo
+    logger.info(
+        "CALL_EMIT %s",
+        json.dumps(
+            {
+                "call_id": str(payload.get("call_id")) if payload.get("call_id") is not None else None,
+                "session_id": sid_lo or None,
+                "event": event_name,
+                "from_user": uid_lo or None,
+                "to_user": None,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            ensure_ascii=False,
+        ),
+    )
 
     await sio.emit(event_name, payload, room=muhabbet_trip_room(session_id))
     passenger_id = str(next_row.get("passenger_id") or "").strip()
@@ -28594,6 +28647,20 @@ async def _muhabbet_trip_call_end_broadcast(uid: str, session_id: str) -> dict:
     payload["session_id"] = sid_lo
     payload["conversation_id"] = next_row.get("conversation_id")
     payload["channel_name"] = str(next_row.get("call_channel_name") or "").strip() or f"muhabbet_trip_{sid_lo}"
+    logger.info(
+        "CALL_EMIT %s",
+        json.dumps(
+            {
+                "call_id": str(payload.get("call_id")) if payload.get("call_id") is not None else None,
+                "session_id": sid_lo or None,
+                "event": "muhabbet_trip_call_end",
+                "from_user": uid_lo or None,
+                "to_user": None,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            ensure_ascii=False,
+        ),
+    )
 
     logger.info(
         "[muhabbet_call_end] session_id=%s ended_by=%s role=%s",
@@ -28785,6 +28852,20 @@ async def muhabbet_trip_call_start_post(
                     sid_lo,
                     uid_lo[:12],
                 )
+                logger.info(
+                    "CALL_EMIT %s",
+                    json.dumps(
+                        {
+                            "call_id": str(payload.get("call_id")) if payload.get("call_id") is not None else None,
+                            "session_id": sid_lo or None,
+                            "event": "muhabbet_trip_call_start",
+                            "from_user": uid_lo or None,
+                            "to_user": uid_lo or None,
+                            "ts": datetime.now(timezone.utc).isoformat(),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
                 await emit_socket_event_to_user(uid_lo, "muhabbet_trip_call_start", payload)
                 if target_uid and target_uid != uid_lo:
                     logger.info(
@@ -28796,6 +28877,20 @@ async def muhabbet_trip_call_start_post(
                         "[muhabbet_call_emit_incoming] session_id=%s to_callee=%s",
                         sid_lo,
                         target_uid[:12],
+                    )
+                    logger.info(
+                        "CALL_EMIT %s",
+                        json.dumps(
+                            {
+                                "call_id": str(payload.get("call_id")) if payload.get("call_id") is not None else None,
+                                "session_id": sid_lo or None,
+                                "event": "muhabbet_trip_call_incoming",
+                                "from_user": uid_lo or None,
+                                "to_user": target_uid or None,
+                                "ts": datetime.now(timezone.utc).isoformat(),
+                            },
+                            ensure_ascii=False,
+                        ),
                     )
                     await emit_socket_event_to_user(target_uid, "muhabbet_trip_call_incoming", payload)
                     try:

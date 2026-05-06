@@ -1600,14 +1600,53 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
     const sidNormTrip = activeSessionId;
     const onCallIncoming = (p: MuhabbetTripCallSocketPayload) => {
-      if (normalizeMuhabbetSessionId(p.session_id || p.sessionId) !== sidNormTrip) return;
-      const callerLo = String(p.caller_id || '').trim().toLowerCase();
+      const callId = p?.call_id != null ? String(p.call_id) : null;
+      const sessionId = p?.session_id != null ? String(p.session_id) : p?.sessionId != null ? String(p.sessionId) : null;
       const myLo = myIdRef.current.trim().toLowerCase();
-      if (callerLo && myLo && callerLo === myLo) return;
+      console.log('CALL_RECEIVE', JSON.stringify({
+        call_id: callId,
+        session_id: sessionId,
+        receiver_user: myLo || null,
+        source: 'trip',
+        ts: new Date().toISOString(),
+      }));
+      if (normalizeMuhabbetSessionId(p.session_id || p.sessionId) !== sidNormTrip) {
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'session_mismatch',
+          ts: new Date().toISOString(),
+        }));
+        return;
+      }
+      const callerLo = String(p.caller_id || '').trim().toLowerCase();
+      if (callerLo && myLo && callerLo === myLo) {
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'self_call',
+          ts: new Date().toISOString(),
+        }));
+        return;
+      }
       const calleeLo = String(p.callee_id || p.target_user_id || '').trim().toLowerCase();
-      if (!calleeLo || calleeLo !== myLo) return;
+      if (!calleeLo || calleeLo !== myLo) {
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'callee_mismatch',
+          ts: new Date().toISOString(),
+        }));
+        return;
+      }
       const dedupeK = buildMuhabbetTripCallDedupeKey(sidNormTrip, p);
       if (muhabbetCallSocketOnceKeysRef.current.incoming === dedupeK && callStateRef.current === 'incoming') {
+        console.log('CALL_IGNORED_REASON', JSON.stringify({
+          call_id: callId,
+          session_id: sessionId,
+          reason: 'duplicate_incoming_event',
+          ts: new Date().toISOString(),
+        }));
         return;
       }
       muhabbetCallSocketOnceKeysRef.current.incoming = dedupeK;
@@ -1623,6 +1662,13 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         target_user_id: calleeLo,
       });
       setCallState('incoming');
+      console.log('CALL_UI_OPENED', JSON.stringify({
+        call_id: callId,
+        session_id: sidNormTrip || sessionId,
+        screen: 'LeylekTripScreen',
+        opened_via: 'trip_listener',
+        ts: new Date().toISOString(),
+      }));
       void refreshSessionFromServer('muhabbet_intercity_call_incoming_socket', { bypassDebounce: true });
     };
     const onCallAccept = (p: MuhabbetTripCallSocketPayload) => {
