@@ -22,7 +22,10 @@ import {
   ensureMuhabbetTripSocketReady,
   isMuhabbetSocketRegisteredForUser,
 } from '../lib/muhabbetTripSocketEnsure';
-import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
+import {
+  ensureSocketRegistered,
+  notifyAuthTokenBecameAvailableForSocket,
+} from '../lib/socketRegisterScheduler';
 import { subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { takePrefetchedMuhabbetTripSession } from '../lib/muhabbetTripPushSessionPrefetch';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -534,6 +537,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
     };
   }, []);
+
+  useEffect(() => {
+    ensureSocketRegistered('leylek_trip_screen_mount');
+  }, [effectiveSessionId]);
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = TERMINAL_TRIP_STATUSES.has(String(session?.status || '').trim().toLowerCase());

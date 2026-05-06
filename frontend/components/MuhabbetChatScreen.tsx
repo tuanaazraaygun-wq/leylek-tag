@@ -36,7 +36,7 @@ import {
   getLastRegisteredSocketUserId,
   getOrCreateSocket,
 } from '../contexts/SocketContext';
-import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
+import { ensureSocketRegistered, notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import { publishSocketSessionRefresh, subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { MUHABBET_CONVERSATION_READ, MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import {
@@ -603,6 +603,10 @@ export default function MuhabbetChatScreen({
     entrance.start();
     return () => entrance.stop();
   }, [tripConvertInModal]);
+
+  useEffect(() => {
+    ensureSocketRegistered('muhabbet_chat_screen_mount');
+  }, [cid]);
 
   const [linkedTripSession, setLinkedTripSession] = useState<MuhabbetTripSession | null>(null);
   const [chatCallState, setChatCallState] = useState<ChatTripCallState>('idle');

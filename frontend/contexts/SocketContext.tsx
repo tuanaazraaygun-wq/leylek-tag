@@ -26,6 +26,23 @@ import { useNotifications } from './NotificationContext';
 
 const SOCKET_URL = BACKEND_BASE_URL;
 
+/** Aynı socket id + kullanıcı için tekrar `register` emit spam’ini keser; ack sonrası kısa pencerede. */
+const REGISTER_EMIT_THROTTLE_MS = 4500;
+
+/** Throttle’ı bypass et — reconnect, foreground, kimlik/token değişimi, watchdog yeniden denemesi. */
+const REGISTER_EMIT_FORCE_REASONS = new Set<string>([
+  'socket_connect',
+  'socket_reconnect',
+  'app_foreground_active',
+  'app_foreground_long_bg',
+  'register_no_ack_within_8s',
+  'register_ack_failed',
+  'auth_token_became_available',
+  'connect_function',
+  'session_identity_sync',
+  'late_identity_recovery',
+]);
+
 // ═══════════════════════════════════════════════════════════════════
 // EMIT WITH LOG - Debug için tüm emit'lerde kullanılabilir
 // ═══════════════════════════════════════════════════════════════════
@@ -210,6 +227,8 @@ interface SocketContextType {
    * login / role-select sırasında da userIdRef + userRoleRef güncel kalır.
    */
   syncSocketSessionFromApp: (patch: { userId?: string | null; role?: string | null }) => void;
+  /** Muhabbet trip/chat ve kök: throttle + force ile merkezi register planla */
+  ensureSocketRegistered: (reason?: string, opts?: { force?: boolean }) => void;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -263,10 +282,25 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const lastSocketIdRef = useRef<string | null>(null);
   /** Son register emit'inden sonra `registered` success ack geldi mi (watchdog için). */
   const registerAckOkRef = useRef(false);
+  /** Son başarılı register emit zamanı (ack OK varsayımıyla throttle). */
+  const lastRegisterEmitAtMsRef = useRef(0);
 
-  const scheduleSocketRegister = useCallback((reason: string) => {
+  const scheduleSocketRegister = useCallback((reason: string, opts?: { force?: boolean }) => {
+    const forceFlag = opts?.force === true || REGISTER_EMIT_FORCE_REASONS.has(reason);
+    console.log(
+      'SOCKET_REGISTER_ENSURE',
+      JSON.stringify({
+        schedule_reason: reason,
+        force: forceFlag,
+        connected: socketRef.current?.connected ?? false,
+        user_id: userIdRef.current,
+        role: userRoleRef.current,
+        ts: new Date().toISOString(),
+      }),
+    );
     console.log('SCHEDULE_REGISTER_START', {
       reason,
+      force: forceFlag,
       connected: socketRef.current?.connected ?? false,
       userId: userIdRef.current,
       role: userRoleRef.current,
@@ -282,39 +316,64 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const tryOnce = (attempt: number) => {
       void (async () => {
         if (myGen !== registerGenRef.current) {
-          console.log('SCHEDULE_REGISTER_SKIP', {
-            reason: 'stale_schedule_generation',
-            userId: userIdRef.current,
-            role: userRoleRef.current,
-            connected: socketRef.current?.connected ?? false,
-          });
+          console.log(
+            'SOCKET_REGISTER_SKIP_REASON',
+            JSON.stringify({
+              kind: 'stale_schedule_generation',
+              schedule_reason: reason,
+              user_id: userIdRef.current,
+              role: userRoleRef.current,
+              connected: socketRef.current?.connected ?? false,
+              ts: new Date().toISOString(),
+            }),
+          );
           return;
         }
         const sock = socketRef.current;
         if (!sock?.connected) {
           if (attempt < maxAttempts) {
-            console.log('SCHEDULE_REGISTER_SKIP', {
-              reason: 'socket_not_connected_scheduling_retry',
-              userId: userIdRef.current,
-              role: userRoleRef.current,
-              connected: false,
-              attempt,
-            });
+            console.log(
+              'SOCKET_REGISTER_SKIP_REASON',
+              JSON.stringify({
+                kind: 'socket_not_connected_scheduling_retry',
+                schedule_reason: reason,
+                user_id: userIdRef.current,
+                role: userRoleRef.current,
+                connected: false,
+                attempt,
+                ts: new Date().toISOString(),
+              }),
+            );
             registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
           } else {
-            console.log('SCHEDULE_REGISTER_SKIP', {
-              reason: 'socket_not_connected_max_attempts_exhausted',
-              userId: userIdRef.current,
-              role: userRoleRef.current,
-              connected: false,
-              attempt,
-            });
+            console.log(
+              'SOCKET_REGISTER_SKIP_REASON',
+              JSON.stringify({
+                kind: 'socket_not_connected_max_attempts_exhausted',
+                schedule_reason: reason,
+                user_id: userIdRef.current,
+                role: userRoleRef.current,
+                connected: false,
+                attempt,
+                ts: new Date().toISOString(),
+              }),
+            );
           }
           return;
         }
         const uid = userIdRef.current;
         const role = userRoleRef.current;
         if (!uid || !role) {
+          console.log(
+            'SOCKET_REGISTER_SKIP_REASON',
+            JSON.stringify({
+              kind: 'missing_user_or_role',
+              schedule_reason: reason,
+              user_id: userIdRef.current,
+              role: userRoleRef.current,
+              ts: new Date().toISOString(),
+            }),
+          );
           console.log('REGISTER_BLOCKED_MISSING_USER_OR_ROLE', {
             userId: userIdRef.current,
             role: userRoleRef.current,
@@ -337,16 +396,31 @@ export function SocketProvider({ children }: SocketProviderProps) {
           waitedForPersistedToken: true,
         });
         if (!token) {
+          console.log(
+            'SOCKET_REGISTER_SKIP_REASON',
+            JSON.stringify({
+              kind: 'missing_token',
+              schedule_reason: reason,
+              user_id: uid,
+              role,
+              ts: new Date().toISOString(),
+            }),
+          );
           console.log('SCHEDULE_REGISTER_NO_TOKEN_FINAL', { userId: uid, role, reason });
           return;
         }
         if (myGen !== registerGenRef.current) {
-          console.log('SCHEDULE_REGISTER_SKIP', {
-            reason: 'stale_schedule_generation_after_token',
-            userId: userIdRef.current,
-            role: userRoleRef.current,
-            connected: socketRef.current?.connected ?? false,
-          });
+          console.log(
+            'SOCKET_REGISTER_SKIP_REASON',
+            JSON.stringify({
+              kind: 'stale_schedule_generation_after_token',
+              schedule_reason: reason,
+              user_id: userIdRef.current,
+              role: userRoleRef.current,
+              connected: socketRef.current?.connected ?? false,
+              ts: new Date().toISOString(),
+            }),
+          );
           return;
         }
         if (attempt === 0) {
@@ -354,6 +428,35 @@ export function SocketProvider({ children }: SocketProviderProps) {
         } else {
           console.log('FRONTEND_SOCKET_REGISTER_RETRY', { userId: uid, role, reason, attempt });
         }
+        const sidNow = sock.id ?? null;
+        const uidLo = String(uid).trim().toLowerCase();
+        const regSid = lastRegisteredSocketSid;
+        const regUidLo = String(lastRegisteredSocketUserId ?? '').trim().toLowerCase();
+        const forceEmit = opts?.force === true || REGISTER_EMIT_FORCE_REASONS.has(reason);
+        const msSinceEmit = Date.now() - lastRegisterEmitAtMsRef.current;
+        if (
+          !forceEmit &&
+          registerAckOkRef.current &&
+          sidNow &&
+          regSid === sidNow &&
+          regUidLo === uidLo &&
+          msSinceEmit < REGISTER_EMIT_THROTTLE_MS
+        ) {
+          console.log(
+            'SOCKET_REGISTER_SKIP_REASON',
+            JSON.stringify({
+              kind: 'emit_throttle_recent_ack_same_socket',
+              schedule_reason: reason,
+              sid: sidNow,
+              user_id: uid,
+              ms_since_last_emit: msSinceEmit,
+              throttle_ms: REGISTER_EMIT_THROTTLE_MS,
+              ts: new Date().toISOString(),
+            }),
+          );
+          return;
+        }
+
         console.log('SOCKET_REGISTER', JSON.stringify({
           user_id: uid ?? null,
           socket_connected: sock.connected,
@@ -362,6 +465,17 @@ export function SocketProvider({ children }: SocketProviderProps) {
         }));
         registerAckOkRef.current = false;
         const registerPayload = { user_id: uid, token, role };
+        lastRegisterEmitAtMsRef.current = Date.now();
+        console.log(
+          'SOCKET_REGISTER_SENT',
+          JSON.stringify({
+            user_id: uid,
+            sid: sidNow,
+            schedule_reason: reason,
+            force_emit: forceEmit,
+            ts: new Date().toISOString(),
+          }),
+        );
         console.log('SOCKET REGISTER EMIT', uid);
         console.log(`[socket] register emit sid=${sock.id || 'null'} user_id=${uid}`);
         console.log('REGISTER_EMIT_PAYLOAD', registerPayload);
@@ -374,7 +488,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
               role: userRoleRef.current,
               reason: 'register_no_ack_within_8s',
             });
-            scheduleSocketRegister('register_no_ack_within_8s');
+            scheduleSocketRegister('register_no_ack_within_8s', { force: true });
           }
         }, 8000);
       })();
@@ -502,7 +616,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
         userId: userIdRef.current,
         role: userRoleRef.current,
       });
-      scheduleSocketRegister('handle_connect_direct');
       const sid = socket.id ?? null;
       console.log('[socket_health]', JSON.stringify({
         tag: 'provider_connect',
@@ -522,7 +635,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       } else if (sid) {
         lastSocketIdRef.current = sid;
       }
-      scheduleSocketRegister('socket_connect');
+      scheduleSocketRegister('socket_connect', { force: true });
     };
 
     const handleDisconnect = (reason: string) => {
@@ -540,11 +653,22 @@ export function SocketProvider({ children }: SocketProviderProps) {
         ts: new Date().toISOString(),
       }));
       setIsRegistered(false);
-      scheduleSocketRegister('socket_reconnect');
+      scheduleSocketRegister('socket_reconnect', { force: true });
     };
 
     const handleRegistered = (data: any) => {
       console.log('FRONTEND_SOCKET_REGISTER_ACK', data);
+      console.log(
+        'SOCKET_REGISTER_ACK',
+        JSON.stringify({
+          success: data?.success === true,
+          room: data?.room != null ? String(data.room) : null,
+          resolved_user_id:
+            data?.resolved_user_id != null ? String(data.resolved_user_id) : data?.user_id != null ? String(data.user_id) : null,
+          sid: socket.id ?? null,
+          ts: new Date().toISOString(),
+        }),
+      );
       if (data?.success === true && data?.room) {
         registerAckOkRef.current = true;
         lastRegisteredSocketSid = socket.id ?? null;
@@ -583,7 +707,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIsRegistered(false);
       console.warn('⚠️ [SocketProvider] register başarısız veya room yok:', data);
       registerTimerRef.current = setTimeout(() => {
-        scheduleSocketRegister('register_ack_failed');
+        scheduleSocketRegister('register_ack_failed', { force: true });
       }, 1500);
     };
 
@@ -768,12 +892,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
             console.log('🔄 [SocketProvider] Socket bağlı değil, bağlanıyor...');
             socket.connect();
           } else {
-            scheduleSocketRegister('app_foreground');
+            scheduleSocketRegister('app_foreground_active', { force: true });
             publishSocketSessionRefresh('app_active');
             // 🔥 Bağlıysa bile 30 saniyeden fazla arka plandaysa yeniden register ol
             if (backgroundDuration > 30000 && userIdRef.current && userRoleRef.current) {
               console.log('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');
-              scheduleSocketRegister('app_foreground_long_bg');
+              scheduleSocketRegister('app_foreground_long_bg', { force: true });
             }
           }
         }
@@ -807,7 +931,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       userId,
       role: userRole,
     });
-    scheduleSocketRegister('late_identity_recovery');
+    scheduleSocketRegister('late_identity_recovery', { force: true });
   }, [isConnected, userId, userRole, scheduleSocketRegister]);
 
   // ══════════════════════════════════════════════════════════════════
@@ -832,7 +956,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
         setUserRole(r ?? null);
       }
       if (identityTouched) {
-        scheduleSocketRegister('session_identity_sync');
+        scheduleSocketRegister('session_identity_sync', { force: true });
       }
     },
     [scheduleSocketRegister]
@@ -858,7 +982,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     } else {
       console.log('🔌 [SocketProvider] Socket zaten bağlı, register planlanıyor...');
     }
-    scheduleSocketRegister('connect_function');
+    scheduleSocketRegister('connect_function', { force: true });
   }, [scheduleSocketRegister]);
 
   // ══════════════════════════════════════════════════════════════════
@@ -1006,6 +1130,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
     return incomingCallDataRef.current;
   }, []);
 
+  const ensureSocketRegisteredFn = useCallback(
+    (reason?: string, opts?: { force?: boolean }) => {
+      scheduleSocketRegister(reason ?? 'socket_context_ensure', opts);
+    },
+    [scheduleSocketRegister],
+  );
+
   // ══════════════════════════════════════════════════════════════════
   // CONTEXT VALUE
   // ══════════════════════════════════════════════════════════════════
@@ -1038,6 +1169,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     getIncomingCallData,  // 🔥 REF GETTER
     incomingCallPresentToken,
     syncSocketSessionFromApp,
+    ensureSocketRegistered: ensureSocketRegisteredFn,
   };
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
