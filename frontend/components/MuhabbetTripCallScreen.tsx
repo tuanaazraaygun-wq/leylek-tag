@@ -14,6 +14,7 @@ import InCallManager from 'react-native-incall-manager';
 import { Ionicons } from '@expo/vector-icons';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import { muhabbetAgoraVoiceService } from '../services/muhabbetAgoraVoiceService';
+import { ensureMuhabbetCallMicPermission } from '../utils/muhabbetCallPermissions';
 
 type MuhabbetTripCallScreenProps = {
   visible: boolean;
@@ -72,10 +73,12 @@ export default function MuhabbetTripCallScreen({
   const joinRetryCountRef = useRef(0);
   const joinRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const joinScheduleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
+  /** Agora’da en az bir uzak kullanıcı (onUserJoined); yerel join ile karıştırılmaz */
+  const [remoteJoined, setRemoteJoined] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
+  const lastJoinMetaRef = useRef<{ sessionId: string; channelName: string; agoraUid: number } | null>(null);
 
   /** Zil / titreşim yalnızca callee incoming — outgoing/active/starting asla */
   useEffect(() => {
@@ -180,8 +183,9 @@ export default function MuhabbetTripCallScreen({
       clearTimeout(joinRetryTimeoutRef.current);
       joinRetryTimeoutRef.current = null;
     }
-    setJoining(false);
     setJoined(false);
+    setRemoteJoined(false);
+    lastJoinMetaRef.current = null;
     await leaveMuhabbetAgora();
   }, []);
 
@@ -190,17 +194,36 @@ export default function MuhabbetTripCallScreen({
     if (joinInFlightRef.current) return;
     joinInFlightRef.current = true;
     joinKeyRef.current = `${sessionId}|active`;
-    setJoining(true);
+    setRemoteJoined(false);
     try {
+      const mic = await ensureMuhabbetCallMicPermission();
+      console.log(
+        'MUHABBET_CALL_MIC_PERMISSION',
+        JSON.stringify({
+          granted: mic.granted,
+          canAskAgain: mic.canAskAgain ?? null,
+          session_id: sessionId,
+        }),
+      );
+      if (!mic.granted) {
+        joinKeyRef.current = '';
+        joinInFlightRef.current = false;
+        Alert.alert('Arama', 'Mikrofon izni olmadan sesli görüşme başlatılamaz.');
+        return;
+      }
+
       const token = await getPersistedAccessToken();
       if (!token) {
         joinKeyRef.current = '';
         joinInFlightRef.current = false;
-        setJoining(false);
         Alert.alert('Arama', 'Sesli görüşme için tekrar giriş yapın.');
         return;
       }
       const base = apiBaseUrl.replace(/\/$/, '');
+      console.log(
+        'MUHABBET_CALL_TOKEN_FETCH_START',
+        JSON.stringify({ session_id: sessionId, api_base: base.replace(/https?:\/\//, '').slice(0, 48) }),
+      );
       const res = await fetch(`${base}/muhabbet/trip-sessions/${encodeURIComponent(sessionId)}/agora-token`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -214,35 +237,77 @@ export default function MuhabbetTripCallScreen({
       const channelName = String(data.channel_name || `muhabbet_trip_${sessionId}`).trim();
       const agoraToken = String(data.agora_token || '').trim();
       const agoraUid = Number(data.agora_uid || 0);
-      if (!res.ok || !data.success || !channelName || !agoraToken || !Number.isFinite(agoraUid)) {
+      const tokenOk = !!(res.ok && data.success && channelName && agoraToken && Number.isFinite(agoraUid));
+      console.log(
+        'MUHABBET_CALL_TOKEN_FETCH_DONE',
+        JSON.stringify({
+          session_id: sessionId,
+          channel_name: channelName,
+          agora_uid: Number.isFinite(agoraUid) ? agoraUid : null,
+          token_length: agoraToken.length,
+          ok: tokenOk,
+        }),
+      );
+      if (!tokenOk) {
         joinKeyRef.current = '';
         joinInFlightRef.current = false;
-        setJoining(false);
         Alert.alert('Arama', data.detail || 'Muhabbet arama bileti alınamadı.');
         return;
       }
+
+      lastJoinMetaRef.current = { sessionId, channelName, agoraUid };
+      console.log(
+        'MUHABBET_CALL_JOIN_START',
+        JSON.stringify({ session_id: sessionId, channel_name: channelName, agora_uid: agoraUid }),
+      );
+
       await muhabbetAgoraVoiceService.initialize();
       muhabbetAgoraVoiceService.resetCallbacks();
       muhabbetAgoraVoiceService.setCallbacks({
         onJoinChannelSuccess: () => {
-          console.log(
-            '[leylek_call_join]',
-            JSON.stringify({ state: 'active', joined: true, retry: joinRetryCountRef.current }),
-          );
           joinRetryCountRef.current = 0;
           joinInFlightRef.current = false;
           setJoined(true);
-          setJoining(false);
+          console.log(
+            'MUHABBET_CALL_JOIN_SUCCESS',
+            JSON.stringify({ session_id: sessionId, channel_name: channelName, agora_uid: agoraUid }),
+          );
         },
-        onError: (_err, msg) => {
+        onUserJoined: (_conn, remoteUid, _elapsed) => {
+          const meta = lastJoinMetaRef.current;
+          const localUid = meta?.agoraUid ?? agoraUid;
+          if (Number(remoteUid) === Number(localUid)) return;
+          setRemoteJoined(true);
+          console.log(
+            'MUHABBET_CALL_REMOTE_JOINED',
+            JSON.stringify({ session_id: sessionId, remote_uid: remoteUid }),
+          );
+        },
+        onUserOffline: (_conn, remoteUid, reason) => {
+          setRemoteJoined(false);
+          console.log(
+            'MUHABBET_CALL_REMOTE_LEFT',
+            JSON.stringify({ session_id: sessionId, remote_uid: remoteUid, reason }),
+          );
+        },
+        onError: (err, msg) => {
+          const meta = lastJoinMetaRef.current;
+          console.log(
+            'MUHABBET_CALL_JOIN_ERROR',
+            JSON.stringify({
+              session_id: meta?.sessionId ?? sessionId,
+              channel_name: meta?.channelName ?? channelName,
+              agora_uid: meta?.agoraUid ?? agoraUid,
+              error: msg || String(err),
+            }),
+          );
           joinKeyRef.current = '';
           joinInFlightRef.current = false;
           setJoined(false);
-          setJoining(false);
+          setRemoteJoined(false);
           muhabbetAgoraVoiceService.resetJoinGate();
           if (joinRetryCountRef.current < 1) {
             joinRetryCountRef.current += 1;
-            console.log('[leylek_call_join]', JSON.stringify({ state: 'error', joined: false, retry: true }));
             if (joinRetryTimeoutRef.current) {
               clearTimeout(joinRetryTimeoutRef.current);
             }
@@ -253,7 +318,6 @@ export default function MuhabbetTripCallScreen({
             return;
           }
           joinRetryCountRef.current = 0;
-          console.log('[leylek_call_join]', JSON.stringify({ state: 'failed', joined: false, retry: false }));
           Alert.alert('Arama', msg || 'Muhabbet Agora bağlantı hatası.');
         },
       });
@@ -265,7 +329,7 @@ export default function MuhabbetTripCallScreen({
       joinKeyRef.current = '';
       joinInFlightRef.current = false;
       setJoined(false);
-      setJoining(false);
+      setRemoteJoined(false);
       Alert.alert('Arama', 'Muhabbet aramasına bağlanılamadı.');
     }
   }, [apiBaseUrl, joined, mode, muted, sessionId, speakerOn, visible]);
@@ -348,7 +412,15 @@ export default function MuhabbetTripCallScreen({
           <Text style={styles.peerName} numberOfLines={1}>
             {peerName || peerRoleLabel}
           </Text>
-          <Text style={styles.peerRole}>{isActive ? (joined ? 'Bağlandı' : joining ? 'Bağlanıyor...' : peerRoleLabel) : peerRoleLabel}</Text>
+          <Text style={styles.peerRole}>
+            {isActive
+              ? !joined
+                ? 'Ses kanalına bağlanıyor…'
+                : joined && !remoteJoined
+                  ? 'Kanala katıldınız, karşı taraf bekleniyor…'
+                  : 'Bağlandı'
+              : peerRoleLabel}
+          </Text>
         </View>
 
         <View style={styles.bottom}>

@@ -8,6 +8,7 @@ import {
 } from 'react-native-agora';
 import { MUHABBET_AGORA_APP_ID } from '../lib/muhabbetAgoraAppId';
 
+/** MuhabbetTripCallScreen — yerel join + uzak katılım (TAG Agora servislerinden bağımsız). */
 export type MuhabbetAgoraVoiceCallbacks = {
   onJoinChannelSuccess?: (connection: RtcConnection, elapsed: number) => void;
   onUserJoined?: (connection: RtcConnection, uid: number, elapsed: number) => void;
