@@ -15,6 +15,7 @@ import {
   Image,
   ImageBackground,
   InteractionManager,
+  ActivityIndicator,
   type TextStyle,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -151,6 +152,8 @@ interface LiveMapViewProps {
   onBlock?: () => void;
   onReport?: () => void;
   onCall?: (type: 'audio' | 'video') => void;
+  /** Normal TAG: index `calling` — REST/start-call süresince ara butonunu kilitle + “Bağlanıyor…” */
+  voiceCallPending?: boolean;
   onChat?: () => void;
   onComplete?: () => void;
   onRequestTripEnd?: () => void;
@@ -1853,6 +1856,7 @@ export default function LiveMapView({
   onBlock,
   onReport,
   onCall,
+  voiceCallPending = false,
   onChat,
   onComplete,
   onRequestTripEnd,
@@ -1920,6 +1924,8 @@ export default function LiveMapView({
 
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
+  /** Yerel 1s spinner + index’ten gelen start-call beklemesi */
+  const callUiBusy = isCallLoading || !!voiceCallPending;
 
   /** Özel PNG marker: Android’de tracksViewChanges sürekli true kalınca pin kaybolabiliyor — bekleme ekranı gibi kısa süre sonra kapat */
   const [pinTracks, setPinTracks] = useState(true);
@@ -3632,7 +3638,7 @@ export default function LiveMapView({
   
   // Arama fonksiyonu - hızlı ve direkt
   const handleCall = async (type: 'audio' | 'video') => {
-    if (isCallLoading) {
+    if (callUiBusy) {
       return;
     }
 
@@ -5613,12 +5619,12 @@ export default function LiveMapView({
             <View style={styles.navImmersiveBelowCardRow}>
               {onCall ? (
                 <TouchableOpacity
-                  style={[styles.navImmersiveAraBtn, boardingConfirmed && !isCallLoading && { opacity: 0.45 }]}
+                  style={[styles.navImmersiveAraBtn, boardingConfirmed && !callUiBusy && { opacity: 0.45 }]}
                   onPress={() => {
                     void tapButtonHaptic();
                     void handleCall('audio');
                   }}
-                  disabled={isCallLoading}
+                  disabled={callUiBusy}
                   activeOpacity={0.88}
                   accessibilityRole="button"
                   accessibilityLabel="Yolcuyu ara"
@@ -5629,8 +5635,14 @@ export default function LiveMapView({
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
-                    <Ionicons name="call" size={18} color="#FFF" />
-                    <Text style={styles.navImmersiveAraText}>Ara</Text>
+                    {voiceCallPending ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Ionicons name="call" size={18} color="#FFF" />
+                    )}
+                    <Text style={styles.navImmersiveAraText}>
+                      {voiceCallPending ? 'Bağlanıyor…' : 'Ara'}
+                    </Text>
                   </LinearGradient>
                 </TouchableOpacity>
               ) : (
@@ -5817,12 +5829,12 @@ export default function LiveMapView({
               {onCall ? (
                 <TouchableOpacity
                   activeOpacity={0.88}
-                  style={[styles.driverRidePrimaryBtn, isCallLoading && { opacity: 0.55 }]}
+                  style={[styles.driverRidePrimaryBtn, callUiBusy && { opacity: 0.55 }]}
                   onPress={() => {
                     void tapButtonHaptic();
                     void handleCall('audio');
                   }}
-                  disabled={isCallLoading}
+                  disabled={callUiBusy}
                   accessibilityRole="button"
                   accessibilityLabel="Yolcuyu ara"
                 >
@@ -5832,14 +5844,18 @@ export default function LiveMapView({
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
-                    <Ionicons name="call" size={22} color="#FFF" />
+                    {voiceCallPending ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Ionicons name="call" size={22} color="#FFF" />
+                    )}
                     <Text
                       style={styles.driverRidePrimaryBtnText}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.82}
                     >
-                      Yolcuyu Ara
+                      {voiceCallPending ? 'Bağlanıyor…' : 'Yolcuyu Ara'}
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -6063,8 +6079,8 @@ export default function LiveMapView({
                       <TouchableOpacity
                         style={[
                           styles.mapCallFabCircle,
-                          isCallLoading && styles.mapCallFabCircleDisabled,
-                          boardingConfirmed && !isCallLoading ? { opacity: 0.45 } : null,
+                          callUiBusy && styles.mapCallFabCircleDisabled,
+                          boardingConfirmed && !callUiBusy ? { opacity: 0.45 } : null,
                         ]}
                         onPress={() => {
                           logPax('tapButtonHaptic', tapButtonHaptic);
@@ -6072,11 +6088,15 @@ export default function LiveMapView({
                           void handleCall('audio');
                         }}
                         activeOpacity={0.88}
-                        disabled={isCallLoading}
+                        disabled={callUiBusy}
                         accessibilityRole="button"
                         accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
                       >
-                        <Ionicons name="call" size={22} color="#FFF" />
+                        {voiceCallPending ? (
+                          <ActivityIndicator size="small" color="#FFF" />
+                        ) : (
+                          <Ionicons name="call" size={22} color="#FFF" />
+                        )}
                       </TouchableOpacity>
                     </Animated.View>
                     {onChat ? (

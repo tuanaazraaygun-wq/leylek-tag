@@ -42,6 +42,8 @@ export interface CallScreenV2Props {
   callRejected?: boolean;
   callEnded?: boolean;
   receiverOffline?: boolean;
+  /** Normal TAG caller: index `joinTripCallAgoraAsCaller` Android mic istedi — çift izin isteme */
+  skipOutgoingMicPermission?: boolean;
 }
 
 const LOG = (msg: string, data?: unknown) => {
@@ -67,6 +69,7 @@ export default function CallScreenV2({
   callRejected,
   callEnded,
   receiverOffline,
+  skipOutgoingMicPermission = false,
 }: CallScreenV2Props) {
   void _remoteUserId;
 
@@ -220,12 +223,20 @@ export default function CallScreenV2({
       /* noop */
     }
 
-    const ok = await requestMicPermission();
+    let micOk = true;
+    if (Platform.OS === 'android' && mode === 'caller' && skipOutgoingMicPermission) {
+      console.log(
+        'TAG_CALL_MIC_PERMISSION_SKIP',
+        JSON.stringify({ reason: 'caller_prefetched_joinTripCallAgoraAsCaller', channel: String(channelName || '').slice(0, 48) }),
+      );
+    } else {
+      micOk = await requestMicPermission();
+    }
     if (callSessionAbortRef.current) {
       stopTimersAndRing();
       return;
     }
-    if (!ok) {
+    if (!micOk) {
       stopTimersAndRing();
       setPhase('ended');
       return;
@@ -246,6 +257,14 @@ export default function CallScreenV2({
     }
     attachEngineHandlers();
     if (agoraVoiceService.isJoinPending()) {
+      console.log(
+        'TAG_CALL_JOIN_PENDING_REUSED',
+        JSON.stringify({
+          channel: String(ch || '').slice(0, 48),
+          uid: myUid,
+          skip_second_join: true,
+        }),
+      );
       if (callSessionAbortRef.current) {
         stopTimersAndRing();
         return;
@@ -261,7 +280,16 @@ export default function CallScreenV2({
     }
     setJoined(true);
     callerJoinExecutedRef.current = true;
-  }, [agoraTokenProp, channelName, attachEngineHandlers, myUid, requestMicPermission, stopTimersAndRing]);
+  }, [
+    agoraTokenProp,
+    channelName,
+    attachEngineHandlers,
+    mode,
+    myUid,
+    requestMicPermission,
+    skipOutgoingMicPermission,
+    stopTimersAndRing,
+  ]);
 
   const acceptIncoming = useCallback(async () => {
     if (joined) return;

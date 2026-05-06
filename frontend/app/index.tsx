@@ -152,7 +152,7 @@ async function joinTripCallAgoraAsCaller(
     callCheck('agoraVoiceService.initialize', agoraVoiceService.initialize);
     callCheck('agoraVoiceService.joinChannel', agoraVoiceService.joinChannel);
     await agoraVoiceService.initialize();
-    agoraVoiceService.joinChannel(channelName, tok, agoraUidFromUserId(userId));
+    await agoraVoiceService.joinChannel(channelName, tok, agoraUidFromUserId(userId));
     return true;
   } catch (e) {
     console.error('Agora caller join:', e);
@@ -9429,8 +9429,18 @@ function PassengerDashboard({
     if (typeof clearIncomingCall === 'function') {
       clearIncomingCall();
     }
+    const _tagPress = String(activeTag.id ?? '');
+    console.log(
+      'TAG_CALL_PRESS',
+      JSON.stringify({ role: 'passenger', tag_id: _tagPress, call_type: callType }),
+    );
     setCalling(true);
     try {
+      console.log(
+        'TAG_CALL_START_REQUEST',
+        JSON.stringify({ role: 'passenger', tag_id: _tagPress, receiver_id: receiverId }),
+      );
+      const tReq = Date.now();
       const response = await fetch(`${API_URL}/voice/start-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -9443,8 +9453,8 @@ function PassengerDashboard({
         }),
       });
       const data = await response.json();
-      setCalling(false);
       if (!data.success) {
+        setCalling(false);
         const detail = String((data as { detail?: unknown }).detail ?? '');
         if (detail === 'busy') {
           appAlert(
@@ -9466,12 +9476,25 @@ function PassengerDashboard({
         appAlert('Hata', detail || 'Arama başlatılamadı');
         return;
       }
+      console.log(
+        'TAG_CALL_START_DONE',
+        JSON.stringify({
+          role: 'passenger',
+          tag_id: _tagPress,
+          ms: Date.now() - tReq,
+          call_id: data.call_id != null ? String(data.call_id) : null,
+          ok: true,
+        }),
+      );
       const agoraOk = await joinTripCallAgoraAsCaller(
         data.channel_name,
         data.agora_token || '',
         String(user.id)
       );
-      if (!agoraOk) return;
+      if (!agoraOk) {
+        setCalling(false);
+        return;
+      }
       setCallAccepted(false);
       setCallRejected(false);
       setCallEnded(false);
@@ -9486,6 +9509,16 @@ function PassengerDashboard({
         callType,
       });
       setShowCallScreen(true);
+      console.log(
+        'TAG_CALL_SCREEN_OPENED',
+        JSON.stringify({
+          role: 'passenger',
+          mode: 'caller',
+          call_id: data.call_id != null ? String(data.call_id) : null,
+          tag_id: _tagPress,
+        }),
+      );
+      setCalling(false);
     } catch (e) {
       console.error('Agora arama (yolcu):', e);
       setCalling(false);
@@ -10517,6 +10550,7 @@ function PassengerDashboard({
                   onCall={async (type) => {
                     await startTripCallAsPassenger(type);
                   }}
+                  voiceCallPending={calling}
                   onTrustRequest={() => {
                     void sendPassengerTrustRequest();
                   }}
@@ -11315,6 +11349,7 @@ function PassengerDashboard({
           callRejected={callRejected}
           callEnded={callEnded}
           receiverOffline={receiverOffline}
+          skipOutgoingMicPermission={callScreenData.mode === 'caller' && Platform.OS === 'android'}
           onAccept={() => {
             if (callScreenData) {
               socketAcceptCall({
@@ -12983,8 +13018,18 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       return;
     }
     driverClearIncomingCall();
+    const _tagPressD = String(activeTag.id ?? '');
+    console.log(
+      'TAG_CALL_PRESS',
+      JSON.stringify({ role: 'driver', tag_id: _tagPressD, call_type: callType }),
+    );
     setCalling(true);
     try {
+      console.log(
+        'TAG_CALL_START_REQUEST',
+        JSON.stringify({ role: 'driver', tag_id: _tagPressD, receiver_id: receiverId }),
+      );
+      const tReqD = Date.now();
       const response = await fetch(`${API_URL}/voice/start-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -12997,8 +13042,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         }),
       });
       const data = await response.json();
-      setCalling(false);
       if (!data.success) {
+        setCalling(false);
         const detail = String((data as { detail?: unknown }).detail ?? '');
         if (detail === 'busy') {
           appAlert(
@@ -13020,12 +13065,25 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         appAlert('Hata', detail || 'Arama başlatılamadı');
         return;
       }
+      console.log(
+        'TAG_CALL_START_DONE',
+        JSON.stringify({
+          role: 'driver',
+          tag_id: _tagPressD,
+          ms: Date.now() - tReqD,
+          call_id: data.call_id != null ? String(data.call_id) : null,
+          ok: true,
+        }),
+      );
       const agoraOk = await joinTripCallAgoraAsCaller(
         data.channel_name,
         data.agora_token || '',
         String(user.id)
       );
-      if (!agoraOk) return;
+      if (!agoraOk) {
+        setCalling(false);
+        return;
+      }
       setCallAccepted(false);
       setCallRejected(false);
       setCallEnded(false);
@@ -13040,6 +13098,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         callType,
       });
       setShowCallScreen(true);
+      console.log(
+        'TAG_CALL_SCREEN_OPENED',
+        JSON.stringify({
+          role: 'driver',
+          mode: 'caller',
+          call_id: data.call_id != null ? String(data.call_id) : null,
+          tag_id: _tagPressD,
+        }),
+      );
+      setCalling(false);
     } catch (e) {
       console.error('Agora arama (sürücü):', e);
       setCalling(false);
@@ -14851,6 +14919,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             onCall={async (type) => {
               await startTripCallAsDriver(type);
             }}
+            voiceCallPending={calling}
             onTrustRequest={() => {
               void sendDriverTrustRequest();
             }}
@@ -15396,6 +15465,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           callRejected={callRejected}
           callEnded={callEnded}
           receiverOffline={receiverOffline}
+          skipOutgoingMicPermission={callScreenData.mode === 'caller' && Platform.OS === 'android'}
           onAccept={() => {
             if (callScreenData) {
               socketAcceptCall({
