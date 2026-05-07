@@ -16,8 +16,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { clearSessionStorage, getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL 
   || process.env.EXPO_PUBLIC_BACKEND_URL 
@@ -31,7 +31,7 @@ export default function DeleteAccountScreen() {
   const handleDeleteAccount = async () => {
     Alert.alert(
       '⚠️ Hesabı Sil',
-      'Hesabınızı silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz ve tüm verileriniz 30 gün içinde kalıcı olarak silinecektir.',
+      'Bu işlem hesabınızı devre dışı bırakır.\n\nAktif yolculuk varsa hesap silinemez.\n\nDevam etmek için onaylayın.',
       [
         { text: 'İptal', style: 'cancel' },
         {
@@ -44,36 +44,55 @@ export default function DeleteAccountScreen() {
   };
 
   const confirmDelete = async () => {
+    if (isDeleting) return;
     setIsDeleting(true);
     try {
-      const userData = await AsyncStorage.getItem('leylek_user');
-      if (!userData) {
+      const token = (await getPersistedAccessToken())?.trim();
+      if (!token) {
         Alert.alert('Hata', 'Giriş yapmanız gerekiyor');
         return;
       }
 
-      const user = JSON.parse(userData);
-
-      // Backend'e silme isteği gönder
+      // user_id backend tarafından Bearer token'dan belirlenir
       const response = await fetch(`${API_URL}/user/delete-account`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: 'user_request_mobile' }),
       });
 
       const data = await response.json();
 
+      if (response.status === 409 && data?.code === 'active_tag_exists') {
+        Alert.alert('Hesap Silinemedi', 'Aktif yolculuk varken hesabınızı silemezsiniz.');
+        return;
+      }
+      if (response.status === 409 && data?.code === 'active_muhabbet_trip_exists') {
+        Alert.alert('Hesap Silinemedi', 'Aktif Leylek Teklifi yolculuğu varken hesabınızı silemezsiniz.');
+        return;
+      }
+
       if (data.success) {
-        // Local storage'ı temizle
-        await AsyncStorage.multiRemove([
-          'leylek_user',
-          'leylek_token',
-          'leylek_role',
-        ]);
+        // Push token temizliği (best-effort)
+        try {
+          const raw = await getPersistedUserRaw();
+          const parsed = raw ? (JSON.parse(raw) as { id?: string }) : null;
+          const uid = String(parsed?.id || '').trim();
+          if (uid) {
+            await fetch(`${API_URL}/user/remove-push-token?user_id=${encodeURIComponent(uid)}`, {
+              method: 'DELETE',
+            });
+          }
+        } catch {
+          // no-op
+        }
+        await clearSessionStorage();
 
         Alert.alert(
           '✅ Hesap Silindi',
-          'Hesabınız başarıyla silindi. Tüm verileriniz 30 gün içinde kalıcı olarak kaldırılacaktır.',
+          'Hesabınız devre dışı bırakıldı ve oturumunuz kapatıldı.',
           [
             {
               text: 'Tamam',
@@ -82,7 +101,7 @@ export default function DeleteAccountScreen() {
           ]
         );
       } else {
-        Alert.alert('Hata', data.error || 'Hesap silinemedi');
+        Alert.alert('Hata', data?.message || data?.error || 'Hesap silinemedi');
       }
     } catch (error) {
       console.error('Delete account error:', error);

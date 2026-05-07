@@ -4901,7 +4901,7 @@ def verify_access_token(token: str) -> Optional[str]:
         return None
 
 
-def get_authenticated_user_id_from_authorization(
+async def get_authenticated_user_id_from_authorization(
     authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
 ) -> str:
     """Authorization: Bearer <JWT> zorunlu; sub alanı kullanıcı id."""
@@ -4916,7 +4916,45 @@ def get_authenticated_user_id_from_authorization(
     uid = verify_access_token(parts[1].strip())
     if not uid:
         raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
-    return uid
+    try:
+        resolved_uid = await resolve_user_id(uid)
+    except Exception as resolve_err:
+        logger.warning(
+            "AUTH_GUARD_RESOLVE_ERROR user_id=%s err=%s",
+            _mask_log_id(uid),
+            resolve_err,
+        )
+        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+    canonical_uid = str((resolved_uid or uid) or "").strip().lower()
+    if not canonical_uid:
+        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+    try:
+        user_row = (
+            supabase.table("users")
+            .select("id, is_active")
+            .eq("id", canonical_uid)
+            .limit(1)
+            .execute()
+        )
+    except Exception as user_fetch_err:
+        logger.warning(
+            "AUTH_GUARD_USER_FETCH_ERROR user_id=%s err=%s",
+            _mask_log_id(canonical_uid),
+            user_fetch_err,
+        )
+        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+    if not user_row.data:
+        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+    is_active = bool((user_row.data[0] or {}).get("is_active", True))
+    if not is_active:
+        logger.info("AUTH_GUARD_ACCOUNT_DISABLED user_id=%s", _mask_log_id(canonical_uid))
+        raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
+
+    return canonical_uid
 
 
 async def resolve_user_id(user_id: str) -> str:
@@ -30844,6 +30882,7 @@ async def muhabbet_conversation_hide(
 
 @api_router.post("/user/delete-account")
 async def delete_user_account(
+    body: Optional[dict] = Body(default=None),
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """
@@ -30854,57 +30893,145 @@ async def delete_user_account(
     - Yalnızca Authorization: Bearer (access_token) ile; silinen kullanıcı token sub ile belirlenir
     """
     try:
-        user_id = authenticated_user_id
-        
-        logger.warning(f"🗑️ HESAP SİLME İSTEĞİ: {user_id}")
-        
-        # 1. Kullanıcıyı bul
+        raw_uid = str(authenticated_user_id or "").strip()
+        resolved_uid = await resolve_user_id(raw_uid)
+        user_id = str((resolved_uid or raw_uid) or "").strip().lower()
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Geçersiz oturum")
+
+        logger.warning("ACCOUNT_DELETE_REQUEST user_id=%s", _mask_log_id(user_id))
+
+        # 1) Aktif normal TAG kontrolü (terminal olmayan durumlarda silme engeli)
+        active_tag_statuses = ["waiting", "pending", "offers_received", "matched", "in_progress"]
+        pax_active = (
+            supabase.table("tags")
+            .select("id")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("passenger_id", user_id)
+            .in_("status", active_tag_statuses)
+            .limit(1)
+            .execute()
+        )
+        drv_active = (
+            supabase.table("tags")
+            .select("id")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("driver_id", user_id)
+            .in_("status", active_tag_statuses)
+            .limit(1)
+            .execute()
+        )
+        if (pax_active.data or drv_active.data):
+            logger.info("ACCOUNT_DELETE_BLOCKED code=active_tag_exists user_id=%s", _mask_log_id(user_id))
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "success": False,
+                    "code": "active_tag_exists",
+                    "message": "Aktif yolculuk varken hesabınızı silemezsiniz.",
+                },
+            )
+
+        # 2) Aktif Muhabbet trip kontrolü (terminal olmayan oturum varsa silme engeli)
+        active_muhabbet_statuses = ["ready", "started", "active"]
+        pax_muhabbet = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("id")
+            .eq("passenger_id", user_id)
+            .in_("status", active_muhabbet_statuses)
+            .limit(1)
+            .execute()
+        )
+        drv_muhabbet = (
+            supabase.table("muhabbet_trip_sessions")
+            .select("id")
+            .eq("driver_id", user_id)
+            .in_("status", active_muhabbet_statuses)
+            .limit(1)
+            .execute()
+        )
+        if (pax_muhabbet.data or drv_muhabbet.data):
+            logger.info(
+                "ACCOUNT_DELETE_BLOCKED code=active_muhabbet_trip_exists user_id=%s",
+                _mask_log_id(user_id),
+            )
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "success": False,
+                    "code": "active_muhabbet_trip_exists",
+                    "message": "Aktif Leylek Teklifi yolculuğu varken hesabınızı silemezsiniz.",
+                },
+            )
+
+        # 3) Kullanıcıyı bul
         user_result = supabase.table("users").select("*").eq("id", user_id).limit(1).execute()
-        
         if not user_result.data:
             return {"success": False, "error": "Kullanıcı bulunamadı"}
-        
-        user = user_result.data[0]
-        
-        # 2. Kullanıcıyı devre dışı bırak (soft delete)
-        supabase.table("users").update({
+
+        deletion_reason = str((body or {}).get("reason") or "user_request").strip()[:120] or "user_request"
+
+        # 4) Soft delete core update (runtime-safe: yalnızca temel/garanti alanlar)
+        core_update = {
             "is_active": False,
-            "is_banned": True,
-            "deleted_at": datetime.utcnow().isoformat(),
-            "deletion_reason": "user_request",
-            # Kişisel verileri anonimleştir
             "name": f"Silinmiş Kullanıcı {user_id[:8]}",
             "profile_photo": None,
-        }).eq("id", user_id).execute()
-        
-        # 3. Aktif TAG'leri iptal et
-        supabase.table("tags").update({
-            "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat(),
-            "cancel_reason": "account_deleted"
-        }).eq("type", TAG_TYPE_NORMAL).eq("passenger_id", user_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).execute()
-        
-        supabase.table("tags").update({
-            "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat(),
-            "cancel_reason": "account_deleted"
-        }).eq("type", TAG_TYPE_NORMAL).eq("driver_id", user_id).in_("status", ["matched", "in_progress"]).execute()
-        
-        # 4. Community mesajlarını anonimleştir (kolon adı insert ile aynı: name)
-        supabase.table("community_messages").update({
-            "name": "Silinmiş Kullanıcı",
-            "user_id": None,
-        }).eq("user_id", user_id).execute()
-        
-        logger.warning(f"✅ HESAP SİLİNDİ: {user_id}")
-        
+            "latitude": None,
+            "longitude": None,
+            "push_token": None,
+            "push_token_updated_at": None,
+        }
+        supabase.table("users").update(core_update).eq("id", user_id).execute()
+
+        # 5) Opsiyonel alanlar best-effort: kolon yoksa akışı düşürme
+        optional_updates = [
+            ("is_banned", True),
+            ("deleted_at", datetime.utcnow().isoformat()),
+            ("deletion_reason", deletion_reason),
+            ("first_name", None),
+            ("last_name", None),
+            ("expo_push_token", None),
+            ("fcm_push_token", None),
+            ("fcm_push_token_updated_at", None),
+            ("driver_online", False),
+        ]
+        for col, val in optional_updates:
+            try:
+                supabase.table("users").update({col: val}).eq("id", user_id).execute()
+            except Exception as opt_err:
+                logger.warning(
+                    "ACCOUNT_DELETE_OPTIONAL_FIELD_SKIP user_id=%s field=%s err=%s",
+                    _mask_log_id(user_id),
+                    col,
+                    opt_err,
+                )
+
+        # 6) Community mesajlarını anonimleştir (best-effort)
+        try:
+            supabase.table("community_messages").update(
+                {
+                    "name": "Silinmiş Kullanıcı",
+                    "user_id": None,
+                }
+            ).eq("user_id", user_id).execute()
+        except Exception as cm_err:
+            logger.warning(
+                "ACCOUNT_DELETE_COMMUNITY_ANON_SKIP user_id=%s err=%s",
+                _mask_log_id(user_id),
+                cm_err,
+            )
+
+        logger.warning("ACCOUNT_DELETE_DONE user_id=%s", _mask_log_id(user_id))
+
         return {
             "success": True,
-            "message": "Hesabınız başarıyla silindi. Verileriniz 30 gün içinde kalıcı olarak kaldırılacaktır."
+            "message": "Hesabınız silinmiştir.",
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ Delete account error: {e}")
+        logger.error("ACCOUNT_DELETE_ERROR user_id=%s err=%s", _mask_log_id(authenticated_user_id), e)
         return {"success": False, "error": str(e)}
 
 
