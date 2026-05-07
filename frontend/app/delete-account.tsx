@@ -13,6 +13,7 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +28,20 @@ const API_URL = `${BACKEND_URL}/api`;
 export default function DeleteAccountScreen() {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const openExternalLink = async (url: string, errorTitle: string) => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert(errorTitle, 'Bu bağlantı bu cihazda açılamıyor.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (error) {
+      console.warn('External link open failed:', error);
+      Alert.alert(errorTitle, 'Bağlantı açılamadı. Lütfen tekrar deneyin.');
+    }
+  };
 
   const handleDeleteAccount = async () => {
     Alert.alert(
@@ -178,9 +193,37 @@ export default function DeleteAccountScreen() {
           )}
         </TouchableOpacity>
 
-        <Text style={styles.disclaimer}>
-          Hesabınızı silmek yerine geçici olarak devre dışı bırakmak isterseniz destek@leylektag.com adresine e-posta gönderebilirsiniz.
-        </Text>
+        <View style={styles.supportCard}>
+          <Text style={styles.supportTitle}>Destek</Text>
+          <Text style={styles.supportCompany}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <TouchableOpacity
+            onPress={() => {
+              void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
+            }}
+          >
+            <Text style={styles.supportLink}>info@karekodteknoloji.com</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              void openExternalLink('tel:08503078029', 'Telefon açılamadı');
+            }}
+          >
+            <Text style={styles.supportLink}>0850 307 80 29</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.legalCard}>
+          <Text style={styles.legalTitle}>Yasal Metinler</Text>
+          <TouchableOpacity onPress={() => router.push('/privacy' as any)}>
+            <Text style={styles.legalLink}>Gizlilik Politikası</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/terms' as any)}>
+            <Text style={styles.legalLink}>Hizmet Şartları</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/kvkk' as any)}>
+            <Text style={styles.legalLink}>KVKK Aydınlatma Metni</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={{ height: 50 }} />
       </ScrollView>
@@ -283,11 +326,49 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
-  disclaimer: {
-    fontSize: 13,
-    color: '#666',
-    textAlign: 'center',
+  supportCard: {
     marginTop: 20,
-    lineHeight: 20,
+    borderWidth: 1,
+    borderColor: '#2a3b5f',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#182640',
+  },
+  supportTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  supportCompany: {
+    color: '#b8c7e0',
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  supportLink: {
+    color: '#6fb7ff',
+    fontSize: 14,
+    textDecorationLine: 'underline',
+    marginBottom: 6,
+  },
+  legalCard: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#2a3b5f',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#182640',
+  },
+  legalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  legalLink: {
+    color: '#6fb7ff',
+    fontSize: 14,
+    textDecorationLine: 'underline',
+    marginBottom: 6,
   },
 });

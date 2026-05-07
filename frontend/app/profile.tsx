@@ -8,6 +8,7 @@ import {
   ScrollView,
   Alert,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +37,20 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const openExternalLink = async (url: string, errorTitle: string) => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert(errorTitle, 'Bu bağlantı bu cihazda açılamıyor.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (error) {
+      console.warn('External link open failed:', error);
+      Alert.alert(errorTitle, 'Bağlantı açılamadı. Lütfen tekrar deneyin.');
+    }
+  };
 
   useEffect(() => {
     loadUser();
@@ -249,6 +264,31 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Destek</Text>
+          <Text style={styles.supportCompany}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <TouchableOpacity
+            style={styles.linkItem}
+            onPress={() => {
+              void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
+            }}
+          >
+            <Ionicons name="mail-outline" size={24} color={Colors.primary} />
+            <Text style={styles.linkText}>info@karekodteknoloji.com</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.linkItem, styles.supportPhoneItem]}
+            onPress={() => {
+              void openExternalLink('tel:08503078029', 'Telefon açılamadı');
+            }}
+          >
+            <Ionicons name="call-outline" size={24} color={Colors.primary} />
+            <Text style={styles.linkText}>0850 307 80 29</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+          </TouchableOpacity>
+        </View>
+
         {/* Hesap İşlemleri */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Hesap İşlemleri</Text>
@@ -450,5 +490,14 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#E74C3C',
+  },
+  supportCompany: {
+    width: '100%',
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
+    marginBottom: Spacing.sm,
+  },
+  supportPhoneItem: {
+    borderBottomWidth: 0,
   },
 });

@@ -12,9 +12,12 @@ import {
   StatusBar,
   Modal,
   StyleSheet,
+  Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import AnimatedClouds from './AnimatedClouds';
 import { LoginBrandHeader } from './LoginBrandHeader';
 import { LegalPage } from '../LegalPages';
@@ -52,6 +55,7 @@ export function LoginScreen({
   styles,
 }: LoginScreenProps) {
   const [legalDoc, setLegalDoc] = useState<null | 'kvkk' | 'privacy'>(null);
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = Dimensions.get('window');
   const padH = 16;
@@ -59,6 +63,20 @@ export function LoginScreen({
   const columnW = Math.min(colMax, winW - padH * 2);
   const isCompact = winH < 640;
   const isShort = winH < 560;
+
+  const openExternalLink = async (url: string, errorTitle: string) => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert(errorTitle, 'Bu bağlantı bu cihazda açılamıyor.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (error) {
+      console.warn('External link open failed:', error);
+      Alert.alert(errorTitle, 'Bağlantı açılamadı. Lütfen tekrar deneyin.');
+    }
+  };
 
   return (
     <View style={{ flex: 1, width: '100%', height: '100%' }}>
@@ -249,6 +267,38 @@ export function LoginScreen({
             <Text style={{ fontSize: 14, color: '#334155', lineHeight: 20, marginBottom: 16 }}>
               Uygulama içi sorunlarınız için lütfen destek kanallarımızdan bize ulaşın.
             </Text>
+            <Text style={{ fontSize: 13, color: '#334155', marginBottom: 8 }}>
+              Karekod Teknoloji ve Yazılım A.Ş.
+            </Text>
+            <TouchableOpacity
+              style={localStyles.supportLinkBtn}
+              onPress={() => {
+                void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
+              }}
+            >
+              <Ionicons name="mail-outline" size={16} color="#1565C0" />
+              <Text style={localStyles.supportLinkTxt}>info@karekodteknoloji.com</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={localStyles.supportLinkBtn}
+              onPress={() => {
+                void openExternalLink('tel:08503078029', 'Telefon açılamadı');
+              }}
+            >
+              <Ionicons name="call-outline" size={16} color="#1565C0" />
+              <Text style={localStyles.supportLinkTxt}>0850 307 80 29</Text>
+            </TouchableOpacity>
+            <View style={localStyles.supportLegalRow}>
+              <TouchableOpacity onPress={() => router.push('/privacy' as any)}>
+                <Text style={localStyles.supportLegalLink}>Gizlilik</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/terms' as any)}>
+                <Text style={localStyles.supportLegalLink}>Şartlar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/kvkk' as any)}>
+                <Text style={localStyles.supportLegalLink}>KVKK</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               style={[styles.modernPrimaryButton, { marginTop: 4 }]}
               onPress={() => {
@@ -313,5 +363,30 @@ const localStyles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#1565C0',
+  },
+  supportLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  supportLinkTxt: {
+    marginLeft: 8,
+    color: '#1565C0',
+    fontSize: 14,
+    textDecorationLine: 'underline',
+  },
+  supportLegalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  supportLegalLink: {
+    color: '#1565C0',
+    fontWeight: '700',
+    fontSize: 13,
+    textDecorationLine: 'underline',
+    marginRight: 10,
   },
 });
