@@ -308,8 +308,12 @@ async function submitUserReport(
   }
 }
 
-console.log('🌐 BACKEND_URL:', BACKEND_URL);
-console.log('🌐 API_URL:', API_URL);
+if (__DEV__) {
+  console.log('TAG_ENV_ENDPOINTS', {
+    has_backend_url: !!BACKEND_URL,
+    has_api_url: !!API_URL,
+  });
+}
 
 // Leylek TAG Colors
 const COLORS = {
@@ -1714,8 +1718,13 @@ export default function App() {
   const handleSendOTP = async () => {
     // 🔒 Önce normalize, sonra yalnızca cleanPhone üzerinden doğrula
     const cleanPhone = loginPhoneToCleanTen(phone);
-    console.log("PHONE_RAW", phone);
-    console.log("PHONE_CLEAN", cleanPhone);
+    if (__DEV__) {
+      const maskPhone = (v: string) => {
+        const d = String(v || '').replace(/\D/g, '');
+        return d.length >= 4 ? `***${d.slice(-4)}` : '***';
+      };
+      console.log('AUTH_PHONE_NORMALIZE', { raw: maskPhone(phone), clean: maskPhone(cleanPhone) });
+    }
     if (!/^5\d{9}$/.test(cleanPhone)) {
       appAlert(
         'Hata',
@@ -1999,7 +2008,7 @@ export default function App() {
             longitude: location.coords.longitude
           };
           setUserLocation(coords);
-          console.log('📍 Konum alındı:', coords);
+          console.log('TAG_LOCATION_FIX_ACQUIRED', { has_coords: true });
         } catch (locErr) {
           console.log('⚠️ İlk konum alınamadı:', locErr);
         }
@@ -7029,7 +7038,7 @@ function PassengerDashboard({
     const hadCoords = prev.lat != null && prev.lng != null;
     const hasCoords = lat != null && lng != null;
     if (!hadCoords && hasCoords) {
-      console.log('[PAX_LOC] userLocation coords first available', { lat, lng });
+      console.log('TAG_PAX_LOCATION_FIRST_FIX', { has_coords: true });
     }
     prevPaxUserLocRef.current = { lat, lng };
   }, [userLocation?.latitude, userLocation?.longitude]);
@@ -7039,10 +7048,9 @@ function PassengerDashboard({
     let cancelled = false;
     (async () => {
       try {
-        console.log('[PAX_LOC] reverse-geocode (city from GPS) start', {
-          lat: userLocation.latitude,
-          lng: userLocation.longitude,
-        });
+        if (__DEV__) {
+          console.log('TAG_PAX_REVERSE_GEOCODE_START', { has_coords: true });
+        }
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.latitude}&lon=${userLocation.longitude}&accept-language=tr&addressdetails=1`;
         const r = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
         const j = await r.json();

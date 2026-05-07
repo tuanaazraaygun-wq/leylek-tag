@@ -96,6 +96,40 @@ from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
+
+def _mask_log_id(value: Any) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return "n/a"
+    if len(s) <= 8:
+        return f"***{s[-2:]}"
+    return f"{s[:4]}***{s[-4:]}"
+
+
+def _mask_log_sid(value: Any) -> str:
+    return _mask_log_id(value)
+
+
+def _mask_log_room(value: Any) -> str:
+    room = str(value or "").strip()
+    if not room:
+        return "n/a"
+    if room.startswith("user_"):
+        uid = room[5:]
+        return f"user_{_mask_log_id(uid)}"
+    if len(room) <= 16:
+        return room
+    return f"{room[:8]}***{room[-4:]}"
+
+
+def _short_log_id(value: Any) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return "n/a"
+    if len(s) <= 12:
+        return s
+    return f"{s[:6]}…{s[-4:]}"
+
 # tags.type: Martı yolculuğu vs Muhabbet (aktif yolculuk/dispatch yalnız TAG_TYPE_NORMAL)
 TAG_TYPE_NORMAL = "normal"
 TAG_TYPE_MUHABBET = "muhabbet"
@@ -405,19 +439,19 @@ def _muhabbet_room_peer_count(room: str) -> int:
 
 @sio.event
 async def connect(sid, environ):
-    print(f"SOCKET CONNECTED: {sid}")
+    logger.debug("SOCKET_CONNECTED sid=%s", _mask_log_sid(sid))
     _pi = (environ or {}).get("PATH_INFO") or ""
     logger.info(
         "SOCKET_CONNECT sid=%s path_info=%s (nginx /socket.io/ → bu süreç olmalı; /api ile karıştırma)",
-        sid,
+        _mask_log_sid(sid),
         _pi[:160],
     )
-    logger.info(f"🔌 Socket bağlandı: {sid}")
+    logger.info("🔌 Socket bağlandı: %s", _mask_log_sid(sid))
     logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
 
 @sio.event
 async def disconnect(sid):
-    print("❌ SOCKET CLIENT DISCONNECTED:", sid)
+    logger.debug("SOCKET_CLIENT_DISCONNECTED sid=%s", _mask_log_sid(sid))
     socket_id_to_user.pop(sid, None)
     mapped_keys = socket_sid_to_keys.pop(sid, set())
     for key in list(mapped_keys):
@@ -444,7 +478,11 @@ async def disconnect(sid):
     for uid in to_remove:
         del connected_users[uid]
     if to_remove:
-        logger.info(f"🔌 Socket ayrıldı: {sid} (user: {to_remove})")
+        logger.info(
+            "🔌 Socket ayrıldı: %s (user_count=%s)",
+            _mask_log_sid(sid),
+            len(to_remove),
+        )
         for uid in to_remove:
             if not isinstance(uid, str):
                 continue
@@ -452,9 +490,9 @@ async def disconnect(sid):
             if not _uid:
                 continue
             _sids = _all_sids_for_registered_user(_uid)
-            logger.info("[SOCKET MAP] user_id=%s sids=%s", _uid[:96], _sids)
+            logger.debug("[SOCKET MAP] user_id=%s sid_count=%s", _mask_log_id(_uid), len(_sids))
     else:
-        logger.info(f"🔌 Socket ayrıldı: {sid}")
+        logger.info("🔌 Socket ayrıldı: %s", _mask_log_sid(sid))
 
 def _normalize_user_room(user_id: str) -> str:
     """UUID/user_id için tutarlı room adı (büyük/küçük harf uyumsuzluğunu önler)."""
@@ -471,13 +509,13 @@ async def register(sid, data):
     client_declares_uid = str(data.get("user_id") or "").strip()
     logger.info(
         "SOCKET_REGISTER_ATTEMPT sid=%s client_declares_user_id=%s role=%s",
-        sid,
-        client_declares_uid or None,
+        _mask_log_sid(sid),
+        _mask_log_id(client_declares_uid) if client_declares_uid else None,
         (data.get("role") if isinstance(data, dict) else None),
     )
     token = (data.get("token") or "").strip()
     if not token:
-        logger.warning("Socket register reddedildi sid=%s: token yok", sid)
+        logger.warning("Socket register reddedildi sid=%s: token yok", _mask_log_sid(sid))
         try:
             await sio.emit(
                 "registered",
@@ -491,7 +529,7 @@ async def register(sid, data):
 
     authed_uid = verify_access_token(token)
     if not authed_uid:
-        logger.warning("Socket register reddedildi sid=%s: geçersiz token", sid)
+        logger.warning("Socket register reddedildi sid=%s: geçersiz token", _mask_log_sid(sid))
         try:
             await sio.emit(
                 "registered",
@@ -512,9 +550,9 @@ async def register(sid, data):
     if not resolved_uid:
         logger.warning(
             "[SOCKET WARNING] fallback to raw sub sid=%s token_sub=%s client_user_id=%s",
-            sid,
-            raw[:96],
-            client_declares_uid[:96],
+            _mask_log_sid(sid),
+            _mask_log_id(raw),
+            _mask_log_id(client_declares_uid),
         )
         resolved_uid = raw
     resolved_uid = str(resolved_uid).strip()
@@ -524,9 +562,9 @@ async def register(sid, data):
     if client_declares_uid and client_declares_uid.lower() != resolved_lower:
         logger.warning(
             "SOCKET_REGISTER_USER_ID_MISMATCH sid=%s client_user_id=%s token_resolved=%s",
-            sid,
-            client_declares_uid,
-            resolved_uid,
+            _mask_log_sid(sid),
+            _mask_log_id(client_declares_uid),
+            _mask_log_id(resolved_uid),
         )
 
     # Dual mapping: hem users.id hem auth_id(sub) anahtarlarında sid bulunabilir.
@@ -540,8 +578,12 @@ async def register(sid, data):
         connected_user_sids.setdefault(raw_lower, set()).add(sid)
         socket_sid_to_keys.setdefault(sid, set()).add(raw_lower)
     socket_id_to_user[sid] = resolved_lower
-    logger.info("[SOCKET MAP] user_id=%s sids=%s", resolved_lower[:96], _all_sids_for_registered_user(resolved_lower))
-    logger.info("[SOCKET MAP FULL] connected_users keys=%s", list(connected_users.keys()))
+    logger.debug(
+        "[SOCKET MAP] user_id=%s sid_count=%s",
+        _mask_log_id(resolved_lower),
+        len(_all_sids_for_registered_user(resolved_lower)),
+    )
+    logger.debug("[SOCKET MAP FULL] connected_users_count=%s", len(connected_users.keys()))
 
     room_names = {
         _normalize_user_room(resolved_uid),
@@ -555,23 +597,22 @@ async def register(sid, data):
     room_name = _normalize_user_room(resolved_uid)
     for rn in sorted(room_names):
         await sio.enter_room(sid, rn)
-        logger.info("[SOCKET USER ROOM] joined sid=%s room=%s", sid, rn)
-    print(f"JOIN ROOM: {resolved_uid}")
-    logger.info("JOIN ROOM: %s", resolved_uid)
+        logger.info("[SOCKET USER ROOM] joined sid=%s room=%s", _mask_log_sid(sid), _mask_log_room(rn))
+    logger.debug("JOIN ROOM: %s", _mask_log_room(room_name))
 
-    logger.info("SOCKET_USER_ID sid=%s user_id=%s", sid, resolved_uid)
+    logger.info("SOCKET_USER_ID sid=%s user_id=%s", _mask_log_sid(sid), _mask_log_id(resolved_uid))
     try:
         _rc = sum(1 for _ in sio.manager.get_participants("/", room_name))
     except Exception:
         _rc = -1
-    logger.info("SOCKET_JOIN_ROOM sid=%s room=%s room_member_count=%s", sid, room_name, _rc)
+    logger.info("SOCKET_JOIN_ROOM sid=%s room=%s room_member_count=%s", _mask_log_sid(sid), _mask_log_room(room_name), _rc)
 
     _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
     logger.info(
         "📱 Kullanıcı kayıtlı (JWT): sid=%s room=%s user=%s",
-        sid,
-        room_name,
-        _ru_short,
+        _mask_log_sid(sid),
+        _mask_log_room(room_name),
+        _mask_log_id(_ru_short),
     )
     await sio.emit(
         "registered",
@@ -583,7 +624,10 @@ async def register(sid, data):
         },
         room=sid,
     )
-    logger.info("[socket_register] %s", json.dumps({"user_id": resolved_lower, "sid": sid}, ensure_ascii=False))
+    logger.info(
+        "[socket_register] %s",
+        json.dumps({"user_id": _mask_log_id(resolved_lower), "sid": _mask_log_sid(sid)}, ensure_ascii=False),
+    )
 
     if role == "driver":
         try:
@@ -599,7 +643,7 @@ async def sio_join_user_room(sid, data):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
     if not uid:
-        logger.warning("[SOCKET USER ROOM] join_user_room not_registered sid=%s", sid)
+        logger.warning("[SOCKET USER ROOM] join_user_room not_registered sid=%s", _mask_log_sid(sid))
         await sio.emit("user_room_joined", {"success": False, "error": "not_registered"}, room=sid)
         return
     raw_user = str(data.get("user_id") or data.get("userId") or uid).strip()
@@ -617,7 +661,11 @@ async def sio_join_user_room(sid, data):
     rooms = {_normalize_user_room(k) for k in keys if k}
     for room in sorted(r for r in rooms if r):
         await sio.enter_room(sid, room)
-        logger.info("[SOCKET USER ROOM] joined sid=%s room=%s via=join_user_room", sid, room)
+        logger.info(
+            "[SOCKET USER ROOM] joined sid=%s room=%s via=join_user_room",
+            _mask_log_sid(sid),
+            _mask_log_room(room),
+        )
     await sio.emit("user_room_joined", {"success": True, "user_id": uid, "rooms": sorted(rooms)}, room=sid)
 
 @sio.event
@@ -631,8 +679,20 @@ async def call_user(sid, data):
     call_type = data.get('call_type', 'audio')
     caller_name = data.get('caller_name', 'Bilinmeyen')
     
-    logger.info(f"📞 Arama isteği: {caller_id} -> {receiver_id} (call_id: {call_id})")
-    logger.info(f"📱 Bağlı kullanıcılar: {list(connected_users.keys())}")
+    logger.info(
+        "CALL_EMIT %s",
+        json.dumps(
+            {
+                "event": "incoming_call_request",
+                "caller_id": _mask_log_id(caller_id),
+                "receiver_id": _mask_log_id(receiver_id),
+                "call_id": _short_log_id(call_id),
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            ensure_ascii=False,
+        ),
+    )
+    logger.debug("SOCKET_CONNECTED_USERS_COUNT count=%s", len(connected_users))
     
     receiver_sid = _connected_sid_for_user(str(receiver_id)) if receiver_id else None
     
@@ -651,11 +711,23 @@ async def call_user(sid, data):
         logger.warning("incoming_call emit_socket_event_to_user failed: %s", _ice)
 
     if receiver_sid:
-        logger.info(f"📲 Gelen arama bildirimi gönderildi: {receiver_id} (sid: {receiver_sid})")
+        logger.info(
+            "CALL_EMIT %s",
+            json.dumps(
+                {
+                    "event": "incoming_call_sent",
+                    "receiver_id": _mask_log_id(receiver_id),
+                    "sid": _mask_log_sid(receiver_sid),
+                    "call_id": _short_log_id(call_id),
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+            ),
+        )
         await sio.emit('call_ringing', {'success': True, 'receiver_online': True}, room=sid)
     else:
-        logger.warning(f"⚠️ Alıcı çevrimdışı veya kayıtlı değil: {receiver_id}")
-        logger.warning(f"⚠️ Kayıtlı kullanıcılar: {connected_users}")
+        logger.warning("⚠️ Alıcı çevrimdışı veya kayıtlı değil: %s", _mask_log_id(receiver_id))
+        logger.debug("⚠️ Kayıtlı kullanıcılar sayısı=%s", len(connected_users))
         try:
             _ic_body = f"{_push_first_name(caller_name, 14) or 'Karşı taraf'} sizi arıyor • Yanıtlamak için dokun"
             if len(_ic_body) > 72:
@@ -686,7 +758,7 @@ async def accept_call(sid, data):
     caller_id = data.get('caller_id')
     receiver_id = data.get('receiver_id')
     
-    logger.info(f"✅ Arama kabul edildi: {call_id}")
+    logger.info("✅ Arama kabul edildi: %s", _short_log_id(call_id))
     
     # Arayana bildir
     caller_sid = connected_users.get(caller_id)
@@ -715,7 +787,7 @@ async def reject_call(sid, data):
     caller_id = data.get('caller_id')
     receiver_id = data.get('receiver_id')
 
-    logger.info(f"❌ Arama reddedildi: {call_id}")
+    logger.info("❌ Arama reddedildi: %s", _short_log_id(call_id))
     payload = {'call_id': call_id, 'rejected_by': receiver_id}
     if caller_id:
         try:
@@ -738,7 +810,7 @@ async def end_call(sid, data):
     receiver_id = data.get('receiver_id')
     ended_by = data.get('ended_by')
     
-    logger.info(f"📴 Arama sonlandırıldı: {call_id} (by: {ended_by})")
+    logger.info("📴 Arama sonlandırıldı: %s (by: %s)", _short_log_id(call_id), _mask_log_id(ended_by))
     
     # Her iki tarafa da bildir
     for user_id in [caller_id, receiver_id]:
@@ -2189,12 +2261,12 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 "TARGET_SID_COUNT %s",
                 json.dumps(
                     {
-                        "call_id": str(call_id) if call_id is not None else None,
-                        "session_id": str(session_id) if session_id is not None else None,
-                        "target_user": canonical_lo or None,
+                        "call_id": _short_log_id(call_id) if call_id is not None else None,
+                        "session_id": _short_log_id(session_id) if session_id is not None else None,
+                        "target_user": _mask_log_id(canonical_lo) if canonical_lo else None,
                         "sid_count": sid_count,
                         "room_member_count": room_member_count,
-                        "resolved_user_id": str(resolved_uid).strip().lower() if resolved_uid else None,
+                        "resolved_user_id": _mask_log_id(str(resolved_uid).strip().lower()) if resolved_uid else None,
                         "ts": datetime.now(timezone.utc).isoformat(),
                     },
                     ensure_ascii=False,
@@ -2204,15 +2276,15 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 "CALL_EMIT %s",
                 json.dumps(
                     {
-                        "call_id": str(call_id) if call_id is not None else None,
-                        "session_id": str(session_id) if session_id is not None else None,
+                        "call_id": _short_log_id(call_id) if call_id is not None else None,
+                        "session_id": _short_log_id(session_id) if session_id is not None else None,
                         "event": event_name,
                         "from_user": (
-                            str(payload_dict.get("caller_id")).strip().lower()
+                            _mask_log_id(str(payload_dict.get("caller_id")).strip().lower())
                             if payload_dict.get("caller_id") is not None
                             else None
                         ),
-                        "to_user": canonical_lo or None,
+                        "to_user": _mask_log_id(canonical_lo) if canonical_lo else None,
                         "ts": datetime.now(timezone.utc).isoformat(),
                     },
                     ensure_ascii=False,
@@ -2223,12 +2295,12 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             json.dumps(
                 {
                     "event": event_name,
-                    "user_id": canonical_lo[:96],
-                    "resolved": str(resolved_uid or "").lower()[:96] if resolved_uid else "",
+                    "user_id": _mask_log_id(canonical_lo),
+                    "resolved": _mask_log_id(str(resolved_uid or "").lower()) if resolved_uid else "",
                     "sid_count": sid_count,
                     "room_member_count": room_member_count,
-                    "room": room,
-                    "keys": sorted(keys_to_try)[:12],
+                    "room": _mask_log_room(room),
+                    "keys": [_mask_log_id(k) for k in sorted(keys_to_try)[:12]],
                 },
                 ensure_ascii=False,
             ),
@@ -2237,8 +2309,8 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             logger.warning(
                 "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
                 event_name,
-                canonical_lo[:48],
-                room,
+                _mask_log_id(canonical_lo),
+                _mask_log_room(room),
             )
 
         if all_sids:
@@ -2246,13 +2318,18 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 try:
                     await sio.emit(event_name, payload, to=sid)
                 except Exception as em:
-                    logger.warning("%s emit to=sid sid=%s err=%s", event_name, sid, em)
+                    logger.warning("%s emit to=sid sid=%s err=%s", event_name, _mask_log_sid(sid), em)
             try:
                 await sio.emit(event_name, payload, room=room)
             except Exception as em:
-                logger.warning("%s emit room=%s err=%s", event_name, room, em)
+                logger.warning("%s emit room=%s err=%s", event_name, _mask_log_room(room), em)
             if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=%s room=%s", canonical_lo, sorted(all_sids), room)
+                logger.info(
+                    "[muhabbet_ack] sent user=%s sid_count=%s room=%s",
+                    _mask_log_id(canonical_lo),
+                    len(all_sids),
+                    _mask_log_room(room),
+                )
         else:
             try:
                 await sio.emit(event_name, payload, room=room)
@@ -12946,9 +13023,9 @@ async def start_call(request: StartCallRequest):
                         "CALL_BUSY_REASON %s",
                         json.dumps(
                             {
-                                "receiver_id": receiver_id,
-                                "call_id": _br.get("call_id"),
-                                "caller_id": _br.get("caller_id"),
+                                "receiver_id": _mask_log_id(receiver_id),
+                                "call_id": _short_log_id(_br.get("call_id")),
+                                "caller_id": _mask_log_id(_br.get("caller_id")),
                                 "status": _br.get("status"),
                             },
                             default=str,
@@ -12957,8 +13034,8 @@ async def start_call(request: StartCallRequest):
                 except Exception:
                     logger.info(
                         "CALL_BUSY_REASON receiver_id=%s call_id=%s",
-                        receiver_id,
-                        busy.data[0].get("call_id") if busy.data else None,
+                        _mask_log_id(receiver_id),
+                        _short_log_id(busy.data[0].get("call_id")) if busy.data else None,
                     )
                 return {
                     "success": False,
@@ -13000,7 +13077,19 @@ async def start_call(request: StartCallRequest):
         if not result.data:
             return {"success": False, "detail": "Arama kaydedilemedi"}
         
-        logger.info(f"📞 SUPABASE: Arama başlatıldı: {call_id} - {request.caller_id} -> {receiver_id}")
+        logger.info(
+            "CALL_EMIT %s",
+            json.dumps(
+                {
+                    "event": "voice_start_call_http",
+                    "call_id": _short_log_id(call_id),
+                    "caller_id": _mask_log_id(request.caller_id),
+                    "receiver_id": _mask_log_id(receiver_id),
+                    "tag_id": _short_log_id(request.tag_id),
+                },
+                default=str,
+            ),
+        )
         try:
             _ic_body_http = f"{_push_first_name(caller_name, 14) or 'Karşı taraf'} sizi arıyor • Yanıtlamak için dokun"
             if len(_ic_body_http) > 72:
@@ -13039,7 +13128,7 @@ async def start_call(request: StartCallRequest):
                 incoming_payload["tag_id"] = request.tag_id
             try:
                 await emit_socket_event_to_user(str(receiver_id).strip(), "incoming_call", incoming_payload)
-                logger.info(f"📲 incoming_call → target_user_id={receiver_id}")
+                logger.info("📲 incoming_call → target_user_id=%s", _mask_log_id(receiver_id))
             except Exception as _ice2:
                 logger.warning(f"⚠️ incoming_call emit_socket_event_to_user: {_ice2}")
         except Exception as sock_err:
@@ -13141,7 +13230,7 @@ async def accept_call(user_id: str, call_id: str):
         
         if result.data:
             call = result.data[0]
-            logger.info(f"✅ SUPABASE: Arama kabul edildi: {call_id}")
+            logger.info("✅ SUPABASE: Arama kabul edildi: %s", _short_log_id(call_id))
             fresh_token = generate_agora_token(call["channel_name"], user_id=user_id)
             try:
                 cid_raw = str(call.get("caller_id") or "").strip()
@@ -13178,12 +13267,16 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
             logger.info(
                 "CALL_REJECT_HTTP %s",
                 json.dumps(
-                    {"call_id": call_id, "tag_id": tag_id, "receiver_user_id": user_id},
+                    {
+                        "call_id": _short_log_id(call_id),
+                        "tag_id": _short_log_id(tag_id),
+                        "receiver_user_id": _mask_log_id(user_id),
+                    },
                     default=str,
                 ),
             )
         except Exception:
-            logger.info("CALL_REJECT_HTTP call_id=%s tag_id=%s", call_id, tag_id)
+            logger.info("CALL_REJECT_HTTP call_id=%s tag_id=%s", _short_log_id(call_id), _short_log_id(tag_id))
         # call_id yoksa tag_id'den en son ringing aramayı bul
         if not call_id and tag_id:
             call_result = supabase.table("calls").select("call_id").eq("tag_id", tag_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
@@ -13212,15 +13305,20 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
                 logger.info(
                     "CALL_REJECT_EMIT_TO_CALLER %s",
                     json.dumps(
-                        {"caller_id": caller_uid, **rp, "emit_reason": label},
+                        {
+                            "caller_id": _mask_log_id(caller_uid),
+                            "call_id": _short_log_id(rp.get("call_id")),
+                            "rejected_by": _mask_log_id(rp.get("rejected_by")),
+                            "emit_reason": label,
+                        },
                         default=str,
                     ),
                 )
             except Exception:
                 logger.info(
                     "CALL_REJECT_EMIT_TO_CALLER caller_id=%s call_id=%s reason=%s",
-                    caller_uid,
-                    call_id,
+                    _mask_log_id(caller_uid),
+                    _short_log_id(call_id),
                     label,
                 )
             try:
@@ -13231,7 +13329,7 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
         reject_payload_base = {"call_id": call_id, "rejected_by": str(user_id).strip()}
 
         if result.data:
-            logger.info(f"📵 SUPABASE: Arama reddedildi: {call_id}")
+            logger.info("📵 SUPABASE: Arama reddedildi: %s", _short_log_id(call_id))
             row = result.data[0]
             caller_id = row.get("caller_id")
             if caller_id:
@@ -13270,8 +13368,8 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
                                 {
                                     "call_id": call_id,
                                     "reason": "receiver_mismatch",
-                                    "expected_receiver": recv,
-                                    "reject_user": uid_norm,
+                                    "expected_receiver": _mask_log_id(recv),
+                                    "reject_user": _mask_log_id(uid_norm),
                                 },
                                 default=str,
                             ),
@@ -13283,14 +13381,14 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
                         logger.info(
                             "CALL_REJECT_HTTP_EMIT_FALLBACK %s",
                             json.dumps(
-                                {"call_id": call_id, "reason": "already_rejected_idempotent"},
+                                {"call_id": _short_log_id(call_id), "reason": "already_rejected_idempotent"},
                                 default=str,
                             ),
                         )
                     except Exception:
                         logger.info(
                             "CALL_REJECT_HTTP_EMIT_FALLBACK call_id=%s already_rejected",
-                            call_id,
+                            _short_log_id(call_id),
                         )
                     if caller_fb:
                         await _emit_call_rejected_to(
@@ -13307,14 +13405,14 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
                         logger.info(
                             "CALL_REJECT_HTTP_EMIT_FALLBACK %s",
                             json.dumps(
-                                {"call_id": call_id, "reason": "terminal_non_ringing", "status": st},
+                                {"call_id": _short_log_id(call_id), "reason": "terminal_non_ringing", "status": st},
                                 default=str,
                             ),
                         )
                     except Exception:
                         logger.info(
                             "CALL_REJECT_HTTP_EMIT_FALLBACK call_id=%s status=%s",
-                            call_id,
+                            _short_log_id(call_id),
                             st,
                         )
                     if caller_fb:
@@ -13415,7 +13513,7 @@ async def end_call(user_id: str, call_id: str = None):
             }).eq("call_id", call_id).in_("status", ["ringing", "connected"]).execute()
             
             if result.data:
-                logger.info(f"📴 SUPABASE: Arama sonlandırıldı: {call_id} by {user_id}")
+                logger.info("📴 SUPABASE: Arama sonlandırıldı: %s by %s", _short_log_id(call_id), _mask_log_id(user_id))
         else:
             # Bu kullanıcının tüm aktif aramalarını sonlandır
             supabase.table("calls").update({
@@ -13424,7 +13522,7 @@ async def end_call(user_id: str, call_id: str = None):
                 "ended_by": user_id
             }).or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ringing", "connected"]).execute()
             
-            logger.info(f"📴 SUPABASE: Kullanıcının tüm aramaları sonlandırıldı: {user_id}")
+            logger.info("📴 SUPABASE: Kullanıcının tüm aramaları sonlandırıldı: %s", _mask_log_id(user_id))
         
         return {"success": True}
     except Exception as e:
@@ -13447,7 +13545,7 @@ async def cancel_call(user_id: str, call_id: str = None):
             }).eq("call_id", call_id).eq("caller_id", user_id).eq("status", "ringing").execute()
             
             if result.data:
-                logger.info(f"📵 SUPABASE: Arama iptal edildi: {call_id}")
+                logger.info("📵 SUPABASE: Arama iptal edildi: %s", _short_log_id(call_id))
         else:
             # Kullanıcının aktif ringing aramalarını iptal et
             supabase.table("calls").update({

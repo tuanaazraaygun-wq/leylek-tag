@@ -29,7 +29,7 @@ type MuhabbetTripCallScreenProps = {
 };
 
 function stopCallAudio(reason = 'stop_call_audio') {
-  console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason }));
+  if (__DEV__) console.log('MUHABBET_CALL_RINGTONE_STOP', JSON.stringify({ reason }));
   Vibration.cancel();
   try {
     InCallManager.stopRingtone();
@@ -89,7 +89,7 @@ export default function MuhabbetTripCallScreen({
       } catch {
         /* noop */
       }
-      console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason: 'not_visible' }));
+      if (__DEV__) console.log('MUHABBET_CALL_RINGTONE_STOP', JSON.stringify({ reason: 'not_visible' }));
       return;
     }
     if (mode !== 'incoming') {
@@ -99,7 +99,7 @@ export default function MuhabbetTripCallScreen({
       } catch {
         /* noop */
       }
-      console.log('[muhabbet_call_ringtone_skip_non_incoming]', JSON.stringify({ mode }));
+      if (__DEV__) console.log('MUHABBET_CALL_RINGTONE_SKIP_NON_INCOMING', JSON.stringify({ mode }));
       return () => {
         Vibration.cancel();
         try {
@@ -107,11 +107,11 @@ export default function MuhabbetTripCallScreen({
         } catch {
           /* noop */
         }
-        console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason: 'effect_cleanup_non_incoming', mode }));
+        if (__DEV__) console.log('MUHABBET_CALL_RINGTONE_STOP', JSON.stringify({ reason: 'effect_cleanup_non_incoming', mode }));
       };
     }
 
-    console.log('[muhabbet_call_ringtone_start]', JSON.stringify({ mode }));
+    if (__DEV__) console.log('MUHABBET_CALL_RINGTONE_START', JSON.stringify({ mode }));
     try {
       InCallManager.startRingtone('_DEFAULT_', [0, 650, 300, 650], 'playback', 60);
       Vibration.vibrate([0, 650, 300, 650], true);
@@ -125,7 +125,7 @@ export default function MuhabbetTripCallScreen({
       } catch {
         /* noop */
       }
-      console.log('[muhabbet_call_ringtone_stop]', JSON.stringify({ reason: 'leave_incoming_or_remount', mode }));
+      if (__DEV__) console.log('MUHABBET_CALL_RINGTONE_STOP', JSON.stringify({ reason: 'leave_incoming_or_remount', mode }));
     };
   }, [visible, mode]);
 

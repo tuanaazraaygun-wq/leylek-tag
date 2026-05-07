@@ -10,6 +10,12 @@ import {
 } from 'react-native';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
+const maskIdForLog = (v: string): string => {
+  const s = String(v || '').trim();
+  if (!s) return 'n/a';
+  if (s.length <= 8) return `***${s.slice(-2)}`;
+  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+};
 
 interface RatingModalProps {
   visible: boolean;
@@ -37,6 +43,16 @@ export default function RatingModal({
   const firstName = rateUserName?.split(' ')[0] || 'Kullanıcı';
 
   const handleSubmitRating = async () => {
+    const t0 = Date.now();
+    console.log(
+      'RATING_SUBMIT_START',
+      JSON.stringify({
+        rater_user_id: maskIdForLog(userId),
+        rated_user_id: maskIdForLog(rateUserId),
+        tag_id: maskIdForLog(tagId),
+        rating,
+      }),
+    );
     setLoading(true);
     try {
       const response = await fetch(
@@ -46,6 +62,15 @@ export default function RatingModal({
       const result = await response.json();
 
       if (result.success) {
+        console.log(
+          'RATING_SUBMIT_DONE',
+          JSON.stringify({
+            ok: true,
+            ms: Date.now() - t0,
+            rating,
+            tag_id: maskIdForLog(tagId),
+          }),
+        );
         setSubmitted(true);
         setTimeout(() => {
           onClose();
@@ -57,10 +82,29 @@ export default function RatingModal({
           setRating(5);
         }, 2000);
       } else {
+        console.log(
+          'RATING_SUBMIT_FAIL',
+          JSON.stringify({
+            ok: false,
+            ms: Date.now() - t0,
+            status: response.status,
+            detail: typeof result?.detail === 'string' ? result.detail : null,
+            tag_id: maskIdForLog(tagId),
+          }),
+        );
         Alert.alert('Hata', result.detail || 'Puanlama gönderilemedi');
       }
     } catch (error) {
-      console.error('Rating error:', error);
+      console.log(
+        'RATING_SUBMIT_FAIL',
+        JSON.stringify({
+          ok: false,
+          ms: Date.now() - t0,
+          error: true,
+          tag_id: maskIdForLog(tagId),
+        }),
+      );
+      console.error('RATING_SUBMIT_ERROR', error);
       Alert.alert('Hata', 'Puanlama gönderilemedi');
     } finally {
       setLoading(false);

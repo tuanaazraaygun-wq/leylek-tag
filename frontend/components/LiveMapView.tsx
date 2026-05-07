@@ -717,8 +717,13 @@ async function fetchOsrmDrivingRoute(
   }
   const origin = { latitude: fromLat, longitude: fromLng };
   const dest = { latitude: toLat, longitude: toLng };
-  console.log('ROUTE ORIGIN:', origin);
-  console.log('ROUTE DEST:', dest);
+  if (__DEV__) {
+    console.log('TAG_NAV_ROUTE_ENDPOINTS', {
+      mode: 'distance',
+      origin: { lat: Number(origin.latitude.toFixed(3)), lng: Number(origin.longitude.toFixed(3)) },
+      dest: { lat: Number(dest.latitude.toFixed(3)), lng: Number(dest.longitude.toFixed(3)) },
+    });
+  }
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=polyline`;
     const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
@@ -790,8 +795,13 @@ async function fetchOsrmDrivingRouteWithSteps(
   }
   const origin = { latitude: fromLat, longitude: fromLng };
   const dest = { latitude: toLat, longitude: toLng };
-  console.log('ROUTE ORIGIN (steps):', origin);
-  console.log('ROUTE DEST (steps):', dest);
+  if (__DEV__) {
+    console.log('TAG_NAV_ROUTE_ENDPOINTS', {
+      mode: 'steps',
+      origin: { lat: Number(origin.latitude.toFixed(3)), lng: Number(origin.longitude.toFixed(3)) },
+      dest: { lat: Number(dest.latitude.toFixed(3)), lng: Number(dest.longitude.toFixed(3)) },
+    });
+  }
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=polyline&steps=true`;
     const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
@@ -2189,11 +2199,11 @@ export default function LiveMapView({
 
   useEffect(() => {
     if (!isDriver) return;
-    console.log('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
+    if (__DEV__) console.log('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
   }, [isDriver, driverMapDebugPayload]);
 
   useEffect(() => {
-    console.log('NAVIGATION_MODE_CHANGED', {
+    if (__DEV__) console.log('NAVIGATION_MODE_CHANGED', {
       navigationMode,
       navigationStage,
       isDriver,
@@ -2214,7 +2224,7 @@ export default function LiveMapView({
   const lastNavRefreshThrottleAtRef = useRef(0);
 
   const clearMeetingRoute = useCallback((reason: string) => {
-    console.log('CLEAR ROUTE CALLED', {
+    if (__DEV__) console.log('CLEAR ROUTE CALLED', {
       reason,
       navigationMode,
       navigationStage,
@@ -2235,7 +2245,7 @@ export default function LiveMapView({
   clearMeetingRouteRef.current = clearMeetingRoute;
 
   const setMeetingRouteCoordsLogged = useCallback((coords: MapLatLng[]) => {
-    console.log('SET ROUTE COORDS', coords.length);
+    if (__DEV__) console.log('SET ROUTE COORDS', coords.length);
     setMeetingRouteCoordinates(coords);
   }, []);
 
@@ -4281,7 +4291,7 @@ export default function LiveMapView({
         return;
       }
 
-      console.log('TRIGGER ROUTE FETCH', {
+      if (__DEV__) console.log('TRIGGER ROUTE FETCH', {
         isDriver,
         navigationMode: navOn,
         navigationStage: navStage,
@@ -4490,7 +4500,7 @@ export default function LiveMapView({
         if (isDriver) {
           const riLog = routeInfoRef.current as Record<string, unknown> | null | undefined;
           try {
-            console.log('DRIVER_MAP_ROUTE_INPUT', {
+            if (__DEV__) console.log('DRIVER_MAP_ROUTE_INPUT', {
               activeTagRouteInfo: riLog,
               propRouteInfo: routeInfoRef.current,
               routeInfoKeys: riLog && typeof riLog === 'object' ? Object.keys(riLog) : null,

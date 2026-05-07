@@ -307,8 +307,13 @@ export default function CallScreenV2({
       );
       const data = await response.json();
 
-      console.log('ACCEPT TOKEN', data.agora_token);
-      console.log('CHANNEL', data.channel_name);
+      console.log(
+        'TAG_CALL_ACCEPT_TOKEN_RECEIVED',
+        JSON.stringify({
+          has_token: !!data?.agora_token,
+          channel: data?.channel_name ? String(data.channel_name).slice(0, 16) : null,
+        }),
+      );
 
       if (!data?.success) {
         Alert.alert('Hata', (data?.detail as string) || 'Arama kabul edilemedi');
@@ -334,11 +339,13 @@ export default function CallScreenV2({
 
       await agoraVoiceService.initialize();
       attachEngineHandlers();
-      console.log('RECEIVER JOIN', {
-        channel: data.channel_name,
-        token: data.agora_token,
-        uid: agoraUidFromUserId(userId),
-      });
+      console.log(
+        'TAG_CALL_RECEIVER_JOIN_ATTEMPT',
+        JSON.stringify({
+          channel: data?.channel_name ? String(data.channel_name).slice(0, 16) : null,
+          uid: agoraUidFromUserId(userId),
+        }),
+      );
       try {
         await agoraVoiceService.joinChannel(
           data.channel_name,

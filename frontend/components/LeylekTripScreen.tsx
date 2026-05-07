@@ -258,7 +258,7 @@ function mergeMuhabbetTripSessionFromPoll(
       payment_method: prev.payment_method,
       payment_method_selected_at: prev.payment_method_selected_at ?? merged.payment_method_selected_at,
     };
-    console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
+    if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
   }
 
   return mergeTripSessionForStalePoll(merged, prev, optimisticLocks, now, ctx);
@@ -918,7 +918,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
       const runLoad = (): Promise<MuhabbetTripSession | null> => {
         if (refreshInFlightRef.current) {
-          console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'join_inflight', action }));
+          if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'join_inflight', action }));
           return refreshInFlightRef.current;
         }
         console.log('[leylek_fast_path]', JSON.stringify({ action, phase: 'load_start' }));
@@ -1203,7 +1203,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   useEffect(() => {
     if (!session || !myId || isTerminal) return;
     if (isLocked('call')) {
-      console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'call_session_effect_locked' }));
+      if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'call_session_effect_locked' }));
       return;
     }
     const active = !!session.call_active;
@@ -1610,7 +1610,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const callId = p?.call_id != null ? String(p.call_id) : null;
       const sessionId = p?.session_id != null ? String(p.session_id) : p?.sessionId != null ? String(p.sessionId) : null;
       const myLo = myIdRef.current.trim().toLowerCase();
-      console.log('CALL_RECEIVE', JSON.stringify({
+    console.log('MUHABBET_CALL_RECEIVE', JSON.stringify({
         call_id: callId,
         session_id: sessionId,
         receiver_user: myLo || null,
@@ -1618,7 +1618,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         ts: new Date().toISOString(),
       }));
       if (normalizeMuhabbetSessionId(p.session_id || p.sessionId) !== sidNormTrip) {
-        console.log('CALL_IGNORED_REASON', JSON.stringify({
+        console.log('MUHABBET_CALL_IGNORED_REASON', JSON.stringify({
           call_id: callId,
           session_id: sessionId,
           reason: 'session_mismatch',
@@ -1628,7 +1628,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
       const callerLo = String(p.caller_id || '').trim().toLowerCase();
       if (callerLo && myLo && callerLo === myLo) {
-        console.log('CALL_IGNORED_REASON', JSON.stringify({
+        console.log('MUHABBET_CALL_IGNORED_REASON', JSON.stringify({
           call_id: callId,
           session_id: sessionId,
           reason: 'self_call',
@@ -1638,7 +1638,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
       const calleeLo = String(p.callee_id || p.target_user_id || '').trim().toLowerCase();
       if (!calleeLo || calleeLo !== myLo) {
-        console.log('CALL_IGNORED_REASON', JSON.stringify({
+        console.log('MUHABBET_CALL_IGNORED_REASON', JSON.stringify({
           call_id: callId,
           session_id: sessionId,
           reason: 'callee_mismatch',
@@ -1648,7 +1648,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       }
       const dedupeK = buildMuhabbetTripCallDedupeKey(sidNormTrip, p);
       if (muhabbetCallSocketOnceKeysRef.current.incoming === dedupeK && callStateRef.current === 'incoming') {
-        console.log('CALL_IGNORED_REASON', JSON.stringify({
+        console.log('MUHABBET_CALL_IGNORED_REASON', JSON.stringify({
           call_id: callId,
           session_id: sessionId,
           reason: 'duplicate_incoming_event',
@@ -1669,7 +1669,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         target_user_id: calleeLo,
       });
       setCallState('incoming');
-      console.log('CALL_UI_OPENED', JSON.stringify({
+      console.log('MUHABBET_CALL_UI_OPENED', JSON.stringify({
         call_id: callId,
         session_id: sidNormTrip || sessionId,
         screen: 'LeylekTripScreen',
@@ -1923,10 +1923,16 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/call/start`;
 
       try {
-        console.log('[leylek_call_start_post]', url);
+        console.log(
+          '[leylek_call_start_post]',
+          JSON.stringify({ session_id: sid || '', path: 'muhabbet/trip-sessions/:id/call/start' }),
+        );
         if (!token) {
           const parsedBody = { error: 'missing_token' };
-          console.log('[leylek_call_start_response]', { status: 0, ok: false, body: parsedBody });
+          console.log(
+            '[leylek_call_start_response]',
+            JSON.stringify({ status: 0, ok: false, has_body: !!parsedBody, keys: Object.keys(parsedBody || {}) }),
+          );
           if (callActionId !== latestCallActionIdRef.current) {
             muhabbetCallStartGuardRef.current = false;
             callStartInFlightRef.current = false;
@@ -1953,10 +1959,19 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         } catch {
           parsedBody = {};
         }
-        console.log('[leylek_call_start_response]', { status: res.status, ok: res.ok, body: parsedBody });
+        console.log(
+          '[leylek_call_start_response]',
+          JSON.stringify({
+            status: res.status,
+            ok: res.ok,
+            success: parsedBody?.success === true,
+            has_detail: parsedBody?.detail != null,
+            body_keys: Object.keys(parsedBody || {}),
+          }),
+        );
 
         if (callActionId !== latestCallActionIdRef.current) {
-          console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
+          if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
           muhabbetCallStartGuardRef.current = false;
           callStartInFlightRef.current = false;
           return;
@@ -2009,7 +2024,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       } catch (error) {
         console.warn('[leylek_call_start_error]', error);
         if (callActionId !== latestCallActionIdRef.current) {
-          console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
+          if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_call_response' }));
           muhabbetCallStartGuardRef.current = false;
           callStartInFlightRef.current = false;
         } else {
@@ -2081,7 +2096,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           });
           if (isMuhabbetTripRestOk(rest)) {
             if (paymentActionId !== latestPaymentActionIdRef.current) {
-              console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
+              if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
               return;
             }
             latestPaymentActionIdRef.current = null;
@@ -2097,7 +2112,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             return;
           }
           if (paymentActionId !== latestPaymentActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
+            if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
             return;
           }
           clearOptimistic('payment_method');
@@ -2118,7 +2133,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           console.log('[leylek_payment_timing]', JSON.stringify({ ms: Date.now() - t0, action: 'payment_method_set', ok: false }));
         } catch {
           if (paymentActionId !== latestPaymentActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
+            if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_payment_response' }));
           } else {
             clearOptimistic('payment_method');
             unlockState('payment');
@@ -2390,7 +2405,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               rest.json.boarding_qr_token.trim()
             ) {
               if (qrActionId !== latestQrActionIdRef.current) {
-                console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
+                if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
                 return;
               }
               latestQrActionIdRef.current = null;
@@ -2419,7 +2434,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               console.log('[leylek_qr_timing]', JSON.stringify({ mode: 'boarding', missing_token: true, ms: Date.now() - t0 }));
             }
             if (qrActionId !== latestQrActionIdRef.current) {
-              console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
+              if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
               return;
             }
             unlockState('qr');
@@ -2432,7 +2447,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             console.log('[leylek_qr_timing]', JSON.stringify({ create_ms: Date.now() - t0, mode: 'boarding', ok: false }));
           } catch {
             if (qrActionId !== latestQrActionIdRef.current) {
-              console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
+              if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
               return;
             }
             unlockState('qr');
@@ -2493,7 +2508,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const sidFinishPost = getActiveMuhabbetSessionId();
       console.log(
         '[leylek_finish_qr_post]',
-        JSON.stringify({ sessionId: sidFinishPost || '', pathSuffix: 'finish-qr/create' })
+        JSON.stringify({ session_id: sidFinishPost || '', path: 'muhabbet/trip-sessions/:id/finish-qr/create' })
       );
       void (async () => {
         const t0 = Date.now();
@@ -2507,8 +2522,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             JSON.stringify({
               status: rest.status,
               ok: rest.ok,
-              success: rest.json.success,
-              detail: rest.json.detail ?? null,
+              success: rest.json.success === true,
+              has_detail: rest.json.detail != null,
             })
           );
           const rawTok =
@@ -2519,7 +2534,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 : '';
           if (rest.ok && rest.json.success === true && rawTok.trim()) {
             if (qrFinishActionId !== latestQrActionIdRef.current) {
-              console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
+              if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
               return;
             }
             latestQrActionIdRef.current = null;
@@ -2548,7 +2563,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             console.log('[leylek_qr_timing]', JSON.stringify({ mode: 'finish', missing_token: true, ms: Date.now() - t0 }));
           }
           if (qrFinishActionId !== latestQrActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
+            if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
             return;
           }
           unlockState('qr');
@@ -2564,7 +2579,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         } catch {
           console.log('[leylek_finish_qr_response]', JSON.stringify({ error: 'network_or_exception' }));
           if (qrFinishActionId !== latestQrActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
+            if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
             return;
           }
           unlockState('qr');
@@ -2728,7 +2743,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         const token = (await getPersistedAccessToken())?.trim() || '';
         const base = apiBaseUrl.replace(/\/$/, '');
         const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/force-end-before-boarding`;
-        console.log('[leylek_force_end_immediate_post]', url);
+        console.log(
+          '[leylek_force_end_immediate_post]',
+          JSON.stringify({ session_id: sid || '', path: 'muhabbet/trip-sessions/:id/force-end-before-boarding' }),
+        );
         if (!sid || !token) {
           if (actionId === latestForceFinishActionIdRef.current) {
             unlockState('forceFinish');
@@ -2747,7 +2765,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         } catch {
           json = {};
         }
-        console.log('[leylek_force_end_immediate_response]', JSON.stringify({ status: res.status, ok: res.ok, body: json }));
+        console.log(
+          '[leylek_force_end_immediate_response]',
+          JSON.stringify({
+            status: res.status,
+            ok: res.ok,
+            success: json?.success === true,
+            has_detail: json?.detail != null,
+          }),
+        );
         const rest = { ok: res.ok, status: res.status, json };
         if (actionId !== latestForceFinishActionIdRef.current) return;
 
@@ -2804,7 +2830,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           const token = (await getPersistedAccessToken())?.trim() || '';
           const base = apiBaseUrl.replace(/\/$/, '');
           const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/force-finish/respond`;
-          console.log('[leylek_force_finish_reply_post]', url);
+          console.log(
+            '[leylek_force_finish_reply_post]',
+            JSON.stringify({ session_id: sid || '', path: 'muhabbet/trip-sessions/:id/force-finish/respond' }),
+          );
 
           if (!sid || !token) {
             if (ffRespActionId === latestForceFinishActionIdRef.current) {
@@ -2825,10 +2854,18 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           } catch {
             json = {};
           }
-          console.log('[leylek_force_finish_reply_response]', JSON.stringify({ status: res.status, ok: res.ok, body: json }));
+          console.log(
+            '[leylek_force_finish_reply_response]',
+            JSON.stringify({
+              status: res.status,
+              ok: res.ok,
+              success: json?.success === true,
+              has_detail: json?.detail != null,
+            }),
+          );
 
           if (ffRespActionId !== latestForceFinishActionIdRef.current) {
-            console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_force_finish_response' }));
+            if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_force_finish_response' }));
             return;
           }
 
