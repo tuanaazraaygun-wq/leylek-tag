@@ -72,14 +72,41 @@ export default function TermsScreen() {
           Şirket komisyon veya üyelik modeli uygulayabilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>6. Uyuşmazlık</Text>
+        <Text style={styles.sectionTitle}>6. Ürün Kapsamı (Bilgilendirme)</Text>
+        <Text style={styles.paragraph}>
+          Hizmet kapsamında aşağıdaki modüller çalışabilir:{"\n"}
+          • Konum verisi ile sürücü/yolcu eşleşme ve teklif sistemi{"\n"}
+          • Leylek Teklifi / Muhabbet mesajlaşma{"\n"}
+          • Sesli görüşme / VoIP ve ilgili teknik kayıtlar{"\n"}
+          • Sesli mesaj veya ses verisi özellikleri (varsa){"\n"}
+          • Cihaz, log ve güvenlik kayıtları{"\n\n"}
+          Detaylar Gizlilik Politikası ve KVKK Aydınlatma Metni'nde açıklanır.
+        </Text>
+
+        <Text style={styles.sectionTitle}>7. Muhabbet Kayıt Süresi (Bilgilendirme)</Text>
+        <Text style={styles.paragraph}>
+          Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
+        </Text>
+
+        <Text style={styles.sectionTitle}>8. Hesap Silme / Veri Silme</Text>
+        <Text style={styles.paragraph}>
+          Kullanıcı, uygulama içinden hesap silme talebi oluşturabilir. İşlem koşulları ve detaylar ilgili hesap silme açıklama sayfasında yer alır.
+        </Text>
+
+        <Text style={styles.sectionTitle}>9. KVKK Başvuru Hakları ve Destek</Text>
+        <Text style={styles.paragraph}>
+          KVKK kapsamındaki başvuru hakları ve destek iletişimi için aşağıdaki kanallar kullanılabilir.
+        </Text>
+
+        <Text style={styles.sectionTitle}>10. Uyuşmazlık</Text>
         <Text style={styles.paragraph}>
           Uyuşmazlıklarda Ankara Mahkemeleri yetkilidir.
         </Text>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>KAREKOD TEKNOLOJİ VE YAZILIM A.Ş.</Text>
-          <Text style={styles.footerText}>destek@leylektag.com</Text>
+          <Text style={styles.footerText}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <Text style={styles.footerText}>info@karekodteknoloji.com</Text>
+          <Text style={styles.footerText}>0850 307 80 29</Text>
         </View>
 
         <View style={{ height: 50 }} />

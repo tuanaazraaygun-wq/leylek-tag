@@ -36,24 +36,33 @@ KAREKOD TEKNOLOJİ VE YAZILIM AŞ olarak kişisel verilerinizin güvenliği hakk
 - Kullanıcı doğrulama
 - Güvenlik ve dolandırıcılık önleme
 - Müşteri desteği
+- Sürücü/yolcu eşleşme ve teklif sistemi
+- Leylek Teklifi / Muhabbet mesajlaşma
+- Sesli görüşme / VoIP kullanımı
+- Sesli mesaj veya ses verisi özellikleri (varsa)
+- Cihaz, log ve güvenlik kayıtları
 
 3. VERİ GÜVENLİĞİ
 - Tüm veriler şifrelenmiş olarak saklanır
 - Aramalar uçtan uca şifrelidir
-- Ses/görüntü kayıtları YAPILMAZ
-- Sadece metadata (süre, tarih) saklanır
+- Standart VoIP görüşmelerinde çağrı içeriği kaydedilmez
+- Bağlantı/arama metadata'sı (süre, tarih gibi) ürün ve güvenlik operasyonları kapsamında işlenebilir
 
 4. VERİ PAYLAŞIMI
 Verileriniz üçüncü taraflarla paylaşılmaz. Ancak yasal zorunluluk halinde yetkili makamlarla paylaşılabilir.
 
-5. HAKLARINIZ
+5. MUHABBET İÇERİK SAKLAMA
+Uygulamada sesli mesaj veya ses kaydı özelliği kullanılırsa, ilgili ses verisi ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
+Muhabbet mesaj içerikleri de ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
+
+6. HAKLARINIZ
 6698 sayılı KVKK kapsamında:
 - Verilerinize erişim hakkı
 - Düzeltme hakkı
 - Silme hakkı (Hesap silme)
 - İtiraz hakkı
 
-6. İLETİŞİM
+7. İLETİŞİM
 KAREKOD TEKNOLOJİ VE YAZILIM AŞ
 E-posta: info@karekodteknoloji.com
 Telefon: 0850 307 80 29
@@ -103,15 +112,24 @@ Leylek TAG, yolcular ve sürücüler arasında bağlantı kuran bir platformdur.
 6. HESAP ASKIYA ALMA
 Kurallara uymayan hesaplar geçici veya kalıcı olarak askıya alınabilir.
 
-7. ÜCRETLER
+7. ÜRÜN KAPSAMI (BİLGİLENDİRME)
+- Konum verisi işleme
+- Sürücü/yolcu eşleşme ve teklif sistemi
+- Leylek Teklifi / Muhabbet mesajlaşma
+- Sesli görüşme / VoIP kullanımı
+- Sesli mesaj veya ses verisi özellikleri (varsa)
+- Muhabbet mesaj/ses kayıtları ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir
+- Cihaz, log ve güvenlik kayıtları
+
+8. ÜCRETLER
 Şu an için hizmet ÜCRETSİZDİR. İleride premium özellikler eklenebilir.
 
-8. DEĞİŞİKLİKLER
+9. DEĞİŞİKLİKLER
 Bu şartlar önceden haber verilmeksizin değiştirilebilir.
 
-9. İLETİŞİM
+10. İLETİŞİM
 KAREKOD TEKNOLOJİ VE YAZILIM AŞ
-E-posta: destek@leylektag.com
+E-posta: info@karekodteknoloji.com
 Telefon: 0850 307 80 29
 Adres: Karanfil Mah. Konur Sokak No:23
 """,
@@ -147,9 +165,13 @@ Karanfil Mah. Konur Sokak No:23
 ✓ Kullanıcı doğrulama
 ✓ Güvenlik sağlama
 ✓ Yasal yükümlülüklerin yerine getirilmesi
+✓ Sürücü/yolcu eşleşme ve teklif sistemi
+✓ Leylek Teklifi / Muhabbet mesajlaşma
+✓ Sesli görüşme / VoIP ve varsa sesli mesaj özellikleri
+✓ Cihaz, log ve güvenlik kayıtları
 
 VERİ SAKLAMA SÜRESİ
-Veriler, hizmet sunumu süresince ve yasal yükümlülükler kapsamında saklanır.
+Veriler, hizmet sunumu süresince ve yasal yükümlülükler kapsamında saklanır. Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
 
 HAKLARINIZ
 KVKK'nın 11. maddesi kapsamında:

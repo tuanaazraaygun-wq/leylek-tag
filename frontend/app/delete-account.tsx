@@ -174,6 +174,7 @@ export default function DeleteAccountScreen() {
         <Text style={styles.infoText}>
           • Hesabınız hemen devre dışı bırakılacaktır{"\n"}
           • Kişisel verileriniz 30 gün içinde silinecektir{"\n"}
+          • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir{"\n"}
           • Yasal zorunluluklar kapsamındaki veriler anonimleştirilecektir{"\n"}
           • Bu işlem geri alınamaz
         </Text>
@@ -223,6 +224,9 @@ export default function DeleteAccountScreen() {
           <TouchableOpacity onPress={() => router.push('/kvkk' as any)}>
             <Text style={styles.legalLink}>KVKK Aydınlatma Metni</Text>
           </TouchableOpacity>
+          <Text style={styles.supportCompany}>
+            KVKK başvuru hakları ve destek için: info@karekodteknoloji.com / 0850 307 80 29
+          </Text>
         </View>
 
         <View style={{ height: 50 }} />

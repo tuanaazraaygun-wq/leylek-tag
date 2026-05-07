@@ -33,9 +33,10 @@ export default function KVKKScreen() {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.companyInfo}>
-          <Text style={styles.companyName}>KAREKOD TEKNOLOJİ VE YAZILIM ANONİM ŞİRKETİ</Text>
+          <Text style={styles.companyName}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
           <Text style={styles.companyAddress}>Meşrutiyet Mah. Konur Sk. Özsoy İş Hanı No: 25 İç Kapı No: 13 Çankaya / Ankara</Text>
-          <Text style={styles.companyEmail}>E-posta: destek@leylektag.com</Text>
+          <Text style={styles.companyEmail}>E-posta: info@karekodteknoloji.com</Text>
+          <Text style={styles.companyEmail}>Telefon: 0850 307 80 29</Text>
         </View>
 
         <Text style={styles.sectionTitle}>1. Veri Sorumlusu</Text>
@@ -67,13 +68,17 @@ export default function KVKKScreen() {
           • IP adresi{"\n"}
           • Cihaz bilgisi{"\n"}
           • Push bildirim token'ı{"\n"}
-          • Sistem log kayıtları
+          • Sistem log ve güvenlik kayıtları
         </Text>
 
         <Text style={styles.sectionTitle}>3. İşleme Amaçları</Text>
         <Text style={styles.paragraph}>
           • Kullanıcı kaydı ve kimlik doğrulama{"\n"}
           • Yolcu–sürücü eşleştirme{"\n"}
+          • Sürücü/yolcu teklif sistemi{"\n"}
+          • Leylek Teklifi / Muhabbet mesajlaşma hizmetleri{"\n"}
+          • Sesli görüşme / VoIP hizmetleri{"\n"}
+          • Sesli mesaj veya ses verisi özellikleri (varsa){"\n"}
           • Güvenliğin sağlanması{"\n"}
           • Hukuki yükümlülüklerin yerine getirilmesi{"\n"}
           • Dolandırıcılığın önlenmesi{"\n"}
@@ -84,7 +89,7 @@ export default function KVKKScreen() {
         <Text style={styles.paragraph}>
           • Hesap bilgileri: Üyelik süresince{"\n"}
           • Trip kayıtları: 5 yıl{"\n"}
-          • Topluluk mesajları: 90 gün{"\n"}
+          • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse): 7 güne kadar{"\n"}
           • Ehliyet ve araç görselleri: Üyelik süresince{"\n"}
           • Log kayıtları: Mevzuat süresi boyunca
         </Text>
@@ -96,12 +101,13 @@ export default function KVKKScreen() {
 
         <Text style={styles.sectionTitle}>6. Haklarınız</Text>
         <Text style={styles.paragraph}>
-          KVKK m.11 kapsamındaki haklarınızı destek@leylektag.com adresine başvurarak kullanabilirsiniz.
+          KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz. Destek hattı: 0850 307 80 29.
         </Text>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>KAREKOD TEKNOLOJİ VE YAZILIM A.Ş.</Text>
-          <Text style={styles.footerText}>destek@leylektag.com</Text>
+          <Text style={styles.footerText}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <Text style={styles.footerText}>info@karekodteknoloji.com</Text>
+          <Text style={styles.footerText}>0850 307 80 29</Text>
         </View>
 
         <View style={{ height: 50 }} />
