@@ -139,6 +139,14 @@ function optimisticLockFresh(locks: Record<string, number>, key: string, now: nu
   return t != null && now - t < OPTIMISTIC_LOCK_MS;
 }
 
+function isQrTokenReusable(expiresAt?: string | null): boolean {
+  const raw = String(expiresAt || '').trim();
+  if (!raw) return true;
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return true;
+  return ms > Date.now();
+}
+
 function createOptimisticActionId(flow: string): string {
   return `${flow}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
@@ -311,6 +319,26 @@ function mergeTripSessionForStalePoll(
     console.log('[leylek_optimistic]', JSON.stringify({ merge: 'boarding_qr_stale_poll' }));
   }
 
+  const prevBoardingConfirmed = !!String(prev?.boarding_qr_confirmed_at || '').trim();
+  const incBoardingConfirmed = !!String(incoming.boarding_qr_confirmed_at || '').trim();
+  if (fresh('boarding_qr_confirm') && prevBoardingConfirmed && !incBoardingConfirmed) {
+    const prevStatus = String(prev?.status || '').trim().toLowerCase();
+    const incStatus = String(incoming.status || '').trim().toLowerCase();
+    merged = {
+      ...merged,
+      boarding_qr_confirmed_at: prev?.boarding_qr_confirmed_at ?? merged.boarding_qr_confirmed_at,
+      ride_status:
+        String(prev?.ride_status || '').trim().toLowerCase() === 'active' && String(incoming.ride_status || '').trim().toLowerCase() !== 'active'
+          ? prev?.ride_status
+          : merged.ride_status,
+      status:
+        (prevStatus === 'active' || prevStatus === 'started') && incStatus === 'ready'
+          ? prev?.status
+          : merged.status,
+    };
+    console.log('[MUHABBET_QR_OPTIMISTIC_GUARD_ACTIVE]', JSON.stringify({ guard: 'boarding_qr_confirm' }));
+  }
+
   const prevFinish = prev?.finish_qr_token || prev?.qr_finish_token;
   const incFinish = incoming.finish_qr_token || incoming.qr_finish_token;
   if (fresh('finish_qr_create') && ctx.qrLoading && prevFinish && !incFinish) {
@@ -321,6 +349,20 @@ function mergeTripSessionForStalePoll(
       finish_qr_expires_at: prev.finish_qr_expires_at ?? merged.finish_qr_expires_at,
     };
     console.log('[leylek_optimistic]', JSON.stringify({ merge: 'finish_qr_stale_poll' }));
+  }
+
+  const prevStatus = String(prev?.status || '').trim().toLowerCase();
+  const incStatus = String(incoming.status || '').trim().toLowerCase();
+  if (fresh('finish_qr_confirm') && TERMINAL_TRIP_STATUSES.has(prevStatus) && !TERMINAL_TRIP_STATUSES.has(incStatus)) {
+    merged = {
+      ...merged,
+      status: prev?.status ?? merged.status,
+      ride_status:
+        String(prev?.ride_status || '').trim().toLowerCase() === 'completed' || String(prev?.ride_status || '').trim().toLowerCase() === 'finished'
+          ? prev?.ride_status
+          : merged.ride_status,
+    };
+    console.log('[MUHABBET_QR_OPTIMISTIC_GUARD_ACTIVE]', JSON.stringify({ guard: 'finish_qr_confirm' }));
   }
 
   return merged;
@@ -2391,6 +2433,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (isDriver) {
         const reuseBoardingToken = String(session.boarding_qr_token || '').trim();
         if (reuseBoardingToken) {
+          if (!isQrTokenReusable(session.boarding_qr_expires_at ?? null)) {
+            console.log(
+              '[MUHABBET_QR_REUSE_TOKEN_EXPIRED]',
+              JSON.stringify({ mode: 'boarding', status: stNow })
+            );
+          } else {
           console.log(
             '[MUHABBET_QR_REUSE_TOKEN]',
             JSON.stringify({ mode: 'boarding', hasToken: true, status: stNow })
@@ -2405,6 +2453,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           setQrFinishToken(reuseBoardingToken.toUpperCase());
           setQrExpiresAt(session.boarding_qr_expires_at ?? null);
           return;
+          }
         }
         if (qrCreateInFlightRef.current) return;
         if (isLocked('qr')) {
@@ -2540,6 +2589,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     if (isDriver) {
       const reuseFinishToken = String(session.finish_qr_token || session.qr_finish_token || '').trim();
       if (reuseFinishToken) {
+        if (!isQrTokenReusable(session.finish_qr_expires_at ?? null)) {
+          console.log(
+            '[MUHABBET_QR_REUSE_TOKEN_EXPIRED]',
+            JSON.stringify({ mode: 'finish', status: stNow })
+          );
+        } else {
         console.log(
           '[MUHABBET_QR_REUSE_TOKEN]',
           JSON.stringify({ mode: 'finish', hasToken: true, status: stNow })
@@ -2553,6 +2608,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         setQrFinishToken(reuseFinishToken.toUpperCase());
         setQrExpiresAt(session.finish_qr_expires_at ?? null);
         return;
+        }
       }
       touchOptimistic('finish_qr_create');
       const qrFinishActionId = createOptimisticActionId('qr_finish');
@@ -2733,6 +2789,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 rest.json.session && typeof rest.json.session === 'object'
                   ? (rest.json.session as MuhabbetTripSession)
                   : null;
+              touchOptimistic('boarding_qr_confirm');
               if (nextSession) {
                 setSession(nextSession);
               }
@@ -2771,6 +2828,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               rest.json.session && typeof rest.json.session === 'object'
                 ? (rest.json.session as MuhabbetTripSession)
                 : null;
+            touchOptimistic('finish_qr_confirm');
             if (nextSession) {
               setSession(nextSession);
             }
