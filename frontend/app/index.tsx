@@ -3480,7 +3480,15 @@ export default function App() {
                 <Ionicons name="settings-outline" size={22} color="#3FA9F5" />
               </TouchableOpacity>
             ) : (
-              <View style={styles.roleExitBtn} pointerEvents="none" />
+              <TouchableOpacity
+                style={styles.roleAdminBtn}
+                onPress={() => {
+                  roleScreenHaptic();
+                  router.push('/settings-hub' as never);
+                }}
+              >
+                <Ionicons name="person-circle-outline" size={22} color="#3FA9F5" />
+              </TouchableOpacity>
             )}
           </View>
 

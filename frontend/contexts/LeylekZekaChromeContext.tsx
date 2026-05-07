@@ -94,6 +94,7 @@ export function useLeylekZekaChrome(): Ctx {
 const STANDALONE_ROUTE_PREFIXES = [
   '/admin',
   '/profile',
+  '/settings-hub',
   '/history',
   '/terms',
   '/privacy',
