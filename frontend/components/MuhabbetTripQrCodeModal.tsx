@@ -42,6 +42,8 @@ export default function MuhabbetTripQrCodeModal({
   loading = false,
 }: MuhabbetTripQrCodeModalProps) {
   const pulse = useRef(new Animated.Value(0.72)).current;
+  const [loadingStuck, setLoadingStuck] = React.useState(false);
+  const tokenReady = !!token?.trim();
   useEffect(() => {
     if (!visible) return undefined;
     const anim = Animated.loop(
@@ -54,13 +56,23 @@ export default function MuhabbetTripQrCodeModal({
     return () => anim.stop();
   }, [pulse, visible]);
 
+  useEffect(() => {
+    if (!visible || !loading || tokenReady) {
+      setLoadingStuck(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      setLoadingStuck(true);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [visible, loading, tokenReady]);
+
   const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
   const hint =
     mode === 'boarding'
       ? 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda başlar.'
       : 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda tamamlanır.';
   const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null;
-  const tokenReady = !!token?.trim();
   const showQr = tokenReady && !loading;
   const value = showQr ? qrValue(mode, sessionId, token) : '';
 
@@ -82,6 +94,7 @@ export default function MuhabbetTripQrCodeModal({
               <View style={styles.loadingBox}>
                 <ActivityIndicator color="#7C3AED" />
                 <Text style={styles.loadingText}>QR hazırlanıyor...</Text>
+                {loadingStuck ? <Text style={styles.loadingHint}>Bağlantı yavaş olabilir, lütfen bekleyin.</Text> : null}
               </View>
             )}
           </View>
@@ -159,6 +172,7 @@ const styles = StyleSheet.create({
   },
   loadingBox: { alignItems: 'center', justifyContent: 'center', gap: 10 },
   loadingText: { color: '#64748B', fontWeight: '800' },
+  loadingHint: { color: '#94A3B8', fontSize: 12, fontWeight: '700', textAlign: 'center' },
   expires: { marginTop: 14, color: '#92400E', fontSize: 12, fontWeight: '800' },
   closeButton: {
     marginTop: 18,

@@ -2389,6 +2389,23 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     }
     if (stNow === 'ready') {
       if (isDriver) {
+        const reuseBoardingToken = String(session.boarding_qr_token || '').trim();
+        if (reuseBoardingToken) {
+          console.log(
+            '[MUHABBET_QR_REUSE_TOKEN]',
+            JSON.stringify({ mode: 'boarding', hasToken: true, status: stNow })
+          );
+          console.log(
+            '[MUHABBET_QR_OPEN]',
+            JSON.stringify({ mode: 'boarding', source: 'reuse_token', status: stNow })
+          );
+          setQrMode('boarding');
+          setQrCodeVisible(true);
+          setQrLoading(false);
+          setQrFinishToken(reuseBoardingToken.toUpperCase());
+          setQrExpiresAt(session.boarding_qr_expires_at ?? null);
+          return;
+        }
         if (qrCreateInFlightRef.current) return;
         if (isLocked('qr')) {
           console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'qr blocked', detail: 'stateLock' }));
@@ -2400,6 +2417,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         const qrActionId = createOptimisticActionId('qr_boarding');
         latestQrActionIdRef.current = qrActionId;
         console.log('[leylek_ui_instant]', JSON.stringify({ flow: 'qr_boarding_open', actionId: qrActionId }));
+        console.log(
+          '[MUHABBET_QR_OPEN]',
+          JSON.stringify({ mode: 'boarding', source: 'create_request', status: stNow })
+        );
         setQrMode('boarding');
         setQrCodeVisible(true);
         setQrLoading(true);
@@ -2432,6 +2453,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               }
               setQrLoading(false);
               clearOptimistic('boarding_qr_create');
+              console.log(
+                '[MUHABBET_QR_REFRESH_BACKGROUND]',
+                JSON.stringify({ action: 'boarding_qr_create_rest' })
+              );
               void refreshSessionFromServer('boarding_qr_create_rest', { bypassDebounce: true });
               console.log(
                 '[leylek_qr_timing]',
@@ -2458,6 +2483,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             clearOptimistic('boarding_qr_create');
             const failMsg = muhabbetTripRestDetail(rest.json.detail, 'Biniş QR oluşturulamadı.');
             if (failMsg) Alert.alert('Muhabbet yolculuk', failMsg);
+          console.log(
+            '[MUHABBET_QR_REFRESH_BACKGROUND]',
+            JSON.stringify({ action: 'boarding_qr_create_rest_fail' })
+          );
             void refreshSessionFromServer('boarding_qr_create_rest_fail', { bypassDebounce: true });
             console.log('[leylek_qr_timing]', JSON.stringify({ create_ms: Date.now() - t0, mode: 'boarding', ok: false }));
           } catch {
@@ -2509,10 +2538,30 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     setQrMode('finish');
 
     if (isDriver) {
+      const reuseFinishToken = String(session.finish_qr_token || session.qr_finish_token || '').trim();
+      if (reuseFinishToken) {
+        console.log(
+          '[MUHABBET_QR_REUSE_TOKEN]',
+          JSON.stringify({ mode: 'finish', hasToken: true, status: stNow })
+        );
+        console.log(
+          '[MUHABBET_QR_OPEN]',
+          JSON.stringify({ mode: 'finish', source: 'reuse_token', status: stNow })
+        );
+        setQrCodeVisible(true);
+        setQrLoading(false);
+        setQrFinishToken(reuseFinishToken.toUpperCase());
+        setQrExpiresAt(session.finish_qr_expires_at ?? null);
+        return;
+      }
       touchOptimistic('finish_qr_create');
       const qrFinishActionId = createOptimisticActionId('qr_finish');
       latestQrActionIdRef.current = qrFinishActionId;
       console.log('[leylek_ui_instant]', JSON.stringify({ flow: 'qr_finish_open', actionId: qrFinishActionId }));
+      console.log(
+        '[MUHABBET_QR_OPEN]',
+        JSON.stringify({ mode: 'finish', source: 'create_request', status: stNow })
+      );
       qrCreateInFlightRef.current = true;
       lockState('qr', 2000);
       setQrCodeVisible(true);
@@ -2561,6 +2610,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             }
             setQrLoading(false);
             clearOptimistic('finish_qr_create');
+            console.log(
+              '[MUHABBET_QR_REFRESH_BACKGROUND]',
+              JSON.stringify({ action: 'finish_qr_create_rest' })
+            );
             void refreshSessionFromServer('finish_qr_create_rest', { bypassDebounce: true });
             console.log(
               '[leylek_qr_timing]',
@@ -2589,6 +2642,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             muhabbetTripRestDetail(rest.json.detail, '') ||
             (!rest.ok ? `İşlem başarısız (HTTP ${rest.status}).` : 'Bitiş QR oluşturulamadı.');
           if (failFnMsg) Alert.alert('Muhabbet yolculuk', failFnMsg);
+          console.log(
+            '[MUHABBET_QR_REFRESH_BACKGROUND]',
+            JSON.stringify({ action: 'finish_qr_create_rest_fail' })
+          );
           void refreshSessionFromServer('finish_qr_create_rest_fail', { bypassDebounce: true });
           console.log('[leylek_qr_timing]', JSON.stringify({ create_ms: Date.now() - t0, mode: 'finish', ok: false }));
         } catch {
@@ -2653,8 +2710,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               pathSuffix: 'boarding-qr/confirm',
               body: { boarding_qr_token: token },
             });
-            const applyBoardingConfirmSuccess = async (refreshReason: string) => {
-              const next = await refreshSessionFromServer(refreshReason, { bypassDebounce: true });
+            const applyBoardingConfirmSuccess = (next?: MuhabbetTripSession | null) => {
               setQrScanVisible(false);
               setQrFinishToken('');
               setQrExpiresAt(null);
@@ -2673,14 +2729,34 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               }
             };
             if (isMuhabbetTripRestOk(rest)) {
-              await applyBoardingConfirmSuccess('boarding_qr_confirm_rest');
+              const nextSession =
+                rest.json.session && typeof rest.json.session === 'object'
+                  ? (rest.json.session as MuhabbetTripSession)
+                  : null;
+              if (nextSession) {
+                setSession(nextSession);
+              }
+              console.log(
+                '[MUHABBET_QR_CONFIRM_OPTIMISTIC_UPDATE]',
+                JSON.stringify({ mode: 'boarding', hasSession: !!nextSession })
+              );
+              applyBoardingConfirmSuccess(nextSession ?? sessionRef.current ?? null);
+              console.log(
+                '[MUHABBET_QR_REFRESH_BACKGROUND]',
+                JSON.stringify({ action: 'boarding_qr_confirm_rest' })
+              );
+              void refreshSessionFromServer('boarding_qr_confirm_rest', { bypassDebounce: true });
               return;
             }
             Alert.alert(
               'Biniş QR',
               muhabbetTripRestDetail(rest.json.detail, 'Biniş QR doğrulanamadı.')
             );
-            await refreshSessionFromServer('boarding_qr_confirm_rest_fail', { bypassDebounce: true });
+            console.log(
+              '[MUHABBET_QR_REFRESH_BACKGROUND]',
+              JSON.stringify({ action: 'boarding_qr_confirm_rest_fail' })
+            );
+            void refreshSessionFromServer('boarding_qr_confirm_rest_fail', { bypassDebounce: true });
             return;
           }
 
@@ -2691,11 +2767,30 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           });
           if (isMuhabbetTripRestOk(rest)) {
             setQrScanVisible(false);
-            await refreshSessionFromServer('finish_qr_confirm_rest', { bypassDebounce: true });
+            const nextSession =
+              rest.json.session && typeof rest.json.session === 'object'
+                ? (rest.json.session as MuhabbetTripSession)
+                : null;
+            if (nextSession) {
+              setSession(nextSession);
+            }
+            console.log(
+              '[MUHABBET_QR_CONFIRM_OPTIMISTIC_UPDATE]',
+              JSON.stringify({ mode: 'finish', hasSession: !!nextSession })
+            );
+            console.log(
+              '[MUHABBET_QR_REFRESH_BACKGROUND]',
+              JSON.stringify({ action: 'finish_qr_confirm_rest' })
+            );
+            void refreshSessionFromServer('finish_qr_confirm_rest', { bypassDebounce: true });
             return;
           }
           Alert.alert('Hedef QR', muhabbetTripRestDetail(rest.json.detail, 'Bitiş QR doğrulanamadı.'));
-          await refreshSessionFromServer('finish_qr_confirm_rest_fail', { bypassDebounce: true });
+          console.log(
+            '[MUHABBET_QR_REFRESH_BACKGROUND]',
+            JSON.stringify({ action: 'finish_qr_confirm_rest_fail' })
+          );
+          void refreshSessionFromServer('finish_qr_confirm_rest_fail', { bypassDebounce: true });
         } finally {
           setActionBusy(false);
         }
