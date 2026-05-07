@@ -338,6 +338,7 @@ export default function CreateListingModal({
   const [passengerCountText, setPassengerCountText] = useState('');
   const [passengerBudgetText, setPassengerBudgetText] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
   /** Teklif satırı: car | motorcycle (API ile aynı). */
   const [offerVehicleKind, setOfferVehicleKind] = useState<'car' | 'motorcycle'>('car');
 
@@ -358,6 +359,7 @@ export default function CreateListingModal({
       setSeatsText('');
       setPassengerCountText('');
       setOfferVehicleKind('car');
+      setSuccessModalVisible(false);
     }
   }, [visible, initialRole, city]);
 
@@ -1115,16 +1117,20 @@ export default function CreateListingModal({
       }
       console.warn('[muhabbet-create] submit OK');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Teklif', 'Teklifin açıldı.');
-      onClose();
-      resetForm();
-      onCreated?.();
+      setSuccessModalVisible(true);
     } catch (err) {
       console.warn('[muhabbet-create] fetch exception', err);
       Alert.alert('Teklif', userSubmitFailureMessage());
     } finally {
       setCreateBusy(false);
     }
+  };
+
+  const handleSuccessModalClose = () => {
+    setSuccessModalVisible(false);
+    onClose();
+    resetForm();
+    onCreated?.();
   };
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
@@ -1340,7 +1346,7 @@ export default function CreateListingModal({
                 Yakıt maliyetini yolcularla paylaşmaya göre kişi başı öneri fiyat hesaplanır.
               </Text>
               <GradientButton
-                label={priceCalcBusy ? 'Hesaplanıyor…' : 'Öneri fiyat hesapla'}
+                label={priceCalcBusy ? 'Hesaplanıyor…' : 'Tavsiye fiyat hesapla'}
                 loading={priceCalcBusy}
                 onPress={() => void calcBasePrice()}
                 disabled={
@@ -1672,6 +1678,26 @@ export default function CreateListingModal({
                 }}
               >
                 <Text style={styles.timeConfirmText}>Tamam</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={successModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleSuccessModalClose}
+        >
+          <Pressable style={styles.successOverlay} onPress={handleSuccessModalClose}>
+            <Pressable style={styles.successSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.successIconWrap}>
+                <Ionicons name="checkmark-done" size={28} color="#ffffff" />
+              </View>
+              <Text style={styles.successTitle}>Teklifin açıldı</Text>
+              <Text style={styles.successDescription}>Talep geldiğinde burada bildirim alacaksın.</Text>
+              <TouchableOpacity style={styles.successButton} activeOpacity={0.9} onPress={handleSuccessModalClose}>
+                <Text style={styles.successButtonText}>Tamam</Text>
               </TouchableOpacity>
             </Pressable>
           </Pressable>
@@ -2052,4 +2078,62 @@ const styles = StyleSheet.create({
   timeConfirmText: { fontSize: 17, fontWeight: '800', color: '#fff' },
   missingLink: { marginTop: 14, alignSelf: 'center', paddingVertical: 8 },
   missingLinkText: { fontSize: 14, color: '#93c5fd', fontWeight: '600' },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.52)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  successSheet: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 22,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  successDescription: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#cbd5e1',
+    textAlign: 'center',
+  },
+  successButton: {
+    marginTop: 18,
+    minWidth: 128,
+    borderRadius: 12,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    backgroundColor: '#ea580c',
+    alignItems: 'center',
+  },
+  successButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
 });
