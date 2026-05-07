@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   View,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -90,6 +91,24 @@ export type FeedListing = {
   destination_city?: string | null;
   matched_conversation_id?: string | null;
   accepted_user_id?: string | null;
+  creator_profile_photo?: string | null;
+  creator_profile_photo_url?: string | null;
+  profile_photo?: string | null;
+  creator_rating?: number | null;
+  rating?: number | null;
+  creator_completed_trips?: number | null;
+  completed_trips?: number | null;
+  completed_tags?: number | null;
+  successful_trips?: number | null;
+  successful_tags?: number | null;
+  creator_total_trips?: number | null;
+  total_trips?: number | null;
+  creator_is_premium?: boolean | null;
+  is_premium?: boolean | null;
+  creator_is_verified?: boolean | null;
+  is_verified?: boolean | null;
+  creator_age?: number | null;
+  age?: number | null;
 };
 
 type MatchRequestRow = {
@@ -1064,6 +1083,29 @@ export default function ListingsTab({
         const accepted = st === 'accepted' && L.conversation_id;
         const pending = st === 'pending';
         const focused = focusHighlightId === L.id;
+        const creatorName = (L.creator_public_name || L.creator_name || 'Leylek kullanıcısı').trim();
+        const initial = creatorName.charAt(0).toLocaleUpperCase('tr-TR') || '?';
+        const photoUri =
+          (
+            L.creator_profile_photo_url ||
+            L.creator_profile_photo ||
+            L.profile_photo ||
+            ''
+          ).toString().trim() || null;
+        const ageRaw = L.creator_age ?? L.age;
+        const age = Number.isFinite(Number(ageRaw)) && Number(ageRaw) > 0 ? Math.trunc(Number(ageRaw)) : null;
+        const ratingRaw = L.creator_rating ?? L.rating;
+        const rating = Number.isFinite(Number(ratingRaw)) && Number(ratingRaw) > 0 ? Number(ratingRaw) : null;
+        const completedRaw =
+          L.creator_completed_trips ??
+          L.completed_trips ??
+          L.completed_tags ??
+          L.successful_trips ??
+          L.successful_tags;
+        const completedTrips =
+          Number.isFinite(Number(completedRaw)) && Number(completedRaw) >= 0 ? Math.trunc(Number(completedRaw)) : null;
+        const hasVerified = L.creator_is_verified === true || L.is_verified === true;
+        const hasPremium = L.creator_is_premium === true || L.is_premium === true;
         const priceStr =
           L.price_amount != null && L.price_amount !== undefined
             ? `${Number(L.price_amount).toLocaleString('tr-TR')} ₺`
@@ -1113,9 +1155,47 @@ export default function ListingsTab({
                 ) : null}
               </View>
             ) : null}
-            <Text style={styles.cardNameLg} numberOfLines={1}>
-              {L.creator_public_name || L.creator_name || 'Leylek kullanıcısı'}
-            </Text>
+            <View style={styles.profileHeaderRow}>
+              <View style={styles.profileAvatar}>
+                {photoUri ? (
+                  <Image source={{ uri: photoUri }} style={styles.profileAvatarImg} />
+                ) : (
+                  <Text style={styles.profileAvatarTxt}>{initial}</Text>
+                )}
+              </View>
+              <View style={styles.profileHeaderMain}>
+                <Text style={styles.cardNameLg} numberOfLines={1}>
+                  {creatorName}
+                  {age ? `, ${age}` : ''}
+                </Text>
+                <View style={styles.profileMetaRow}>
+                  {rating != null ? (
+                    <View style={styles.profileMetaChip}>
+                      <Ionicons name="star" size={11} color="#D97706" />
+                      <Text style={styles.profileMetaTxt}>{rating.toFixed(1)}</Text>
+                    </View>
+                  ) : null}
+                  {completedTrips != null ? (
+                    <View style={styles.profileMetaChip}>
+                      <Ionicons name="checkmark-circle" size={11} color="#0F766E" />
+                      <Text style={styles.profileMetaTxt}>{completedTrips} yolculuk</Text>
+                    </View>
+                  ) : null}
+                  {hasVerified ? (
+                    <View style={[styles.profileMetaChip, styles.profileMetaChipInfo]}>
+                      <Ionicons name="shield-checkmark" size={11} color="#1D4ED8" />
+                      <Text style={[styles.profileMetaTxt, styles.profileMetaTxtInfo]}>Doğrulandı</Text>
+                    </View>
+                  ) : null}
+                  {hasPremium ? (
+                    <View style={[styles.profileMetaChip, styles.profileMetaChipPremium]}>
+                      <Ionicons name="diamond" size={11} color="#7C3AED" />
+                      <Text style={[styles.profileMetaTxt, styles.profileMetaTxtPremium]}>Premium</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            </View>
             <View style={styles.cityRouteBanner}>
               <Ionicons name="map-outline" size={14} color="#0369A1" />
               <Text style={styles.cityRouteText} numberOfLines={2} ellipsizeMode="tail">
@@ -1811,6 +1891,34 @@ const styles = StyleSheet.create({
   rolePillText: { fontSize: 12, fontWeight: '800', color: TEXT_PRIMARY },
   statusPill: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY, marginLeft: 'auto' },
   cardNameLg: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 6 },
+  profileHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
+  profileAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatarImg: { width: '100%', height: '100%' },
+  profileAvatarTxt: { fontSize: 15, fontWeight: '900', color: '#1D4ED8' },
+  profileHeaderMain: { flex: 1, minWidth: 0 },
+  profileMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  profileMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.06)',
+  },
+  profileMetaChipInfo: { backgroundColor: 'rgba(37,99,235,0.12)' },
+  profileMetaChipPremium: { backgroundColor: 'rgba(124,58,237,0.12)' },
+  profileMetaTxt: { fontSize: 10.5, fontWeight: '800', color: '#334155' },
+  profileMetaTxtInfo: { color: '#1D4ED8' },
+  profileMetaTxtPremium: { color: '#6D28D9' },
   cityRouteBanner: {
     flexDirection: 'row',
     alignItems: 'center',

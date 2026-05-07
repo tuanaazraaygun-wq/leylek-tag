@@ -72,6 +72,24 @@ type HomeFeedListing = {
   listing_scope?: string | null;
   origin_city?: string | null;
   destination_city?: string | null;
+  creator_profile_photo?: string | null;
+  creator_profile_photo_url?: string | null;
+  profile_photo?: string | null;
+  creator_rating?: number | null;
+  rating?: number | null;
+  creator_completed_trips?: number | null;
+  completed_trips?: number | null;
+  completed_tags?: number | null;
+  successful_trips?: number | null;
+  successful_tags?: number | null;
+  creator_total_trips?: number | null;
+  total_trips?: number | null;
+  creator_is_premium?: boolean | null;
+  is_premium?: boolean | null;
+  creator_is_verified?: boolean | null;
+  is_verified?: boolean | null;
+  creator_age?: number | null;
+  age?: number | null;
 };
 
 type IncomingOfferRequest = {
@@ -140,6 +158,27 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
   const roleLabel = isDriver ? 'Sürücü' : 'Yolcu';
   const creatorPublic = (item.creator_public_name || item.creator_name || 'Leylek kullanıcısı').trim();
   const initial = creatorPublic.charAt(0).toLocaleUpperCase('tr-TR') || '?';
+  const photoUri =
+    (
+      item.creator_profile_photo_url ||
+      item.creator_profile_photo ||
+      item.profile_photo ||
+      ''
+    ).toString().trim() || null;
+  const ageRaw = item.creator_age ?? item.age;
+  const age = Number.isFinite(Number(ageRaw)) && Number(ageRaw) > 0 ? Math.trunc(Number(ageRaw)) : null;
+  const ratingRaw = item.creator_rating ?? item.rating;
+  const rating = Number.isFinite(Number(ratingRaw)) && Number(ratingRaw) > 0 ? Number(ratingRaw) : null;
+  const completedRaw =
+    item.creator_completed_trips ??
+    item.completed_trips ??
+    item.completed_tags ??
+    item.successful_trips ??
+    item.successful_tags;
+  const completedTrips =
+    Number.isFinite(Number(completedRaw)) && Number(completedRaw) >= 0 ? Math.trunc(Number(completedRaw)) : null;
+  const hasVerified = item.creator_is_verified === true || item.is_verified === true;
+  const hasPremium = item.creator_is_premium === true || item.is_premium === true;
 
   return (
     <Pressable
@@ -158,9 +197,45 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
             </View>
             <View style={cs.cardTop}>
               <View style={[cs.avatarHero, isDriver ? cs.avatarHeroDrv : cs.avatarHeroPax]}>
-                <Text style={cs.avatarHeroTxt}>{initial}</Text>
+                {photoUri ? (
+                  <Image source={{ uri: photoUri }} style={cs.avatarHeroImg} />
+                ) : (
+                  <Text style={cs.avatarHeroTxt}>{initial}</Text>
+                )}
               </View>
               <View style={cs.cardTopMain}>
+                <View style={cs.profileHeaderRow}>
+                  <Text style={cs.profileName} numberOfLines={1}>
+                    {creatorPublic}
+                    {age ? `, ${age}` : ''}
+                  </Text>
+                  <View style={cs.profileMetaRow}>
+                    {rating != null ? (
+                      <View style={cs.profileMetaChip}>
+                        <Ionicons name="star" size={11} color="#D97706" />
+                        <Text style={cs.profileMetaText}>{rating.toFixed(1)}</Text>
+                      </View>
+                    ) : null}
+                    {completedTrips != null ? (
+                      <View style={cs.profileMetaChip}>
+                        <Ionicons name="checkmark-circle" size={11} color="#0F766E" />
+                        <Text style={cs.profileMetaText}>{completedTrips} yolculuk</Text>
+                      </View>
+                    ) : null}
+                    {hasVerified ? (
+                      <View style={[cs.profileMetaChip, cs.profileMetaChipInfo]}>
+                        <Ionicons name="shield-checkmark" size={11} color="#1D4ED8" />
+                        <Text style={[cs.profileMetaText, cs.profileMetaTextInfo]}>Doğrulandı</Text>
+                      </View>
+                    ) : null}
+                    {hasPremium ? (
+                      <View style={[cs.profileMetaChip, cs.profileMetaChipPremium]}>
+                        <Ionicons name="diamond" size={11} color="#7C3AED" />
+                        <Text style={[cs.profileMetaText, cs.profileMetaTextPremium]}>Premium</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
                 <View style={cs.chipsRow}>
                   <View style={[cs.pill, { backgroundColor: isDriver ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.15)' }]}>
                     <Text style={[cs.pillTxt, { color: isDriver ? '#1D4ED8' : '#C2410C' }]}>{roleLabel}</Text>
@@ -208,12 +283,6 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
                 {to}
               </Text>
             </View>
-          </View>
-          <View style={cs.creatorRow}>
-            <Ionicons name="person-circle-outline" size={17} color="#94A3B8" style={{ marginRight: 6 }} />
-            <Text style={cs.creatorLine} numberOfLines={1}>
-              {creatorPublic}
-            </Text>
           </View>
           <Pressable
             onPress={(e) => {
@@ -338,6 +407,24 @@ const cs = StyleSheet.create({
     borderColor: 'rgba(234,88,12,0.38)',
   },
   avatarHeroTxt: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  avatarHeroImg: { width: '100%', height: '100%', borderRadius: 12 },
+  profileHeaderRow: { marginBottom: 8 },
+  profileName: { fontSize: 14, fontWeight: '900', color: '#0F172A', marginBottom: 5 },
+  profileMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  profileMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.06)',
+  },
+  profileMetaChipInfo: { backgroundColor: 'rgba(37,99,235,0.12)' },
+  profileMetaChipPremium: { backgroundColor: 'rgba(124,58,237,0.12)' },
+  profileMetaText: { fontSize: 10.5, fontWeight: '800', color: '#334155' },
+  profileMetaTextInfo: { color: '#1D4ED8' },
+  profileMetaTextPremium: { color: '#6D28D9' },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
   pillTxt: { fontSize: 11, fontWeight: '900', letterSpacing: 0.2 },
@@ -390,8 +477,6 @@ const cs = StyleSheet.create({
   miniCol: { flex: 1, minWidth: 0 },
   tagG: { fontSize: 9, fontWeight: '900', color: '#64748B', marginBottom: 4, letterSpacing: 0.6 },
   place: { fontSize: 13.5, fontWeight: '700', color: '#0f172a', lineHeight: 19 },
-  creatorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  creatorLine: { flex: 1, fontSize: 13, color: '#475569', fontWeight: '700' },
   cta: {
     alignSelf: 'stretch',
     flexDirection: 'row',
