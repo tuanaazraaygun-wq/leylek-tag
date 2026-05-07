@@ -20,7 +20,6 @@ import DriverBoardingQRModal from '../components/DriverBoardingQRModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
-import PanicDial112Button from '../components/PanicDial112Button';
 import { RoleSelectLeylekAIFloating } from '../screens/RoleSelectScreen';
 import { DriverWaitingLeylekAIFloating } from '../screens/DriverWaitingScreen';
 import CallScreenV2 from '../components/CallScreenV2';
@@ -10035,7 +10034,6 @@ function PassengerDashboard({
               selfUserId={user?.id}
             />
           </View>
-          <PanicDial112Button variant="mapStrip" />
         </View>
 
         {/* Rota Bilgisi - Küçük Kart */}
@@ -11061,7 +11059,6 @@ function PassengerDashboard({
                     }
                   }}
                 />
-                <PanicDial112Button variant="mapOverlay" />
                 </View>
                 
                 {/* 🆕 End Trip Modal - Yolcu */}
@@ -14749,7 +14746,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 null
               }
             />
-            <PanicDial112Button variant="mapOverlay" />
             <DriverOfferScreen
               embedded
               vehicleKind={driverVehicleKind}
@@ -15327,7 +15323,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             }}
             onShowEndTripModal={() => setDriverEndTripModalVisible(true)}
           />
-          <PanicDial112Button variant="mapOverlay" />
           </View>
 
           {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz (PURE SOCKET - ANLIK) */}
