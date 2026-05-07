@@ -18,16 +18,10 @@
         "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
       },
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Sürücü ve yolcu arasında sesli ve görüntülü görüşme yapmak için mikrofon izni gereklidir.",
-        "NSCameraUsageDescription": "Görüntülü arama yapmak ve profil fotoğrafı çekmek için kamera izni gereklidir.",
-        "NSLocationWhenInUseUsageDescription": "Yakındaki sürücüleri bulmak ve konumunuzu paylaşmak için konum izni gereklidir.",
-        "NSLocationAlwaysUsageDescription": "Yolculuk sırasında konumunuzu takip etmek için konum izni gereklidir.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sürücü ve yolcu eşleştirmesi için konum izni gereklidir.",
-        "UIBackgroundModes": [
-          "audio",
-          "voip",
-          "location"
-        ],
+        "NSMicrophoneUsageDescription": "Uygulama içi sesli görüşme için mikrofon izni gereklidir.",
+        "NSCameraUsageDescription": "QR kod tarama ve profil fotoğrafı işlemleri için kamera izni gereklidir.",
+        "NSLocationWhenInUseUsageDescription": "Yakındaki sürücüleri bulmak ve yolculukta konum paylaşımı için konum izni gereklidir.",
+        "NSPhotoLibraryUsageDescription": "Profil ve doğrulama görsellerini seçmek için fotoğraf erişimi gereklidir.",
         "NSBluetoothAlwaysUsageDescription": "Bluetooth kulaklık kullanımı için izin gereklidir.",
         "NSBluetoothPeripheralUsageDescription": "Bluetooth cihazları ile bağlantı için izin gereklidir.",
         "NSAppTransportSecurity": {
@@ -64,14 +58,12 @@
         "android.permission.CAMERA",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.FOREGROUND_SERVICE_CAMERA",
         "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.VIBRATE",
         "android.permission.WAKE_LOCK",
-        "android.permission.READ_PHONE_STATE",
         "android.permission.POST_NOTIFICATIONS"
       ],
       "config": {
@@ -113,7 +105,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Konumunuzu şoförlere göstermek için konum izni gereklidir."
+          "locationWhenInUsePermission": "Yakındaki sürücüleri bulmak ve yolculukta konum paylaşımı için konum izni gereklidir."
         }
       ],
       [
