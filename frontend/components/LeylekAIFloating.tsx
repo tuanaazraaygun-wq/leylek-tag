@@ -209,12 +209,13 @@ export default function LeylekAIFloating({ position, message }: LeylekAIFloating
         }
       : position === 'driver-waiting'
         ? {
-            /** Normal TAG sürücü bekleme: harita satırının altı, liste başlığı hizası — kart fiyatıyla çakışmayı önler */
+            /** Normal TAG sürücü teklif/bekleme: alt orta, safe area — diğer konumlar değişmez */
             position: 'absolute',
-            left: 14,
-            top: Math.max(insets.top, 8) + 76,
+            left: 0,
+            right: 0,
+            bottom: Math.max(insets.bottom, Spacing.sm) + Spacing.md,
             zIndex: 50,
-            alignItems: 'flex-start',
+            alignItems: 'center',
           }
         : {
             width: '100%',
@@ -228,7 +229,7 @@ export default function LeylekAIFloating({ position, message }: LeylekAIFloating
         pointerEvents="none"
         style={[
           styles.tooltipWrap,
-          position === 'center-bottom' && { alignSelf: 'center' },
+          (position === 'center-bottom' || position === 'driver-waiting') && { alignSelf: 'center' },
           {
             opacity: tipOpacity,
             transform: [{ scale: tipBubbleScale }],

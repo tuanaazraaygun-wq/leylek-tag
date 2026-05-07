@@ -11827,6 +11827,74 @@ const DRIVER_OFFER_MIN_VISIBLE_MS = 30_000;
 /** Sürücü match overlay: yalnız bu önceki tag status’larından `matched`’e geçişte göster (hydrate/resume değil) */
 const DRIVER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
 
+const DRIVER_MATCH_PREMIUM_DOT_COLORS = ['#22C55E', '#3FA9F5', '#EAB308', '#F97316'] as const;
+
+/** Accept sonrası eşleşme overlay — renkli hareketli noktalar (iş mantığından bağımsız saf UI). */
+function DriverMatchTransitionPremiumRow() {
+  const anims = useRef(
+    DRIVER_MATCH_PREMIUM_DOT_COLORS.map(() => new Animated.Value(0.35)),
+  ).current;
+
+  useEffect(() => {
+    const loops = anims.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 140),
+          Animated.timing(v, {
+            toValue: 1,
+            duration: 400,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(v, {
+            toValue: 0.35,
+            duration: 400,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
+    loops.forEach((l) => l.start());
+    return () => {
+      loops.forEach((l) => l.stop());
+    };
+  }, [anims]);
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 14,
+      }}
+    >
+      {DRIVER_MATCH_PREMIUM_DOT_COLORS.map((color, i) => (
+        <Animated.View
+          key={color}
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: color,
+            marginHorizontal: 5,
+            opacity: anims[i],
+            transform: [
+              {
+                scale: anims[i].interpolate({
+                  inputRange: [0.35, 1],
+                  outputRange: [0.82, 1.12],
+                }),
+              },
+            ],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
@@ -11948,6 +12016,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   /** `<no-tag>` veya gerçek tag id — resume ile null→matched hydrate ayrımı */
   const driverMatchLastTagKeyRef = useRef<string | null>(null);
   const driverMatchPrevStatusRef = useRef<string | null>(null);
+  /** Teklif kabulü sonrası 2s overlay: status effect ile timer çakışmasın */
+  const driverMatchTransitionFromAcceptRef = useRef(false);
 
   // KYC Status - prop'tan al veya null
   const kycStatus = kycStatusProp;
@@ -13334,6 +13404,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     if (prev === 'matched' || prev === 'in_progress') return;
     if (prev == null || prev === '') return;
     if (!DRIVER_MATCH_OVERLAY_FROM_STATUSES.has(prev)) return;
+
+    if (driverMatchTransitionFromAcceptRef.current) {
+      return;
+    }
 
     if (driverMatchTransitionTimerRef.current) {
       clearTimeout(driverMatchTransitionTimerRef.current);
@@ -14875,6 +14949,20 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 }
                 setScreen('dashboard');
                 setTimeout(() => loadData(), 800);
+
+                if (data?.tag_id) {
+                  if (driverMatchTransitionTimerRef.current) {
+                    clearTimeout(driverMatchTransitionTimerRef.current);
+                    driverMatchTransitionTimerRef.current = null;
+                  }
+                  driverMatchTransitionFromAcceptRef.current = true;
+                  setDriverMatchTransitionVisible(true);
+                  driverMatchTransitionTimerRef.current = setTimeout(() => {
+                    driverMatchTransitionTimerRef.current = null;
+                    driverMatchTransitionFromAcceptRef.current = false;
+                    setDriverMatchTransitionVisible(false);
+                  }, 2000);
+                }
               }}
               onBack={() => {
                 playTapSound();
@@ -14916,8 +15004,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       {driverMatchTransitionVisible ? (
         <View style={styles.matchingOverlay} pointerEvents="auto">
           <View style={styles.matchingBox}>
+            <DriverMatchTransitionPremiumRow />
             <ActivityIndicator size="large" color="#3FA9F5" />
-            <Text style={styles.matchingTitle}>Eşleşme sağlanıyor…</Text>
+            <Text style={styles.matchingTitle}>Eşleşme sağlanıyor</Text>
             <Text style={styles.matchingSubtitle}>Yolculuk ekranı hazırlanıyor</Text>
           </View>
         </View>
