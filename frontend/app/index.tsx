@@ -6818,7 +6818,17 @@ function PassengerDashboard({
   
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
-  
+  const passengerMatchTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (passengerMatchTransitionTimerRef.current) {
+        clearTimeout(passengerMatchTransitionTimerRef.current);
+        passengerMatchTransitionTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // 🔥 Cancelled Alert'in bir kez gösterilmesi için flag
   const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
   const lastCancelledTagId = useRef<string | null>(null);
@@ -9614,7 +9624,10 @@ function PassengerDashboard({
       return;
     }
 
-    // 🆕 "Eşleşme sağlanıyor..." göster
+    console.log(
+      'TAG_MATCH_TRANSITION_SHOW',
+      JSON.stringify({ role: 'passenger', tag_id: activeTag?.id ?? null }),
+    );
     setMatchingInProgress(true);
 
     try {
@@ -9648,9 +9661,20 @@ function PassengerDashboard({
         
         // Teklifleri temizle
         clearOffers();
-        
-        // "Eşleşme sağlanıyor..." kapat
-        setMatchingInProgress(false);
+
+        if (passengerMatchTransitionTimerRef.current) {
+          clearTimeout(passengerMatchTransitionTimerRef.current);
+          passengerMatchTransitionTimerRef.current = null;
+        }
+        const ms = 1200 + Math.round(Math.random() * 600);
+        passengerMatchTransitionTimerRef.current = setTimeout(() => {
+          passengerMatchTransitionTimerRef.current = null;
+          setMatchingInProgress(false);
+          console.log(
+            'TAG_MATCH_TRANSITION_HIDE',
+            JSON.stringify({ role: 'passenger', tag_id: activeTag?.id ?? null, ms }),
+          );
+        }, ms);
 
         void playMatchChimeSound();
         
@@ -10075,8 +10099,8 @@ function PassengerDashboard({
         <View style={styles.matchingOverlay}>
           <View style={styles.matchingBox}>
             <ActivityIndicator size="large" color="#3FA9F5" />
-            <Text style={styles.matchingTitle}>🎉 Eşleşme Sağlanıyor...</Text>
-            <Text style={styles.matchingSubtitle}>Lütfen bekleyin</Text>
+            <Text style={styles.matchingTitle}>Eşleşme sağlanıyor…</Text>
+            <Text style={styles.matchingSubtitle}>Yolculuk ekranı hazırlanıyor</Text>
           </View>
         </View>
       )}
@@ -11785,6 +11809,9 @@ interface DriverDashboardProps {
 /** Rolling `remove_offer`: kart en az bu kadar ms görünsün (dalga geçişinde titreşimi keser). */
 const DRIVER_OFFER_MIN_VISIBLE_MS = 30_000;
 
+/** Sürücü match overlay: yalnız bu önceki tag status’larından `matched`’e geçişte göster (hydrate/resume değil) */
+const DRIVER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
+
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
@@ -11900,7 +11927,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
-  
+  const [driverMatchTransitionVisible, setDriverMatchTransitionVisible] = useState(false);
+  const driverMatchTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Tag değişince önceki status kirlenmesin; resume’da null→matched yanlış pozitif üretmesin */
+  /** `<no-tag>` veya gerçek tag id — resume ile null→matched hydrate ayrımı */
+  const driverMatchLastTagKeyRef = useRef<string | null>(null);
+  const driverMatchPrevStatusRef = useRef<string | null>(null);
+
   // KYC Status - prop'tan al veya null
   const kycStatus = kycStatusProp;
   const setKycStatus = setKycStatusProp || (() => {});
@@ -13257,6 +13290,55 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       setRatingModalData((prev) => (prev?.visible ? prev : null));
     }
   }, [activeTag]);
+
+  useEffect(() => {
+    return () => {
+      if (driverMatchTransitionTimerRef.current) {
+        clearTimeout(driverMatchTransitionTimerRef.current);
+        driverMatchTransitionTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  /** Normal TAG: eşleşme anında kısa premium overlay (iş mantığı / socket geciktirilmez). */
+  useEffect(() => {
+    const id = activeTag?.id ? String(activeTag.id) : '';
+    const st = activeTag?.status ? String(activeTag.status).toLowerCase() : null;
+    const tagKey = id || '<no-tag>';
+
+    if (tagKey !== driverMatchLastTagKeyRef.current) {
+      driverMatchLastTagKeyRef.current = tagKey;
+      driverMatchPrevStatusRef.current = st;
+      return;
+    }
+
+    const prev = driverMatchPrevStatusRef.current;
+    driverMatchPrevStatusRef.current = st;
+
+    if (!id || st !== 'matched') return;
+    if (prev === 'matched' || prev === 'in_progress') return;
+    if (prev == null || prev === '') return;
+    if (!DRIVER_MATCH_OVERLAY_FROM_STATUSES.has(prev)) return;
+
+    if (driverMatchTransitionTimerRef.current) {
+      clearTimeout(driverMatchTransitionTimerRef.current);
+      driverMatchTransitionTimerRef.current = null;
+    }
+    console.log(
+      'TAG_MATCH_TRANSITION_SHOW',
+      JSON.stringify({ role: 'driver', tag_id: id, from_status: prev }),
+    );
+    setDriverMatchTransitionVisible(true);
+    const ms = 1200 + Math.round(Math.random() * 600);
+    driverMatchTransitionTimerRef.current = setTimeout(() => {
+      driverMatchTransitionTimerRef.current = null;
+      setDriverMatchTransitionVisible(false);
+      console.log(
+        'TAG_MATCH_TRANSITION_HIDE',
+        JSON.stringify({ role: 'driver', tag_id: id, ms }),
+      );
+    }, ms);
+  }, [activeTag?.id, activeTag?.status]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
@@ -14817,6 +14899,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       />
     ) : null}
     <SafeAreaView style={styles.containerTransparent}>
+      {driverMatchTransitionVisible ? (
+        <View style={styles.matchingOverlay} pointerEvents="auto">
+          <View style={styles.matchingBox}>
+            <ActivityIndicator size="large" color="#3FA9F5" />
+            <Text style={styles.matchingTitle}>Eşleşme sağlanıyor…</Text>
+            <Text style={styles.matchingSubtitle}>Yolculuk ekranı hazırlanıyor</Text>
+          </View>
+        </View>
+      ) : null}
 
       {/* CANLI HARİTA - Tam Ekran (Şoför)
           Android'de (stabilite için) haritayı kapatıyoruz. */}
@@ -14871,6 +14962,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 ? 'motorcycle'
                 : 'car'
             }
+            driverSelfVehicleKind={driverVehicleKind}
             otherPassengerGender={parseGender(activeTag?.passenger_gender)}
             passengerPaymentMethod={normalizePassengerPaymentMethod(activeTag?.passenger_payment_method) ?? undefined}
             isDriver={true}

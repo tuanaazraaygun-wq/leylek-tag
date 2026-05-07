@@ -171,8 +171,13 @@ interface LiveMapViewProps {
   onShowBoardingQRModal?: () => void;
   /** Normal TAG: biniş öncesi yolcu — `BoardingScanModal` */
   onShowBoardingScanModal?: () => void;
-  /** Sürücü haritasında: yolcu araç/motor tercihi (marker ve uyarı metinleri) */
+  /**
+   * Yolcu haritasında: karşıdaki sürücü PNG — `activeTag.driver_vehicle_kind`.
+   * Sürücü haritasında: yolcu talebi (passenger_preferred_vehicle) — self araç ikonu için `driverSelfVehicleKind`.
+   */
   otherTripVehicleKind?: 'car' | 'motorcycle';
+  /** Normal TAG sürücü: kendi araç PNG / immersive nav — profil `vehicle_kind`; yoksa car */
+  driverSelfVehicleKind?: 'car' | 'motorcycle';
   /** Sürücü: yolcunun teklifte seçtiği ödeme */
   passengerPaymentMethod?: 'cash' | 'card';
   /** Sürücü uygulama-içi navigasyon açıkken üst bileşen GPS aralığını kısaltır */
@@ -1106,6 +1111,8 @@ const NAV_MARKER_MICRO_IGNORE_M = 3;
 const NAV_MARKER_SOFT_BLEND_MAX_M = 22;
 /** Yumuşak yaklaşmada her karede hedefe yaklaşma oranı */
 const NAV_MARKER_LERP = 0.15;
+/** GPS düştüğünde snap/pin yedeği en fazla bu kadar “taze” sayılır (~8–12 s ortası) */
+const NAV_MARKER_FALLBACK_MAX_AGE_MS = 10_000;
 
 /** Marker yönü: rota üzerinde ileri bakış (m) — pusula kullanılmaz */
 const NAV_ROUTE_BEARING_LOOKAHEAD_MIN_M = 14;
@@ -1868,6 +1875,7 @@ export default function LiveMapView({
   onShowBoardingQRModal,
   onShowBoardingScanModal,
   otherTripVehicleKind = 'car',
+  driverSelfVehicleKind,
   passengerPaymentMethod,
   onNavigationModeChange,
   onTrustRequest,
@@ -2254,15 +2262,23 @@ export default function LiveMapView({
   /** Nav modunda araç marker’ı: rota snap + drift filtresi (ham GPS yerine) */
   const [navDriverMapCoord, setNavDriverMapCoord] = useState<MapLatLng | null>(null);
   const navDriverStableRef = useRef<MapLatLng | null>(null);
+  /** Son geçerli GPS ile stable güncellendiği an (fallback yaşlandırma) */
+  const navDriverStableFixAtRef = useRef<number>(0);
   /** Eşleşme haritası sürücü pini (parse edilmiş) — Yolcuya Git origin yedeği */
   const driverMapPinCoordRef = useRef<MapLatLng | null>(null);
+  const driverMapPinFixAtRef = useRef<number>(0);
+  const tagMarkerRenderLogThrottleRef = useRef<{ at: number; key: string }>({ at: 0, key: '' });
   useEffect(() => {
     if (!isDriver) {
       driverMapPinCoordRef.current = null;
+      driverMapPinFixAtRef.current = 0;
       return;
     }
     const p = parseRouteEndpoint(userLocation);
-    if (p) driverMapPinCoordRef.current = p;
+    if (p) {
+      driverMapPinCoordRef.current = p;
+      driverMapPinFixAtRef.current = Date.now();
+    }
   }, [isDriver, userLocation]);
   /** Nav başına bir kez Güven ipucu animasyonu */
   const guvenNavHintShownRef = useRef(false);
@@ -2412,6 +2428,7 @@ export default function LiveMapView({
       navSpeechLastAtRef.current = 0;
       navSpeechPrevMetersRef.current = null;
       navDriverStableRef.current = null;
+      navDriverStableFixAtRef.current = 0;
       setNavDriverMapCoord(null);
       navDriverMarkerSmoothedBearingRef.current = null;
       setDriverNavRouteHeadingDeg(0);
@@ -2576,6 +2593,8 @@ export default function LiveMapView({
       navGestureResumeTimerRef.current = null;
     }
     navDriverStableRef.current = null;
+    navDriverStableFixAtRef.current = 0;
+    driverMapPinFixAtRef.current = 0;
     setNavDriverMapCoord(null);
     navDriverMarkerSmoothedBearingRef.current = null;
     setDriverNavRouteHeadingDeg(0);
@@ -2625,12 +2644,14 @@ export default function LiveMapView({
   useEffect(() => {
     if (!isDriver || !navigationMode) {
       navDriverStableRef.current = null;
+      navDriverStableFixAtRef.current = 0;
       setNavDriverMapCoord(null);
       return;
     }
     if (!isValidMapCoord(userLocation)) {
       return;
     }
+    navDriverStableFixAtRef.current = Date.now();
     const uLoc = userLocation as MapLatLng;
     const poly =
       navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
@@ -3143,7 +3164,9 @@ export default function LiveMapView({
 
   const [passengerEtaTick, setPassengerEtaTick] = useState(0);
 
-  const passMotor = otherTripVehicleKind === 'motorcycle';
+  const passMotor = isDriver
+    ? (driverSelfVehicleKind ?? 'car') === 'motorcycle'
+    : otherTripVehicleKind === 'motorcycle';
 
   const tripCompassSpin = useRef(new Animated.Value(0)).current;
   const tripCompassRotate = tripCompassSpin.interpolate({
@@ -4798,6 +4821,34 @@ export default function LiveMapView({
   const driverNavImmersive = isDriver && navigationMode;
   const driverRideUiModern = !!(isDriver && MapView && !driverNavImmersive && modernLeylekOfferUi);
 
+  /**
+   * Immersive araç pini: GPS bir an geçersiz olsa bile son stabil snap / pin ile kaybolmasın
+   * (hedef fazı + navigationMode açıkken). Çok eski yedek sonsuza dek kullanılmaz.
+   */
+  const navMapVehicleCoordResolved =
+    driverNavImmersive && Marker
+      ? (() => {
+          const fallbackFresh = (ts: number) =>
+            ts > 0 && Date.now() - ts <= NAV_MARKER_FALLBACK_MAX_AGE_MS;
+          if (userLocation && isValidMapCoord(userLocation)) {
+            return navDriverMapCoord && isValidMapCoord(navDriverMapCoord)
+              ? navDriverMapCoord
+              : userLocation;
+          }
+          const stable = navDriverStableRef.current;
+          if (stable && isValidMapCoord(stable) && fallbackFresh(navDriverStableFixAtRef.current)) {
+            return stable;
+          }
+          const pin = driverMapPinCoordRef.current;
+          if (pin && isValidMapCoord(pin) && fallbackFresh(driverMapPinFixAtRef.current)) {
+            return pin;
+          }
+          return null;
+        })()
+      : null;
+
+  const TAG_MARKER_RENDER_LOG_MIN_MS = 2500;
+
   useEffect(() => {
     if (!driverRideUiModern) return;
     console.log('[ride_ui_modern]', {
@@ -4821,6 +4872,56 @@ export default function LiveMapView({
     if (!__DEV__ || !driverRideUiModern || !boardingConfirmed) return;
     console.log('[ride_ui_modern] boardingConfirmed: trip end QR row (modern sheet)');
   }, [driverRideUiModern, boardingConfirmed]);
+
+  useEffect(() => {
+    const hasUserLoc = !!(userLocation && isValidMapCoord(userLocation));
+    const hasOtherLoc = !!(otherLocation && isValidRouteEndpoint(otherLocation));
+    const hasDestLoc = !!(destinationLocation && isValidMapCoord(destinationLocation));
+    const hasVehicleMarker = isDriver
+      ? navigationMode
+        ? !!(navMapVehicleCoordResolved && Marker)
+        : !!(hasUserLoc && !driverNavActive)
+      : !!(hasUserLoc && !(boardingConfirmed && !isDriver));
+    const payload = {
+      isDriver,
+      navigationMode,
+      navigationStage,
+      boardingConfirmed,
+      hasUserLocation: hasUserLoc,
+      hasOtherLocation: hasOtherLoc,
+      hasDestinationLocation: hasDestLoc,
+      hasVehicleMarker,
+      /** Karşı PNG araç tipi kaynağı (yolcu: tag driver_vehicle_kind; sürücü map: yolcu talebi) */
+      peerOrTagVehicleKind: otherTripVehicleKind ?? null,
+      /** Sürücü self ikon — profil vehicle_kind */
+      driverSelfVehicleKind: isDriver ? (driverSelfVehicleKind ?? 'car') : null,
+      vehicleIconUsesMotor: passMotor,
+    };
+    const key = JSON.stringify(payload);
+    const now = Date.now();
+    const th = tagMarkerRenderLogThrottleRef.current;
+    if (key === th.key && now - th.at < TAG_MARKER_RENDER_LOG_MIN_MS) {
+      return;
+    }
+    tagMarkerRenderLogThrottleRef.current = { at: now, key };
+    console.log('TAG_MARKER_RENDER_STATE', JSON.stringify(payload));
+  }, [
+    isDriver,
+    navigationMode,
+    navigationStage,
+    boardingConfirmed,
+    driverNavActive,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    navMapVehicleCoordResolved?.latitude,
+    navMapVehicleCoordResolved?.longitude,
+    otherTripVehicleKind,
+    driverSelfVehicleKind,
+  ]);
 
   // Web fallback
   if (Platform.OS === 'web' || !MapView) {
@@ -4923,12 +5024,6 @@ export default function LiveMapView({
     driverNavImmersive ? styles.routeValueModernNav : null,
   ];
 
-  const navMapVehicleCoord =
-    driverNavImmersive && userLocation && isValidMapCoord(userLocation)
-      ? navDriverMapCoord && isValidMapCoord(navDriverMapCoord)
-        ? navDriverMapCoord
-        : userLocation
-      : null;
   const navMapVehicleRotation =
     (typeof driverNavRouteHeadingDeg === 'number' && Number.isFinite(driverNavRouteHeadingDeg)
       ? driverNavRouteHeadingDeg
@@ -5185,9 +5280,9 @@ export default function LiveMapView({
             )}
 
           {/* Navigasyon: araç haritada (flat + rota bearing); çizgiler zIndex 8–10 altında */}
-          {driverNavImmersive && navMapVehicleCoord && Marker ? (
+          {driverNavImmersive && navMapVehicleCoordResolved && Marker ? (
             <Marker
-              coordinate={navMapVehicleCoord}
+              coordinate={navMapVehicleCoordResolved}
               flat
               rotation={navMapVehicleRotation}
               anchor={getDriverNavMarkerAnchor(passMotor ? 'motorcycle' : 'car')}
