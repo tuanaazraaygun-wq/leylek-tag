@@ -186,6 +186,8 @@ interface LiveMapViewProps {
   onTrustRequest?: () => void;
   /** true iken Güven AL basılmaz (çift istek / oturum çakışması önlemi) */
   trustRequestDisabled?: boolean;
+  /** Güven isteği gönderim bekliyor — yalnız UI feedback (spinner + metin) */
+  trustRequestPending?: boolean;
   trustRequestLabel?: string;
   /** Harita ekranından Leylek Zeka sohbeti (global widget ayrı kalır) */
   onOpenLeylekZekaSupport?: () => void;
@@ -1890,6 +1892,7 @@ export default function LiveMapView({
   onNavigationModeChange,
   onTrustRequest,
   trustRequestDisabled = false,
+  trustRequestPending = false,
   trustRequestLabel,
   onOpenLeylekZekaSupport,
   peerMapPinScale = 1,
@@ -5924,7 +5927,11 @@ export default function LiveMapView({
                     Güven mi istiyorsun? Yolcudan güven al
                   </Animated.Text>
                   <TouchableOpacity
-                    style={[styles.navImmersiveGuvenBtn, boardingConfirmed && { opacity: 0.45 }]}
+                    style={[
+                      styles.navImmersiveGuvenBtn,
+                      boardingConfirmed && { opacity: 0.45 },
+                      trustRequestPending && { opacity: 0.78 },
+                    ]}
                     onPress={() => {
                       void tapButtonHaptic();
                       if (boardingConfirmed) {
@@ -5935,13 +5942,13 @@ export default function LiveMapView({
                         });
                         return;
                       }
-                      if (trustRequestDisabled) return;
+                      if (trustRequestDisabled || trustRequestPending) return;
                       onTrustRequest();
                     }}
                     activeOpacity={0.88}
-                    disabled={!!trustRequestDisabled}
+                    disabled={!!trustRequestDisabled || !!trustRequestPending}
                     accessibilityRole="button"
-                    accessibilityLabel={trustRequestLabel ?? 'Güven AL'}
+                    accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                   >
                     <LinearGradient
                       colors={['#0E7490', '#059669', '#10B981', '#22C55E']}
@@ -5950,10 +5957,16 @@ export default function LiveMapView({
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                        <Ionicons name="shield-checkmark" size={18} color="#FFF" />
-                      </Animated.View>
-                      <Text style={styles.navImmersiveGuvenText}>Güven AL</Text>
+                      {trustRequestPending ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                          <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                        </Animated.View>
+                      )}
+                      <Text style={styles.navImmersiveGuvenText}>
+                        {trustRequestPending ? 'Gönderiliyor...' : 'Güven AL'}
+                      </Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
@@ -6396,7 +6409,11 @@ export default function LiveMapView({
                   {onTrustRequest ? (
                     <View style={styles.tripGuvenMirrorWrap}>
                       <TouchableOpacity
-                        style={[styles.tripGuvenFabCompact, boardingConfirmed && { opacity: 0.45 }]}
+                        style={[
+                          styles.tripGuvenFabCompact,
+                          boardingConfirmed && { opacity: 0.45 },
+                          trustRequestPending && { opacity: 0.78 },
+                        ]}
                         onPress={() => {
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
@@ -6408,14 +6425,14 @@ export default function LiveMapView({
                             });
                             return;
                           }
-                          if (trustRequestDisabled) return;
+                          if (trustRequestDisabled || trustRequestPending) return;
                           logPax('onTrustRequest', onTrustRequest);
                           onTrustRequest();
                         }}
                         activeOpacity={0.88}
-                        disabled={!!trustRequestDisabled}
+                        disabled={!!trustRequestDisabled || !!trustRequestPending}
                         accessibilityRole="button"
-                        accessibilityLabel={trustRequestLabel ?? 'Güven AL'}
+                        accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                       >
                         <LinearGradient
                           colors={['#0D9488', '#059669', '#10B981', '#34D399']}
@@ -6424,10 +6441,16 @@ export default function LiveMapView({
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
-                          <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                            <Ionicons name="shield-checkmark" size={20} color="#FFF" />
-                          </Animated.View>
-                          <Text style={styles.tripGuvenFabLabel}>Güven AL</Text>
+                          {trustRequestPending ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                              <Ionicons name="shield-checkmark" size={20} color="#FFF" />
+                            </Animated.View>
+                          )}
+                          <Text style={styles.tripGuvenFabLabel}>
+                            {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
+                          </Text>
                         </LinearGradient>
                       </TouchableOpacity>
                     </View>

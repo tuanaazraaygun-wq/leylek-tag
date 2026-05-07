@@ -10593,6 +10593,7 @@ function PassengerDashboard({
                     void sendPassengerTrustRequest();
                   }}
                   trustRequestDisabled={passengerTrustGuvenButtonDisabled}
+                  trustRequestPending={trustOutgoingPending}
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
                     setPassengerChatVisible(true);
@@ -15029,6 +15030,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               void sendDriverTrustRequest();
             }}
             trustRequestDisabled={driverTrustGuvenButtonDisabled}
+            trustRequestPending={trustOutgoingPending}
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
               setDriverChatVisible(true);
