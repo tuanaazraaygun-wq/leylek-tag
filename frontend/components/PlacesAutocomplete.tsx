@@ -941,6 +941,8 @@ interface PlacesAutocompleteProps {
   quickPickSuggestions?: MuhabbetQuickPickPlace[];
   /** quickPickSuggestions gösterimi için üst karakter sınırı (varsayılan 3) */
   quickPickShowMaxQueryLength?: number;
+  /** TAG hedef modalı: city/bias değiştiğinde aktif query'yi tekrar ara */
+  replayOnBiasChange?: boolean;
 }
 
 export default function PlacesAutocomplete({
@@ -962,6 +964,7 @@ export default function PlacesAutocomplete({
   compactMerkezChips = false,
   quickPickSuggestions,
   quickPickShowMaxQueryLength = 3,
+  replayOnBiasChange = false,
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
   const tech = visualVariant === 'tech';
@@ -997,6 +1000,9 @@ export default function PlacesAutocomplete({
   const [districtMerkezCoords, setDistrictMerkezCoords] = useState<
     Record<string, { lat: number; lng: number }>
   >({});
+  const [searchReplayTick, setSearchReplayTick] = useState(0);
+  const lastBiasReplayKeyRef = useRef('');
+  const emptyFallbackLogKeyRef = useRef('');
 
   const compactMerkezEntries = useMemo(() => {
     const empty = {
@@ -1053,6 +1059,50 @@ export default function PlacesAutocomplete({
     districtMerkezCoordsRef.current = {};
     setDistrictMerkezCoords({});
   }, [city]);
+
+  useEffect(() => {
+    if (!replayOnBiasChange) return;
+    if (query.trim().length < 2) return;
+    const replayKey = JSON.stringify({
+      q: normalizeText(query),
+      city: normalizeText(city || ''),
+      strict: !!strictCityBounds,
+      hasBiasLat: biasLatitude != null && Number.isFinite(biasLatitude),
+      hasBiasLng: biasLongitude != null && Number.isFinite(biasLongitude),
+      biasDeltaDeg,
+      forceCityInSearch: !!forceCityInSearch,
+    });
+    if (lastBiasReplayKeyRef.current === replayKey) return;
+    lastBiasReplayKeyRef.current = replayKey;
+    try {
+      console.log(
+        'TAG_PLACE_SEARCH_REPLAY_ON_BIAS_CHANGE',
+        JSON.stringify({
+          query_len: query.trim().length,
+          has_city: !!city.trim(),
+          strict_city_bounds: !!strictCityBounds,
+          has_bias: !!(
+            biasLatitude != null &&
+            Number.isFinite(biasLatitude) &&
+            biasLongitude != null &&
+            Number.isFinite(biasLongitude)
+          ),
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+    setSearchReplayTick((n) => n + 1);
+  }, [
+    replayOnBiasChange,
+    query,
+    city,
+    strictCityBounds,
+    biasLatitude,
+    biasLongitude,
+    biasDeltaDeg,
+    forceCityInSearch,
+  ]);
 
   useEffect(() => {
     if (!compactMerkezChips || compactMerkezEntries.districts.length === 0) return undefined;
@@ -1121,7 +1171,17 @@ export default function PlacesAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, widerSearch, city, strictCityBounds, biasLatitude, biasLongitude, biasDeltaDeg, forceCityInSearch]);
+  }, [
+    query,
+    widerSearch,
+    city,
+    strictCityBounds,
+    biasLatitude,
+    biasLongitude,
+    biasDeltaDeg,
+    forceCityInSearch,
+    searchReplayTick,
+  ]);
 
   /** Önce Google Places (Autocomplete + Details ile koordinat); boş / hata → Nominatim (mevcut mantık). */
   const searchPlaces = async (input: string) => {
@@ -1138,6 +1198,25 @@ export default function PlacesAutocomplete({
     let nominatimRawTotal = 0;
     let diagFallbackUsed = false;
     if (SHOW_PLACES_DIAG) setSearchDiag(null);
+    try {
+      console.log(
+        'TAG_PLACE_SEARCH_START',
+        JSON.stringify({
+          query_len: input.trim().length,
+          has_city: !!city.trim(),
+          strict_city_bounds: !!strictCityBounds,
+          has_bias: !!(
+            biasLatitude != null &&
+            Number.isFinite(biasLatitude) &&
+            biasLongitude != null &&
+            Number.isFinite(biasLongitude)
+          ),
+          request_id: requestId,
+        }),
+      );
+    } catch {
+      /* noop */
+    }
     try {
       const cityKeyHome = resolveCityDataKey(city);
       const cityLabel = cityKeyHome || city.trim();
@@ -1517,7 +1596,14 @@ export default function PlacesAutocomplete({
       }
 
       if (filtered.length === 0 && input.trim().length >= 2) {
-        const silentQueries = [`${input.trim()}, İstanbul, Türkiye`, `${input.trim()}, Ankara, Türkiye`];
+        const normalizedCity = (cityLabel || '').trim();
+        const silentQueries = [
+          normalizedCity ? normalizePlaceQuery(input.trim(), normalizedCity) : '',
+          normalizedCity ? `${input.trim()} Mahallesi, ${normalizedCity}, Türkiye` : '',
+          normalizedCity ? `${input.trim()} Caddesi, ${normalizedCity}, Türkiye` : '',
+          `${input.trim()}, İstanbul, Türkiye`,
+          `${input.trim()}, Ankara, Türkiye`,
+        ].filter(Boolean);
         const nCapSilent =
           widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
         for (const sq of silentQueries) {
@@ -1612,6 +1698,24 @@ export default function PlacesAutocomplete({
         /** Boş sonuçta da liste alanı açık kalsın; aksi halde "sonuç yok" UI hiç görünmez */
         setShowPredictions(true);
       }
+      try {
+        console.log(
+          'TAG_PLACE_SEARCH_DONE',
+          JSON.stringify({
+            query_len: input.trim().length,
+            request_id: requestId,
+            result_count: filtered.length,
+            provider:
+              filtered.length > 0 && filtered[0]?.source === 'google'
+                ? 'google'
+                : filtered.length > 0
+                  ? 'nominatim'
+                  : 'none',
+          }),
+        );
+      } catch {
+        /* noop */
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
@@ -1638,6 +1742,19 @@ export default function PlacesAutocomplete({
             query: input.trim(),
           });
         }
+      }
+      try {
+        console.log(
+          'TAG_PLACE_SEARCH_DONE',
+          JSON.stringify({
+            query_len: input.trim().length,
+            request_id: requestId,
+            result_count: 0,
+            provider: 'error',
+          }),
+        );
+      } catch {
+        /* noop */
       }
     } finally {
       if (requestId === autocompleteRequestIdRef.current) {
@@ -1768,6 +1885,72 @@ export default function PlacesAutocomplete({
     setShowPopular(true);
     setSearchRoundDone(false);
   };
+
+  const emptyFallbackSuggestions = useMemo(() => {
+    const q = query.trim();
+    if (q.length < 2) return [];
+    const cityTrim = (city || '').trim();
+    const cityKey = resolveCityDataKey(cityTrim);
+    const base = [
+      cityTrim ? `${q}, ${cityTrim}` : `${q}, Türkiye`,
+      cityTrim ? `${q} Mahallesi, ${cityTrim}` : `${q} Mahallesi`,
+      cityTrim ? `${q} Caddesi, ${cityTrim}` : `${q} Caddesi`,
+      cityTrim ? `${q} Sokak, ${cityTrim}` : `${q} Sokak`,
+    ];
+    const popular =
+      cityKey && POPULAR_PLACES[cityKey]
+        ? POPULAR_PLACES[cityKey]
+            .filter((p) => normalizeText(p).includes(normalizeText(q)))
+            .slice(0, 2)
+            .map((p) => `${p}, ${cityKey}`)
+        : [];
+    const uniq = new Set<string>();
+    const out: string[] = [];
+    for (const s of [...base, ...popular]) {
+      const t = s.trim().replace(/\s+/g, ' ');
+      if (!t) continue;
+      const key = normalizeText(t);
+      if (uniq.has(key)) continue;
+      uniq.add(key);
+      out.push(t);
+      if (out.length >= 5) break;
+    }
+    return out;
+  }, [query, city]);
+
+  useEffect(() => {
+    const canShow =
+      showPredictions &&
+      predictions.length === 0 &&
+      query.length >= 2 &&
+      !loading &&
+      searchRoundDone &&
+      emptyFallbackSuggestions.length > 0;
+    if (!canShow) return;
+    const logKey = `${normalizeText(query)}|${emptyFallbackSuggestions.length}`;
+    if (emptyFallbackLogKeyRef.current === logKey) return;
+    emptyFallbackLogKeyRef.current = logKey;
+    try {
+      console.log(
+        'TAG_PLACE_SEARCH_EMPTY_FALLBACK',
+        JSON.stringify({
+          query_len: query.trim().length,
+          fallback_count: emptyFallbackSuggestions.length,
+          has_city: !!city.trim(),
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+  }, [
+    showPredictions,
+    predictions.length,
+    query,
+    loading,
+    searchRoundDone,
+    emptyFallbackSuggestions,
+    city,
+  ]);
 
   // Popüler yerler listesi
   const popularCityKey = resolveCityDataKey(city);
@@ -2038,6 +2221,22 @@ export default function PlacesAutocomplete({
             <Text style={[styles.noResultsDiag, tech && styles.noResultsDiagTech]} numberOfLines={2}>
               {`diag: ${searchDiag.code}${searchDiag.hint ? ` · ${searchDiag.hint}` : ''}`}
             </Text>
+          ) : null}
+          {emptyFallbackSuggestions.length > 0 ? (
+            <View style={styles.emptyFallbackWrap}>
+              {emptyFallbackSuggestions.map((hint) => (
+                <TouchableOpacity
+                  key={hint}
+                  style={[styles.emptyFallbackChip, tech && styles.emptyFallbackChipTech]}
+                  onPress={() => void handleSelectPopular(hint)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.emptyFallbackChipText, tech && styles.emptyFallbackChipTextTech]} numberOfLines={1}>
+                    {hint}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           ) : null}
         </View>
       )}
@@ -2354,5 +2553,33 @@ const styles = StyleSheet.create({
   },
   noResultsDiagTech: {
     color: '#475569',
+  },
+  emptyFallbackWrap: {
+    marginTop: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  emptyFallbackChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    maxWidth: '100%',
+  },
+  emptyFallbackChipTech: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderColor: 'rgba(56, 189, 248, 0.45)',
+  },
+  emptyFallbackChipText: {
+    color: '#4338CA',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyFallbackChipTextTech: {
+    color: '#E0F2FE',
   },
 });

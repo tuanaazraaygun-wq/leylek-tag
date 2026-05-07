@@ -11329,6 +11329,7 @@ function PassengerDashboard({
                         biasDeltaDeg={0.22}
                         inputSize="large"
                         predictionMaxHeightBonus={56}
+                        replayOnBiasChange
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
                       />
                     </View>

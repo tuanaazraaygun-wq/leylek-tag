@@ -2024,6 +2024,15 @@ export default function LiveMapView({
   const destRouteFetchIdRef = useRef(0);
   const destLoadUiStartRef = useRef<number | null>(null);
   const destLoadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destMetricsInFlightKeyRef = useRef<string | null>(null);
+  const destMetricsLastAttemptKeyRef = useRef<string | null>(null);
+  const destMetricsLastSuccessKeyRef = useRef<string | null>(null);
+  const destMetricsLastSuccessAtRef = useRef<number>(0);
+  const destMetricsTimeoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destMetricsSkipLogRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
+  const DEST_ROUTE_METRICS_TIMEOUT_MS = 7000;
+  const DEST_ROUTE_METRICS_SUCCESS_TTL_MS = 10000;
+  const DEST_ROUTE_SKIP_LOG_MIN_MS = 2500;
 
   const forceMeetingRoadLoadingFalse = useCallback(() => {
     meetingLoadUiStartRef.current = null;
@@ -2107,6 +2116,15 @@ export default function LiveMapView({
         ROUTE_LOADING_MIN_VISIBLE_MS - elapsed,
       );
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (destMetricsTimeoutTimerRef.current) {
+        clearTimeout(destMetricsTimeoutTimerRef.current);
+        destMetricsTimeoutTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -3880,17 +3898,60 @@ export default function LiveMapView({
    * Polyline ayrı effect’lerde OSRM/backend geometry.
    */
   useEffect(() => {
+    const clearDestMetricsTimeout = () => {
+      if (destMetricsTimeoutTimerRef.current) {
+        clearTimeout(destMetricsTimeoutTimerRef.current);
+        destMetricsTimeoutTimerRef.current = null;
+      }
+    };
+    const clearDestMetricsInFlight = (key?: string) => {
+      if (!key || destMetricsInFlightKeyRef.current === key) {
+        destMetricsInFlightKeyRef.current = null;
+      }
+      clearDestMetricsTimeout();
+    };
+    const logDestMetricsSkip = (reason: string, endpointKey?: string, hasOrigin = false, hasDest = false) => {
+      const logKey = `${reason}|${endpointKey || 'n/a'}`;
+      const now = Date.now();
+      const prev = destMetricsSkipLogRef.current;
+      if (prev.key === logKey && now - prev.at < DEST_ROUTE_SKIP_LOG_MIN_MS) return;
+      destMetricsSkipLogRef.current = { key: logKey, at: now };
+      try {
+        console.log(
+          'TAG_DEST_ROUTE_METRICS_FETCH_SKIP',
+          JSON.stringify({
+            reason,
+            endpoint_key: endpointKey || null,
+            has_origin: hasOrigin,
+            has_dest: hasDest,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    };
     if (!isValidRouteEndpoint(destinationLocation)) {
+      clearDestMetricsInFlight();
       forceDestinationRoadLoadingFalse();
+      logDestMetricsSkip('missing_destination', undefined, false, false);
       return;
     }
     const passengerLoc = isDriver ? otherLocation : userLocation;
     if (!isValidRouteEndpoint(passengerLoc)) {
+      clearDestMetricsInFlight();
       forceDestinationRoadLoadingFalse();
+      logDestMetricsSkip('missing_origin', undefined, false, true);
       return;
     }
+    const endpointKey = [
+      `o:${Number(passengerLoc.latitude.toFixed(4))},${Number(passengerLoc.longitude.toFixed(4))}`,
+      `d:${Number(destinationLocation.latitude.toFixed(4))},${Number(destinationLocation.longitude.toFixed(4))}`,
+      `role:${isDriver ? 'driver' : 'passenger'}`,
+      `stage:${navigationStageRef.current}`,
+    ].join('|');
     const serverTripGuard = readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current);
     if (pickupFallbackForDriver && serverTripGuard != null) {
+      clearDestMetricsInFlight(endpointKey);
       destinationMetricSourceRef.current = 'routeInfo';
       forceDestinationRoadLoadingFalse();
       setDestinationRouteMetricsUnavailable(false);
@@ -3902,30 +3963,92 @@ export default function LiveMapView({
         isDriver: true,
         action: 'skip_osrm_metrics_pickup_anchor',
       });
+      logDestMetricsSkip('pickup_fallback_route_info_guard', endpointKey, true, true);
       return;
+    }
+    const quotedNow = readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
+    if (quotedNow) {
+      clearDestMetricsInFlight(endpointKey);
+      forceDestinationRoadLoadingFalse();
+      setDestinationRouteMetricsUnavailable(false);
+      logDestMetricsSkip('route_info_available', endpointKey, true, true);
+      return;
+    }
+    if (destMetricsInFlightKeyRef.current === endpointKey) {
+      logDestMetricsSkip('same_key_in_flight', endpointKey, true, true);
+      return;
+    }
+    if (destMetricsLastSuccessKeyRef.current === endpointKey) {
+      const ttlActive = Date.now() - destMetricsLastSuccessAtRef.current < DEST_ROUTE_METRICS_SUCCESS_TTL_MS;
+      if (ttlActive) {
+        clearDestMetricsInFlight(endpointKey);
+        forceDestinationRoadLoadingFalse();
+        setDestinationRouteMetricsUnavailable(false);
+        logDestMetricsSkip('success_ttl_active', endpointKey, true, true);
+        return;
+      }
+      logDestMetricsSkip('success_ttl_expired_refetch', endpointKey, true, true);
     }
     const fetchId = ++destRouteFetchIdRef.current;
     let cancelled = false;
-    const quotedNow = readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
+    let timedOut = false;
+    const requestStartMs = Date.now();
+    destMetricsInFlightKeyRef.current = endpointKey;
+    destMetricsLastAttemptKeyRef.current = endpointKey;
+    clearDestMetricsTimeout();
     const destAlreadyDrawn = destinationRouteRef.current.length > 2;
-    if (!quotedNow && !destAlreadyDrawn) {
+    if (!destAlreadyDrawn) {
       beginDestinationRoadLoadingUi();
       setDestinationRouteMetricsUnavailable(false);
     } else {
       forceDestinationRoadLoadingFalse();
     }
-    void (async () => {
+    try {
+      console.log(
+        'TAG_DEST_ROUTE_METRICS_FETCH_START',
+        JSON.stringify({
+          endpoint_key: endpointKey,
+          has_origin: true,
+          has_dest: true,
+          quoted_now: false,
+          polyline_ready: destAlreadyDrawn,
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+    destMetricsTimeoutTimerRef.current = setTimeout(() => {
+      if (cancelled) return;
+      if (destMetricsInFlightKeyRef.current !== endpointKey) return;
+      timedOut = true;
+      destMetricsInFlightKeyRef.current = null;
+      setDestinationRouteMetricsUnavailable(true);
+      forceDestinationRoadLoadingFalse();
       try {
-        if (quotedNow) {
-          return;
-        }
+        console.log(
+          'TAG_DEST_ROUTE_METRICS_TIMEOUT',
+          JSON.stringify({
+            endpoint_key: endpointKey,
+            timeout_ms: DEST_ROUTE_METRICS_TIMEOUT_MS,
+            has_origin: true,
+            has_dest: true,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    }, DEST_ROUTE_METRICS_TIMEOUT_MS);
+    void (async () => {
+      let doneStatus: 'success' | 'empty' | 'error' | 'timeout' = 'empty';
+      let resultCount = 0;
+      try {
         const br = await fetchBackendRouteMetrics(
           passengerLoc.latitude,
           passengerLoc.longitude,
           destinationLocation.latitude,
           destinationLocation.longitude,
         );
-        if (cancelled) return;
+        if (cancelled || timedOut) return;
         if (
           br.success &&
           br.distance_km != null &&
@@ -3935,12 +4058,16 @@ export default function LiveMapView({
           Number.isFinite(br.duration_min) &&
           br.duration_min > 0
         ) {
+          doneStatus = 'success';
+          resultCount = 1;
           if (!readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current)) {
             setDestinationDistance(br.distance_km);
             setDestinationDuration(Math.max(0, Math.round(br.duration_min)));
             destinationMetricSourceRef.current = 'backend_route_metrics';
           }
           setDestinationRouteMetricsUnavailable(false);
+          destMetricsLastSuccessKeyRef.current = endpointKey;
+          destMetricsLastSuccessAtRef.current = Date.now();
           logNavDiag('MATCH_ROUTE_METRICS', {
             leg: 'destination',
             source: readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current)
@@ -3953,6 +4080,7 @@ export default function LiveMapView({
             min: br.duration_min,
           });
         } else {
+          doneStatus = 'empty';
           logNavDiag('MATCH_ROUTE_METRICS', {
             leg: 'destination',
             reason: 'no_backend_route_metrics',
@@ -3962,15 +4090,41 @@ export default function LiveMapView({
             setDestinationRouteMetricsUnavailable(true);
           }
         }
+      } catch {
+        doneStatus = timedOut ? 'timeout' : 'error';
+        if (!timedOut && !readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current)) {
+          setDestinationRouteMetricsUnavailable(true);
+        }
       } finally {
-        if (!cancelled && destRouteFetchIdRef.current === fetchId) {
+        clearDestMetricsTimeout();
+        if (destMetricsInFlightKeyRef.current === endpointKey) {
+          destMetricsInFlightKeyRef.current = null;
+        }
+        if (!cancelled && !timedOut && destRouteFetchIdRef.current === fetchId) {
           endDestinationRoadLoadingUi();
+        }
+        try {
+          console.log(
+            'TAG_DEST_ROUTE_METRICS_FETCH_DONE',
+            JSON.stringify({
+              endpoint_key: endpointKey,
+              status: timedOut ? 'timeout' : doneStatus,
+              ms: Date.now() - requestStartMs,
+              result_count: resultCount,
+            }),
+          );
+        } catch {
+          /* noop */
         }
       }
     })();
     return () => {
       cancelled = true;
       destRouteFetchIdRef.current += 1;
+      clearDestMetricsTimeout();
+      if (destMetricsInFlightKeyRef.current === endpointKey) {
+        destMetricsInFlightKeyRef.current = null;
+      }
       forceDestinationRoadLoadingFalse();
     };
   }, [
