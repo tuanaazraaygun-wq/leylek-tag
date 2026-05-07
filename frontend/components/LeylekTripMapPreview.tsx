@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Dimensions, Image, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
+import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
 
 type Coord = { latitude: number; longitude: number };
 
@@ -13,6 +14,9 @@ type LeylekTripMapPreviewProps = {
   deviceLocation?: Coord | null;
   routePolyline?: string | null;
   sessionStatus?: string | null;
+  passengerGender?: 'female' | 'male' | null;
+  passengerUserId?: string | null;
+  driverVehicleKind?: 'car' | 'motorcycle' | null;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -87,6 +91,9 @@ export default function LeylekTripMapPreview({
   deviceLocation,
   routePolyline,
   sessionStatus,
+  passengerGender,
+  passengerUserId,
+  driverVehicleKind,
   style,
 }: LeylekTripMapPreviewProps) {
   const mapRef = useRef<any>(null);
@@ -187,6 +194,11 @@ export default function LeylekTripMapPreview({
   }, [fitCoords, mapReady]);
 
   const polylineStroke = '#047857';
+  const driverKind: 'car' | 'motorcycle' = driverVehicleKind === 'motorcycle' ? 'motorcycle' : 'car';
+  const driverMarkerImage = getDriverMarkerImage(driverKind);
+  const passengerMarkerImage = getPassengerMarkerImage(passengerGender, passengerUserId || null);
+  const driverMarkerPx = driverKind === 'motorcycle' ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar;
+  const passengerMarkerPx = MARKER_PIXEL.passenger;
 
   const showRouteBanner = wantsRoadBanner && routeBannerPhase !== 'idle';
 
@@ -228,12 +240,18 @@ export default function LeylekTripMapPreview({
         ) : null}
         {isCoord(driverLocation) ? (
           <Marker coordinate={driverLocation} anchor={{ x: 0.5, y: 1 }}>
-            <MarkerBubble label="Sürücü" color="#0EA5E9" icon="car-sport" />
+            <View style={styles.personMarkerWrap}>
+              <Image source={driverMarkerImage} style={{ width: driverMarkerPx, height: driverMarkerPx }} resizeMode="contain" />
+              <Text style={styles.personMarkerLabel}>Sürücü</Text>
+            </View>
           </Marker>
         ) : null}
         {isCoord(passengerLocation) ? (
           <Marker coordinate={passengerLocation} anchor={{ x: 0.5, y: 1 }}>
-            <MarkerBubble label="Yolcu" color="#F97316" icon="person" />
+            <View style={styles.personMarkerWrap}>
+              <Image source={passengerMarkerImage} style={{ width: passengerMarkerPx, height: passengerMarkerPx }} resizeMode="contain" />
+              <Text style={styles.personMarkerLabel}>Yolcu</Text>
+            </View>
           </Marker>
         ) : null}
         {backendPolyReady ? (
@@ -297,6 +315,21 @@ const styles = StyleSheet.create({
   markerText: {
     fontSize: 11,
     fontWeight: '800',
+  },
+  personMarkerWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  personMarkerLabel: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0F172A',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
   },
   fallbackBadge: {
     position: 'absolute',

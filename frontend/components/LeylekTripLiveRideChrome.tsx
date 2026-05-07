@@ -34,6 +34,9 @@ type LeylekTripLiveRideChromeProps = {
   dropoffText: string;
   agreedPrice?: number | string | null;
   vehicleKind?: string | null;
+  driverVehicleKind?: 'car' | 'motorcycle' | null;
+  passengerGender?: 'female' | 'male' | null;
+  passengerUserId?: string | null;
   paymentMethod?: 'cash' | 'card' | null;
   routePolyline?: string | null;
   routeDistanceKm?: number | null;
@@ -114,6 +117,9 @@ export default function LeylekTripLiveRideChrome({
   dropoffText,
   agreedPrice,
   vehicleKind,
+  driverVehicleKind,
+  passengerGender,
+  passengerUserId,
   paymentMethod,
   routePolyline,
   routeDistanceKm,
@@ -292,6 +298,9 @@ export default function LeylekTripLiveRideChrome({
           deviceLocation={deviceLocation}
           routePolyline={routePolyline}
           sessionStatus={sessionStatus}
+          passengerGender={passengerGender}
+          passengerUserId={passengerUserId}
+          driverVehicleKind={driverVehicleKind}
           style={styles.map}
         />
       </View>

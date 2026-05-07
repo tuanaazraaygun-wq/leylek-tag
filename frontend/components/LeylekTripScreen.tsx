@@ -30,6 +30,7 @@ import { subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { takePrefetchedMuhabbetTripSession } from '../lib/muhabbetTripPushSessionPrefetch';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { subscribeTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
+import { parseGender } from '../lib/passengerFieldHelpers';
 import type {
   MuhabbetTripCallSocketPayload,
   MuhabbetTripSession,
@@ -441,6 +442,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   /** Zorla bitir isteği sunucuya yansımadan yerel “beklemede” */
   const [forceFinishRequestOptimistic, setForceFinishRequestOptimistic] = useState(false);
   const [qrLoading, setQrLoading] = useState(false);
+  const passengerGender = useMemo(() => {
+    if (!session) return null;
+    const s = session as MuhabbetTripSession & {
+      passenger_gender?: unknown;
+      passengerGender?: unknown;
+    };
+    return parseGender(s.passenger_gender ?? s.passengerGender);
+  }, [session]);
+  const driverVehicleKind: 'car' | 'motorcycle' = useMemo(() => {
+    if (!session) return 'car';
+    const s = session as MuhabbetTripSession & { driver_vehicle_kind?: unknown };
+    const raw = String(s.driver_vehicle_kind ?? session.vehicle_kind ?? '').trim().toLowerCase();
+    return raw === 'motorcycle' || raw === 'motor' ? 'motorcycle' : 'car';
+  }, [session]);
 
   const lastLocationRestOkRef = useRef(0);
 
@@ -2993,6 +3008,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         dropoffText={session.dropoff_text || 'Sohbette belirlenen varış noktası'}
         agreedPrice={session.agreed_price}
         vehicleKind={session.vehicle_kind}
+        driverVehicleKind={driverVehicleKind}
+        passengerGender={passengerGender}
+        passengerUserId={session.passenger_id}
         paymentMethod={session.payment_method}
         routePolyline={session.route_polyline}
         routeDistanceKm={session.route_distance_km}
