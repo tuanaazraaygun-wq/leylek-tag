@@ -28,8 +28,8 @@ import {
 } from '../contexts/LeylekZekaChromeContext';
 import { useLeylekZeka } from '../hooks/useLeylekZeka';
 import {
+  getLeylekZekaContextCopy,
   getContextualPillLine,
-  getMiniHintPool,
   pickNextSequential,
 } from '../lib/leylekZekaUxCopy';
 
@@ -581,7 +581,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       const idleFor = now - lastInteractionRef.current;
       if (idleFor < idleThresholdRef.current) return;
 
-      const pool = getMiniHintPool(homeRef.current ?? null, hintRef.current);
+      const pool = getLeylekZekaContextCopy(homeRef.current ?? null, hintRef.current).idleHints;
       if (!pool.length) {
         idleThresholdRef.current = nextIdleThresholdMs();
         return;

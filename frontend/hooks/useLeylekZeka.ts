@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSegments } from 'expo-router';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 import { getLeylekZekaChatUrl } from '../lib/backendConfig';
+import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 
 export type LeylekZekaMessage = {
@@ -56,9 +57,16 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
   const segments = useSegments();
   const isAdminUser = options?.isAdmin === true || segments[0] === 'admin';
   const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
+  const contextCopy = useMemo(
+    () => getLeylekZekaContextCopy(homeFlowScreen ?? null, flowHint),
+    [homeFlowScreen, flowHint],
+  );
 
   const leylekContext = useMemo(() => {
     const o: Record<string, string | boolean> = {};
+    o.guideMode = true;
+    o.stageLabel = contextCopy.stageLabel;
+    o.intentScope = contextCopy.intentScope;
     if (homeFlowScreen) o.screen = homeFlowScreen;
     if (flowHint) o.flowHint = flowHint;
     const pass = Boolean(flowHint?.startsWith('passenger'));
@@ -76,7 +84,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       o.hasActiveOffer = true;
     }
     return Object.keys(o).length ? o : undefined;
-  }, [homeFlowScreen, flowHint]);
+  }, [homeFlowScreen, flowHint, contextCopy.intentScope, contextCopy.stageLabel]);
 
   const [messages, setMessages] = useState<LeylekZekaMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);

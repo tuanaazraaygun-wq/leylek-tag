@@ -26,7 +26,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing } from '../constants/Colors';
+import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 import { type LeylekZekaMessage, type LeylekZekaReplySource } from '../hooks/useLeylekZeka';
+import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 const LOGO = require('../assets/images/logo.png');
@@ -202,16 +204,45 @@ const BinaryPatternBackdrop = memo(function BinaryPatternBackdrop() {
   );
 });
 
-const EmptyWelcome = memo(function EmptyWelcome() {
+const EmptyWelcome = memo(function EmptyWelcome({
+  title,
+  body,
+  prompts,
+  disabled,
+  onPromptPress,
+}: {
+  title: string;
+  body: string;
+  prompts: string[];
+  disabled: boolean;
+  onPromptPress: (prompt: string) => void;
+}) {
   return (
-    <View style={styles.emptyState} accessible accessibilityRole="text">
+    <View style={styles.emptyState}>
       <View style={styles.emptyIconWrap}>
         <Image source={LOGO} style={styles.emptyLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
-      <Text style={styles.emptyTitle}>Leylek Zeka</Text>
-      <Text style={styles.emptyBody}>
-        Merhaba 👋 Ben Leylek Zeka. LeylekTag içinde eşleşme, yolculuk ve uygulama kullanımıyla ilgili konularda sana yardımcı olabilirim. Aklına takılan bir şey varsa yazabilir, istersen geri bildirim paylaşarak uygulamanın gelişmesine katkı da sağlayabilirsin.
-      </Text>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyBody}>{body}</Text>
+      <Text style={styles.emptyPromptTitle}>Sorabileceğin başlıklar</Text>
+      <View style={styles.emptyPromptGrid}>
+        {prompts.map((prompt) => (
+          <Pressable
+            key={prompt}
+            onPress={() => onPromptPress(prompt)}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={prompt}
+            style={({ pressed }) => [
+              styles.emptyPromptChip,
+              disabled && styles.emptyPromptChipDisabled,
+              pressed && !disabled && styles.emptyPromptChipPressed,
+            ]}
+          >
+            <Text style={styles.emptyPromptText}>{prompt}</Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 });
@@ -430,6 +461,26 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     onSend(t);
   }, [input, isTyping, onSend]);
 
+  const contextCopy = useMemo(
+    () => getLeylekZekaContextCopy(homeFlowScreen ?? null, flowHint),
+    [homeFlowScreen, flowHint],
+  );
+
+  const onStarterPromptPress = useCallback(
+    (prompt: string) => {
+      if (isTyping) return;
+      if (Platform.OS !== 'web') {
+        try {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {
+          /* ignore */
+        }
+      }
+      onSend(prompt);
+    },
+    [isTyping, onSend],
+  );
+
   const scrollToEndSafe = useCallback(() => {
     if (!mountedRef.current || !visibleRef.current) {
       lzChatDebug('scrollToEndSafe skip: not mounted or not visible');
@@ -557,6 +608,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           ? 'Resmi adım adım yanıt.'
           : null;
 
+  const headerSubtitle = `${contextCopy.stageLabel} · Rehber`;
+
   const closeWithHaptic = useCallback(() => {
     if (Platform.OS !== 'web') {
       try {
@@ -676,7 +729,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                       <Text style={styles.aiBadgeText}>AI</Text>
                     </LinearGradient>
                   </View>
-                  <Text style={styles.headerSubtitle}>Rehber · Yardım</Text>
+                  <Text style={styles.headerSubtitle} numberOfLines={1}>
+                    {headerSubtitle}
+                  </Text>
                   {modeCaption ? <Text style={styles.modeCaptionInline}>{modeCaption}</Text> : null}
                 </View>
               </View>
@@ -689,8 +744,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           {showBetaHint ? (
             <View style={styles.betaBanner}>
               <Text style={styles.betaText}>
-                Leylek Zeka beta destek modunda çalışıyor. Şimdilik size hazır yanıtlarla yardımcı
-                oluyoruz; tam yapay zeka desteği kısa süre içinde açılacaktır.
+                Leylek Zeka yanınızda 🚀{'\n\n'}
+                Yolculuk eşleşmeleri, Leylek Teklifi, güvenli kullanım ve uygulama adımları
+                hakkında anlık rehberlik alabilirsiniz.{'\n'}
+                Sürücüler için kullanım önerileri, yolcular için yolculuk desteği burada.
               </Text>
               <Pressable onPress={dismissBetaHint} hitSlop={8} style={styles.betaDismiss}>
                 <Ionicons name="close-circle" size={22} color={Colors.gray500} />
@@ -730,7 +787,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               windowSize={10}
               maxToRenderPerBatch={10}
               updateCellsBatchingPeriod={50}
-              ListEmptyComponent={EmptyWelcome}
+              ListEmptyComponent={
+                <EmptyWelcome
+                  title={contextCopy.emptyTitle}
+                  body={contextCopy.emptyBody}
+                  prompts={contextCopy.starterPrompts}
+                  disabled={isTyping}
+                  onPromptPress={onStarterPromptPress}
+                />
+              }
               ListFooterComponent={
                 isTyping ? (
                   <View style={styles.typingBubbleOuter}>
@@ -761,7 +826,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.input}
-                placeholder="Sorunuzu yazın…"
+                placeholder={contextCopy.placeholder}
                 placeholderTextColor="#475569"
                 value={input}
                 onChangeText={setInput}
