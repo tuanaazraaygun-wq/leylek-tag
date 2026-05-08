@@ -2,6 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 import * as Speech from 'expo-speech';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -333,6 +337,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const [input, setInput] = useState('');
   const [showBetaHint, setShowBetaHint] = useState(false);
   const [speechEnabled, setSpeechEnabled] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [partialTranscript, setPartialTranscript] = useState('');
+  const [voiceInputError, setVoiceInputError] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
@@ -349,6 +356,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const scrollGenRef = useRef(0);
   const lastAssistantSpeechIdRef = useRef<string | null>(null);
   const prevVisibleForSpeechRef = useRef(visible);
+  const finalTranscriptRef = useRef('');
+  const partialTranscriptRef = useRef('');
+  const pressActiveRef = useRef(false);
+  const recognitionStartedRef = useRef(false);
+  const suppressNextVoiceErrorRef = useRef(false);
+  const voiceSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Android: keyboardDidHide bazen düzen değişince iki kez tetiklenir; anlık sıfırlama odak kaybına yol açabilir */
   const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -494,23 +507,115 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
   }, []);
 
+  const clearVoiceSubmitTimer = useCallback(() => {
+    if (voiceSubmitTimerRef.current) {
+      clearTimeout(voiceSubmitTimerRef.current);
+      voiceSubmitTimerRef.current = null;
+    }
+  }, []);
+
+  const resetVoiceInputState = useCallback(() => {
+    finalTranscriptRef.current = '';
+    partialTranscriptRef.current = '';
+    setPartialTranscript('');
+    setVoiceInputError('');
+  }, []);
+
+  const abortVoiceInput = useCallback(() => {
+    clearVoiceSubmitTimer();
+    const hadVoiceSession =
+      pressActiveRef.current || recognitionStartedRef.current || Boolean(partialTranscriptRef.current);
+    pressActiveRef.current = false;
+    recognitionStartedRef.current = false;
+    if (hadVoiceSession) suppressNextVoiceErrorRef.current = true;
+    try {
+      ExpoSpeechRecognitionModule.abort();
+    } catch {
+      /* recognizer may already be inactive */
+    }
+    setIsListening(false);
+    resetVoiceInputState();
+  }, [clearVoiceSubmitTimer, resetVoiceInputState]);
+
+  const submitVoiceTranscript = useCallback(() => {
+    clearVoiceSubmitTimer();
+    const transcript = (finalTranscriptRef.current || partialTranscriptRef.current).trim();
+    finalTranscriptRef.current = '';
+    partialTranscriptRef.current = '';
+    setPartialTranscript('');
+    recognitionStartedRef.current = false;
+    if (!transcript) {
+      setVoiceInputError('Ses algılanamadı, tekrar deneyin.');
+      return;
+    }
+    setVoiceInputError('');
+    onSend(transcript);
+  }, [clearVoiceSubmitTimer, onSend]);
+
+  const scheduleVoiceTranscriptSubmit = useCallback(() => {
+    clearVoiceSubmitTimer();
+    voiceSubmitTimerRef.current = setTimeout(() => {
+      voiceSubmitTimerRef.current = null;
+      submitVoiceTranscript();
+    }, 420);
+  }, [clearVoiceSubmitTimer, submitVoiceTranscript]);
+
+  useSpeechRecognitionEvent('start', () => {
+    recognitionStartedRef.current = true;
+    setIsListening(true);
+    setVoiceInputError('');
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    setIsListening(false);
+    if (!pressActiveRef.current && recognitionStartedRef.current) {
+      scheduleVoiceTranscriptSubmit();
+    }
+  });
+
+  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = (event.results?.[0]?.transcript ?? '').trim();
+    if (!transcript) return;
+    partialTranscriptRef.current = transcript;
+    setPartialTranscript(transcript);
+    if (event.isFinal) {
+      finalTranscriptRef.current = transcript;
+    }
+  });
+
+  useSpeechRecognitionEvent('error', (event) => {
+    if (suppressNextVoiceErrorRef.current || event.error === 'aborted') {
+      suppressNextVoiceErrorRef.current = false;
+      return;
+    }
+    recognitionStartedRef.current = false;
+    setIsListening(false);
+    const message =
+      event.error === 'not-allowed'
+        ? 'Mikrofon izni olmadan bas-konuş kullanılamaz.'
+        : 'Ses algılanamadı, tekrar deneyin.';
+    setVoiceInputError(message);
+  });
+
   useEffect(() => {
     return () => {
+      abortVoiceInput();
       stopSpeech();
     };
-  }, [stopSpeech]);
+  }, [abortVoiceInput, stopSpeech]);
 
   useEffect(() => {
     const wasVisible = prevVisibleForSpeechRef.current;
     prevVisibleForSpeechRef.current = visible;
     if (!visible) {
+      abortVoiceInput();
       stopSpeech();
       return;
     }
     if (!wasVisible) {
       lastAssistantSpeechIdRef.current = latestAssistantId;
     }
-  }, [latestAssistantId, stopSpeech, visible]);
+  }, [abortVoiceInput, latestAssistantId, stopSpeech, visible]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -540,9 +645,51 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     });
   }, [stopSpeech]);
 
+  const startVoiceInput = useCallback(async () => {
+    if (isTyping) return;
+    stopSpeech();
+    clearVoiceSubmitTimer();
+    resetVoiceInputState();
+    suppressNextVoiceErrorRef.current = false;
+    pressActiveRef.current = true;
+    try {
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) {
+        pressActiveRef.current = false;
+        setIsListening(false);
+        setVoiceInputError('Mikrofon izni olmadan bas-konuş kullanılamaz.');
+        return;
+      }
+      if (!pressActiveRef.current) return;
+      ExpoSpeechRecognitionModule.start({
+        lang: 'tr-TR',
+        interimResults: true,
+        continuous: false,
+      });
+    } catch {
+      pressActiveRef.current = false;
+      setIsListening(false);
+      setVoiceInputError('Bas-konuş başlatılamadı, tekrar deneyin.');
+    }
+  }, [clearVoiceSubmitTimer, isTyping, resetVoiceInputState, stopSpeech]);
+
+  const stopVoiceInput = useCallback(() => {
+    if (!pressActiveRef.current && !isListening && !recognitionStartedRef.current) return;
+    pressActiveRef.current = false;
+    try {
+      ExpoSpeechRecognitionModule.stop();
+    } catch {
+      setIsListening(false);
+      scheduleVoiceTranscriptSubmit();
+      return;
+    }
+    scheduleVoiceTranscriptSubmit();
+  }, [isListening, scheduleVoiceTranscriptSubmit]);
+
   const onSubmit = useCallback(() => {
     const t = input.trim();
     if (!t || isTyping) return;
+    abortVoiceInput();
     stopSpeech();
     if (Platform.OS !== 'web') {
       try {
@@ -553,7 +700,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
     setInput('');
     onSend(t);
-  }, [input, isTyping, onSend, stopSpeech]);
+  }, [abortVoiceInput, input, isTyping, onSend, stopSpeech]);
 
   const contextCopy = useMemo(
     () => getLeylekZekaContextCopy(homeFlowScreen ?? null, flowHint),
@@ -563,6 +710,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const onStarterPromptPress = useCallback(
     (prompt: string) => {
       if (isTyping) return;
+      abortVoiceInput();
       stopSpeech();
       if (Platform.OS !== 'web') {
         try {
@@ -573,7 +721,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
       onSend(prompt);
     },
-    [isTyping, onSend, stopSpeech],
+    [abortVoiceInput, isTyping, onSend, stopSpeech],
   );
 
   const scrollToEndSafe = useCallback(() => {
@@ -706,6 +854,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const headerSubtitle = `${contextCopy.stageLabel} · Rehber`;
 
   const closeWithHaptic = useCallback(() => {
+    abortVoiceInput();
     stopSpeech();
     if (Platform.OS !== 'web') {
       try {
@@ -715,7 +864,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
     }
     onClose();
-  }, [onClose, stopSpeech]);
+  }, [abortVoiceInput, onClose, stopSpeech]);
 
   const kavOffset = useMemo(() => {
     if (Platform.OS === 'ios') {
@@ -971,6 +1120,26 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 })}
               />
               <Pressable
+                onPressIn={startVoiceInput}
+                onPressOut={stopVoiceInput}
+                accessibilityRole="button"
+                accessibilityLabel="Bas-konuş"
+                accessibilityState={{ disabled: isTyping }}
+                style={({ pressed }) => [
+                  styles.micBtn,
+                  isListening && styles.micBtnListening,
+                  isTyping && styles.micBtnDisabled,
+                  pressed && !isTyping && styles.micBtnPressed,
+                ]}
+                disabled={isTyping}
+              >
+                <Ionicons
+                  name={isListening ? 'mic' : 'mic-outline'}
+                  size={19}
+                  color={isListening ? '#FFFFFF' : '#2563EB'}
+                />
+              </Pressable>
+              <Pressable
                 onPress={onSubmit}
                 accessibilityRole="button"
                 accessibilityLabel="Gönder"
@@ -996,6 +1165,17 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 </LinearGradient>
               </Pressable>
             </View>
+            {isListening || partialTranscript || voiceInputError ? (
+              <Text
+                style={[
+                  styles.voiceInputHint,
+                  voiceInputError ? styles.voiceInputHintError : null,
+                ]}
+                numberOfLines={2}
+              >
+                {voiceInputError || (partialTranscript ? `Algılanan: ${partialTranscript}` : 'Dinleniyor...')}
+              </Text>
+            ) : null}
             </View>
           </LinearGradient>
             </View>
@@ -1638,6 +1818,37 @@ const styles = StyleSheet.create({
     marginRight: Spacing.sm,
     fontWeight: '500',
     letterSpacing: 0.04,
+  },
+  micBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.42)',
+    backgroundColor: '#EFF6FF',
+  },
+  micBtnListening: {
+    backgroundColor: '#2563EB',
+    borderColor: '#1D4ED8',
+  },
+  micBtnPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.96 }],
+  },
+  micBtnDisabled: { opacity: 0.45 },
+  voiceInputHint: {
+    marginTop: 6,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
+  voiceInputHintError: {
+    color: '#B91C1C',
   },
   sendBtnOuter: {
     borderRadius: 22,
