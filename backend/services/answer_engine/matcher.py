@@ -149,6 +149,13 @@ def _ctx_dict(context: dict[str, Any] | None) -> dict[str, Any]:
     return context if isinstance(context, dict) else {}
 
 
+def _has_role_word(t: str, words: tuple[str, ...]) -> bool:
+    padded = f" {t} "
+    for ch in "?!.,;:()[]{}":
+        padded = padded.replace(ch, " ")
+    return any(f" {w} " in padded for w in words)
+
+
 def infer_role(context: dict[str, Any] | None, t: str) -> str | None:
     """passenger | driver | None — istemci bağlamı + kısa metin ipuçları."""
     ctx = _ctx_dict(context)
@@ -161,11 +168,13 @@ def infer_role(context: dict[str, Any] | None, t: str) -> str | None:
         return "driver"
     if fh.startswith("passenger"):
         return "passenger"
-    if "sürücü" in t or "surucu" in t or "şoför" in t:
-        if "yolcu" not in t:
+    driver_word = _has_role_word(t, ("sürücü", "surucu", "şoför", "sofor"))
+    passenger_word = _has_role_word(t, ("yolcu", "müşteri", "musteri"))
+    if driver_word:
+        if not passenger_word:
             return "driver"
-    if "yolcu" in t or "müşteri" in t:
-        if "sürücü" not in t and "surucu" not in t:
+    if passenger_word:
+        if not driver_word:
             return "passenger"
     return None
 

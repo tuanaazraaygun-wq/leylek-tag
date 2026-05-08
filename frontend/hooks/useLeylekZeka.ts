@@ -53,6 +53,10 @@ function buildHistory(prev: LeylekZekaMessage[]): HistoryItem[] {
   return prev.map((m) => ({ role: m.role, content: m.text }));
 }
 
+function stripSimpleMarkdownBold(text: string): string {
+  return text.replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, '$1').replace(/\*\*([^*]+)\*\*/g, '$1');
+}
+
 export function useLeylekZeka(options?: { isAdmin?: boolean }) {
   const segments = useSegments();
   const isAdminUser = options?.isAdmin === true || segments[0] === 'admin';
@@ -178,7 +182,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
         return;
       }
 
-      const reply = typeof data?.reply === 'string' ? data.reply.trim() : '';
+      const reply = typeof data?.reply === 'string' ? stripSimpleMarkdownBold(data.reply).trim() : '';
       if (!reply) {
         setError('Boş yanıt.');
         return;

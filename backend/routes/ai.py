@@ -51,6 +51,12 @@ class LeylekZekaClientContext(BaseModel):
     isDriver: bool | None = None
     isPassenger: bool | None = None
     flowHint: str | None = None
+    guideMode: bool | None = None
+    stageLabel: str | None = None
+    intentScope: str | None = None
+    operationAwareness: bool | None = None
+    knownSignals: list[str] | None = None
+    safeAdviceOnly: bool | None = None
 
 
 class LeylekZekaRequest(BaseModel):

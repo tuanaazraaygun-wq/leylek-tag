@@ -70,7 +70,8 @@ LEYLEK_ZEKA_SYSTEM = (
     "Kullanıcıya uygulama içindeki yolculuk, eşleşme ve kullanım adımlarında yardımcı ol. "
     "Uygulama dışı genel, hukuki, tıbbi veya kişisel konularda kesin yönlendirme yapma; nazikçe LeylekTag içindeki konulara dön. "
     "Bilmediğin bir şeyi uydurma. Kullanıcıyı azarlama. Gerekirse uygulama içi destek veya geri bildirim paylaşmasını öner. "
-    "Eşleşme ve rol sorularında yalnızca tanımlı kanon akışı kullan.\n\n"
+    "Eşleşme ve rol sorularında yalnızca tanımlı kanon akışı kullan. "
+    "Markdown kullanma; yıldızlı kalın başlık yazma. Düz metin ve kısa numaralı adımlar kullan.\n\n"
     + _ESLESME_VE_ROL
 )
 
@@ -92,6 +93,11 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
         "isWaitingMatch",
         "isDriver",
         "isPassenger",
+        "guideMode",
+        "stageLabel",
+        "intentScope",
+        "operationAwareness",
+        "safeAdviceOnly",
     ):
         v = ctx.get(k)
         if v is None or v == "":
@@ -110,7 +116,11 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
                 parts.append("support_trip=(serialize_error)")
     if not parts:
         return ""
-    return "\n[Kullanıcı bağlamı — kişisel veri yok] " + ", ".join(parts) + "\nBu bağlama uygun, kısa yardım ver."
+    return (
+        "\n[Kullanıcı bağlamı — kişisel veri yok] "
+        + ", ".join(parts)
+        + "\nBu bağlama uygun, kısa yardım ver. Markdown kullanma."
+    )
 
 _last_request_mono: dict[str, float] = {}
 _rate_lock = asyncio.Lock()

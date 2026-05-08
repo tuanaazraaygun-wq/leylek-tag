@@ -55,7 +55,7 @@ const ROLE_SELECT_COPY: LeylekZekaBaseCopy = {
   emptyTitle: 'Rol seçimini birlikte netleştirelim',
   emptyBody:
     'Yolcu akışı yolculuk başlatmaya, sürücü akışı teklifleri takip etmeye odaklanır. Hangi rolün hangi ekrana götürdüğünü kısa ve iddiasız şekilde açıklayabilirim.',
-  placeholder: 'Örn. Yolcu ve sürücü farkı nedir?',
+  placeholder: 'Leylek Zeka’ya sorunuzu yazın...',
   starterPrompts: [
     'Yolcu akışı nasıl çalışır?',
     'Sürücü akışı nasıl çalışır?',
@@ -94,7 +94,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
     intentScope: 'passenger_matching_guide',
     emptyTitle: 'Eşleşme beklerken rehber',
     emptyBody:
-      'Bekleme ekranında konum, rota ve araç tercihi gibi görünen adımları nasıl kontrol edeceğini anlatabilirim. Kesin eşleşme veya süre tahmini paylaşmam.',
+      'Bekleme ekranında konum, rota ve araç tercihi gibi görünen adımları nasıl kontrol edeceğini anlatabilirim. Eşleşme veya süre garantisi paylaşmam.',
     placeholder: 'Örn. Eşleşme beklerken neyi kontrol etmeliyim?',
     starterPrompts: [
       'Eşleşme beklerken hangi adımları kontrol etmeliyim?',

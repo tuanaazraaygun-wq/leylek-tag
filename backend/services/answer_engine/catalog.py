@@ -124,6 +124,56 @@ TEKLIF_BRIEF = """Teklif
 
 Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur."""
 
+GUVEN_AL_EXPLAINED = """Güven Al
+
+Güven Al, normal TAG yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep edebilmesini sağlar.
+
+Butona basıldığında karşı tarafa sizden güven almak istiyor benzeri bir istek gider.
+
+Karşı taraf kabul ederse yaklaşık 5 dakikalık görüntülü görüşme başlar.
+
+Bu özellik acil servis, polis, çağrı merkezi, resmi güvenlik bildirimi veya kendiliğinden ihbar sistemi değildir. Acil durumda 112 veya ilgili resmi kanallar kullanılmalıdır."""
+
+INTERCITY_ROLE_QUESTION = """Şehir dışı Leylek Teklif Sende akışı için yardımcı olayım.
+
+Yolcu olarak mı şehir dışına gitmek istiyorsunuz, yoksa sürücü olarak teklif vermek/açmak mı istiyorsunuz?"""
+
+PASSENGER_INTERCITY_LEYLEK_OFFER = """Yolcu olarak şehir dışı Leylek Teklif Sende
+
+Şehir dışı yolculuk, şehir içi normal TAG’den ayrıdır.
+
+1) Rol seçimi ekranının altındaki Leylek Teklif Sende kartına dokunun.
+2) Yolcu olarak şehir dışı talep oluşturun.
+3) Rota, tarih/saat ve yolculuk notlarını girin.
+4) Uygun sürücülerle teklif/eşleşme süreci uygulama içinde ilerler.
+5) Eşleşme sonrası Muhabbet/chat üzerinden detayları netleştirin.
+6) Uygulamadaki QR ve görüşme adımlarını takip edin.
+
+Eşleşme veya süre garantisi verilmez."""
+
+DRIVER_INTERCITY_LEYLEK_OFFER = """Sürücü olarak şehir dışı Leylek Teklif Sende
+
+Şehir dışı yolculuk, şehir içi normal TAG’den ayrıdır.
+
+1) Rol seçimi ekranının altındaki Leylek Teklif Sende kartına dokunun.
+2) Sürücü olarak şehir dışı teklif/talep alanını kullanın.
+3) Rota, tarih/saat, araç uygunluğu ve yolcu notlarını kontrol edin.
+4) Uygunsa teklif verin veya uygun ilanı değerlendirin.
+5) Eşleşme sonrası Muhabbet/chat üzerinden detayları netleştirin.
+6) Uygulamadaki QR ve görüşme adımlarını takip edin.
+
+Bölge yönlendirmesi, garanti kazanç veya garanti eşleşme söylenmez."""
+
+TAG_VS_INTERCITY_LEYLEK_OFFER = """Şehir içi TAG ve Leylek Teklif Sende farkı
+
+Şehir içi normal TAG:
+Yakın mesafe şehir içi yolcu/sürücü eşleşme ve normal TAG yolculuk akışıdır.
+
+Leylek Teklif Sende:
+Şehir dışı/şehirler arası yolculuklar için ayrı teklif/talep alanıdır.
+Rol seçimi ekranının altındaki karttan açılır.
+Eşleşme sonrası Muhabbet/chat ve ilgili yolculuk adımları kullanılır."""
+
 MATCH_NOT_HAPPENING = """Eşleşme veya teklif gecikiyor
 
 Özet
@@ -134,7 +184,7 @@ Adımlar
 2) İnternet; gerekirse uygulamayı kapatıp aç.
 3) Talep veya teklif bekleme ekranındasın; yanlışlıkla iptal veya başka sekmeye düşmedin mi?
 4) Yolcuysan: talep yayında mı; araç tipi ve adresler doğru mu? Liste boşsa bekle veya adresi sadeleştirip talebi yenile.
-5) Sürücüysen: müsait mod açık mı; listede talep var mı? Boşsa bölge veya saati değiştirmeyi dene.
+5) Sürücüysen: müsait mod açık mı; listede talep var mı? Boşsa ekrandaki durumu ve bildirimlerini kontrol et.
 
 Dikkat
 Adresi gereğinden geniş bırakmak veya araç tipini yanlış seçmek eşleşmeyi yavaşlatır.
@@ -162,7 +212,7 @@ Buluşmayı mesajdan netleştir; ardından yolculuk adımlarını uygulamada izl
 DRIVER_ACCEPT_REQUEST = """Sürücü: talebe teklif gönderme
 
 Özet
-Uygun talebi açıp teklif yazıp gönderirsin. Kesin eşleşme, yolcunun bu teklifi kabul etmesiyle oluşur.
+Uygun talebi açıp teklif yazıp gönderirsin. Eşleşme, yolcunun bu teklifi kabul etmesiyle oluşur.
 
 Adımlar
 1) Harita veya listeden talebi aç; kalkış ve varışı doğrula.
@@ -441,6 +491,113 @@ _H2SO_PHRASE_WEIGHTS: tuple[tuple[str, int], ...] = (
 
 
 INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
+    IntentDefinition(
+        id="guven_al_explained",
+        title="Güven Al nasıl çalışır?",
+        supported_roles=("any",),
+        example_queries=(
+            "Güven Al butonu nasıl çalışır?",
+            "güven al nedir",
+            "güven alma",
+            "güven görüşmesi nedir",
+        ),
+        description="Güven Al'ın kısa süreli görüntülü görüşme isteği olduğunu açıklar.",
+        match_phrases=(
+            "güven al",
+            "guven al",
+            "güven alma",
+            "guven alma",
+            "güven görüşmesi",
+            "guven gorusmesi",
+            "güven görüşme",
+            "guven gorusme",
+        ),
+        phrase_weights=(
+            ("güven al butonu", 14),
+            ("guven al butonu", 14),
+            ("güven al", 12),
+            ("guven al", 12),
+            ("güven görüşmesi", 12),
+            ("guven gorusmesi", 12),
+        ),
+        default_template=GUVEN_AL_EXPLAINED,
+    ),
+    IntentDefinition(
+        id="tag_vs_intercity_leylek_offer",
+        title="Şehir içi TAG ve Leylek Teklif Sende farkı",
+        supported_roles=("any",),
+        example_queries=(
+            "Şehir içi TAG ile Leylek Teklifi farkı nedir?",
+            "normal TAG ve şehir dışı teklif farkı",
+            "şehir içi ile şehir dışı farkı",
+        ),
+        description="Normal TAG şehir içi akışı ile Leylek Teklif Sende şehir dışı akışını ayırır.",
+        match_phrases=(
+            "şehir içi tag ile leylek teklifi fark",
+            "sehir ici tag ile leylek teklifi fark",
+            "normal tag ile leylek teklifi fark",
+            "normal tag ve şehir dışı",
+            "normal tag ve sehir disi",
+            "şehir içi ile şehir dışı fark",
+            "sehir ici ile sehir disi fark",
+            "tag ile leylek teklif sende fark",
+        ),
+        phrase_weights=(
+            ("şehir içi tag ile leylek teklifi fark", 16),
+            ("sehir ici tag ile leylek teklifi fark", 16),
+            ("normal tag ile leylek teklifi fark", 15),
+            ("şehir içi ile şehir dışı fark", 14),
+            ("sehir ici ile sehir disi fark", 14),
+        ),
+        default_template=TAG_VS_INTERCITY_LEYLEK_OFFER,
+    ),
+    IntentDefinition(
+        id="intercity_leylek_offer",
+        title="Şehir dışı Leylek Teklif Sende",
+        supported_roles=("passenger", "driver"),
+        example_queries=(
+            "şehir dışı yolculuk nasıl yapacağım",
+            "şehirler arası yolculuk",
+            "Leylek Teklif Sende nedir",
+            "şehir dışı teklif",
+            "yolcu olarak şehir dışı nasıl giderim",
+            "sürücü olarak şehir dışı teklif nasıl veririm",
+        ),
+        description="Şehir dışı Leylek Teklif Sende akışını rol varsa anlatır; rol yoksa önce rol sorar.",
+        match_phrases=(
+            "şehir dışı yolculuk",
+            "sehir disi yolculuk",
+            "şehirler arası yolculuk",
+            "sehirler arasi yolculuk",
+            "leylek teklif sende",
+            "şehir dışı teklif",
+            "sehir disi teklif",
+            "şehir dışına",
+            "sehir disina",
+            "şehir dışı nasıl",
+            "sehir disi nasil",
+        ),
+        phrase_weights=(
+            ("şehir dışı yolculuk nasıl", 16),
+            ("sehir disi yolculuk nasil", 16),
+            ("leylek teklif sende nedir", 16),
+            ("şehirler arası yolculuk", 14),
+            ("sehirler arasi yolculuk", 14),
+            ("şehir dışı teklif", 14),
+            ("sehir disi teklif", 14),
+            ("şehir dışı nasıl", 12),
+            ("sehir disi nasil", 12),
+            ("yolcu olarak şehir dışı", 13),
+            ("yolcu olarak sehir disi", 13),
+            ("sürücü olarak şehir dışı", 13),
+            ("surucu olarak sehir disi", 13),
+        ),
+        role_specific_templates={
+            "driver": DRIVER_INTERCITY_LEYLEK_OFFER,
+            "passenger": PASSENGER_INTERCITY_LEYLEK_OFFER,
+        },
+        default_template=INTERCITY_ROLE_QUESTION,
+    ),
     IntentDefinition(
         id="match_not_happening",
         title="Eşleşme gelmiyor / çok bekliyorum",
