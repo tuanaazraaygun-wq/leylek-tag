@@ -55,6 +55,17 @@ function lzChatDebug(...args: unknown[]) {
   if (__DEV__ && __LZ_CHAT_SCROLL_DEBUG__) console.log('[LeylekZekaChat]', ...args);
 }
 
+function sanitizeSpeechText(text: string): string {
+  const normalized = text
+    .replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/[^\p{L}\p{N}\s.,!?;:()/%+-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (normalized.length <= 900) return normalized;
+  return `${normalized.slice(0, 900).trim()}... Devamını ekrandan okuyabilirsiniz.`;
+}
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -508,13 +519,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     if (lastAssistantSpeechIdRef.current === latest.id) return;
     lastAssistantSpeechIdRef.current = latest.id;
     if (!visible || !speechEnabled) return;
-    const text = latest.text.trim();
+    const text = sanitizeSpeechText(latest.text);
     if (!text) return;
     try {
       Speech.stop();
       Speech.speak(text, {
         language: 'tr-TR',
         rate: 0.92,
+        pitch: 1.0,
       });
     } catch {
       /* Sesli cevap desteklenmeyen cihazlarda chat yazılı kalır. */
