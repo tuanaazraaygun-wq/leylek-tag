@@ -18,7 +18,8 @@
         "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
       },
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Uygulama içi sesli görüşme için mikrofon izni gereklidir.",
+        "NSMicrophoneUsageDescription": "Uygulama içi sesli görüşme, sesli komut ve bas-konuş özellikleri için mikrofon izni gereklidir.",
+        "NSSpeechRecognitionUsageDescription": "Bas-konuş özelliğinde konuşmanızı metne çevirmek için konuşma tanıma izni gereklidir.",
         "NSCameraUsageDescription": "QR kod tarama ve profil fotoğrafı işlemleri için kamera izni gereklidir.",
         "NSLocationWhenInUseUsageDescription": "Yakındaki sürücüleri bulmak ve yolculukta konum paylaşımı için konum izni gereklidir.",
         "NSPhotoLibraryUsageDescription": "Profil ve doğrulama görsellerini seçmek için fotoğraf erişimi gereklidir.",
@@ -117,7 +118,15 @@
       [
         "expo-av",
         {
-          "microphonePermission": "Sesli görüşme için mikrofon izni gereklidir."
+          "microphonePermission": "Sesli görüşme, sesli komut ve bas-konuş için mikrofon izni gereklidir."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Uygulama içi sesli görüşme, sesli komut ve bas-konuş özellikleri için mikrofon izni gereklidir.",
+          "speechRecognitionPermission": "Bas-konuş özelliğinde konuşmanızı metne çevirmek için konuşma tanıma izni gereklidir.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
       ],
       [
