@@ -28,7 +28,9 @@ type Props = {
 };
 
 export type BoardingScanModalProps = Props;
-const BOARDING_SCAN_DEDUPE_WINDOW_MS = 1500;
+
+/** Aynı karede ML Kit’in çift decode etmesi — ms; retry’i engellememek için kısa tutulur */
+const BOARDING_SCAN_BURST_DEDUPE_MS = 120;
 const BOARDING_SCAN_RESCAN_COOLDOWN_MS = 900;
 
 export default function BoardingScanModal({
@@ -42,7 +44,7 @@ export default function BoardingScanModal({
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const lastScanRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
+  const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
   const cooldownUntilRef = useRef<number>(0);
 
   useEffect(() => {
@@ -50,7 +52,7 @@ export default function BoardingScanModal({
       setScanned(false);
       setProcessing(false);
       cooldownUntilRef.current = 0;
-      lastScanRef.current = { data: '', ts: 0 };
+      lastScannedValueRef.current = { data: '', ts: 0 };
       if (!hasPermission?.granted) {
         void requestPermission();
       }
@@ -125,6 +127,7 @@ export default function BoardingScanModal({
         Alert.alert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
       } finally {
         setProcessing(false);
+        lastScannedValueRef.current = { data: '', ts: 0 };
         const now = Date.now();
         const delay = Math.max(0, cooldownUntilRef.current - now);
         if (delay > 0) {
@@ -146,16 +149,18 @@ export default function BoardingScanModal({
         return;
       }
       const now = Date.now();
-      const prev = lastScanRef.current;
-      if (prev.data === d && now - prev.ts < BOARDING_SCAN_DEDUPE_WINDOW_MS) {
+      const prev = lastScannedValueRef.current;
+      if (prev.data === d && now - prev.ts < BOARDING_SCAN_BURST_DEDUPE_MS) {
         return;
       }
-      lastScanRef.current = { data: d, ts: now };
+      lastScannedValueRef.current = { data: d, ts: now };
       setScanned(true);
       await verifyBoarding(d);
     },
     [scanned, processing, verifyBoarding],
   );
+
+  const scannerActive = !scanned && !processing;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -181,7 +186,12 @@ export default function BoardingScanModal({
                 style={StyleSheet.absoluteFill}
                 facing="back"
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                onBarcodeScanned={scanned || processing ? undefined : onBarcodeScanned}
+                onCameraReady={() => {
+                  if (__DEV__) {
+                    console.log('[BoardingScanModal] onCameraReady');
+                  }
+                }}
+                onBarcodeScanned={scannerActive ? onBarcodeScanned : undefined}
               />
               <View style={styles.frame} pointerEvents="none" />
               {processing ? (

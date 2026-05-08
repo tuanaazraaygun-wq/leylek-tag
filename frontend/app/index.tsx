@@ -13,6 +13,9 @@ import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import LiveMapView from '../components/LiveMapView';
+import TagMatchTransitionOverlay, {
+  TAG_MATCH_TRANSITION_HOLD_MS,
+} from '../components/TagMatchTransitionOverlay';
 import QRTripEndModal from '../components/QRTripEndModal';
 import BoardingPassengerPromptModal from '../components/BoardingPassengerPromptModal';
 import BoardingScanModal, { type BoardingScanModalProps } from '../components/BoardingScanModal';
@@ -6729,6 +6732,9 @@ function pickPriceApiDetailMessage(body: unknown, fallback: string): string {
 const BOARDING_STATE_POLL_MS = 380;
 const BOARDING_STATE_MAX_ATTEMPTS = 8;
 
+/** Normal TAG yolcu: socket/poll ile matched — overlay yalnız bu önceki status’tan `matched`’e geçişte */
+const PASSENGER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ 
   user, 
@@ -6835,6 +6841,10 @@ function PassengerDashboard({
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
   const passengerMatchTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passengerMatchLastTagKeyRef = useRef<string | null>(null);
+  const passengerMatchPrevStatusRef = useRef<string | null>(null);
+  const passengerMatchTransitionFromAcceptRef = useRef(false);
+  const passengerMatchOverlayDoneTagIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -6844,6 +6854,41 @@ function PassengerDashboard({
       }
     };
   }, []);
+
+  /** Normal TAG yolcu: poll/socket ile `matched` olduğunda overlay (accept API ile yarışmaz — ref) */
+  useEffect(() => {
+    const id = activeTag?.id ? String(activeTag.id) : '';
+    const st = activeTag?.status ? String(activeTag.status).toLowerCase() : null;
+    const tagKey = id || '<no-tag>';
+
+    if (tagKey !== passengerMatchLastTagKeyRef.current) {
+      passengerMatchLastTagKeyRef.current = tagKey;
+      passengerMatchPrevStatusRef.current = st;
+      passengerMatchOverlayDoneTagIdRef.current = null;
+      return;
+    }
+
+    const prev = passengerMatchPrevStatusRef.current;
+    passengerMatchPrevStatusRef.current = st;
+
+    if (!id || st !== 'matched') return;
+    if (prev === 'matched' || prev === 'in_progress') return;
+    if (prev == null || prev === '') return;
+    if (!PASSENGER_MATCH_OVERLAY_FROM_STATUSES.has(prev)) return;
+    if (passengerMatchTransitionFromAcceptRef.current) return;
+    if (passengerMatchOverlayDoneTagIdRef.current === id) return;
+
+    if (passengerMatchTransitionTimerRef.current) {
+      clearTimeout(passengerMatchTransitionTimerRef.current);
+      passengerMatchTransitionTimerRef.current = null;
+    }
+    passengerMatchOverlayDoneTagIdRef.current = id;
+    setMatchingInProgress(true);
+    passengerMatchTransitionTimerRef.current = setTimeout(() => {
+      passengerMatchTransitionTimerRef.current = null;
+      setMatchingInProgress(false);
+    }, TAG_MATCH_TRANSITION_HOLD_MS);
+  }, [activeTag?.id, activeTag?.status]);
 
   // 🔥 Cancelled Alert'in bir kez gösterilmesi için flag
   const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
@@ -9643,7 +9688,6 @@ function PassengerDashboard({
       'TAG_MATCH_TRANSITION_SHOW',
       JSON.stringify({ role: 'passenger', tag_id: activeTag?.id ?? null }),
     );
-    setMatchingInProgress(true);
 
     try {
       // 🚀 ÖNCE Socket ile anında bildir (hızlı feedback)
@@ -9661,6 +9705,11 @@ function PassengerDashboard({
       const success = await acceptOfferAPI(offerId, selectedOffer.driver_id, activeTag.id, currentRequestId || undefined);
       
       if (success) {
+        const overlayTagId = String(activeTag.id);
+        passengerMatchOverlayDoneTagIdRef.current = overlayTagId;
+        passengerMatchTransitionFromAcceptRef.current = true;
+        setMatchingInProgress(true);
+
         // Sadece sürücü adını kaydet
         setSelectedDriverName(selectedOffer.driver_name);
         
@@ -9681,9 +9730,10 @@ function PassengerDashboard({
           clearTimeout(passengerMatchTransitionTimerRef.current);
           passengerMatchTransitionTimerRef.current = null;
         }
-        const ms = 1200 + Math.round(Math.random() * 600);
+        const ms = TAG_MATCH_TRANSITION_HOLD_MS;
         passengerMatchTransitionTimerRef.current = setTimeout(() => {
           passengerMatchTransitionTimerRef.current = null;
+          passengerMatchTransitionFromAcceptRef.current = false;
           setMatchingInProgress(false);
           console.log(
             'TAG_MATCH_TRANSITION_HIDE',
@@ -9990,7 +10040,9 @@ function PassengerDashboard({
     // Teklif yoksa premium bekleme ekranını göster
     if (offers.length === 0) {
       return (
-        <PassengerWaitingScreen
+        <View style={{ flex: 1 }}>
+          <TagMatchTransitionOverlay active={matchingInProgress} />
+          <PassengerWaitingScreen
           userLocation={userLocation}
           destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
           pickupAddress={activeTag.pickup_location || ''}
@@ -10007,11 +10059,14 @@ function PassengerDashboard({
             console.log('Match received:', driverData);
           }}
         />
+        </View>
       );
     }
     
     // Teklif varsa mevcut listeyi göster
     return (
+      <View style={{ flex: 1 }}>
+        <TagMatchTransitionOverlay active={matchingInProgress} />
       <SafeAreaView style={searchingStyles.container}>
         {/* Üst Bar - Geri + Durum + İptal */}
         <View style={searchingStyles.topBar}>
@@ -10094,6 +10149,7 @@ function PassengerDashboard({
           />
         </View>
       </SafeAreaView>
+      </View>
     );
   }
 
@@ -10109,15 +10165,7 @@ function PassengerDashboard({
     >
     <SafeAreaView style={styles.containerTransparent}>
       {/* 🆕 Eşleşme Sağlanıyor Modal */}
-      {matchingInProgress && (
-        <View style={styles.matchingOverlay}>
-          <View style={styles.matchingBox}>
-            <ActivityIndicator size="large" color="#3FA9F5" />
-            <Text style={styles.matchingTitle}>Eşleşme sağlanıyor…</Text>
-            <Text style={styles.matchingSubtitle}>Yolculuk ekranı hazırlanıyor</Text>
-          </View>
-        </View>
-      )}
+      <TagMatchTransitionOverlay active={matchingInProgress} />
       
       {/* Toast Notification - Otomatik Kaybolan */}
       {showToast && (
@@ -11827,74 +11875,6 @@ const DRIVER_OFFER_MIN_VISIBLE_MS = 30_000;
 /** Sürücü match overlay: yalnız bu önceki tag status’larından `matched`’e geçişte göster (hydrate/resume değil) */
 const DRIVER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
 
-const DRIVER_MATCH_PREMIUM_DOT_COLORS = ['#22C55E', '#3FA9F5', '#EAB308', '#F97316'] as const;
-
-/** Accept sonrası eşleşme overlay — renkli hareketli noktalar (iş mantığından bağımsız saf UI). */
-function DriverMatchTransitionPremiumRow() {
-  const anims = useRef(
-    DRIVER_MATCH_PREMIUM_DOT_COLORS.map(() => new Animated.Value(0.35)),
-  ).current;
-
-  useEffect(() => {
-    const loops = anims.map((v, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 140),
-          Animated.timing(v, {
-            toValue: 1,
-            duration: 400,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(v, {
-            toValue: 0.35,
-            duration: 400,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]),
-      ),
-    );
-    loops.forEach((l) => l.start());
-    return () => {
-      loops.forEach((l) => l.stop());
-    };
-  }, [anims]);
-
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 14,
-      }}
-    >
-      {DRIVER_MATCH_PREMIUM_DOT_COLORS.map((color, i) => (
-        <Animated.View
-          key={color}
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: 5,
-            backgroundColor: color,
-            marginHorizontal: 5,
-            opacity: anims[i],
-            transform: [
-              {
-                scale: anims[i].interpolate({
-                  inputRange: [0.35, 1],
-                  outputRange: [0.82, 1.12],
-                }),
-              },
-            ],
-          }}
-        />
-      ))}
-    </View>
-  );
-}
-
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
@@ -13418,7 +13398,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       JSON.stringify({ role: 'driver', tag_id: id, from_status: prev }),
     );
     setDriverMatchTransitionVisible(true);
-    const ms = 1200 + Math.round(Math.random() * 600);
+    const ms = TAG_MATCH_TRANSITION_HOLD_MS;
     driverMatchTransitionTimerRef.current = setTimeout(() => {
       driverMatchTransitionTimerRef.current = null;
       setDriverMatchTransitionVisible(false);
@@ -14961,7 +14941,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                     driverMatchTransitionTimerRef.current = null;
                     driverMatchTransitionFromAcceptRef.current = false;
                     setDriverMatchTransitionVisible(false);
-                  }, 2000);
+                  }, TAG_MATCH_TRANSITION_HOLD_MS);
                 }
               }}
               onBack={() => {
@@ -15001,16 +14981,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       />
     ) : null}
     <SafeAreaView style={styles.containerTransparent}>
-      {driverMatchTransitionVisible ? (
-        <View style={styles.matchingOverlay} pointerEvents="auto">
-          <View style={styles.matchingBox}>
-            <DriverMatchTransitionPremiumRow />
-            <ActivityIndicator size="large" color="#3FA9F5" />
-            <Text style={styles.matchingTitle}>Eşleşme sağlanıyor</Text>
-            <Text style={styles.matchingSubtitle}>Yolculuk ekranı hazırlanıyor</Text>
-          </View>
-        </View>
-      ) : null}
+      <TagMatchTransitionOverlay active={driverMatchTransitionVisible} />
 
       {/* CANLI HARİTA - Tam Ekran (Şoför)
           Android'de (stabilite için) haritayı kapatıyoruz. */}

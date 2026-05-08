@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   View,
@@ -18,6 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width } = Dimensions.get('window');
+
+/** Çift decode burst — retry’i kilitlemez */
+const TRIP_END_SCAN_BURST_DEDUPE_MS = 120;
 
 type PaymentMethod = 'cash' | 'card';
 
@@ -58,6 +61,7 @@ export default function QRTripEndModal({
   const [passengerStep, setPassengerStep] = useState<'scan' | 'payment'>('scan');
   const [pendingDriverId, setPendingDriverId] = useState<string | null>(null);
   const [legacyPaymentPick, setLegacyPaymentPick] = useState<PaymentMethod | null>(null);
+  const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
 
   const qrValue = `leylektag://end?u=${userId}&t=${tagId}`;
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
@@ -69,11 +73,12 @@ export default function QRTripEndModal({
       setPassengerStep('scan');
       setPendingDriverId(null);
       setLegacyPaymentPick(null);
+      lastScannedValueRef.current = { data: '', ts: 0 };
       if (!isDriver && !hasPermission?.granted) {
         requestPermission();
       }
     }
-  }, [visible, isDriver]);
+  }, [visible, isDriver, hasPermission?.granted, requestPermission]);
 
   const submitCompleteQr = useCallback(
     async (paymentConfirmed: PaymentMethod, driverUserId: string) => {
@@ -126,30 +131,41 @@ export default function QRTripEndModal({
     async ({ data }: { type: string; data: string }) => {
       if (isDriver) return;
       if (scanned || processing) return;
-      if (!data.startsWith('leylektag://end?')) {
+      const raw = (data || '').trim();
+      if (!raw.startsWith('leylektag://end?')) {
         return;
       }
+
+      const now = Date.now();
+      const prev = lastScannedValueRef.current;
+      if (prev.data === raw && now - prev.ts < TRIP_END_SCAN_BURST_DEDUPE_MS) {
+        return;
+      }
+      lastScannedValueRef.current = { data: raw, ts: now };
 
       setScanned(true);
       Vibration.vibrate(100);
 
-      const params = new URLSearchParams(data.split('?')[1]);
+      const params = new URLSearchParams(raw.split('?')[1]);
       const driverUserId = params.get('u');
       const qrTagId = params.get('t');
 
       if (!driverUserId || !qrTagId) {
         Alert.alert('Hata', 'Geçersiz QR kod');
+        lastScannedValueRef.current = { data: '', ts: 0 };
         setScanned(false);
         return;
       }
 
       if (qrTagId !== tagId) {
         Alert.alert('Hata', 'Bu QR kod bu yolculuğa ait değil');
+        lastScannedValueRef.current = { data: '', ts: 0 };
         setScanned(false);
         return;
       }
 
       // Yolcu: QR doğru — ödeme onayı adımına geç
+      lastScannedValueRef.current = { data: '', ts: 0 };
       setPendingDriverId(driverUserId);
       setPassengerStep('payment');
       setScanned(false);
@@ -179,6 +195,7 @@ export default function QRTripEndModal({
     setPassengerStep('scan');
     setPendingDriverId(null);
     setLegacyPaymentPick(null);
+    lastScannedValueRef.current = { data: '', ts: 0 };
     onClose();
   };
 
@@ -235,7 +252,7 @@ export default function QRTripEndModal({
             ) : passengerStep === 'scan' ? (
               <View style={styles.cameraContainer}>
                 <Text style={styles.instruction}>
-                  {firstName}'ın QR kodunu tarayın
+                  {`${firstName}'ın QR kodunu tarayın`}
                 </Text>
 
                 {processing && (
@@ -251,7 +268,16 @@ export default function QRTripEndModal({
                       style={styles.camera}
                       facing="back"
                       barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                      onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+                      onCameraReady={() => {
+                        if (__DEV__) {
+                          console.log('[QRTripEndModal] onCameraReady');
+                        }
+                      }}
+                      onBarcodeScanned={
+                        passengerStep === 'scan' && !scanned && !processing
+                          ? handleBarCodeScanned
+                          : undefined
+                      }
                     />
                     <View style={styles.scanOverlay}>
                       <View style={styles.scanFrame}>
