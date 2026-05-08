@@ -341,6 +341,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const [input, setInput] = useState('');
   const [showBetaHint, setShowBetaHint] = useState(false);
   const [speechEnabled, setSpeechEnabled] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [hasSpeakableAssistant, setHasSpeakableAssistant] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [partialTranscript, setPartialTranscript] = useState('');
   const [voiceInputError, setVoiceInputError] = useState('');
@@ -360,6 +362,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
    */
   const scrollGenRef = useRef(0);
   const lastAssistantSpeechIdRef = useRef<string | null>(null);
+  const lastSpeakableAssistantTextRef = useRef('');
   const prevVisibleForSpeechRef = useRef(visible);
   const finalTranscriptRef = useRef('');
   const lastTranscriptRef = useRef('');
@@ -532,6 +535,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, []);
 
   const stopSpeech = useCallback(() => {
+    setIsSpeaking(false);
     if (Platform.OS === 'web') return;
     try {
       Speech.stop();
@@ -664,14 +668,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
   }, [abortVoiceInput, latestAssistantId, stopSpeech, visible]);
 
-  useEffect(() => {
+  const speakAssistantText = useCallback((rawText: string) => {
     if (Platform.OS === 'web') return;
-    const latest = messages[messages.length - 1];
-    if (!latest || latest.role !== 'assistant') return;
-    if (lastAssistantSpeechIdRef.current === latest.id) return;
-    lastAssistantSpeechIdRef.current = latest.id;
-    if (!visible || !speechEnabled) return;
-    const text = sanitizeSpeechText(latest.text);
+    const text = sanitizeSpeechText(rawText);
     if (!text) return;
     try {
       Speech.stop();
@@ -679,11 +678,28 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
         language: 'tr-TR',
         rate: 1.0,
         pitch: 1.0,
+        onStart: () => setIsSpeaking(true),
+        onDone: () => setIsSpeaking(false),
+        onStopped: () => setIsSpeaking(false),
+        onError: () => setIsSpeaking(false),
       });
     } catch {
+      setIsSpeaking(false);
       /* Sesli cevap desteklenmeyen cihazlarda chat yazılı kalır. */
     }
-  }, [messages, speechEnabled, visible]);
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const latest = messages[messages.length - 1];
+    if (!latest || latest.role !== 'assistant') return;
+    if (lastAssistantSpeechIdRef.current === latest.id) return;
+    lastAssistantSpeechIdRef.current = latest.id;
+    lastSpeakableAssistantTextRef.current = latest.text;
+    setHasSpeakableAssistant(Boolean(sanitizeSpeechText(latest.text)));
+    if (!visible || !speechEnabled) return;
+    speakAssistantText(latest.text);
+  }, [messages, speakAssistantText, speechEnabled, visible]);
 
   const toggleSpeechEnabled = useCallback(() => {
     setSpeechEnabled((v) => {
@@ -691,6 +707,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       return !v;
     });
   }, [stopSpeech]);
+
+  const replayLastAssistantSpeech = useCallback(() => {
+    const text = lastSpeakableAssistantTextRef.current;
+    if (!text) return;
+    speakAssistantText(text);
+  }, [speakAssistantText]);
 
   const startVoiceInput = useCallback(async () => {
     if (isTyping) return;
@@ -1066,26 +1088,59 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                     {headerSubtitle}
                   </Text>
                   {modeCaption ? <Text style={styles.modeCaptionInline}>{modeCaption}</Text> : null}
-                  <Pressable
-                    onPress={toggleSpeechEnabled}
-                    accessibilityRole="switch"
-                    accessibilityState={{ checked: speechEnabled }}
-                    accessibilityLabel="Sesli cevap"
-                    style={({ pressed }) => [
-                      styles.speechToggle,
-                      speechEnabled && styles.speechToggleOn,
-                      pressed && styles.speechTogglePressed,
-                    ]}
-                  >
-                    <Ionicons
-                      name={speechEnabled ? 'volume-high' : 'volume-mute'}
-                      size={12}
-                      color={speechEnabled ? '#1D4ED8' : '#64748B'}
-                    />
-                    <Text style={[styles.speechToggleText, speechEnabled && styles.speechToggleTextOn]}>
-                      Sesli cevap {speechEnabled ? 'açık' : 'kapalı'}
-                    </Text>
-                  </Pressable>
+                  <View style={styles.speechControlsRow}>
+                    <Pressable
+                      onPress={toggleSpeechEnabled}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: speechEnabled }}
+                      accessibilityLabel="Sesli cevap"
+                      style={({ pressed }) => [
+                        styles.speechToggle,
+                        speechEnabled && styles.speechToggleOn,
+                        pressed && styles.speechTogglePressed,
+                      ]}
+                    >
+                      <Ionicons
+                        name={speechEnabled ? 'volume-high' : 'volume-mute'}
+                        size={12}
+                        color={speechEnabled ? '#1D4ED8' : '#64748B'}
+                      />
+                      <Text style={[styles.speechToggleText, speechEnabled && styles.speechToggleTextOn]}>
+                        Sesli cevap {speechEnabled ? 'açık' : 'kapalı'}
+                      </Text>
+                    </Pressable>
+                    {isSpeaking ? (
+                      <Pressable
+                        onPress={stopSpeech}
+                        accessibilityRole="button"
+                        accessibilityLabel="Sesli cevabı durdur"
+                        style={({ pressed }) => [
+                          styles.speechMiniControl,
+                          styles.speechMiniControlStop,
+                          pressed && styles.speechMiniControlPressed,
+                        ]}
+                      >
+                        <Ionicons name="stop-circle" size={12} color="#B91C1C" />
+                        <Text style={[styles.speechMiniControlText, styles.speechMiniControlTextStop]}>
+                          Durdur
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {hasSpeakableAssistant ? (
+                      <Pressable
+                        onPress={replayLastAssistantSpeech}
+                        accessibilityRole="button"
+                        accessibilityLabel="Son Leylek Zeka cevabını tekrar oku"
+                        style={({ pressed }) => [
+                          styles.speechMiniControl,
+                          pressed && styles.speechMiniControlPressed,
+                        ]}
+                      >
+                        <Ionicons name="refresh" size={12} color="#1D4ED8" />
+                        <Text style={styles.speechMiniControlText}>Tekrar oku</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
               </View>
             </View>
@@ -1565,12 +1620,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.08,
     opacity: 0.92,
   },
-  speechToggle: {
+  speechControlsRow: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 5,
     marginTop: 6,
+  },
+  speechToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
@@ -1595,6 +1656,34 @@ const styles = StyleSheet.create({
   },
   speechToggleTextOn: {
     color: '#1D4ED8',
+  },
+  speechMiniControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(239, 246, 255, 0.9)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(37, 99, 235, 0.24)',
+  },
+  speechMiniControlStop: {
+    backgroundColor: 'rgba(254, 242, 242, 0.92)',
+    borderColor: 'rgba(185, 28, 28, 0.24)',
+  },
+  speechMiniControlPressed: {
+    opacity: 0.82,
+  },
+  speechMiniControlText: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 9,
+    lineHeight: 12,
+    color: '#1D4ED8',
+    fontWeight: '800',
+  },
+  speechMiniControlTextStop: {
+    color: '#B91C1C',
   },
   closeBtn: {
     position: 'absolute',
