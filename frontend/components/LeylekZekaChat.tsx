@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Speech from 'expo-speech';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -320,6 +321,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
   const [input, setInput] = useState('');
   const [showBetaHint, setShowBetaHint] = useState(false);
+  const [speechEnabled, setSpeechEnabled] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
@@ -334,6 +336,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
    * Kapalı modal / unmount üzerinde scrollToEnd çağrılarını etkisizleştirir.
    */
   const scrollGenRef = useRef(0);
+  const lastAssistantSpeechIdRef = useRef<string | null>(null);
+  const prevVisibleForSpeechRef = useRef(visible);
   /** Android: keyboardDidHide bazen düzen değişince iki kez tetiklenir; anlık sıfırlama odak kaybına yol açabilir */
   const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -348,6 +352,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   /** Uzun tek mesajda da içerik imzası değişsin; scroll + FlatList extraData */
   const messagesScrollSig = useMemo(
     () => messages.map((m) => `${m.id}:${m.text.length}`).join('\u001e'),
+    [messages],
+  );
+  const latestAssistantId = useMemo(
+    () => [...messages].reverse().find((m) => m.role === 'assistant')?.id ?? null,
     [messages],
   );
 
@@ -466,9 +474,64 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     void AsyncStorage.setItem(BETA_HINT_KEY, '1').catch(() => {});
   }, []);
 
+  const stopSpeech = useCallback(() => {
+    if (Platform.OS === 'web') return;
+    try {
+      Speech.stop();
+    } catch {
+      /* speech engine race */
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopSpeech();
+    };
+  }, [stopSpeech]);
+
+  useEffect(() => {
+    const wasVisible = prevVisibleForSpeechRef.current;
+    prevVisibleForSpeechRef.current = visible;
+    if (!visible) {
+      stopSpeech();
+      return;
+    }
+    if (!wasVisible) {
+      lastAssistantSpeechIdRef.current = latestAssistantId;
+    }
+  }, [latestAssistantId, stopSpeech, visible]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const latest = messages[messages.length - 1];
+    if (!latest || latest.role !== 'assistant') return;
+    if (lastAssistantSpeechIdRef.current === latest.id) return;
+    lastAssistantSpeechIdRef.current = latest.id;
+    if (!visible || !speechEnabled) return;
+    const text = latest.text.trim();
+    if (!text) return;
+    try {
+      Speech.stop();
+      Speech.speak(text, {
+        language: 'tr-TR',
+        rate: 0.92,
+      });
+    } catch {
+      /* Sesli cevap desteklenmeyen cihazlarda chat yazılı kalır. */
+    }
+  }, [messages, speechEnabled, visible]);
+
+  const toggleSpeechEnabled = useCallback(() => {
+    setSpeechEnabled((v) => {
+      if (v) stopSpeech();
+      return !v;
+    });
+  }, [stopSpeech]);
+
   const onSubmit = useCallback(() => {
     const t = input.trim();
     if (!t || isTyping) return;
+    stopSpeech();
     if (Platform.OS !== 'web') {
       try {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -478,7 +541,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
     setInput('');
     onSend(t);
-  }, [input, isTyping, onSend]);
+  }, [input, isTyping, onSend, stopSpeech]);
 
   const contextCopy = useMemo(
     () => getLeylekZekaContextCopy(homeFlowScreen ?? null, flowHint),
@@ -488,6 +551,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const onStarterPromptPress = useCallback(
     (prompt: string) => {
       if (isTyping) return;
+      stopSpeech();
       if (Platform.OS !== 'web') {
         try {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -497,7 +561,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
       onSend(prompt);
     },
-    [isTyping, onSend],
+    [isTyping, onSend, stopSpeech],
   );
 
   const scrollToEndSafe = useCallback(() => {
@@ -630,6 +694,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const headerSubtitle = `${contextCopy.stageLabel} · Rehber`;
 
   const closeWithHaptic = useCallback(() => {
+    stopSpeech();
     if (Platform.OS !== 'web') {
       try {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -638,7 +703,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
     }
     onClose();
-  }, [onClose]);
+  }, [onClose, stopSpeech]);
 
   const kavOffset = useMemo(() => {
     if (Platform.OS === 'ios') {
@@ -752,6 +817,26 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                     {headerSubtitle}
                   </Text>
                   {modeCaption ? <Text style={styles.modeCaptionInline}>{modeCaption}</Text> : null}
+                  <Pressable
+                    onPress={toggleSpeechEnabled}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: speechEnabled }}
+                    accessibilityLabel="Sesli cevap"
+                    style={({ pressed }) => [
+                      styles.speechToggle,
+                      speechEnabled && styles.speechToggleOn,
+                      pressed && styles.speechTogglePressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={speechEnabled ? 'volume-high' : 'volume-mute'}
+                      size={12}
+                      color={speechEnabled ? '#1D4ED8' : '#64748B'}
+                    />
+                    <Text style={[styles.speechToggleText, speechEnabled && styles.speechToggleTextOn]}>
+                      Sesli cevap {speechEnabled ? 'açık' : 'kapalı'}
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
             </View>
@@ -1161,6 +1246,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.08,
     opacity: 0.92,
+  },
+  speechToggle: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(100, 116, 139, 0.28)',
+  },
+  speechToggleOn: {
+    backgroundColor: 'rgba(219, 234, 254, 0.92)',
+    borderColor: 'rgba(37, 99, 235, 0.32)',
+  },
+  speechTogglePressed: {
+    opacity: 0.82,
+  },
+  speechToggleText: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 9,
+    lineHeight: 12,
+    color: '#64748B',
+    fontWeight: '700',
+    letterSpacing: 0.04,
+  },
+  speechToggleTextOn: {
+    color: '#1D4ED8',
   },
   closeBtn: {
     position: 'absolute',
