@@ -3913,7 +3913,13 @@ export default function LiveMapView({
       }
       clearDestMetricsTimeout();
     };
-    const logDestMetricsSkip = (reason: string, endpointKey?: string, hasOrigin = false, hasDest = false) => {
+    const logDestMetricsSkip = (
+      reason: string,
+      endpointKey?: string,
+      hasOrigin = false,
+      hasDest = false,
+      extra?: Record<string, unknown>,
+    ) => {
       const logKey = `${reason}|${endpointKey || 'n/a'}`;
       const now = Date.now();
       const prev = destMetricsSkipLogRef.current;
@@ -3927,6 +3933,7 @@ export default function LiveMapView({
             endpoint_key: endpointKey || null,
             has_origin: hasOrigin,
             has_dest: hasDest,
+            ...(extra || {}),
           }),
         );
       } catch {
@@ -3934,9 +3941,18 @@ export default function LiveMapView({
       }
     };
     if (!isValidRouteEndpoint(destinationLocation)) {
+      const rawDest = destinationLocation as
+        | { latitude?: unknown; longitude?: unknown }
+        | null
+        | undefined;
       clearDestMetricsInFlight();
       forceDestinationRoadLoadingFalse();
-      logDestMetricsSkip('missing_destination', undefined, false, false);
+      logDestMetricsSkip('missing_destination', undefined, false, false, {
+        has_raw_dropoff:
+          !!rawDest &&
+          (rawDest.latitude !== undefined ||
+            rawDest.longitude !== undefined),
+      });
       return;
     }
     const passengerLoc = isDriver ? otherLocation : userLocation;

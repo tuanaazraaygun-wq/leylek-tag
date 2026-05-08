@@ -63,10 +63,13 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
   );
 
   const leylekContext = useMemo(() => {
-    const o: Record<string, string | boolean> = {};
+    const o: Record<string, string | boolean | string[]> = {};
     o.guideMode = true;
     o.stageLabel = contextCopy.stageLabel;
     o.intentScope = contextCopy.intentScope;
+    o.operationAwareness = true;
+    o.knownSignals = contextCopy.knownSignals;
+    o.safeAdviceOnly = contextCopy.safeAdviceOnly;
     if (homeFlowScreen) o.screen = homeFlowScreen;
     if (flowHint) o.flowHint = flowHint;
     const pass = Boolean(flowHint?.startsWith('passenger'));
@@ -84,7 +87,14 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       o.hasActiveOffer = true;
     }
     return Object.keys(o).length ? o : undefined;
-  }, [homeFlowScreen, flowHint, contextCopy.intentScope, contextCopy.stageLabel]);
+  }, [
+    homeFlowScreen,
+    flowHint,
+    contextCopy.intentScope,
+    contextCopy.knownSignals,
+    contextCopy.safeAdviceOnly,
+    contextCopy.stageLabel,
+  ]);
 
   const [messages, setMessages] = useState<LeylekZekaMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);

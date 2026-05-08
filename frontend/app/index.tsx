@@ -520,6 +520,21 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   return base;
 }
 
+function normalizeCoordValue(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeLocationCoords(
+  location: { latitude?: unknown; longitude?: unknown } | null | undefined,
+): { latitude: number; longitude: number } | null {
+  if (!location) return null;
+  const latitude = normalizeCoordValue(location.latitude);
+  const longitude = normalizeCoordValue(location.longitude);
+  if (latitude == null || longitude == null) return null;
+  return { latitude, longitude };
+}
+
 /** `trip_force_ended` sonrası active-tag / check-end polling eski eşleşmeyi geri getirmesin */
 const forceEndLockRef = { current: false };
 let forceEndUnlockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -10029,6 +10044,19 @@ function PassengerDashboard({
     destination?.longitude ??
     destinationPickerCityLLResolved?.longitude ??
     DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+  const normalizedDestinationFromState = normalizeLocationCoords(destination);
+  const normalizedDestinationFromActiveTag = normalizeLocationCoords({
+    latitude: activeTag?.dropoff_lat,
+    longitude: activeTag?.dropoff_lng,
+  });
+  const passengerDestinationLocation =
+    normalizedDestinationFromState ?? normalizedDestinationFromActiveTag;
+  const passengerDestinationAddress =
+    (typeof destination?.address === 'string' && destination.address.trim()) ||
+    (typeof activeTag?.dropoff_location === 'string' && activeTag.dropoff_location.trim()) ||
+    (typeof (activeTag as { destination_location?: unknown } | null)?.destination_location === 'string' &&
+      String((activeTag as { destination_location?: unknown }).destination_location).trim()) ||
+    '';
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 🆕 SEARCHING PHASE - HARİTA + TEKLİF LİSTESİ (YENİ UI)
@@ -10044,9 +10072,9 @@ function PassengerDashboard({
           <TagMatchTransitionOverlay active={matchingInProgress} />
           <PassengerWaitingScreen
           userLocation={userLocation}
-          destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
+          destinationLocation={passengerDestinationLocation}
           pickupAddress={activeTag.pickup_location || ''}
-          dropoffAddress={activeTag.dropoff_location || ''}
+          dropoffAddress={passengerDestinationAddress}
           tagId={activeTag.id}
           offeredPrice={activeTag.final_price || activeTag.offered_price || 0}
           passengerVehicleKind={rideVehiclePreference}
@@ -10089,7 +10117,7 @@ function PassengerDashboard({
           <View style={{ borderRadius: 16, overflow: 'hidden' }}>
             <SearchingMapView
               userLocation={userLocation}
-              destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
+              destinationLocation={passengerDestinationLocation}
               driverLocations={offerDriverLocations}
               height={SCREEN_HEIGHT * 0.32}
               nearbyDriverCount={nearbyDriverCount}
@@ -10594,7 +10622,7 @@ function PassengerDashboard({
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
-                  destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
+                  destinationLocation={passengerDestinationLocation}
                   isDriver={false}
                   otherTripVehicleKind={
                     /motor/i.test(String(activeTag?.driver_vehicle_kind ?? ''))
@@ -15027,7 +15055,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               passengerLocation,
               activeTag,
             )}
-            destinationLocation={activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null}
+            destinationLocation={normalizeLocationCoords({
+              latitude: activeTag?.dropoff_lat,
+              longitude: activeTag?.dropoff_lng,
+            })}
             peerMapPinScale={1.04}
             otherTripVehicleKind={
               /motor/i.test(

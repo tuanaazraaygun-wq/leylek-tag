@@ -581,7 +581,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       const idleFor = now - lastInteractionRef.current;
       if (idleFor < idleThresholdRef.current) return;
 
-      const pool = getLeylekZekaContextCopy(homeRef.current ?? null, hintRef.current).idleHints;
+      const contextCopy = getLeylekZekaContextCopy(homeRef.current ?? null, hintRef.current);
+      const pool = [...contextCopy.idleHints, ...contextCopy.safeChecklist.slice(0, 2)];
       if (!pool.length) {
         idleThresholdRef.current = nextIdleThresholdMs();
         return;

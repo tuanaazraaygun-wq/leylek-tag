@@ -11,7 +11,17 @@ export type LeylekZekaContextCopy = {
   placeholder: string;
   starterPrompts: string[];
   idleHints: string[];
+  operationAwarenessTitle: string;
+  operationAwarenessBody: string;
+  safeChecklist: string[];
+  knownSignals: string[];
+  safeAdviceOnly: true;
 };
+
+type LeylekZekaBaseCopy = Omit<
+  LeylekZekaContextCopy,
+  'operationAwarenessTitle' | 'operationAwarenessBody' | 'safeChecklist' | 'knownSignals' | 'safeAdviceOnly'
+>;
 
 const LEYLEK_OFFER_GUIDE_PROMPTS = [
   'Leylek Teklifi nasıl açılır?',
@@ -20,7 +30,7 @@ const LEYLEK_OFFER_GUIDE_PROMPTS = [
   'QR biniş ve bitiş nasıl çalışır?',
 ] as const;
 
-const DEFAULT_COPY: LeylekZekaContextCopy = {
+const DEFAULT_COPY: LeylekZekaBaseCopy = {
   stageLabel: 'Uygulama rehberi',
   intentScope: 'general_app_guide',
   emptyTitle: 'Leylek Zeka yanınızda',
@@ -39,7 +49,7 @@ const DEFAULT_COPY: LeylekZekaContextCopy = {
   ],
 };
 
-const ROLE_SELECT_COPY: LeylekZekaContextCopy = {
+const ROLE_SELECT_COPY: LeylekZekaBaseCopy = {
   stageLabel: 'Rol seçimi',
   intentScope: 'role_selection_guide',
   emptyTitle: 'Rol seçimini birlikte netleştirelim',
@@ -59,7 +69,7 @@ const ROLE_SELECT_COPY: LeylekZekaContextCopy = {
   ],
 };
 
-const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaContextCopy> = {
+const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> = {
   passenger_home: {
     stageLabel: 'Yolcu ana ekranı',
     intentScope: 'passenger_start_guide',
@@ -233,13 +243,136 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaContextCopy
   },
 };
 
+const DEFAULT_OPERATION = {
+  operationAwarenessTitle: 'Kontrol listesi',
+  operationAwarenessBody:
+    'Bu rehber yalnızca ekrandaki akışa göre genel kullanım desteği verir; gerçek operasyon verisi veya yönlendirme içermez.',
+  safeChecklist: [
+    'Ekrandaki güncel durumu kontrol et.',
+    'Bildirimlerin açık olduğundan emin ol.',
+    'QR, Muhabbet/chat ve destek adımlarını uygulama içinden takip et.',
+  ],
+  knownSignals: ['homeFlowScreen', 'flowHint'],
+} as const;
+
+function operationForIntent(intentScope: string): Omit<
+  LeylekZekaContextCopy,
+  keyof LeylekZekaBaseCopy | 'safeAdviceOnly'
+> {
+  switch (intentScope) {
+    case 'passenger_matching_guide':
+      return {
+        operationAwarenessTitle: 'Eşleşme kontrol listesi',
+        operationAwarenessBody:
+          'Eşleşme beklerken yalnız ekrandaki duruma göre rehberlik ederim; kesin süre veya garanti paylaşmam.',
+        safeChecklist: [
+          'Konum, hedef ve araç tercihini kontrol et.',
+          'Bildirimlerin açık olduğundan emin ol.',
+          'Teklif gelirse karttaki ücret, araç ve sürücü bilgilerine bak.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'isWaitingMatch'],
+      };
+    case 'passenger_offer_review_guide':
+      return {
+        operationAwarenessTitle: 'Teklif kontrol listesi',
+        operationAwarenessBody:
+          'Gelen tekliflerde ekrandaki güncel kart bilgisi esas alınır; fiyat veya seçim kararı vermem.',
+        safeChecklist: [
+          'Teklif kartındaki ücret, araç tipi ve sürücü bilgilerine bak.',
+          'Muhabbet/chat, QR ve destek adımlarını uygulama içinde takip et.',
+          'Ekrandaki güncel durum değişirse kart bilgilerini yeniden kontrol et.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'hasActiveOffer'],
+      };
+    case 'passenger_trip_guide':
+      return {
+        operationAwarenessTitle: 'Yolculuk kontrol listesi',
+        operationAwarenessBody:
+          'Yolculuk sırasında uygulamadaki güvenlik ve iletişim adımlarını anlatırım; navigasyon veya işlem kararı vermem.',
+        safeChecklist: [
+          'QR, Güven Al, destek ve görüşme adımlarını uygulama içinden takip et.',
+          'Muhabbet/chat içinde gerekli detayları teyit et.',
+          'Sorun yaşarsan uygulamadaki destek adımlarını kullan.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'isPassenger'],
+      };
+    case 'driver_idle_guide':
+      return {
+        operationAwarenessTitle: 'Sürücü hazır olma kontrolü',
+        operationAwarenessBody:
+          'Açık talepler geldikçe ekran güncellenebilir; gerçek bölge yönlendirmesi yapmam.',
+        safeChecklist: [
+          'Çevrimiçi durumunu ve bildirimlerini kontrol et.',
+          'Açık talepler geldikçe ekrandaki kartları takip et.',
+          'Bölge veya rota yönlendirmesi yerine ekrandaki kullanım adımlarını açıklarım.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'isDriver'],
+      };
+    case 'driver_offer_list_guide':
+      return {
+        operationAwarenessTitle: 'Talep kartı kontrolü',
+        operationAwarenessBody:
+          'Talep listesi ekrandaki güncel kartlara göre değerlendirilir; kazanç veya yönlendirme garantisi vermem.',
+        safeChecklist: [
+          'Talep kartındaki rota, araç tercihi ve notları kontrol et.',
+          'Yolcu bilgisi ve yolculuk detaylarını tekliften önce gözden geçir.',
+          'Bildirimler ve ekran güncellemelerini takip et.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'hasActiveOffer'],
+      };
+    case 'driver_offer_compose_guide':
+      return {
+        operationAwarenessTitle: 'Teklif hazırlama kontrolü',
+        operationAwarenessBody:
+          'Teklif öncesi görünen bilgileri netleştirmeye yardım ederim; fiyat kararı veya rota talimatı vermem.',
+        safeChecklist: [
+          'Teklif vermeden önce rota, zaman ve iletişim detaylarını netleştir.',
+          'Şehir dışı tekliflerde rota, tarih ve rol bilgisini kontrol et.',
+          'Eşleşme sonrası Muhabbet/chat içinde detayları teyit et.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'hasActiveOffer'],
+      };
+    case 'driver_kyc_guide':
+      return {
+        operationAwarenessTitle: 'Onay süreci kontrolü',
+        operationAwarenessBody:
+          'Onay süreci devam ederken bazı sürücü özellikleri sınırlı olabilir; ekrandaki durum esas alınır.',
+        safeChecklist: [
+          'Başvuru durumunu uygulama içindeki ekrandan kontrol et.',
+          'Onay tamamlanmadan bazı sürücü özelliklerinin sınırlı olabileceğini unutma.',
+          'Eksik veya reddedilen bilgi varsa ekrandaki yönlendirmeyi takip et.',
+        ],
+        knownSignals: ['homeFlowScreen', 'flowHint', 'isDriver'],
+      };
+    default:
+      return { ...DEFAULT_OPERATION };
+  }
+}
+
+function withOperationAwareness(copy: LeylekZekaBaseCopy): LeylekZekaContextCopy {
+  const operation = operationForIntent(copy.intentScope);
+  const offerChecklist = [
+    'Şehir dışı tekliflerde rota, tarih ve rol bilgilerini netleştir.',
+    'Eşleşme sonrası Muhabbet/chat içinde detayları teyit et.',
+    'QR ve görüşme adımlarını uygulama içinde takip et.',
+  ];
+  return {
+    ...copy,
+    ...operation,
+    safeChecklist: [...operation.safeChecklist, ...offerChecklist],
+    knownSignals: Array.from(new Set([...operation.knownSignals, 'stageLabel', 'intentScope'])),
+    safeAdviceOnly: true,
+    idleHints: [...copy.idleHints, operation.safeChecklist[0]],
+  };
+}
+
 export function getLeylekZekaContextCopy(
   home: LeylekZekaHomeFlowScreen,
   hint: LeylekZekaFlowHint,
 ): LeylekZekaContextCopy {
-  if (home === 'role-select') return ROLE_SELECT_COPY;
-  if (home === 'dashboard' && hint) return FLOW_COPY[hint];
-  return DEFAULT_COPY;
+  if (home === 'role-select') return withOperationAwareness(ROLE_SELECT_COPY);
+  if (home === 'dashboard' && hint) return withOperationAwareness(FLOW_COPY[hint]);
+  return withOperationAwareness(DEFAULT_COPY);
 }
 
 /** Ekran + akışa göre ara sıra gösterilen kısa pill (widget). */

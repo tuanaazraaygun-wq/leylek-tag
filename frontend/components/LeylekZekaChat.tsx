@@ -207,12 +207,18 @@ const BinaryPatternBackdrop = memo(function BinaryPatternBackdrop() {
 const EmptyWelcome = memo(function EmptyWelcome({
   title,
   body,
+  operationTitle,
+  operationBody,
+  safeChecklist,
   prompts,
   disabled,
   onPromptPress,
 }: {
   title: string;
   body: string;
+  operationTitle: string;
+  operationBody: string;
+  safeChecklist: string[];
   prompts: string[];
   disabled: boolean;
   onPromptPress: (prompt: string) => void;
@@ -224,6 +230,18 @@ const EmptyWelcome = memo(function EmptyWelcome({
       </View>
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyBody}>{body}</Text>
+      <View style={styles.operationGuideCard}>
+        <Text style={styles.operationGuideTitle}>{operationTitle}</Text>
+        <Text style={styles.operationGuideBody}>{operationBody}</Text>
+        <View style={styles.operationChecklist}>
+          {safeChecklist.slice(0, 4).map((item) => (
+            <View key={item} style={styles.operationChecklistRow}>
+              <Ionicons name="checkmark-circle" size={13} color="#2563EB" />
+              <Text style={styles.operationChecklistText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
       <Text style={styles.emptyPromptTitle}>Sorabileceğin başlıklar</Text>
       <View style={styles.emptyPromptGrid}>
         {prompts.map((prompt) => (
@@ -299,6 +317,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   lastReplySource,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
   const [input, setInput] = useState('');
   const [showBetaHint, setShowBetaHint] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -791,6 +810,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 <EmptyWelcome
                   title={contextCopy.emptyTitle}
                   body={contextCopy.emptyBody}
+                  operationTitle={contextCopy.operationAwarenessTitle}
+                  operationBody={contextCopy.operationAwarenessBody}
+                  safeChecklist={contextCopy.safeChecklist}
                   prompts={contextCopy.starterPrompts}
                   disabled={isTyping}
                   onPromptPress={onStarterPromptPress}
@@ -1263,6 +1285,50 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     letterSpacing: 0.04,
+  },
+  operationGuideCard: {
+    width: '100%',
+    marginTop: Spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 11,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(239, 246, 255, 0.86)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(37, 99, 235, 0.26)',
+  },
+  operationGuideTitle: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#1d4ed8',
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  operationGuideBody: {
+    fontFamily: DIGITAL_MONO,
+    marginTop: 5,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#334155',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  operationChecklist: {
+    marginTop: 8,
+    gap: 6,
+  },
+  operationChecklistRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  operationChecklistText: {
+    flex: 1,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#0f172a',
+    fontWeight: '600',
   },
   bubbleWrap: { marginBottom: Spacing.md, maxWidth: '92%' },
   bubbleWrapUser: { alignSelf: 'flex-end' },
