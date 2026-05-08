@@ -525,7 +525,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       Speech.stop();
       Speech.speak(text, {
         language: 'tr-TR',
-        rate: 0.92,
+        rate: 1.0,
         pitch: 1.0,
       });
     } catch {
