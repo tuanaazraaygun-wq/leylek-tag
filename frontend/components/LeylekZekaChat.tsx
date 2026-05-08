@@ -350,6 +350,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const scrollRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentSizeScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const voicePulse = useRef(new Animated.Value(0)).current;
   /** Modal açık mı — kapanış sonrası async zincirlerde güncel değer */
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -424,6 +425,32 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isListening || reduceMotion) {
+      voicePulse.stopAnimation();
+      voicePulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(voicePulse, {
+          toValue: 1,
+          duration: 920,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(voicePulse, {
+          toValue: 0,
+          duration: 920,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isListening, reduceMotion, voicePulse]);
 
   useEffect(() => {
     if (!visible) {
@@ -895,15 +922,24 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           : null;
 
   const headerSubtitle = `${contextCopy.stageLabel} · Rehber`;
-  const voiceInputHelperText = voiceInputError
+  const voiceStatusTitle = voiceInputError
+    ? 'Bas-konuş durdu'
+    : isListening
+      ? 'Dinleniyor'
+      : 'Basılı tut ve konuş';
+  const voiceStatusBody = voiceInputError
     ? voiceInputError
     : isListening
-      ? partialTranscript
-        ? `Algılanan: ${partialTranscript}`
-        : 'Dinleniyor... bırakınca gönderilecek'
-      : partialTranscript
-        ? `Algılanan: ${partialTranscript}`
-        : 'Basılı tut ve konuş';
+      ? 'Bırakınca gönderilecek'
+      : 'Mikrofona basılı tutarak sorunuzu söyleyin.';
+  const voicePulseStyle = {
+    opacity: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.58] }),
+    transform: [
+      {
+        scale: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.42] }),
+      },
+    ],
+  };
 
   const closeWithHaptic = useCallback(() => {
     abortVoiceInput();
@@ -1176,6 +1212,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 onPressOut={stopVoiceInput}
                 accessibilityRole="button"
                 accessibilityLabel="Bas-konuş"
+                accessibilityHint="Basılı tutarak konuşun, bırakınca Leylek Zeka'ya gönderilir."
                 accessibilityState={{ disabled: isTyping }}
                 style={({ pressed }) => [
                   styles.micBtn,
@@ -1185,11 +1222,19 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 ]}
                 disabled={isTyping}
               >
-                <Ionicons
-                  name={isListening ? 'mic' : 'mic-outline'}
-                  size={19}
-                  color={isListening ? '#FFFFFF' : '#2563EB'}
-                />
+                <View style={styles.micBtnContent}>
+                  {isListening && !reduceMotion ? (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[styles.micPulseRing, voicePulseStyle]}
+                    />
+                  ) : null}
+                  <Ionicons
+                    name={isListening ? 'mic' : 'mic-outline'}
+                    size={19}
+                    color={isListening ? '#FFFFFF' : '#2563EB'}
+                  />
+                </View>
               </Pressable>
               <Pressable
                 onPress={onSubmit}
@@ -1217,15 +1262,46 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 </LinearGradient>
               </Pressable>
             </View>
-            <Text
+            <View
               style={[
-                styles.voiceInputHint,
-                voiceInputError ? styles.voiceInputHintError : null,
+                styles.voiceStatusCard,
+                isListening ? styles.voiceStatusCardListening : null,
+                voiceInputError ? styles.voiceStatusCardError : null,
               ]}
-              numberOfLines={2}
             >
-              {voiceInputHelperText}
-            </Text>
+              <View style={styles.voiceStatusHeader}>
+                <View
+                  style={[
+                    styles.voiceStatusDot,
+                    isListening ? styles.voiceStatusDotListening : null,
+                    voiceInputError ? styles.voiceStatusDotError : null,
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.voiceStatusTitle,
+                    voiceInputError ? styles.voiceStatusTitleError : null,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {voiceStatusTitle}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.voiceStatusBody,
+                  voiceInputError ? styles.voiceStatusBodyError : null,
+                ]}
+                numberOfLines={1}
+              >
+                {voiceStatusBody}
+              </Text>
+              {partialTranscript && !voiceInputError ? (
+                <Text style={styles.voicePartialText} numberOfLines={2}>
+                  {partialTranscript}
+                </Text>
+              ) : null}
+            </View>
             </View>
           </LinearGradient>
             </View>
@@ -1880,6 +1956,22 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(37, 99, 235, 0.42)',
     backgroundColor: '#EFF6FF',
   },
+  micBtnContent: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micPulseRing: {
+    position: 'absolute',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.65)',
+    backgroundColor: 'rgba(37, 99, 235, 0.16)',
+  },
   micBtnListening: {
     backgroundColor: '#2563EB',
     borderColor: '#1D4ED8',
@@ -1889,16 +1981,72 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.96 }],
   },
   micBtnDisabled: { opacity: 0.45 },
-  voiceInputHint: {
-    marginTop: 6,
+  voiceStatusCard: {
+    marginTop: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.18)',
+    backgroundColor: 'rgba(239, 246, 255, 0.72)',
+  },
+  voiceStatusCardListening: {
+    borderColor: 'rgba(37, 99, 235, 0.42)',
+    backgroundColor: 'rgba(219, 234, 254, 0.86)',
+  },
+  voiceStatusCardError: {
+    borderColor: 'rgba(185, 28, 28, 0.28)',
+    backgroundColor: 'rgba(254, 242, 242, 0.86)',
+  },
+  voiceStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  voiceStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+    backgroundColor: '#2563EB',
+    opacity: 0.72,
+  },
+  voiceStatusDotListening: {
+    backgroundColor: '#1D4ED8',
+    opacity: 1,
+  },
+  voiceStatusDotError: {
+    backgroundColor: '#B91C1C',
+    opacity: 1,
+  },
+  voiceStatusTitle: {
     fontFamily: DIGITAL_MONO,
     fontSize: 10,
     lineHeight: 14,
     color: '#1D4ED8',
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.08,
   },
-  voiceInputHintError: {
+  voiceStatusTitleError: {
     color: '#B91C1C',
+  },
+  voiceStatusBody: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 13,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  voiceStatusBodyError: {
+    color: '#991B1B',
+  },
+  voicePartialText: {
+    marginTop: 5,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#0F172A',
+    fontWeight: '700',
   },
   sendBtnOuter: {
     borderRadius: 22,
