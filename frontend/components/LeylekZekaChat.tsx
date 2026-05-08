@@ -45,6 +45,10 @@ const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
 const SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS = 48;
 /** Mesaj/typing değişiminden sonra ilk scroll gecikmesi */
 const SCROLL_AFTER_UPDATE_MS = 72;
+/** Android speech provider final result'ı stop/end sonrasında gecikmeli gönderebilir. */
+const VOICE_TRANSCRIPT_SUBMIT_DELAY_MS = 680;
+/** Çok kısa basışlar çoğunlukla recognizer başlamadan stop aldığı için boş sonuç üretir. */
+const VOICE_MIN_HOLD_MS = 800;
 
 /** Terminal / HUD hissi — tüm sohbet tipografisi */
 const DIGITAL_MONO = Platform.select({
@@ -357,8 +361,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const lastAssistantSpeechIdRef = useRef<string | null>(null);
   const prevVisibleForSpeechRef = useRef(visible);
   const finalTranscriptRef = useRef('');
+  const lastTranscriptRef = useRef('');
   const partialTranscriptRef = useRef('');
   const pressActiveRef = useRef(false);
+  const holdStartedAtRef = useRef<number | null>(null);
   const recognitionStartedRef = useRef(false);
   const suppressNextVoiceErrorRef = useRef(false);
   const voiceSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -516,7 +522,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const resetVoiceInputState = useCallback(() => {
     finalTranscriptRef.current = '';
+    lastTranscriptRef.current = '';
     partialTranscriptRef.current = '';
+    holdStartedAtRef.current = null;
     setPartialTranscript('');
     setVoiceInputError('');
   }, []);
@@ -539,9 +547,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const submitVoiceTranscript = useCallback(() => {
     clearVoiceSubmitTimer();
-    const transcript = (finalTranscriptRef.current || partialTranscriptRef.current).trim();
+    const transcript = (
+      finalTranscriptRef.current ||
+      lastTranscriptRef.current ||
+      partialTranscriptRef.current
+    ).trim();
     finalTranscriptRef.current = '';
+    lastTranscriptRef.current = '';
     partialTranscriptRef.current = '';
+    holdStartedAtRef.current = null;
     setPartialTranscript('');
     recognitionStartedRef.current = false;
     if (!transcript) {
@@ -557,7 +571,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     voiceSubmitTimerRef.current = setTimeout(() => {
       voiceSubmitTimerRef.current = null;
       submitVoiceTranscript();
-    }, 420);
+    }, VOICE_TRANSCRIPT_SUBMIT_DELAY_MS);
   }, [clearVoiceSubmitTimer, submitVoiceTranscript]);
 
   useSpeechRecognitionEvent('start', () => {
@@ -577,6 +591,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     const transcript = (event.results?.[0]?.transcript ?? '').trim();
     if (!transcript) return;
     partialTranscriptRef.current = transcript;
+    lastTranscriptRef.current = transcript;
     setPartialTranscript(transcript);
     if (event.isFinal) {
       finalTranscriptRef.current = transcript;
@@ -589,7 +604,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       return;
     }
     recognitionStartedRef.current = false;
+    holdStartedAtRef.current = null;
     setIsListening(false);
+    if (lastTranscriptRef.current.trim()) {
+      scheduleVoiceTranscriptSubmit();
+      return;
+    }
     const message =
       event.error === 'not-allowed'
         ? 'Mikrofon izni olmadan bas-konuş kullanılamaz.'
@@ -652,10 +672,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     resetVoiceInputState();
     suppressNextVoiceErrorRef.current = false;
     pressActiveRef.current = true;
+    holdStartedAtRef.current = Date.now();
     try {
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!permission.granted) {
         pressActiveRef.current = false;
+        holdStartedAtRef.current = null;
         setIsListening(false);
         setVoiceInputError('Mikrofon izni olmadan bas-konuş kullanılamaz.');
         return;
@@ -675,7 +697,28 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const stopVoiceInput = useCallback(() => {
     if (!pressActiveRef.current && !isListening && !recognitionStartedRef.current) return;
+    const holdDuration = holdStartedAtRef.current ? Date.now() - holdStartedAtRef.current : 0;
     pressActiveRef.current = false;
+    if (holdDuration > 0 && holdDuration < VOICE_MIN_HOLD_MS) {
+      clearVoiceSubmitTimer();
+      holdStartedAtRef.current = null;
+      finalTranscriptRef.current = '';
+      lastTranscriptRef.current = '';
+      partialTranscriptRef.current = '';
+      setPartialTranscript('');
+      setIsListening(false);
+      setVoiceInputError('Biraz daha basılı tutup konuşun.');
+      if (recognitionStartedRef.current || isListening) {
+        recognitionStartedRef.current = false;
+        suppressNextVoiceErrorRef.current = true;
+        try {
+          ExpoSpeechRecognitionModule.abort();
+        } catch {
+          /* recognizer may already be inactive */
+        }
+      }
+      return;
+    }
     try {
       ExpoSpeechRecognitionModule.stop();
     } catch {
@@ -684,7 +727,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       return;
     }
     scheduleVoiceTranscriptSubmit();
-  }, [isListening, scheduleVoiceTranscriptSubmit]);
+  }, [clearVoiceSubmitTimer, isListening, scheduleVoiceTranscriptSubmit]);
 
   const onSubmit = useCallback(() => {
     const t = input.trim();
@@ -852,6 +895,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           : null;
 
   const headerSubtitle = `${contextCopy.stageLabel} · Rehber`;
+  const voiceInputHelperText = voiceInputError
+    ? voiceInputError
+    : isListening
+      ? partialTranscript
+        ? `Algılanan: ${partialTranscript}`
+        : 'Dinleniyor... bırakınca gönderilecek'
+      : partialTranscript
+        ? `Algılanan: ${partialTranscript}`
+        : 'Basılı tut ve konuş';
 
   const closeWithHaptic = useCallback(() => {
     abortVoiceInput();
@@ -1165,17 +1217,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 </LinearGradient>
               </Pressable>
             </View>
-            {isListening || partialTranscript || voiceInputError ? (
-              <Text
-                style={[
-                  styles.voiceInputHint,
-                  voiceInputError ? styles.voiceInputHintError : null,
-                ]}
-                numberOfLines={2}
-              >
-                {voiceInputError || (partialTranscript ? `Algılanan: ${partialTranscript}` : 'Dinleniyor...')}
-              </Text>
-            ) : null}
+            <Text
+              style={[
+                styles.voiceInputHint,
+                voiceInputError ? styles.voiceInputHintError : null,
+              ]}
+              numberOfLines={2}
+            >
+              {voiceInputHelperText}
+            </Text>
             </View>
           </LinearGradient>
             </View>
