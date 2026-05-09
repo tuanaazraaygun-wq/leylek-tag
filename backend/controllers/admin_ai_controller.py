@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from decimal import Decimal, InvalidOperation, ROUND_HALF_DOWN
 from typing import Any, Literal
 
 import httpx
@@ -38,6 +39,37 @@ def _metrics_block(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _format_region_label(raw: str) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return "Bölge bilgisi yok"
+
+    city_raw, sep, coord_raw = text.partition("|")
+    city_key = city_raw.strip()
+    city_map = {
+        "bilinmeyen_sehir": "Şehir bilgisi yok",
+        "bilinmeyen": "Şehir bilgisi yok",
+        "ankara": "Ankara",
+        "istanbul": "İstanbul",
+        "izmir": "İzmir",
+    }
+    city_label = city_map.get(city_key.lower(), city_key.replace("_", " ").strip().title())
+
+    if not sep:
+        return city_label or text
+
+    lat_raw, coord_sep, lng_raw = coord_raw.partition(",")
+    try:
+        if not coord_sep:
+            raise ValueError("missing lng")
+        lat = Decimal(lat_raw.strip()).quantize(Decimal("0.1"), rounding=ROUND_HALF_DOWN)
+        lng = Decimal(lng_raw.strip()).quantize(Decimal("0.1"), rounding=ROUND_HALF_DOWN)
+        return f"{city_label} · kaba bölge {lat:.1f},{lng:.1f}"
+    except (InvalidOperation, TypeError, ValueError):
+        coord_label = coord_raw.replace("_", " ").strip()
+        return f"{city_label} · {coord_label}" if coord_label else city_label
+
+
 def _deterministic_narrative(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Claude yokken yapılandırılmış özet (uydurma yok)."""
     tags = snapshot.get("tags") or {}
@@ -55,12 +87,12 @@ def _deterministic_narrative(snapshot: dict[str, Any]) -> dict[str, Any]:
     hotspots: list[str] = []
     for reg, cnt in (tags.get("waiting_now_by_region_top") or [])[:3]:
         if cnt:
-            hotspots.append(f"Bekleyen talep yoğunluğu (kaba bölge): {reg} — {cnt} kayıt.")
+            hotspots.append(f"Bekleyen talep yoğunluğu (kaba bölge): {_format_region_label(reg)} — {cnt} kayıt.")
 
     weak_zones: list[str] = []
     for reg, cnt in (tags.get("cancelled_by_region_top") or [])[:3]:
         if cnt:
-            weak_zones.append(f"İptal kayıtları (kaba bölge): {reg} — {cnt}.")
+            weak_zones.append(f"İptal kayıtları (kaba bölge): {_format_region_label(reg)} — {cnt}.")
 
     recommendations: list[str] = []
     if "high_cancellation_rate_in_window" in inf:
