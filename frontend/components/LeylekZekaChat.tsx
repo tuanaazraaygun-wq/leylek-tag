@@ -12,6 +12,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
+  AppState,
   Dimensions,
   Easing,
   FlatList,
@@ -404,6 +405,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const recognitionStartedRef = useRef(false);
   const suppressNextVoiceErrorRef = useRef(false);
   const voiceSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceStartInFlightRef = useRef(false);
   /** Android: keyboardDidHide bazen düzen değişince iki kez tetiklenir; anlık sıfırlama odak kaybına yol açabilir */
   const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -661,6 +663,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     const hadVoiceSession =
       pressActiveRef.current || recognitionStartedRef.current || Boolean(partialTranscriptRef.current);
     pressActiveRef.current = false;
+    voiceStartInFlightRef.current = false;
     recognitionStartedRef.current = false;
     if (hadVoiceSession) suppressNextVoiceErrorRef.current = true;
     try {
@@ -671,6 +674,16 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     setIsListening(false);
     resetVoiceInputState();
   }, [clearVoiceSubmitTimer, resetVoiceInputState]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') return;
+      abortVoiceInput();
+      stopSpeech();
+      clearTypewriter(true);
+    });
+    return () => sub.remove();
+  }, [abortVoiceInput, clearTypewriter, stopSpeech]);
 
   const submitVoiceTranscript = useCallback(() => {
     clearVoiceSubmitTimer();
@@ -683,8 +696,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     lastTranscriptRef.current = '';
     partialTranscriptRef.current = '';
     holdStartedAtRef.current = null;
-    setPartialTranscript('');
     recognitionStartedRef.current = false;
+    if (!mountedRef.current || !visibleRef.current) return;
+    setPartialTranscript('');
     if (!transcript) {
       setVoiceInputError('Ses algılanamadı, tekrar deneyin.');
       return;
@@ -843,6 +857,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const startVoiceInput = useCallback(async () => {
     interruptAssistantOutputForVoice();
     if (isTyping) return;
+    if (voiceStartInFlightRef.current || pressActiveRef.current || recognitionStartedRef.current) return;
+    voiceStartInFlightRef.current = true;
     clearVoiceSubmitTimer();
     resetVoiceInputState();
     suppressNextVoiceErrorRef.current = false;
@@ -852,6 +868,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!permission.granted) {
         pressActiveRef.current = false;
+        voiceStartInFlightRef.current = false;
         holdStartedAtRef.current = null;
         setIsListening(false);
         setVoiceInputError('Mikrofon izni olmadan bas-konuş kullanılamaz.');
@@ -865,8 +882,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       });
     } catch {
       pressActiveRef.current = false;
+      voiceStartInFlightRef.current = false;
       setIsListening(false);
-      setVoiceInputError('Bas-konuş başlatılamadı, tekrar deneyin.');
+      setVoiceInputError('Bas-konuş başlatılamadı. Cihazınızda konuşma tanıma desteklenmeyebilir.');
+    } finally {
+      voiceStartInFlightRef.current = false;
     }
   }, [clearVoiceSubmitTimer, interruptAssistantOutputForVoice, isTyping, resetVoiceInputState]);
 
