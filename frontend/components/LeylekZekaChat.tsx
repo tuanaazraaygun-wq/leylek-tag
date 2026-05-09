@@ -1447,6 +1447,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               <Pressable
                 onPressIn={startVoiceInput}
                 onPressOut={stopVoiceInput}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel="Bas-konuş"
                 accessibilityHint="Basılı tutarak konuşun, bırakınca Leylek Zeka'ya gönderilir."
@@ -2259,28 +2260,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.04,
   },
   micBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.xs,
+    marginRight: Spacing.sm,
     borderWidth: 1,
     borderColor: 'rgba(37, 99, 235, 0.42)',
     backgroundColor: '#EFF6FF',
   },
   micBtnContent: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
   },
   micPulseRing: {
     position: 'absolute',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     borderWidth: 1,
     borderColor: 'rgba(37, 99, 235, 0.65)',
     backgroundColor: 'rgba(37, 99, 235, 0.16)',
@@ -2293,7 +2294,10 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     transform: [{ scale: 0.96 }],
   },
-  micBtnDisabled: { opacity: 0.45 },
+  micBtnDisabled: {
+    opacity: 0.34,
+    borderColor: 'rgba(100, 116, 139, 0.32)',
+  },
   voiceStatusCard: {
     marginTop: 7,
     paddingHorizontal: 10,
