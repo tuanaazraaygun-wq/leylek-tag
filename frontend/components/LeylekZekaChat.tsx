@@ -624,6 +624,22 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
   }, []);
 
+  const interruptAssistantOutputForVoice = useCallback(() => {
+    stopSpeech();
+    const typingId = activeTypingMessageId;
+    if (!typingId) return;
+
+    const activeAssistant = messages.find((m) => m.id === typingId && m.role === 'assistant');
+    clearTypewriter(false);
+    if (!activeAssistant) return;
+
+    setDisplayedAssistantTextById((prev) => ({
+      ...prev,
+      [activeAssistant.id]: activeAssistant.text,
+    }));
+    lastAssistantSpeechIdRef.current = activeAssistant.id;
+  }, [activeTypingMessageId, clearTypewriter, messages, stopSpeech]);
+
   const clearVoiceSubmitTimer = useCallback(() => {
     if (voiceSubmitTimerRef.current) {
       clearTimeout(voiceSubmitTimerRef.current);
@@ -825,8 +841,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, [speakAssistantText]);
 
   const startVoiceInput = useCallback(async () => {
+    interruptAssistantOutputForVoice();
     if (isTyping) return;
-    stopSpeech();
     clearVoiceSubmitTimer();
     resetVoiceInputState();
     suppressNextVoiceErrorRef.current = false;
@@ -852,7 +868,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       setIsListening(false);
       setVoiceInputError('Bas-konuş başlatılamadı, tekrar deneyin.');
     }
-  }, [clearVoiceSubmitTimer, isTyping, resetVoiceInputState, stopSpeech]);
+  }, [clearVoiceSubmitTimer, interruptAssistantOutputForVoice, isTyping, resetVoiceInputState]);
 
   const stopVoiceInput = useCallback(() => {
     if (!pressActiveRef.current && !isListening && !recognitionStartedRef.current) return;
