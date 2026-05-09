@@ -805,6 +805,16 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 </View>
               </View>
             ) : null}
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Leylek Zeka Operasyon</Text>
+              <Text style={styles.cardSub}>
+                Operasyon özetleri, bölge içgörüleri ve destek sinyalleri burada toplanacak.
+              </Text>
+              <Text style={styles.cardMeta}>
+                Hazırlık görünümü · Mevcut operasyon akışını değiştirmez.
+              </Text>
+            </View>
             
             <Text style={styles.sectionTitle}>Son Yolculuklar</Text>
             {trips.slice(0, 5).map((t, i) => (
@@ -1119,7 +1129,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Teklif Sende şehir talepleri</Text>
             <Text style={styles.subtleHelp}>
-              Kullanıcılar Ankara dışındaki illerde &quot;Leylek Teklif Sende'ye katın&quot; ile gönderdiği istekler.
+              Kullanıcılar Ankara dışındaki illerde &quot;Leylek Teklif Sende&apos;ye katın&quot; ile gönderdiği istekler.
             </Text>
             {communityCityRequests.length === 0 ? (
               <Text style={styles.emptyListText}>Henüz talep yok.</Text>
