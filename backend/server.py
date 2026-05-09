@@ -7834,6 +7834,27 @@ async def get_blocked_list(user_id: str):
 
 # ==================== REPORT (ŞİKAYET) SYSTEM ====================
 
+LEYLEK_ZEKA_REPORT_CATEGORIES = {
+    "user_complaint",
+    "driver_complaint",
+    "passenger_complaint",
+    "platform_issue",
+    "payment_issue",
+    "location_issue",
+    "matching_issue",
+    "offer_issue",
+    "general_feedback",
+}
+
+
+class LeylekZekaReportRequest(BaseModel):
+    category: str = Field(..., max_length=80)
+    categoryLabel: Optional[str] = Field(default=None, max_length=120)
+    details: str = Field(..., min_length=10, max_length=2000)
+    originalText: Optional[str] = Field(default=None, max_length=1000)
+    reportedUserId: Optional[str] = None
+
+
 @api_router.post("/user/report")
 async def report_user(user_id: str, reported_user_id: str, reason: str = "other", details: str = None, tag_id: str = None):
     """Kullanıcı şikayet et - Supabase'e kaydet, Admin görsün"""
@@ -7875,6 +7896,98 @@ async def report_user(user_id: str, reported_user_id: str, reason: str = "other"
         if "reports" in str(e).lower() and "does not exist" in str(e).lower():
             return {"success": True, "message": "Şikayetiniz alındı. (Tablo oluşturulacak)"}
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/user/report/leylekzeka")
+async def report_user_leylek_zeka(
+    body: LeylekZekaReportRequest,
+    reporter_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Bearer doğrulamalı Leylek Zeka destek kaydı."""
+    category = (body.category or "").strip()
+    if category not in LEYLEK_ZEKA_REPORT_CATEGORIES:
+        raise HTTPException(status_code=422, detail="Geçersiz kategori")
+
+    clean_details = (body.details or "").strip()
+    if len(clean_details) < 10:
+        raise HTTPException(status_code=422, detail="Açıklama çok kısa")
+
+    category_label = (body.categoryLabel or "").strip()[:120]
+    original_text = (body.originalText or "").strip()[:1000]
+
+    try:
+        cutoff = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
+        recent = (
+            supabase.table("reports")
+            .select("id")
+            .eq("reporter_id", reporter_id)
+            .gte("created_at", cutoff)
+            .ilike("details", "%[source=leylek_zeka]%")
+            .execute()
+        )
+        if len(recent.data or []) >= 3:
+            raise HTTPException(status_code=429, detail="Çok sık destek kaydı oluşturuldu")
+
+        reporter_result = (
+            supabase.table("users")
+            .select("name, phone")
+            .eq("id", reporter_id)
+            .limit(1)
+            .execute()
+        )
+        reporter_info = reporter_result.data[0] if reporter_result.data else {}
+
+        reported_user_id = None
+        reported_info = {}
+        reported_role = None
+        if body.reportedUserId:
+            reported_user_id = await resolve_user_id(str(body.reportedUserId).strip())
+            if not reported_user_id:
+                raise HTTPException(status_code=404, detail="Bildirilecek kullanıcı bulunamadı")
+            reported_result = (
+                supabase.table("users")
+                .select("name, phone, driver_details")
+                .eq("id", reported_user_id)
+                .limit(1)
+                .execute()
+            )
+            reported_info = reported_result.data[0] if reported_result.data else {}
+            reported_role = "driver" if reported_info.get("driver_details") else "passenger"
+
+        report_details = "\n".join(
+            [
+                "[source=leylek_zeka]",
+                f"[categoryLabel={category_label or category}]",
+                f"[originalText={original_text}]",
+                f"[details={clean_details}]",
+            ]
+        )
+        report_data = {
+            "reporter_id": reporter_id,
+            "reporter_name": reporter_info.get("name", "Bilinmeyen"),
+            "reporter_phone": reporter_info.get("phone", ""),
+            "reported_user_id": reported_user_id,
+            "reported_user_name": reported_info.get("name") if reported_info else None,
+            "reported_user_phone": reported_info.get("phone") if reported_info else None,
+            "reported_user_role": reported_role,
+            "reason": category,
+            "details": report_details,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        result = supabase.table("reports").insert(report_data).execute()
+        logger.info(
+            "Leylek Zeka report saved: reporter=%s category=%s",
+            _mask_log_id(reporter_id),
+            category,
+        )
+        return {"ok": True, "report_id": result.data[0]["id"] if result.data else None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Leylek Zeka report error: %s", e)
+        raise HTTPException(status_code=500, detail="Destek kaydı oluşturulamadı") from e
+
 
 @api_router.get("/admin/reports")
 async def get_all_reports(status: str = None, limit: int = 50):
