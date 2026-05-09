@@ -49,6 +49,10 @@ const SCROLL_AFTER_UPDATE_MS = 72;
 const VOICE_TRANSCRIPT_SUBMIT_DELAY_MS = 680;
 /** Çok kısa basışlar çoğunlukla recognizer başlamadan stop aldığı için boş sonuç üretir. */
 const VOICE_MIN_HOLD_MS = 800;
+/** Backend streaming yokken düşük maliyetli kelime grubu typewriter hissi. */
+const TYPEWRITER_INTERVAL_MS = 58;
+const TYPEWRITER_SHORT_CHUNK_WORDS = 5;
+const TYPEWRITER_LONG_CHUNK_WORDS = 8;
 
 /** Terminal / HUD hissi — tüm sohbet tipografisi */
 const DIGITAL_MONO = Platform.select({
@@ -72,6 +76,18 @@ function sanitizeSpeechText(text: string): string {
     .trim();
   if (normalized.length <= 900) return normalized;
   return `${normalized.slice(0, 900).trim()}... Devamını ekrandan okuyabilirsiniz.`;
+}
+
+function buildTypewriterFrames(text: string): string[] {
+  const tokens = text.match(/\S+\s*/g) ?? [text];
+  const chunkSize =
+    text.length > 650 ? TYPEWRITER_LONG_CHUNK_WORDS : TYPEWRITER_SHORT_CHUNK_WORDS;
+  const frames: string[] = [];
+  for (let i = chunkSize; i < tokens.length; i += chunkSize) {
+    frames.push(tokens.slice(0, i).join('').trimEnd());
+  }
+  frames.push(text);
+  return frames;
 }
 
 type Props = {
@@ -135,8 +151,15 @@ const TypingBars = memo(function TypingBars() {
   );
 });
 
-const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
+const Bubble = memo(function Bubble({
+  item,
+  displayText,
+}: {
+  item: LeylekZekaMessage;
+  displayText?: string;
+}) {
   const isUser = item.role === 'user';
+  const text = displayText ?? item.text;
   if (isUser) {
     return (
       <View style={[styles.bubbleWrap, styles.bubbleWrapUser]}>
@@ -147,7 +170,7 @@ const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
           style={styles.bubbleUserGrad}
         >
           <Text style={[styles.bubbleText, styles.bubbleTextUser]} selectable>
-            {item.text}
+            {text}
           </Text>
         </LinearGradient>
       </View>
@@ -176,7 +199,7 @@ const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
               default: {},
             })}
           >
-            {item.text}
+            {text}
           </Text>
         </View>
       </View>
@@ -343,6 +366,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const [speechEnabled, setSpeechEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasSpeakableAssistant, setHasSpeakableAssistant] = useState(false);
+  const [displayedAssistantTextById, setDisplayedAssistantTextById] = useState<Record<string, string>>({});
+  const [activeTypingMessageId, setActiveTypingMessageId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [partialTranscript, setPartialTranscript] = useState('');
   const [voiceInputError, setVoiceInputError] = useState('');
@@ -351,6 +376,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
   const scrollRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentSizeScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
   const voicePulse = useRef(new Animated.Value(0)).current;
   /** Modal açık mı — kapanış sonrası async zincirlerde güncel değer */
@@ -362,6 +388,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
    */
   const scrollGenRef = useRef(0);
   const lastAssistantSpeechIdRef = useRef<string | null>(null);
+  const lastTypewriterAssistantIdRef = useRef<string | null>(null);
   const lastSpeakableAssistantTextRef = useRef('');
   const prevVisibleForSpeechRef = useRef(visible);
   const finalTranscriptRef = useRef('');
@@ -388,6 +415,13 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     () => messages.map((m) => `${m.id}:${m.text.length}`).join('\u001e'),
     [messages],
   );
+  const typewriterRenderSig = useMemo(
+    () =>
+      activeTypingMessageId
+        ? `${activeTypingMessageId}:${displayedAssistantTextById[activeTypingMessageId]?.length ?? 0}`
+        : '',
+    [activeTypingMessageId, displayedAssistantTextById],
+  );
   const latestAssistantId = useMemo(
     () => [...messages].reverse().find((m) => m.role === 'assistant')?.id ?? null,
     [messages],
@@ -405,6 +439,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       if (contentSizeScrollTimerRef.current) {
         clearTimeout(contentSizeScrollTimerRef.current);
         contentSizeScrollTimerRef.current = null;
+      }
+      if (typewriterIntervalRef.current) {
+        clearInterval(typewriterIntervalRef.current);
+        typewriterIntervalRef.current = null;
       }
     };
   }, []);
@@ -544,6 +582,17 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
   }, []);
 
+  const clearTypewriter = useCallback((resetDisplayed = false) => {
+    if (typewriterIntervalRef.current) {
+      clearInterval(typewriterIntervalRef.current);
+      typewriterIntervalRef.current = null;
+    }
+    setActiveTypingMessageId(null);
+    if (resetDisplayed) {
+      setDisplayedAssistantTextById({});
+    }
+  }, []);
+
   const clearVoiceSubmitTimer = useCallback(() => {
     if (voiceSubmitTimerRef.current) {
       clearTimeout(voiceSubmitTimerRef.current);
@@ -650,23 +699,26 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   useEffect(() => {
     return () => {
+      clearTypewriter(true);
       abortVoiceInput();
       stopSpeech();
     };
-  }, [abortVoiceInput, stopSpeech]);
+  }, [abortVoiceInput, clearTypewriter, stopSpeech]);
 
   useEffect(() => {
     const wasVisible = prevVisibleForSpeechRef.current;
     prevVisibleForSpeechRef.current = visible;
     if (!visible) {
+      clearTypewriter(true);
       abortVoiceInput();
       stopSpeech();
       return;
     }
     if (!wasVisible) {
       lastAssistantSpeechIdRef.current = latestAssistantId;
+      lastTypewriterAssistantIdRef.current = latestAssistantId;
     }
-  }, [abortVoiceInput, latestAssistantId, stopSpeech, visible]);
+  }, [abortVoiceInput, clearTypewriter, latestAssistantId, stopSpeech, visible]);
 
   const speakAssistantText = useCallback((rawText: string) => {
     if (Platform.OS === 'web') return;
@@ -690,16 +742,43 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, []);
 
   useEffect(() => {
-    if (Platform.OS === 'web') return;
     const latest = messages[messages.length - 1];
     if (!latest || latest.role !== 'assistant') return;
-    if (lastAssistantSpeechIdRef.current === latest.id) return;
-    lastAssistantSpeechIdRef.current = latest.id;
     lastSpeakableAssistantTextRef.current = latest.text;
     setHasSpeakableAssistant(Boolean(sanitizeSpeechText(latest.text)));
-    if (!visible || !speechEnabled) return;
-    speakAssistantText(latest.text);
-  }, [messages, speakAssistantText, speechEnabled, visible]);
+    if (lastTypewriterAssistantIdRef.current === latest.id) return;
+    lastTypewriterAssistantIdRef.current = latest.id;
+    clearTypewriter(false);
+
+    const speakAfterDisplay = () => {
+      if (lastAssistantSpeechIdRef.current === latest.id) return;
+      lastAssistantSpeechIdRef.current = latest.id;
+      if (!visible || !speechEnabled) return;
+      speakAssistantText(latest.text);
+    };
+
+    if (!visible || reduceMotion) {
+      setDisplayedAssistantTextById((prev) => ({ ...prev, [latest.id]: latest.text }));
+      speakAfterDisplay();
+      return;
+    }
+
+    const frames = buildTypewriterFrames(latest.text);
+    let index = 0;
+    setActiveTypingMessageId(latest.id);
+    setDisplayedAssistantTextById((prev) => ({ ...prev, [latest.id]: frames[0] ?? latest.text }));
+    typewriterIntervalRef.current = setInterval(() => {
+      index += 1;
+      const next = frames[index];
+      if (!next) {
+        clearTypewriter(false);
+        setDisplayedAssistantTextById((prev) => ({ ...prev, [latest.id]: latest.text }));
+        speakAfterDisplay();
+        return;
+      }
+      setDisplayedAssistantTextById((prev) => ({ ...prev, [latest.id]: next }));
+    }, TYPEWRITER_INTERVAL_MS);
+  }, [clearTypewriter, messages, reduceMotion, speakAssistantText, speechEnabled, visible]);
 
   const toggleSpeechEnabled = useCallback(() => {
     setSpeechEnabled((v) => {
@@ -781,6 +860,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const onSubmit = useCallback(() => {
     const t = input.trim();
     if (!t || isTyping) return;
+    clearTypewriter(true);
     abortVoiceInput();
     stopSpeech();
     if (Platform.OS !== 'web') {
@@ -792,7 +872,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
     setInput('');
     onSend(t);
-  }, [abortVoiceInput, input, isTyping, onSend, stopSpeech]);
+  }, [abortVoiceInput, clearTypewriter, input, isTyping, onSend, stopSpeech]);
 
   const contextCopy = useMemo(
     () => getLeylekZekaContextCopy(homeFlowScreen ?? null, flowHint),
@@ -802,6 +882,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const onStarterPromptPress = useCallback(
     (prompt: string) => {
       if (isTyping) return;
+      clearTypewriter(true);
       abortVoiceInput();
       stopSpeech();
       if (Platform.OS !== 'web') {
@@ -813,7 +894,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
       onSend(prompt);
     },
-    [abortVoiceInput, isTyping, onSend, stopSpeech],
+    [abortVoiceInput, clearTypewriter, isTyping, onSend, stopSpeech],
   );
 
   const scrollToEndSafe = useCallback(() => {
@@ -928,8 +1009,13 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, [visible, messagesScrollSig, isTyping, scrollToEndSafe]);
 
   const renderItem = useCallback(
-    ({ item }: { item: LeylekZekaMessage }) => <Bubble item={item} />,
-    [],
+    ({ item }: { item: LeylekZekaMessage }) => (
+      <Bubble
+        item={item}
+        displayText={item.role === 'assistant' ? displayedAssistantTextById[item.id] : undefined}
+      />
+    ),
+    [displayedAssistantTextById],
   );
 
   const keyExtractor = useCallback((m: LeylekZekaMessage) => m.id, []);
@@ -1173,7 +1259,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             <FlatList
               ref={listRef}
               data={messages}
-              extraData={messagesScrollSig}
+              extraData={`${messagesScrollSig}:${typewriterRenderSig}`}
               keyExtractor={keyExtractor}
               renderItem={renderItem}
               style={styles.list}
@@ -1217,6 +1303,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                       style={styles.typingAccent}
                     />
                     <View style={styles.typingBubbleInner}>
+                      <View style={styles.thinkingHeaderRow}>
+                        <Ionicons name="sparkles" size={13} color="#2563EB" />
+                        <Text style={styles.thinkingTitle}>Leylek Zeka düşünüyor</Text>
+                      </View>
+                      <Text style={styles.thinkingSubtitle}>Yanıt hazırlanıyor...</Text>
                       <TypingBars />
                     </View>
                   </View>
@@ -1951,9 +2042,31 @@ const styles = StyleSheet.create({
   typingBubbleInner: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: Spacing.md + 2,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
     backgroundColor: 'rgba(255,255,255,0.98)',
+  },
+  thinkingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  thinkingTitle: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#1D4ED8',
+    fontWeight: '800',
+    letterSpacing: 0.08,
+  },
+  thinkingSubtitle: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 13,
+    color: '#475569',
+    fontWeight: '600',
+    marginBottom: 7,
   },
   typingRow: {
     flexDirection: 'row',
