@@ -23,7 +23,15 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
-import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
+import {
+  ADMIN_API_BASE,
+  AdminApiError,
+  type AdminAiResponse,
+  normalizeTrPhone10,
+  postAdminAiHelpSummary,
+  postAdminAiRegionInsight,
+  postAdminAiSummary,
+} from '../lib/adminApi';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import {
@@ -201,6 +209,51 @@ function kbKindLabel(kind: string | undefined): string {
   return kind;
 }
 
+function operationErrorMessage(err: unknown): string {
+  const status = err instanceof AdminApiError ? err.status : 0;
+  if (status === 401 || status === 403) return 'Admin yetkisi gerekli.';
+  if (status === 503) return 'Leylek Zeka operasyon servisi şu anda kapalı.';
+  return 'Operasyon özeti alınamadı.';
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function operationMetricsLine(data: AdminAiResponse | null): string {
+  const metrics = recordValue(data?.metrics);
+  if (!Object.keys(metrics).length) return '';
+
+  const tags = recordValue(metrics.tags);
+  const dispatchQueue = recordValue(metrics.dispatch_queue);
+  const driversOnlineByCity = recordValue(metrics.drivers_online_by_city);
+  const helpProxy = recordValue(metrics.help_proxy);
+  const parts: string[] = [];
+
+  if (typeof tags.total_in_window === 'number') {
+    parts.push(`Talep kaydı: ${tags.total_in_window}`);
+  }
+  if (typeof tags.cancel_rate === 'number') {
+    parts.push(`İptal oranı: ${(tags.cancel_rate * 100).toFixed(1)}%`);
+  }
+  if (typeof dispatchQueue.rows_in_window === 'number') {
+    parts.push(`Dispatch kaydı: ${dispatchQueue.rows_in_window}`);
+  }
+  if (Object.keys(driversOnlineByCity).length > 0) {
+    parts.push(`Online sürücü şehirleri: ${Object.keys(driversOnlineByCity).length}`);
+  }
+  if (typeof helpProxy.proxy_passenger_stuck_matching === 'number') {
+    parts.push(`Eşleşmede bekleyen: ${helpProxy.proxy_passenger_stuck_matching}`);
+  }
+  if (typeof helpProxy.proxy_cancelled === 'number') {
+    parts.push(`İptal proxy: ${helpProxy.proxy_cancelled}`);
+  }
+
+  return parts.length ? parts.join(' · ') : 'Metrik verisi mevcut.';
+}
+
 // Error Boundary
 class ErrorBoundary extends Component<{children: React.ReactNode}, {hasError: boolean, error: string}> {
   constructor(props: any) {
@@ -268,6 +321,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [kbChatInput, setKbChatInput] = useState('');
   const [kbChatLoading, setKbChatLoading] = useState(false);
   const [kbChatErr, setKbChatErr] = useState('');
+  const [operationLoading, setOperationLoading] = useState(false);
+  const [operationError, setOperationError] = useState('');
+  const [operationSummary, setOperationSummary] = useState<AdminAiResponse | null>(null);
+  const [operationRegionInsight, setOperationRegionInsight] = useState<AdminAiResponse | null>(null);
+  const [operationHelpSummary, setOperationHelpSummary] = useState<AdminAiResponse | null>(null);
+  const [operationLoaded, setOperationLoaded] = useState(false);
 
   type KycDocPreviewItem = { label: string; url: string };
   const [kycDocPreview, setKycDocPreview] = useState<{
@@ -460,6 +519,62 @@ function AdminContent({ adminPhone, onClose }: Props) {
     setRefreshing(true);
     loadAll();
   };
+
+  const loadOperationAi = useCallback(async () => {
+    setOperationLoading(true);
+    setOperationError('');
+
+    try {
+      const token = await getPersistedAccessToken();
+      if (!token) {
+        setOperationSummary(null);
+        setOperationRegionInsight(null);
+        setOperationHelpSummary(null);
+        setOperationError('Oturum anahtarı yok; yeniden giriş yapın.');
+        setOperationLoaded(true);
+        return;
+      }
+
+      const [summaryResult, regionResult, helpResult] = await Promise.allSettled([
+        postAdminAiSummary(token, { since_days: 7, use_llm: false }),
+        postAdminAiRegionInsight(token, {
+          city: null,
+          region_hint: null,
+          since_days: 7,
+          use_llm: false,
+        }),
+        postAdminAiHelpSummary(token, { since_days: 7 }),
+      ]);
+
+      setOperationSummary(summaryResult.status === 'fulfilled' ? summaryResult.value : null);
+      setOperationRegionInsight(regionResult.status === 'fulfilled' ? regionResult.value : null);
+      setOperationHelpSummary(helpResult.status === 'fulfilled' ? helpResult.value : null);
+
+      const failed = [summaryResult, regionResult, helpResult].filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected',
+      );
+      if (failed.length === 3) {
+        setOperationError(operationErrorMessage(failed[0].reason));
+      } else if (failed.length > 0) {
+        setOperationError(operationErrorMessage(failed[0].reason));
+      }
+      setOperationLoaded(true);
+    } catch (e) {
+      setOperationSummary(null);
+      setOperationRegionInsight(null);
+      setOperationHelpSummary(null);
+      setOperationError(operationErrorMessage(e));
+      setOperationLoaded(true);
+    } finally {
+      setOperationLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'operasyon' && !operationLoaded && !operationLoading) {
+      void loadOperationAi();
+    }
+  }, [tab, operationLoaded, operationLoading, loadOperationAi]);
 
   const approveMuhabbetGroup = async (gid: string) => {
     setMuhabbetGroupActionId(gid);
@@ -697,6 +812,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
           <Text style={[styles.tabText, tab === 'dashboard' && styles.tabTextActive]}>Panel</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.tabBtn, tab === 'operasyon' && styles.tabActive]}
+          onPress={() => setTab('operasyon')}
+        >
+          <Text style={[styles.tabText, tab === 'operasyon' && styles.tabTextActive]}>Operasyon</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.tabBtn, tab === 'users' && styles.tabActive]}
           onPress={() => setTab('users')}
         >
@@ -823,6 +944,117 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 <Text style={styles.cardSub}>{t.final_price || t.offered_price || 0} TL</Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {/* Operasyon */}
+        {tab === 'operasyon' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Leylek Zeka Operasyon</Text>
+            <Text style={styles.subtleHelp}>Read-only operasyon içgörüleri</Text>
+            <TouchableOpacity
+              style={[styles.sendBtn, operationLoading && styles.sendBtnDisabled]}
+              onPress={() => void loadOperationAi()}
+              disabled={operationLoading}
+            >
+              {operationLoading ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.sendBtnText}>Yenile</Text>
+              )}
+            </TouchableOpacity>
+
+            {operationError ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{operationError}</Text>
+              </View>
+            ) : null}
+
+            {operationLoading && !operationLoaded ? (
+              <View style={styles.card}>
+                <ActivityIndicator color="#3B82F6" size="small" />
+                <Text style={styles.cardSub}>Operasyon özeti yükleniyor...</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Genel Operasyon Özeti</Text>
+              <Text style={styles.cardSub}>
+                {operationSummary?.summary || 'Henüz operasyon özeti yok.'}
+              </Text>
+              {operationSummary?.recommendations?.length ? (
+                <Text style={styles.cardMeta}>
+                  Öneriler: {operationSummary.recommendations.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationSummary?.risks?.length ? (
+                <Text style={styles.cardMeta}>
+                  Riskler: {operationSummary.risks.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationMetricsLine(operationSummary) ? (
+                <Text style={styles.cardMeta}>{operationMetricsLine(operationSummary)}</Text>
+              ) : null}
+              {operationSummary?.source ? (
+                <Text style={styles.cardMeta}>Kaynak: {operationSummary.source}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Bölge İçgörüsü</Text>
+              <Text style={styles.cardSub}>
+                {operationRegionInsight?.summary || 'Henüz bölge içgörüsü yok.'}
+              </Text>
+              {operationRegionInsight?.hotspots?.length ? (
+                <Text style={styles.cardMeta}>
+                  Yoğunluk: {operationRegionInsight.hotspots.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationRegionInsight?.weakZones?.length ? (
+                <Text style={styles.cardMeta}>
+                  Zayıf bölgeler: {operationRegionInsight.weakZones.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationRegionInsight?.recommendations?.length ? (
+                <Text style={styles.cardMeta}>
+                  Öneriler: {operationRegionInsight.recommendations.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationRegionInsight?.risks?.length ? (
+                <Text style={styles.cardMeta}>
+                  Riskler: {operationRegionInsight.risks.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationMetricsLine(operationRegionInsight) ? (
+                <Text style={styles.cardMeta}>{operationMetricsLine(operationRegionInsight)}</Text>
+              ) : null}
+              {operationRegionInsight?.source ? (
+                <Text style={styles.cardMeta}>Kaynak: {operationRegionInsight.source}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Sürücü/Yolcu Yardım Özeti</Text>
+              <Text style={styles.cardSub}>
+                {operationHelpSummary?.summary || 'Henüz yardım özeti yok.'}
+              </Text>
+              {operationHelpSummary?.recommendations?.length ? (
+                <Text style={styles.cardMeta}>
+                  Öneriler: {operationHelpSummary.recommendations.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationHelpSummary?.risks?.length ? (
+                <Text style={styles.cardMeta}>
+                  Riskler: {operationHelpSummary.risks.slice(0, 3).join(' · ')}
+                </Text>
+              ) : null}
+              {operationMetricsLine(operationHelpSummary) ? (
+                <Text style={styles.cardMeta}>{operationMetricsLine(operationHelpSummary)}</Text>
+              ) : null}
+              {operationHelpSummary?.source ? (
+                <Text style={styles.cardMeta}>Kaynak: {operationHelpSummary.source}</Text>
+              ) : null}
+            </View>
           </View>
         )}
 
