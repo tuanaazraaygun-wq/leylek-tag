@@ -7855,6 +7855,91 @@ class LeylekZekaReportRequest(BaseModel):
     reportedUserId: Optional[str] = None
 
 
+def _report_candidate_time(row: dict) -> datetime:
+    for key in ("matched_at", "completed_at", "cancelled_at", "created_at"):
+        raw = row.get(key)
+        if not raw:
+            continue
+        try:
+            return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).replace(tzinfo=None)
+        except Exception:
+            continue
+    return datetime.min
+
+
+def _report_candidate_payload(row: dict, role: str) -> Optional[dict]:
+    if role == "driver":
+        reported_user_id = row.get("driver_id")
+        reported_user_name = row.get("driver_name")
+    else:
+        reported_user_id = row.get("passenger_id")
+        reported_user_name = row.get("passenger_name")
+
+    if not reported_user_id:
+        return None
+
+    return {
+        "tag_id": row.get("id"),
+        "reported_user_id": reported_user_id,
+        "reported_user_name": reported_user_name or ("Sürücü" if role == "driver" else "Yolcu"),
+        "role": role,
+        "status": row.get("status"),
+        "created_at": row.get("created_at"),
+    }
+
+
+def _counterpart_role_order(category: Optional[str]) -> list[str]:
+    key = str(category or "").strip()
+    if key == "driver_complaint":
+        return ["driver"]
+    if key == "passenger_complaint":
+        return ["passenger"]
+    return ["driver", "passenger"]
+
+
+def _fetch_normal_tag_counterpart_candidate(user_id: str, category: Optional[str]) -> Optional[dict]:
+    candidates: list[tuple[int, datetime, dict]] = []
+    status_specs = (
+        (0, "matched", "matched_at"),
+        (0, "in_progress", "matched_at"),
+        (1, "completed", "completed_at"),
+        (1, "cancelled", "cancelled_at"),
+    )
+    for role in _counterpart_role_order(category):
+        own_column = "passenger_id" if role == "driver" else "driver_id"
+        counterpart_column = "driver_id" if role == "driver" else "passenger_id"
+        for priority, status, time_column in status_specs:
+            try:
+                result = (
+                    supabase.table("tags")
+                    .select(
+                        "id, passenger_id, passenger_name, driver_id, driver_name, "
+                        "status, type, matched_at, completed_at, cancelled_at, created_at"
+                    )
+                    .eq(own_column, user_id)
+                    .not_.is_(counterpart_column, "null")
+                    .eq("status", status)
+                    .or_("type.eq.normal,type.is.null")
+                    .order(time_column, desc=True)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as e:
+                logger.warning("Leylek Zeka counterpart candidate lookup error: %s", e)
+                continue
+            for row in result.data or []:
+                payload = _report_candidate_payload(row, role)
+                if payload:
+                    candidates.append((priority, _report_candidate_time(row), payload))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][2]
+
+
 @api_router.post("/user/report")
 async def report_user(user_id: str, reported_user_id: str, reason: str = "other", details: str = None, tag_id: str = None):
     """Kullanıcı şikayet et - Supabase'e kaydet, Admin görsün"""
@@ -7987,6 +8072,16 @@ async def report_user_leylek_zeka(
     except Exception as e:
         logger.error("Leylek Zeka report error: %s", e)
         raise HTTPException(status_code=500, detail="Destek kaydı oluşturulamadı") from e
+
+
+@api_router.get("/user/report/counterpart-candidate")
+async def get_report_counterpart_candidate(
+    category: Optional[str] = None,
+    reporter_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Leylek Zeka için son normal TAG karşı taraf adayını döndürür; kayıt oluşturmaz."""
+    candidate = _fetch_normal_tag_counterpart_candidate(reporter_id, category)
+    return {"ok": True, "candidate": candidate}
 
 
 @api_router.get("/admin/reports")
