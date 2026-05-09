@@ -57,6 +57,8 @@ class LeylekZekaClientContext(BaseModel):
     operationAwareness: bool | None = None
     knownSignals: list[str] | None = None
     safeAdviceOnly: bool | None = None
+    voiceMode: bool | None = None
+    inputMode: str | None = None
 
 
 class LeylekZekaRequest(BaseModel):

@@ -32,7 +32,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing } from '../constants/Colors';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
-import { type LeylekZekaMessage, type LeylekZekaReplySource } from '../hooks/useLeylekZeka';
+import {
+  type LeylekZekaMessage,
+  type LeylekZekaReplySource,
+  type LeylekZekaSendOptions,
+} from '../hooks/useLeylekZeka';
 import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
@@ -96,7 +100,7 @@ type Props = {
   messages: LeylekZekaMessage[];
   isTyping: boolean;
   error: string | null;
-  onSend: (text: string) => void;
+  onSend: (text: string, options?: LeylekZekaSendOptions) => void;
   onClearError: () => void;
   lastReplySource: LeylekZekaReplySource | null;
 };
@@ -670,7 +674,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       return;
     }
     setVoiceInputError('');
-    onSend(transcript);
+    onSend(transcript, { voiceMode: true, inputMode: 'voice' });
   }, [clearVoiceSubmitTimer, onSend]);
 
   const scheduleVoiceTranscriptSubmit = useCallback(() => {
@@ -898,8 +902,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       }
     }
     setInput('');
-    onSend(t);
-  }, [abortVoiceInput, clearTypewriter, input, isTyping, onSend, stopSpeech]);
+    onSend(t, { voiceMode: speechEnabled, inputMode: 'text' });
+  }, [abortVoiceInput, clearTypewriter, input, isTyping, onSend, speechEnabled, stopSpeech]);
 
   const contextCopy = useMemo(
     () => getLeylekZekaContextCopy(homeFlowScreen ?? null, flowHint),
@@ -919,9 +923,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           /* ignore */
         }
       }
-      onSend(prompt);
+      onSend(prompt, { voiceMode: speechEnabled, inputMode: 'text' });
     },
-    [abortVoiceInput, clearTypewriter, isTyping, onSend, stopSpeech],
+    [abortVoiceInput, clearTypewriter, isTyping, onSend, speechEnabled, stopSpeech],
   );
 
   const scrollToEndSafe = useCallback(() => {

@@ -12,6 +12,10 @@ export type LeylekZekaMessage = {
 };
 
 export type LeylekZekaReplySource = 'openai' | 'fallback' | 'answer_engine' | 'admin_kb' | 'kb';
+export type LeylekZekaSendOptions = {
+  voiceMode?: boolean;
+  inputMode?: 'text' | 'voice';
+};
 
 const LEYLEK_ZEKA_FETCH_TIMEOUT_MS = 28_000;
 
@@ -108,7 +112,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
 
   const clearError = useCallback(() => setError(null), []);
 
-  const sendMessage = useCallback(async (raw: string) => {
+  const sendMessage = useCallback(async (raw: string, sendOptions?: LeylekZekaSendOptions) => {
     const text = isAdminUser && raw.trim() === '' ? '' : raw.trim();
     if ((!text && !isAdminUser) || inFlightRef.current) return;
     inFlightRef.current = true;
@@ -135,8 +139,17 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), LEYLEK_ZEKA_FETCH_TIMEOUT_MS);
     try {
+      const requestContext: Record<string, string | boolean | string[]> = {
+        ...(leylekContext ?? {}),
+      };
+      if (typeof sendOptions?.voiceMode === 'boolean') {
+        requestContext.voiceMode = sendOptions.voiceMode;
+      }
+      if (sendOptions?.inputMode) {
+        requestContext.inputMode = sendOptions.inputMode;
+      }
       const payload: Record<string, unknown> = { message, history };
-      if (leylekContext) payload.context = leylekContext;
+      if (Object.keys(requestContext).length) payload.context = requestContext;
       if (isAdminUser) payload.is_admin = true;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       const accessTok = await getPersistedAccessToken();

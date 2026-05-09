@@ -98,6 +98,8 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
         "intentScope",
         "operationAwareness",
         "safeAdviceOnly",
+        "voiceMode",
+        "inputMode",
     ):
         v = ctx.get(k)
         if v is None or v == "":
@@ -120,6 +122,12 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
         "\n[Kullanıcı bağlamı — kişisel veri yok] "
         + ", ".join(parts)
         + "\nBu bağlama uygun, kısa yardım ver. Markdown kullanma."
+        + (
+            "\nvoiceMode=true ise konuşma diliyle yanıt ver: 2-4 kısa cümle kur, gereksiz liste yapma; "
+            "kritik güvenlik, garanti yok ve acil durum bilgilerini çıkarma."
+            if ctx.get("voiceMode") is True
+            else ""
+        )
     )
 
 _last_request_mono: dict[str, float] = {}
