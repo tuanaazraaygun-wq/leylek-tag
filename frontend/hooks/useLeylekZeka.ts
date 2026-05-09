@@ -50,8 +50,83 @@ type LeylekZekaApiJson = {
   ok?: boolean;
   reply?: string;
   source?: string;
+  intent_id?: string;
+  intentId?: string;
   detail?: string | { detail?: string };
 };
+
+type PendingComplaintFlow = {
+  step: 'confirm' | 'category' | 'details';
+  originalText: string;
+  category?: string;
+  categoryLabel?: string;
+};
+
+function normalizeText(text: string): string {
+  return text
+    .toLocaleLowerCase('tr-TR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isAffirmative(text: string): boolean {
+  const t = normalizeText(text);
+  return ['evet', 'tamam', 'olur', 'iletmek istiyorum', 'ilet', 'gonder', 'gondermek istiyorum'].some(
+    (p) => t === p || t.includes(p),
+  );
+}
+
+function isNegative(text: string): boolean {
+  const t = normalizeText(text);
+  return ['hayir', 'vazgectim', 'istemiyorum', 'gerek yok', 'iptal'].some(
+    (p) => t === p || t.includes(p),
+  );
+}
+
+function resolveComplaintCategory(text: string): { category: string; categoryLabel: string } | null {
+  const t = normalizeText(text);
+  const has = (...parts: string[]) => parts.some((p) => t.includes(p));
+
+  if (has('kullanici', 'profil')) {
+    return { category: 'user_complaint', categoryLabel: 'Kullanıcı şikayeti' };
+  }
+  if (has('surucu', 'sofor')) {
+    return { category: 'driver_complaint', categoryLabel: 'Sürücü şikayeti' };
+  }
+  if (has('yolcu')) {
+    return { category: 'passenger_complaint', categoryLabel: 'Yolcu şikayeti' };
+  }
+  if (has('platform', 'uygulama')) {
+    return { category: 'platform_issue', categoryLabel: 'Platform veya uygulama sorunu' };
+  }
+  if (has('odeme', 'para', 'ucret')) {
+    return { category: 'payment_issue', categoryLabel: 'Ödeme sorunu' };
+  }
+  if (has('konum', 'adres', 'harita')) {
+    return { category: 'location_issue', categoryLabel: 'Konum sorunu' };
+  }
+  if (has('eslesme', 'match')) {
+    return { category: 'matching_issue', categoryLabel: 'Eşleşme sorunu' };
+  }
+  if (has('teklif', 'fiyat')) {
+    return { category: 'offer_issue', categoryLabel: 'Teklif sorunu' };
+  }
+  if (has('geri bildirim', 'genel')) {
+    return { category: 'general_feedback', categoryLabel: 'Genel geri bildirim' };
+  }
+  return null;
+}
+
+function makeMessage(role: LeylekZekaMessage['role'], text: string): LeylekZekaMessage {
+  return {
+    id: `${role === 'user' ? 'u' : 'a'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    text,
+  };
+}
 
 function buildHistory(prev: LeylekZekaMessage[]): HistoryItem[] {
   return prev.map((m) => ({ role: m.role, content: m.text }));
@@ -108,13 +183,73 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastReplySource, setLastReplySource] = useState<LeylekZekaReplySource | null>(null);
+  const [pendingComplaintFlow, setPendingComplaintFlow] = useState<PendingComplaintFlow | null>(null);
   const inFlightRef = useRef(false);
 
   const clearError = useCallback(() => setError(null), []);
 
+  const appendLocalComplaintExchange = useCallback((userText: string, assistantText: string) => {
+    setMessages((prev) => [...prev, makeMessage('user', userText), makeMessage('assistant', assistantText)]);
+    setError(null);
+    setLastReplySource('answer_engine');
+  }, []);
+
   const sendMessage = useCallback(async (raw: string, sendOptions?: LeylekZekaSendOptions) => {
     const text = isAdminUser && raw.trim() === '' ? '' : raw.trim();
     if ((!text && !isAdminUser) || inFlightRef.current) return;
+
+    if (pendingComplaintFlow && text) {
+      if (isNegative(text)) {
+        appendLocalComplaintExchange(text, 'Tamam, kayıt açmadan bu akışı kapattım.');
+        setPendingComplaintFlow(null);
+        return;
+      }
+
+      if (pendingComplaintFlow.step === 'confirm') {
+        if (isAffirmative(text)) {
+          appendLocalComplaintExchange(
+            text,
+            'Kimi veya neyi bildirmek istiyorsunuz: bir kullanıcıyı, sürücüyü/yolcuyu, yoksa platformla ilgili genel bir durumu mu?',
+          );
+          setPendingComplaintFlow({ ...pendingComplaintFlow, step: 'category' });
+          return;
+        }
+        appendLocalComplaintExchange(text, 'Devam etmemi ister misiniz? Evet ya da hayır diye yanıtlayabilirsiniz.');
+        return;
+      }
+
+      if (pendingComplaintFlow.step === 'category') {
+        const category = resolveComplaintCategory(text);
+        if (!category) {
+          appendLocalComplaintExchange(
+            text,
+            'Bunu hangi başlık altında değerlendirelim: kullanıcı, sürücü, yolcu, platform, ödeme, konum, eşleşme, teklif veya genel geri bildirim?',
+          );
+          return;
+        }
+        appendLocalComplaintExchange(
+          text,
+          'Kısaca ne olduğunu yazar mısınız? Kişisel veri paylaşmadan olayı özetlemeniz yeterli.',
+        );
+        setPendingComplaintFlow({
+          ...pendingComplaintFlow,
+          step: 'details',
+          category: category.category,
+          categoryLabel: category.categoryLabel,
+        });
+        return;
+      }
+
+      if (pendingComplaintFlow.step === 'details') {
+        appendLocalComplaintExchange(
+          text,
+          `Bunu ${pendingComplaintFlow.categoryLabel || 'geri bildirim'} olarak hazırladım. Henüz kayıt açmadım. Bir sonraki adımda onayınızla destek kaydına dönüştürebiliriz.`,
+        );
+        setPendingComplaintFlow(null);
+        return;
+      }
+    }
+
     inFlightRef.current = true;
 
     const userMsg: LeylekZekaMessage = {
@@ -201,6 +336,11 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
         return;
       }
 
+      const intentId = data?.intent_id || data?.intentId;
+      if (intentId === 'complaint_feedback_intake') {
+        setPendingComplaintFlow({ step: 'confirm', originalText: message });
+      }
+
       setLastReplySource(normalizeReplySource(typeof data?.source === 'string' ? data.source : undefined));
 
       const assistantMsg: LeylekZekaMessage = {
@@ -228,7 +368,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       setIsTyping(false);
       inFlightRef.current = false;
     }
-  }, [leylekContext, isAdminUser]);
+  }, [appendLocalComplaintExchange, leylekContext, isAdminUser, pendingComplaintFlow]);
 
   return { messages, isTyping, error, sendMessage, clearError, lastReplySource };
 }
