@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSegments } from 'expo-router';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
-import { getLeylekZekaChatUrl } from '../lib/backendConfig';
+import { API_BASE_URL, getLeylekZekaChatUrl } from '../lib/backendConfig';
 import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 
@@ -56,10 +56,11 @@ type LeylekZekaApiJson = {
 };
 
 type PendingComplaintFlow = {
-  step: 'confirm' | 'category' | 'details';
+  step: 'confirm' | 'category' | 'details' | 'final_confirm';
   originalText: string;
   category?: string;
   categoryLabel?: string;
+  details?: string;
 };
 
 function normalizeText(text: string): string {
@@ -74,9 +75,18 @@ function normalizeText(text: string): string {
 
 function isAffirmative(text: string): boolean {
   const t = normalizeText(text);
-  return ['evet', 'tamam', 'olur', 'iletmek istiyorum', 'ilet', 'gonder', 'gondermek istiyorum'].some(
-    (p) => t === p || t.includes(p),
-  );
+  return [
+    'evet',
+    'tamam',
+    'olur',
+    'iletmek istiyorum',
+    'ilet',
+    'gonder',
+    'gondermek istiyorum',
+    'onayliyorum',
+    'kaydet',
+    'olustur',
+  ].some((p) => t === p || t.includes(p));
 }
 
 function isNegative(text: string): boolean {
@@ -126,6 +136,66 @@ function makeMessage(role: LeylekZekaMessage['role'], text: string): LeylekZekaM
     role,
     text,
   };
+}
+
+type LeylekZekaReportSubmitArgs = {
+  category: string;
+  categoryLabel?: string;
+  details: string;
+  originalText: string;
+};
+
+async function submitLeylekZekaReport(
+  args: LeylekZekaReportSubmitArgs,
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  const token = (await getPersistedAccessToken())?.trim();
+  if (!token) {
+    return { ok: false, status: 0, message: 'Oturum bulunamadı. Lütfen tekrar giriş yapıp deneyin.' };
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/user/report/leylekzeka`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        category: args.category,
+        categoryLabel: args.categoryLabel,
+        details: args.details,
+        originalText: args.originalText,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
+    if (res.ok && data.ok === true) {
+      return { ok: true };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, status: res.status, message: 'Oturum doğrulanamadı. Lütfen tekrar giriş yapın.' };
+    }
+    if (res.status === 422) {
+      return { ok: false, status: res.status, message: 'Açıklama veya kategori uygun değil. Kısaca tekrar yazar mısınız?' };
+    }
+    if (res.status === 429) {
+      return {
+        ok: false,
+        status: res.status,
+        message: 'Kısa sürede çok fazla kayıt oluşturuldu. Lütfen biraz sonra tekrar deneyin.',
+      };
+    }
+    return {
+      ok: false,
+      status: res.status,
+      message: 'Destek kaydı şu anda oluşturulamadı. Lütfen bağlantınızı kontrol edip tekrar deneyin.',
+    };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      message: 'Destek kaydı şu anda oluşturulamadı. Lütfen bağlantınızı kontrol edip tekrar deneyin.',
+    };
+  }
 }
 
 function buildHistory(prev: LeylekZekaMessage[]): HistoryItem[] {
@@ -243,9 +313,46 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       if (pendingComplaintFlow.step === 'details') {
         appendLocalComplaintExchange(
           text,
-          `Bunu ${pendingComplaintFlow.categoryLabel || 'geri bildirim'} olarak hazırladım. Henüz kayıt açmadım. Bir sonraki adımda onayınızla destek kaydına dönüştürebiliriz.`,
+          `Bunu ${pendingComplaintFlow.categoryLabel || 'geri bildirim'} olarak hazırladım. Henüz kayıt açmadım. İsterseniz bunu destek kaydı olarak oluşturabilirim. Onaylıyor musunuz?`,
         );
-        setPendingComplaintFlow(null);
+        setPendingComplaintFlow({ ...pendingComplaintFlow, step: 'final_confirm', details: text });
+        return;
+      }
+
+      if (pendingComplaintFlow.step === 'final_confirm') {
+        if (!isAffirmative(text)) {
+          appendLocalComplaintExchange(
+            text,
+            'Destek kaydı oluşturmak için onaylıyor musunuz? Evet derseniz kaydı oluştururum, hayır derseniz kapatırım.',
+          );
+          return;
+        }
+
+        inFlightRef.current = true;
+        setIsTyping(true);
+        setError(null);
+        setMessages((prev) => [...prev, makeMessage('user', text)]);
+        try {
+          const result = await submitLeylekZekaReport({
+            category: pendingComplaintFlow.category || 'general_feedback',
+            categoryLabel: pendingComplaintFlow.categoryLabel,
+            details: pendingComplaintFlow.details || '',
+            originalText: pendingComplaintFlow.originalText,
+          });
+          if (result.ok) {
+            setMessages((prev) => [...prev, makeMessage('assistant', 'Destek kaydınızı oluşturdum. Admin ekibi inceleyebilir.')]);
+            setPendingComplaintFlow(null);
+          } else {
+            setMessages((prev) => [...prev, makeMessage('assistant', result.message)]);
+            if (result.status === 422) {
+              setPendingComplaintFlow({ ...pendingComplaintFlow, step: 'details' });
+            }
+          }
+          setLastReplySource('answer_engine');
+        } finally {
+          setIsTyping(false);
+          inFlightRef.current = false;
+        }
         return;
       }
     }
