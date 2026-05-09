@@ -770,7 +770,7 @@ export default function LeylekMuhabbetiHomeTab({
         ]}
       >
         <LinearGradient
-          colors={['rgba(255,255,255,0.97)', 'rgba(239,246,255,0.94)', 'rgba(255,247,237,0.5)']}
+          colors={['rgba(255,255,255,0.99)', 'rgba(239,246,255,0.96)', 'rgba(237,233,254,0.82)']}
           locations={[0, 0.55, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -936,19 +936,11 @@ export default function LeylekMuhabbetiHomeTab({
         </View>
 
         <View style={styles.chipsWrap}>
-          <View style={styles.chipsPrimaryFull}>
-            <View style={[styles.statChip, styles.statChipFull, styles.statChipCity]}>
-              <Ionicons name="location" size={14} color="#1D4ED8" />
-              <Text style={styles.statChipTxt} numberOfLines={1} ellipsizeMode="tail">
-                {selectedCity.trim() || 'Şehir'}
-              </Text>
-            </View>
-          </View>
           <View style={styles.chipsStatRow}>
-            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell]}>
-              <Ionicons name="albums-outline" size={11} color="#0369A1" />
+            <View style={[styles.statChip, styles.statChipMuted, styles.statChipStatCell, styles.statChipOfferSummary]}>
+              <Ionicons name="sparkles-outline" size={13} color="#4F46E5" />
               <Text style={styles.statChipTxtStat} numberOfLines={1} ellipsizeMode="tail">
-                {listingScopeCounts.total} şehir dışı açık
+                {(selectedCity.trim() || 'Seçili şehir')} için açık şehir dışı teklif: {listingScopeCounts.total}
               </Text>
             </View>
           </View>
@@ -1338,8 +1330,9 @@ const styles = StyleSheet.create({
   },
   chipsWrap: {
     width: '100%',
-    marginBottom: 14,
-    gap: 6,
+    marginTop: 10,
+    marginBottom: 16,
+    gap: 8,
   },
   chipsPrimaryFull: {
     width: '100%',
@@ -1361,12 +1354,15 @@ const styles = StyleSheet.create({
   },
   statChipStatCell: {
     flex: 1,
-    marginHorizontal: 2,
     minWidth: 0,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     justifyContent: 'center',
-    gap: 4,
+    gap: 6,
+  },
+  statChipOfferSummary: {
+    borderColor: 'rgba(79,70,229,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
   },
   statChipCity: {
     paddingHorizontal: 11,
@@ -1410,24 +1406,26 @@ const styles = StyleSheet.create({
   statChipTxtStat: {
     flex: 1,
     minWidth: 0,
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#475569',
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#334155',
   },
   statChipAlertTxt: { fontSize: 12, fontWeight: '900', color: '#C2410C', flexShrink: 1 },
   createSectionWrap: {
-    marginBottom: 18,
-    borderRadius: 28,
+    marginBottom: 20,
+    borderRadius: 30,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.78)',
     ...Platform.select({
       ios: {
-        shadowColor: '#0f172a',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.08,
-        shadowRadius: 22,
+        shadowColor: '#1E3A8A',
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: 0.14,
+        shadowRadius: 26,
       },
-      android: { elevation: 5 },
+      android: { elevation: 7 },
       default: {},
     }),
   },
@@ -1440,8 +1438,8 @@ const styles = StyleSheet.create({
     borderLeftColor: '#2563eb',
   },
   createSection: {
-    padding: 14,
-    borderRadius: 26,
+    padding: 16,
+    borderRadius: 28,
     position: 'relative',
     zIndex: 1,
   },
@@ -1466,24 +1464,24 @@ const styles = StyleSheet.create({
   },
   sectionBadgeText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.35 },
   ctaSectionTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '900',
     color: TEXT_PRIMARY,
-    letterSpacing: 0.45,
+    letterSpacing: 0.35,
     textTransform: 'uppercase',
   },
-  ctaSectionSubtitle: { marginTop: 4, fontSize: 12.5, fontWeight: '700', color: TEXT_SECONDARY, lineHeight: 17 },
-  ctaRow: { flexDirection: 'row', gap: 10, marginBottom: 2 },
+  ctaSectionSubtitle: { marginTop: 6, fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY, lineHeight: 18 },
+  ctaRow: { flexDirection: 'row', gap: 12, marginTop: 2, marginBottom: 2 },
   ctaRowDim: { opacity: 0.92 },
   ctaHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 18 },
   ctaBig: {
     flex: 1,
-    minHeight: 172,
+    minHeight: 178,
     minWidth: 0,
-    borderRadius: 24,
+    borderRadius: 26,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.38)',
+    borderColor: 'rgba(255,255,255,0.48)',
     ...CTA_CARD_SHADOW,
   },
   ctaBigDriver: { shadowColor: '#1D4ED8' },
@@ -1512,9 +1510,9 @@ const styles = StyleSheet.create({
   ctaPressed: { transform: [{ scale: 0.935 }] },
   ctaBigInner: {
     flex: 1,
-    minHeight: 168,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+    minHeight: 174,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     justifyContent: 'flex-start',
     zIndex: 3,
   },
@@ -1530,18 +1528,18 @@ const styles = StyleSheet.create({
   ctaRolePillPax: { backgroundColor: 'rgba(0,0,0,0.2)' },
   ctaRolePillTxt: { fontSize: 10.5, fontWeight: '900', color: '#fff', letterSpacing: 0.4 },
   ctaIconBubble: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(255,255,255,0.34)',
     marginTop: 2,
   },
-  ctaBigTitle: { fontSize: 13.5, fontWeight: '900', color: '#fff', marginTop: 8, letterSpacing: -0.15, lineHeight: 18 },
-  ctaBigSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.93)', marginTop: 5, lineHeight: 17 },
+  ctaBigTitle: { fontSize: 14.5, fontWeight: '900', color: '#fff', marginTop: 10, letterSpacing: -0.2, lineHeight: 19 },
+  ctaBigSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.94)', marginTop: 6, lineHeight: 18 },
   ctaBigFooter: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1692,6 +1692,7 @@ export default function LeylekMuhabbetiFaz1Screen({
             contentContainerStyle={styles.cityGrid}
             renderItem={({ item }) => {
               const th = getCityTheme(item);
+              const selected = item === selectedCity;
               return (
                 <TouchableOpacity
                   style={styles.cityCardWrap}
@@ -1701,9 +1702,21 @@ export default function LeylekMuhabbetiFaz1Screen({
                   }}
                   activeOpacity={0.9}
                 >
-                  <LinearGradient colors={th.gradient} style={styles.cityCard}>
-                    <Ionicons name={th.icon} size={26} color="#fff" />
-                    <Text style={styles.cityCardText}>{item}</Text>
+                  <LinearGradient
+                    colors={selected ? ['#EEF2FF', '#E0E7FF', '#DBEAFE'] : ['#FFFFFF', '#F8FAFC', '#EEF2FF']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.cityCard, selected && styles.cityCardSelected]}
+                  >
+                    <View style={[styles.cityCardIconShell, selected && styles.cityCardIconShellSelected]}>
+                      <Ionicons name={th.icon} size={23} color={selected ? '#4F46E5' : '#2563EB'} />
+                    </View>
+                    <Text style={[styles.cityCardText, selected && styles.cityCardTextSelected]}>{item}</Text>
+                    {selected ? (
+                      <View style={styles.citySelectedMark}>
+                        <Ionicons name="checkmark" size={13} color="#FFFFFF" />
+                      </View>
+                    ) : null}
                   </LinearGradient>
                 </TouchableOpacity>
               );
@@ -2293,28 +2306,90 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginHorizontal: 16,
-    marginBottom: 10,
-    marginTop: 4,
-    backgroundColor: CARD_BG,
-    borderRadius: BTN_RADIUS,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: BORDER_HAIRLINE,
+    marginBottom: 12,
+    marginTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.16)',
     ...CARD_SHADOW,
   },
   searchInput: { flex: 1, color: TEXT_PRIMARY, fontSize: 16 },
-  cityGrid: { paddingHorizontal: 10, paddingBottom: 24 },
-  cityCardWrap: { width: '50%', padding: 6 },
+  cityGrid: { paddingHorizontal: 10, paddingBottom: 28 },
+  cityCardWrap: { width: '50%', padding: 7 },
   cityCard: {
-    borderRadius: 14,
-    paddingVertical: 18,
-    paddingHorizontal: 10,
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
-    minHeight: 96,
+    minHeight: 104,
     justifyContent: 'center',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(37,99,235,0.12)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1E3A8A',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
   },
-  cityCardText: { color: '#fff', fontWeight: '700', marginTop: 8, textAlign: 'center', fontSize: 13 },
+  cityCardSelected: {
+    borderWidth: 1.8,
+    borderColor: '#6366F1',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#6D28D9',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.18,
+        shadowRadius: 18,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
+  },
+  cityCardIconShell: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(37,99,235,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(37,99,235,0.12)',
+  },
+  cityCardIconShellSelected: {
+    backgroundColor: 'rgba(99,102,241,0.14)',
+    borderColor: 'rgba(99,102,241,0.28)',
+  },
+  cityCardText: {
+    color: '#1E293B',
+    fontWeight: '800',
+    marginTop: 10,
+    textAlign: 'center',
+    fontSize: 13.5,
+  },
+  cityCardTextSelected: {
+    color: '#3730A3',
+    fontWeight: '900',
+  },
+  citySelectedMark: {
+    position: 'absolute',
+    top: 9,
+    right: 9,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6366F1',
+  },
   detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   detailBackdrop: { flex: 1 },
   detailSheet: {
