@@ -54,6 +54,8 @@ const SCROLL_AFTER_UPDATE_MS = 72;
 const VOICE_TRANSCRIPT_SUBMIT_DELAY_MS = 680;
 /** Çok kısa basışlar çoğunlukla recognizer başlamadan stop aldığı için boş sonuç üretir. */
 const VOICE_MIN_HOLD_MS = 800;
+/** Yanlışlıkla gelen erken onPressOut olaylarında recognizer start'a kısa pencere tanır. */
+const VOICE_RELEASE_DEBOUNCE_MS = 160;
 /** Backend streaming yokken düşük maliyetli kelime grubu typewriter hissi. */
 const TYPEWRITER_INTERVAL_MS = 58;
 const TYPEWRITER_SHORT_CHUNK_WORDS = 5;
@@ -406,6 +408,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const recognitionStartedRef = useRef(false);
   const suppressNextVoiceErrorRef = useRef(false);
   const voiceSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceStartInFlightRef = useRef(false);
   /** Android: keyboardDidHide bazen düzen değişince iki kez tetiklenir; anlık sıfırlama odak kaybına yol açabilir */
   const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -650,6 +653,13 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
   }, []);
 
+  const clearVoiceReleaseTimer = useCallback(() => {
+    if (voiceReleaseTimerRef.current) {
+      clearTimeout(voiceReleaseTimerRef.current);
+      voiceReleaseTimerRef.current = null;
+    }
+  }, []);
+
   const resetVoiceInputState = useCallback(() => {
     finalTranscriptRef.current = '';
     lastTranscriptRef.current = '';
@@ -661,6 +671,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const abortVoiceInput = useCallback(() => {
     clearVoiceSubmitTimer();
+    clearVoiceReleaseTimer();
     const hadVoiceSession =
       pressActiveRef.current || recognitionStartedRef.current || Boolean(partialTranscriptRef.current);
     pressActiveRef.current = false;
@@ -674,7 +685,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
     setIsListening(false);
     resetVoiceInputState();
-  }, [clearVoiceSubmitTimer, resetVoiceInputState]);
+  }, [clearVoiceReleaseTimer, clearVoiceSubmitTimer, resetVoiceInputState]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -861,6 +872,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const startVoiceInput = useCallback(async () => {
     interruptAssistantOutputForVoice();
+    clearVoiceReleaseTimer();
     if (isTyping) {
       setVoiceDebugText('debug: blocked isTyping');
       return;
@@ -909,9 +921,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     } finally {
       voiceStartInFlightRef.current = false;
     }
-  }, [clearVoiceSubmitTimer, interruptAssistantOutputForVoice, isTyping, resetVoiceInputState]);
+  }, [clearVoiceReleaseTimer, clearVoiceSubmitTimer, interruptAssistantOutputForVoice, isTyping, resetVoiceInputState]);
 
   const stopVoiceInput = useCallback(() => {
+    clearVoiceReleaseTimer();
     if (!pressActiveRef.current && !isListening && !recognitionStartedRef.current) return;
     const holdDuration = holdStartedAtRef.current ? Date.now() - holdStartedAtRef.current : 0;
     pressActiveRef.current = false;
@@ -943,7 +956,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       return;
     }
     scheduleVoiceTranscriptSubmit();
-  }, [clearVoiceSubmitTimer, isListening, scheduleVoiceTranscriptSubmit]);
+  }, [clearVoiceReleaseTimer, clearVoiceSubmitTimer, isListening, scheduleVoiceTranscriptSubmit]);
+
+  const scheduleStopVoiceInput = useCallback(() => {
+    clearVoiceReleaseTimer();
+    voiceReleaseTimerRef.current = setTimeout(() => {
+      voiceReleaseTimerRef.current = null;
+      stopVoiceInput();
+    }, VOICE_RELEASE_DEBOUNCE_MS);
+  }, [clearVoiceReleaseTimer, stopVoiceInput]);
 
   const onSubmit = useCallback(() => {
     const t = input.trim();
@@ -1470,7 +1491,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   setVoiceDebugText('debug: press in');
                   void startVoiceInput();
                 }}
-                onPressOut={stopVoiceInput}
+                onPressOut={scheduleStopVoiceInput}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel="Bas-konuş"
