@@ -411,6 +411,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const voiceSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceStartInFlightRef = useRef(false);
+  const voiceStopRequestedBeforeStartRef = useRef(false);
   /** Android: keyboardDidHide bazen düzen değişince iki kez tetiklenir; anlık sıfırlama odak kaybına yol açabilir */
   const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -677,6 +678,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       pressActiveRef.current || recognitionStartedRef.current || Boolean(partialTranscriptRef.current);
     pressActiveRef.current = false;
     voiceStartInFlightRef.current = false;
+    voiceStopRequestedBeforeStartRef.current = false;
     recognitionStartedRef.current = false;
     if (hadVoiceSession) suppressNextVoiceErrorRef.current = true;
     try {
@@ -733,6 +735,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     recognitionStartedRef.current = true;
     setIsListening(true);
     setVoiceInputError('');
+    if (voiceStopRequestedBeforeStartRef.current) {
+      voiceStopRequestedBeforeStartRef.current = false;
+      scheduleStopVoiceInput();
+    }
   });
 
   useSpeechRecognitionEvent('end', () => {
@@ -890,6 +896,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     clearVoiceSubmitTimer();
     resetVoiceInputState();
     suppressNextVoiceErrorRef.current = false;
+    voiceStopRequestedBeforeStartRef.current = false;
     pressActiveRef.current = true;
     holdStartedAtRef.current = Date.now();
     try {
@@ -903,8 +910,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
         setVoiceInputError('Mikrofon izni olmadan bas-konuş kullanılamaz.');
         return;
       }
-      if (!pressActiveRef.current) {
-        setVoiceDebugText('debug: press cancelled before start');
+      if (!mountedRef.current || !visibleRef.current) {
+        setVoiceDebugText('debug: start cancelled not visible');
         return;
       }
       setVoiceDebugText('debug: starting recognizer');
@@ -927,6 +934,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const stopVoiceInput = useCallback(() => {
     clearVoiceReleaseTimer();
     if (!pressActiveRef.current && !isListening && !recognitionStartedRef.current) return;
+    if (!recognitionStartedRef.current && voiceStartInFlightRef.current) {
+      voiceStopRequestedBeforeStartRef.current = true;
+      setVoiceDebugText('debug: stop queued before start');
+      return;
+    }
     const holdDuration = holdStartedAtRef.current ? Date.now() - holdStartedAtRef.current : 0;
     pressActiveRef.current = false;
     if (holdDuration > 0 && holdDuration < VOICE_MIN_HOLD_MS) {
