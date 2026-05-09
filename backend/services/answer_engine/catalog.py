@@ -124,15 +124,15 @@ TEKLIF_BRIEF = """Teklif
 
 Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur."""
 
-GUVEN_AL_EXPLAINED = """Güven Al
-
-Güven Al, normal TAG yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep edebilmesini sağlar.
+GUVEN_AL_EXPLAINED = """Güven Al, normal TAG yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep edebilmesini sağlar.
 
 Butona basıldığında karşı tarafa sizden güven almak istiyor benzeri bir istek gider.
 
 Karşı taraf kabul ederse yaklaşık 5 dakikalık görüntülü görüşme başlar.
 
-Bu özellik acil servis, polis, çağrı merkezi, resmi güvenlik bildirimi veya kendiliğinden ihbar sistemi değildir. Acil durumda 112 veya ilgili resmi kanallar kullanılmalıdır."""
+Bu özellik acil servis, polis, çağrı merkezi, resmi güvenlik bildirimi veya otomatik ihbar sistemi değildir.
+
+Acil durumda 112 veya ilgili resmi kanallar kullanılmalıdır."""
 
 INTERCITY_ROLE_QUESTION = """Şehir dışı Leylek Teklif Sende akışı için yardımcı olayım.
 
@@ -505,6 +505,16 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
         match_phrases=(
             "güven al",
             "guven al",
+            "güvenal",
+            "guvenal",
+            "güvenal butonu",
+            "guvenal butonu",
+            "güvenal nasıl çalışır",
+            "guvenal nasil calisir",
+            "güvenal nedir",
+            "guvenal nedir",
+            "güven al buton",
+            "guven al buton",
             "güven alma",
             "guven alma",
             "güven görüşmesi",
@@ -513,6 +523,12 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             "guven gorusme",
         ),
         phrase_weights=(
+            ("güvenal butonu", 16),
+            ("guvenal butonu", 16),
+            ("güvenal nasıl çalışır", 16),
+            ("guvenal nasil calisir", 16),
+            ("güvenal", 14),
+            ("guvenal", 14),
             ("güven al butonu", 14),
             ("guven al butonu", 14),
             ("güven al", 12),
