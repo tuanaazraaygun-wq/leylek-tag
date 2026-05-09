@@ -323,6 +323,11 @@ Bu metin genel bilgilendirme içerir; hukuki sonuç veya “kesin güvenli” id
 Sonraki adım
 Şüpheli davranış veya profil için güvenliğini önceleyerek destek hattına başvur."""
 
+COMPLAINT_FEEDBACK_INTAKE = """Bunu geri bildirim veya şikayet olarak iletmek ister misiniz?
+Onayınız olmadan kayıt açmam. İsterseniz önce kimi veya neyi bildirmek istediğinizi birlikte netleştirelim."""
+
+COMPLAINT_FEEDBACK_INTAKE_VOICE = "Bunu geri bildirim veya şikayet olarak iletmek ister misiniz? Onayınız olmadan kayıt açmam."
+
 
 # “Teklifi nasıl yollarım” (how_to_send) vs “bana teklif gelmiyor” — matcher’da how_to_send cezası (tek kaynak).
 TEKLIF_INCOMING_PROBLEM_PHRASES: tuple[str, ...] = (
@@ -975,6 +980,78 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             ("sürücüye yazamıyorum", 11),
         ),
         default_template=HOW_IN_APP_MESSAGING_WORKS,
+    ),
+    IntentDefinition(
+        id="complaint_feedback_intake",
+        title="Şikayet veya geri bildirim teyidi",
+        supported_roles=("any",),
+        example_queries=(
+            "şikayetim var",
+            "şikayet etmek istiyorum",
+            "geri bildirim göndermek istiyorum",
+            "rahatsız oldum",
+            "kullanıcıyı bildirmek istiyorum",
+            "sürücüden şikayetçiyim",
+            "yolcudan şikayetçiyim",
+            "uygulama sorunu var",
+            "ödeme sorunu var",
+            "konum sorunu var",
+            "eşleşme sorunu var",
+            "teklif sorunu var",
+            "sorun bildirmek istiyorum",
+        ),
+        description="Şikayet/geri bildirim niyetinde kayıt açmadan önce güvenli teyit ister.",
+        match_phrases=(
+            "şikayetim var",
+            "sikayetim var",
+            "şikayet etmek istiyorum",
+            "sikayet etmek istiyorum",
+            "geri bildirim göndermek istiyorum",
+            "geri bildirim gondermek istiyorum",
+            "geri bildirim vermek istiyorum",
+            "rahatsız oldum",
+            "rahatsiz oldum",
+            "kullanıcıyı bildirmek istiyorum",
+            "kullaniciyi bildirmek istiyorum",
+            "sürücüden şikayetçiyim",
+            "surucuden sikayetciyim",
+            "yolcudan şikayetçiyim",
+            "yolcudan sikayetciyim",
+            "uygulama sorunu var",
+            "ödeme sorunu var",
+            "odeme sorunu var",
+            "konum sorunu var",
+            "eşleşme sorunu var",
+            "eslesme sorunu var",
+            "teklif sorunu var",
+            "sorun bildirmek istiyorum",
+        ),
+        phrase_weights=(
+            ("sürücüden şikayetçiyim", 22),
+            ("surucuden sikayetciyim", 22),
+            ("yolcudan şikayetçiyim", 22),
+            ("yolcudan sikayetciyim", 22),
+            ("kullanıcıyı bildirmek istiyorum", 21),
+            ("kullaniciyi bildirmek istiyorum", 21),
+            ("geri bildirim göndermek istiyorum", 20),
+            ("geri bildirim gondermek istiyorum", 20),
+            ("sorun bildirmek istiyorum", 20),
+            ("şikayet etmek istiyorum", 19),
+            ("sikayet etmek istiyorum", 19),
+            ("şikayetim var", 18),
+            ("sikayetim var", 18),
+            ("rahatsız oldum", 17),
+            ("rahatsiz oldum", 17),
+            ("uygulama sorunu var", 16),
+            ("ödeme sorunu var", 16),
+            ("odeme sorunu var", 16),
+            ("konum sorunu var", 16),
+            ("eşleşme sorunu var", 16),
+            ("eslesme sorunu var", 16),
+            ("teklif sorunu var", 16),
+        ),
+        default_template=COMPLAINT_FEEDBACK_INTAKE,
+        voice_default_template=COMPLAINT_FEEDBACK_INTAKE_VOICE,
     ),
     # Yanlış eşleşme riski: çok kısa "güven" / "risk" kullanılmaz; iddialı söylem yok.
     IntentDefinition(
