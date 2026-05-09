@@ -56,11 +56,24 @@ type LeylekZekaApiJson = {
 };
 
 type PendingComplaintFlow = {
-  step: 'confirm' | 'category' | 'details' | 'final_confirm';
+  step: 'confirm' | 'category' | 'counterpart_confirm' | 'details' | 'final_confirm';
   originalText: string;
   category?: string;
   categoryLabel?: string;
+  candidate?: ComplaintCounterpartCandidate;
+  candidateConfirmed?: boolean;
+  reportedUserId?: string;
+  tagId?: string;
   details?: string;
+};
+
+type ComplaintCounterpartCandidate = {
+  tag_id?: string | number;
+  reported_user_id?: string;
+  reported_user_name?: string;
+  role?: 'driver' | 'passenger';
+  status?: string;
+  created_at?: string;
 };
 
 function normalizeText(text: string): string {
@@ -130,6 +143,14 @@ function resolveComplaintCategory(text: string): { category: string; categoryLab
   return null;
 }
 
+function shouldResolveCounterpart(category: string | undefined): boolean {
+  return category === 'driver_complaint' || category === 'passenger_complaint' || category === 'user_complaint';
+}
+
+function counterpartRoleLabel(role: ComplaintCounterpartCandidate['role']): string {
+  return role === 'driver' ? 'sürücü' : 'yolcu';
+}
+
 function makeMessage(role: LeylekZekaMessage['role'], text: string): LeylekZekaMessage {
   return {
     id: `${role === 'user' ? 'u' : 'a'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -143,7 +164,32 @@ type LeylekZekaReportSubmitArgs = {
   categoryLabel?: string;
   details: string;
   originalText: string;
+  reportedUserId?: string;
 };
+
+async function fetchCounterpartCandidate(category: string): Promise<ComplaintCounterpartCandidate | null> {
+  const token = (await getPersistedAccessToken())?.trim();
+  if (!token) return null;
+
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/user/report/counterpart-candidate?category=${encodeURIComponent(category)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      candidate?: ComplaintCounterpartCandidate | null;
+    };
+    if (res.ok && data.ok === true && data.candidate?.reported_user_id) {
+      return data.candidate;
+    }
+  } catch {
+    /* Candidate yoksa akış genel kayıt olarak devam eder. */
+  }
+  return null;
+}
 
 async function submitLeylekZekaReport(
   args: LeylekZekaReportSubmitArgs,
@@ -154,18 +200,23 @@ async function submitLeylekZekaReport(
   }
 
   try {
+    const body: Record<string, string | undefined> = {
+      category: args.category,
+      categoryLabel: args.categoryLabel,
+      details: args.details,
+      originalText: args.originalText,
+    };
+    if (args.reportedUserId) {
+      body.reportedUserId = args.reportedUserId;
+    }
+
     const res = await fetch(`${API_BASE_URL}/user/report/leylekzeka`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        category: args.category,
-        categoryLabel: args.categoryLabel,
-        details: args.details,
-        originalText: args.originalText,
-      }),
+      body: JSON.stringify(body),
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
     if (res.ok && data.ok === true) {
@@ -269,13 +320,12 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
     if ((!text && !isAdminUser) || inFlightRef.current) return;
 
     if (pendingComplaintFlow && text) {
-      if (isNegative(text)) {
-        appendLocalComplaintExchange(text, 'Tamam, kayıt açmadan bu akışı kapattım.');
-        setPendingComplaintFlow(null);
-        return;
-      }
-
       if (pendingComplaintFlow.step === 'confirm') {
+        if (isNegative(text)) {
+          appendLocalComplaintExchange(text, 'Tamam, kayıt açmadan bu akışı kapattım.');
+          setPendingComplaintFlow(null);
+          return;
+        }
         if (isAffirmative(text)) {
           appendLocalComplaintExchange(
             text,
@@ -297,6 +347,52 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
           );
           return;
         }
+        if (shouldResolveCounterpart(category.category)) {
+          inFlightRef.current = true;
+          setIsTyping(true);
+          setError(null);
+          setMessages((prev) => [...prev, makeMessage('user', text)]);
+          try {
+            const candidate = await fetchCounterpartCandidate(category.category);
+            if (candidate) {
+              const name = candidate.reported_user_name || counterpartRoleLabel(candidate.role);
+              setMessages((prev) => [
+                ...prev,
+                makeMessage(
+                  'assistant',
+                  `Son yolculuğunuzdaki ${counterpartRoleLabel(candidate.role)} ${name} için mi bildirim yapmak istiyorsunuz?`,
+                ),
+              ]);
+              setPendingComplaintFlow({
+                ...pendingComplaintFlow,
+                step: 'counterpart_confirm',
+                category: category.category,
+                categoryLabel: category.categoryLabel,
+                candidate,
+              });
+            } else {
+              setMessages((prev) => [
+                ...prev,
+                makeMessage(
+                  'assistant',
+                  'Kısaca ne olduğunu yazar mısınız? Kişisel veri paylaşmadan olayı özetlemeniz yeterli.',
+                ),
+              ]);
+              setPendingComplaintFlow({
+                ...pendingComplaintFlow,
+                step: 'details',
+                category: category.category,
+                categoryLabel: category.categoryLabel,
+              });
+            }
+            setLastReplySource('answer_engine');
+          } finally {
+            setIsTyping(false);
+            inFlightRef.current = false;
+          }
+          return;
+        }
+
         appendLocalComplaintExchange(
           text,
           'Kısaca ne olduğunu yazar mısınız? Kişisel veri paylaşmadan olayı özetlemeniz yeterli.',
@@ -310,6 +406,45 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
         return;
       }
 
+      if (pendingComplaintFlow.step === 'counterpart_confirm') {
+        if (isNegative(text)) {
+          appendLocalComplaintExchange(
+            text,
+            'Tamam, bu bildirimi belirli bir kullanıcıya bağlamadan hazırlayacağım. Kısaca ne olduğunu yazar mısınız?',
+          );
+          setPendingComplaintFlow({
+            ...pendingComplaintFlow,
+            step: 'details',
+            candidateConfirmed: false,
+            reportedUserId: undefined,
+            tagId: undefined,
+          });
+          return;
+        }
+        if (isAffirmative(text)) {
+          appendLocalComplaintExchange(
+            text,
+            'Tamam. Kısaca ne olduğunu yazar mısınız? Kişisel veri paylaşmadan olayı özetlemeniz yeterli.',
+          );
+          setPendingComplaintFlow({
+            ...pendingComplaintFlow,
+            step: 'details',
+            candidateConfirmed: true,
+            reportedUserId: pendingComplaintFlow.candidate?.reported_user_id,
+            tagId:
+              pendingComplaintFlow.candidate?.tag_id !== undefined
+                ? String(pendingComplaintFlow.candidate.tag_id)
+                : undefined,
+          });
+          return;
+        }
+        appendLocalComplaintExchange(
+          text,
+          'Son yolculuğunuzdaki bu kişiye bağlamamı onaylıyor musunuz? Evet veya hayır yazabilirsiniz.',
+        );
+        return;
+      }
+
       if (pendingComplaintFlow.step === 'details') {
         appendLocalComplaintExchange(
           text,
@@ -320,6 +455,11 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       }
 
       if (pendingComplaintFlow.step === 'final_confirm') {
+        if (isNegative(text)) {
+          appendLocalComplaintExchange(text, 'Tamam, kayıt açmadan bu akışı kapattım.');
+          setPendingComplaintFlow(null);
+          return;
+        }
         if (!isAffirmative(text)) {
           appendLocalComplaintExchange(
             text,
@@ -338,6 +478,10 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
             categoryLabel: pendingComplaintFlow.categoryLabel,
             details: pendingComplaintFlow.details || '',
             originalText: pendingComplaintFlow.originalText,
+            reportedUserId:
+              pendingComplaintFlow.candidateConfirmed === true && pendingComplaintFlow.reportedUserId
+                ? pendingComplaintFlow.reportedUserId
+                : undefined,
           });
           if (result.ok) {
             setMessages((prev) => [...prev, makeMessage('assistant', 'Destek kaydınızı oluşturdum. Admin ekibi inceleyebilir.')]);
