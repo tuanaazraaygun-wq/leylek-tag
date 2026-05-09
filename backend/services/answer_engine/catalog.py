@@ -205,6 +205,20 @@ Leylek Teklif Sende ise şehir dışı veya şehirler arası yolculuklar için a
 
 Kısaca: şehir içi TAG ve şehir dışı Leylek Teklif Sende ayrı akışlardır."""
 
+LEYLEKTAG_COMPANY_INFO = """LeylekTag, Karekod Teknoloji ve Yazılım Anonim Şirketi tarafından geliştirilmektedir.
+
+Şirket 2025 yılında Ankara’da, Türkiye’de yolculuk paylaşımı, güvenli dijital eşleşme ve yerli mobil platform teknolojileri geliştirmek amacıyla kurulmuştur.
+
+LeylekTag içinde yapay zeka destekli rehber sistemleri, eşleşme altyapıları, gerçek zamanlı iletişim teknolojileri, QR doğrulama, sesli asistan ve mobil yolculuk deneyimi çözümleri bulunmaktadır.
+
+Amaç; Türkiye’de güvenli, erişilebilir ve yerli ulaşım teknolojileri geliştirmektir."""
+
+LEYLEKTAG_COMPANY_INFO_VOICE = """LeylekTag, Karekod Teknoloji ve Yazılım Anonim Şirketi tarafından geliştirilmektedir.
+
+Şirket 2025 yılında Ankara’da kurulmuştur. Amaç; Türkiye’de güvenli, erişilebilir ve yerli ulaşım teknolojileri geliştirmektir.
+
+LeylekTag’te yapay zeka rehberi, eşleşme altyapısı, gerçek zamanlı iletişim, QR doğrulama, sesli asistan ve mobil yolculuk çözümleri bulunur."""
+
 MATCH_NOT_HAPPENING = """Eşleşme veya teklif gecikiyor
 
 Özet
@@ -522,6 +536,89 @@ _H2SO_PHRASE_WEIGHTS: tuple[tuple[str, int], ...] = (
 
 
 INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
+    IntentDefinition(
+        id="leylektag_company_info",
+        title="LeylekTag şirket bilgisi",
+        supported_roles=("any",),
+        example_queries=(
+            "LeylekTag kim kurdu?",
+            "LeylekTag kim tarafından geliştirildi?",
+            "Hangi firma yaptı?",
+            "Neden kuruldu?",
+            "Hangi teknolojiler kullanılıyor?",
+        ),
+        description="LeylekTag'in şirket, kuruluş amacı ve teknoloji altyapısı bilgisini açıklar.",
+        match_phrases=(
+            "leylek tag kim kurdu",
+            "leylektag kim kurdu",
+            "leylek tag kim tarafından kuruldu",
+            "leylektag kim tarafından kuruldu",
+            "leylek tag kim tarafindan kuruldu",
+            "leylektag kim tarafindan kuruldu",
+            "leylek tag kim tarafından geliştirildi",
+            "leylektag kim tarafından geliştirildi",
+            "leylek tag kim tarafindan gelistirildi",
+            "leylektag kim tarafindan gelistirildi",
+            "hangi firma yaptı",
+            "hangi firma yapti",
+            "hangi firma geliştirdi",
+            "hangi firma gelistirdi",
+            "kim geliştirdi",
+            "kim gelistirdi",
+            "leylek tag nedir",
+            "leylektag nedir",
+            "neden kuruldu",
+            "hangi şirket",
+            "hangi sirket",
+            "teknoloji altyapısı",
+            "teknoloji altyapisi",
+            "leylek tag hangi teknolojileri kullanıyor",
+            "leylektag hangi teknolojileri kullanıyor",
+            "leylek tag hangi teknolojileri kullaniyor",
+            "leylektag hangi teknolojileri kullaniyor",
+            "hangi teknolojiler kullanılıyor",
+            "hangi teknolojiler kullaniliyor",
+            "merkez nerede",
+            "ankara şirketi mi",
+            "ankara sirketi mi",
+        ),
+        phrase_weights=(
+            ("leylek tag kim kurdu", 18),
+            ("leylektag kim kurdu", 18),
+            ("leylek tag kim tarafından kuruldu", 18),
+            ("leylektag kim tarafından kuruldu", 18),
+            ("leylek tag kim tarafindan kuruldu", 18),
+            ("leylektag kim tarafindan kuruldu", 18),
+            ("leylek tag kim tarafından geliştirildi", 18),
+            ("leylektag kim tarafından geliştirildi", 18),
+            ("leylek tag kim tarafindan gelistirildi", 18),
+            ("leylektag kim tarafindan gelistirildi", 18),
+            ("leylek tag hangi teknolojileri kullanıyor", 18),
+            ("leylektag hangi teknolojileri kullanıyor", 18),
+            ("leylek tag hangi teknolojileri kullaniyor", 18),
+            ("leylektag hangi teknolojileri kullaniyor", 18),
+            ("hangi teknolojiler kullanılıyor", 16),
+            ("hangi teknolojiler kullaniliyor", 16),
+            ("teknoloji altyapısı", 15),
+            ("teknoloji altyapisi", 15),
+            ("hangi firma yaptı", 14),
+            ("hangi firma yapti", 14),
+            ("hangi firma geliştirdi", 14),
+            ("hangi firma gelistirdi", 14),
+            ("leylek tag nedir", 14),
+            ("leylektag nedir", 14),
+            ("neden kuruldu", 12),
+            ("hangi şirket", 12),
+            ("hangi sirket", 12),
+            ("merkez nerede", 12),
+            ("ankara şirketi mi", 12),
+            ("ankara sirketi mi", 12),
+            ("kim geliştirdi", 10),
+            ("kim gelistirdi", 10),
+        ),
+        default_template=LEYLEKTAG_COMPANY_INFO,
+        voice_default_template=LEYLEKTAG_COMPANY_INFO_VOICE,
+    ),
     IntentDefinition(
         id="guven_al_explained",
         title="Güven Al nasıl çalışır?",

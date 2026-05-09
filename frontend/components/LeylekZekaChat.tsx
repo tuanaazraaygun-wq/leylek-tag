@@ -379,7 +379,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const [isListening, setIsListening] = useState(false);
   const [partialTranscript, setPartialTranscript] = useState('');
   const [voiceInputError, setVoiceInputError] = useState('');
-  const [voiceDebugText, setVoiceDebugText] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
@@ -731,7 +730,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, [clearVoiceSubmitTimer, submitVoiceTranscript]);
 
   useSpeechRecognitionEvent('start', () => {
-    setVoiceDebugText('debug: recognizer started');
     recognitionStartedRef.current = true;
     setIsListening(true);
     setVoiceInputError('');
@@ -742,7 +740,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   });
 
   useSpeechRecognitionEvent('end', () => {
-    setVoiceDebugText('debug: recognizer ended');
     setIsListening(false);
     if (!pressActiveRef.current && recognitionStartedRef.current) {
       scheduleVoiceTranscriptSubmit();
@@ -750,7 +747,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   });
 
   useSpeechRecognitionEvent('result', (event) => {
-    setVoiceDebugText('debug: result received');
     const transcript = (event.results?.[0]?.transcript ?? '').trim();
     if (!transcript) return;
     partialTranscriptRef.current = transcript;
@@ -762,7 +758,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   });
 
   useSpeechRecognitionEvent('error', (event) => {
-    setVoiceDebugText(`debug: error: ${event.error || 'unknown'}`);
     if (suppressNextVoiceErrorRef.current || event.error === 'aborted') {
       suppressNextVoiceErrorRef.current = false;
       return;
@@ -881,15 +876,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     interruptAssistantOutputForVoice();
     clearVoiceReleaseTimer();
     if (isTyping) {
-      setVoiceDebugText('debug: blocked isTyping');
       return;
     }
     if (voiceStartInFlightRef.current) {
-      setVoiceDebugText('debug: blocked start in flight');
       return;
     }
     if (pressActiveRef.current || recognitionStartedRef.current) {
-      setVoiceDebugText('debug: blocked active session');
       return;
     }
     voiceStartInFlightRef.current = true;
@@ -906,21 +898,17 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
         voiceStartInFlightRef.current = false;
         holdStartedAtRef.current = null;
         setIsListening(false);
-        setVoiceDebugText('debug: permission denied');
         setVoiceInputError('Mikrofon izni olmadan bas-konuş kullanılamaz.');
         return;
       }
       if (!mountedRef.current || !visibleRef.current) {
-        setVoiceDebugText('debug: start cancelled not visible');
         return;
       }
-      setVoiceDebugText('debug: starting recognizer');
       ExpoSpeechRecognitionModule.start({
         lang: 'tr-TR',
         interimResults: true,
         continuous: false,
       });
-      setVoiceDebugText('debug: recognizer start called');
     } catch {
       pressActiveRef.current = false;
       voiceStartInFlightRef.current = false;
@@ -936,7 +924,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     if (!pressActiveRef.current && !isListening && !recognitionStartedRef.current) return;
     if (!recognitionStartedRef.current && voiceStartInFlightRef.current) {
       voiceStopRequestedBeforeStartRef.current = true;
-      setVoiceDebugText('debug: stop queued before start');
       return;
     }
     const holdDuration = holdStartedAtRef.current ? Date.now() - holdStartedAtRef.current : 0;
@@ -982,19 +969,16 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const handleVoiceTouchStart = useCallback((event: GestureResponderEvent) => {
     event.stopPropagation();
     clearVoiceReleaseTimer();
-    setVoiceDebugText('debug: touch start');
     void startVoiceInput();
   }, [clearVoiceReleaseTimer, startVoiceInput]);
 
   const handleVoiceTouchEnd = useCallback((event: GestureResponderEvent) => {
     event.stopPropagation();
-    setVoiceDebugText('debug: touch end');
     scheduleStopVoiceInput();
   }, [scheduleStopVoiceInput]);
 
   const handleVoiceTouchCancel = useCallback((event: GestureResponderEvent) => {
     event.stopPropagation();
-    setVoiceDebugText('debug: touch cancel ignored');
     if (recognitionStartedRef.current) {
       scheduleStopVoiceInput();
     }
@@ -1634,11 +1618,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               {partialTranscript && !voiceInputError ? (
                 <Text style={styles.voicePartialText} numberOfLines={2}>
                   {partialTranscript}
-                </Text>
-              ) : null}
-              {voiceDebugText ? (
-                <Text style={styles.voiceDebugText} numberOfLines={1}>
-                  {voiceDebugText}
                 </Text>
               ) : null}
             </View>
@@ -2465,14 +2444,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: '#0F172A',
     fontWeight: '700',
-  },
-  voiceDebugText: {
-    marginTop: 4,
-    fontFamily: DIGITAL_MONO,
-    fontSize: 9,
-    lineHeight: 12,
-    color: '#64748B',
-    fontWeight: '600',
   },
   sendBtnOuter: {
     borderRadius: 22,
