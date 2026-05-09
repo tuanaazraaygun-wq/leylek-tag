@@ -16,6 +16,7 @@ import {
   Dimensions,
   Easing,
   FlatList,
+  type GestureResponderEvent,
   Image,
   InteractionManager,
   Keyboard,
@@ -966,6 +967,27 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }, VOICE_RELEASE_DEBOUNCE_MS);
   }, [clearVoiceReleaseTimer, stopVoiceInput]);
 
+  const handleVoiceTouchStart = useCallback((event: GestureResponderEvent) => {
+    event.stopPropagation();
+    clearVoiceReleaseTimer();
+    setVoiceDebugText('debug: touch start');
+    void startVoiceInput();
+  }, [clearVoiceReleaseTimer, startVoiceInput]);
+
+  const handleVoiceTouchEnd = useCallback((event: GestureResponderEvent) => {
+    event.stopPropagation();
+    setVoiceDebugText('debug: touch end');
+    scheduleStopVoiceInput();
+  }, [scheduleStopVoiceInput]);
+
+  const handleVoiceTouchCancel = useCallback((event: GestureResponderEvent) => {
+    event.stopPropagation();
+    setVoiceDebugText('debug: touch cancel ignored');
+    if (recognitionStartedRef.current) {
+      scheduleStopVoiceInput();
+    }
+  }, [scheduleStopVoiceInput]);
+
   const onSubmit = useCallback(() => {
     const t = input.trim();
     if (!t || isTyping) return;
@@ -1487,11 +1509,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 })}
               />
               <Pressable
-                onPressIn={() => {
-                  setVoiceDebugText('debug: press in');
-                  void startVoiceInput();
-                }}
-                onPressOut={scheduleStopVoiceInput}
+                onTouchStart={handleVoiceTouchStart}
+                onTouchEnd={handleVoiceTouchEnd}
+                onTouchCancel={handleVoiceTouchCancel}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel="Bas-konuş"
