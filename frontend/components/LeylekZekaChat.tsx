@@ -379,6 +379,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const typewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
   const voicePulse = useRef(new Animated.Value(0)).current;
+  const voiceWave = useRef(new Animated.Value(0)).current;
   /** Modal açık mı — kapanış sonrası async zincirlerde güncel değer */
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -492,6 +493,32 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     loop.start();
     return () => loop.stop();
   }, [isListening, reduceMotion, voicePulse]);
+
+  useEffect(() => {
+    if (!isListening || reduceMotion) {
+      voiceWave.stopAnimation();
+      voiceWave.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(voiceWave, {
+          toValue: 1,
+          duration: 720,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(voiceWave, {
+          toValue: 0,
+          duration: 720,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isListening, reduceMotion, voiceWave]);
 
   useEffect(() => {
     if (!visible) {
@@ -1048,6 +1075,30 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       },
     ],
   };
+  const voiceWaveBars = useMemo(
+    () =>
+      [
+        [0.42, 0.92, 0.58, 1, 0.48],
+        [0.72, 0.44, 1, 0.52, 0.86],
+        [0.5, 1, 0.46, 0.9, 0.62],
+        [0.86, 0.56, 0.96, 0.42, 0.78],
+        [0.48, 0.84, 0.54, 1, 0.44],
+      ].map((outputRange) => ({
+        opacity: voiceWave.interpolate({
+          inputRange: [0, 0.25, 0.5, 0.75, 1],
+          outputRange: outputRange.map((v) => 0.42 + v * 0.42),
+        }),
+        transform: [
+          {
+            scaleY: voiceWave.interpolate({
+              inputRange: [0, 0.25, 0.5, 0.75, 1],
+              outputRange,
+            }),
+          },
+        ],
+      })),
+    [voiceWave],
+  );
 
   const closeWithHaptic = useCallback(() => {
     abortVoiceInput();
@@ -1442,6 +1493,26 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               >
                 {voiceStatusBody}
               </Text>
+              {isListening ? (
+                <View style={styles.voiceWaveformRow} pointerEvents="none">
+                  {voiceWaveBars.map((barStyle, index) =>
+                    reduceMotion ? (
+                      <View
+                        key={`voice-wave-${index}`}
+                        style={[
+                          styles.voiceWaveformBar,
+                          index % 2 === 0 ? styles.voiceWaveformBarTall : null,
+                        ]}
+                      />
+                    ) : (
+                      <Animated.View
+                        key={`voice-wave-${index}`}
+                        style={[styles.voiceWaveformBar, barStyle]}
+                      />
+                    ),
+                  )}
+                </View>
+              ) : null}
               {partialTranscript && !voiceInputError ? (
                 <Text style={styles.voicePartialText} numberOfLines={2}>
                   {partialTranscript}
@@ -2241,6 +2312,25 @@ const styles = StyleSheet.create({
   },
   voiceStatusBodyError: {
     color: '#991B1B',
+  },
+  voiceWaveformRow: {
+    height: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    marginBottom: 1,
+  },
+  voiceWaveformBar: {
+    width: 4,
+    height: 16,
+    borderRadius: 3,
+    backgroundColor: '#2563EB',
+    opacity: 0.72,
+  },
+  voiceWaveformBarTall: {
+    height: 18,
+    opacity: 0.86,
   },
   voicePartialText: {
     marginTop: 5,
