@@ -502,6 +502,8 @@ export type LeylekMuhabbetiHomeTabProps = {
   onOpenMatchRequests?: () => void;
   /** Teklifler sekmesine geç ve bu ilanı üste taşı (ListingsTab ile eşleşir). */
   onOpenListingsForListing?: (listingId: string) => void;
+  /** Ana sayfadaki genel CTA: Teklifler sekmesine geçer; verilmezse pasif kalır. */
+  onOpenListings?: () => void;
   currentUserId: string;
   viewerAppRole: string;
   requireToken: () => boolean;
@@ -517,6 +519,7 @@ export default function LeylekMuhabbetiHomeTab({
   onOpenPassengerListing,
   onOpenMatchRequests,
   onOpenListingsForListing,
+  onOpenListings,
   currentUserId,
   viewerAppRole,
   requireToken,
@@ -1038,6 +1041,21 @@ export default function LeylekMuhabbetiHomeTab({
               <Text style={styles.offersSectionTitle}>Günün teklifleri</Text>
               <Text style={styles.offersSectionHint}>Şehrindeki açık teklifler — liste hafifçe yenilenir</Text>
             </View>
+            <Pressable
+              onPress={onOpenListings}
+              disabled={!onOpenListings}
+              style={({ pressed }) => [
+                styles.offersCityCta,
+                !onOpenListings && styles.offersCityCtaDisabled,
+                pressed && styles.offersCityCtaPressed,
+              ]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.offersCityCtaText} numberOfLines={1}>
+                {selectedCity.trim() || 'Şehir'} tekliflerini gör
+              </Text>
+              <Ionicons name="chevron-forward" size={15} color="#4F46E5" />
+            </Pressable>
           </View>
           <View style={styles.offersDivider} />
           {feedLoading ? (
@@ -1069,9 +1087,9 @@ export default function LeylekMuhabbetiHomeTab({
               </View>
               <Text style={styles.emptyTitle}>Henüz liste görünmüyor</Text>
               <Text style={styles.emptySub}>
-                Yukarıdan bir teklif türü seçerek başlayabilir veya veri geldiğinde burada günün tekliflerini görebilirsin.
+                {(selectedCity.trim() || 'Seçili şehir')} için henüz açık teklif yok. İlk şehir dışı teklifi sen açarak başlayabilirsin.
               </Text>
-              <Text style={styles.emptyHint}>Henüz teklif yok — teklif açarak başlat.</Text>
+              <Text style={styles.emptyHint}>Teklif oluştur butonuyla ilk ilanı başlat.</Text>
             </View>
           ) : null}
           {!feedLoading && visibleOffers.length > 0 ? (
@@ -1167,13 +1185,13 @@ const styles = StyleSheet.create({
     right: 40,
     backgroundColor: 'rgba(249,115,22,0.1)',
   },
-  insetTop: { paddingHorizontal: 16, paddingTop: 4 },
-  inset: { paddingHorizontal: 16, marginTop: 16, paddingBottom: 10 },
+  insetTop: { paddingHorizontal: 16, paddingTop: 0 },
+  inset: { paddingHorizontal: 16, marginTop: 10, paddingBottom: 10 },
   heroShell: {
-    borderRadius: 28,
+    borderRadius: 24,
     overflow: 'hidden',
-    marginTop: -10,
-    marginBottom: 11,
+    marginTop: -6,
+    marginBottom: 6,
     position: 'relative',
     ...Platform.select({
       ios: {
@@ -1192,9 +1210,9 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   heroInnerRow: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 18,
+    paddingHorizontal: 14,
+    paddingTop: 13,
+    paddingBottom: 13,
     zIndex: 5,
   },
   heroLeylekColumn: {
@@ -1203,9 +1221,9 @@ const styles = StyleSheet.create({
     maxWidth: 170,
   },
   heroLeylekBadge: {
-    marginBottom: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    marginBottom: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(59,130,246,0.28)',
@@ -1222,17 +1240,17 @@ const styles = StyleSheet.create({
     }),
   },
   heroLeylekBadgeTxt: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: '#1E3A8A',
     letterSpacing: 0.3,
   },
   heroLeylekAbsolute: {
     position: 'absolute',
-    top: 64,
-    right: -8,
-    width: 180,
-    height: 196,
+    top: 48,
+    right: -16,
+    width: 158,
+    height: 164,
     zIndex: 3,
     overflow: 'hidden',
     justifyContent: 'flex-start',
@@ -1249,49 +1267,49 @@ const styles = StyleSheet.create({
     }),
   },
   heroLeylekImg: {
-    width: 165,
-    height: 165,
+    width: 138,
+    height: 138,
     backgroundColor: 'transparent',
     borderRadius: 0,
     opacity: 0.95,
-    transform: [{ scale: 1.12 }],
-    marginTop: -2,
+    transform: [{ scale: 1.08 }],
+    marginTop: -4,
   },
   heroContent: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 145,
+    paddingRight: 116,
     zIndex: 3,
   },
-  heroEyebrow: { marginBottom: 10 },
+  heroEyebrow: { marginBottom: 7 },
   heroEyebrowGrad: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(59,130,246,0.2)',
   },
-  heroEyebrowText: { fontSize: 11.5, fontWeight: '900', color: '#1D4ED8', letterSpacing: 0.6 },
+  heroEyebrowText: { fontSize: 10.5, fontWeight: '900', color: '#1D4ED8', letterSpacing: 0.55 },
   heroTitle: {
-    fontSize: 21,
+    fontSize: 19,
     fontWeight: '900',
     color: TEXT_PRIMARY,
     letterSpacing: -0.5,
-    lineHeight: 27,
+    lineHeight: 24,
   },
   heroSubtitle: {
-    marginTop: 8,
-    fontSize: 13.5,
+    marginTop: 6,
+    fontSize: 12.5,
     fontWeight: '600',
     color: TEXT_SECONDARY,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   heroMiniCtaOuter: {
-    marginTop: 14,
+    marginTop: 10,
     alignSelf: 'flex-start',
     borderRadius: 999,
     overflow: 'hidden',
@@ -1309,12 +1327,12 @@ const styles = StyleSheet.create({
   heroMiniCtaGrad: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 18,
-    paddingVertical: 13,
+    gap: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
   },
   heroMiniCtaPressed: { transform: [{ scale: 0.96 }] },
-  heroMiniCtaTxt: { fontSize: 13.5, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.15 },
+  heroMiniCtaTxt: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.1 },
   heroMiniCtaArrowGlow: {
     marginLeft: 2,
     ...Platform.select({
@@ -1330,9 +1348,9 @@ const styles = StyleSheet.create({
   },
   chipsWrap: {
     width: '100%',
-    marginTop: 10,
-    marginBottom: 16,
-    gap: 8,
+    marginTop: 6,
+    marginBottom: 10,
+    gap: 6,
   },
   chipsPrimaryFull: {
     width: '100%',
@@ -1355,7 +1373,7 @@ const styles = StyleSheet.create({
   statChipStatCell: {
     flex: 1,
     minWidth: 0,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     justifyContent: 'center',
     gap: 6,
@@ -1412,8 +1430,8 @@ const styles = StyleSheet.create({
   },
   statChipAlertTxt: { fontSize: 12, fontWeight: '900', color: '#C2410C', flexShrink: 1 },
   createSectionWrap: {
-    marginBottom: 20,
-    borderRadius: 30,
+    marginBottom: 14,
+    borderRadius: 26,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
@@ -1421,11 +1439,11 @@ const styles = StyleSheet.create({
     ...Platform.select({
       ios: {
         shadowColor: '#1E3A8A',
-        shadowOffset: { width: 0, height: 14 },
-        shadowOpacity: 0.14,
-        shadowRadius: 26,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.12,
+        shadowRadius: 20,
       },
-      android: { elevation: 7 },
+      android: { elevation: 5 },
       default: {},
     }),
   },
@@ -1438,19 +1456,19 @@ const styles = StyleSheet.create({
     borderLeftColor: '#2563eb',
   },
   createSection: {
-    padding: 16,
-    borderRadius: 28,
+    padding: 13,
+    borderRadius: 24,
     position: 'relative',
     zIndex: 1,
   },
-  createSectionHeadRow: { marginBottom: 8 },
+  createSectionHeadRow: { marginBottom: 6 },
   sectionBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -1464,21 +1482,21 @@ const styles = StyleSheet.create({
   },
   sectionBadgeText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.35 },
   ctaSectionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '900',
     color: TEXT_PRIMARY,
     letterSpacing: 0.35,
     textTransform: 'uppercase',
   },
-  ctaSectionSubtitle: { marginTop: 6, fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY, lineHeight: 18 },
-  ctaRow: { flexDirection: 'row', gap: 12, marginTop: 2, marginBottom: 2 },
+  ctaSectionSubtitle: { marginTop: 4, fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY, lineHeight: 16 },
+  ctaRow: { flexDirection: 'row', gap: 10, marginTop: 0, marginBottom: 0 },
   ctaRowDim: { opacity: 0.92 },
   ctaHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 18 },
   ctaBig: {
     flex: 1,
-    minHeight: 178,
+    minHeight: 148,
     minWidth: 0,
-    borderRadius: 26,
+    borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.48)',
@@ -1510,27 +1528,27 @@ const styles = StyleSheet.create({
   ctaPressed: { transform: [{ scale: 0.935 }] },
   ctaBigInner: {
     flex: 1,
-    minHeight: 174,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    minHeight: 144,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
     justifyContent: 'flex-start',
     zIndex: 3,
   },
-  ctaRoleBadgeRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 6 },
+  ctaRoleBadgeRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 4 },
   ctaRolePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.35)',
   },
   ctaRolePillDriver: { backgroundColor: 'rgba(0,0,0,0.2)' },
   ctaRolePillPax: { backgroundColor: 'rgba(0,0,0,0.2)' },
-  ctaRolePillTxt: { fontSize: 10.5, fontWeight: '900', color: '#fff', letterSpacing: 0.4 },
+  ctaRolePillTxt: { fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.35 },
   ctaIconBubble: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1538,15 +1556,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.34)',
     marginTop: 2,
   },
-  ctaBigTitle: { fontSize: 14.5, fontWeight: '900', color: '#fff', marginTop: 10, letterSpacing: -0.2, lineHeight: 19 },
-  ctaBigSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.94)', marginTop: 6, lineHeight: 18 },
+  ctaBigTitle: { fontSize: 13, fontWeight: '900', color: '#fff', marginTop: 7, letterSpacing: -0.15, lineHeight: 17 },
+  ctaBigSub: { fontSize: 11.5, color: 'rgba(255,255,255,0.94)', marginTop: 4, lineHeight: 15 },
   ctaBigFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 12,
-    paddingTop: 4,
+    marginTop: 8,
+    paddingTop: 3,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.22)',
   },
@@ -1560,7 +1578,7 @@ const styles = StyleSheet.create({
   offersSectionHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     marginBottom: 10,
   },
   offersIconBadge: {
@@ -1574,6 +1592,28 @@ const styles = StyleSheet.create({
   },
   offersCardPad: { paddingBottom: 18 },
   offersSectionTitle: { fontSize: 20, fontWeight: '900', color: TEXT_PRIMARY, letterSpacing: -0.35 },
+  offersSectionHint: { color: TEXT_SECONDARY, fontSize: 12.5, fontWeight: '700', marginTop: 2 },
+  offersCityCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    maxWidth: 138,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(238,242,255,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.24)',
+  },
+  offersCityCtaPressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
+  offersCityCtaDisabled: { opacity: 0.55 },
+  offersCityCtaText: {
+    flexShrink: 1,
+    color: '#4F46E5',
+    fontSize: 11.5,
+    fontWeight: '900',
+    letterSpacing: -0.05,
+  },
   offersDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(148,163,184,0.35)',

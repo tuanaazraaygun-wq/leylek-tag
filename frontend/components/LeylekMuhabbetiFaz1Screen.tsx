@@ -1323,7 +1323,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                   Leylek Teklif Sende
                 </Text>
                 <Text style={styles.muhabbetGlassSub} numberOfLines={2}>
-                  Teklif aç, eşleş, güvenle yola
+                  Teklif aç, eşleş, güvenle yola çık
                 </Text>
               </View>
               <View style={styles.muhabbetGlassRight}>
@@ -1550,6 +1550,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                   onOpenPassengerListing={(scope) => openListingCreateAs('passenger', scope)}
                   onOpenMatchRequests={() => router.push('/muhabbet-match-requests' as Href)}
                   onOpenListingsForListing={openListingsForListing}
+                  onOpenListings={() => setMainTab('listings')}
                   currentUserId={user.id}
                   viewerAppRole={user.role}
                   requireToken={requireMuhabbetToken}
@@ -1935,9 +1936,9 @@ const styles = StyleSheet.create({
     marginTop: -8,
   },
   cityChipGlass: {
-    marginHorizontal: 14,
-    marginBottom: 8,
-    borderRadius: 22,
+    marginHorizontal: 18,
+    marginBottom: 6,
+    borderRadius: 18,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
@@ -1951,7 +1952,7 @@ const styles = StyleSheet.create({
     }),
   },
   cityChipGlassBlur: {
-    borderRadius: 22,
+    borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.9)',
@@ -1961,15 +1962,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
-    paddingVertical: 22,
-    paddingHorizontal: 22,
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
   },
   cityChipGlassText: {
     color: TEXT_PRIMARY,
-    fontSize: 22,
+    fontSize: 17,
     fontWeight: '900',
-    letterSpacing: -0.45,
+    letterSpacing: -0.25,
   },
   muhabbetTabBarWarmOuter: {
     marginHorizontal: 16,
