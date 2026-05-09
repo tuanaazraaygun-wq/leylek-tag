@@ -376,6 +376,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const [isListening, setIsListening] = useState(false);
   const [partialTranscript, setPartialTranscript] = useState('');
   const [voiceInputError, setVoiceInputError] = useState('');
+  const [voiceDebugText, setVoiceDebugText] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
@@ -716,12 +717,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, [clearVoiceSubmitTimer, submitVoiceTranscript]);
 
   useSpeechRecognitionEvent('start', () => {
+    setVoiceDebugText('debug: recognizer started');
     recognitionStartedRef.current = true;
     setIsListening(true);
     setVoiceInputError('');
   });
 
   useSpeechRecognitionEvent('end', () => {
+    setVoiceDebugText('debug: recognizer ended');
     setIsListening(false);
     if (!pressActiveRef.current && recognitionStartedRef.current) {
       scheduleVoiceTranscriptSubmit();
@@ -729,6 +732,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   });
 
   useSpeechRecognitionEvent('result', (event) => {
+    setVoiceDebugText('debug: result received');
     const transcript = (event.results?.[0]?.transcript ?? '').trim();
     if (!transcript) return;
     partialTranscriptRef.current = transcript;
@@ -740,6 +744,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   });
 
   useSpeechRecognitionEvent('error', (event) => {
+    setVoiceDebugText(`debug: error: ${event.error || 'unknown'}`);
     if (suppressNextVoiceErrorRef.current || event.error === 'aborted') {
       suppressNextVoiceErrorRef.current = false;
       return;
@@ -856,8 +861,18 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   const startVoiceInput = useCallback(async () => {
     interruptAssistantOutputForVoice();
-    if (isTyping) return;
-    if (voiceStartInFlightRef.current || pressActiveRef.current || recognitionStartedRef.current) return;
+    if (isTyping) {
+      setVoiceDebugText('debug: blocked isTyping');
+      return;
+    }
+    if (voiceStartInFlightRef.current) {
+      setVoiceDebugText('debug: blocked start in flight');
+      return;
+    }
+    if (pressActiveRef.current || recognitionStartedRef.current) {
+      setVoiceDebugText('debug: blocked active session');
+      return;
+    }
     voiceStartInFlightRef.current = true;
     clearVoiceSubmitTimer();
     resetVoiceInputState();
@@ -871,15 +886,21 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
         voiceStartInFlightRef.current = false;
         holdStartedAtRef.current = null;
         setIsListening(false);
+        setVoiceDebugText('debug: permission denied');
         setVoiceInputError('Mikrofon izni olmadan bas-konuş kullanılamaz.');
         return;
       }
-      if (!pressActiveRef.current) return;
+      if (!pressActiveRef.current) {
+        setVoiceDebugText('debug: press cancelled before start');
+        return;
+      }
+      setVoiceDebugText('debug: starting recognizer');
       ExpoSpeechRecognitionModule.start({
         lang: 'tr-TR',
         interimResults: true,
         continuous: false,
       });
+      setVoiceDebugText('debug: recognizer start called');
     } catch {
       pressActiveRef.current = false;
       voiceStartInFlightRef.current = false;
@@ -1445,7 +1466,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 })}
               />
               <Pressable
-                onPressIn={startVoiceInput}
+                onPressIn={() => {
+                  setVoiceDebugText('debug: press in');
+                  void startVoiceInput();
+                }}
                 onPressOut={stopVoiceInput}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
@@ -1557,6 +1581,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               {partialTranscript && !voiceInputError ? (
                 <Text style={styles.voicePartialText} numberOfLines={2}>
                   {partialTranscript}
+                </Text>
+              ) : null}
+              {voiceDebugText ? (
+                <Text style={styles.voiceDebugText} numberOfLines={1}>
+                  {voiceDebugText}
                 </Text>
               ) : null}
             </View>
@@ -2383,6 +2412,14 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: '#0F172A',
     fontWeight: '700',
+  },
+  voiceDebugText: {
+    marginTop: 4,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 9,
+    lineHeight: 12,
+    color: '#64748B',
+    fontWeight: '600',
   },
   sendBtnOuter: {
     borderRadius: 22,
