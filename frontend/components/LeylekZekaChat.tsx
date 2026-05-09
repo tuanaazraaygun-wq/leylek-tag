@@ -677,7 +677,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') return;
+      if (state !== 'background') return;
       abortVoiceInput();
       stopSpeech();
       clearTypewriter(true);
