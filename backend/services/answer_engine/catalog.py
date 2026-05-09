@@ -31,6 +31,9 @@ class IntentDefinition:
     role_specific_templates: dict[str, str] = field(default_factory=dict)
     """Bağlam yokken (rol net değil) güvenli özet — role_specific varsa doldurulmalı."""
     default_template: str = ""
+    voice_role_specific_templates: dict[str, str] = field(default_factory=dict)
+    """voiceMode için kısa, TTS dostu rol bazlı cevaplar."""
+    voice_default_template: str = ""
 
 
 def _dedupe_phrases(*groups: tuple[str, ...]) -> tuple[str, ...]:
@@ -134,9 +137,19 @@ Bu özellik acil servis, polis, çağrı merkezi, resmi güvenlik bildirimi veya
 
 Acil durumda 112 veya ilgili resmi kanallar kullanılmalıdır."""
 
+GUVEN_AL_EXPLAINED_VOICE = """Güven Al, normal TAG yolculuğunda yolcu ve sürücünün birbirinden kısa süreli görüntülü görüşme talep etmesini sağlar.
+
+Butona basınca karşı tarafa sizden güven almak istiyor isteği gider. Kabul edilirse yaklaşık 5 dakikalık görüntülü görüşme başlar.
+
+Bu özellik acil servis, polis, çağrı merkezi, resmi bildirim veya otomatik ihbar değildir. Acil durumda 112 kullanılmalıdır."""
+
 INTERCITY_ROLE_QUESTION = """Şehir dışı Leylek Teklif Sende akışı için yardımcı olayım.
 
 Yolcu olarak mı şehir dışına gitmek istiyorsunuz, yoksa sürücü olarak teklif vermek/açmak mı istiyorsunuz?"""
+
+INTERCITY_ROLE_QUESTION_VOICE = """Şehir dışı Leylek Teklif Sende, şehir içi TAG’den ayrıdır ve rol ekranının altındaki karttan açılır.
+
+Yolcu musunuz, sürücü olarak mı teklif vermek istiyorsunuz?"""
 
 PASSENGER_INTERCITY_LEYLEK_OFFER = """Yolcu olarak şehir dışı Leylek Teklif Sende
 
@@ -148,6 +161,12 @@ PASSENGER_INTERCITY_LEYLEK_OFFER = """Yolcu olarak şehir dışı Leylek Teklif 
 4) Uygun sürücülerle teklif/eşleşme süreci uygulama içinde ilerler.
 5) Eşleşme sonrası Muhabbet/chat üzerinden detayları netleştirin.
 6) Uygulamadaki QR ve görüşme adımlarını takip edin.
+
+Eşleşme veya süre garantisi verilmez."""
+
+PASSENGER_INTERCITY_LEYLEK_OFFER_VOICE = """Yolcu olarak şehir dışı yolculuk, şehir içi normal TAG’den ayrıdır.
+
+Rol seçimi ekranının altındaki Leylek Teklif Sende kartını açıp rota, tarih/saat ve notları girersiniz. Eşleşme sonrası Muhabbet/chat ve uygulamadaki QR ile görüşme adımlarını takip edersiniz.
 
 Eşleşme veya süre garantisi verilmez."""
 
@@ -164,6 +183,12 @@ DRIVER_INTERCITY_LEYLEK_OFFER = """Sürücü olarak şehir dışı Leylek Teklif
 
 Bölge yönlendirmesi, garanti kazanç veya garanti eşleşme söylenmez."""
 
+DRIVER_INTERCITY_LEYLEK_OFFER_VOICE = """Sürücü olarak şehir dışı Leylek Teklif Sende, şehir içi normal TAG’den ayrı bir akıştır.
+
+Rol seçimi ekranının altındaki karttan açılır. Rota, tarih/saat, araç uygunluğu ve yolcu notlarını kontrol edip uygunsa teklif verirsiniz; eşleşme sonrası Muhabbet/chat ve uygulama adımlarını takip edersiniz.
+
+Süre, kazanç veya bölge yönlendirmesi garantisi verilmez."""
+
 TAG_VS_INTERCITY_LEYLEK_OFFER = """Şehir içi TAG ve Leylek Teklif Sende farkı
 
 Şehir içi normal TAG:
@@ -173,6 +198,12 @@ Leylek Teklif Sende:
 Şehir dışı/şehirler arası yolculuklar için ayrı teklif/talep alanıdır.
 Rol seçimi ekranının altındaki karttan açılır.
 Eşleşme sonrası Muhabbet/chat ve ilgili yolculuk adımları kullanılır."""
+
+TAG_VS_INTERCITY_LEYLEK_OFFER_VOICE = """Şehir içi normal TAG, yakın mesafe şehir içi yolcu/sürücü eşleşme akışıdır.
+
+Leylek Teklif Sende ise şehir dışı veya şehirler arası yolculuklar için ayrı teklif alanıdır. Rol seçimi ekranının altındaki karttan açılır ve Muhabbet/chat ile uygulama adımları kullanılır.
+
+Kısaca: şehir içi TAG ve şehir dışı Leylek Teklif Sende ayrı akışlardır."""
 
 MATCH_NOT_HAPPENING = """Eşleşme veya teklif gecikiyor
 
@@ -537,6 +568,7 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             ("guven gorusmesi", 12),
         ),
         default_template=GUVEN_AL_EXPLAINED,
+        voice_default_template=GUVEN_AL_EXPLAINED_VOICE,
     ),
     IntentDefinition(
         id="tag_vs_intercity_leylek_offer",
@@ -566,6 +598,7 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             ("sehir ici ile sehir disi fark", 14),
         ),
         default_template=TAG_VS_INTERCITY_LEYLEK_OFFER,
+        voice_default_template=TAG_VS_INTERCITY_LEYLEK_OFFER_VOICE,
     ),
     IntentDefinition(
         id="intercity_leylek_offer",
@@ -613,6 +646,11 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             "passenger": PASSENGER_INTERCITY_LEYLEK_OFFER,
         },
         default_template=INTERCITY_ROLE_QUESTION,
+        voice_role_specific_templates={
+            "driver": DRIVER_INTERCITY_LEYLEK_OFFER_VOICE,
+            "passenger": PASSENGER_INTERCITY_LEYLEK_OFFER_VOICE,
+        },
+        voice_default_template=INTERCITY_ROLE_QUESTION_VOICE,
     ),
     IntentDefinition(
         id="match_not_happening",

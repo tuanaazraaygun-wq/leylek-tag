@@ -273,6 +273,15 @@ def _resolve_role_for_offer(ctx: dict[str, Any], inferred: str | None) -> str | 
 
 
 def _render_intent(intent: IntentDefinition, ctx: dict[str, Any], inferred: str | None) -> str | None:
+    if ctx.get("voiceMode") is True:
+        role = _resolve_role_for_offer(ctx, inferred)
+        if role:
+            tpl = intent.voice_role_specific_templates.get(role)
+            if tpl:
+                return tpl
+        if intent.voice_default_template:
+            return intent.voice_default_template
+
     if intent.role_specific_templates:
         role = _resolve_role_for_offer(ctx, inferred)
         if role:
