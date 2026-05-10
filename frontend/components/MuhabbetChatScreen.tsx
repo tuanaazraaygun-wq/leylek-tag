@@ -59,6 +59,7 @@ import type {
 import { subscribeConversationUpdated, subscribeTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import * as FileSystem from 'expo-file-system/legacy';
 import { tapButtonHaptic } from '../utils/touchHaptics';
+import { appAlert } from '../contexts/AppAlertContext';
 
 /** Socket sid + JWT kayıt kullanıcısı güncel mi (Muhabbet emit öncesi). */
 function isMuhabbetSocketRegisteredForUser(socket: Socket, myUserLo: string): boolean {
@@ -240,6 +241,15 @@ export type ChatContext = {
   trip_convert_request?: TripConvertRequestContext | null;
   /** Sunucu geçmiş mesaj tutmaz */
   ephemeral_chat?: boolean;
+};
+
+type SeatInviteChatState = {
+  id: string;
+  session_id: string;
+  conversation_id?: string | null;
+  passenger_user_id?: string | null;
+  status?: string | null;
+  expires_at?: string | null;
 };
 
 type PullMessagesFromApiResult = { ok: boolean; context: ChatContext | null };
@@ -609,6 +619,9 @@ export default function MuhabbetChatScreen({
   }, [cid]);
 
   const [linkedTripSession, setLinkedTripSession] = useState<MuhabbetTripSession | null>(null);
+  const [pendingSeatInvite, setPendingSeatInvite] = useState<SeatInviteChatState | null>(null);
+  const [seatInviteBusy, setSeatInviteBusy] = useState(false);
+  const [seatInviteError, setSeatInviteError] = useState('');
   const [chatCallState, setChatCallState] = useState<ChatTripCallState>('idle');
   const [chatCallPayload, setChatCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
   const chatCallStateRef = useRef<ChatTripCallState>('idle');
@@ -1217,6 +1230,72 @@ export default function MuhabbetChatScreen({
     setLinkedTripSession(null);
   }, [base, cid]);
 
+  const respondSeatInvite = useCallback(
+    async (action: 'accept' | 'decline') => {
+      const invite = pendingSeatInvite;
+      if (!invite || seatInviteBusy) return;
+      const sid = normalizeMuhabbetSessionId(invite.session_id);
+      const inviteId = String(invite.id || '').trim().toLowerCase();
+      if (!sid || !inviteId) {
+        setPendingSeatInvite(null);
+        setSeatInviteError('');
+        appAlert('Davet', 'Davet bilgisi eksik.');
+        return;
+      }
+      const token = (await getPersistedAccessToken())?.trim();
+      if (!token) {
+        appAlert('Oturum gerekli', 'Davet yanıtlamak için tekrar giriş yapın.');
+        return;
+      }
+      setSeatInviteBusy(true);
+      setSeatInviteError('');
+      try {
+        const res = await fetch(
+          `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/seat-invites/${encodeURIComponent(inviteId)}/${action}`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (handleUnauthorizedAndMaybeRedirect(res)) return;
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          session?: MuhabbetTripSession;
+          detail?: unknown;
+        };
+        if (!res.ok || json.success !== true) {
+          const msg = muhabbetTripRestDetail(
+            json.detail,
+            action === 'accept' ? 'Davet kabul edilemedi.' : 'Davet reddedilemedi.'
+          );
+          setPendingSeatInvite(null);
+          setSeatInviteError(msg);
+          appAlert('Davet', msg);
+          return;
+        }
+        setPendingSeatInvite(null);
+        setSeatInviteError('');
+        if (action === 'accept') {
+          await refreshLinkedTripSession();
+          if (json.session && typeof json.session === 'object') {
+            setLinkedTripSession(json.session);
+          }
+          appAlert('Yolculuğa katıldın', 'Yol Oturumu hazırlandı.');
+        } else {
+          appAlert('Davet reddedildi', 'Boş koltuk daveti kapatıldı.');
+        }
+      } catch {
+        const msg = action === 'accept' ? 'Davet kabul edilemedi.' : 'Davet reddedilemedi.';
+        setPendingSeatInvite(null);
+        setSeatInviteError(msg);
+        appAlert('Davet', 'Bağlantı kurulamadı. Lütfen tekrar deneyin.');
+      } finally {
+        setSeatInviteBusy(false);
+      }
+    },
+    [base, pendingSeatInvite, refreshLinkedTripSession, seatInviteBusy]
+  );
+
   useEffect(() => {
     chatCallStateRef.current = chatCallState;
   }, [chatCallState]);
@@ -1238,6 +1317,38 @@ export default function MuhabbetChatScreen({
     });
     return unsub;
   }, [refreshLinkedTripSession]);
+
+  useEffect(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    const cidLo = cid.trim().toLowerCase();
+    const onSeatInviteReceived = (payload: Record<string, unknown>) => {
+      const inviteRaw = payload?.invite && typeof payload.invite === 'object' && !Array.isArray(payload.invite)
+        ? (payload.invite as Record<string, unknown>)
+        : payload;
+      const conversationId = String(payload?.conversation_id || inviteRaw?.conversation_id || '').trim().toLowerCase();
+      if (!conversationId || conversationId !== cidLo) return;
+      const status = String(inviteRaw?.status || '').trim().toLowerCase();
+      if (status !== 'pending') return;
+      const inviteId = String(inviteRaw?.id || '').trim().toLowerCase();
+      const sessionId = normalizeMuhabbetSessionId(String(payload?.session_id || inviteRaw?.session_id || ''));
+      if (!inviteId || !sessionId) return;
+      setPendingSeatInvite({
+        id: inviteId,
+        session_id: sessionId,
+        conversation_id: conversationId || null,
+        passenger_user_id:
+          inviteRaw?.passenger_user_id != null ? String(inviteRaw.passenger_user_id).trim().toLowerCase() : null,
+        status,
+        expires_at: inviteRaw?.expires_at != null ? String(inviteRaw.expires_at) : null,
+      });
+      setSeatInviteError('');
+    };
+    socket.on('muhabbet_trip_seat_invite_received', onSeatInviteReceived);
+    return () => {
+      socket.off('muhabbet_trip_seat_invite_received', onSeatInviteReceived);
+    };
+  }, [cid]);
 
   const retryPendingActionAfterNotRegistered = useCallback(async () => {
     const pending = pendingActionRef.current;
@@ -3063,6 +3174,48 @@ export default function MuhabbetChatScreen({
                       </Text>
                     </View>
                   ) : null}
+                  {pendingSeatInvite ? (
+                    <View style={styles.seatInviteBanner}>
+                      <View style={styles.seatInviteIcon}>
+                        <Ionicons name="person-add" size={18} color="#FFFFFF" />
+                      </View>
+                      <View style={styles.seatInviteBody}>
+                        <Text style={styles.seatInviteTitle}>Sürücü seni boş koltuğa davet ediyor</Text>
+                        <Text style={styles.seatInviteText}>
+                          Bu yolculuğa katılıp sürücüyle eşleşebilirsin.
+                        </Text>
+                        {seatInviteError ? <Text style={styles.seatInviteError}>{seatInviteError}</Text> : null}
+                        <View style={styles.seatInviteActions}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.seatInviteAcceptButton,
+                              pressed && !seatInviteBusy && { opacity: 0.88 },
+                              seatInviteBusy && { opacity: 0.7 },
+                            ]}
+                            disabled={seatInviteBusy}
+                            onPress={() => void respondSeatInvite('accept')}
+                          >
+                            {seatInviteBusy ? (
+                              <ActivityIndicator color="#FFFFFF" size="small" />
+                            ) : (
+                              <Text style={styles.seatInviteAcceptText}>Kabul et</Text>
+                            )}
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.seatInviteDeclineButton,
+                              pressed && !seatInviteBusy && { opacity: 0.88 },
+                              seatInviteBusy && { opacity: 0.7 },
+                            ]}
+                            disabled={seatInviteBusy}
+                            onPress={() => void respondSeatInvite('decline')}
+                          >
+                            <Text style={styles.seatInviteDeclineText}>Reddet</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  ) : null}
                   {ctx?.matched_via_leylek_key ? (
                     <View style={styles.secureMatchCard}>
                       <View style={styles.secureMatchHeader}>
@@ -3576,6 +3729,52 @@ const styles = StyleSheet.create({
   systemPermanentOkTxt: { color: '#166534', fontSize: 12, fontWeight: '700' },
   systemPermanentPending: { marginHorizontal: 14, marginBottom: 8, backgroundColor: 'rgba(37,99,235,0.12)', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
   systemPermanentPendingTxt: { color: '#1D4ED8', fontSize: 12, fontWeight: '700', flex: 1 },
+  seatInviteBanner: {
+    marginHorizontal: 14,
+    marginBottom: 10,
+    borderRadius: 18,
+    backgroundColor: '#F5F3FF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(124,58,237,0.28)',
+    padding: 12,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  seatInviteIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seatInviteBody: { flex: 1, minWidth: 0 },
+  seatInviteTitle: { color: '#2E1065', fontSize: 14, fontWeight: '900' },
+  seatInviteText: { marginTop: 3, color: '#5B21B6', fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  seatInviteError: { marginTop: 6, color: '#B45309', fontSize: 11, fontWeight: '800' },
+  seatInviteActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  seatInviteAcceptButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 13,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  seatInviteAcceptText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
+  seatInviteDeclineButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 13,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  seatInviteDeclineText: { color: '#6D28D9', fontSize: 13, fontWeight: '900' },
   systemCard: { marginHorizontal: 14, marginBottom: 6, borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10 },
   systemCardBlue: { backgroundColor: 'rgba(37,99,235,0.12)' },
   systemCardGreen: { backgroundColor: 'rgba(22,163,74,0.12)' },

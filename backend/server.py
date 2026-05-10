@@ -25815,6 +25815,517 @@ def _muhabbet_listing_accepted_passenger_context(
     return out
 
 
+def _muhabbet_trip_seat_candidate_invite_statuses(session_id: str) -> dict[str, str]:
+    sid = str(session_id or "").strip().lower()
+    if not sid:
+        return {}
+    out: dict[str, str] = {}
+    try:
+        res = (
+            supabase.table("muhabbet_trip_seat_invites")
+            .select("match_request_id,status,updated_at,created_at")
+            .eq("session_id", sid)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        for raw in res.data or []:
+            row = dict(raw)
+            mrid = str(row.get("match_request_id") or "").strip().lower()
+            st = str(row.get("status") or "").strip().lower()
+            if mrid and mrid not in out:
+                out[mrid] = st or None
+    except Exception as e:
+        logger.debug("[muhabbet_trip_seat_candidates] invite_statuses skipped session_id=%s err=%s", sid[:12], e)
+    return out
+
+
+def _muhabbet_trip_seat_invite_public(row: dict) -> dict:
+    if not isinstance(row, dict):
+        return {}
+    return {
+        "id": row.get("id"),
+        "session_id": row.get("session_id"),
+        "listing_id": row.get("listing_id"),
+        "match_request_id": row.get("match_request_id"),
+        "conversation_id": row.get("conversation_id"),
+        "driver_user_id": row.get("driver_user_id"),
+        "passenger_user_id": row.get("passenger_user_id"),
+        "status": row.get("status"),
+        "expires_at": row.get("expires_at"),
+        "responded_at": row.get("responded_at"),
+        "response_reason": row.get("response_reason"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
+
+
+async def _cancel_pending_seat_invites_for_session(session_id: str, reason: str) -> None:
+    """Best-effort cleanup; invite table/schema issues must not block depart."""
+    sid = str(session_id or "").strip().lower()
+    if not sid:
+        return
+    reason_clean = str(reason or "").strip()[:120] or "cancelled"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        pending_res = (
+            supabase.table("muhabbet_trip_seat_invites")
+            .select("*")
+            .eq("session_id", sid)
+            .eq("status", "pending")
+            .execute()
+        )
+        pending_rows = [dict(x) for x in (pending_res.data or [])]
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] pending_cleanup_select_failed session_id=%s err=%s", sid[:12], e)
+        return
+    if not pending_rows:
+        return
+    patch = {
+        "status": "cancelled",
+        "responded_at": now_iso,
+        "response_reason": reason_clean,
+        "updated_at": now_iso,
+    }
+    try:
+        upd = (
+            supabase.table("muhabbet_trip_seat_invites")
+            .update(patch)
+            .eq("session_id", sid)
+            .eq("status", "pending")
+            .execute()
+        )
+        updated_rows = [dict(x) for x in (upd.data or [])] or [{**row, **patch} for row in pending_rows]
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] pending_cleanup_update_failed session_id=%s err=%s", sid[:12], e)
+        return
+    logger.info(
+        "[muhabbet_trip_seat_invite] pending_cleanup_cancelled session_id=%s count=%s reason=%s",
+        sid[:12],
+        len(updated_rows),
+        reason_clean,
+    )
+    for invite_row in updated_rows:
+        passenger_uid = str(invite_row.get("passenger_user_id") or "").strip().lower()
+        if not passenger_uid:
+            continue
+        payload = {
+            "session_id": sid,
+            "reason": reason_clean,
+            "invite": _muhabbet_trip_seat_invite_public(invite_row),
+        }
+        try:
+            await emit_socket_event_to_user(passenger_uid, "muhabbet_trip_seat_invite_cancelled", payload)
+        except Exception as e:
+            logger.warning(
+                "[muhabbet_trip_seat_invite] pending_cleanup_emit_failed session_id=%s passenger=%s err=%s",
+                sid[:12],
+                passenger_uid[:12],
+                e,
+            )
+
+
+def _muhabbet_trip_joined_passenger_ids(session_row: dict) -> set[str]:
+    sid = str((session_row or {}).get("id") or "").strip().lower()
+    joined: set[str] = set(_muhabbet_json_uuid_list((session_row or {}).get("accepted_passenger_ids")))
+    passenger_id = str((session_row or {}).get("passenger_id") or "").strip().lower()
+    if passenger_id:
+        joined.add(passenger_id)
+    for pr in _muhabbet_trip_passenger_rows_for_session(sid):
+        uid = _muhabbet_passenger_uid_from_row(pr)
+        if uid:
+            joined.add(uid)
+    return joined
+
+
+def _muhabbet_trip_passenger_id_from_match_request(match_row: dict, driver_id: str) -> str:
+    did = str(driver_id or "").strip().lower()
+    sender = str((match_row or {}).get("sender_user_id") or "").strip().lower()
+    receiver = str((match_row or {}).get("receiver_user_id") or "").strip().lower()
+    if sender and sender != did:
+        return sender
+    if receiver and receiver != did:
+        return receiver
+    return ""
+
+
+def _muhabbet_trip_create_seat_invite(uid: str, session_id: str, match_request_id: str) -> tuple[dict, dict, bool]:
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid or "").strip().lower()
+    sid = str(session_id or "").strip().lower()
+    driver_id = str(row.get("driver_id") or "").strip().lower()
+    if uid_lo != driver_id:
+        raise _MuhabbetTripOpError("driver_required", "Boş koltuk davetini yalnızca sürücü gönderebilir.", 403)
+    listing_id = str(row.get("listing_id") or "").strip().lower()
+    if not listing_id:
+        raise _MuhabbetTripOpError("bad_request", "Bu Yol Oturumu bir ilana bağlı değil.", 400)
+    if _muhabbet_trip_session_row_terminal_status(row):
+        raise _MuhabbetTripOpError("not_active", "Kapanmış oturum için boş koltuk daveti gönderilemez.", 400)
+    if str(row.get("depart_confirmed_at") or "").strip():
+        raise _MuhabbetTripOpError("departed", "Yola çıkıldıktan sonra boş koltuk daveti gönderilemez.", 400)
+    ride_status = str(row.get("ride_status") or "waiting").strip().lower()
+    if ride_status in ("active", "finished", "cancelled", "expired"):
+        raise _MuhabbetTripOpError("not_active", "Bu aşamada boş koltuk daveti gönderilemez.", 400)
+
+    match_id = str(match_request_id or "").strip().lower()
+    if not match_id:
+        raise _MuhabbetTripOpError("bad_request", "match_request_id gerekli.", 400)
+    try:
+        mr = supabase.table("listing_match_requests").select("*").eq("id", match_id).limit(1).execute()
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] match_request_lookup_failed match_id=%s err=%s", match_id[:12], e)
+        raise _MuhabbetTripOpError("bad_request", "Eşleşme isteği okunamadı.", 400) from e
+    if not mr.data:
+        raise _MuhabbetTripOpError("not_found", "Eşleşme isteği bulunamadı.", 404)
+    match_row = dict(mr.data[0])
+    if str(match_row.get("listing_id") or "").strip().lower() != listing_id:
+        raise _MuhabbetTripOpError("wrong_listing", "Bu yolcu bu Yol Oturumu ilanına ait değil.", 400)
+    if str(match_row.get("status") or "").strip().lower() != "accepted":
+        raise _MuhabbetTripOpError("not_accepted", "Yalnızca kabul edilmiş yolcular davet edilebilir.", 400)
+    passenger_uid = _muhabbet_trip_passenger_id_from_match_request(match_row, driver_id)
+    if not passenger_uid or passenger_uid == driver_id:
+        raise _MuhabbetTripOpError("passenger_required", "Davet edilecek yolcu belirlenemedi.", 400)
+
+    joined = _muhabbet_trip_joined_passenger_ids(row)
+    if passenger_uid in joined:
+        raise _MuhabbetTripOpError("already_in_session", "Bu yolcu zaten Yol Oturumu'nda.", 409)
+    seat_capacity = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
+    if len(joined) >= seat_capacity:
+        raise _MuhabbetTripOpError("capacity_full", "Boş koltuk kalmadı.", 409)
+
+    try:
+        existing = (
+            supabase.table("muhabbet_trip_seat_invites")
+            .select("*")
+            .eq("session_id", sid)
+            .eq("passenger_user_id", passenger_uid)
+            .in_("status", ["pending", "accepted"])
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] existing_lookup_failed session_id=%s err=%s", sid[:12], e)
+        raise _MuhabbetTripOpError("invite_unavailable", "Boş koltuk daveti hazırlanamadı.", 500) from e
+    if existing.data:
+        invite = dict(existing.data[0])
+        st = str(invite.get("status") or "").strip().lower()
+        if st == "pending":
+            return invite, row, True
+        if st == "accepted":
+            raise _MuhabbetTripOpError("accepted_invite_exists", "Bu yolcu daveti zaten kabul etmiş.", 409)
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    payload = {
+        "session_id": sid,
+        "listing_id": listing_id,
+        "match_request_id": match_id,
+        "conversation_id": str(match_row.get("conversation_id") or "").strip().lower() or None,
+        "driver_user_id": driver_id,
+        "passenger_user_id": passenger_uid,
+        "status": "pending",
+        "expires_at": (now + timedelta(minutes=15)).isoformat(),
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    try:
+        ins = supabase.table("muhabbet_trip_seat_invites").insert(payload).execute()
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] insert_failed session_id=%s passenger=%s err=%s", sid[:12], passenger_uid[:12], e)
+        raise _MuhabbetTripOpError("invite_create_failed", "Boş koltuk daveti oluşturulamadı.", 500) from e
+    invite = dict(ins.data[0]) if ins.data else payload
+    logger.info("[muhabbet_trip_seat_invite] created session_id=%s passenger=%s", sid[:12], passenger_uid[:12])
+    return invite, row, False
+
+
+def _muhabbet_trip_fetch_seat_invite_or_404(session_id: str, invite_id: str) -> dict:
+    sid = str(session_id or "").strip().lower()
+    iid = str(invite_id or "").strip().lower()
+    if not sid or not iid:
+        raise _MuhabbetTripOpError("bad_request", "Davet bilgisi gerekli.", 400)
+    try:
+        res = (
+            supabase.table("muhabbet_trip_seat_invites")
+            .select("*")
+            .eq("id", iid)
+            .eq("session_id", sid)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] lookup_failed session_id=%s invite_id=%s err=%s", sid[:12], iid[:12], e)
+        raise _MuhabbetTripOpError("invite_unavailable", "Boş koltuk daveti okunamadı.", 500) from e
+    if not res.data:
+        raise _MuhabbetTripOpError("not_found", "Boş koltuk daveti bulunamadı.", 404)
+    return dict(res.data[0])
+
+
+def _muhabbet_trip_seat_invite_update(invite_id: str, patch: dict) -> dict:
+    iid = str(invite_id or "").strip().lower()
+    if not iid or not patch:
+        return {}
+    try:
+        upd = supabase.table("muhabbet_trip_seat_invites").update(patch).eq("id", iid).execute()
+        return dict(upd.data[0]) if upd.data else {"id": iid, **patch}
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] update_failed invite_id=%s err=%s", iid[:12], e)
+        raise _MuhabbetTripOpError("invite_update_failed", "Boş koltuk daveti güncellenemedi.", 500) from e
+
+
+def _muhabbet_trip_session_row_for_seat_invite(session_id: str) -> dict:
+    sid = str(session_id or "").strip().lower()
+    if not sid:
+        raise _MuhabbetTripOpError("bad_request", "Yol Oturumu gerekli.", 400)
+    try:
+        res = supabase.table("muhabbet_trip_sessions").select("*").eq("id", sid).limit(1).execute()
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] session_lookup_failed session_id=%s err=%s", sid[:12], e)
+        raise _MuhabbetTripOpError("session_unavailable", "Yol Oturumu okunamadı.", 500) from e
+    if not res.data:
+        raise _MuhabbetTripOpError("not_found", "Yol Oturumu bulunamadı.", 404)
+    return dict(res.data[0])
+
+
+def _muhabbet_trip_seat_invite_upsert_passenger(session_row: dict, invite_row: dict) -> None:
+    sid = str((session_row or {}).get("id") or "").strip().lower()
+    did = str((session_row or {}).get("driver_id") or "").strip().lower()
+    pid = str((invite_row or {}).get("passenger_user_id") or "").strip().lower()
+    cid = str((invite_row or {}).get("conversation_id") or "").strip().lower()
+    if not sid or not did or not pid or not cid:
+        return
+    col = _muhabbet_trip_passengers_uid_column()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload: dict = {
+        "session_id": sid,
+        "conversation_id": cid,
+        col: pid,
+        "driver_user_id": did,
+        "status": "accepted",
+        "updated_at": now_iso,
+    }
+    listing_id = str((session_row or {}).get("listing_id") or (invite_row or {}).get("listing_id") or "").strip().lower()
+    if listing_id:
+        payload["listing_id"] = listing_id
+    for key in (
+        "pickup_lat",
+        "pickup_lng",
+        "pickup_text",
+        "dropoff_lat",
+        "dropoff_lng",
+        "dropoff_text",
+        "agreed_price",
+    ):
+        val = (session_row or {}).get(key)
+        if val is not None:
+            payload[key] = val
+    pay = _canonical_passenger_payment_method((session_row or {}).get("payment_method"))
+    if pay is not None:
+        payload["payment_method"] = pay
+    try:
+        supabase.table("muhabbet_trip_passengers").upsert(payload, on_conflict=f"session_id,{col}").execute()
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] passenger_upsert_failed session_id=%s passenger=%s err=%s", sid[:12], pid[:12], e)
+        raise _MuhabbetTripOpError("passenger_upsert_failed", "Yolcu oturuma eklenemedi.", 500) from e
+
+
+def _muhabbet_trip_accept_seat_invite(uid: str, session_id: str, invite_id: str) -> tuple[dict, dict]:
+    invite = _muhabbet_trip_fetch_seat_invite_or_404(session_id, invite_id)
+    uid_lo = str(uid or "").strip().lower()
+    passenger_uid = str(invite.get("passenger_user_id") or "").strip().lower()
+    if uid_lo != passenger_uid:
+        raise _MuhabbetTripOpError("passenger_required", "Bu daveti yalnızca davet edilen yolcu kabul edebilir.", 403)
+    row = _muhabbet_trip_session_row_for_seat_invite(session_id)
+    st_inv = str(invite.get("status") or "").strip().lower()
+    if st_inv == "accepted":
+        return invite, row
+    if st_inv == "declined":
+        return invite, row
+    if st_inv in ("cancelled", "expired"):
+        return invite, row
+    if st_inv != "pending":
+        raise _MuhabbetTripOpError("not_pending", "Davet artık geçerli değil.", 409)
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    exp = _muhabbet_trip_parse_dt(invite.get("expires_at"))
+    if exp and exp <= now:
+        _muhabbet_trip_seat_invite_update(
+            str(invite.get("id") or ""),
+            {"status": "expired", "responded_at": now_iso, "updated_at": now_iso},
+        )
+        raise _MuhabbetTripOpError("invite_expired", "Boş koltuk davetinin süresi doldu.", 410) from None
+
+    if _muhabbet_trip_session_row_terminal_status(row):
+        raise _MuhabbetTripOpError("not_active", "Kapanmış oturum için davet kabul edilemez.", 400)
+    if str(row.get("depart_confirmed_at") or "").strip():
+        raise _MuhabbetTripOpError("departed", "Yola çıkıldıktan sonra davet kabul edilemez.", 400)
+    ride_status = str(row.get("ride_status") or "waiting").strip().lower()
+    if ride_status in ("active", "finished", "cancelled", "expired"):
+        raise _MuhabbetTripOpError("not_active", "Bu aşamada davet kabul edilemez.", 400)
+
+    joined = _muhabbet_trip_joined_passenger_ids(row)
+    already_joined = passenger_uid in joined
+    seat_capacity = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
+    if not already_joined and len(joined) >= seat_capacity:
+        _muhabbet_trip_seat_invite_update(
+            str(invite.get("id") or ""),
+            {
+                "status": "cancelled",
+                "responded_at": now_iso,
+                "response_reason": "capacity_full_on_accept",
+                "updated_at": now_iso,
+            },
+        )
+        _log_muhabbet_trip_event(
+            "capacity_full_on_accept",
+            {
+                "session_id": str(session_id or "").strip().lower(),
+                "invite_id": str(invite.get("id") or "").strip().lower(),
+                "passenger_user_id": passenger_uid,
+                "seat_capacity": seat_capacity,
+                "joined_count": len(joined),
+            },
+        )
+        raise _MuhabbetTripOpError("capacity_full", "Boş koltuk kalmadı.", 409) from None
+
+    next_row = row
+    if not already_joined:
+        acc = _muhabbet_json_uuid_list(row.get("accepted_passenger_ids"))
+        if passenger_uid not in acc:
+            acc.append(passenger_uid)
+        pickup_order = _muhabbet_json_uuid_list(row.get("pickup_order"))
+        if not pickup_order:
+            pickup_order = list(acc)
+        elif passenger_uid not in pickup_order:
+            pickup_order.append(passenger_uid)
+        patch = {
+            "accepted_passenger_ids": acc,
+            "pickup_order": pickup_order[:seat_capacity],
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", str(session_id or "").strip().lower()).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        _muhabbet_trip_seat_invite_upsert_passenger(next_row, invite)
+
+    accepted = _muhabbet_trip_seat_invite_update(
+        str(invite.get("id") or ""),
+        {"status": "accepted", "responded_at": now_iso, "updated_at": now_iso},
+    )
+    logger.info("[muhabbet_trip_seat_invite] accepted session_id=%s passenger=%s", str(session_id or "")[:12], passenger_uid[:12])
+    return accepted, next_row
+
+
+def _muhabbet_trip_decline_seat_invite(uid: str, session_id: str, invite_id: str) -> tuple[dict, dict]:
+    invite = _muhabbet_trip_fetch_seat_invite_or_404(session_id, invite_id)
+    uid_lo = str(uid or "").strip().lower()
+    passenger_uid = str(invite.get("passenger_user_id") or "").strip().lower()
+    if uid_lo != passenger_uid:
+        raise _MuhabbetTripOpError("passenger_required", "Bu daveti yalnızca davet edilen yolcu yanıtlayabilir.", 403)
+    row = _muhabbet_trip_session_row_for_seat_invite(session_id)
+    st_inv = str(invite.get("status") or "").strip().lower()
+    if st_inv == "pending":
+        now_iso = datetime.now(timezone.utc).isoformat()
+        invite = _muhabbet_trip_seat_invite_update(
+            str(invite.get("id") or ""),
+            {"status": "declined", "responded_at": now_iso, "updated_at": now_iso},
+        )
+        logger.info("[muhabbet_trip_seat_invite] declined session_id=%s passenger=%s", str(session_id or "")[:12], passenger_uid[:12])
+    return invite, row
+
+
+def _muhabbet_trip_seat_candidates_payload(session_row: dict) -> dict:
+    sid = str((session_row or {}).get("id") or "").strip().lower()
+    listing_id = str((session_row or {}).get("listing_id") or "").strip().lower()
+    driver_id = str((session_row or {}).get("driver_id") or "").strip().lower()
+    seat_capacity = _muhabbet_trip_seat_capacity_int((session_row or {}).get("seat_capacity"))
+    joined = _muhabbet_trip_joined_passenger_ids(session_row)
+    joined_count = len(joined)
+    available_seats = max(0, seat_capacity - joined_count)
+
+    terminal = _muhabbet_trip_session_row_terminal_status(session_row)
+    departed = bool(str((session_row or {}).get("depart_confirmed_at") or "").strip())
+    ride_status = str((session_row or {}).get("ride_status") or "waiting").strip().lower()
+    session_closed_for_invites = terminal or departed or ride_status in ("active", "finished", "cancelled", "expired")
+    invite_status_by_match = _muhabbet_trip_seat_candidate_invite_statuses(sid)
+
+    request_rows: list[dict] = []
+    if listing_id:
+        try:
+            res = (
+                supabase.table("listing_match_requests")
+                .select("id, sender_user_id, receiver_user_id, conversation_id, updated_at, created_at")
+                .eq("listing_id", listing_id)
+                .eq("status", "accepted")
+                .order("updated_at", desc=False)
+                .execute()
+            )
+            request_rows = [dict(x) for x in res.data or []]
+        except Exception as e:
+            logger.warning("[muhabbet_trip_seat_candidates] accepted_requests_failed listing_id=%s err=%s", listing_id[:12], e)
+
+    passenger_ids: list[str] = []
+    extracted: list[dict] = []
+    seen_passengers: set[str] = set()
+    for req in request_rows:
+        sender = str(req.get("sender_user_id") or "").strip().lower()
+        receiver = str(req.get("receiver_user_id") or "").strip().lower()
+        passenger_uid = sender if sender and sender != driver_id else receiver if receiver and receiver != driver_id else ""
+        if not passenger_uid or passenger_uid == driver_id:
+            continue
+        if passenger_uid in seen_passengers:
+            continue
+        seen_passengers.add(passenger_uid)
+        passenger_ids.append(passenger_uid)
+        extracted.append({**req, "passenger_user_id": passenger_uid})
+
+    name_map = _muhabbet_listing_name_map_for_ids(passenger_ids) if passenger_ids else {}
+    candidates: list[dict] = []
+    for req in extracted:
+        passenger_uid = str(req.get("passenger_user_id") or "").strip().lower()
+        match_request_id = str(req.get("id") or "").strip().lower()
+        invite_status = invite_status_by_match.get(match_request_id)
+        already_in_session = passenger_uid in joined
+        eligible = True
+        reason = None
+        if already_in_session:
+            eligible = False
+            reason = "already_in_session"
+        elif invite_status == "pending":
+            eligible = False
+            reason = "pending_invite"
+        elif invite_status == "accepted":
+            eligible = False
+            reason = "accepted_invite"
+        elif available_seats <= 0:
+            eligible = False
+            reason = "capacity_full"
+        elif session_closed_for_invites:
+            eligible = False
+            reason = "session_not_invitable"
+        candidates.append(
+            {
+                "match_request_id": match_request_id,
+                "conversation_id": str(req.get("conversation_id") or "").strip().lower() or None,
+                "passenger_user_id": passenger_uid,
+                "display_name": name_map.get(passenger_uid) or "Leylek yolcusu",
+                "already_in_session": already_in_session,
+                "invite_status": invite_status,
+                "eligible": eligible,
+                "reason": reason,
+            }
+        )
+
+    return {
+        "success": True,
+        "candidates": candidates,
+        "capacity": {
+            "seat_capacity": seat_capacity,
+            "joined_count": joined_count,
+            "available_seats": available_seats,
+        },
+    }
+
+
 def _muhabbet_trip_has_boarding_started_row(row: dict) -> bool:
     """Zorla bitir / süre: tek yolcuda boarding_qr_confirmed_at; çoklu yolcuda boarded_passenger_ids."""
     if not isinstance(row, dict):
@@ -26195,9 +26706,9 @@ def _muhabbet_trip_passenger_summary(session_id: str, session_row: dict | None =
 
 
 def _muhabbet_trip_passengers_uid_column() -> str:
-    """Şemada passenger_user_id yerine user_id / passenger_id kullanılıyorsa env ile seçilir."""
+    """Passenger leg user kolonu; özel şemalar env override ile seçilir."""
     v = (os.getenv("MUHABBET_TRIP_PASSENGERS_USER_COLUMN") or "").strip()
-    return v if v else "user_id"
+    return v if v else "passenger_user_id"
 
 
 def _muhabbet_passenger_uid_from_row(pr_row: dict) -> str:
@@ -26587,7 +27098,7 @@ def _muhabbet_trip_passengers_update_for_user(session_id: str, passenger_user_id
 
 
 def _muhabbet_trip_passenger_upsert_for_session(session_row: dict, conversion_row: dict) -> None:
-    """Accept / session oluşturma sonrası tek yolcu satırı. Yolcu FK kolon adı: MUHABBET_TRIP_PASSENGERS_USER_COLUMN (varsayılan user_id)."""
+    """Accept / session oluşturma sonrası tek yolcu satırı. Yolcu FK kolonu env ile override edilebilir."""
     sid = str((session_row or {}).get("id") or "").strip().lower()
     cid = str((conversion_row or {}).get("conversation_id") or (session_row or {}).get("conversation_id") or "").strip().lower()
     pid = str((session_row or {}).get("passenger_id") or (conversion_row or {}).get("passenger_id") or "").strip().lower()
@@ -27080,71 +27591,6 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
         if _muhabbet_trip_session_row_terminal_status(out) and sid_ex:
             out = _muhabbet_trip_session_revive_pre_boarding_terminal(sid_ex, out, row)
             return out
-        seat_cap_ex = _muhabbet_trip_seat_capacity_int(out.get("seat_capacity") or (row or {}).get("seat_capacity") or 1)
-        listing_id_ex = str(out.get("listing_id") or (row or {}).get("listing_id") or "").strip().lower()
-        driver_id_ex = str(out.get("driver_id") or (row or {}).get("driver_id") or "").strip().lower()
-        passenger_id_ex = str(out.get("passenger_id") or (row or {}).get("passenger_id") or "").strip().lower()
-        rs_ex = str(out.get("ride_status") or "waiting").strip().lower()
-        can_hydrate_existing = (
-            seat_cap_ex > 1
-            and listing_id_ex
-            and driver_id_ex
-            and passenger_id_ex
-            and not str(out.get("depart_confirmed_at") or "").strip()
-            and not _muhabbet_trip_has_boarding_started_row(out)
-            and rs_ex not in ("boarding", "active", "finished", "cancelled", "expired")
-        )
-        if can_hydrate_existing:
-            existing_contexts = _muhabbet_listing_accepted_passenger_context(listing_id_ex, driver_id_ex, passenger_id_ex)
-            if len(existing_contexts) > seat_cap_ex:
-                logger.info(
-                    "[muhabbet_trip_session] accepted_context_capacity_clamped listing_id=%s count=%s seat_cap=%s",
-                    listing_id_ex[:12],
-                    len(existing_contexts),
-                    seat_cap_ex,
-                )
-                cur_idx = next(
-                    (
-                        i
-                        for i, ctx in enumerate(existing_contexts)
-                        if str(ctx.get("passenger_user_id") or "").strip().lower() == passenger_id_ex
-                    ),
-                    -1,
-                )
-                existing_contexts = existing_contexts[:seat_cap_ex]
-                if cur_idx >= seat_cap_ex and passenger_id_ex:
-                    existing_contexts[-1] = {
-                        "passenger_user_id": passenger_id_ex,
-                        "conversation_id": row.get("conversation_id"),
-                        "request_id": row.get("listing_match_request_id") or row.get("id"),
-                    }
-            acc_ex = _muhabbet_json_uuid_list(out.get("accepted_passenger_ids"))
-            if not acc_ex and passenger_id_ex:
-                acc_ex = [passenger_id_ex]
-            hyd_ex = list(acc_ex)
-            for ctx in existing_contexts:
-                pid_ctx = str(ctx.get("passenger_user_id") or "").strip().lower()
-                if pid_ctx and pid_ctx not in hyd_ex and len(hyd_ex) < seat_cap_ex:
-                    hyd_ex.append(pid_ctx)
-            if hyd_ex != acc_ex:
-                po_ex = _muhabbet_json_uuid_list(out.get("pickup_order")) or list(acc_ex)
-                for pid_po in hyd_ex:
-                    if pid_po not in po_ex:
-                        po_ex.append(pid_po)
-                patch_ex = {
-                    "accepted_passenger_ids": hyd_ex,
-                    "pickup_order": po_ex[:seat_cap_ex],
-                    "seat_capacity": seat_cap_ex,
-                    "ride_status": "waiting",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-                upd_ex = supabase.table("muhabbet_trip_sessions").update(patch_ex).eq("id", sid_ex).execute()
-                out = dict(upd_ex.data[0]) if upd_ex.data else {**out, **patch_ex}
-                logger.info("[muhabbet_trip_session] hydrated_existing_passengers session_id=%s count=%s", sid_ex, len(hyd_ex))
-            try:
-                _muhabbet_trip_passenger_upsert_contexts_for_session(out, existing_contexts)
-            except Exception as e:
-                logger.warning("[muhabbet_trip_passengers] bulk_upsert_failed session_id=%s err=%s", sid_ex, e)
         logger.info("[muhabbet_trip_session] ready session_id=%s request_id=%s", sid_ex, rid)
         try:
             _muhabbet_trip_passenger_upsert_for_session(out, row)
@@ -27159,34 +27605,6 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
     listing_id = str(hydrated.get("listing_id") or (row or {}).get("listing_id") or "").strip().lower()
     driver_id = str((row or {}).get("driver_id") or "").strip().lower()
     passenger_id = str((row or {}).get("passenger_id") or "").strip().lower()
-    accepted_contexts = (
-        _muhabbet_listing_accepted_passenger_context(listing_id, driver_id, passenger_id)
-        if seat_cap > 1 and listing_id and driver_id and passenger_id
-        else []
-    )
-    if len(accepted_contexts) > seat_cap:
-        logger.info(
-            "[muhabbet_trip_session] accepted_context_capacity_clamped listing_id=%s count=%s seat_cap=%s",
-            listing_id[:12],
-            len(accepted_contexts),
-            seat_cap,
-        )
-        cur_idx = next(
-            (i for i, ctx in enumerate(accepted_contexts) if str(ctx.get("passenger_user_id") or "").strip().lower() == passenger_id),
-            -1,
-        )
-        accepted_contexts = accepted_contexts[:seat_cap]
-        if cur_idx >= seat_cap and passenger_id:
-            accepted_contexts[-1] = {
-                "passenger_user_id": passenger_id,
-                "conversation_id": row.get("conversation_id"),
-                "request_id": row.get("listing_match_request_id") or row.get("id"),
-            }
-    accepted_ids_from_context = [
-        str(ctx.get("passenger_user_id") or "").strip().lower()
-        for ctx in accepted_contexts
-        if str(ctx.get("passenger_user_id") or "").strip()
-    ]
 
     if seat_cap > 1 and listing_id and driver_id and passenger_id:
         open_sess = _muhabbet_trip_open_session_for_listing_driver(listing_id, driver_id)
@@ -27215,44 +27633,18 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
                         rid,
                     )
                     return dict(open_sess)
-                hydrated_acc = list(acc)
-                hydrated_contexts = accepted_contexts if can_hydrate_open else []
-                if hydrated_contexts:
-                    for ctx in hydrated_contexts:
-                        pid_ctx = str(ctx.get("passenger_user_id") or "").strip().lower()
-                        if pid_ctx and pid_ctx not in hydrated_acc and len(hydrated_acc) < seat_cap:
-                            hydrated_acc.append(pid_ctx)
                 if passenger_id in acc:
                     out = dict(open_sess)
-                    if can_hydrate_open and hydrated_acc != acc:
-                        sid_hyd = str(open_sess.get("id") or "").strip().lower()
-                        po_hyd = _muhabbet_json_uuid_list(open_sess.get("pickup_order")) or list(acc)
-                        for pid_hyd in hydrated_acc:
-                            if pid_hyd not in po_hyd:
-                                po_hyd.append(pid_hyd)
-                        patch_hyd = {
-                            "accepted_passenger_ids": hydrated_acc,
-                            "pickup_order": po_hyd[:seat_cap],
-                            "seat_capacity": seat_cap,
-                            "ride_status": "waiting",
-                            "updated_at": now_iso,
-                        }
-                        upd_hyd = supabase.table("muhabbet_trip_sessions").update(patch_hyd).eq("id", sid_hyd).execute()
-                        out = dict(upd_hyd.data[0]) if upd_hyd.data else {**open_sess, **patch_hyd}
-                        logger.info("[muhabbet_trip_session] hydrated_existing_passengers session_id=%s count=%s", sid_hyd, len(hydrated_acc))
                     try:
-                        if hydrated_contexts:
-                            _muhabbet_trip_passenger_upsert_contexts_for_session(out, hydrated_contexts)
-                        elif can_hydrate_open:
+                        if can_hydrate_open:
                             _muhabbet_trip_passenger_upsert_for_session(out, row)
                     except Exception as e:
                         logger.warning("[muhabbet_trip_passengers] upsert_failed session_id=%s err=%s", out.get("id"), e)
                     return out
                 if len(acc) >= seat_cap:
                     raise HTTPException(status_code=409, detail="Bu ilan için yolcu kontenjanı dolu.")
-                new_acc = list(hydrated_acc)
-                if passenger_id not in new_acc and len(new_acc) < seat_cap:
-                    new_acc.append(passenger_id)
+                new_acc = list(acc)
+                new_acc.append(passenger_id)
                 brd = _muhabbet_json_uuid_list(open_sess.get("boarded_passenger_ids"))
                 sid_merge = str(open_sess.get("id") or "").strip().lower()
                 po_prev = _muhabbet_json_uuid_list(open_sess.get("pickup_order"))
@@ -27275,15 +27667,12 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
                 out = dict(upd.data[0]) if upd.data else {**open_sess, **patch}
                 logger.info("[muhabbet_trip_session] merged_passenger session_id=%s request_id=%s", out.get("id"), rid)
                 try:
-                    if hydrated_contexts:
-                        _muhabbet_trip_passenger_upsert_contexts_for_session(out, hydrated_contexts)
-                    else:
-                        _muhabbet_trip_passenger_upsert_for_session(out, row)
+                    _muhabbet_trip_passenger_upsert_for_session(out, row)
                 except Exception as e:
                     logger.warning("[muhabbet_trip_passengers] upsert_failed session_id=%s err=%s", out.get("id"), e)
                 return out
 
-    acc_list = accepted_ids_from_context or ([passenger_id] if passenger_id else [])
+    acc_list = [passenger_id] if passenger_id else []
     insert_payload = {
         "conversion_request_id": rid,
         "conversation_id": row.get("conversation_id"),
@@ -27312,8 +27701,6 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
     logger.info("[muhabbet_trip_session] ready session_id=%s request_id=%s", out.get("id"), rid)
 
     try:
-        if accepted_contexts:
-            _muhabbet_trip_passenger_upsert_contexts_for_session(out, accepted_contexts)
         _muhabbet_trip_passenger_upsert_for_session(out, row)
     except Exception as e:
         logger.warning("[muhabbet_trip_passengers] upsert_failed session_id=%s err=%s", out.get("id"), e)
@@ -28443,6 +28830,107 @@ async def muhabbet_trip_session_active_get(
         )
         candidates = [dict(x) for x in ((passenger_rows.data or []) + (driver_rows.data or []))]
         if not candidates:
+            def is_open_active_session(row: dict) -> bool:
+                st = str((row or {}).get("status") or "").strip().lower()
+                rs = str((row or {}).get("ride_status") or "waiting").strip().lower()
+                return st in ("ready", "started", "active") and rs not in ("cancelled", "finished", "expired")
+
+            leg_session_row: dict | None = None
+            leg_conversation_id = ""
+            try:
+                uid_col = _muhabbet_trip_passengers_uid_column()
+                leg_res = (
+                    supabase.table("muhabbet_trip_passengers")
+                    .select("*")
+                    .eq(uid_col, uid_lo)
+                    .in_(
+                        "status",
+                        ["accepted", "waiting_pickup", "pickup_active", "boarded", "onboard", "completed"],
+                    )
+                    .order("updated_at", desc=True)
+                    .limit(20)
+                    .execute()
+                )
+                leg_rows = [dict(x) for x in (leg_res.data or [])]
+                leg_rows.sort(
+                    key=lambda x: (
+                        0 if str(x.get("status") or "").strip().lower() == "completed" else 1,
+                        str(x.get("updated_at") or x.get("created_at") or ""),
+                    ),
+                    reverse=True,
+                )
+                for leg in leg_rows:
+                    sid_leg = str(leg.get("session_id") or "").strip().lower()
+                    if not sid_leg:
+                        continue
+                    sess_res = (
+                        supabase.table("muhabbet_trip_sessions")
+                        .select("*")
+                        .eq("id", sid_leg)
+                        .limit(1)
+                        .execute()
+                    )
+                    if not sess_res.data:
+                        continue
+                    sess_row = dict(sess_res.data[0])
+                    if not is_open_active_session(sess_row):
+                        continue
+                    leg_session_row = sess_row
+                    leg_conversation_id = str(leg.get("conversation_id") or "").strip().lower()
+                    break
+            except Exception as le:
+                logger.debug("[muhabbet_trip_state] endpoint=active passenger_leg_lookup_skipped user_id=%s err=%s", uid_lo[:13], le)
+
+            if leg_session_row:
+                response_row = dict(leg_session_row)
+                original_cid = str(response_row.get("conversation_id") or "").strip().lower()
+                if leg_conversation_id and leg_conversation_id != original_cid:
+                    response_row["original_conversation_id"] = response_row.get("conversation_id")
+                    response_row["conversation_id"] = leg_conversation_id
+                session_public = _muhabbet_trip_session_public(response_row)
+                if response_row.get("original_conversation_id"):
+                    session_public["original_conversation_id"] = response_row.get("original_conversation_id")
+                logger.info(
+                    "[muhabbet_trip_state] endpoint=active user_id=%s selected_session_id=%s conversation_id=%s listing_id=%s status=%s ride_status=%s candidate_count=%s source=passenger_leg",
+                    uid_lo,
+                    str(response_row.get("id") or ""),
+                    str(response_row.get("conversation_id") or ""),
+                    str(response_row.get("listing_id") or ""),
+                    str(response_row.get("status") or ""),
+                    str(response_row.get("ride_status") or ""),
+                    1,
+                )
+                return {"success": True, "session": session_public}
+
+            try:
+                accepted_res = (
+                    supabase.table("muhabbet_trip_sessions")
+                    .select("*")
+                    .in_("status", ["ready", "started", "active"])
+                    .order("updated_at", desc=True)
+                    .limit(50)
+                    .execute()
+                )
+                for raw in accepted_res.data or []:
+                    row = dict(raw)
+                    if uid_lo not in set(_muhabbet_json_uuid_list(row.get("accepted_passenger_ids"))):
+                        continue
+                    if not is_open_active_session(row):
+                        continue
+                    logger.info(
+                        "[muhabbet_trip_state] endpoint=active user_id=%s selected_session_id=%s conversation_id=%s listing_id=%s status=%s ride_status=%s candidate_count=%s source=accepted_passenger_ids",
+                        uid_lo,
+                        str(row.get("id") or ""),
+                        str(row.get("conversation_id") or ""),
+                        str(row.get("listing_id") or ""),
+                        str(row.get("status") or ""),
+                        str(row.get("ride_status") or ""),
+                        1,
+                    )
+                    return {"success": True, "session": _muhabbet_trip_session_public(row)}
+            except Exception as ae:
+                logger.debug("[muhabbet_trip_state] endpoint=active accepted_ids_lookup_skipped user_id=%s err=%s", uid_lo[:13], ae)
+
             return {"success": True, "session": None}
         candidates.sort(key=lambda x: str(x.get("updated_at") or x.get("created_at") or ""), reverse=True)
         sel = candidates[0]
@@ -28460,6 +28948,22 @@ async def muhabbet_trip_session_active_get(
     except Exception as e:
         logger.warning("muhabbet_trip_session_active_get: %s", e)
         raise HTTPException(status_code=500, detail="Aktif Muhabbet yolculuğu alınamadı")
+
+
+@api_router.get("/muhabbet/trip-sessions/{session_id}/seat-candidates")
+async def muhabbet_trip_seat_candidates_get(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    uid_lo = str(uid or "").strip().lower()
+    driver_id = str(row.get("driver_id") or "").strip().lower()
+    if uid_lo != driver_id:
+        raise HTTPException(status_code=403, detail="Boş koltuk adaylarını yalnızca sürücü görüntüleyebilir.")
+    if not str(row.get("listing_id") or "").strip():
+        raise HTTPException(status_code=400, detail="Bu Yol Oturumu bir ilana bağlı değil.")
+    return _muhabbet_trip_seat_candidates_payload(row)
 
 
 @api_router.get("/muhabbet/trip-sessions/{session_id}")
@@ -29347,6 +29851,7 @@ async def _muhabbet_trip_depart_apply(uid: str, session_id: str) -> dict:
     if st in ("finished", "cancelled", "expired"):
         raise _MuhabbetTripOpError("not_active", "Kapanmış oturum için yola çıkış kararı verilemez.", 400)
     if str(row.get("depart_confirmed_at") or "").strip():
+        await _cancel_pending_seat_invites_for_session(sid, "driver_departed")
         return row
 
     passenger_rows = _muhabbet_trip_passenger_rows_for_session(sid)
@@ -29402,6 +29907,7 @@ async def _muhabbet_trip_depart_apply(uid: str, session_id: str) -> dict:
             "no_show_count": len(no_show_ids),
         },
     )
+    await _cancel_pending_seat_invites_for_session(sid, "driver_departed")
     return next_row
 
 
@@ -29901,6 +30407,10 @@ class MuhabbetTripActivePickupBody(BaseModel):
     passenger_user_id: str
 
 
+class MuhabbetTripSeatInviteCreateBody(BaseModel):
+    match_request_id: str
+
+
 class MuhabbetTripCancelBody(BaseModel):
     reason: Optional[str] = None
 
@@ -30240,6 +30750,126 @@ async def muhabbet_trip_active_pickup_post(
         raise
     except _MuhabbetTripOpError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/seat-invites")
+async def muhabbet_trip_seat_invites_post(
+    session_id: str,
+    body: MuhabbetTripSeatInviteCreateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    sid = str(session_id or "").strip().lower()
+    try:
+        invite_row, session_row, reused = _muhabbet_trip_create_seat_invite(uid, session_id, body.match_request_id)
+        invite = _muhabbet_trip_seat_invite_public(invite_row)
+        passenger_uid = str(invite.get("passenger_user_id") or "").strip().lower()
+        payload = {
+            "invite": invite,
+            "session_id": sid,
+            "session": _muhabbet_trip_session_public(session_row),
+            "reused": reused,
+        }
+        if passenger_uid:
+            try:
+                await emit_socket_event_to_user(passenger_uid, "muhabbet_trip_seat_invite_received", payload)
+            except Exception as se:
+                logger.warning("[muhabbet_trip_seat_invite] passenger_emit_failed session_id=%s err=%s", sid[:12], se)
+        try:
+            await _broadcast_muhabbet_trip_session_state(
+                session_row,
+                "muhabbet_trip_session_updated",
+                socket_reason="seat_invite_created",
+            )
+        except Exception as be:
+            logger.warning("[muhabbet_trip_seat_invite] session_broadcast_failed session_id=%s err=%s", sid[:12], be)
+        try:
+            await notify_trip_session_updated(sid, "seat_invite_created", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] seat_invite_created notify failed: %s", ne)
+        return {"success": True, "invite": invite, "session": payload["session"]}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/seat-invites/{invite_id}/accept")
+async def muhabbet_trip_seat_invite_accept_post(
+    session_id: str,
+    invite_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    sid = str(session_id or "").strip().lower()
+    try:
+        invite_row, session_row = _muhabbet_trip_accept_seat_invite(uid, session_id, invite_id)
+        invite = _muhabbet_trip_seat_invite_public(invite_row)
+        session_public = _muhabbet_trip_session_public(session_row)
+        payload = {"invite": invite, "session_id": sid, "session": session_public}
+        driver_uid = str(session_row.get("driver_id") or "").strip().lower()
+        try:
+            await sio.emit("muhabbet_trip_seat_invite_accepted", payload, room=muhabbet_trip_room(sid))
+            if driver_uid:
+                await emit_socket_event_to_user(driver_uid, "muhabbet_trip_seat_invite_accepted", payload)
+        except Exception as se:
+            logger.warning("[muhabbet_trip_seat_invite] accepted_emit_failed session_id=%s err=%s", sid[:12], se)
+        try:
+            await _broadcast_muhabbet_trip_session_state(
+                session_row,
+                "muhabbet_trip_session_updated",
+                socket_reason="seat_invite_accepted",
+            )
+        except Exception as be:
+            logger.warning("[muhabbet_trip_seat_invite] accepted_broadcast_failed session_id=%s err=%s", sid[:12], be)
+        try:
+            await notify_trip_session_updated(sid, "seat_invite_accepted", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] seat_invite_accepted notify failed: %s", ne)
+        return {"success": True, "invite": invite, "session": session_public}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
+
+
+@api_router.post("/muhabbet/trip-sessions/{session_id}/seat-invites/{invite_id}/decline")
+async def muhabbet_trip_seat_invite_decline_post(
+    session_id: str,
+    invite_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    sid = str(session_id or "").strip().lower()
+    try:
+        invite_row, session_row = _muhabbet_trip_decline_seat_invite(uid, session_id, invite_id)
+        invite = _muhabbet_trip_seat_invite_public(invite_row)
+        session_public = _muhabbet_trip_session_public(session_row)
+        payload = {"invite": invite, "session_id": sid, "session": session_public}
+        driver_uid = str(session_row.get("driver_id") or "").strip().lower()
+        try:
+            await sio.emit("muhabbet_trip_seat_invite_declined", payload, room=muhabbet_trip_room(sid))
+            if driver_uid:
+                await emit_socket_event_to_user(driver_uid, "muhabbet_trip_seat_invite_declined", payload)
+        except Exception as se:
+            logger.warning("[muhabbet_trip_seat_invite] declined_emit_failed session_id=%s err=%s", sid[:12], se)
+        try:
+            await _broadcast_muhabbet_trip_session_state(
+                session_row,
+                "muhabbet_trip_session_updated",
+                socket_reason="seat_invite_declined",
+            )
+        except Exception as be:
+            logger.warning("[muhabbet_trip_seat_invite] declined_broadcast_failed session_id=%s err=%s", sid[:12], be)
+        try:
+            await notify_trip_session_updated(sid, "seat_invite_declined", uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] seat_invite_declined notify failed: %s", ne)
+        return {"success": True, "invite": invite, "session": session_public}
+    except HTTPException:
+        raise
+    except _MuhabbetTripOpError as e:
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/depart")
