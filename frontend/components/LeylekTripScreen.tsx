@@ -33,6 +33,7 @@ import { subscribeTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
 import { parseGender } from '../lib/passengerFieldHelpers';
 import type {
   MuhabbetTripCallSocketPayload,
+  MuhabbetTripPassengerLeg,
   MuhabbetTripSession,
   MuhabbetTripSessionSocketPayload,
 } from '../lib/muhabbetTripTypes';
@@ -52,6 +53,12 @@ type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbe
 type MuhabbetCallUiState = 'idle' | 'starting' | 'outgoing' | 'incoming' | 'active';
 type CallState = MuhabbetCallUiState;
 type QrMode = 'boarding' | 'finish';
+type PassengerLegUi = MuhabbetTripPassengerLeg & {
+  passenger_user_id: string;
+  display_name: string;
+  status: string;
+  seat_index: number | null;
+};
 type ForceFinishPrompt = {
   requesterUserId: string;
   targetUserId: string;
@@ -445,6 +452,41 @@ function displayStatus(status?: string | null): { label: string; detail: string 
   }
 }
 
+function normalizeTripPassengerStatus(status?: string | null): string {
+  const st = String(status || '').trim().toLowerCase();
+  if (st === 'boarding') return 'pickup_active';
+  if (st === 'onboard') return 'boarded';
+  return st || 'accepted';
+}
+
+function passengerStatusMeta(status?: string | null): {
+  label: string;
+  tone: 'waiting' | 'active' | 'boarded' | 'done' | 'closed';
+} {
+  const st = normalizeTripPassengerStatus(status);
+  if (st === 'pickup_active') return { label: 'Sürücü geliyor', tone: 'active' };
+  if (st === 'boarded') return { label: 'Araçta', tone: 'boarded' };
+  if (st === 'completed') return { label: 'Tamamlandı', tone: 'done' };
+  if (st === 'cancelled' || st === 'no_show') return { label: 'Kapandı', tone: 'closed' };
+  return { label: 'Bekliyor', tone: 'waiting' };
+}
+
+function passengerStatusPillStyle(tone: 'waiting' | 'active' | 'boarded' | 'done' | 'closed') {
+  if (tone === 'active') return styles.passengerStatus_active;
+  if (tone === 'boarded') return styles.passengerStatus_boarded;
+  if (tone === 'done') return styles.passengerStatus_done;
+  if (tone === 'closed') return styles.passengerStatus_closed;
+  return styles.passengerStatus_waiting;
+}
+
+function passengerStatusTextStyle(tone: 'waiting' | 'active' | 'boarded' | 'done' | 'closed') {
+  if (tone === 'active') return styles.passengerStatusText_active;
+  if (tone === 'boarded') return styles.passengerStatusText_boarded;
+  if (tone === 'done') return styles.passengerStatusText_done;
+  if (tone === 'closed') return styles.passengerStatusText_closed;
+  return styles.passengerStatusText_waiting;
+}
+
 async function currentUserId(): Promise<string> {
   try {
     const raw = await getPersistedUserRaw();
@@ -601,6 +643,59 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = TERMINAL_TRIP_STATUSES.has(String(session?.status || '').trim().toLowerCase());
+  const tripPassengerLegs = useMemo<PassengerLegUi[]>(() => {
+    if (!session) return [];
+    const rows = Array.isArray(session.passengers) ? session.passengers : [];
+    const sourceRows: MuhabbetTripPassengerLeg[] =
+      rows.length > 0
+        ? rows
+        : session.passenger_id
+          ? [
+              {
+                passenger_user_id: session.passenger_id,
+                display_name: 'Yolcu',
+                status:
+                  session.status === 'finished'
+                    ? 'completed'
+                    : session.status === 'cancelled' || session.status === 'expired'
+                      ? 'cancelled'
+                      : session.boarding_qr_confirmed_at
+                        ? 'boarded'
+                        : 'accepted',
+                seat_index: 1,
+                boarded_at: session.boarding_qr_confirmed_at,
+                cancelled_at: session.cancelled_at || session.expired_at,
+              },
+            ]
+          : [];
+    return sourceRows
+      .map((leg, index) => {
+        const passengerId = String(leg?.passenger_user_id || '').trim().toLowerCase();
+        if (!passengerId) return null;
+        return {
+          ...leg,
+          passenger_user_id: passengerId,
+          display_name: String(leg?.display_name || '').trim() || `Yolcu ${index + 1}`,
+          status: normalizeTripPassengerStatus(leg?.status || leg?.raw_status),
+          seat_index: Number.isFinite(Number(leg?.seat_index)) ? Number(leg?.seat_index) : null,
+        };
+      })
+      .filter((leg): leg is PassengerLegUi => !!leg);
+  }, [session]);
+  const tripPassengerSummary = useMemo(() => {
+    const totalPassengers = tripPassengerLegs.filter((leg) => !['cancelled', 'no_show'].includes(leg.status)).length;
+    const boardedCount = tripPassengerLegs.filter((leg) => leg.status === 'boarded' || leg.status === 'completed').length;
+    const rawSeatCapacity = session?.seat_capacity ?? totalPassengers;
+    const seatCapacity = Math.max(1, Number(rawSeatCapacity || 1));
+    const emptySeats = Math.max(0, seatCapacity - totalPassengers);
+    return { totalPassengers, boardedCount, emptySeats };
+  }, [session?.seat_capacity, tripPassengerLegs]);
+  const visiblePassengerLegs = useMemo(() => {
+    const limit = tripPassengerLegs.length > 3 ? 2 : 3;
+    return tripPassengerLegs.slice(0, limit);
+  }, [tripPassengerLegs]);
+  const hiddenPassengerCount = Math.max(0, tripPassengerLegs.length - visiblePassengerLegs.length);
+  const myPassengerLegId = myId.trim().toLowerCase();
 
   useEffect(() => {
     if (isTerminal) {
@@ -3206,6 +3301,60 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}
       />
+      {tripPassengerLegs.length > 0 ? (
+        <View style={styles.passengerListCard} pointerEvents="box-none">
+          <View style={styles.passengerListHeader}>
+            <View>
+              <Text style={styles.passengerListTitle}>Yolcular</Text>
+              <Text style={styles.passengerListSubtitle}>
+                {tripPassengerSummary.boardedCount}/{tripPassengerSummary.totalPassengers} araçta
+              </Text>
+            </View>
+            <View style={styles.emptySeatPill}>
+              <Ionicons name="people-outline" size={14} color="#5B21B6" />
+              <Text style={styles.emptySeatPillText}>{tripPassengerSummary.emptySeats} boş koltuk</Text>
+            </View>
+          </View>
+          <View style={styles.passengerRows}>
+            {visiblePassengerLegs.map((leg, index) => {
+              const meta = passengerStatusMeta(leg.status);
+              const isMine = myPassengerLegId && leg.passenger_user_id === myPassengerLegId;
+              const isActivePickup =
+                !!session.active_pickup_passenger_id &&
+                leg.passenger_user_id === String(session.active_pickup_passenger_id).trim().toLowerCase();
+              const isNextPickup =
+                !!session.next_pickup_user_id &&
+                leg.passenger_user_id === String(session.next_pickup_user_id).trim().toLowerCase();
+              return (
+                <View key={`${leg.passenger_user_id}-${index}`} style={[styles.passengerRow, isMine && styles.passengerRowMine]}>
+                  <View style={styles.seatBadge}>
+                    <Text style={styles.seatBadgeText}>Koltuk {leg.seat_index || index + 1}</Text>
+                  </View>
+                  <View style={styles.passengerInfo}>
+                    <Text style={styles.passengerName} numberOfLines={1}>
+                      {leg.display_name}
+                    </Text>
+                    <View style={styles.passengerTagRow}>
+                      {isMine ? <Text style={styles.passengerMiniTag}>Sizin durumunuz</Text> : null}
+                      {isActivePickup ? <Text style={styles.passengerMiniTag}>Sürücü bu yolcuya gidiyor</Text> : null}
+                      {isNextPickup ? <Text style={styles.passengerMiniTag}>Önerilen sıradaki</Text> : null}
+                    </View>
+                  </View>
+                  <View style={[styles.passengerStatusPill, passengerStatusPillStyle(meta.tone)]}>
+                    <Text style={[styles.passengerStatusText, passengerStatusTextStyle(meta.tone)]}>{meta.label}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            {hiddenPassengerCount > 0 ? (
+              <View style={styles.passengerMoreRow}>
+                <Ionicons name="ellipsis-horizontal" size={15} color="#6D28D9" />
+                <Text style={styles.passengerMoreText}>+{hiddenPassengerCount} yolcu daha</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
       {boardingMessage ? (
         <View style={styles.boardingToast} pointerEvents="none">
           <Ionicons name="checkmark-circle" size={19} color="#BBF7D0" />
@@ -3423,6 +3572,108 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   resultButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  passengerListCard: {
+    position: 'absolute',
+    top: 206,
+    left: 14,
+    right: 14,
+    zIndex: 80,
+    maxHeight: 196,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,58,237,0.18)',
+    padding: 12,
+    shadowColor: '#312E81',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  passengerListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 9,
+  },
+  passengerListTitle: { color: '#111827', fontSize: 15, fontWeight: '900' },
+  passengerListSubtitle: { marginTop: 2, color: '#64748B', fontSize: 12, fontWeight: '800' },
+  emptySeatPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  emptySeatPillText: { color: '#5B21B6', fontSize: 11, fontWeight: '900' },
+  passengerRows: { gap: 7 },
+  passengerRow: {
+    minHeight: 40,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  passengerMoreRow: {
+    minHeight: 32,
+    borderRadius: 14,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  passengerMoreText: { color: '#6D28D9', fontSize: 11, fontWeight: '900' },
+  passengerRowMine: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  seatBadge: {
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  seatBadgeText: { color: '#3730A3', fontSize: 10, fontWeight: '900' },
+  passengerInfo: { flex: 1, minWidth: 0 },
+  passengerName: { color: '#0F172A', fontSize: 13, fontWeight: '900' },
+  passengerTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 3 },
+  passengerMiniTag: {
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '800',
+    backgroundColor: '#E2E8F0',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  passengerStatusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  passengerStatus_waiting: { backgroundColor: '#FEF3C7' },
+  passengerStatus_active: { backgroundColor: '#DBEAFE' },
+  passengerStatus_boarded: { backgroundColor: '#DCFCE7' },
+  passengerStatus_done: { backgroundColor: '#E0E7FF' },
+  passengerStatus_closed: { backgroundColor: '#F1F5F9' },
+  passengerStatusText: { fontSize: 10, fontWeight: '900' },
+  passengerStatusText_waiting: { color: '#92400E' },
+  passengerStatusText_active: { color: '#1D4ED8' },
+  passengerStatusText_boarded: { color: '#15803D' },
+  passengerStatusText_done: { color: '#3730A3' },
+  passengerStatusText_closed: { color: '#64748B' },
   boardingToast: {
     position: 'absolute',
     top: 54,

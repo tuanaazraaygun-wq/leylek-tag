@@ -4,6 +4,32 @@
  */
 export type MuhabbetTripStatus = 'ready' | 'started' | 'active' | 'cancelled' | 'finished' | 'expired';
 
+export type MuhabbetTripPassengerLeg = {
+  id?: string | null;
+  session_id?: string | null;
+  listing_id?: string | null;
+  conversation_id?: string | null;
+  conversion_request_id?: string | null;
+  seat_index?: number | null;
+  passenger_user_id: string;
+  driver_user_id?: string | null;
+  display_name?: string | null;
+  status?: string | null;
+  raw_status?: string | null;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
+  pickup_text?: string | null;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
+  dropoff_text?: string | null;
+  agreed_price?: number | string | null;
+  payment_method?: 'cash' | 'card' | string | null;
+  boarded_at?: string | null;
+  cancelled_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type MuhabbetTripSession = {
   id: string;
   session_id?: string;
@@ -114,6 +140,10 @@ export type MuhabbetTripSession = {
   next_pickup_user_id?: string | null;
   next_pickup_display_name?: string | null;
   next_pickup_location?: { lat: number; lng: number } | null;
+  active_pickup_passenger_id?: string | null;
+  active_pickup_selected_at?: string | null;
+  active_pickup_selected_by_user_id?: string | null;
+  passengers?: MuhabbetTripPassengerLeg[] | null;
   multi_seat_strings?: {
     phase_line?: string;
     accepted_line?: string;
