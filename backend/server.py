@@ -26031,6 +26031,9 @@ def _muhabbet_trip_multi_seat_public_extra(row: dict) -> dict:
             "next_pickup_user_id": None,
             "next_pickup_display_name": None,
             "next_pickup_location": None,
+            "active_pickup_passenger_id": row.get("active_pickup_passenger_id"),
+            "active_pickup_selected_at": row.get("active_pickup_selected_at"),
+            "active_pickup_selected_by_user_id": row.get("active_pickup_selected_by_user_id"),
             "multi_seat_strings": None,
             "expired_but_extendable": False,
         }
@@ -26080,6 +26083,9 @@ def _muhabbet_trip_multi_seat_public_extra(row: dict) -> dict:
         "next_pickup_user_id": next_uid or None,
         "next_pickup_display_name": next_name or None,
         "next_pickup_location": next_loc,
+        "active_pickup_passenger_id": row.get("active_pickup_passenger_id"),
+        "active_pickup_selected_at": row.get("active_pickup_selected_at"),
+        "active_pickup_selected_by_user_id": row.get("active_pickup_selected_by_user_id"),
         "multi_seat_strings": {
             "phase_line": phase_msg,
             "accepted_line": waiting_line,
@@ -26112,9 +26118,9 @@ def _muhabbet_trip_passenger_summary(session_id: str, session_row: dict | None =
         st = str(pr.get("status") or "").strip().lower()
         if st in ("cancelled", "no_show"):
             continue
-        if st in ("accepted", "boarding", "onboard", "completed"):
+        if st in ("accepted", "waiting_pickup", "boarding", "pickup_active", "onboard", "boarded", "completed"):
             accepted_count += 1
-        if pr.get("boarded_at") is not None or st in ("onboard", "completed"):
+        if pr.get("boarded_at") is not None or st in ("onboard", "boarded", "completed"):
             onboard_count += 1
 
     if accepted_count == 0 and session_row and session_row.get("passenger_id"):
@@ -26153,6 +26159,129 @@ def _muhabbet_passenger_uid_from_row(pr_row: dict) -> str:
         if u2:
             return u2
     return ""
+
+
+def _muhabbet_trip_passenger_status_public(status_raw: str) -> str:
+    """Canonical passenger-leg status for new Yol Oturumu UI; legacy DB values stay readable."""
+    st = str(status_raw or "").strip().lower()
+    if st == "boarding":
+        return "pickup_active"
+    if st == "onboard":
+        return "boarded"
+    if st in ("invited", "accepted", "waiting_pickup", "pickup_active", "boarded", "cancelled", "no_show", "completed"):
+        return st
+    return "accepted"
+
+
+def _muhabbet_trip_passenger_seat_index_map(session_row: dict, rows: list[dict]) -> dict[str, int]:
+    """Stable UI-only slot index: pickup_order/accepted list first, then passenger rows by creation order."""
+    ordered: list[str] = []
+    for uid in _muhabbet_trip_pickup_order_list(session_row):
+        if uid and uid not in ordered:
+            ordered.append(uid)
+    for uid in _muhabbet_json_uuid_list((session_row or {}).get("accepted_passenger_ids")):
+        if uid and uid not in ordered:
+            ordered.append(uid)
+    for pr in rows or []:
+        uid = _muhabbet_passenger_uid_from_row(pr)
+        if uid and uid not in ordered:
+            ordered.append(uid)
+    return {uid: ix + 1 for ix, uid in enumerate(ordered)}
+
+
+def _muhabbet_trip_passengers_public(session_id: str, session_row: dict | None = None) -> list[dict]:
+    """Public passenger legs for the shared Leylek Yol Oturumu. Additive response only."""
+    sid = str(session_id or "").strip().lower()
+    if not sid:
+        return []
+    rows: list[dict] = []
+    try:
+        res = (
+            supabase.table("muhabbet_trip_passengers")
+            .select("*")
+            .eq("session_id", sid)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        rows = [dict(x) for x in (res.data or [])]
+    except Exception as e:
+        logger.debug("muhabbet_trip_passengers_public select failed session_id=%s err=%s", sid[:12], e)
+        rows = []
+
+    if not rows and session_row and session_row.get("passenger_id"):
+        # Legacy single-passenger fallback; do not require muhabbet_trip_passengers backfill to exist.
+        boarded_at = session_row.get("boarding_qr_confirmed_at")
+        st_raw = str(session_row.get("status") or "").strip().lower()
+        if st_raw == "finished":
+            leg_status = "completed"
+        elif st_raw in ("cancelled", "expired"):
+            leg_status = "cancelled"
+        elif boarded_at or st_raw in ("active", "started"):
+            leg_status = "onboard"
+        else:
+            leg_status = "accepted"
+        rows = [
+            {
+                "session_id": sid,
+                "conversation_id": session_row.get("conversation_id"),
+                "listing_id": session_row.get("listing_id"),
+                "conversion_request_id": session_row.get("conversion_request_id"),
+                "passenger_user_id": session_row.get("passenger_id"),
+                "driver_user_id": session_row.get("driver_id"),
+                "status": leg_status,
+                "pickup_lat": session_row.get("pickup_lat"),
+                "pickup_lng": session_row.get("pickup_lng"),
+                "pickup_text": session_row.get("pickup_text"),
+                "dropoff_lat": session_row.get("dropoff_lat"),
+                "dropoff_lng": session_row.get("dropoff_lng"),
+                "dropoff_text": session_row.get("dropoff_text"),
+                "agreed_price": session_row.get("agreed_price"),
+                "payment_method": session_row.get("payment_method"),
+                "boarded_at": boarded_at,
+                "cancelled_at": session_row.get("cancelled_at") or session_row.get("expired_at"),
+                "created_at": session_row.get("created_at"),
+                "updated_at": session_row.get("updated_at"),
+            }
+        ]
+
+    uids = [_muhabbet_passenger_uid_from_row(pr) for pr in rows]
+    name_map = _muhabbet_listing_name_map_for_ids(uids) if uids else {}
+    seat_ix = _muhabbet_trip_passenger_seat_index_map(session_row or {}, rows)
+    out: list[dict] = []
+    for pr in rows:
+        uid = _muhabbet_passenger_uid_from_row(pr)
+        if not uid:
+            continue
+        raw_status = str(pr.get("status") or "").strip().lower() or "accepted"
+        public_status = _muhabbet_trip_passenger_status_public(raw_status)
+        out.append(
+            {
+                "id": pr.get("id"),
+                "session_id": pr.get("session_id") or sid,
+                "listing_id": pr.get("listing_id"),
+                "conversation_id": pr.get("conversation_id"),
+                "conversion_request_id": pr.get("conversion_request_id"),
+                "seat_index": seat_ix.get(uid),
+                "passenger_user_id": uid,
+                "driver_user_id": pr.get("driver_user_id") or (session_row or {}).get("driver_id"),
+                "display_name": name_map.get(uid) or "Leylek kullanıcısı",
+                "status": public_status,
+                "raw_status": raw_status,
+                "pickup_lat": pr.get("pickup_lat"),
+                "pickup_lng": pr.get("pickup_lng"),
+                "pickup_text": pr.get("pickup_text"),
+                "dropoff_lat": pr.get("dropoff_lat"),
+                "dropoff_lng": pr.get("dropoff_lng"),
+                "dropoff_text": pr.get("dropoff_text"),
+                "agreed_price": pr.get("agreed_price"),
+                "payment_method": pr.get("payment_method"),
+                "boarded_at": pr.get("boarded_at"),
+                "cancelled_at": pr.get("cancelled_at"),
+                "created_at": pr.get("created_at"),
+                "updated_at": pr.get("updated_at"),
+            }
+        )
+    return out
 
 
 def _muhabbet_trip_passengers_update_for_user(session_id: str, passenger_user_id: str, patch: dict) -> None:
@@ -26361,6 +26490,7 @@ def _muhabbet_trip_session_public(row: dict) -> dict:
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
         "passenger_summary": _muhabbet_trip_passenger_summary(str(row.get("id") or ""), row),
+        "passengers": _muhabbet_trip_passengers_public(str(row.get("id") or ""), row),
     }
     out = {**base, **_muhabbet_trip_multi_seat_public_extra(row)}
     return out
