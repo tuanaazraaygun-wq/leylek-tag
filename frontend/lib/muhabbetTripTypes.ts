@@ -135,6 +135,10 @@ export type MuhabbetTripSession = {
     | null;
   accepted_passenger_ids?: string[] | null;
   boarded_passenger_ids?: string[] | null;
+  required_passenger_ids?: string[] | null;
+  depart_confirmed_at?: string | null;
+  depart_confirmed_by_user_id?: string | null;
+  depart_reason?: string | null;
   pickup_order?: string[] | null;
   /** Çoklu koltuk: sıradaki biniş yolcusu */
   next_pickup_user_id?: string | null;

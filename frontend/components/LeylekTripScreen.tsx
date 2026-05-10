@@ -41,6 +41,7 @@ import LeylekTripLiveRideChrome from './LeylekTripLiveRideChrome';
 import MuhabbetTripCallScreen from './MuhabbetTripCallScreen';
 import MuhabbetTripQrCodeModal from './MuhabbetTripQrCodeModal';
 import MuhabbetTripQrScanModal from './MuhabbetTripQrScanModal';
+import { appAlert } from '../contexts/AppAlertContext';
 
 type LeylekTripScreenProps = {
   apiBaseUrl: string;
@@ -467,8 +468,18 @@ function passengerStatusMeta(status?: string | null): {
   if (st === 'pickup_active') return { label: 'Sürücü geliyor', tone: 'active' };
   if (st === 'boarded') return { label: 'Araçta', tone: 'boarded' };
   if (st === 'completed') return { label: 'Tamamlandı', tone: 'done' };
-  if (st === 'cancelled' || st === 'no_show') return { label: 'Kapandı', tone: 'closed' };
+  if (st === 'no_show') return { label: 'Yola çıkıldı', tone: 'closed' };
+  if (st === 'cancelled') return { label: 'Kapandı', tone: 'closed' };
   return { label: 'Bekliyor', tone: 'waiting' };
+}
+
+function passengerOwnContextLabel(status?: string | null): string {
+  const st = normalizeTripPassengerStatus(status);
+  if (st === 'pickup_active') return 'Sürücü size geliyor';
+  if (st === 'boarded') return 'Araçtasınız · varışta QR okutun';
+  if (st === 'completed') return 'Yolculuğunuz tamamlandı';
+  if (st === 'no_show') return 'Araç yola çıktı';
+  return 'Pickup bekleniyor';
 }
 
 function passengerStatusPillStyle(tone: 'waiting' | 'active' | 'boarded' | 'done' | 'closed') {
@@ -520,6 +531,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [paymentPromptVisible, setPaymentPromptVisible] = useState(false);
   const [paymentPromptShown, setPaymentPromptShown] = useState(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [departBusy, setDepartBusy] = useState(false);
+  const [activePickupBusyId, setActivePickupBusyId] = useState<string | null>(null);
   const [boardingMessage, setBoardingMessage] = useState('');
   const [finishResult, setFinishResult] = useState<FinishResult>(null);
   const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
@@ -685,17 +698,75 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const tripPassengerSummary = useMemo(() => {
     const totalPassengers = tripPassengerLegs.filter((leg) => !['cancelled', 'no_show'].includes(leg.status)).length;
     const boardedCount = tripPassengerLegs.filter((leg) => leg.status === 'boarded' || leg.status === 'completed').length;
+    const noShowCount = tripPassengerLegs.filter((leg) => leg.status === 'no_show').length;
+    const waitingCount = tripPassengerLegs.filter(
+      (leg) => !['cancelled', 'no_show', 'boarded', 'completed'].includes(leg.status)
+    ).length;
+    const requiredIds = Array.isArray(session?.required_passenger_ids)
+      ? session.required_passenger_ids.map((pid) => String(pid || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    const requiredCompletedCount = requiredIds.filter((pid) =>
+      tripPassengerLegs.some((leg) => leg.passenger_user_id === pid && leg.status === 'completed')
+    ).length;
+    const activePickupId = String(session?.active_pickup_passenger_id || '').trim().toLowerCase();
+    const activePickupName = activePickupId
+      ? tripPassengerLegs.find((leg) => leg.passenger_user_id === activePickupId)?.display_name || ''
+      : '';
     const rawSeatCapacity = session?.seat_capacity ?? totalPassengers;
     const seatCapacity = Math.max(1, Number(rawSeatCapacity || 1));
     const emptySeats = Math.max(0, seatCapacity - totalPassengers);
-    return { totalPassengers, boardedCount, emptySeats };
-  }, [session?.seat_capacity, tripPassengerLegs]);
+    return {
+      totalPassengers,
+      boardedCount,
+      noShowCount,
+      waitingCount,
+      requiredCount: requiredIds.length,
+      requiredCompletedCount,
+      activePickupName,
+      emptySeats,
+    };
+  }, [session?.active_pickup_passenger_id, session?.required_passenger_ids, session?.seat_capacity, tripPassengerLegs]);
   const visiblePassengerLegs = useMemo(() => {
     const limit = tripPassengerLegs.length > 3 ? 2 : 3;
     return tripPassengerLegs.slice(0, limit);
   }, [tripPassengerLegs]);
   const hiddenPassengerCount = Math.max(0, tripPassengerLegs.length - visiblePassengerLegs.length);
   const myPassengerLegId = myId.trim().toLowerCase();
+  const passengerCompactStatusLine = useMemo(() => {
+    if (!session) return '';
+    const rs = String(session.ride_status || '').trim().toLowerCase();
+    const departed = !!String(session.depart_confirmed_at || '').trim();
+    const parts: string[] = [];
+    if (tripPassengerSummary.activePickupName) {
+      parts.push(`Aktif pickup: ${tripPassengerSummary.activePickupName}`);
+    }
+    if (rs === 'boarding') {
+      parts.push(`${tripPassengerSummary.boardedCount} araçta · ${tripPassengerSummary.waitingCount} bekliyor`);
+    } else if (Number(session.seat_capacity ?? 1) > 1 && tripPassengerSummary.requiredCount > 0) {
+      const noShowSuffix = tripPassengerSummary.noShowCount > 0 ? ` · ${tripPassengerSummary.noShowCount} no-show` : '';
+      parts.push(`Bitiş: ${tripPassengerSummary.requiredCompletedCount}/${tripPassengerSummary.requiredCount} tamamlandı${noShowSuffix}`);
+    } else if (departed) {
+      const noShowSuffix = tripPassengerSummary.noShowCount > 0 ? ` · ${tripPassengerSummary.noShowCount} no-show` : '';
+      parts.push(`Yola çıkıldı${noShowSuffix}`);
+    }
+    return parts.join(' · ');
+  }, [
+    session,
+    tripPassengerSummary.activePickupName,
+    tripPassengerSummary.boardedCount,
+    tripPassengerSummary.noShowCount,
+    tripPassengerSummary.requiredCompletedCount,
+    tripPassengerSummary.requiredCount,
+    tripPassengerSummary.waitingCount,
+  ]);
+  const departWithEmptySeatsVisible = useMemo(() => {
+    if (!session || !isDriver || isTerminal || departBusy || actionBusy || qrLoading) return false;
+    const sc = Number(session.seat_capacity ?? 1);
+    if (sc <= 1) return false;
+    if (String(session.ride_status || '').trim().toLowerCase() !== 'boarding') return false;
+    if (String(session.depart_confirmed_at || '').trim()) return false;
+    return tripPassengerSummary.boardedCount > 0 && tripPassengerSummary.waitingCount > 0;
+  }, [actionBusy, departBusy, isDriver, isTerminal, qrLoading, session, tripPassengerSummary.boardedCount, tripPassengerSummary.waitingCount]);
 
   useEffect(() => {
     if (isTerminal) {
@@ -1254,6 +1325,87 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       return { ok: res.ok, status: res.status, json };
     },
     [apiBaseUrl, getActiveMuhabbetSessionId],
+  );
+
+  const departWithEmptySeats = useCallback(() => {
+    if (departBusy || !departWithEmptySeatsVisible) return;
+    appAlert(
+      'Yola çıkılsın mı?',
+      'Araçta olmayan yolcular bu oturumda no-show olarak kapanır. Varışta sadece araçtaki yolcular bitiş QR kodunu okutabilir.',
+      [
+        {
+          text: 'Vazgeç',
+          style: 'cancel',
+        },
+        {
+          text: 'Yola çık',
+          onPress: () => {
+            void (async () => {
+              setDepartBusy(true);
+              try {
+                const rest = await muhabbetTripSessionRestPost({
+                  action: 'trip_depart',
+                  pathSuffix: 'depart',
+                });
+                if (isMuhabbetTripRestOk(rest)) {
+                  const sess = rest.json.session;
+                  if (sess && typeof sess === 'object') {
+                    setSession(sess as MuhabbetTripSession);
+                  }
+                  await refreshSessionFromServer('trip_depart_rest', { bypassDebounce: true });
+                  appAlert('Yola çıkıldı', 'Bitiş QR kodu araçtaki yolcular için aktif olacak.');
+                  return;
+                }
+                const msg = muhabbetTripRestDetail(rest.json.detail, 'Yola çıkış işlemi tamamlanamadı.');
+                appAlert('Yola çıkılamadı', msg);
+                void refreshSessionFromServer('trip_depart_rest_fail', { bypassDebounce: true });
+              } catch {
+                appAlert('Yola çıkılamadı', 'Bağlantı kurulamadı. Lütfen tekrar deneyin.');
+                void refreshSessionFromServer('trip_depart_network_error', { bypassDebounce: true });
+              } finally {
+                setDepartBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+      { variant: 'warning' }
+    );
+  }, [departBusy, departWithEmptySeatsVisible, muhabbetTripSessionRestPost, refreshSessionFromServer]);
+
+  const selectActivePickupPassenger = useCallback(
+    (passengerUserId: string) => {
+      const pid = String(passengerUserId || '').trim().toLowerCase();
+      if (!pid || activePickupBusyId) return;
+      void (async () => {
+        setActivePickupBusyId(pid);
+        try {
+          const rest = await muhabbetTripSessionRestPost({
+            action: 'active_pickup_select',
+            pathSuffix: 'active-pickup',
+            body: { passenger_user_id: pid },
+          });
+          if (isMuhabbetTripRestOk(rest)) {
+            const sess = rest.json.session;
+            if (sess && typeof sess === 'object') {
+              setSession(sess as MuhabbetTripSession);
+            }
+            await refreshSessionFromServer('active_pickup_select_rest', { bypassDebounce: true });
+            appAlert('Pickup güncellendi', 'Sürücü bu yolcuya gidiyor.');
+            return;
+          }
+          const msg = muhabbetTripRestDetail(rest.json.detail, 'Aktif pickup yolcusu seçilemedi.');
+          appAlert('Pickup seçilemedi', msg);
+          void refreshSessionFromServer('active_pickup_select_fail', { bypassDebounce: true });
+        } catch {
+          appAlert('Pickup seçilemedi', 'Bağlantı kurulamadı. Lütfen tekrar deneyin.');
+          void refreshSessionFromServer('active_pickup_select_network', { bypassDebounce: true });
+        } finally {
+          setActivePickupBusyId(null);
+        }
+      })();
+    },
+    [activePickupBusyId, muhabbetTripSessionRestPost, refreshSessionFromServer]
   );
 
   useEffect(() => {
@@ -3315,16 +3467,29 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               <Text style={styles.emptySeatPillText}>{tripPassengerSummary.emptySeats} boş koltuk</Text>
             </View>
           </View>
+          {passengerCompactStatusLine ? (
+            <Text style={styles.passengerCompactStatusLine} numberOfLines={1}>
+              {passengerCompactStatusLine}
+            </Text>
+          ) : null}
           <View style={styles.passengerRows}>
             {visiblePassengerLegs.map((leg, index) => {
               const meta = passengerStatusMeta(leg.status);
               const isMine = myPassengerLegId && leg.passenger_user_id === myPassengerLegId;
+              const ownContext = isMine ? passengerOwnContextLabel(leg.status) : '';
               const isActivePickup =
                 !!session.active_pickup_passenger_id &&
                 leg.passenger_user_id === String(session.active_pickup_passenger_id).trim().toLowerCase();
               const isNextPickup =
                 !!session.next_pickup_user_id &&
                 leg.passenger_user_id === String(session.next_pickup_user_id).trim().toLowerCase();
+              const canSelectActivePickup =
+                isDriver &&
+                Number(session.seat_capacity ?? 1) > 1 &&
+                ['waiting', 'boarding'].includes(String(session.ride_status || '').trim().toLowerCase()) &&
+                !String(session.depart_confirmed_at || '').trim() &&
+                ['accepted', 'waiting_pickup', 'pickup_active'].includes(leg.status);
+              const activePickupBusy = activePickupBusyId === leg.passenger_user_id;
               return (
                 <View key={`${leg.passenger_user_id}-${index}`} style={[styles.passengerRow, isMine && styles.passengerRowMine]}>
                   <View style={styles.seatBadge}>
@@ -3336,8 +3501,28 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                     </Text>
                     <View style={styles.passengerTagRow}>
                       {isMine ? <Text style={styles.passengerMiniTag}>Sizin durumunuz</Text> : null}
-                      {isActivePickup ? <Text style={styles.passengerMiniTag}>Sürücü bu yolcuya gidiyor</Text> : null}
+                      {ownContext ? (
+                        <Text style={styles.passengerOwnContextTag} numberOfLines={1}>
+                          {ownContext}
+                        </Text>
+                      ) : null}
+                      {isActivePickup ? <Text style={styles.activePickupBadge}>Sürücü bu yolcuya gidiyor</Text> : null}
                       {isNextPickup ? <Text style={styles.passengerMiniTag}>Önerilen sıradaki</Text> : null}
+                      {canSelectActivePickup && !isActivePickup ? (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.activePickupAction,
+                            pressed && { opacity: 0.86 },
+                            !!activePickupBusyId && !activePickupBusy && { opacity: 0.55 },
+                          ]}
+                          disabled={!!activePickupBusyId}
+                          onPress={() => selectActivePickupPassenger(leg.passenger_user_id)}
+                        >
+                          <Text style={styles.activePickupActionText} numberOfLines={1}>
+                            {activePickupBusy ? 'Seçiliyor...' : 'Bu yolcuya gidiyorum'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   </View>
                   <View style={[styles.passengerStatusPill, passengerStatusPillStyle(meta.tone)]}>
@@ -3350,6 +3535,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               <View style={styles.passengerMoreRow}>
                 <Ionicons name="ellipsis-horizontal" size={15} color="#6D28D9" />
                 <Text style={styles.passengerMoreText}>+{hiddenPassengerCount} yolcu daha</Text>
+              </View>
+            ) : null}
+            {departWithEmptySeatsVisible ? (
+              <View style={styles.departPromptCard}>
+                <Text style={styles.departPromptTitle} numberOfLines={1}>
+                  {tripPassengerSummary.waitingCount} yolcu bekliyor
+                </Text>
+                <Pressable
+                  style={({ pressed }) => [styles.departPromptButton, pressed && { opacity: 0.86 }]}
+                  onPress={departWithEmptySeats}
+                  disabled={departBusy}
+                >
+                  <Text style={styles.departPromptButtonText}>{departBusy ? 'İşleniyor...' : 'Boş koltukla yola çık'}</Text>
+                </Pressable>
               </View>
             ) : null}
           </View>
@@ -3590,6 +3789,29 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 12,
   },
+  departPromptCard: {
+    minHeight: 38,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,251,235,0.97)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.32)',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  departPromptTitle: { flex: 1, color: '#78350F', fontSize: 12, fontWeight: '900' },
+  departPromptButton: {
+    borderRadius: 999,
+    backgroundColor: '#F97316',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  departPromptButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
   passengerListHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3599,6 +3821,13 @@ const styles = StyleSheet.create({
   },
   passengerListTitle: { color: '#111827', fontSize: 15, fontWeight: '900' },
   passengerListSubtitle: { marginTop: 2, color: '#64748B', fontSize: 12, fontWeight: '800' },
+  passengerCompactStatusLine: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: -4,
+    marginBottom: 8,
+  },
   emptySeatPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3658,6 +3887,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
+  passengerOwnContextTag: {
+    color: '#0369A1',
+    fontSize: 10,
+    fontWeight: '900',
+    backgroundColor: '#E0F2FE',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    maxWidth: 170,
+  },
+  activePickupBadge: {
+    color: '#1D4ED8',
+    fontSize: 10,
+    fontWeight: '900',
+    backgroundColor: '#DBEAFE',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  activePickupAction: {
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  activePickupActionText: { color: '#4338CA', fontSize: 10, fontWeight: '900' },
   passengerStatusPill: {
     borderRadius: 999,
     paddingHorizontal: 8,
