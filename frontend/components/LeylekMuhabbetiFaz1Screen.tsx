@@ -15,7 +15,6 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   ScrollView,
   Image,
   KeyboardAvoidingView,
@@ -34,6 +33,7 @@ import ListingsTab from './ListingsTab';
 import ConversationsScreen from './ConversationsScreen';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import { getOrCreateSocket } from '../contexts/SocketContext';
+import { appAlert } from '../contexts/AppAlertContext';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -313,7 +313,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   }, [propTok, lastGoodToken]);
   const requireMuhabbetToken = useCallback((): boolean => {
     if (!tok) {
-      Alert.alert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);
+      appAlert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);
       return false;
     }
     return true;
@@ -460,7 +460,7 @@ export default function LeylekMuhabbetiFaz1Screen({
           const g = data.group;
           const st = String(g.status || 'approved').toLowerCase();
           if (st !== 'approved') {
-            Alert.alert(
+            appAlert(
               'Grup henüz yayında değil',
               'Bu grup yönetici onayında veya reddedilmiş olabilir. Onaylandıktan sonra akışa erişebilirsiniz.',
             );
@@ -556,11 +556,11 @@ export default function LeylekMuhabbetiFaz1Screen({
       } else {
         setFeedPosts([]);
         const msg = userFacingApiMessage(status, data, 'Akış yüklenemedi.');
-        if (tok) Alert.alert('Akış', msg);
+        if (tok) appAlert('Akış', msg);
       }
     } catch {
       setFeedPosts([]);
-      if (tok) Alert.alert('Akış', 'Akış yüklenirken bir sorun oluştu. Tekrar deneyin.');
+      if (tok) appAlert('Akış', 'Akış yüklenirken bir sorun oluştu. Tekrar deneyin.');
     }
     setFeedLoading(false);
   }, [apiUrl, feedGroup, tok]);
@@ -655,9 +655,9 @@ export default function LeylekMuhabbetiFaz1Screen({
       const data = await res.json();
       if (data.success) {
         if (data.already_member) {
-          Alert.alert('Bilgi', 'Zaten bu grubun üyesisiniz.');
+          appAlert('Bilgi', 'Zaten bu grubun üyesisiniz.');
         } else {
-          Alert.alert('Tamam', 'Gruba katıldınız.');
+          appAlert('Tamam', 'Gruba katıldınız.');
         }
         await loadMyGroups();
         await loadGroups();
@@ -666,10 +666,10 @@ export default function LeylekMuhabbetiFaz1Screen({
         const gj = await gr.json();
         if (gj.success && gj.group) setDetailGroup(gj.group);
       } else {
-        Alert.alert('Hata', (data.detail as string) || 'Katılım başarısız');
+        appAlert('Hata', (data.detail as string) || 'Katılım başarısız');
       }
     } catch {
-      Alert.alert('Hata', 'Bağlantı kurulamadı');
+      appAlert('Hata', 'Bağlantı kurulamadı');
     }
     setJoinBusy(false);
   };
@@ -679,12 +679,12 @@ export default function LeylekMuhabbetiFaz1Screen({
     if (!requireMuhabbetToken()) return;
     const st = String(detailGroup.status || 'approved').toLowerCase();
     if (st !== 'approved') {
-      Alert.alert('Akış', 'Bu grup henüz yönetici onayıyla yayınlanmadı.');
+      appAlert('Akış', 'Bu grup henüz yönetici onayıyla yayınlanmadı.');
       return;
     }
     const member = detailGroup.is_member || myGroupIds.has(detailGroup.id);
     if (!member) {
-      Alert.alert('Üyelik', 'Önce gruba katılmanız gerekir.');
+      appAlert('Üyelik', 'Önce gruba katılmanız gerekir.');
       return;
     }
     setDetailVisible(false);
@@ -695,12 +695,12 @@ export default function LeylekMuhabbetiFaz1Screen({
     if (!requireMuhabbetToken()) return;
     const nid = (selectedNeighborhoodId || '').trim();
     if (!nid) {
-      Alert.alert('Mahalle', 'Önce bir mahalle seçin.');
+      appAlert('Mahalle', 'Önce bir mahalle seçin.');
       return;
     }
     const nm = createGroupName.trim();
     if (nm.length < 2) {
-      Alert.alert('Grup adı', 'En az 2 karakter girin.');
+      appAlert('Grup adı', 'En az 2 karakter girin.');
       return;
     }
     setCreateGroupBusy(true);
@@ -723,16 +723,16 @@ export default function LeylekMuhabbetiFaz1Screen({
           typeof payload.message === 'string' && payload.message.trim()
             ? payload.message.trim()
             : 'Önerin alındı. Yönetici onayından sonra keşifte görünecek.';
-        Alert.alert('Teşekkürler', msg);
+        appAlert('Teşekkürler', msg);
         setCreateGroupOpen(false);
         setCreateGroupName('');
         setCreateGroupDesc('');
         await loadGroups();
       } else {
-        Alert.alert('Grup önerisi', userFacingApiMessage(status, data, 'Gönderilemedi.'));
+        appAlert('Grup önerisi', userFacingApiMessage(status, data, 'Gönderilemedi.'));
       }
     } catch {
-      Alert.alert('Grup önerisi', 'Bağlantı kurulamadı.');
+      appAlert('Grup önerisi', 'Bağlantı kurulamadı.');
     }
     setCreateGroupBusy(false);
   };
@@ -751,11 +751,11 @@ export default function LeylekMuhabbetiFaz1Screen({
       const payload = (data || {}) as { success?: boolean; post?: PostRow };
       if (ok && payload.success && payload.post) setPostDetail(payload.post);
       else if (!ok || !payload.success) {
-        Alert.alert('Gönderi', userFacingApiMessage(status, data, 'Gönderi açılamadı.'));
+        appAlert('Gönderi', userFacingApiMessage(status, data, 'Gönderi açılamadı.'));
         skipComments = true;
       }
     } catch {
-      Alert.alert('Gönderi', 'Gönderi bilgisi alınamadı.');
+      appAlert('Gönderi', 'Gönderi bilgisi alınamadı.');
       skipComments = true;
     }
     setPostDetailLoading(false);
@@ -772,12 +772,12 @@ export default function LeylekMuhabbetiFaz1Screen({
       else {
         setComments([]);
         if (!ok || !payload.success) {
-          Alert.alert('Yorumlar', userFacingApiMessage(status, data, 'Yorumlar yüklenemedi.'));
+          appAlert('Yorumlar', userFacingApiMessage(status, data, 'Yorumlar yüklenemedi.'));
         }
       }
     } catch {
       setComments([]);
-      Alert.alert('Yorumlar', 'Yorum listesi alınamadı.');
+      appAlert('Yorumlar', 'Yorum listesi alınamadı.');
     }
     setCommentsLoading(false);
   };
@@ -799,10 +799,10 @@ export default function LeylekMuhabbetiFaz1Screen({
         setComments((prev) => [...prev, payload.comment as CommentRow]);
         setNewComment('');
       } else {
-        Alert.alert('Yorum', userFacingApiMessage(status, data, 'Yorum gönderilemedi.'));
+        appAlert('Yorum', userFacingApiMessage(status, data, 'Yorum gönderilemedi.'));
       }
     } catch {
-      Alert.alert('Yorum', 'Yorum gönderilemedi. Bağlantınızı kontrol edin.');
+      appAlert('Yorum', 'Yorum gönderilemedi. Bağlantınızı kontrol edin.');
     }
     setCommentBusy(false);
   };
@@ -810,7 +810,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   const submitReport = async () => {
     if (!postDetail || !requireMuhabbetToken()) return;
     if (!reportReason.trim()) {
-      Alert.alert('Şikayet', 'Lütfen bir kategori seçin.');
+      appAlert('Şikayet', 'Lütfen bir kategori seçin.');
       return;
     }
     setReportBusy(true);
@@ -829,18 +829,18 @@ export default function LeylekMuhabbetiFaz1Screen({
       const payload = (data || {}) as { success?: boolean; already_reported?: boolean };
       if (ok && payload.success) {
         if (payload.already_reported) {
-          Alert.alert('Şikayet', 'Bu gönderiyi zaten şikayet ettiniz.');
+          appAlert('Şikayet', 'Bu gönderiyi zaten şikayet ettiniz.');
         } else {
-          Alert.alert('Teşekkürler', 'Şikayetiniz kaydedildi.');
+          appAlert('Teşekkürler', 'Şikayetiniz kaydedildi.');
         }
         setReportOpen(false);
         setReportReason('');
         setReportDetails('');
       } else {
-        Alert.alert('Şikayet', userFacingApiMessage(status, data, 'Şikayet kaydedilemedi.'));
+        appAlert('Şikayet', userFacingApiMessage(status, data, 'Şikayet kaydedilemedi.'));
       }
     } catch {
-      Alert.alert('Şikayet', 'Şikayet gönderilemedi. Bağlantınızı kontrol edin.');
+      appAlert('Şikayet', 'Şikayet gönderilemedi. Bağlantınızı kontrol edin.');
     }
     setReportBusy(false);
   };
@@ -849,7 +849,7 @@ export default function LeylekMuhabbetiFaz1Screen({
     if (!requireMuhabbetToken()) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
+      appAlert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
       return;
     }
     const r = await ImagePicker.launchImageLibraryAsync({
@@ -860,7 +860,7 @@ export default function LeylekMuhabbetiFaz1Screen({
     });
     const uri = imagePickerResultToLocalUri(r);
     if (!uri) {
-      Alert.alert('Fotoğraf', 'Seçilen görüntünün adresi alınamadı. Tekrar deneyin.');
+      appAlert('Fotoğraf', 'Seçilen görüntünün adresi alınamadı. Tekrar deneyin.');
       return;
     }
     setComposeImageUri(uri);
@@ -876,15 +876,15 @@ export default function LeylekMuhabbetiFaz1Screen({
     const cap = composeCaption.trim();
     const fileUri = (composeImageUri || '').trim();
     if (!fileUri) {
-      Alert.alert('Gönderi', 'Fotoğraf seçmelisiniz.');
+      appAlert('Gönderi', 'Fotoğraf seçmelisiniz.');
       return;
     }
     if (cap.length < 1) {
-      Alert.alert('Gönderi', 'Kısa açıklama zorunludur.');
+      appAlert('Gönderi', 'Kısa açıklama zorunludur.');
       return;
     }
     if (cap.length > MUHABBET_POST_BODY_MAX) {
-      Alert.alert('Gönderi', `Açıklama en fazla ${MUHABBET_POST_BODY_MAX} karakter olabilir.`);
+      appAlert('Gönderi', `Açıklama en fazla ${MUHABBET_POST_BODY_MAX} karakter olabilir.`);
       return;
     }
     setComposeBusy(true);
@@ -907,7 +907,7 @@ export default function LeylekMuhabbetiFaz1Screen({
         detail?: unknown;
       };
       if (!presParsed.ok || !pj.success || !pj.signed_url || !pj.path) {
-        Alert.alert(
+        appAlert(
           'Fotoğraf hazırlığı',
           userFacingApiMessage(presParsed.status, presParsed.data, 'Fotoğraf yüklemesi için adres alınamadı.'),
         );
@@ -916,7 +916,7 @@ export default function LeylekMuhabbetiFaz1Screen({
       }
       const up = await putLocalImageToSignedUrl(fileUri, String(pj.signed_url), composeMime);
       if (!up.ok) {
-        Alert.alert(
+        appAlert(
           'Fotoğraf yükleme',
           up.status
             ? 'Fotoğraf sunucuya yüklenemedi. Bağlantınızı veya dosya boyutunu kontrol edip tekrar deneyin.'
@@ -943,9 +943,9 @@ export default function LeylekMuhabbetiFaz1Screen({
         setComposeCaption('');
         setComposeImageUri(null);
         await loadFeed();
-        Alert.alert('Tamam', 'Gönderiniz yayınlandı.');
+        appAlert('Tamam', 'Gönderiniz yayınlandı.');
       } else {
-        Alert.alert(
+        appAlert(
           'Gönderi kaydı',
           uploadOk
             ? 'Fotoğraf yüklendi ancak gönderi metni kaydedilemedi. Metni kontrol edip tekrar deneyin; aynı fotoğrafı kullanabilirsiniz.'
@@ -953,7 +953,7 @@ export default function LeylekMuhabbetiFaz1Screen({
         );
       }
     } catch (e) {
-      Alert.alert(
+      appAlert(
         'Gönderi',
         uploadOk
           ? 'Fotoğraf yüklendi; gönderi tamamlanırken bağlantı koptu. Lütfen tekrar deneyin.'
@@ -976,12 +976,12 @@ export default function LeylekMuhabbetiFaz1Screen({
       });
       const j = await res.json();
       if (j.success) {
-        Alert.alert('Teşekkürler', 'Talebiniz yöneticilere iletildi.');
+        appAlert('Teşekkürler', 'Talebiniz yöneticilere iletildi.');
       } else {
-        Alert.alert('Hata', (j.detail as string) || 'Gönderilemedi');
+        appAlert('Hata', (j.detail as string) || 'Gönderilemedi');
       }
     } catch {
-      Alert.alert('Hata', 'Bağlantı kurulamadı');
+      appAlert('Hata', 'Bağlantı kurulamadı');
     }
   };
 
@@ -1437,7 +1437,7 @@ export default function LeylekMuhabbetiFaz1Screen({
               <TouchableOpacity
                 onPress={() => {
                   if (!selectedNeighborhoodId) {
-                    Alert.alert('Mahalle', 'Önce mahalle seçin.');
+                    appAlert('Mahalle', 'Önce mahalle seçin.');
                     return;
                   }
                   setCreateGroupOpen(true);

@@ -10,7 +10,6 @@ import {
   Text,
   View,
   Platform,
-  Alert,
   Image,
 } from 'react-native';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
@@ -18,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import MuhabbetWatermark from './MuhabbetWatermark';
+import { appAlert } from '../contexts/AppAlertContext';
 
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
@@ -696,7 +696,7 @@ export default function LeylekMuhabbetiHomeTab({
       if (handleUnauthorizedAndMaybeRedirect(res)) return;
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; conversation_id?: string; detail?: string };
       if (!res.ok || !d.success) {
-        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : action === 'accept' ? 'Kabul edilemedi.' : 'Reddedilemedi.');
+        appAlert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : action === 'accept' ? 'Kabul edilemedi.' : 'Reddedilemedi.');
         return;
       }
       setIncomingRequests((rows) => rows.filter((x) => x.id !== row.id));
@@ -706,7 +706,7 @@ export default function LeylekMuhabbetiHomeTab({
         openChatForAcceptedRequest(d.conversation_id, row);
       }
     } catch {
-      Alert.alert('Talep', 'Bağlantı hatası.');
+      appAlert('Talep', 'Bağlantı hatası.');
     } finally {
       setIncomingBusyId(null);
       setIncomingBusyAction(null);
@@ -725,18 +725,27 @@ export default function LeylekMuhabbetiHomeTab({
         });
         const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
         if (handleUnauthorizedAndMaybeRedirect(res) || !res.ok || !d.success) {
-          Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Talep gönderilemedi.');
+          appAlert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Talep gönderilemedi.');
           return;
         }
-        Alert.alert('Talep', 'Talebin gönderildi.');
+        appAlert(
+          'Talebin gönderildi',
+          'İlan sahibi kabul ederse sohbet otomatik açılır. Durumu Teklifler bölümünden takip edebilirsin.',
+          onOpenListings
+            ? [
+                { text: 'Tekliflere git', onPress: onOpenListings },
+                { text: 'Tamam', style: 'cancel' },
+              ]
+            : [{ text: 'Tamam', style: 'cancel' }],
+        );
         void loadPreview();
       } catch {
-        Alert.alert('Talep', 'Bağlantı hatası.');
+        appAlert('Talep', 'Bağlantı hatası.');
       } finally {
         setMatchBusyId(null);
       }
     },
-    [base, tok, requireToken, loadPreview]
+    [base, tok, requireToken, loadPreview, onOpenListings]
   );
 
   const pulseStyle = {
@@ -983,7 +992,7 @@ export default function LeylekMuhabbetiHomeTab({
                   style={({ pressed }) => [styles.incomingRow, pressed && { opacity: 0.97 }]}
                   onLongPress={() => {
                     if (incomingBusyId) return;
-                    Alert.alert('Sil', 'Bu öğeyi silmek istiyor musun?', [
+                    appAlert('Sil', 'Bu öğeyi silmek istiyor musun?', [
                       { text: 'Vazgeç', style: 'cancel' },
                       {
                         text: 'Sil',

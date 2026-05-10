@@ -8,7 +8,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Modal,
   Pressable,
@@ -28,6 +27,7 @@ import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect'
 import CreateListingModal from './CreateListingModal';
 import MuhabbetWatermark from './MuhabbetWatermark';
 import { formatMuhabbetRouteLabel } from '../lib/formatMuhabbetRouteLabel';
+import { appAlert } from '../contexts/AppAlertContext';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 const TEXT_PRIMARY = '#111111';
@@ -522,13 +522,13 @@ export default function ListingsTab({
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
       if (!res.ok || !d.success) {
         setListings(snapshot);
-        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Talep gönderilemedi.');
+        appAlert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Talep gönderilemedi.');
         return;
       }
       void loadAll();
     } catch {
       setListings(snapshot);
-      Alert.alert('Talep', 'Bağlantı hatası.');
+      appAlert('Talep', 'Bağlantı hatası.');
     } finally {
       setMatchBusyId(null);
     }
@@ -573,7 +573,7 @@ export default function ListingsTab({
           detail?: string;
         };
         if (!res.ok || !d.success) {
-          Alert.alert(
+          appAlert(
             'Talep',
             typeof d.detail === 'string' && d.detail
               ? d.detail
@@ -590,7 +590,7 @@ export default function ListingsTab({
           openChatForAcceptedIncoming(d.conversation_id, row);
         }
       } catch {
-        Alert.alert('Talep', 'Bağlantı hatası.');
+        appAlert('Talep', 'Bağlantı hatası.');
       } finally {
         setIncomingBusyId(null);
         setIncomingBusyAction(null);
@@ -680,16 +680,16 @@ export default function ListingsTab({
         });
         const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
         if (handleUnauthorizedAndMaybeRedirect(res) || !res.ok || !d.success) {
-          Alert.alert('İlan', typeof d.detail === 'string' && d.detail ? d.detail : 'İşlem yapılamadı.');
+          appAlert('İlan', typeof d.detail === 'string' && d.detail ? d.detail : 'İşlem yapılamadı.');
           return;
         }
         void loadMyListings();
         if (feedFilter !== 'mine') void loadFeed();
         if (action === 'continue' && opts?.afterContinueMessage) {
-          Alert.alert('Teklifin', 'Teklifin 60 dakika daha yayında.');
+          appAlert('Teklifin', 'Teklifin 60 dakika daha yayında.');
         }
       } catch {
-        Alert.alert('İlan', 'Bağlantı hatası.');
+        appAlert('İlan', 'Bağlantı hatası.');
       }
     },
     [base, tok, requireToken, loadMyListings, loadFeed, feedFilter]
@@ -699,7 +699,7 @@ export default function ListingsTab({
     (L: FeedListing) => {
       const stillValid = listingExpiresAtAfterNow(L);
       if (stillValid) {
-        Alert.alert(
+        appAlert(
           'Bu teklif henüz kapatılamaz',
           'Teklif süresi dolmadan kapatılamaz. İstersen yayında kalmaya devam edebilirsin.\n\nİlanlar 60 dakika yayında kalır. Süresi dolunca kapatabilirsin.\n\nİstersen teklifini yayında tutmaya devam edebilirsin.',
           [
@@ -713,7 +713,7 @@ export default function ListingsTab({
         );
         return;
       }
-      Alert.alert('Teklifi kapat', 'Bu teklifi kapatmak istiyor musun?', [
+      appAlert('Teklifi kapat', 'Bu teklifi kapatmak istiyor musun?', [
         { text: 'Vazgeç', style: 'cancel' },
         {
           text: 'Kapat',
@@ -773,7 +773,7 @@ export default function ListingsTab({
           style={styles.reqFilterTxtBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           onPress={() =>
-            Alert.alert('Filtrele', undefined, [
+            appAlert('Filtrele', undefined, [
               { text: 'Tümü', onPress: () => setIncomingListFilter('all') },
               { text: 'Sadece gelen', onPress: () => setIncomingListFilter('incoming_only') },
               { text: 'Sadece giden', onPress: () => setIncomingListFilter('outgoing_only') },
@@ -830,7 +830,7 @@ export default function ListingsTab({
                 onLongPress={() => {
                   if (incomingBusyId) return;
                   incomingNavGuardRef.current[r.id] = true;
-                  Alert.alert(
+                  appAlert(
                     'Talebi sil',
                     'Bu talebi silmek istiyor musun?',
                     [
