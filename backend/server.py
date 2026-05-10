@@ -27851,9 +27851,8 @@ def _muhabbet_trip_parse_dt(value):
 
 
 async def _muhabbet_trip_cancel_waiting_no_board_30s() -> None:
-    """Çoklu koltuk: ride_status waiting + kimse binmemiş → oluşturulmadan 30 sn sonra iptal."""
+    """Legacy maintenance hook; multi-seat waiting sessions must stay open for passenger pickup."""
     now = datetime.now(timezone.utc)
-    now_iso = now.isoformat()
     try:
         res = supabase.table("muhabbet_trip_sessions").select("*").eq("status", "ready").execute()
     except Exception as e:
@@ -27873,36 +27872,18 @@ async def _muhabbet_trip_cancel_waiting_no_board_30s() -> None:
         session_id = str(row.get("id") or "").strip().lower()
         if not session_id:
             continue
-        patch = {
-            "status": "cancelled",
-            "cancelled_at": now_iso,
-            "cancel_reason": "waiting_no_board_30s",
-            "ride_status": "cancelled",
-            "call_active": False,
-            "updated_at": now_iso,
-        }
-        logger.info(
-            "[muhabbet_trip_state] endpoint=expiry session_id=%s conversation_id=%s listing_id=%s old_status=%s old_ride_status=%s new_status=%s reason=waiting_no_board_30s",
-            session_id,
-            str(row.get("conversation_id") or ""),
-            str(row.get("listing_id") or ""),
-            str(row.get("status") or ""),
-            str(row.get("ride_status") or ""),
-            str(patch.get("status") or ""),
+        _log_muhabbet_trip_event(
+            "multi_seat_waiting_auto_cancel_skipped",
+            {
+                "session_id": session_id,
+                "conversation_id": str(row.get("conversation_id") or "") or None,
+                "listing_id": str(row.get("listing_id") or "") or None,
+                "seat_capacity": _muhabbet_trip_seat_capacity_int(row.get("seat_capacity")),
+                "status": str(row.get("status") or ""),
+                "ride_status": str(row.get("ride_status") or ""),
+                "reason": "multi_seat_waiting_pickup_window",
+            },
         )
-        try:
-            upd = (
-                supabase.table("muhabbet_trip_sessions")
-                .update(patch)
-                .eq("id", session_id)
-                .eq("status", "ready")
-                .execute()
-            )
-            next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-            logger.info("[muhabbet_trip_wait30] cancelled session_id=%s", session_id[:12])
-            await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_session_updated")
-        except Exception as e:
-            logger.warning("[muhabbet_trip_wait30] cancel_failed session_id=%s err=%s", session_id[:12], e)
 
 
 async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
