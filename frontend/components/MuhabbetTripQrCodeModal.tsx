@@ -114,6 +114,18 @@ export default function MuhabbetTripQrCodeModal({
   useEffect(() => {
     if (!visible) return;
     console.log(
+      '[LYO_QR_MODAL_VISIBLE]',
+      JSON.stringify({
+        mode,
+        loading,
+        tokenReady,
+        targetPassengerId: String(targetPassengerId || '').trim() || null,
+      })
+    );
+  }, [loading, mode, targetPassengerId, tokenReady, visible]);
+  useEffect(() => {
+    if (!visible) return;
+    console.log(
       '[LYO_QR_MODAL_RENDER]',
       JSON.stringify({
         usingQrPayload,

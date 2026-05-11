@@ -29449,7 +29449,6 @@ async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str, pas
             "qr_payload": qr_payload,
             "boarding_qr_target_passenger_id": target_pid,
             "boarding_qr_target_passenger_name": target_name or None,
-            "session": _muhabbet_trip_session_public(next_row),
         }
         logger.info(
             "[leylek_qr] %s",
@@ -29478,7 +29477,6 @@ async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str, pas
             "conversation_id": row.get("conversation_id"),
             "boarding_qr_token": token,
             "expires_at": expires_iso,
-            "session": _muhabbet_trip_session_public(row),
         }
         logger.info(
             "[leylek_qr] %s",
@@ -29511,7 +29509,6 @@ async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str, pas
         "conversation_id": row.get("conversation_id"),
         "boarding_qr_token": token,
         "expires_at": expires_iso,
-        "session": _muhabbet_trip_session_public(next_row),
     }
     return {
         "boarding_qr_token": token,
@@ -29544,6 +29541,41 @@ async def _muhabbet_emit_boarding_qr_created_after_apply(out: dict, session_id: 
         await notify_trip_session_updated(sid, "boarding_qr_created", actor_uid)
     except Exception as ne:
         logger.warning("[muhabbet_notify] boarding_qr_created notify failed: %s", ne)
+
+
+async def _muhabbet_trip_boarding_qr_confirm_background(
+    next_row: dict,
+    event_name: str,
+    session_id: str,
+    actor_uid: str,
+    *,
+    calculate_route: bool = False,
+) -> None:
+    sid = str(session_id or "").strip().lower()
+    started = time.perf_counter()
+    try:
+        row_for_emit = next_row
+        if calculate_route:
+            row_for_emit = await _muhabbet_trip_calculate_and_store_route(next_row)
+        await _broadcast_muhabbet_trip_session_state(row_for_emit, event_name)
+        try:
+            await notify_trip_session_updated(sid, "boarding_confirmed", actor_uid)
+        except Exception as ne:
+            logger.warning("[muhabbet_notify] boarding_confirmed notify failed: %s", ne)
+        logger.info(
+            "[LYO_QR_BACKGROUND_SESSION_REFRESH] %s",
+            json.dumps(
+                {
+                    "session_id": sid,
+                    "event": event_name,
+                    "route_calculated": bool(calculate_route),
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    except Exception as e:
+        logger.warning("[LYO_QR_BACKGROUND_SESSION_REFRESH] session_id=%s failed err=%s", sid[:12], e)
 
 
 async def _muhabbet_trip_boarding_qr_confirm_apply(
@@ -29598,9 +29630,21 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         raise _MuhabbetTripOpError("not_active", _muhabbet_trip_boarding_confirm_reject_detail(st_row))
     if st_row in ("active", "started"):
         if sc <= 1 and str(row.get("boarding_qr_confirmed_at") or "").strip():
-            return {"session": _muhabbet_trip_session_public(row)}
+            return {
+                "session_id": str(session_id or "").strip().lower(),
+                "passenger_user_id": uid_lo,
+                "boarded_passenger_ids": brd_ids,
+                "all_boarded": True,
+                "ride_status": str(row.get("ride_status") or row.get("status") or "").strip().lower() or None,
+            }
         if sc > 1 and acc_ids and set(acc_ids).issubset(set(brd_ids)):
-            return {"session": _muhabbet_trip_session_public(row)}
+            return {
+                "session_id": str(session_id or "").strip().lower(),
+                "passenger_user_id": uid_lo,
+                "boarded_passenger_ids": brd_ids,
+                "all_boarded": True,
+                "ride_status": str(row.get("ride_status") or row.get("status") or "").strip().lower() or None,
+            }
     elif st_row != "ready":
         raise _MuhabbetTripOpError("not_active", _muhabbet_trip_boarding_confirm_reject_detail(st_row))
 
@@ -29635,10 +29679,35 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         }
         upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
         next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
         _muhabbet_trip_passengers_update_for_user(session_id, uid_lo, {"status": "onboard", "boarded_at": now_iso})
-        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started")
-        return {"session": _muhabbet_trip_session_public(next_row)}
+        asyncio.create_task(
+            _muhabbet_trip_boarding_qr_confirm_background(
+                next_row,
+                "muhabbet_trip_started",
+                session_id,
+                uid_lo,
+                calculate_route=True,
+            )
+        )
+        logger.info(
+            "[LYO_QR_CONFIRM_FAST_PATH] %s",
+            json.dumps(
+                {
+                    "session_id": str(session_id or "").strip().lower(),
+                    "passenger_user_id": uid_lo,
+                    "all_boarded": True,
+                    "ride_status": "active",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        return {
+            "session_id": str(session_id or "").strip().lower(),
+            "passenger_user_id": uid_lo,
+            "boarded_passenger_ids": new_brd,
+            "all_boarded": True,
+            "ride_status": "active",
+        }
 
     ride_rs = "boarding" if len(new_brd) > 0 else "waiting"
     if all_boarded:
@@ -29736,8 +29805,6 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             )
             raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch_ms}
-    if all_boarded:
-        next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
     _muhabbet_trip_passengers_update_for_user(session_id, uid_lo, {"status": "onboard", "boarded_at": now_iso})
     if token_row:
         try:
@@ -29759,8 +29826,35 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
                 ),
             )
             raise
-    await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started" if all_boarded else "muhabbet_trip_session_updated")
-    return {"session": _muhabbet_trip_session_public(next_row)}
+    asyncio.create_task(
+        _muhabbet_trip_boarding_qr_confirm_background(
+            next_row,
+            "muhabbet_trip_started" if all_boarded else "muhabbet_trip_session_updated",
+            session_id,
+            uid_lo,
+            calculate_route=all_boarded,
+        )
+    )
+    logger.info(
+        "[LYO_QR_CONFIRM_FAST_PATH] %s",
+        json.dumps(
+            {
+                "session_id": str(session_id or "").strip().lower(),
+                "passenger_user_id": uid_lo,
+                "boarded_passenger_ids": new_brd,
+                "all_boarded": all_boarded,
+                "ride_status": str(next_row.get("ride_status") or ride_rs or "").strip().lower() or None,
+            },
+            ensure_ascii=False,
+        ),
+    )
+    return {
+        "session_id": str(session_id or "").strip().lower(),
+        "passenger_user_id": uid_lo,
+        "boarded_passenger_ids": new_brd,
+        "all_boarded": all_boarded,
+        "ride_status": str(next_row.get("ride_status") or ride_rs or "").strip().lower() or None,
+    }
 
 
 def _muhabbet_call_started_at_age_seconds(started_raw) -> float | None:
@@ -31037,17 +31131,45 @@ async def muhabbet_trip_boarding_qr_create_post(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     try:
         out = await _muhabbet_trip_boarding_qr_create_apply(uid, session_id, (body.passenger_user_id if body else None))
-        await _muhabbet_emit_boarding_qr_created_after_apply(out, session_id, uid)
-        next_pub = _muhabbet_trip_session_public(out["next_row"])
+        async def _background_emit_boarding_qr_created() -> None:
+            started = time.perf_counter()
+            try:
+                await _muhabbet_emit_boarding_qr_created_after_apply(out, session_id, uid)
+                logger.info(
+                    "[LYO_QR_BACKGROUND_SESSION_REFRESH] %s",
+                    json.dumps(
+                        {
+                            "session_id": str(session_id or "").strip().lower(),
+                            "event": "boarding_qr_created",
+                            "duration_ms": int((time.perf_counter() - started) * 1000),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except Exception as be:
+                logger.warning("[LYO_QR_BACKGROUND_SESSION_REFRESH] boarding_qr_created session_id=%s err=%s", str(session_id or "")[:12], be)
+
+        asyncio.create_task(_background_emit_boarding_qr_created())
+        logger.info(
+            "[LYO_QR_CREATE_FAST_PATH] %s",
+            json.dumps(
+                {
+                    "session_id": str(session_id or "").strip().lower(),
+                    "target_passenger_id": out.get("boarding_qr_target_passenger_id"),
+                    "has_payload": bool(out.get("qr_payload")),
+                },
+                ensure_ascii=False,
+            ),
+        )
         return {
             "success": True,
+            "session_id": str(session_id or "").strip().lower(),
             "boarding_qr_token": out["boarding_qr_token"],
             "qr_payload": out["qr_payload"],
             "expires_at": out["expires_at"],
             "boarding_qr_expires_at": out.get("boarding_qr_expires_at") or out["expires_at"],
             "boarding_qr_target_passenger_id": out.get("boarding_qr_target_passenger_id"),
             "boarding_qr_target_passenger_name": out.get("boarding_qr_target_passenger_name"),
-            "session": next_pub,
         }
     except HTTPException:
         raise
@@ -31066,11 +31188,6 @@ async def muhabbet_trip_boarding_qr_confirm_post(
     tok, payload_passenger_id = _muhabbet_trip_parse_boarding_qr_input(raw_qr, body.passenger_user_id)
     try:
         sess = await _muhabbet_trip_boarding_qr_confirm_apply(uid, session_id, tok, payload_passenger_id)
-        sid_lo = str(session_id or "").strip().lower()
-        try:
-            await notify_trip_session_updated(sid_lo, "boarding_confirmed", uid)
-        except Exception as ne:
-            logger.warning("[muhabbet_notify] boarding_confirmed notify failed: %s", ne)
         return {"success": True, **sess}
     except HTTPException:
         raise

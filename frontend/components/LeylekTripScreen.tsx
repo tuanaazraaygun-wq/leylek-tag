@@ -2858,6 +2858,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   }, [getActiveMuhabbetSessionId, isDriver, myId, navigationTarget, session?.status]);
 
   const openQrFinish = useCallback(() => {
+    const openTapAt = Date.now();
+    console.log(
+      '[LYO_QR_OPEN_TAP]',
+      JSON.stringify({
+        session_id: getActiveMuhabbetSessionId() || effectiveSessionId,
+        mode: session?.status === 'ready' ? 'boarding' : 'finish',
+        role: isDriver ? 'driver' : 'passenger',
+      })
+    );
     if (!session || isTerminal) return;
     const stNow = String(session.status || '').trim().toLowerCase();
     if (!['ready', 'active', 'started'].includes(stNow)) {
@@ -2972,11 +2981,28 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           const startedAt = new Date().toISOString();
           const t0 = Date.now();
           try {
+            console.log(
+              '[LYO_QR_CREATE_REQUEST_START]',
+              JSON.stringify({
+                session_id: activeSessionIdForQrCreate || '',
+                targetPassengerId: targetPassengerId || null,
+                since_tap_ms: Date.now() - openTapAt,
+              })
+            );
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_create',
               pathSuffix: 'boarding-qr/create',
               body: multiSeatBoarding && targetPassengerId ? { passenger_user_id: targetPassengerId } : undefined,
             });
+            console.log(
+              '[LYO_QR_CREATE_RESPONSE_MS]',
+              JSON.stringify({
+                session_id: activeSessionIdForQrCreate || '',
+                duration_ms: Date.now() - t0,
+                status: rest.status,
+                success: rest.json.success === true,
+              })
+            );
             console.log(
               '[LYO_QR_CREATE_TIMING]',
               JSON.stringify({ started_at: startedAt, duration_ms: Date.now() - t0 })
@@ -3300,6 +3326,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   }, [
     activePickupPassengerLeg,
     clearOptimistic,
+    effectiveSessionId,
     getActiveMuhabbetSessionId,
     isDriver,
     isTerminal,
@@ -3340,6 +3367,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             const confirmBody = passengerId
               ? { boarding_qr_token: token, passenger_user_id: passengerId }
               : { boarding_qr_token: token };
+            const confirmStart = Date.now();
             console.log(
               '[LYO_QR_CONFIRM_BODY]',
               JSON.stringify({
@@ -3357,11 +3385,28 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 body_keys: Object.keys(confirmBody),
               })
             );
+            console.log(
+              '[LYO_QR_CONFIRM_REQUEST_START]',
+              JSON.stringify({
+                session_id: getActiveMuhabbetSessionId() || '',
+                token_length: token.length,
+                passenger_user_id: passengerId || null,
+              })
+            );
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_confirm',
               pathSuffix: 'boarding-qr/confirm',
               body: confirmBody,
             });
+            console.log(
+              '[LYO_QR_CONFIRM_RESPONSE_MS]',
+              JSON.stringify({
+                session_id: getActiveMuhabbetSessionId() || '',
+                duration_ms: Date.now() - confirmStart,
+                status: rest.status,
+                success: rest.json.success === true,
+              })
+            );
             const detail = rest.json.detail;
             const errorCode =
               detail && typeof detail === 'object' && !Array.isArray(detail) && typeof (detail as Record<string, unknown>).code === 'string'
@@ -3416,7 +3461,17 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 '[MUHABBET_QR_REFRESH_BACKGROUND]',
                 JSON.stringify({ action: 'boarding_qr_confirm_rest' })
               );
-              void refreshSessionFromServer('boarding_qr_confirm_rest', { bypassDebounce: true });
+              void (async () => {
+                const refreshStart = Date.now();
+                await refreshSessionFromServer('boarding_qr_confirm_rest', { bypassDebounce: true });
+                console.log(
+                  '[LYO_QR_SESSION_REFRESH_AFTER_CONFIRM_MS]',
+                  JSON.stringify({
+                    session_id: getActiveMuhabbetSessionId() || '',
+                    duration_ms: Date.now() - refreshStart,
+                  })
+                );
+              })();
               return;
             }
             Alert.alert(

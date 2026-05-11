@@ -174,10 +174,17 @@ export default function MuhabbetTripQrScanModal({
   const onBarcodeScanned = useCallback(
     ({ data }: { type: string; data: string }) => {
       if (scanned || processing) return;
+      console.log(
+        '[LYO_QR_SCAN_RAW_RECEIVED]',
+        JSON.stringify({
+          raw_length: String(data || '').length,
+          mode,
+        })
+      );
       setScanned(true);
       void submitToken(data);
     },
-    [processing, scanned, submitToken],
+    [mode, processing, scanned, submitToken],
   );
 
   const title = 'QR kodu okut';
