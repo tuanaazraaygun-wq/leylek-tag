@@ -26626,6 +26626,13 @@ def _muhabbet_trip_next_pickup_location(session_row: dict, next_uid: str) -> dic
     nu = str(next_uid or "").strip().lower()
     if not sid or not nu:
         return None
+    def _session_pickup_fallback() -> dict | None:
+        la = _muhabbet_trip_float_or_none((session_row or {}).get("pickup_lat"))
+        ln = _muhabbet_trip_float_or_none((session_row or {}).get("pickup_lng"))
+        if la is not None and ln is not None:
+            return {"lat": la, "lng": ln}
+        return None
+
     col = _muhabbet_trip_passengers_uid_column()
     try:
         r = (
@@ -26643,8 +26650,40 @@ def _muhabbet_trip_next_pickup_location(session_row: dict, next_uid: str) -> dic
             if la is not None and ln is not None:
                 return {"lat": la, "lng": ln}
     except Exception as e:
+        err = str(e).lower()
+        schema_missing = (
+            "pickup_lat" in err
+            or "pickup_lng" in err
+            or "schema cache" in err
+            or "column" in err
+            or "400" in err
+        )
+        if schema_missing:
+            logger.warning(
+                "[LYO_PASSENGER_PICKUP_COLUMNS_MISSING] session_id=%s passenger_user_id=%s",
+                sid,
+                nu,
+            )
+            try:
+                fallback = (
+                    supabase.table("muhabbet_trip_passengers")
+                    .select("*")
+                    .eq("session_id", sid)
+                    .eq(col, nu)
+                    .limit(1)
+                    .execute()
+                )
+                if fallback.data:
+                    pr = dict(fallback.data[0])
+                    la = _muhabbet_trip_float_or_none(pr.get("pickup_lat"))
+                    ln = _muhabbet_trip_float_or_none(pr.get("pickup_lng"))
+                    if la is not None and ln is not None:
+                        return {"lat": la, "lng": ln}
+            except Exception as fe:
+                logger.debug("next_pickup_location fallback select skipped session_id=%s err=%s", sid[:12], fe)
+            return _session_pickup_fallback()
         logger.debug("next_pickup_location session_id=%s err=%s", sid[:12], e)
-    return None
+    return _session_pickup_fallback()
 
 
 def _muhabbet_trip_multi_seat_public_extra(row: dict) -> dict:
