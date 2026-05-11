@@ -29665,7 +29665,76 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         patch_ms["depart_confirmed_at"] = now_iso
         patch_ms["depart_confirmed_by_user_id"] = str(row.get("driver_id") or "").strip().lower() or uid_lo
         patch_ms["depart_reason"] = "all_boarded"
-    upd = supabase.table("muhabbet_trip_sessions").update(patch_ms).eq("id", session_id).execute()
+    patch_keys = list(patch_ms.keys())
+    logger.info(
+        "[LYO_QR_SESSION_PATCH] %s",
+        json.dumps(
+            {
+                "session_id": str(session_id or "").strip().lower(),
+                "uid": uid_lo,
+                "patch_keys": patch_keys,
+                "patch_ms": patch_ms,
+            },
+            ensure_ascii=False,
+            default=str,
+        ),
+    )
+    try:
+        upd = supabase.table("muhabbet_trip_sessions").update(patch_ms).eq("id", session_id).execute()
+    except Exception as e:
+        err_msg = str(e)
+        logger.warning(
+            "[LYO_QR_SESSION_PATCH_FAILED] %s",
+            json.dumps(
+                {
+                    "session_id": str(session_id or "").strip().lower(),
+                    "patch_keys": patch_keys,
+                    "error_repr": repr(e),
+                    "error_message": err_msg,
+                },
+                ensure_ascii=False,
+                default=str,
+            ),
+        )
+        err_low = err_msg.lower()
+        status_active_constraint = (
+            "status" in patch_ms
+            and str(patch_ms.get("status") or "").strip().lower() == "active"
+            and ("check" in err_low or "constraint" in err_low)
+        )
+        if not status_active_constraint:
+            raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from e
+        retry_patch = {k: v for k, v in patch_ms.items() if k != "status"}
+        retry_keys = list(retry_patch.keys())
+        logger.warning(
+            "[LYO_QR_SESSION_PATCH_RETRY_WITHOUT_STATUS] %s",
+            json.dumps(
+                {
+                    "session_id": str(session_id or "").strip().lower(),
+                    "uid": uid_lo,
+                    "patch_keys": retry_keys,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        try:
+            upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
+            patch_ms = retry_patch
+        except Exception as retry_e:
+            logger.warning(
+                "[LYO_QR_SESSION_PATCH_FAILED] %s",
+                json.dumps(
+                    {
+                        "session_id": str(session_id or "").strip().lower(),
+                        "patch_keys": retry_keys,
+                        "error_repr": repr(retry_e),
+                        "error_message": str(retry_e),
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+            raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch_ms}
     if all_boarded:
         next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
