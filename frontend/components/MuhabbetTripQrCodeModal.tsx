@@ -17,6 +17,8 @@ type MuhabbetTripQrCodeModalProps = {
   token: string;
   sessionId: string;
   expiresAt?: string | null;
+  qrPayload?: string | object | null;
+  targetPassengerName?: string | null;
   onClose: () => void;
   /** REST ile token beklenirken spinner */
   loading?: boolean;
@@ -32,12 +34,24 @@ function qrValue(mode: 'boarding' | 'finish', sessionId: string, token: string):
   return `leylekmuhabbet://trip-qr?${params.toString()}`;
 }
 
+function normalizeQrPayload(payload?: string | object | null): string {
+  if (!payload) return '';
+  if (typeof payload === 'string') return payload.trim();
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return '';
+  }
+}
+
 export default function MuhabbetTripQrCodeModal({
   visible,
   mode,
   token,
   sessionId,
   expiresAt,
+  qrPayload,
+  targetPassengerName,
   onClose,
   loading = false,
 }: MuhabbetTripQrCodeModalProps) {
@@ -67,14 +81,18 @@ export default function MuhabbetTripQrCodeModal({
     return () => clearTimeout(timer);
   }, [visible, loading, tokenReady]);
 
-  const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
+  const passengerName = String(targetPassengerName || '').trim();
+  const title = mode === 'boarding' && passengerName ? `${passengerName} için Biniş QR` : mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
   const hint =
-    mode === 'boarding'
+    mode === 'boarding' && passengerName
+      ? 'Bu QR yalnızca bu yolcu tarafından okutulabilir.'
+      : mode === 'boarding'
       ? 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda başlar.'
       : 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda tamamlanır.';
   const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null;
   const showQr = tokenReady && !loading;
-  const value = showQr ? qrValue(mode, sessionId, token) : '';
+  const backendQrPayload = mode === 'boarding' ? normalizeQrPayload(qrPayload) : '';
+  const value = showQr ? backendQrPayload || qrValue(mode, sessionId, token) : '';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

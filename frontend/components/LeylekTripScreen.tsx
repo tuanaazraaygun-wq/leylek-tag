@@ -560,6 +560,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [qrMode, setQrMode] = useState<QrMode>('finish');
   const [qrFinishToken, setQrFinishToken] = useState('');
   const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null);
+  const [qrPayload, setQrPayload] = useState<string | object | null>(null);
+  const [qrTargetPassengerId, setQrTargetPassengerId] = useState<string | null>(null);
+  const [qrTargetPassengerName, setQrTargetPassengerName] = useState<string | null>(null);
   const [paymentPromptVisible, setPaymentPromptVisible] = useState(false);
   const [paymentPromptShown, setPaymentPromptShown] = useState(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
@@ -1104,6 +1107,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrScanVisible(false);
       setQrFinishToken('');
       setQrExpiresAt(null);
+      setQrPayload(null);
+      setQrTargetPassengerId(null);
+      setQrTargetPassengerName(null);
       setForceFinishPrompt(null);
       setForceFinishWarningVisible(false);
       setForceFinishRequestOptimistic(false);
@@ -1845,6 +1851,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrMode('finish');
       setQrFinishToken(finishTok.toUpperCase());
       setQrExpiresAt(session.finish_qr_expires_at ?? null);
+      setQrPayload(null);
+      setQrTargetPassengerId(null);
+      setQrTargetPassengerName(null);
       setQrCodeVisible(true);
       setQrLoading(false);
       return;
@@ -1854,6 +1863,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrCodeVisible(false);
       setQrFinishToken('');
       setQrExpiresAt(null);
+      setQrPayload(null);
+      setQrTargetPassengerId(null);
+      setQrTargetPassengerName(null);
     }
   }, [isDriver, isTerminal, isLocked, qrLoading, session]);
 
@@ -1864,6 +1876,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrScanVisible(false);
       setQrCodeVisible(false);
       setQrLoading(false);
+      setQrPayload(null);
+      setQrTargetPassengerId(null);
+      setQrTargetPassengerName(null);
       qrCreateInFlightRef.current = false;
       unlockState('qr');
     }
@@ -2863,8 +2878,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     }
     if (stNow === 'ready') {
       if (isDriver) {
+        const multiSeatBoarding = Number(session.seat_capacity ?? 1) > 1;
         const reuseBoardingToken = String(session.boarding_qr_token || '').trim();
-        if (reuseBoardingToken) {
+        if (reuseBoardingToken && !multiSeatBoarding) {
           if (!isQrTokenReusable(session.boarding_qr_expires_at ?? null)) {
             console.log(
               '[MUHABBET_QR_REUSE_TOKEN_EXPIRED]',
@@ -2884,6 +2900,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           setQrLoading(false);
           setQrFinishToken(reuseBoardingToken.toUpperCase());
           setQrExpiresAt(session.boarding_qr_expires_at ?? null);
+          setQrPayload(null);
+          setQrTargetPassengerId(null);
+          setQrTargetPassengerName(null);
           return;
           }
         }
@@ -2907,6 +2926,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         setQrLoading(true);
         setQrFinishToken('');
         setQrExpiresAt(null);
+        setQrPayload(null);
+        setQrTargetPassengerId(null);
+        setQrTargetPassengerName(null);
         qrModalOpenedAtRef.current = Date.now();
         void (async () => {
           const t0 = Date.now();
@@ -2928,6 +2950,22 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               latestQrActionIdRef.current = null;
               setQrFinishToken(String(rest.json.boarding_qr_token).trim().toUpperCase());
               setQrExpiresAt(typeof rest.json.expires_at === 'string' ? rest.json.expires_at : null);
+              const nextQrPayload = rest.json.qr_payload;
+              setQrPayload(
+                typeof nextQrPayload === 'string' || (nextQrPayload && typeof nextQrPayload === 'object')
+                  ? (nextQrPayload as string | object)
+                  : null
+              );
+              setQrTargetPassengerId(
+                typeof rest.json.boarding_qr_target_passenger_id === 'string'
+                  ? rest.json.boarding_qr_target_passenger_id
+                  : null
+              );
+              setQrTargetPassengerName(
+                typeof rest.json.boarding_qr_target_passenger_name === 'string'
+                  ? rest.json.boarding_qr_target_passenger_name
+                  : null
+              );
               const sessBrd = rest.json.session;
               if (sessBrd && typeof sessBrd === 'object') {
                 setSession(sessBrd as MuhabbetTripSession);
@@ -2961,6 +2999,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             unlockState('qr');
             setQrCodeVisible(false);
             setQrFinishToken('');
+            setQrPayload(null);
+            setQrTargetPassengerId(null);
+            setQrTargetPassengerName(null);
             clearOptimistic('boarding_qr_create');
             const failMsg = muhabbetTripRestDetail(rest.json.detail, 'Biniş QR oluşturulamadı.');
             if (failMsg) Alert.alert('Muhabbet yolculuk', failMsg);
@@ -2979,6 +3020,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             clearOptimistic('boarding_qr_create');
             setQrCodeVisible(false);
             setQrFinishToken('');
+            setQrPayload(null);
+            setQrTargetPassengerId(null);
+            setQrTargetPassengerName(null);
           } finally {
             qrCreateInFlightRef.current = false;
             if (qrActionId === latestQrActionIdRef.current) {
@@ -3017,6 +3061,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     unlockState('qr');
     qrCreateInFlightRef.current = false;
     setQrMode('finish');
+    setQrPayload(null);
+    setQrTargetPassengerId(null);
+    setQrTargetPassengerName(null);
 
     if (isDriver) {
       const reuseFinishToken = String(session.finish_qr_token || session.qr_finish_token || '').trim();
@@ -3056,6 +3103,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrLoading(true);
       setQrFinishToken('');
       setQrExpiresAt(null);
+      setQrPayload(null);
+      setQrTargetPassengerId(null);
+      setQrTargetPassengerName(null);
       qrModalOpenedAtRef.current = Date.now();
       const sidFinishPost = getActiveMuhabbetSessionId();
       console.log(
@@ -3125,6 +3175,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           unlockState('qr');
           setQrCodeVisible(false);
           setQrFinishToken('');
+          setQrPayload(null);
+          setQrTargetPassengerId(null);
+          setQrTargetPassengerName(null);
           clearOptimistic('finish_qr_create');
           const failFnMsg =
             muhabbetTripRestDetail(rest.json.detail, '') ||
@@ -3146,6 +3199,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           clearOptimistic('finish_qr_create');
           setQrCodeVisible(false);
           setQrFinishToken('');
+          setQrPayload(null);
+          setQrTargetPassengerId(null);
+          setQrTargetPassengerName(null);
           Alert.alert('Muhabbet yolculuk', 'Bağlantı hatası. Tekrar deneyin.');
         } finally {
           qrCreateInFlightRef.current = false;
@@ -3172,7 +3228,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   ]);
 
   const confirmQrToken = useCallback(
-    (rawToken: string) => {
+    (rawToken: string, passengerUserId?: string | null) => {
       const token = rawToken.trim();
       if (!token) {
         Alert.alert(qrMode === 'boarding' ? 'Biniş QR' : 'QR ile Bitir', qrMode === 'boarding' ? 'Sürücünün gösterdiği kodu girin.' : 'Yolcunun gösterdiği kodu girin.');
@@ -3193,15 +3249,19 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             return;
           }
           if (qrMode === 'boarding') {
+            const passengerId = String(passengerUserId || '').trim();
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_confirm',
               pathSuffix: 'boarding-qr/confirm',
-              body: { boarding_qr_token: token },
+              body: passengerId ? { boarding_qr_token: token, passenger_user_id: passengerId } : { boarding_qr_token: token },
             });
             const applyBoardingConfirmSuccess = (next?: MuhabbetTripSession | null) => {
               setQrScanVisible(false);
               setQrFinishToken('');
               setQrExpiresAt(null);
+              setQrPayload(null);
+              setQrTargetPassengerId(null);
+              setQrTargetPassengerName(null);
               setQrCodeVisible(false);
               const st = next?.status;
               if (st === 'active' || st === 'started') {
@@ -3511,6 +3571,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const closeQrCodeModal = useCallback(() => {
     setQrCodeVisible(false);
     setQrLoading(false);
+    setQrPayload(null);
+    setQrTargetPassengerId(null);
+    setQrTargetPassengerName(null);
     qrCreateInFlightRef.current = false;
     latestQrActionIdRef.current = null;
     unlockState('qr');
@@ -3935,12 +3998,15 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         onCancel={endCall}
       />
       <MuhabbetTripQrCodeModal
+        key={`qr-${qrMode}-${qrTargetPassengerId || 'legacy'}`}
         visible={qrCodeVisible}
         mode={qrMode}
         loading={qrLoading}
         token={qrFinishToken}
         sessionId={activeSessionId || effectiveSessionId}
         expiresAt={qrExpiresAt}
+        qrPayload={qrMode === 'boarding' ? qrPayload : null}
+        targetPassengerName={qrMode === 'boarding' ? qrTargetPassengerName : null}
         onClose={closeQrCodeModal}
       />
       <MuhabbetTripQrScanModal

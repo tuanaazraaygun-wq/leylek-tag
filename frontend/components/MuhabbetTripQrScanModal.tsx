@@ -17,18 +17,19 @@ type MuhabbetTripQrScanModalProps = {
   visible: boolean;
   mode: 'boarding' | 'finish';
   onClose: () => void;
-  onConfirmToken: (token: string) => void | Promise<void>;
+  onConfirmToken: (token: string, passengerUserId?: string | null) => void | Promise<void>;
 };
 
 const TOKEN_PARAM_KEYS = ['token', 'qr', 'code', 'boarding_token'] as const;
+const PASSENGER_PARAM_KEYS = ['passenger_user_id', 'passengerUserId'] as const;
 
 /**
  * QR içinde URL veya düz kod olabilir. Token çıkarılırken büyük/küçük harf korunur (sunucu digest öncesi normalize eder).
  */
-function extractMuhabbetTripQrToken(raw: string): { token: string | null; parsedUrl: boolean } {
+function extractMuhabbetTripQrToken(raw: string): { token: string | null; passengerUserId: string | null; parsedUrl: boolean } {
   const trimmed = String(raw || '').trim();
   if (!trimmed) {
-    return { token: null, parsedUrl: false };
+    return { token: null, passengerUserId: null, parsedUrl: false };
   }
 
   const pickFromSearchParams = (searchParams: URLSearchParams): string | null => {
@@ -39,20 +40,43 @@ function extractMuhabbetTripQrToken(raw: string): { token: string | null; parsed
     }
     return null;
   };
+  const pickPassengerFromSearchParams = (searchParams: URLSearchParams): string | null => {
+    for (const key of PASSENGER_PARAM_KEYS) {
+      const v = searchParams.get(key);
+      const t = v != null ? String(v).trim() : '';
+      if (t) return t;
+    }
+    return null;
+  };
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        const rec = obj as Record<string, unknown>;
+        const token = String(rec.token || rec.boarding_qr_token || '').trim() || null;
+        const passengerUserId = String(rec.passenger_user_id || rec.passengerUserId || '').trim() || null;
+        return { token, passengerUserId, parsedUrl: false };
+      }
+    } catch {
+      // Fall through to URL/raw-token parsing.
+    }
+  }
 
   try {
     const url = new URL(trimmed);
     const scope = url.searchParams.get('scope');
     const picked = pickFromSearchParams(url.searchParams);
+    const passengerUserId = pickPassengerFromSearchParams(url.searchParams);
     if (picked) {
-      return { token: picked, parsedUrl: true };
+      return { token: picked, passengerUserId, parsedUrl: true };
     }
     if (scope === 'muhabbet_trip') {
-      return { token: null, parsedUrl: true };
+      return { token: null, passengerUserId, parsedUrl: true };
     }
-    return { token: null, parsedUrl: true };
+    return { token: null, passengerUserId, parsedUrl: true };
   } catch {
-    return { token: trimmed, parsedUrl: false };
+    return { token: trimmed, passengerUserId: null, parsedUrl: false };
   }
 }
 
@@ -87,7 +111,7 @@ export default function MuhabbetTripQrScanModal({
   }, [hasPermission?.granted, requestPermission, visible]);
 
   const submitToken = useCallback(async (raw: string) => {
-    const { token, parsedUrl } = extractMuhabbetTripQrToken(raw);
+    const { token, passengerUserId, parsedUrl } = extractMuhabbetTripQrToken(raw);
     const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
     if (!token) {
       Alert.alert(
@@ -102,7 +126,7 @@ export default function MuhabbetTripQrScanModal({
     try {
       Vibration.vibrate([0, 70, 55, 90]);
       setSuccessVisible(true);
-      await onConfirmToken(token);
+      await onConfirmToken(token, passengerUserId);
       setTimeout(onClose, 180);
     } finally {
       setTimeout(() => {
