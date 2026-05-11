@@ -30874,7 +30874,7 @@ async def muhabbet_trip_boarding_qr_create_post(
     except HTTPException:
         raise
     except _MuhabbetTripOpError as e:
-        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+        raise HTTPException(status_code=e.http_status, detail=_muhabbet_trip_api_error_detail(e.socket_code, e.message)) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/boarding-qr/confirm")

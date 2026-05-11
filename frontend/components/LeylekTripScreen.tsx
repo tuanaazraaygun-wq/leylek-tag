@@ -2969,6 +2969,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         setQrTargetPassengerName(targetPassengerName || null);
         qrModalOpenedAtRef.current = Date.now();
         void (async () => {
+          const startedAt = new Date().toISOString();
           const t0 = Date.now();
           try {
             const rest = await muhabbetTripSessionRestPost({
@@ -2976,6 +2977,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               pathSuffix: 'boarding-qr/create',
               body: multiSeatBoarding && targetPassengerId ? { passenger_user_id: targetPassengerId } : undefined,
             });
+            console.log(
+              '[LYO_QR_CREATE_TIMING]',
+              JSON.stringify({ started_at: startedAt, duration_ms: Date.now() - t0 })
+            );
             console.log(
               '[LYO_QR_CREATE_RESPONSE]',
               JSON.stringify({
@@ -2989,6 +2994,27 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                     ? rest.json.boarding_qr_target_passenger_name
                     : null,
                 has_token: typeof rest.json.boarding_qr_token === 'string' && !!rest.json.boarding_qr_token.trim(),
+              })
+            );
+            console.log(
+              '[LYO_QR_CREATE_RESPONSE_FULL]',
+              JSON.stringify({
+                status: rest.status,
+                success: rest.json.success === true,
+                has_qr_payload: !!rest.json.qr_payload,
+                boarding_qr_target_passenger_id:
+                  typeof rest.json.boarding_qr_target_passenger_id === 'string'
+                    ? rest.json.boarding_qr_target_passenger_id
+                    : null,
+                boarding_qr_target_passenger_name:
+                  typeof rest.json.boarding_qr_target_passenger_name === 'string'
+                    ? rest.json.boarding_qr_target_passenger_name
+                    : null,
+                token_length:
+                  typeof rest.json.boarding_qr_token === 'string'
+                    ? rest.json.boarding_qr_token.trim().length
+                    : 0,
+                expires_at: typeof rest.json.expires_at === 'string' ? rest.json.expires_at : null,
               })
             );
             if (
@@ -3066,6 +3092,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             void refreshSessionFromServer('boarding_qr_create_rest_fail', { bypassDebounce: true });
             console.log('[leylek_qr_timing]', JSON.stringify({ create_ms: Date.now() - t0, mode: 'boarding', ok: false }));
           } catch {
+            console.log(
+              '[LYO_QR_CREATE_TIMING]',
+              JSON.stringify({ started_at: startedAt, duration_ms: Date.now() - t0, error: 'network_or_exception' })
+            );
             if (qrActionId !== latestQrActionIdRef.current) {
               if (__DEV__) console.log('[leylek_skip_refresh]', JSON.stringify({ reason: 'stale_qr_response' }));
               return;
@@ -3307,6 +3337,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           }
           if (qrMode === 'boarding') {
             const passengerId = String(passengerUserId || '').trim();
+            const confirmBody = passengerId
+              ? { boarding_qr_token: token, passenger_user_id: passengerId }
+              : { boarding_qr_token: token };
             console.log(
               '[LYO_QR_CONFIRM_BODY]',
               JSON.stringify({
@@ -3315,11 +3348,35 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 mode: qrMode,
               })
             );
+            console.log(
+              '[LYO_QR_CONFIRM_REQUEST]',
+              JSON.stringify({
+                session_id: getActiveMuhabbetSessionId() || '',
+                token_length: token.length,
+                passenger_user_id: passengerId || null,
+                body_keys: Object.keys(confirmBody),
+              })
+            );
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_confirm',
               pathSuffix: 'boarding-qr/confirm',
-              body: passengerId ? { boarding_qr_token: token, passenger_user_id: passengerId } : { boarding_qr_token: token },
+              body: confirmBody,
             });
+            const detail = rest.json.detail;
+            const errorCode =
+              detail && typeof detail === 'object' && !Array.isArray(detail) && typeof (detail as Record<string, unknown>).code === 'string'
+                ? String((detail as Record<string, unknown>).code)
+                : null;
+            console.log(
+              '[LYO_QR_CONFIRM_RESPONSE]',
+              JSON.stringify({
+                status: rest.status,
+                success: rest.json.success === true,
+                detail,
+                error_code: errorCode,
+                response_body: rest.json,
+              })
+            );
             const applyBoardingConfirmSuccess = (next?: MuhabbetTripSession | null) => {
               setQrScanVisible(false);
               setQrFinishToken('');
@@ -3411,7 +3468,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         }
       })();
     },
-    [muhabbetTripSessionRestPost, myId, qrMode, refreshSessionFromServer]
+    [getActiveMuhabbetSessionId, muhabbetTripSessionRestPost, myId, qrMode, refreshSessionFromServer]
   );
 
   const requestForceFinish = useCallback(() => {

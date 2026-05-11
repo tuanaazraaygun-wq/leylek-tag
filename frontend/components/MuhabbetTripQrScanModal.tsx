@@ -31,10 +31,12 @@ function extractMuhabbetTripQrToken(raw: string): {
   passengerUserId: string | null;
   parsedUrl: boolean;
   qrType: string | null;
+  sessionId: string | null;
+  parseSource: 'json' | 'url' | 'raw';
 } {
   const trimmed = String(raw || '').trim();
   if (!trimmed) {
-    return { token: null, passengerUserId: null, parsedUrl: false, qrType: null };
+    return { token: null, passengerUserId: null, parsedUrl: false, qrType: null, sessionId: null, parseSource: 'raw' };
   }
 
   const pickFromSearchParams = (searchParams: URLSearchParams): string | null => {
@@ -62,7 +64,8 @@ function extractMuhabbetTripQrToken(raw: string): {
         const token = String(rec.token || rec.boarding_qr_token || '').trim() || null;
         const passengerUserId = String(rec.passenger_user_id || rec.passengerUserId || '').trim() || null;
         const qrType = String(rec.qr_type || rec.qrType || '').trim() || null;
-        return { token, passengerUserId, parsedUrl: false, qrType };
+        const sessionId = String(rec.session_id || rec.sessionId || '').trim() || null;
+        return { token, passengerUserId, parsedUrl: false, qrType, sessionId, parseSource: 'json' };
       }
     } catch {
       // Fall through to URL/raw-token parsing.
@@ -75,15 +78,18 @@ function extractMuhabbetTripQrToken(raw: string): {
     const picked = pickFromSearchParams(url.searchParams);
     const passengerUserId = pickPassengerFromSearchParams(url.searchParams);
     const qrType = url.searchParams.get('qr_type') || url.searchParams.get('qrType');
+    const sessionId = url.searchParams.get('session_id') || url.searchParams.get('sessionId');
+    const parsedSessionId = sessionId ? String(sessionId).trim() : null;
+    const parsedQrType = qrType ? String(qrType).trim() : null;
     if (picked) {
-      return { token: picked, passengerUserId, parsedUrl: true, qrType: qrType ? String(qrType).trim() : null };
+      return { token: picked, passengerUserId, parsedUrl: true, qrType: parsedQrType, sessionId: parsedSessionId, parseSource: 'url' };
     }
     if (scope === 'muhabbet_trip') {
-      return { token: null, passengerUserId, parsedUrl: true, qrType: qrType ? String(qrType).trim() : null };
+      return { token: null, passengerUserId, parsedUrl: true, qrType: parsedQrType, sessionId: parsedSessionId, parseSource: 'url' };
     }
-    return { token: null, passengerUserId, parsedUrl: true, qrType: qrType ? String(qrType).trim() : null };
+    return { token: null, passengerUserId, parsedUrl: true, qrType: parsedQrType, sessionId: parsedSessionId, parseSource: 'url' };
   } catch {
-    return { token: trimmed, passengerUserId: null, parsedUrl: false, qrType: null };
+    return { token: trimmed, passengerUserId: null, parsedUrl: false, qrType: null, sessionId: null, parseSource: 'raw' };
   }
 }
 
@@ -118,7 +124,7 @@ export default function MuhabbetTripQrScanModal({
   }, [hasPermission?.granted, requestPermission, visible]);
 
   const submitToken = useCallback(async (raw: string) => {
-    const { token, passengerUserId, parsedUrl, qrType } = extractMuhabbetTripQrToken(raw);
+    const { token, passengerUserId, parsedUrl, qrType, sessionId, parseSource } = extractMuhabbetTripQrToken(raw);
     console.log(
       '[LYO_QR_SCAN_PARSE]',
       JSON.stringify({
@@ -126,6 +132,18 @@ export default function MuhabbetTripQrScanModal({
         passenger_user_id: passengerUserId || null,
         mode,
         qr_type: qrType || null,
+      })
+    );
+    console.log(
+      '[LYO_QR_SCAN_PARSE_FULL]',
+      JSON.stringify({
+        raw_length: String(raw || '').length,
+        parsed_token_length: token ? token.length : 0,
+        passenger_user_id: passengerUserId || null,
+        session_id: sessionId || null,
+        qr_type: qrType || null,
+        mode,
+        parse_source: parseSource,
       })
     );
     const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';

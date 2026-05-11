@@ -103,6 +103,35 @@ export default function MuhabbetTripQrCodeModal({
   const showQr = tokenReady && !loading;
   const backendQrPayload = mode === 'boarding' ? normalizeQrPayload(qrPayload) : '';
   const value = showQr ? backendQrPayload || qrValue(mode, sessionId, token) : '';
+  const usingQrPayload = !!backendQrPayload;
+  const valueKind = value.trim().startsWith('{')
+    ? 'json'
+    : value.trim().startsWith('leylekmuhabbet://')
+      ? 'deep_link'
+      : value.trim()
+        ? 'other'
+        : 'empty';
+  useEffect(() => {
+    if (!visible) return;
+    console.log(
+      '[LYO_QR_MODAL_RENDER]',
+      JSON.stringify({
+        usingQrPayload,
+        targetPassengerName: passengerName || null,
+        targetPassengerId: String(targetPassengerId || '').trim() || null,
+        qrValue: valueKind,
+      })
+    );
+    if (mode === 'boarding' && showQr && !backendQrPayload) {
+      console.warn(
+        '[LYO_QR_MODAL_NO_PAYLOAD]',
+        JSON.stringify({
+          targetPassengerId: String(targetPassengerId || '').trim() || null,
+          targetPassengerName: passengerName || null,
+        })
+      );
+    }
+  }, [backendQrPayload, mode, passengerName, showQr, targetPassengerId, usingQrPayload, valueKind, visible]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
