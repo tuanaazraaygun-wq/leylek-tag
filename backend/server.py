@@ -29268,51 +29268,103 @@ def _muhabbet_trip_create_boarding_token_row(session_id: str, passenger_user_id:
     raise _MuhabbetTripOpError("qr_token_store_unavailable", "Biniş QR tokenı oluşturulamadı.", 500)
 
 
-def _muhabbet_trip_boarding_token_for_confirm(session_id: str, uid: str, token: str, payload_passenger_id: str | None) -> dict:
+def _muhabbet_trip_boarding_token_for_confirm(
+    session_id: str,
+    uid: str,
+    token: str,
+    payload_passenger_id: str | None,
+    seat_capacity: int | None = None,
+) -> dict:
     sid = str(session_id or "").strip().lower()
     uid_lo = str(uid or "").strip().lower()
     tok = str(token or "").strip().upper()
     payload_pid = str(payload_passenger_id or "").strip().lower()
+    def _log_confirm_backend(error_code: str | None, token_lookup_count: int | None = None) -> None:
+        try:
+            logger.info(
+                "[LYO_QR_CONFIRM_BACKEND] %s",
+                json.dumps(
+                    {
+                        "session_id": sid,
+                        "uid": uid_lo,
+                        "passenger_user_id": payload_pid or uid_lo or None,
+                        "token_len": len(tok),
+                        "seat_capacity": seat_capacity,
+                        "token_lookup_count": token_lookup_count,
+                        "error_code": error_code,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
+
     try:
         res = supabase.table("muhabbet_trip_boarding_qr_tokens").select("*").eq("token", tok).limit(1).execute()
     except Exception as e:
-        logger.warning("[muhabbet_trip_boarding_qr_token] confirm_lookup_failed session_id=%s err=%s", sid[:12], e)
-        raise _MuhabbetTripOpError("qr_token_store_unavailable", "Biniş QR tokenı doğrulanamadı.", 500) from e
+        _log_confirm_backend("qr_token_store_unavailable", None)
+        logger.exception("[muhabbet_trip_boarding_qr_token] confirm_lookup_failed session_id=%s", sid[:12])
+        raise _MuhabbetTripOpError(
+            "qr_token_store_unavailable",
+            "Biniş QR token deposuna ulaşılamadı. Lütfen tekrar deneyin.",
+            503,
+        ) from e
+    lookup_count = len(res.data or [])
     if not res.data:
-        raise _MuhabbetTripOpError("bad_qr_token", "QR kod geçersiz.", 400)
+        _log_confirm_backend("invalid_qr_token", lookup_count)
+        raise _MuhabbetTripOpError("invalid_qr_token", "QR kod geçersiz.", 400)
     row = dict(res.data[0])
     token_sid = str(row.get("session_id") or "").strip().lower()
     token_pid = str(row.get("passenger_user_id") or "").strip().lower()
     if token_sid != sid:
-        raise _MuhabbetTripOpError("bad_qr_token", "QR kod bu yolculuk için geçerli değil.", 400)
+        _log_confirm_backend("invalid_qr_session", lookup_count)
+        raise _MuhabbetTripOpError("invalid_qr_session", "QR kod bu yolculuk için geçerli değil.", 400)
     if payload_pid and payload_pid != token_pid:
+        _log_confirm_backend("passenger_mismatch", lookup_count)
         raise _MuhabbetTripOpError("passenger_mismatch", "QR yolcu bilgisi eşleşmiyor.", 400)
     if token_pid != uid_lo:
+        _log_confirm_backend("passenger_mismatch", lookup_count)
         raise _MuhabbetTripOpError("passenger_mismatch", "Bu biniş QR kodu başka bir yolcu için oluşturuldu.", 403)
     if row.get("consumed_at"):
+        _log_confirm_backend("used_qr_token", lookup_count)
         raise _MuhabbetTripOpError("used_qr_token", "Bu biniş QR kodu daha önce kullanıldı.", 409)
     if row.get("cancelled_at"):
-        raise _MuhabbetTripOpError("bad_qr_token", "Bu biniş QR kodu iptal edildi.", 400)
+        _log_confirm_backend("cancelled_qr_token", lookup_count)
+        raise _MuhabbetTripOpError("cancelled_qr_token", "Bu biniş QR kodu iptal edildi.", 400)
     if _muhabbet_trip_qr_expired(row.get("expires_at")):
+        _log_confirm_backend("expired_qr_token", lookup_count)
         raise _MuhabbetTripOpError("expired_qr_token", "QR kodun süresi doldu.", 400)
+    _log_confirm_backend(None, lookup_count)
     return row
 
 
 def _muhabbet_trip_mark_boarding_token_consumed(token_row: dict, consumed_by_user_id: str, now_iso: str) -> None:
     token_id = str((token_row or {}).get("id") or "").strip().lower()
     if not token_id:
-        return
+        raise _MuhabbetTripOpError("qr_token_consume_failed", "Biniş QR tokenı kullanıldı olarak işaretlenemedi.", 503)
+    consumed_by = str(consumed_by_user_id or "").strip().lower() or None
     try:
-        supabase.table("muhabbet_trip_boarding_qr_tokens").update(
+        upd = supabase.table("muhabbet_trip_boarding_qr_tokens").update(
             {
                 "consumed_at": now_iso,
-                "consumed_by_user_id": str(consumed_by_user_id or "").strip().lower() or None,
+                "consumed_by_user_id": consumed_by,
                 "updated_at": now_iso,
             }
         ).eq("id", token_id).is_("consumed_at", "null").execute()
     except Exception as e:
-        logger.warning("[muhabbet_trip_boarding_qr_token] consume_failed token_id=%s err=%s", token_id[:12], e)
-        raise _MuhabbetTripOpError("qr_token_store_unavailable", "Biniş QR tokenı kullanıldı olarak işaretlenemedi.", 500) from e
+        logger.exception("[muhabbet_trip_boarding_qr_token] consume_failed token_id=%s", token_id[:12])
+        raise _MuhabbetTripOpError("qr_token_consume_failed", "Biniş QR tokenı kullanıldı olarak işaretlenemedi.", 503) from e
+    if upd.data:
+        return
+    try:
+        chk = supabase.table("muhabbet_trip_boarding_qr_tokens").select("consumed_at,consumed_by_user_id").eq("id", token_id).limit(1).execute()
+        chk_row = dict(chk.data[0]) if chk.data else {}
+    except Exception as e:
+        logger.exception("[muhabbet_trip_boarding_qr_token] consume_verify_failed token_id=%s", token_id[:12])
+        raise _MuhabbetTripOpError("qr_token_consume_failed", "Biniş QR tokenı kullanıldı olarak işaretlenemedi.", 503) from e
+    if chk_row.get("consumed_at"):
+        raise _MuhabbetTripOpError("used_qr_token", "Bu biniş QR kodu daha önce kullanıldı.", 409)
+    raise _MuhabbetTripOpError("qr_token_consume_failed", "Biniş QR tokenı kullanıldı olarak işaretlenemedi.", 503)
 
 
 async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str, passenger_user_id: str | None = None) -> dict:
@@ -29476,7 +29528,7 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     brd_ids = _muhabbet_trip_boarded_passenger_ids(row, passenger_rows) if sc > 1 else _muhabbet_json_uuid_list(row.get("boarded_passenger_ids"))
     token_row = None
     if sc > 1:
-        token_row = _muhabbet_trip_boarding_token_for_confirm(session_id, uid_lo, tok, passenger_user_id)
+        token_row = _muhabbet_trip_boarding_token_for_confirm(session_id, uid_lo, tok, passenger_user_id, sc)
     if sc <= 1:
         if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
             raise _MuhabbetTripOpError("passenger_required", "Biniş QR kodunu yolcu onaylayabilir.")
@@ -29580,7 +29632,25 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         next_row = await _muhabbet_trip_calculate_and_store_route(next_row)
     _muhabbet_trip_passengers_update_for_user(session_id, uid_lo, {"status": "onboard", "boarded_at": now_iso})
     if token_row:
-        _muhabbet_trip_mark_boarding_token_consumed(token_row, uid_lo, now_iso)
+        try:
+            _muhabbet_trip_mark_boarding_token_consumed(token_row, uid_lo, now_iso)
+        except _MuhabbetTripOpError as e:
+            logger.info(
+                "[LYO_QR_CONFIRM_BACKEND] %s",
+                json.dumps(
+                    {
+                        "session_id": str(session_id or "").strip().lower(),
+                        "uid": uid_lo,
+                        "passenger_user_id": uid_lo,
+                        "token_len": len(tok),
+                        "seat_capacity": sc,
+                        "token_lookup_count": None,
+                        "error_code": e.socket_code,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            raise
     await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started" if all_boarded else "muhabbet_trip_session_updated")
     return {"session": _muhabbet_trip_session_public(next_row)}
 
@@ -30897,7 +30967,37 @@ async def muhabbet_trip_boarding_qr_confirm_post(
     except HTTPException:
         raise
     except _MuhabbetTripOpError as e:
-        raise HTTPException(status_code=e.http_status, detail=e.message) from e
+        raise HTTPException(
+            status_code=e.http_status,
+            detail={"success": False, **_muhabbet_trip_api_error_detail(e.socket_code, e.message)},
+        ) from e
+    except Exception as e:
+        sid_lo = str(session_id or "").strip().lower()
+        uid_lo = str(uid or "").strip().lower()
+        logger.info(
+            "[LYO_QR_CONFIRM_BACKEND] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "uid": uid_lo,
+                    "passenger_user_id": payload_passenger_id or uid_lo or None,
+                    "token_len": len(tok),
+                    "seat_capacity": None,
+                    "token_lookup_count": None,
+                    "error_code": "boarding_qr_confirm_failed",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        logger.exception("[muhabbet_trip_boarding_qr_confirm] unhandled session_id=%s uid=%s", sid_lo[:12], uid_lo[:12])
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "code": "boarding_qr_confirm_failed",
+                "message": "Biniş QR doğrulanamadı. Lütfen tekrar deneyin.",
+            },
+        ) from e
 
 
 @api_router.post("/muhabbet/trip-sessions/{session_id}/call/start")
