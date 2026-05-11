@@ -30307,11 +30307,11 @@ async def _muhabbet_trip_cancel_apply(uid: str, session_id: str, reason: Optiona
     return next_row, True
 
 
-async def _muhabbet_trip_force_end_before_boarding_apply(uid: str, session_id: str) -> tuple[dict, bool]:
-    """Biniş QR onayı yokken tek taraflı anında iptal; karşı onay beklemez. (row, did_cancel)."""
+async def _muhabbet_trip_force_end_before_boarding_apply(uid: str, session_id: str) -> tuple[dict, bool, bool]:
+    """Biniş QR onayı yokken tek taraflı kapatma. Multi-seat passenger yalnız kendi leg'ini kapatır."""
     row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
     if _muhabbet_trip_session_row_terminal_status(row):
-        return dict(row), False
+        return dict(row), False, False
     if _muhabbet_trip_has_boarding_started_row(row):
         raise _MuhabbetTripOpError(
             "TRIP_ALREADY_STARTED",
@@ -30324,6 +30324,50 @@ async def _muhabbet_trip_force_end_before_boarding_apply(uid: str, session_id: s
     uid_lo = str(uid).strip().lower()
     sid_lo = str(session_id or "").strip().lower()
     now_iso = datetime.now(timezone.utc).isoformat()
+    sc = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
+    driver_id = str(row.get("driver_id") or "").strip().lower()
+    if sc > 1 and uid_lo != driver_id:
+        passenger_rows = _muhabbet_trip_passenger_rows_for_session(sid_lo)
+        leg = _muhabbet_trip_passenger_row_for_user(passenger_rows, uid_lo)
+        if not leg:
+            raise _MuhabbetTripOpError(
+                "passenger_not_in_session",
+                "Bu yolcu bu Yol Oturumu'nda yolcu satırı olarak görünmüyor.",
+                400,
+            )
+        leg_status = str(leg.get("status") or "").strip().lower()
+        if _muhabbet_trip_status_is_boarded_leg(leg_status, leg.get("boarded_at")):
+            raise _MuhabbetTripOpError(
+                "TRIP_ALREADY_STARTED",
+                "Yolculuk başladı. Varış QR ile bitirin veya Şikayet Et kullanın.",
+                409,
+            )
+        _muhabbet_trip_passengers_update_for_user(
+            sid_lo,
+            uid_lo,
+            {"status": "cancelled", "cancelled_at": now_iso},
+        )
+        patch_parent = {"updated_at": now_iso}
+        if str(row.get("active_pickup_passenger_id") or "").strip().lower() == uid_lo:
+            patch_parent.update(
+                {
+                    "active_pickup_passenger_id": None,
+                    "active_pickup_selected_at": None,
+                    "active_pickup_selected_by_user_id": None,
+                }
+            )
+        upd_parent = supabase.table("muhabbet_trip_sessions").update(patch_parent).eq("id", sid_lo).execute()
+        next_row = dict(upd_parent.data[0]) if upd_parent.data else {**row, **patch_parent}
+        logger.info(
+            "[muhabbet_intercity_force_end] passenger_leg_cancelled session_id=%s passenger=%s",
+            sid_lo[:13],
+            uid_lo[:13],
+        )
+        _log_muhabbet_trip_event(
+            "passenger_left_before_boarding",
+            {"session_id": sid_lo, "passenger_user_id": uid_lo},
+        )
+        return next_row, False, True
     patch = {
         "status": "cancelled",
         "ride_status": "cancelled",
@@ -30360,7 +30404,7 @@ async def _muhabbet_trip_force_end_before_boarding_apply(uid: str, session_id: s
         )
     except Exception as pe:
         logger.warning("[muhabbet_intercity_force_end] passenger_row_update_failed session_id=%s err=%s", sid_lo[:12], pe)
-    return next_row, True
+    return next_row, True, False
 
 
 async def _muhabbet_trip_emit_force_ended(next_row: dict, actor_uid: str) -> None:
@@ -31309,14 +31353,28 @@ async def muhabbet_trip_force_end_before_boarding_post(
     uid = await _muhabbet_listing_uid(authenticated_user_id)
     sid_lo = str(session_id or "").strip().lower()
     try:
-        next_row, did_cancel = await _muhabbet_trip_force_end_before_boarding_apply(uid, session_id)
+        next_row, did_cancel, passenger_leg_cancelled = await _muhabbet_trip_force_end_before_boarding_apply(uid, session_id)
         if did_cancel:
             await _muhabbet_trip_emit_force_ended(next_row, uid)
             try:
                 await notify_trip_session_updated(sid_lo, "force_ended_before_boarding", uid)
             except Exception as ne:
                 logger.warning("[muhabbet_notify] force_ended_before_boarding notify failed: %s", ne)
-        return {"success": True, "session": _muhabbet_trip_session_public(next_row)}
+        elif passenger_leg_cancelled:
+            await _broadcast_muhabbet_trip_session_state(
+                next_row,
+                "muhabbet_trip_session_updated",
+                socket_reason="passenger_left_before_boarding",
+            )
+            try:
+                await notify_trip_session_updated(sid_lo, "passenger_left_before_boarding", uid)
+            except Exception as ne:
+                logger.warning("[muhabbet_notify] passenger_left_before_boarding notify failed: %s", ne)
+        return {
+            "success": True,
+            "session": _muhabbet_trip_session_public(next_row),
+            "passenger_leg_cancelled": passenger_leg_cancelled,
+        }
     except HTTPException:
         raise
     except _MuhabbetTripOpError as e:
