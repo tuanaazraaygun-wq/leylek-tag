@@ -26,10 +26,15 @@ const PASSENGER_PARAM_KEYS = ['passenger_user_id', 'passengerUserId'] as const;
 /**
  * QR içinde URL veya düz kod olabilir. Token çıkarılırken büyük/küçük harf korunur (sunucu digest öncesi normalize eder).
  */
-function extractMuhabbetTripQrToken(raw: string): { token: string | null; passengerUserId: string | null; parsedUrl: boolean } {
+function extractMuhabbetTripQrToken(raw: string): {
+  token: string | null;
+  passengerUserId: string | null;
+  parsedUrl: boolean;
+  qrType: string | null;
+} {
   const trimmed = String(raw || '').trim();
   if (!trimmed) {
-    return { token: null, passengerUserId: null, parsedUrl: false };
+    return { token: null, passengerUserId: null, parsedUrl: false, qrType: null };
   }
 
   const pickFromSearchParams = (searchParams: URLSearchParams): string | null => {
@@ -56,7 +61,8 @@ function extractMuhabbetTripQrToken(raw: string): { token: string | null; passen
         const rec = obj as Record<string, unknown>;
         const token = String(rec.token || rec.boarding_qr_token || '').trim() || null;
         const passengerUserId = String(rec.passenger_user_id || rec.passengerUserId || '').trim() || null;
-        return { token, passengerUserId, parsedUrl: false };
+        const qrType = String(rec.qr_type || rec.qrType || '').trim() || null;
+        return { token, passengerUserId, parsedUrl: false, qrType };
       }
     } catch {
       // Fall through to URL/raw-token parsing.
@@ -68,15 +74,16 @@ function extractMuhabbetTripQrToken(raw: string): { token: string | null; passen
     const scope = url.searchParams.get('scope');
     const picked = pickFromSearchParams(url.searchParams);
     const passengerUserId = pickPassengerFromSearchParams(url.searchParams);
+    const qrType = url.searchParams.get('qr_type') || url.searchParams.get('qrType');
     if (picked) {
-      return { token: picked, passengerUserId, parsedUrl: true };
+      return { token: picked, passengerUserId, parsedUrl: true, qrType: qrType ? String(qrType).trim() : null };
     }
     if (scope === 'muhabbet_trip') {
-      return { token: null, passengerUserId, parsedUrl: true };
+      return { token: null, passengerUserId, parsedUrl: true, qrType: qrType ? String(qrType).trim() : null };
     }
-    return { token: null, passengerUserId, parsedUrl: true };
+    return { token: null, passengerUserId, parsedUrl: true, qrType: qrType ? String(qrType).trim() : null };
   } catch {
-    return { token: trimmed, passengerUserId: null, parsedUrl: false };
+    return { token: trimmed, passengerUserId: null, parsedUrl: false, qrType: null };
   }
 }
 
@@ -111,7 +118,16 @@ export default function MuhabbetTripQrScanModal({
   }, [hasPermission?.granted, requestPermission, visible]);
 
   const submitToken = useCallback(async (raw: string) => {
-    const { token, passengerUserId, parsedUrl } = extractMuhabbetTripQrToken(raw);
+    const { token, passengerUserId, parsedUrl, qrType } = extractMuhabbetTripQrToken(raw);
+    console.log(
+      '[LYO_QR_SCAN_PARSE]',
+      JSON.stringify({
+        has_token: !!token,
+        passenger_user_id: passengerUserId || null,
+        mode,
+        qr_type: qrType || null,
+      })
+    );
     const title = mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
     if (!token) {
       Alert.alert(

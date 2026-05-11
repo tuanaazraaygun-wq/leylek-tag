@@ -18,6 +18,7 @@ type MuhabbetTripQrCodeModalProps = {
   sessionId: string;
   expiresAt?: string | null;
   qrPayload?: string | object | null;
+  targetPassengerId?: string | null;
   targetPassengerName?: string | null;
   onClose: () => void;
   /** REST ile token beklenirken spinner */
@@ -51,6 +52,7 @@ export default function MuhabbetTripQrCodeModal({
   sessionId,
   expiresAt,
   qrPayload,
+  targetPassengerId,
   targetPassengerName,
   onClose,
   loading = false,
@@ -82,10 +84,18 @@ export default function MuhabbetTripQrCodeModal({
   }, [visible, loading, tokenReady]);
 
   const passengerName = String(targetPassengerName || '').trim();
-  const title = mode === 'boarding' && passengerName ? `${passengerName} için Biniş QR` : mode === 'boarding' ? 'Biniş QR' : 'Yolculuğu Bitir';
-  const hint =
+  const hasTargetPassenger = !!String(targetPassengerId || '').trim() || !!passengerName;
+  const title =
     mode === 'boarding' && passengerName
-      ? 'Bu QR yalnızca bu yolcu tarafından okutulabilir.'
+      ? `${passengerName} için Biniş QR`
+      : mode === 'boarding' && hasTargetPassenger
+        ? 'Seçili yolcu için Biniş QR'
+        : mode === 'boarding'
+          ? 'Biniş QR'
+          : 'Yolculuğu Bitir';
+  const hint =
+    mode === 'boarding' && hasTargetPassenger
+      ? 'Bu QR yalnızca seçili yolcu tarafından okutulabilir.'
       : mode === 'boarding'
       ? 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda başlar.'
       : 'Yolcu bu QR kodu okuttuğunda Muhabbet yolculuğu iki cihazda tamamlanır.';

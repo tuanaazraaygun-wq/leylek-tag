@@ -2906,6 +2906,44 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           return;
           }
         }
+        const activePickupId = String(session.active_pickup_passenger_id || '').trim().toLowerCase();
+        const nextPickupId = String(session.next_pickup_user_id || '').trim().toLowerCase();
+        const firstVisibleWaitingPassenger = visiblePassengerLegs.find((leg) =>
+          ['pickup_active', 'waiting_pickup', 'accepted'].includes(leg.status)
+        );
+        const targetPassengerId = multiSeatBoarding
+          ? [
+              activePickupPassengerLeg?.passenger_user_id,
+              activePickupId,
+              nextPickupId,
+              activePickupPassengerLeg?.passenger_user_id,
+              firstVisibleWaitingPassenger?.passenger_user_id,
+            ].find((pid) => !!String(pid || '').trim())
+          : '';
+        const targetPassengerName =
+          (targetPassengerId
+            ? (
+                activePickupPassengerLeg?.passenger_user_id === targetPassengerId
+                  ? activePickupPassengerLeg.display_name
+                  : visiblePassengerLegs.find((leg) => leg.passenger_user_id === targetPassengerId)?.display_name
+              )
+            : '') || '';
+        const activeSessionIdForQrCreate = getActiveMuhabbetSessionId();
+        console.log(
+          '[LYO_QR_CREATE_TARGET]',
+          JSON.stringify({
+            session_id: activeSessionIdForQrCreate || '',
+            seat_capacity: Number(session.seat_capacity ?? 1),
+            active_pickup_passenger_id: activePickupId || null,
+            next_pickup_user_id: nextPickupId || null,
+            targetPassengerId: targetPassengerId || null,
+            passenger_count: tripPassengerLegs.length,
+          })
+        );
+        if (multiSeatBoarding && !targetPassengerId) {
+          appAlert('Pickup seçilemedi', 'Önce sıradaki yolcuyu seçin.');
+          return;
+        }
         if (qrCreateInFlightRef.current) return;
         if (isLocked('qr')) {
           console.log('[leylek_ui_guard]', JSON.stringify({ reason: 'qr blocked', detail: 'stateLock' }));
@@ -2927,8 +2965,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         setQrFinishToken('');
         setQrExpiresAt(null);
         setQrPayload(null);
-        setQrTargetPassengerId(null);
-        setQrTargetPassengerName(null);
+        setQrTargetPassengerId(targetPassengerId || null);
+        setQrTargetPassengerName(targetPassengerName || null);
         qrModalOpenedAtRef.current = Date.now();
         void (async () => {
           const t0 = Date.now();
@@ -2936,7 +2974,23 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_create',
               pathSuffix: 'boarding-qr/create',
+              body: multiSeatBoarding && targetPassengerId ? { passenger_user_id: targetPassengerId } : undefined,
             });
+            console.log(
+              '[LYO_QR_CREATE_RESPONSE]',
+              JSON.stringify({
+                has_qr_payload: !!rest.json.qr_payload,
+                target_id:
+                  typeof rest.json.boarding_qr_target_passenger_id === 'string'
+                    ? rest.json.boarding_qr_target_passenger_id
+                    : null,
+                target_name:
+                  typeof rest.json.boarding_qr_target_passenger_name === 'string'
+                    ? rest.json.boarding_qr_target_passenger_name
+                    : null,
+                has_token: typeof rest.json.boarding_qr_token === 'string' && !!rest.json.boarding_qr_token.trim(),
+              })
+            );
             if (
               rest.ok &&
               rest.json.success === true &&
@@ -2959,12 +3013,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               setQrTargetPassengerId(
                 typeof rest.json.boarding_qr_target_passenger_id === 'string'
                   ? rest.json.boarding_qr_target_passenger_id
-                  : null
+                  : targetPassengerId || null
               );
               setQrTargetPassengerName(
                 typeof rest.json.boarding_qr_target_passenger_name === 'string'
                   ? rest.json.boarding_qr_target_passenger_name
-                  : null
+                  : targetPassengerName || null
               );
               const sessBrd = rest.json.session;
               if (sessBrd && typeof sessBrd === 'object') {
@@ -3214,6 +3268,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       setQrScanVisible(true);
     }
   }, [
+    activePickupPassengerLeg,
     clearOptimistic,
     getActiveMuhabbetSessionId,
     isDriver,
@@ -3224,7 +3279,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     refreshSessionFromServer,
     session,
     touchOptimistic,
+    tripPassengerLegs.length,
     unlockState,
+    visiblePassengerLegs,
   ]);
 
   const confirmQrToken = useCallback(
@@ -3250,6 +3307,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           }
           if (qrMode === 'boarding') {
             const passengerId = String(passengerUserId || '').trim();
+            console.log(
+              '[LYO_QR_CONFIRM_BODY]',
+              JSON.stringify({
+                has_token: !!token,
+                passenger_user_id: passengerId || null,
+                mode: qrMode,
+              })
+            );
             const rest = await muhabbetTripSessionRestPost({
               action: 'boarding_qr_confirm',
               pathSuffix: 'boarding-qr/confirm',
@@ -4006,6 +4071,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         sessionId={activeSessionId || effectiveSessionId}
         expiresAt={qrExpiresAt}
         qrPayload={qrMode === 'boarding' ? qrPayload : null}
+        targetPassengerId={qrMode === 'boarding' ? qrTargetPassengerId : null}
         targetPassengerName={qrMode === 'boarding' ? qrTargetPassengerName : null}
         onClose={closeQrCodeModal}
       />
