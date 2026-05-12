@@ -26156,12 +26156,48 @@ def _muhabbet_trip_session_row_for_seat_invite(session_id: str) -> dict:
     return dict(res.data[0])
 
 
+def _muhabbet_trip_seat_invite_conversation_id(session_row: dict, invite_row: dict) -> tuple[str, str]:
+    invite_cid = str((invite_row or {}).get("conversation_id") or "").strip().lower()
+    if invite_cid:
+        return invite_cid, "invite"
+    match_id = str((invite_row or {}).get("match_request_id") or "").strip().lower()
+    if match_id:
+        try:
+            mr = supabase.table("listing_match_requests").select("conversation_id").eq("id", match_id).limit(1).execute()
+            if mr.data:
+                match_cid = str((dict(mr.data[0]) or {}).get("conversation_id") or "").strip().lower()
+                if match_cid:
+                    return match_cid, "match_request"
+        except Exception as e:
+            logger.warning("[muhabbet_trip_seat_invite] match_conversation_lookup_failed match_id=%s err=%s", match_id[:12], e)
+    session_cid = str((session_row or {}).get("conversation_id") or "").strip().lower()
+    if session_cid:
+        return session_cid, "session"
+    return "", "missing"
+
+
 def _muhabbet_trip_seat_invite_upsert_passenger(session_row: dict, invite_row: dict) -> None:
     sid = str((session_row or {}).get("id") or "").strip().lower()
     did = str((session_row or {}).get("driver_id") or "").strip().lower()
     pid = str((invite_row or {}).get("passenger_user_id") or "").strip().lower()
-    cid = str((invite_row or {}).get("conversation_id") or "").strip().lower()
+    cid, cid_source = _muhabbet_trip_seat_invite_conversation_id(session_row, invite_row)
     if not sid or not did or not pid or not cid:
+        try:
+            logger.warning(
+                "[LYO_SEAT_INVITE_PASSENGER_UPSERT_SKIPPED] %s",
+                json.dumps(
+                    {
+                        "session_id": sid[:12],
+                        "passenger_user_id": _lyo_qr_mask_id(pid),
+                        "has_driver_id": bool(did),
+                        "has_conversation_id": bool(cid),
+                        "conversation_source": cid_source,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
         return
     col = _muhabbet_trip_passengers_uid_column()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -26193,9 +26229,52 @@ def _muhabbet_trip_seat_invite_upsert_passenger(session_row: dict, invite_row: d
         payload["payment_method"] = pay
     try:
         supabase.table("muhabbet_trip_passengers").upsert(payload, on_conflict=f"session_id,{col}").execute()
+        try:
+            logger.info(
+                "[LYO_SEAT_INVITE_PASSENGER_UPSERT] %s",
+                json.dumps(
+                    {
+                        "session_id": sid[:12],
+                        "passenger_user_id": _lyo_qr_mask_id(pid),
+                        "status": "accepted",
+                        "source": cid_source,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
     except Exception as e:
         logger.warning("[muhabbet_trip_seat_invite] passenger_upsert_failed session_id=%s passenger=%s err=%s", sid[:12], pid[:12], e)
         raise _MuhabbetTripOpError("passenger_upsert_failed", "Yolcu oturuma eklenemedi.", 500) from e
+
+
+def _muhabbet_trip_merge_invited_passenger_into_session(session_row: dict, passenger_uid: str, seat_capacity: int, now_iso: str) -> dict:
+    pid = str(passenger_uid or "").strip().lower()
+    if not pid:
+        return session_row
+    acc = _muhabbet_json_uuid_list((session_row or {}).get("accepted_passenger_ids"))
+    pickup_order = _muhabbet_json_uuid_list((session_row or {}).get("pickup_order"))
+    changed = False
+    if pid not in acc:
+        acc.append(pid)
+        changed = True
+    if not pickup_order:
+        pickup_order = list(acc)
+        changed = True
+    elif pid not in pickup_order:
+        pickup_order.append(pid)
+        changed = True
+    pickup_order = pickup_order[:seat_capacity]
+    if not changed:
+        return session_row
+    patch = {
+        "accepted_passenger_ids": acc,
+        "pickup_order": pickup_order,
+        "updated_at": now_iso,
+    }
+    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", str((session_row or {}).get("id") or "").strip().lower()).execute()
+    return dict(upd.data[0]) if upd.data else {**session_row, **patch}
 
 
 def _muhabbet_trip_accept_seat_invite(uid: str, session_id: str, invite_id: str) -> tuple[dict, dict]:
@@ -26207,7 +26286,11 @@ def _muhabbet_trip_accept_seat_invite(uid: str, session_id: str, invite_id: str)
     row = _muhabbet_trip_session_row_for_seat_invite(session_id)
     st_inv = str(invite.get("status") or "").strip().lower()
     if st_inv == "accepted":
-        return invite, row
+        now_iso = datetime.now(timezone.utc).isoformat()
+        seat_capacity = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
+        next_row = _muhabbet_trip_merge_invited_passenger_into_session(row, passenger_uid, seat_capacity, now_iso)
+        _muhabbet_trip_seat_invite_upsert_passenger(next_row, invite)
+        return invite, next_row
     if st_inv == "declined":
         return invite, row
     if st_inv in ("cancelled", "expired"):
@@ -26260,27 +26343,13 @@ def _muhabbet_trip_accept_seat_invite(uid: str, session_id: str, invite_id: str)
 
     next_row = row
     if not already_joined:
-        acc = _muhabbet_json_uuid_list(row.get("accepted_passenger_ids"))
-        if passenger_uid not in acc:
-            acc.append(passenger_uid)
-        pickup_order = _muhabbet_json_uuid_list(row.get("pickup_order"))
-        if not pickup_order:
-            pickup_order = list(acc)
-        elif passenger_uid not in pickup_order:
-            pickup_order.append(passenger_uid)
-        patch = {
-            "accepted_passenger_ids": acc,
-            "pickup_order": pickup_order[:seat_capacity],
-            "updated_at": now_iso,
-        }
-        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", str(session_id or "").strip().lower()).execute()
-        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
-        _muhabbet_trip_seat_invite_upsert_passenger(next_row, invite)
+        next_row = _muhabbet_trip_merge_invited_passenger_into_session(row, passenger_uid, seat_capacity, now_iso)
 
     accepted = _muhabbet_trip_seat_invite_update(
         str(invite.get("id") or ""),
         {"status": "accepted", "responded_at": now_iso, "updated_at": now_iso},
     )
+    _muhabbet_trip_seat_invite_upsert_passenger(next_row, accepted)
     logger.info("[muhabbet_trip_seat_invite] accepted session_id=%s passenger=%s", str(session_id or "")[:12], passenger_uid[:12])
     return accepted, next_row
 

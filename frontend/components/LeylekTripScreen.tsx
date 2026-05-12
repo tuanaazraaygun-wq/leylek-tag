@@ -97,6 +97,16 @@ const countQrIdList = (value: unknown): number => {
   return value.filter((item) => !!String(item || '').trim()).length;
 };
 
+const normalizedTripIdList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  value.forEach((item) => {
+    const id = String(item || '').trim().toLowerCase();
+    if (id && !out.includes(id)) out.push(id);
+  });
+  return out;
+};
+
 const TERMINAL_TRIP_STATUSES = new Set(['finished', 'cancelled', 'expired']);
 /** Bu ekranda sesli görüşme geçici kapalı; yolculuk durumu REST + GET ile doğrulanır. */
 /** false: Muhabbet Leylek Teklifi trip sesli arama (TAG / normal ride ile ilgisiz) */
@@ -726,7 +736,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const tripPassengerLegs = useMemo<PassengerLegUi[]>(() => {
     if (!session) return [];
     const rows = Array.isArray(session.passengers) ? session.passengers : [];
-    const sourceRows: MuhabbetTripPassengerLeg[] =
+    const sourceRowsBase: MuhabbetTripPassengerLeg[] =
       rows.length > 0
         ? rows
         : session.passenger_id
@@ -748,6 +758,51 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               },
             ]
           : [];
+    const sourceRows: MuhabbetTripPassengerLeg[] = [...sourceRowsBase];
+    const seatCapacity = Number(session.seat_capacity ?? 1);
+    const acceptedIds = normalizedTripIdList(session.accepted_passenger_ids);
+    const pickupOrderIds = normalizedTripIdList(session.pickup_order);
+    const orderedIds = [...pickupOrderIds, ...acceptedIds].filter((pid, index, arr) => pid && arr.indexOf(pid) === index);
+    const existingIds = new Set(
+      sourceRows
+        .map((leg) => String(leg?.passenger_user_id || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const boardedIds = new Set(normalizedTripIdList(session.boarded_passenger_ids));
+    const activePickupId = String(session.active_pickup_passenger_id || '').trim().toLowerCase();
+    let placeholderCount = 0;
+    if (seatCapacity > 1 && orderedIds.length > 0) {
+      orderedIds.forEach((passengerId) => {
+        if (!passengerId || existingIds.has(passengerId)) return;
+        const seatIndex = pickupOrderIds.indexOf(passengerId) >= 0
+          ? pickupOrderIds.indexOf(passengerId) + 1
+          : orderedIds.indexOf(passengerId) + 1;
+        sourceRows.push({
+          passenger_user_id: passengerId,
+          display_name: 'Yolcu',
+          status: boardedIds.has(passengerId)
+            ? 'boarded'
+            : activePickupId === passengerId
+              ? 'pickup_active'
+              : 'accepted',
+          seat_index: seatIndex,
+          boarded_at: boardedIds.has(passengerId) ? session.boarding_qr_confirmed_at : null,
+        });
+        existingIds.add(passengerId);
+        placeholderCount += 1;
+      });
+    }
+    if (seatCapacity > 1) {
+      console.log(
+        '[LYO_DRIVER_PASSENGER_LIST_NORMALIZED]',
+        JSON.stringify({
+          passengers_count: sourceRowsBase.length,
+          accepted_count: acceptedIds.length,
+          pickup_order_count: pickupOrderIds.length,
+          placeholder_count: placeholderCount,
+        })
+      );
+    }
     return sourceRows
       .map((leg, index) => {
         const passengerId = String(leg?.passenger_user_id || '').trim().toLowerCase();
