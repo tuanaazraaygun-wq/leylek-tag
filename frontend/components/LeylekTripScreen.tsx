@@ -949,10 +949,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     if (!session || !isDriver || isTerminal || departBusy || actionBusy || qrLoading) return false;
     const sc = Number(session.seat_capacity ?? 1);
     if (sc <= 1) return false;
-    if (String(session.ride_status || '').trim().toLowerCase() !== 'boarding') return false;
+    const rideStatus = String(session.ride_status || '').trim().toLowerCase();
+    const status = String(session.status || '').trim().toLowerCase();
+    if (rideStatus !== 'boarding' && status !== 'ready') return false;
     if (String(session.depart_confirmed_at || '').trim()) return false;
-    return tripPassengerSummary.boardedCount > 0 && tripPassengerSummary.waitingCount > 0;
-  }, [actionBusy, departBusy, isDriver, isTerminal, qrLoading, session, tripPassengerSummary.boardedCount, tripPassengerSummary.waitingCount]);
+    return tripPassengerSummary.boardedCount > 0 && tripPassengerSummary.boardedCount < sc;
+  }, [actionBusy, departBusy, isDriver, isTerminal, qrLoading, session, tripPassengerSummary.boardedCount]);
   const seatCandidatePickerVisible = useMemo(() => {
     if (!session || !isDriver || isTerminal) return false;
     const sc = Number(session.seat_capacity ?? 1);
@@ -1647,6 +1649,17 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             void (async () => {
               setDepartBusy(true);
               try {
+                console.log(
+                  '[LYO_EMPTY_SEAT_DEPART_CLIENT]',
+                  JSON.stringify({
+                    session_id: getActiveMuhabbetSessionId(),
+                    seat_capacity: Number(sessionRef.current?.seat_capacity ?? 1),
+                    boarded_count: tripPassengerSummary.boardedCount,
+                    waiting_count: tripPassengerSummary.waitingCount,
+                    ride_status: String(sessionRef.current?.ride_status || '').trim().toLowerCase() || null,
+                    status: String(sessionRef.current?.status || '').trim().toLowerCase() || null,
+                  })
+                );
                 const rest = await muhabbetTripSessionRestPost({
                   action: 'trip_depart',
                   pathSuffix: 'depart',
@@ -1675,7 +1688,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       ],
       { variant: 'warning' }
     );
-  }, [departBusy, departWithEmptySeatsVisible, muhabbetTripSessionRestPost, refreshSessionFromServer]);
+  }, [departBusy, departWithEmptySeatsVisible, getActiveMuhabbetSessionId, muhabbetTripSessionRestPost, refreshSessionFromServer, tripPassengerSummary.boardedCount, tripPassengerSummary.waitingCount]);
 
   const selectActivePickupPassenger = useCallback(
     (passengerUserId: string) => {
@@ -4202,7 +4215,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                   onPress={departWithEmptySeats}
                   disabled={departBusy}
                 >
-                  <Text style={styles.departPromptButtonText}>{departBusy ? 'İşleniyor...' : 'Boş koltukla yola çık'}</Text>
+                  <Text style={styles.departPromptButtonText}>{departBusy ? 'İşleniyor...' : 'Boş geç · Yola çık'}</Text>
                 </Pressable>
               </View>
             ) : null}

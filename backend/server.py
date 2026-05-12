@@ -25885,6 +25885,63 @@ def _muhabbet_trip_seat_invite_public(row: dict) -> dict:
     }
 
 
+def _log_muhabbet_trip_seat_invite_notify(session_id: str, passenger_user_id: str, conversation_id: str, source: str, ok: bool, error: str | None = None) -> None:
+    try:
+        logger.info(
+            "[LYO_SEAT_INVITE_NOTIFY] %s",
+            json.dumps(
+                {
+                    "session_id": str(session_id or "").strip().lower()[:12],
+                    "passenger_user_id": _lyo_qr_mask_id(passenger_user_id),
+                    "conversation_id_present": bool(str(conversation_id or "").strip()),
+                    "source": str(source or "").strip() or "unknown",
+                    "ok": bool(ok),
+                    "error": str(error or "")[:160] or None,
+                },
+                ensure_ascii=False,
+            ),
+        )
+    except Exception:
+        pass
+
+
+async def _emit_muhabbet_trip_seat_invite_notify(passenger_uid: str, payload: dict) -> None:
+    uid = str(passenger_uid or "").strip().lower()
+    invite = payload.get("invite") if isinstance(payload, dict) else {}
+    invite_row = invite if isinstance(invite, dict) else {}
+    sid = str((payload or {}).get("session_id") or invite_row.get("session_id") or "").strip().lower()
+    cid = str(invite_row.get("conversation_id") or (payload or {}).get("conversation_id") or "").strip().lower()
+    if not uid:
+        _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "missing_passenger", False, "missing_passenger_user_id")
+        return
+    notify_payload = {**payload, "conversation_id": cid or None}
+    try:
+        await emit_socket_event_to_user(uid, "muhabbet_trip_seat_invite_received", notify_payload)
+        _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "seat_invite_received", True)
+    except Exception as e:
+        _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "seat_invite_received", False, str(e))
+        logger.warning("[muhabbet_trip_seat_invite] passenger_emit_failed session_id=%s err=%s", sid[:12], e)
+    try:
+        await emit_socket_event_to_user(uid, "muhabbet_trip_seat_invite_pending", notify_payload)
+        _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "seat_invite_pending", True)
+    except Exception as e:
+        _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "seat_invite_pending", False, str(e))
+    if cid:
+        try:
+            await emit_socket_event_to_user(
+                uid,
+                "conversation_updated",
+                {
+                    "conversation_id": cid,
+                    "reason": "seat_invite_created",
+                    "version": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "conversation_updated", True)
+        except Exception as e:
+            _log_muhabbet_trip_seat_invite_notify(sid, uid, cid, "conversation_updated", False, str(e))
+
+
 async def _cancel_pending_seat_invites_for_session(session_id: str, reason: str) -> None:
     """Best-effort cleanup; invite table/schema issues must not block depart."""
     sid = str(session_id or "").strip().lower()
@@ -29379,6 +29436,66 @@ async def muhabbet_trip_seat_candidates_get(
     return _muhabbet_trip_seat_candidates_payload(row)
 
 
+@api_router.get("/muhabbet/trip-seat-invites/pending")
+async def muhabbet_trip_seat_invite_pending_get(
+    conversation_id: str = Query(..., min_length=1),
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    uid_lo = str(uid or "").strip().lower()
+    cid = str(conversation_id or "").strip().lower()
+    if not cid:
+        raise HTTPException(status_code=400, detail="conversation_id gerekli.")
+    try:
+        res = (
+            supabase.table("muhabbet_trip_seat_invites")
+            .select("*")
+            .eq("conversation_id", cid)
+            .eq("passenger_user_id", uid_lo)
+            .eq("status", "pending")
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        invite_row = dict(res.data[0]) if res.data else None
+        session_public = None
+        if invite_row:
+            sid = str(invite_row.get("session_id") or "").strip().lower()
+            if sid:
+                try:
+                    sess = supabase.table("muhabbet_trip_sessions").select("*").eq("id", sid).limit(1).execute()
+                    if sess.data:
+                        session_public = _muhabbet_trip_session_public(dict(sess.data[0]))
+                except Exception as se:
+                    logger.debug("[muhabbet_trip_seat_invite] pending_session_lookup_failed session_id=%s err=%s", sid[:12], se)
+        try:
+            logger.info(
+                "[LYO_SEAT_INVITE_PENDING_FETCH] %s",
+                json.dumps(
+                    {
+                        "conversation_id": cid[:12],
+                        "passenger_user_id": _lyo_qr_mask_id(uid_lo),
+                        "found": bool(invite_row),
+                        "session_id": str((invite_row or {}).get("session_id") or "").strip().lower()[:12] or None,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
+        return {
+            "success": True,
+            "invite": _muhabbet_trip_seat_invite_public(invite_row) if invite_row else None,
+            "session": session_public,
+            "listing_id": (invite_row or {}).get("listing_id") if invite_row else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[muhabbet_trip_seat_invite] pending_fetch_failed conversation_id=%s user=%s err=%s", cid[:12], uid_lo[:12], e)
+        raise HTTPException(status_code=500, detail="Boş koltuk daveti alınamadı.") from e
+
+
 @api_router.get("/muhabbet/trip-sessions/{session_id}")
 async def muhabbet_trip_session_get(
     session_id: str,
@@ -32277,14 +32394,12 @@ async def muhabbet_trip_seat_invites_post(
         payload = {
             "invite": invite,
             "session_id": sid,
+            "conversation_id": invite.get("conversation_id"),
             "session": _muhabbet_trip_session_public(session_row),
             "reused": reused,
         }
         if passenger_uid:
-            try:
-                await emit_socket_event_to_user(passenger_uid, "muhabbet_trip_seat_invite_received", payload)
-            except Exception as se:
-                logger.warning("[muhabbet_trip_seat_invite] passenger_emit_failed session_id=%s err=%s", sid[:12], se)
+            await _emit_muhabbet_trip_seat_invite_notify(passenger_uid, payload)
         try:
             await _broadcast_muhabbet_trip_session_state(
                 session_row,

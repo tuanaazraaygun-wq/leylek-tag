@@ -629,6 +629,30 @@ export default function MuhabbetChatScreen({
   const chatCallStartInFlightRef = useRef(false);
   const latestChatCallActionIdRef = useRef<string | null>(null);
 
+  const applyPendingSeatInvitePayload = useCallback((payload: Record<string, unknown>, expectedConversationId: string) => {
+    const inviteRaw = payload?.invite && typeof payload.invite === 'object' && !Array.isArray(payload.invite)
+      ? (payload.invite as Record<string, unknown>)
+      : payload;
+    const conversationId = String(payload?.conversation_id || inviteRaw?.conversation_id || '').trim().toLowerCase();
+    if (!conversationId || conversationId !== expectedConversationId) return false;
+    const status = String(inviteRaw?.status || '').trim().toLowerCase();
+    if (status !== 'pending') return false;
+    const inviteId = String(inviteRaw?.id || '').trim().toLowerCase();
+    const sessionId = normalizeMuhabbetSessionId(String(payload?.session_id || inviteRaw?.session_id || ''));
+    if (!inviteId || !sessionId) return false;
+    setPendingSeatInvite({
+      id: inviteId,
+      session_id: sessionId,
+      conversation_id: conversationId || null,
+      passenger_user_id:
+        inviteRaw?.passenger_user_id != null ? String(inviteRaw.passenger_user_id).trim().toLowerCase() : null,
+      status,
+      expires_at: inviteRaw?.expires_at != null ? String(inviteRaw.expires_at) : null,
+    });
+    setSeatInviteError('');
+    return true;
+  }, []);
+
   const recordingRef = useRef<Audio.Recording | null>(null);
   const recordIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordStartedAtRef = useRef<number>(0);
@@ -1165,16 +1189,59 @@ export default function MuhabbetChatScreen({
   );
 
   const refreshLinkedTripSession = useCallback(async () => {
+    const fetchPendingSeatInvite = async (token: string, cidLo: string) => {
+      try {
+        const res = await fetch(
+          `${base}/muhabbet/trip-seat-invites/pending?conversation_id=${encodeURIComponent(cidLo)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          invite?: Record<string, unknown> | null;
+          session?: MuhabbetTripSession | null;
+        };
+        console.log(
+          '[LYO_SEAT_INVITE_PENDING_FETCH]',
+          JSON.stringify({
+            conversation_id: cidLo,
+            status: res.status,
+            ok: res.ok,
+            found: !!json.invite,
+          })
+        );
+        if (!res.ok || json.success !== true || !json.invite) return;
+        applyPendingSeatInvitePayload(
+          {
+            invite: json.invite,
+            session_id: json.invite.session_id,
+            conversation_id: json.invite.conversation_id,
+          },
+          cidLo
+        );
+        if (json.session && typeof json.session === 'object') {
+          setLinkedTripSession(json.session);
+        }
+      } catch {
+        console.log('[LYO_SEAT_INVITE_PENDING_FETCH]', JSON.stringify({ conversation_id: cidLo, error: 'network_or_exception' }));
+      }
+    };
     const eligible = !!(
       ctxRef.current?.trip_convert_eligible ?? ctxRef.current?.matched_via_leylek_key
     );
-    if (!eligible || !cid) {
+    if (!cid) {
       setLinkedTripSession(null);
       return;
     }
     const token = (await getPersistedAccessToken())?.trim();
     if (!token) return;
     const cidLo = cid.trim().toLowerCase();
+    await fetchPendingSeatInvite(token, cidLo);
+    if (!eligible) {
+      setLinkedTripSession(null);
+      return;
+    }
 
     const tcr = ctxRef.current?.trip_convert_request;
     const sidFromConvert =
@@ -1228,7 +1295,7 @@ export default function MuhabbetChatScreen({
       /* noop */
     }
     setLinkedTripSession(null);
-  }, [base, cid]);
+  }, [applyPendingSeatInvitePayload, base, cid]);
 
   const respondSeatInvite = useCallback(
     async (action: 'accept' | 'decline') => {
@@ -1323,32 +1390,15 @@ export default function MuhabbetChatScreen({
     const socket = getOrCreateSocket();
     const cidLo = cid.trim().toLowerCase();
     const onSeatInviteReceived = (payload: Record<string, unknown>) => {
-      const inviteRaw = payload?.invite && typeof payload.invite === 'object' && !Array.isArray(payload.invite)
-        ? (payload.invite as Record<string, unknown>)
-        : payload;
-      const conversationId = String(payload?.conversation_id || inviteRaw?.conversation_id || '').trim().toLowerCase();
-      if (!conversationId || conversationId !== cidLo) return;
-      const status = String(inviteRaw?.status || '').trim().toLowerCase();
-      if (status !== 'pending') return;
-      const inviteId = String(inviteRaw?.id || '').trim().toLowerCase();
-      const sessionId = normalizeMuhabbetSessionId(String(payload?.session_id || inviteRaw?.session_id || ''));
-      if (!inviteId || !sessionId) return;
-      setPendingSeatInvite({
-        id: inviteId,
-        session_id: sessionId,
-        conversation_id: conversationId || null,
-        passenger_user_id:
-          inviteRaw?.passenger_user_id != null ? String(inviteRaw.passenger_user_id).trim().toLowerCase() : null,
-        status,
-        expires_at: inviteRaw?.expires_at != null ? String(inviteRaw.expires_at) : null,
-      });
-      setSeatInviteError('');
+      applyPendingSeatInvitePayload(payload, cidLo);
     };
     socket.on('muhabbet_trip_seat_invite_received', onSeatInviteReceived);
+    socket.on('muhabbet_trip_seat_invite_pending', onSeatInviteReceived);
     return () => {
       socket.off('muhabbet_trip_seat_invite_received', onSeatInviteReceived);
+      socket.off('muhabbet_trip_seat_invite_pending', onSeatInviteReceived);
     };
-  }, [cid]);
+  }, [applyPendingSeatInvitePayload, cid]);
 
   const retryPendingActionAfterNotRegistered = useCallback(async () => {
     const pending = pendingActionRef.current;
@@ -1599,10 +1649,15 @@ export default function MuhabbetChatScreen({
     const cidLo = cid.trim().toLowerCase();
     const unsub = subscribeConversationUpdated((p) => {
       const conv = (p.conversation_id || '').trim().toLowerCase();
-      if (conv && conv === cidLo) void pullMessagesFromApi();
+      if (conv && conv === cidLo) {
+        void pullMessagesFromApi();
+        if (String(p.reason || '').trim() === 'seat_invite_created') {
+          void refreshLinkedTripSession();
+        }
+      }
     });
     return unsub;
-  }, [cid, pullMessagesFromApi]);
+  }, [cid, pullMessagesFromApi, refreshLinkedTripSession]);
 
   useEffect(() => {
     void loadContext();
