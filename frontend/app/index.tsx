@@ -3426,14 +3426,21 @@ export default function App() {
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
     const roleStep1Done = !!selectedRole;
     const roleStep2Done = !!rideVehicleKind;
+    const isCommunityComingSoon = true;
+    const communityCardColors = isCommunityComingSoon
+      ? (['#334155', '#475569', '#64748B'] as const)
+      : (['#1e1b4b', '#312e81', '#1e3a8a', '#172554'] as const);
+    const communityArrowColors = isCommunityComingSoon
+      ? (['#64748B', '#475569', '#334155'] as const)
+      : (['#6366F1', '#4F46E5', '#2563EB'] as const);
     const passengerIconSize = rs.isVeryCompact ? 30 : rs.isCompact ? 34 : 40;
     const driverCarIconSize = rs.isVeryCompact ? 28 : rs.isCompact ? 31 : 34;
     const driverBikeIconSize = rs.isVeryCompact ? 24 : rs.isCompact ? 28 : 30;
     const roleCheckIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
     const vehicleChipIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
     const continueArrowIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
-    const communityRoutesIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 28;
-    const communityChevronSize = rs.isVeryCompact ? 18 : rs.isCompact ? 20 : 22;
+    const communityRoutesIconSize = rs.isVeryCompact ? 20 : rs.isCompact ? 22 : 24;
+    const communityChevronSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
 
     return (
       <ImageBackground 
@@ -3959,15 +3966,20 @@ export default function App() {
             </View>
 
             <TouchableOpacity
-              style={styles.communityBtnOuter}
+              style={[
+                styles.communityBtnOuter,
+                isCommunityComingSoon && styles.communityBtnOuterDisabled,
+              ]}
               onPress={async () => {
+                if (isCommunityComingSoon) return;
                 roleScreenHaptic();
                 setScreen('community');
               }}
-              activeOpacity={0.88}
+              disabled={isCommunityComingSoon}
+              activeOpacity={isCommunityComingSoon ? 1 : 0.88}
             >
               <LinearGradient
-                colors={['#1e1b4b', '#312e81', '#1e3a8a', '#172554']}
+                colors={communityCardColors}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[
@@ -3980,7 +3992,7 @@ export default function App() {
                   style={[styles.communityBadgeYeni, rs.isVeryCompact && styles.communityBadgeYeniVery]}
                   pointerEvents="none"
                 >
-                  <Text style={styles.communityBadgeYeniText}>YENİ</Text>
+                  <Text style={styles.communityBadgeYeniText}>YAKINDA</Text>
                 </View>
                 <View
                   style={[
@@ -3996,7 +4008,7 @@ export default function App() {
                       rs.isCompact && !rs.isVeryCompact && styles.communityIconRouteBoxCompact,
                     ]}
                   >
-                    <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="#E0E7FF" />
+                    <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="#CBD5E1" />
                   </View>
                   <View style={styles.communityTextBox}>
                     <Text
@@ -4019,11 +4031,11 @@ export default function App() {
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      Şehirler arası yolculuklara katıl
+                      Çok yakında aktif olacak
                     </Text>
                   </View>
                   <LinearGradient
-                    colors={['#6366F1', '#4F46E5', '#2563EB']}
+                    colors={communityArrowColors}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={[
@@ -4032,7 +4044,7 @@ export default function App() {
                       rs.isCompact && !rs.isVeryCompact && styles.communityArrowPremiumCompact,
                     ]}
                   >
-                    <Ionicons name="chevron-forward" size={communityChevronSize} color="#FFF" />
+                    <Ionicons name="lock-closed" size={communityChevronSize} color="#E2E8F0" />
                   </LinearGradient>
                 </View>
               </LinearGradient>
@@ -19869,15 +19881,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   roleBottomFooterColumnCompact: {
-    paddingTop: 2,
+    paddingTop: 0,
     paddingBottom: 16,
-    gap: 7,
+    gap: 6,
     paddingHorizontal: 18,
   },
   roleBottomFooterColumnVery: {
     paddingTop: 0,
     paddingBottom: 12,
-    gap: 4,
+    gap: 3,
     paddingHorizontal: 14,
   },
   roleContinueBtnOuterCompact: {
@@ -19905,12 +19917,12 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   communityBtnGradientCompact: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   communityBtnGradientVery: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
   },
   communityBadgeYeniVery: {
     top: 7,
@@ -19926,14 +19938,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   communityIconRouteBoxVery: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   communityIconRouteBoxCompact: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   communityBtnTitleProminentCompact: {
     fontSize: 17,
@@ -19955,14 +19967,14 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   communityArrowPremiumVery: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
   communityArrowPremiumCompact: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
   /** Trip uyarısı — Phase 1: üst alanı sadeleştirmek için margin + tipografi StyleSheet’te */
   roleSelectBannerWrap: {
@@ -20086,9 +20098,9 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumn: {
     paddingHorizontal: 20,
-    paddingTop: 4,
+    paddingTop: 2,
     paddingBottom: Platform.OS === 'ios' ? 24 : 20,
-    gap: 10,
+    gap: 8,
     alignItems: 'stretch',
   },
   roleCardsRow: {
@@ -20321,22 +20333,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(129, 140, 248, 0.45)',
   },
+  communityBtnOuterDisabled: {
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
+    borderColor: 'rgba(148, 163, 184, 0.55)',
+    opacity: 0.88,
+  },
   communityBtnGradient: {
-    paddingVertical: 20,
-    paddingHorizontal: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     position: 'relative',
   },
   communityBadgeYeni: {
     position: 'absolute',
-    top: 12,
-    right: 14,
+    top: 10,
+    right: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: 'rgba(236, 72, 153, 0.95)',
+    backgroundColor: 'rgba(245, 158, 11, 0.95)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.35)',
-    shadowColor: '#831843',
+    shadowColor: '#92400E',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 4,
@@ -20355,9 +20374,9 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   communityIconRouteBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -20437,9 +20456,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   communityArrowPremium: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
