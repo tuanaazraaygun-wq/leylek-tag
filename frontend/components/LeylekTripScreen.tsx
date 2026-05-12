@@ -612,6 +612,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const refreshDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshInFlightRef = useRef<Promise<MuhabbetTripSession | null> | null>(null);
   const refreshDebouncedResolversRef = useRef<((v: MuhabbetTripSession | null) => void)[]>([]);
+  const tripJoinInFlightRef = useRef(false);
+  const lastTripJoinRef = useRef<{ sessionId: string; at: number } | null>(null);
+  const tripJoinPrefetchedRef = useRef<Record<string, boolean>>({});
+  const lastLocationRefreshRef = useRef<{ sessionId: string; at: number } | null>(null);
   const callSigLoggedRef = useRef('');
   const forceFinishSeenRef = useRef('');
   const forceFinishDismissedRef = useRef('');
@@ -679,6 +683,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       clearTimeout(terminalAutoTimerRef.current);
       terminalAutoTimerRef.current = null;
     }
+    tripJoinInFlightRef.current = false;
+    lastTripJoinRef.current = null;
+    tripJoinPrefetchedRef.current = {};
+    lastLocationRefreshRef.current = null;
   }, [effectiveSessionId]);
 
   useEffect(() => {
@@ -1402,18 +1410,51 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const base = apiBaseUrl.replace(/\/$/, '');
       const url = `${base}/muhabbet/trip-sessions/${encodeURIComponent(sid)}/${opts.pathSuffix}`;
       let res: Response;
+      const isBoardingQrConfirm = opts.action === 'boarding_qr_confirm';
+      const abortController = isBoardingQrConfirm ? new AbortController() : null;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
       try {
+        if (abortController) {
+          timeoutId = setTimeout(() => abortController.abort(), 6000);
+        }
         res = await fetch(url, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(opts.body ?? {}),
+          signal: abortController?.signal,
         });
-      } catch {
+      } catch (error) {
+        const timedOut =
+          isBoardingQrConfirm &&
+          (abortController?.signal.aborted ||
+            (error instanceof Error && String(error.name || '').toLowerCase() === 'aborterror'));
+        if (timedOut) {
+          console.log(
+            '[LYO_QR_CONFIRM_TIMEOUT]',
+            JSON.stringify({ action: opts.action, sessionId: sid, timeout_ms: 6000 })
+          );
+          return {
+            ok: false,
+            status: -2,
+            json: {
+              success: false,
+              detail: {
+                success: false,
+                code: 'boarding_qr_confirm_timeout',
+                message: 'Biniş QR doğrulama yanıtı gecikti. Lütfen tekrar deneyin.',
+              },
+            },
+          };
+        }
         console.log(
           '[leylek_rest_action]',
           JSON.stringify({ action: opts.action, sessionId: sid, status: -1, body: { error: 'network' } })
         );
         return { ok: false, status: -1, json: {} };
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
       let json: Record<string, unknown> = {};
       try {
@@ -1633,7 +1674,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const multiSeatPending = scPoll > 1 && (rsPoll === 'waiting' || rsPoll === 'boarding');
     const fastPoll =
       qrLoading || (!!session?.call_active && ringingLike) || ffPending || multiSeatPending;
-    const pollMs = fastPoll ? 500 : 1200;
+    const basePollMs = fastPoll ? 500 : 1200;
+    const pollMs = qrCodeVisible || qrScanVisible ? Math.max(basePollMs, 3000) : basePollMs;
     const id = setInterval(() => {
       console.log(
         '[leylek_poll]',
@@ -1650,6 +1692,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     // eslint-disable-next-line react-hooks/exhaustive-deps -- session nesnesi yerine üstteki primitive alanlar
   }, [
     qrCodeVisible,
+    qrScanVisible,
     qrLoading,
     session?.call_active,
     session?.call_state,
@@ -2044,31 +2087,56 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           : 'passenger';
 
     const runTripJoin = async (reason: string) => {
-      console.log('[socket_join]', JSON.stringify({ kind: 'trip_run', reason, session_id: activeSessionId }));
-      const sock = getOrCreateSocket();
-      const sessSnap = sessionRef.current;
-      logLeylekAction('muhabbet_trip_join', {
-        sessionId: activeSessionId,
-        socketConnected: sock.connected,
-        registered: !!myId && isMuhabbetSocketRegisteredForUser(sock, myId),
-        role: joinRole,
-        status: String(sessSnap?.status || ''),
-      });
-      notifyAuthTokenBecameAvailableForSocket();
-      await refreshSessionFromServer('trip_join_prefetch', { bypassDebounce: true });
-      const ok = await ensureMuhabbetTripSocketReady(myId, 8000);
-      logLeylekAction('muhabbet_trip_join_after_ensure', {
-        sessionId: activeSessionId,
-        socketConnected: sock.connected,
-        registered: !!myId && isMuhabbetSocketRegisteredForUser(sock, myId),
-        role: joinRole,
-        status: String(sessSnap?.status || ''),
-      });
-      if (!ok) {
-        await refreshSessionFromServer('trip_join_socket_not_ready', { bypassDebounce: true });
+      const now = Date.now();
+      const lastJoin = lastTripJoinRef.current;
+      if (tripJoinInFlightRef.current) {
+        console.log(
+          '[LYO_JOIN_DEDUPE_SKIP]',
+          JSON.stringify({ session_id: activeSessionId, reason, cause: 'in_flight' })
+        );
         return;
       }
-      await emitMuhabbetTripJoinWithRetries(sock, activeSessionId);
+      if (lastJoin?.sessionId === activeSessionId && now - lastJoin.at < 15000) {
+        console.log(
+          '[LYO_JOIN_DEDUPE_SKIP]',
+          JSON.stringify({ session_id: activeSessionId, reason, cause: 'ttl', elapsed_ms: now - lastJoin.at })
+        );
+        return;
+      }
+      tripJoinInFlightRef.current = true;
+      console.log('[socket_join]', JSON.stringify({ kind: 'trip_run', reason, session_id: activeSessionId }));
+      try {
+        const sock = getOrCreateSocket();
+        const sessSnap = sessionRef.current;
+        logLeylekAction('muhabbet_trip_join', {
+          sessionId: activeSessionId,
+          socketConnected: sock.connected,
+          registered: !!myId && isMuhabbetSocketRegisteredForUser(sock, myId),
+          role: joinRole,
+          status: String(sessSnap?.status || ''),
+        });
+        notifyAuthTokenBecameAvailableForSocket();
+        if (!tripJoinPrefetchedRef.current[activeSessionId] || !sessionRef.current) {
+          await refreshSessionFromServer('trip_join_prefetch', { bypassDebounce: true });
+          tripJoinPrefetchedRef.current[activeSessionId] = true;
+        }
+        const ok = await ensureMuhabbetTripSocketReady(myId, 8000);
+        logLeylekAction('muhabbet_trip_join_after_ensure', {
+          sessionId: activeSessionId,
+          socketConnected: sock.connected,
+          registered: !!myId && isMuhabbetSocketRegisteredForUser(sock, myId),
+          role: joinRole,
+          status: String(sessSnap?.status || ''),
+        });
+        if (!ok) {
+          await refreshSessionFromServer('trip_join_socket_not_ready', { bypassDebounce: true });
+          return;
+        }
+        lastTripJoinRef.current = { sessionId: activeSessionId, at: Date.now() };
+        await emitMuhabbetTripJoinWithRetries(sock, activeSessionId);
+      } finally {
+        tripJoinInFlightRef.current = false;
+      }
     };
 
     void runTripJoin('effect_mount');
@@ -2086,6 +2154,18 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (r === 'force_ended' && ps && TERMINAL_TRIP_STATUSES.has(pst)) {
         closeTerminalTrip('muhabbet_trip_session_updated_force_ended', ps as MuhabbetTripSession);
         return;
+      }
+      if (r.includes('location_updated')) {
+        const now = Date.now();
+        const last = lastLocationRefreshRef.current;
+        if (last?.sessionId === activeSessionId && now - last.at < 2000) {
+          console.log(
+            '[LYO_LOCATION_REFRESH_DEBOUNCE_SKIP]',
+            JSON.stringify({ session_id: activeSessionId, reason: r, elapsed_ms: now - last.at })
+          );
+          return;
+        }
+        lastLocationRefreshRef.current = { sessionId: activeSessionId, at: now };
       }
       void refreshSessionFromServer('muhabbet_trip_session_updated_socket', { bypassDebounce: true });
     };
@@ -3342,13 +3422,13 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   ]);
 
   const confirmQrToken = useCallback(
-    (rawToken: string, passengerUserId?: string | null) => {
+    async (rawToken: string, passengerUserId?: string | null) => {
       const token = rawToken.trim();
       if (!token) {
         Alert.alert(qrMode === 'boarding' ? 'Biniş QR' : 'QR ile Bitir', qrMode === 'boarding' ? 'Sürücünün gösterdiği kodu girin.' : 'Yolcunun gösterdiği kodu girin.');
-        return;
+        return false;
       }
-      void (async () => {
+      {
         setActionBusy(true);
         if (qrMode === 'finish') {
           Vibration.vibrate([0, 70, 55, 90]);
@@ -3360,7 +3440,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               'Hedef QR',
               'Önce biniş QR ile yolculuğu başlatın. Bitiş kodunu okutmak için yolculuk aktif olmalıdır.'
             );
-            return;
+            return false;
           }
           if (qrMode === 'boarding') {
             const passengerId = String(passengerUserId || '').trim();
@@ -3472,7 +3552,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                   })
                 );
               })();
-              return;
+              return true;
             }
             Alert.alert(
               'Biniş QR',
@@ -3483,7 +3563,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               JSON.stringify({ action: 'boarding_qr_confirm_rest_fail' })
             );
             void refreshSessionFromServer('boarding_qr_confirm_rest_fail', { bypassDebounce: true });
-            return;
+            return false;
           }
 
           const rest = await muhabbetTripSessionRestPost({
@@ -3510,7 +3590,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               JSON.stringify({ action: 'finish_qr_confirm_rest' })
             );
             void refreshSessionFromServer('finish_qr_confirm_rest', { bypassDebounce: true });
-            return;
+            return true;
           }
           Alert.alert('Hedef QR', muhabbetTripRestDetail(rest.json.detail, 'Bitiş QR doğrulanamadı.'));
           console.log(
@@ -3518,10 +3598,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             JSON.stringify({ action: 'finish_qr_confirm_rest_fail' })
           );
           void refreshSessionFromServer('finish_qr_confirm_rest_fail', { bypassDebounce: true });
+          return false;
+        } catch (error) {
+          console.warn('[LYO_QR_CONFIRM_ERROR]', error);
+          Alert.alert(
+            qrMode === 'boarding' ? 'Biniş QR' : 'Hedef QR',
+            qrMode === 'boarding'
+              ? 'Biniş QR doğrulama sırasında bağlantı hatası oluştu. Lütfen tekrar deneyin.'
+              : 'QR doğrulama sırasında bağlantı hatası oluştu. Lütfen tekrar deneyin.'
+          );
+          return false;
         } finally {
           setActionBusy(false);
         }
-      })();
+      }
     },
     [getActiveMuhabbetSessionId, muhabbetTripSessionRestPost, myId, qrMode, refreshSessionFromServer]
   );

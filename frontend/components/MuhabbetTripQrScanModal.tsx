@@ -17,7 +17,7 @@ type MuhabbetTripQrScanModalProps = {
   visible: boolean;
   mode: 'boarding' | 'finish';
   onClose: () => void;
-  onConfirmToken: (token: string, passengerUserId?: string | null) => void | Promise<void>;
+  onConfirmToken: (token: string, passengerUserId?: string | null) => boolean | Promise<boolean>;
 };
 
 const TOKEN_PARAM_KEYS = ['token', 'qr', 'code', 'boarding_token'] as const;
@@ -160,8 +160,12 @@ export default function MuhabbetTripQrScanModal({
     try {
       Vibration.vibrate([0, 70, 55, 90]);
       setSuccessVisible(true);
-      await onConfirmToken(token, passengerUserId);
-      setTimeout(onClose, 180);
+      const ok = await onConfirmToken(token, passengerUserId);
+      if (ok) {
+        setTimeout(onClose, 180);
+      }
+    } catch (error) {
+      console.warn('[LYO_QR_SCAN_CONFIRM_ERROR]', error);
     } finally {
       setTimeout(() => {
         setProcessing(false);

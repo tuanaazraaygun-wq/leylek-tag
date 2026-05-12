@@ -28384,8 +28384,23 @@ async def _muhabbet_trip_cancel_waiting_no_board_30s() -> None:
         )
 
 
+_MUHABBET_TRIP_EXPIRE_STALE_LAST_RUN_MONO = 0.0
+_MUHABBET_TRIP_EXPIRE_STALE_THROTTLE_SECONDS = 30.0
+
+
 async def _expire_stale_muhabbet_trip_sessions() -> list[dict]:
     """Expire unboarded Muhabbet trip sessions only; never touches normal ride state."""
+    global _MUHABBET_TRIP_EXPIRE_STALE_LAST_RUN_MONO
+    now_mono = time.monotonic()
+    elapsed = now_mono - _MUHABBET_TRIP_EXPIRE_STALE_LAST_RUN_MONO
+    if _MUHABBET_TRIP_EXPIRE_STALE_LAST_RUN_MONO > 0 and elapsed < _MUHABBET_TRIP_EXPIRE_STALE_THROTTLE_SECONDS:
+        logger.info(
+            "[LYO_EXPIRE_STALE_THROTTLED] %s",
+            json.dumps({"elapsed_ms": int(elapsed * 1000)}, ensure_ascii=False),
+        )
+        return []
+    _MUHABBET_TRIP_EXPIRE_STALE_LAST_RUN_MONO = now_mono
+    logger.info("[LYO_EXPIRE_STALE_RUN] %s", json.dumps({"ts": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False))
     try:
         await _muhabbet_trip_force_finish_process_deadlines()
     except Exception as e:
@@ -29585,21 +29600,54 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     passenger_user_id: str | None = None,
 ) -> dict:
     """Biniş QR onayı — ready ise başlatır; active + zaten onaylıysa idempotent döner."""
-    await _expire_stale_muhabbet_trip_sessions()
-    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    sid_lo = str(session_id or "").strip().lower()
     uid_lo = str(uid).strip().lower()
+
+    def _log_confirm_step(step: str, started_at: float, **extra) -> None:
+        try:
+            logger.info(
+                "[LYO_QR_CONFIRM_STEP] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo,
+                        "uid": uid_lo,
+                        "step": step,
+                        "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                        **extra,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+        except Exception:
+            pass
+
+    async def _background_expire_stale_for_confirm() -> None:
+        try:
+            await _expire_stale_muhabbet_trip_sessions()
+        except Exception as e:
+            logger.warning("[LYO_QR_CONFIRM_STEP] expire_stale_background_failed session_id=%s err=%s", sid_lo[:12], e)
+
+    asyncio.create_task(_background_expire_stale_for_confirm())
+    step_started = time.perf_counter()
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    _log_confirm_step("session_lookup", step_started)
     tok = str(token or "").strip().upper()
     if not tok:
         raise _MuhabbetTripOpError("bad_request", "QR kodu gerekli.")
     sc = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
+    step_started = time.perf_counter()
     passenger_rows = _muhabbet_trip_passenger_rows_for_session(session_id) if sc > 1 else []
+    _log_confirm_step("passenger_rows", step_started, seat_capacity=sc, row_count=len(passenger_rows))
     acc_ids = _muhabbet_trip_eligible_passenger_ids(row, passenger_rows) if sc > 1 else _muhabbet_json_uuid_list(row.get("accepted_passenger_ids"))
     if not acc_ids and row.get("passenger_id"):
         acc_ids = [str(row.get("passenger_id") or "").strip().lower()]
     brd_ids = _muhabbet_trip_boarded_passenger_ids(row, passenger_rows) if sc > 1 else _muhabbet_json_uuid_list(row.get("boarded_passenger_ids"))
     token_row = None
+    step_started = time.perf_counter()
     if sc > 1:
         token_row = _muhabbet_trip_boarding_token_for_confirm(session_id, uid_lo, tok, passenger_user_id, sc)
+    _log_confirm_step("token_lookup", step_started, seat_capacity=sc, token_found=bool(token_row))
     if sc <= 1:
         if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
             raise _MuhabbetTripOpError("passenger_required", "Biniş QR kodunu yolcu onaylayabilir.")
@@ -29677,9 +29725,13 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             "ride_status": "active",
             "boarded_passenger_ids": new_brd,
         }
+        step_started = time.perf_counter()
         upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        _log_confirm_step("session_patch", step_started, patch_keys=list(patch.keys()), row_count=len(upd.data or []))
         next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        step_started = time.perf_counter()
         _muhabbet_trip_passengers_update_for_user(session_id, uid_lo, {"status": "onboard", "boarded_at": now_iso})
+        _log_confirm_step("passenger_update", step_started)
         asyncio.create_task(
             _muhabbet_trip_boarding_qr_confirm_background(
                 next_row,
@@ -29749,7 +29801,9 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         ),
     )
     try:
+        step_started = time.perf_counter()
         upd = supabase.table("muhabbet_trip_sessions").update(patch_ms).eq("id", session_id).execute()
+        _log_confirm_step("session_patch", step_started, patch_keys=patch_keys, row_count=len(upd.data or []))
     except Exception as e:
         err_msg = str(e)
         logger.warning(
@@ -29787,7 +29841,9 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             ),
         )
         try:
+            step_started = time.perf_counter()
             upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
+            _log_confirm_step("session_patch", step_started, patch_keys=retry_keys, retry_without_status=True, row_count=len(upd.data or []))
             patch_ms = retry_patch
         except Exception as retry_e:
             logger.warning(
@@ -29805,11 +29861,16 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             )
             raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch_ms}
+    step_started = time.perf_counter()
     _muhabbet_trip_passengers_update_for_user(session_id, uid_lo, {"status": "onboard", "boarded_at": now_iso})
+    _log_confirm_step("passenger_update", step_started)
     if token_row:
         try:
+            step_started = time.perf_counter()
             _muhabbet_trip_mark_boarding_token_consumed(token_row, uid_lo, now_iso)
+            _log_confirm_step("token_consume", step_started)
         except _MuhabbetTripOpError as e:
+            _log_confirm_step("token_consume", step_started, error_code=e.socket_code)
             logger.info(
                 "[LYO_QR_CONFIRM_BACKEND] %s",
                 json.dumps(
@@ -31183,22 +31244,93 @@ async def muhabbet_trip_boarding_qr_confirm_post(
     body: MuhabbetTripBoardingQrConfirmBody,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    endpoint_started = time.perf_counter()
     raw_qr = body.qr_payload or body.boarding_qr_token or body.token or ""
     tok, payload_passenger_id = _muhabbet_trip_parse_boarding_qr_input(raw_qr, body.passenger_user_id)
+    sid_lo = str(session_id or "").strip().lower()
+    logger.info(
+        "[LYO_QR_CONFIRM_ENDPOINT_ENTER] %s",
+        json.dumps(
+            {
+                "session_id": sid_lo,
+                "auth_user_id": str(authenticated_user_id or "")[:12] or None,
+                "passenger_user_id": payload_passenger_id or None,
+                "token_len": len(tok),
+            },
+            ensure_ascii=False,
+        ),
+    )
+    uid = ""
+    uid_lo = ""
     try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        uid_lo = str(uid or "").strip().lower()
+        logger.info(
+            "[LYO_QR_CONFIRM_STEP] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "uid": uid_lo,
+                    "step": "resolve_user",
+                    "duration_ms": int((time.perf_counter() - endpoint_started) * 1000),
+                },
+                ensure_ascii=False,
+            ),
+        )
         sess = await _muhabbet_trip_boarding_qr_confirm_apply(uid, session_id, tok, payload_passenger_id)
+        logger.info(
+            "[LYO_QR_CONFIRM_ENDPOINT_RETURN] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "uid": uid_lo,
+                    "status": 200,
+                    "success": True,
+                    "duration_ms": int((time.perf_counter() - endpoint_started) * 1000),
+                },
+                ensure_ascii=False,
+            ),
+        )
         return {"success": True, **sess}
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, dict) else {"success": False, "code": "http_error", "message": str(e.detail)}
+        if isinstance(detail, dict) and "success" not in detail:
+            detail = {"success": False, **detail}
+        logger.info(
+            "[LYO_QR_CONFIRM_ENDPOINT_RETURN] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "uid": uid_lo,
+                    "status": e.status_code,
+                    "success": False,
+                    "duration_ms": int((time.perf_counter() - endpoint_started) * 1000),
+                    "code": detail.get("code") if isinstance(detail, dict) else None,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        raise HTTPException(status_code=e.status_code, detail=detail) from e
     except _MuhabbetTripOpError as e:
+        logger.info(
+            "[LYO_QR_CONFIRM_ENDPOINT_RETURN] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "uid": uid_lo,
+                    "status": e.http_status,
+                    "success": False,
+                    "duration_ms": int((time.perf_counter() - endpoint_started) * 1000),
+                    "code": e.socket_code,
+                },
+                ensure_ascii=False,
+            ),
+        )
         raise HTTPException(
             status_code=e.http_status,
             detail={"success": False, **_muhabbet_trip_api_error_detail(e.socket_code, e.message)},
         ) from e
     except Exception as e:
-        sid_lo = str(session_id or "").strip().lower()
-        uid_lo = str(uid or "").strip().lower()
         logger.info(
             "[LYO_QR_CONFIRM_BACKEND] %s",
             json.dumps(
@@ -31215,6 +31347,20 @@ async def muhabbet_trip_boarding_qr_confirm_post(
             ),
         )
         logger.exception("[muhabbet_trip_boarding_qr_confirm] unhandled session_id=%s uid=%s", sid_lo[:12], uid_lo[:12])
+        logger.info(
+            "[LYO_QR_CONFIRM_ENDPOINT_RETURN] %s",
+            json.dumps(
+                {
+                    "session_id": sid_lo,
+                    "uid": uid_lo,
+                    "status": 500,
+                    "success": False,
+                    "duration_ms": int((time.perf_counter() - endpoint_started) * 1000),
+                    "code": "boarding_qr_confirm_failed",
+                },
+                ensure_ascii=False,
+            ),
+        )
         raise HTTPException(
             status_code=500,
             detail={
@@ -31870,11 +32016,16 @@ async def sio_join_muhabbet_trip_session(sid, data):
         )
         return
     try:
-        await _expire_stale_muhabbet_trip_sessions()
+        asyncio.create_task(_expire_stale_muhabbet_trip_sessions())
         row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
         room = muhabbet_trip_room(session_id)
         await sio.enter_room(sid, room)
-        joined_payload = {"session_id": session_id, "room": room, "session": _muhabbet_trip_session_public(row)}
+        joined_payload = {
+            "success": True,
+            "session_id": session_id,
+            "room": room,
+            "joined_at": datetime.now(timezone.utc).isoformat(),
+        }
         await sio.emit("muhabbet_trip_joined", joined_payload, room=sid)
         logger.info(
             "[socket_join] %s",
