@@ -625,12 +625,14 @@ export default function App() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const roleSelectUsableHeight = Math.max(0, windowHeight - insets.top - insets.bottom);
   const roleSelectBreakpoints = useMemo(
     () => ({
-      isCompact: windowHeight < 760,
-      isVeryCompact: windowHeight < 700,
+      usableHeight: roleSelectUsableHeight,
+      isCompact: roleSelectUsableHeight < 720 || windowWidth < 380,
+      isVeryCompact: roleSelectUsableHeight < 650 || windowWidth < 360,
     }),
-    [windowHeight],
+    [roleSelectUsableHeight, windowWidth],
   );
   const loginLayout = useLoginAuthLayout();
   const leylekChrome = useLeylekZekaChrome();
@@ -3423,6 +3425,36 @@ export default function App() {
 
     const rs = roleSelectBreakpoints;
     const roleSelectContentWide = windowWidth >= 428 && !rs.isVeryCompact;
+    const roleScale = Math.max(0.78, Math.min(1, rs.usableHeight / 760, windowWidth / 390));
+    const roleHorizontalPad = Math.round(Math.max(14, Math.min(20, windowWidth * 0.048)));
+    const roleTopButtonSize = Math.round(Math.max(38, Math.min(46, 46 * roleScale)));
+    const roleTopButtonRadius = Math.round(Math.max(12, Math.min(14, 14 * roleScale)));
+    const roleTopPaddingV = Math.round(Math.max(4, Math.min(8, 8 * roleScale)));
+    const roleTitleFontSize = Math.round(Math.max(14, Math.min(18, 18 * roleScale)));
+    const roleTitleLineHeight = Math.round(Math.max(18, Math.min(24, 24 * roleScale)));
+    const roleTitlePadV = Math.round(Math.max(7, Math.min(12, 12 * roleScale)));
+    const roleTitlePadH = Math.round(Math.max(12, Math.min(22, 22 * roleScale)));
+    const roleMainPadTop = Math.round(Math.max(5, Math.min(16, rs.usableHeight * 0.018)));
+    const roleMainPadBottom = Math.round(Math.max(3, Math.min(12, rs.usableHeight * 0.011)));
+    const roleStepMarginBottom = Math.round(Math.max(4, Math.min(16, rs.usableHeight * 0.017)));
+    const roleStepCircleSize = Math.round(Math.max(24, Math.min(32, 32 * roleScale)));
+    const roleStepCircleMarginBottom = Math.round(Math.max(4, Math.min(8, 8 * roleScale)));
+    const roleStepHelperMarginTop = Math.round(Math.max(4, Math.min(12, 12 * roleScale)));
+    const roleCardsGap = Math.round(Math.max(7, Math.min(14, 14 * roleScale)));
+    const roleCardsMarginBottom = Math.round(Math.max(6, Math.min(24, rs.usableHeight * 0.024)));
+    const roleCardPadV = Math.round(Math.max(10, Math.min(22, 22 * roleScale)));
+    const roleCardMaxHeight = Math.round(Math.max(156, Math.min(218, rs.usableHeight * 0.285)));
+    const roleCardMinHeight = Math.round(Math.max(112, Math.min(150, rs.usableHeight * 0.185)));
+    const roleIconCircleSize = Math.round(Math.max(52, Math.min(78, 78 * roleScale)));
+    const roleIconMarginBottom = Math.round(Math.max(6, Math.min(12, 12 * roleScale)));
+    const roleCardLabelFontSize = Math.round(Math.max(15, Math.min(19, 19 * roleScale)));
+    const roleCardDescFontSize = Math.round(Math.max(10, Math.min(12, 12 * roleScale)));
+    const roleCardDescLineHeight = Math.round(Math.max(14, Math.min(17, 17 * roleScale)));
+    const roleContinueMinHeight = Math.round(Math.max(48, Math.min(64, rs.usableHeight * 0.078)));
+    const roleContinuePadV = Math.round(Math.max(11, Math.min(20, roleContinueMinHeight * 0.31)));
+    const roleContinueTextSize = Math.round(Math.max(18, Math.min(23, 23 * roleScale)));
+    const roleFooterGap = Math.round(Math.max(2, Math.min(8, rs.usableHeight * 0.006)));
+    const roleFooterBottomPad = Math.round(Math.max(10, Math.min(22, Math.max(insets.bottom, 8) + 8)));
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
     const roleStep1Done = !!selectedRole;
     const roleStep2Done = !!rideVehicleKind;
@@ -3460,9 +3492,17 @@ export default function App() {
             </Animated.View>
           ) : null}
           {/* Üst Bar */}
-          <View style={styles.roleTopBarCompact}>
+          <View
+            style={[
+              styles.roleTopBarCompact,
+              { paddingHorizontal: roleHorizontalPad, paddingVertical: roleTopPaddingV },
+            ]}
+          >
             <TouchableOpacity 
-              style={styles.roleExitBtn}
+              style={[
+                styles.roleExitBtn,
+                { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
+              ]}
               onPress={() => {
                 roleScreenHaptic();
                 appAlert('Çıkış', 'Oturumu kapatmak istiyor musunuz?', [
@@ -3484,6 +3524,11 @@ export default function App() {
                   styles.roleTopTitlePill,
                   rs.isCompact && !rs.isVeryCompact && styles.roleTopTitlePillCompact,
                   rs.isVeryCompact && styles.roleTopTitlePillVery,
+                  {
+                    paddingVertical: roleTitlePadV,
+                    paddingHorizontal: roleTitlePadH,
+                    borderRadius: Math.round(Math.max(18, Math.min(22, 22 * roleScale))),
+                  },
                 ]}
               >
                 <Text
@@ -3491,6 +3536,7 @@ export default function App() {
                     styles.roleTopTitle,
                     rs.isCompact && !rs.isVeryCompact && styles.roleTopTitleCompact,
                     rs.isVeryCompact && styles.roleTopTitleVery,
+                    { fontSize: roleTitleFontSize, lineHeight: roleTitleLineHeight },
                   ]}
                   numberOfLines={2}
                   ellipsizeMode="tail"
@@ -3501,12 +3547,21 @@ export default function App() {
             </View>
             
             {isAdmin ? (
-              <TouchableOpacity style={styles.roleAdminBtn} onPress={async () => { roleScreenHaptic(); setShowAdminPanel(true); }}>
+              <TouchableOpacity
+                style={[
+                  styles.roleAdminBtn,
+                  { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
+                ]}
+                onPress={async () => { roleScreenHaptic(); setShowAdminPanel(true); }}
+              >
                 <Ionicons name="settings-outline" size={22} color="#3FA9F5" />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.roleAdminBtn}
+                style={[
+                  styles.roleAdminBtn,
+                  { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
+                ]}
                 onPress={() => {
                   roleScreenHaptic();
                   router.push('/settings-hub' as never);
@@ -3525,6 +3580,7 @@ export default function App() {
               rs.isCompact && !rs.isVeryCompact && styles.roleSelectScrollContentCompact,
               styles.roleSelectScrollContentSteps,
               rs.isVeryCompact && styles.roleSelectScrollContentVeryFooter,
+              { paddingBottom: Math.round(Math.max(10, Math.min(20, rs.usableHeight * 0.02))) },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -3537,6 +3593,11 @@ export default function App() {
                 rs.isVeryCompact && styles.roleMainContentVery,
                 rs.isCompact && !rs.isVeryCompact && styles.roleMainContentCompact,
                 roleSelectContentWide && styles.roleMainContentMaxWidth,
+                {
+                  paddingHorizontal: roleHorizontalPad,
+                  paddingTop: roleMainPadTop,
+                  paddingBottom: roleMainPadBottom,
+                },
               ]}
             >
               <View
@@ -3544,6 +3605,7 @@ export default function App() {
                   styles.roleStepIndicatorWrap,
                   rs.isVeryCompact && styles.roleStepIndicatorWrapVery,
                   rs.isCompact && !rs.isVeryCompact && styles.roleStepIndicatorWrapCompact,
+                  { marginBottom: roleStepMarginBottom },
                 ]}
               >
                 <View style={styles.roleStepIndicatorRow}>
@@ -3551,6 +3613,12 @@ export default function App() {
                     <View
                       style={[
                         styles.roleStepCircle,
+                        {
+                          width: roleStepCircleSize,
+                          height: roleStepCircleSize,
+                          borderRadius: roleStepCircleSize / 2,
+                          marginBottom: roleStepCircleMarginBottom,
+                        },
                         roleActiveStep === 1 && styles.roleStepCircleActive,
                         roleStep1Done && roleActiveStep !== 1 && styles.roleStepCircleDone,
                       ]}
@@ -3578,6 +3646,12 @@ export default function App() {
                     <View
                       style={[
                         styles.roleStepCircle,
+                        {
+                          width: roleStepCircleSize,
+                          height: roleStepCircleSize,
+                          borderRadius: roleStepCircleSize / 2,
+                          marginBottom: roleStepCircleMarginBottom,
+                        },
                         roleActiveStep === 2 && styles.roleStepCircleActive,
                         roleStep2Done && roleActiveStep !== 2 && styles.roleStepCircleDone,
                         !roleStep1Done && styles.roleStepCircleMuted,
@@ -3615,6 +3689,12 @@ export default function App() {
                     <View
                       style={[
                         styles.roleStepCircle,
+                        {
+                          width: roleStepCircleSize,
+                          height: roleStepCircleSize,
+                          borderRadius: roleStepCircleSize / 2,
+                          marginBottom: roleStepCircleMarginBottom,
+                        },
                         roleActiveStep === 3 && styles.roleStepCircleActive,
                         !rideVehicleKind && styles.roleStepCircleMuted,
                       ]}
@@ -3646,6 +3726,7 @@ export default function App() {
                     styles.roleStepHelper,
                     rs.isVeryCompact && styles.roleStepHelperVery,
                     rs.isCompact && !rs.isVeryCompact && styles.roleStepHelperCompact,
+                    { marginTop: roleStepHelperMarginTop },
                   ]}
                   numberOfLines={1}
                   ellipsizeMode="tail"
@@ -3661,6 +3742,7 @@ export default function App() {
                       rs.isVeryCompact && styles.roleCardsRowVery,
                       rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
                       roleSelectContentWide && styles.roleCardsRowWide,
+                      { gap: roleCardsGap, marginBottom: roleCardsMarginBottom },
                     ]}
                   >
                     <Animated.View
@@ -3678,6 +3760,11 @@ export default function App() {
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                           selectedRole === 'passenger' && styles.roleCardSelected,
+                          {
+                            paddingVertical: roleCardPadV,
+                            maxHeight: roleCardMaxHeight,
+                            minHeight: roleCardMinHeight,
+                          },
                         ]}
                         onPress={async () => {
                           handleRoleSelect('passenger');
@@ -3690,6 +3777,12 @@ export default function App() {
                             rs.isVeryCompact && styles.roleIconCircleVery,
                             rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
                             selectedRole === 'passenger' && styles.roleIconCircleActive,
+                            {
+                              width: roleIconCircleSize,
+                              height: roleIconCircleSize,
+                              borderRadius: roleIconCircleSize / 2,
+                              marginBottom: roleIconMarginBottom,
+                            },
                           ]}
                         >
                           <MaterialCommunityIcons
@@ -3698,7 +3791,13 @@ export default function App() {
                             color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'}
                           />
                         </View>
-                        <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>
+                        <Text
+                          style={[
+                            styles.roleCardLabel,
+                            { fontSize: roleCardLabelFontSize },
+                            selectedRole === 'passenger' && styles.roleCardLabelActive,
+                          ]}
+                        >
                           Yolcu
                         </Text>
                         <Text
@@ -3706,6 +3805,7 @@ export default function App() {
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
                             selectedRole === 'passenger' && styles.roleCardDescActive,
+                            { fontSize: roleCardDescFontSize, lineHeight: roleCardDescLineHeight },
                           ]}
                           numberOfLines={2}
                         >
@@ -3734,6 +3834,11 @@ export default function App() {
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                           selectedRole === 'driver' && styles.roleCardSelected,
+                          {
+                            paddingVertical: roleCardPadV,
+                            maxHeight: roleCardMaxHeight,
+                            minHeight: roleCardMinHeight,
+                          },
                         ]}
                         onPress={async () => {
                           handleRoleSelect('driver');
@@ -3746,6 +3851,12 @@ export default function App() {
                             rs.isVeryCompact && styles.roleIconCircleVery,
                             rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
                             selectedRole === 'driver' && styles.roleIconCircleActive,
+                            {
+                              width: roleIconCircleSize,
+                              height: roleIconCircleSize,
+                              borderRadius: roleIconCircleSize / 2,
+                              marginBottom: roleIconMarginBottom,
+                            },
                           ]}
                         >
                           <View style={styles.roleDriverIconsRow}>
@@ -3761,7 +3872,13 @@ export default function App() {
                             />
                           </View>
                         </View>
-                        <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>
+                        <Text
+                          style={[
+                            styles.roleCardLabel,
+                            { fontSize: roleCardLabelFontSize },
+                            selectedRole === 'driver' && styles.roleCardLabelActive,
+                          ]}
+                        >
                           Sürücü
                         </Text>
                         <Text
@@ -3769,6 +3886,7 @@ export default function App() {
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
                             selectedRole === 'driver' && styles.roleCardDescActive,
+                            { fontSize: roleCardDescFontSize, lineHeight: roleCardDescLineHeight },
                           ]}
                           numberOfLines={2}
                         >
@@ -3817,6 +3935,7 @@ export default function App() {
                         rs.isVeryCompact && styles.roleCardsRowVery,
                         rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
                         roleSelectContentWide && styles.roleCardsRowWide,
+                        { gap: roleCardsGap, marginBottom: Math.max(0, Math.round(roleCardsMarginBottom * 0.45)) },
                       ]}
                     >
                       <Animated.View
@@ -3910,6 +4029,12 @@ export default function App() {
               rs.isVeryCompact && styles.roleBottomFooterColumnVery,
               rs.isCompact && !rs.isVeryCompact && styles.roleBottomFooterColumnCompact,
               roleSelectContentWide && styles.roleBottomFooterColumnWide,
+              {
+                paddingHorizontal: roleHorizontalPad,
+                paddingTop: 0,
+                paddingBottom: roleFooterBottomPad,
+                gap: roleFooterGap,
+              },
             ]}
           >
             <RoleSelectLeylekAIFloating />
@@ -3919,6 +4044,10 @@ export default function App() {
                 rs.isVeryCompact && styles.roleContinueBtnOuterVery,
                 rs.isCompact && !rs.isVeryCompact && styles.roleContinueBtnOuterCompact,
                 (!selectedRole || !rideVehicleKind) && styles.roleContinueBtnDisabled,
+                {
+                  minHeight: roleContinueMinHeight,
+                  borderRadius: Math.round(Math.max(20, Math.min(26, roleContinueMinHeight * 0.4))),
+                },
               ]}
               onPress={handleContinue}
               disabled={!selectedRole || !rideVehicleKind}
@@ -3939,6 +4068,11 @@ export default function App() {
                   styles.roleContinueBtnContent,
                   rs.isVeryCompact && styles.roleContinueBtnContentVery,
                   rs.isCompact && !rs.isVeryCompact && styles.roleContinueBtnContentCompact,
+                  {
+                    paddingVertical: roleContinuePadV,
+                    paddingHorizontal: roleHorizontalPad + 4,
+                    gap: Math.round(Math.max(8, Math.min(14, 14 * roleScale))),
+                  },
                 ]}
                 pointerEvents="box-none"
               >
@@ -3946,6 +4080,7 @@ export default function App() {
                   style={[
                     styles.roleContinueTextLarge,
                     rs.isVeryCompact && styles.roleContinueTextLargeVery,
+                    { fontSize: roleContinueTextSize },
                   ]}
                 >
                   Devam Et
