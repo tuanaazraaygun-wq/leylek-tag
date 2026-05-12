@@ -31035,8 +31035,45 @@ async def _muhabbet_trip_active_pickup_apply(uid: str, session_id: str, passenge
         "ride_status": "boarding" if rs == "waiting" else rs,
         "updated_at": now_iso,
     }
-    upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid).execute()
+    try:
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", sid).execute()
+    except Exception as e:
+        err_low = str(e).lower()
+        if "pgrst204" in err_low or "schema cache" in err_low or "active_pickup" in err_low:
+            try:
+                logger.warning(
+                    "[LYO_ACTIVE_PICKUP_SCHEMA_MISMATCH] %s",
+                    json.dumps(
+                        {
+                            "session_id": sid[:12],
+                            "passenger_user_id": _lyo_qr_mask_id(target_uid),
+                            "previous_active": _lyo_qr_mask_id(prev_active),
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                )
+            except Exception:
+                pass
+        raise
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+    try:
+        logger.info(
+            "[LYO_ACTIVE_PICKUP_SELECTED] %s",
+            json.dumps(
+                {
+                    "session_id": sid[:12],
+                    "passenger_user_id": _lyo_qr_mask_id(target_uid),
+                    "previous_active": _lyo_qr_mask_id(prev_active),
+                    "next_pickup": _lyo_qr_mask_id(get_next_passenger_to_pickup(next_row)),
+                },
+                ensure_ascii=False,
+            ),
+        )
+    except Exception:
+        pass
     logger.info("[muhabbet_trip_active_pickup] selected session_id=%s passenger=%s", sid, target_uid[:12])
     return next_row
 

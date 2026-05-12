@@ -848,7 +848,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       emptySeats,
     };
   }, [session?.active_pickup_passenger_id, session?.required_passenger_ids, session?.seat_capacity, tripPassengerLegs]);
-  const activePickupPassengerLeg = useMemo(() => {
+  const realActivePickupPassengerLeg = useMemo(() => {
     if (!tripPassengerLegs.length) return null;
     const activeId = String(session?.active_pickup_passenger_id || '').trim().toLowerCase();
     const byStatus = tripPassengerLegs.find((leg) => leg.status === 'pickup_active');
@@ -857,6 +857,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       const byActiveId = tripPassengerLegs.find((leg) => leg.passenger_user_id === activeId);
       if (byActiveId) return byActiveId;
     }
+    return null;
+  }, [session?.active_pickup_passenger_id, tripPassengerLegs]);
+  const suggestedNextPickupPassengerLeg = useMemo(() => {
+    if (!tripPassengerLegs.length) return null;
     const nextId = String(session?.next_pickup_user_id || '').trim().toLowerCase();
     if (nextId) {
       const byNextId = tripPassengerLegs.find((leg) => leg.passenger_user_id === nextId);
@@ -867,7 +871,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       tripPassengerLegs.find((leg) => leg.status === 'accepted') ||
       null
     );
-  }, [session?.active_pickup_passenger_id, session?.next_pickup_user_id, tripPassengerLegs]);
+  }, [session?.next_pickup_user_id, tripPassengerLegs]);
+  const activePickupPassengerLeg = realActivePickupPassengerLeg || suggestedNextPickupPassengerLeg;
   const activePickupNavigationCoord = useMemo(() => {
     const legCoord = passengerLegPickupCoord(activePickupPassengerLeg);
     if (legCoord) return legCoord;
@@ -1678,12 +1683,21 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       if (!pid || activePickupBusyId) return;
       void (async () => {
         setActivePickupBusyId(pid);
+        const previousActive = String(sessionRef.current?.active_pickup_passenger_id || '').trim().toLowerCase();
         try {
           const rest = await muhabbetTripSessionRestPost({
             action: 'active_pickup_select',
             pathSuffix: 'active-pickup',
             body: { passenger_user_id: pid },
           });
+          console.log(
+            '[LYO_ACTIVE_PICKUP_SELECT_CLIENT]',
+            JSON.stringify({
+              requested_passenger: maskQrId(pid),
+              previous_active: maskQrId(previousActive),
+              response_success: isMuhabbetTripRestOk(rest),
+            })
+          );
           if (isMuhabbetTripRestOk(rest)) {
             const sess = rest.json.session;
             if (sess && typeof sess === 'object') {
@@ -3071,23 +3085,26 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         }
         const activePickupId = String(session.active_pickup_passenger_id || '').trim().toLowerCase();
         const nextPickupId = String(session.next_pickup_user_id || '').trim().toLowerCase();
-        const firstVisibleWaitingPassenger = visiblePassengerLegs.find((leg) =>
-          ['pickup_active', 'waiting_pickup', 'accepted'].includes(leg.status)
-        );
+        const pickupActiveVisiblePassenger = visiblePassengerLegs.find((leg) => leg.status === 'pickup_active');
         const targetPassengerId = multiSeatBoarding
           ? [
-              activePickupPassengerLeg?.passenger_user_id,
+              realActivePickupPassengerLeg?.passenger_user_id,
               activePickupId,
-              nextPickupId,
-              activePickupPassengerLeg?.passenger_user_id,
-              firstVisibleWaitingPassenger?.passenger_user_id,
+              pickupActiveVisiblePassenger?.passenger_user_id,
             ].find((pid) => !!String(pid || '').trim())
           : '';
+        const targetSource = !multiSeatBoarding
+          ? 'single_seat'
+          : activePickupId && targetPassengerId === activePickupId
+            ? 'active_pickup'
+            : realActivePickupPassengerLeg?.status === 'pickup_active' || pickupActiveVisiblePassenger?.passenger_user_id
+              ? 'pickup_active_leg'
+              : 'blocked_no_active_pickup';
         const targetPassengerName =
           (targetPassengerId
             ? (
-                activePickupPassengerLeg?.passenger_user_id === targetPassengerId
-                  ? activePickupPassengerLeg.display_name
+                realActivePickupPassengerLeg?.passenger_user_id === targetPassengerId
+                  ? realActivePickupPassengerLeg.display_name
                   : visiblePassengerLegs.find((leg) => leg.passenger_user_id === targetPassengerId)?.display_name
               )
             : '') || '';
@@ -3099,6 +3116,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             session_id: (activeSessionIdForQrCreate || '').slice(0, 12),
             seat_capacity: Number(session.seat_capacity ?? 1),
             selected_passenger: maskQrId(targetPassengerId),
+            target_source: targetSource,
             active_pickup: maskQrId(activePickupId),
             next_pickup: maskQrId(nextPickupId),
             boarded_count: countQrIdList(sessionForQrLog.boarded_passenger_ids),
@@ -3106,7 +3124,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           })
         );
         if (multiSeatBoarding && !targetPassengerId) {
-          appAlert('Pickup seçilemedi', 'Önce sıradaki yolcuyu seçin.');
+          appAlert('Pickup seçilemedi', "Önce yolcu seçin. Yolcu kartından 'Bu yolcuya gidiyorum' deyin.");
           return;
         }
         if (qrCreateInFlightRef.current) return;
@@ -3490,6 +3508,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     lockState,
     muhabbetTripSessionRestPost,
     refreshSessionFromServer,
+    realActivePickupPassengerLeg,
     session,
     touchOptimistic,
     tripPassengerLegs.length,
