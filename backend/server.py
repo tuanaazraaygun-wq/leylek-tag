@@ -29784,6 +29784,27 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         except Exception:
             pass
 
+    def _schema_retry_removed_keys(exc: Exception, patch_body: dict) -> list[str]:
+        err_low = f"{type(exc).__name__} {repr(exc)} {str(exc)}".lower()
+        if "pgrst204" not in err_low and "schema cache" not in err_low and "could not find" not in err_low:
+            return []
+        optional_depart_keys = (
+            "depart_confirmed_at",
+            "depart_confirmed_by_user_id",
+            "depart_reason",
+        )
+        if not any(key.lower() in err_low for key in optional_depart_keys):
+            return []
+        return [key for key in optional_depart_keys if key in patch_body]
+
+    def _is_status_active_constraint_error(exc: Exception, patch_body: dict) -> bool:
+        err_low = str(exc).lower()
+        return (
+            "status" in patch_body
+            and str(patch_body.get("status") or "").strip().lower() == "active"
+            and ("check" in err_low or "constraint" in err_low)
+        )
+
     async def _background_expire_stale_for_confirm() -> None:
         try:
             await _expire_stale_muhabbet_trip_sessions()
@@ -30033,40 +30054,103 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     except Exception as e:
         err_msg = str(e)
         _log_session_patch_failed(patch_keys, patch_ms, all_boarded, e, attempt="primary")
-        err_low = err_msg.lower()
-        status_active_constraint = (
-            "status" in patch_ms
-            and str(patch_ms.get("status") or "").strip().lower() == "active"
-            and ("check" in err_low or "constraint" in err_low)
-        )
-        if not status_active_constraint:
-            raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from e
-        retry_patch = {k: v for k, v in patch_ms.items() if k != "status"}
-        retry_keys = list(retry_patch.keys())
-        logger.warning(
-            "[LYO_QR_SESSION_PATCH_RETRY_WITHOUT_STATUS] %s",
-            json.dumps(
-                {
-                    "session_id": str(session_id or "").strip().lower(),
-                    "uid": uid_lo,
-                    "patch_keys": retry_keys,
-                    "patch_where": {"id": sid_lo},
-                    "primary_error_type": type(e).__name__,
-                    "primary_error_message": err_msg,
-                },
-                ensure_ascii=False,
-            ),
-        )
-        try:
-            _log_session_patch(retry_keys, retry_patch, all_boarded, attempt="retry_without_status")
-            step_started = time.perf_counter()
-            upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
-            _log_session_patch_response("retry_without_status", retry_keys, upd, step_started)
-            _log_confirm_step("session_patch", step_started, patch_keys=retry_keys, retry_without_status=True, row_count=len(upd.data or []))
-            patch_ms = retry_patch
-        except Exception as retry_e:
-            _log_session_patch_failed(retry_keys, retry_patch, all_boarded, retry_e, attempt="retry_without_status")
-            raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
+        removed_schema_keys = _schema_retry_removed_keys(e, patch_ms)
+        if removed_schema_keys:
+            schema_retry_patch = {k: v for k, v in patch_ms.items() if k not in set(removed_schema_keys)}
+            schema_retry_keys = list(schema_retry_patch.keys())
+            logger.warning(
+                "[LYO_QR_SESSION_PATCH_SCHEMA_RETRY] %s",
+                json.dumps(
+                    {
+                        "session_id": str(session_id or "").strip().lower(),
+                        "uid": uid_lo,
+                        "removed_keys": removed_schema_keys,
+                        "original_error": err_msg,
+                        "original_error_type": type(e).__name__,
+                        "retry_patch_keys": schema_retry_keys,
+                        "patch_where": {"id": sid_lo},
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+            try:
+                _log_session_patch(schema_retry_keys, schema_retry_patch, all_boarded, attempt="schema_retry")
+                step_started = time.perf_counter()
+                upd = supabase.table("muhabbet_trip_sessions").update(schema_retry_patch).eq("id", session_id).execute()
+                _log_session_patch_response("schema_retry", schema_retry_keys, upd, step_started)
+                _log_confirm_step(
+                    "session_patch",
+                    step_started,
+                    patch_keys=schema_retry_keys,
+                    schema_retry=True,
+                    removed_keys=removed_schema_keys,
+                    row_count=len(upd.data or []),
+                )
+                patch_ms = schema_retry_patch
+            except Exception as schema_retry_e:
+                _log_session_patch_failed(schema_retry_keys, schema_retry_patch, all_boarded, schema_retry_e, attempt="schema_retry")
+                if not _is_status_active_constraint_error(schema_retry_e, schema_retry_patch):
+                    raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from schema_retry_e
+                retry_patch = {k: v for k, v in schema_retry_patch.items() if k != "status"}
+                retry_keys = list(retry_patch.keys())
+                logger.warning(
+                    "[LYO_QR_SESSION_PATCH_RETRY_WITHOUT_STATUS] %s",
+                    json.dumps(
+                        {
+                            "session_id": str(session_id or "").strip().lower(),
+                            "uid": uid_lo,
+                            "patch_keys": retry_keys,
+                            "patch_where": {"id": sid_lo},
+                            "primary_error_type": type(schema_retry_e).__name__,
+                            "primary_error_message": str(schema_retry_e),
+                            "after_schema_retry": True,
+                            "schema_removed_keys": removed_schema_keys,
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                )
+                try:
+                    _log_session_patch(retry_keys, retry_patch, all_boarded, attempt="schema_retry_without_status")
+                    step_started = time.perf_counter()
+                    upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
+                    _log_session_patch_response("schema_retry_without_status", retry_keys, upd, step_started)
+                    _log_confirm_step("session_patch", step_started, patch_keys=retry_keys, retry_without_status=True, schema_retry=True, row_count=len(upd.data or []))
+                    patch_ms = retry_patch
+                except Exception as retry_e:
+                    _log_session_patch_failed(retry_keys, retry_patch, all_boarded, retry_e, attempt="schema_retry_without_status")
+                    raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
+        else:
+            status_active_constraint = _is_status_active_constraint_error(e, patch_ms)
+            if not status_active_constraint:
+                raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from e
+            retry_patch = {k: v for k, v in patch_ms.items() if k != "status"}
+            retry_keys = list(retry_patch.keys())
+            logger.warning(
+                "[LYO_QR_SESSION_PATCH_RETRY_WITHOUT_STATUS] %s",
+                json.dumps(
+                    {
+                        "session_id": str(session_id or "").strip().lower(),
+                        "uid": uid_lo,
+                        "patch_keys": retry_keys,
+                        "patch_where": {"id": sid_lo},
+                        "primary_error_type": type(e).__name__,
+                        "primary_error_message": err_msg,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            try:
+                _log_session_patch(retry_keys, retry_patch, all_boarded, attempt="retry_without_status")
+                step_started = time.perf_counter()
+                upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
+                _log_session_patch_response("retry_without_status", retry_keys, upd, step_started)
+                _log_confirm_step("session_patch", step_started, patch_keys=retry_keys, retry_without_status=True, row_count=len(upd.data or []))
+                patch_ms = retry_patch
+            except Exception as retry_e:
+                _log_session_patch_failed(retry_keys, retry_patch, all_boarded, retry_e, attempt="retry_without_status")
+                raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch_ms}
     step_started = time.perf_counter()
     _muhabbet_trip_passengers_update_for_user(session_id, uid_lo, {"status": "onboard", "boarded_at": now_iso})
