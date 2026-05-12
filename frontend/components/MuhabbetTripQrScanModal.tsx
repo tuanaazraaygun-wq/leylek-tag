@@ -23,6 +23,19 @@ type MuhabbetTripQrScanModalProps = {
 const TOKEN_PARAM_KEYS = ['token', 'qr', 'code', 'boarding_token'] as const;
 const PASSENGER_PARAM_KEYS = ['passenger_user_id', 'passengerUserId'] as const;
 
+const maskQrId = (value: unknown): string | null => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw.length <= 8) return `${raw.slice(0, 2)}…`;
+  return `${raw.slice(0, 4)}…${raw.slice(-4)}`;
+};
+
+const shortQrToken = (value: unknown): string | null => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  return raw.length > 8 ? `${raw.slice(0, 4)}…${raw.slice(-4)}` : `${raw.slice(0, 2)}…`;
+};
+
 /**
  * QR içinde URL veya düz kod olabilir. Token çıkarılırken büyük/küçük harf korunur (sunucu digest öncesi normalize eder).
  */
@@ -126,10 +139,19 @@ export default function MuhabbetTripQrScanModal({
   const submitToken = useCallback(async (raw: string) => {
     const { token, passengerUserId, parsedUrl, qrType, sessionId, parseSource } = extractMuhabbetTripQrToken(raw);
     console.log(
+      '[LYO_QR_SCAN_PARSED_TARGET]',
+      JSON.stringify({
+        parsed_passenger: maskQrId(passengerUserId),
+        token: shortQrToken(token),
+        qr_type: qrType || null,
+        scan_mode: mode,
+      })
+    );
+    console.log(
       '[LYO_QR_SCAN_PARSE]',
       JSON.stringify({
         has_token: !!token,
-        passenger_user_id: passengerUserId || null,
+        passenger_user_id: maskQrId(passengerUserId),
         mode,
         qr_type: qrType || null,
       })
@@ -139,8 +161,8 @@ export default function MuhabbetTripQrScanModal({
       JSON.stringify({
         raw_length: String(raw || '').length,
         parsed_token_length: token ? token.length : 0,
-        passenger_user_id: passengerUserId || null,
-        session_id: sessionId || null,
+        passenger_user_id: maskQrId(passengerUserId),
+        session_id: sessionId ? sessionId.slice(0, 12) : null,
         qr_type: qrType || null,
         mode,
         parse_source: parseSource,

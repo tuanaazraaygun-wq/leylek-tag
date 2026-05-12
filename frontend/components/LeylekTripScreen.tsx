@@ -78,6 +78,25 @@ type ForceFinishPrompt = {
   timeoutAt?: string;
 } | null;
 type FinishResult = { paymentMethod: 'cash' | 'card' | null } | null;
+
+const maskQrId = (value: unknown): string | null => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (raw.length <= 8) return `${raw.slice(0, 2)}…`;
+  return `${raw.slice(0, 4)}…${raw.slice(-4)}`;
+};
+
+const shortQrToken = (value: unknown): string | null => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  return raw.length > 8 ? `${raw.slice(0, 4)}…${raw.slice(-4)}` : `${raw.slice(0, 2)}…`;
+};
+
+const countQrIdList = (value: unknown): number => {
+  if (!Array.isArray(value)) return 0;
+  return value.filter((item) => !!String(item || '').trim()).length;
+};
+
 const TERMINAL_TRIP_STATUSES = new Set(['finished', 'cancelled', 'expired']);
 /** Bu ekranda sesli görüşme geçici kapalı; yolculuk durumu REST + GET ile doğrulanır. */
 /** false: Muhabbet Leylek Teklifi trip sesli arama (TAG / normal ride ile ilgisiz) */
@@ -3018,15 +3037,17 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               )
             : '') || '';
         const activeSessionIdForQrCreate = getActiveMuhabbetSessionId();
+        const sessionForQrLog = session as unknown as Record<string, unknown>;
         console.log(
-          '[LYO_QR_CREATE_TARGET]',
+          '[LYO_QR_CREATE_TARGET_CLIENT]',
           JSON.stringify({
-            session_id: activeSessionIdForQrCreate || '',
+            session_id: (activeSessionIdForQrCreate || '').slice(0, 12),
             seat_capacity: Number(session.seat_capacity ?? 1),
-            active_pickup_passenger_id: activePickupId || null,
-            next_pickup_user_id: nextPickupId || null,
-            targetPassengerId: targetPassengerId || null,
-            passenger_count: tripPassengerLegs.length,
+            selected_passenger: maskQrId(targetPassengerId),
+            active_pickup: maskQrId(activePickupId),
+            next_pickup: maskQrId(nextPickupId),
+            boarded_count: countQrIdList(sessionForQrLog.boarded_passenger_ids),
+            accepted_count: countQrIdList(sessionForQrLog.accepted_passenger_ids) || tripPassengerLegs.length,
           })
         );
         if (multiSeatBoarding && !targetPassengerId) {
@@ -3064,8 +3085,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
             console.log(
               '[LYO_QR_CREATE_REQUEST_START]',
               JSON.stringify({
-                session_id: activeSessionIdForQrCreate || '',
-                targetPassengerId: targetPassengerId || null,
+                session_id: (activeSessionIdForQrCreate || '').slice(0, 12),
+                targetPassengerId: maskQrId(targetPassengerId),
                 since_tap_ms: Date.now() - openTapAt,
               })
             );
@@ -3093,7 +3114,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 has_qr_payload: !!rest.json.qr_payload,
                 target_id:
                   typeof rest.json.boarding_qr_target_passenger_id === 'string'
-                    ? rest.json.boarding_qr_target_passenger_id
+                    ? maskQrId(rest.json.boarding_qr_target_passenger_id)
                     : null,
                 target_name:
                   typeof rest.json.boarding_qr_target_passenger_name === 'string'
@@ -3110,7 +3131,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
                 has_qr_payload: !!rest.json.qr_payload,
                 boarding_qr_target_passenger_id:
                   typeof rest.json.boarding_qr_target_passenger_id === 'string'
-                    ? rest.json.boarding_qr_target_passenger_id
+                    ? maskQrId(rest.json.boarding_qr_target_passenger_id)
                     : null,
                 boarding_qr_target_passenger_name:
                   typeof rest.json.boarding_qr_target_passenger_name === 'string'
@@ -3448,29 +3469,40 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
               ? { boarding_qr_token: token, passenger_user_id: passengerId }
               : { boarding_qr_token: token };
             const confirmStart = Date.now();
+            const currentSession = sessionRef.current as unknown as Record<string, unknown> | null;
+            console.log(
+              '[LYO_QR_CONFIRM_REQUEST_TARGET]',
+              JSON.stringify({
+                session_id: (getActiveMuhabbetSessionId() || '').slice(0, 12),
+                token: shortQrToken(token),
+                parsed_passenger: maskQrId(passengerId),
+                current_active_pickup: maskQrId(currentSession?.active_pickup_passenger_id),
+                next_pickup: maskQrId(currentSession?.next_pickup_user_id),
+              })
+            );
             console.log(
               '[LYO_QR_CONFIRM_BODY]',
               JSON.stringify({
                 has_token: !!token,
-                passenger_user_id: passengerId || null,
+                passenger_user_id: maskQrId(passengerId),
                 mode: qrMode,
               })
             );
             console.log(
               '[LYO_QR_CONFIRM_REQUEST]',
               JSON.stringify({
-                session_id: getActiveMuhabbetSessionId() || '',
-                token_length: token.length,
-                passenger_user_id: passengerId || null,
+                session_id: (getActiveMuhabbetSessionId() || '').slice(0, 12),
+                token: shortQrToken(token),
+                passenger_user_id: maskQrId(passengerId),
                 body_keys: Object.keys(confirmBody),
               })
             );
             console.log(
               '[LYO_QR_CONFIRM_REQUEST_START]',
               JSON.stringify({
-                session_id: getActiveMuhabbetSessionId() || '',
-                token_length: token.length,
-                passenger_user_id: passengerId || null,
+                session_id: (getActiveMuhabbetSessionId() || '').slice(0, 12),
+                token: shortQrToken(token),
+                passenger_user_id: maskQrId(passengerId),
               })
             );
             const rest = await muhabbetTripSessionRestPost({

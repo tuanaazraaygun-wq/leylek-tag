@@ -29421,6 +29421,22 @@ def _muhabbet_trip_mark_boarding_token_consumed(token_row: dict, consumed_by_use
     raise _MuhabbetTripOpError("qr_token_consume_failed", "Biniş QR tokenı kullanıldı olarak işaretlenemedi.", 503)
 
 
+def _lyo_qr_mask_id(value) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    if len(raw) <= 8:
+        return f"{raw[:2]}…"
+    return f"{raw[:4]}…{raw[-4:]}"
+
+
+def _lyo_qr_short_token(value) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    return f"{raw[:4]}…{raw[-4:]}" if len(raw) > 8 else f"{raw[:2]}…"
+
+
 async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str, passenger_user_id: str | None = None) -> dict:
     """Biniş QR oluşturma — DB günceller; emit_payload döner. HTTPException | _MuhabbetTripOpError."""
     await _expire_stale_muhabbet_trip_sessions()
@@ -29472,6 +29488,25 @@ async def _muhabbet_trip_boarding_qr_create_apply(uid: str, session_id: str, pas
                 ensure_ascii=False,
             ),
         )
+        try:
+            logger.info(
+                "[LYO_QR_CREATE_TARGET] %s",
+                json.dumps(
+                    {
+                        "session_id": str(session_id or "").strip().lower()[:12],
+                        "requested_passenger_user_id": _lyo_qr_mask_id(passenger_user_id),
+                        "active_pickup_passenger_id": _lyo_qr_mask_id(row.get("active_pickup_passenger_id")),
+                        "next_pickup_user_id": _lyo_qr_mask_id(get_next_passenger_to_pickup(row)),
+                        "boarded_count": len(_muhabbet_trip_boarded_passenger_ids(row, passenger_rows)),
+                        "accepted_count": len(_muhabbet_trip_eligible_passenger_ids(row, passenger_rows)),
+                        "required_count": len(_muhabbet_json_uuid_list(row.get("required_passenger_ids"))),
+                        "qr_payload_present": bool(qr_payload),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
         return {
             "boarding_qr_token": token,
             "qr_payload": qr_payload,
@@ -29622,6 +29657,54 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         except Exception:
             pass
 
+    def _log_session_patch(patch_keys: list[str], patch_body: dict, all_boarded_value: bool) -> None:
+        try:
+            logger.info(
+                "[LYO_QR_SESSION_PATCH] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo,
+                        "uid": uid_lo,
+                        "all_boarded": bool(all_boarded_value),
+                        "seat_capacity": sc,
+                        "patch_keys": patch_keys,
+                        "patch_ms": patch_body,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+        except Exception:
+            pass
+
+    def _log_session_patch_failed(
+        patch_keys_value: list[str],
+        patch_body: dict,
+        all_boarded_value: bool,
+        exc: Exception,
+    ) -> None:
+        try:
+            logger.warning(
+                "[LYO_QR_SESSION_PATCH_FAILED] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo,
+                        "uid": uid_lo,
+                        "all_boarded": bool(all_boarded_value),
+                        "seat_capacity": sc,
+                        "patch_keys": patch_keys_value,
+                        "patch_ms": patch_body,
+                        "error_repr": repr(exc),
+                        "error_message": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+        except Exception:
+            pass
+
     async def _background_expire_stale_for_confirm() -> None:
         try:
             await _expire_stale_muhabbet_trip_sessions()
@@ -29639,15 +29722,41 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     step_started = time.perf_counter()
     passenger_rows = _muhabbet_trip_passenger_rows_for_session(session_id) if sc > 1 else []
     _log_confirm_step("passenger_rows", step_started, seat_capacity=sc, row_count=len(passenger_rows))
+    multi_seat_empty_passenger_rows = sc > 1 and len(passenger_rows) == 0
     acc_ids = _muhabbet_trip_eligible_passenger_ids(row, passenger_rows) if sc > 1 else _muhabbet_json_uuid_list(row.get("accepted_passenger_ids"))
     if not acc_ids and row.get("passenger_id"):
         acc_ids = [str(row.get("passenger_id") or "").strip().lower()]
     brd_ids = _muhabbet_trip_boarded_passenger_ids(row, passenger_rows) if sc > 1 else _muhabbet_json_uuid_list(row.get("boarded_passenger_ids"))
+    if multi_seat_empty_passenger_rows:
+        acc_ids = [uid_lo]
+        brd_ids = [pid for pid in brd_ids if pid != uid_lo]
+        _log_confirm_step("passenger_rows", time.perf_counter(), seat_capacity=sc, row_count=0, fallback="single_session")
     token_row = None
     step_started = time.perf_counter()
     if sc > 1:
         token_row = _muhabbet_trip_boarding_token_for_confirm(session_id, uid_lo, tok, passenger_user_id, sc)
     _log_confirm_step("token_lookup", step_started, seat_capacity=sc, token_found=bool(token_row))
+    if sc > 1:
+        try:
+            logger.info(
+                "[LYO_QR_CONFIRM_PRE_STATE] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo[:12],
+                        "scanner_user_id": _lyo_qr_mask_id(uid_lo),
+                        "token_passenger_user_id": _lyo_qr_mask_id((token_row or {}).get("passenger_user_id")),
+                        "parsed_passenger_user_id": _lyo_qr_mask_id(passenger_user_id),
+                        "active_pickup_passenger_id": _lyo_qr_mask_id(row.get("active_pickup_passenger_id")),
+                        "boarded_passenger_ids_count": len(brd_ids),
+                        "accepted_passenger_ids_count": len(acc_ids),
+                        "required_passenger_ids_count": len(_muhabbet_json_uuid_list(row.get("required_passenger_ids"))),
+                        "ride_status": str(row.get("ride_status") or "").strip().lower() or None,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
     if sc <= 1:
         if str(row.get("passenger_id") or "").strip().lower() != uid_lo:
             raise _MuhabbetTripOpError("passenger_required", "Biniş QR kodunu yolcu onaylayabilir.")
@@ -29656,8 +29765,26 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     if sc > 1 and uid_lo in brd_ids:
         raise _MuhabbetTripOpError("used_qr_token", "Bu yolcu zaten biniş yaptı.", 409)
     active_pick = str(row.get("active_pickup_passenger_id") or "").strip().lower()
-    next_pick = active_pick or get_next_passenger_to_pickup(row)
+    next_pick = uid_lo if multi_seat_empty_passenger_rows else active_pick or get_next_passenger_to_pickup(row)
     if sc > 1 and uid_lo != next_pick:
+        try:
+            logger.warning(
+                "[LYO_QR_CONFIRM_WRONG_PICKUP_TURN] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo[:12],
+                        "expected_active_pickup": _lyo_qr_mask_id(active_pick),
+                        "attempted_passenger": _lyo_qr_mask_id(uid_lo),
+                        "next_pickup": _lyo_qr_mask_id(next_pick),
+                        "boarded_count": len(brd_ids),
+                        "accepted_count": len(acc_ids),
+                        "required_count": len(_muhabbet_json_uuid_list(row.get("required_passenger_ids"))),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
         _log_muhabbet_trip_event(
             "wrong_pickup_turn",
             {
@@ -29761,64 +29888,42 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             "ride_status": "active",
         }
 
-    ride_rs = "boarding" if len(new_brd) > 0 else "waiting"
-    if all_boarded:
-        ride_rs = "active"
-    patch_ms: dict = {
-        "boarded_passenger_ids": new_brd,
-        "ride_status": ride_rs,
-        "boarding_qr_token": None,
-        "boarding_qr_expires_at": None,
-        **clear_force,
-        "updated_at": now_iso,
-    }
-    if active_pick and active_pick == uid_lo:
-        patch_ms["active_pickup_passenger_id"] = None
-        patch_ms["active_pickup_selected_at"] = None
-        patch_ms["active_pickup_selected_by_user_id"] = None
-    if all_boarded:
-        patch_ms["status"] = "active"
-        patch_ms["started_at"] = now_iso
-        patch_ms["boarding_qr_token"] = None
-        patch_ms["boarding_qr_confirmed_at"] = now_iso
-        patch_ms["boarding_qr_confirmed_by_user_id"] = uid_lo
-        patch_ms["required_passenger_ids"] = eligible_boarded
-        patch_ms["depart_confirmed_at"] = now_iso
-        patch_ms["depart_confirmed_by_user_id"] = str(row.get("driver_id") or "").strip().lower() or uid_lo
-        patch_ms["depart_reason"] = "all_boarded"
-    patch_keys = list(patch_ms.keys())
-    logger.info(
-        "[LYO_QR_SESSION_PATCH] %s",
-        json.dumps(
-            {
-                "session_id": str(session_id or "").strip().lower(),
-                "uid": uid_lo,
-                "patch_keys": patch_keys,
-                "patch_ms": patch_ms,
-            },
-            ensure_ascii=False,
-            default=str,
-        ),
-    )
+    patch_ms: dict = {}
+    patch_keys: list[str] = []
     try:
+        ride_rs = "boarding" if len(new_brd) > 0 else "waiting"
+        if all_boarded:
+            ride_rs = "active"
+        patch_ms = {
+            "boarded_passenger_ids": new_brd,
+            "ride_status": ride_rs,
+            "boarding_qr_token": None,
+            "boarding_qr_expires_at": None,
+            **clear_force,
+            "updated_at": now_iso,
+        }
+        if active_pick and (active_pick == uid_lo or multi_seat_empty_passenger_rows):
+            patch_ms["active_pickup_passenger_id"] = None
+            patch_ms["active_pickup_selected_at"] = None
+            patch_ms["active_pickup_selected_by_user_id"] = None
+        if all_boarded:
+            patch_ms["status"] = "active"
+            patch_ms["started_at"] = now_iso
+            patch_ms["boarding_qr_token"] = None
+            patch_ms["boarding_qr_confirmed_at"] = now_iso
+            patch_ms["boarding_qr_confirmed_by_user_id"] = uid_lo
+            patch_ms["required_passenger_ids"] = eligible_boarded or [uid_lo]
+            patch_ms["depart_confirmed_at"] = now_iso
+            patch_ms["depart_confirmed_by_user_id"] = str(row.get("driver_id") or "").strip().lower() or uid_lo
+            patch_ms["depart_reason"] = "all_boarded"
+        patch_keys = list(patch_ms.keys())
+        _log_session_patch(patch_keys, patch_ms, all_boarded)
         step_started = time.perf_counter()
         upd = supabase.table("muhabbet_trip_sessions").update(patch_ms).eq("id", session_id).execute()
         _log_confirm_step("session_patch", step_started, patch_keys=patch_keys, row_count=len(upd.data or []))
     except Exception as e:
         err_msg = str(e)
-        logger.warning(
-            "[LYO_QR_SESSION_PATCH_FAILED] %s",
-            json.dumps(
-                {
-                    "session_id": str(session_id or "").strip().lower(),
-                    "patch_keys": patch_keys,
-                    "error_repr": repr(e),
-                    "error_message": err_msg,
-                },
-                ensure_ascii=False,
-                default=str,
-            ),
-        )
+        _log_session_patch_failed(patch_keys, patch_ms, all_boarded, e)
         err_low = err_msg.lower()
         status_active_constraint = (
             "status" in patch_ms
@@ -29841,24 +29946,13 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             ),
         )
         try:
+            _log_session_patch(retry_keys, retry_patch, all_boarded)
             step_started = time.perf_counter()
             upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
             _log_confirm_step("session_patch", step_started, patch_keys=retry_keys, retry_without_status=True, row_count=len(upd.data or []))
             patch_ms = retry_patch
         except Exception as retry_e:
-            logger.warning(
-                "[LYO_QR_SESSION_PATCH_FAILED] %s",
-                json.dumps(
-                    {
-                        "session_id": str(session_id or "").strip().lower(),
-                        "patch_keys": retry_keys,
-                        "error_repr": repr(retry_e),
-                        "error_message": str(retry_e),
-                    },
-                    ensure_ascii=False,
-                    default=str,
-                ),
-            )
+            _log_session_patch_failed(retry_keys, retry_patch, all_boarded, retry_e)
             raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch_ms}
     step_started = time.perf_counter()
@@ -29871,6 +29965,22 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             _log_confirm_step("token_consume", step_started)
         except _MuhabbetTripOpError as e:
             _log_confirm_step("token_consume", step_started, error_code=e.socket_code)
+            try:
+                logger.warning(
+                    "[LYO_QR_TOKEN_CONSUME_FAILED] %s",
+                    json.dumps(
+                        {
+                            "session_id": sid_lo[:12],
+                            "passenger_user_id": _lyo_qr_mask_id(uid_lo),
+                            "token": _lyo_qr_short_token(tok),
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except Exception:
+                pass
             logger.info(
                 "[LYO_QR_CONFIRM_BACKEND] %s",
                 json.dumps(
@@ -29887,6 +29997,27 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
                 ),
             )
             raise
+    next_pick_after = get_next_passenger_to_pickup(next_row) if sc > 1 else ""
+    if sc > 1:
+        try:
+            logger.info(
+                "[LYO_QR_CONFIRM_POST_STATE] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo[:12],
+                        "passenger_user_id": _lyo_qr_mask_id(uid_lo),
+                        "all_boarded": bool(all_boarded),
+                        "ride_status": str(next_row.get("ride_status") or ride_rs or "").strip().lower() or None,
+                        "boarded_passenger_ids_count": len(_muhabbet_json_uuid_list(next_row.get("boarded_passenger_ids"))),
+                        "required_passenger_ids_count": len(_muhabbet_json_uuid_list(next_row.get("required_passenger_ids"))),
+                        "next_pickup_user_id": _lyo_qr_mask_id(next_pick_after),
+                        "active_pickup_passenger_id": _lyo_qr_mask_id(next_row.get("active_pickup_passenger_id")),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
     asyncio.create_task(
         _muhabbet_trip_boarding_qr_confirm_background(
             next_row,
