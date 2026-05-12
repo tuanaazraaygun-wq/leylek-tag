@@ -731,6 +731,7 @@ export default function App() {
   /** Eşleşme sonrası QR’sız çıkışta rol ekranında 3 sn kırmızı şerit */
   const [roleSelectTripExitBanner, setRoleSelectTripExitBanner] = useState<string | null>(null);
   const roleSelectBannerShimmer = useRef(new Animated.Value(1)).current;
+  const roleStepPulse = useRef(new Animated.Value(1)).current;
 
   /** Role-select Phase B — görsel giriş (yan etki yok; sıralama/state değiştirmez) */
   const roleCardPassengerTranslateX = useRef(new Animated.Value(-26)).current;
@@ -847,6 +848,34 @@ export default function App() {
     });
     return () => cancelAnimationFrame(raf);
   }, [screen, selectedRole]);
+
+  useEffect(() => {
+    if (screen !== 'role-select') {
+      roleStepPulse.stopAnimation();
+      roleStepPulse.setValue(1);
+      return;
+    }
+    roleStepPulse.setValue(1);
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(roleStepPulse, {
+          toValue: 1.045,
+          duration: 820,
+          useNativeDriver: true,
+        }),
+        Animated.timing(roleStepPulse, {
+          toValue: 1,
+          duration: 820,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulse.start();
+    return () => {
+      pulse.stop();
+      roleStepPulse.setValue(1);
+    };
+  }, [screen, selectedRole, rideVehicleKind, roleStepPulse]);
 
   useEffect(() => {
     if (!roleSelectTripExitBanner) return undefined;
@@ -3458,6 +3487,7 @@ export default function App() {
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
     const roleStep1Done = !!selectedRole;
     const roleStep2Done = !!rideVehicleKind;
+    const roleStepPulseStyle = { transform: [{ scale: roleStepPulse }] };
     const isCommunityComingSoon = true;
     const communityCardColors = isCommunityComingSoon
       ? (['#334155', '#475569', '#64748B'] as const)
@@ -3610,7 +3640,7 @@ export default function App() {
               >
                 <View style={styles.roleStepIndicatorRow}>
                   <View style={styles.roleStepSegment}>
-                    <View
+                    <Animated.View
                       style={[
                         styles.roleStepCircle,
                         {
@@ -3620,6 +3650,8 @@ export default function App() {
                           marginBottom: roleStepCircleMarginBottom,
                         },
                         roleActiveStep === 1 && styles.roleStepCircleActive,
+                        roleActiveStep === 1 && styles.roleStepCircleActiveRole,
+                        roleActiveStep === 1 && roleStepPulseStyle,
                         roleStep1Done && roleActiveStep !== 1 && styles.roleStepCircleDone,
                       ]}
                     >
@@ -3628,12 +3660,13 @@ export default function App() {
                       ) : (
                         <Text style={[styles.roleStepCircleText, roleActiveStep === 1 && styles.roleStepCircleTextActive]}>1</Text>
                       )}
-                    </View>
+                    </Animated.View>
                     <Text
                       style={[
                         styles.roleStepLabel,
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 1 && styles.roleStepLabelActive,
+                        roleActiveStep === 1 && styles.roleStepLabelActiveRole,
                         roleStep1Done && styles.roleStepLabelDone,
                       ]}
                       numberOfLines={2}
@@ -3643,7 +3676,7 @@ export default function App() {
                   </View>
                   <View style={[styles.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
                   <View style={styles.roleStepSegment}>
-                    <View
+                    <Animated.View
                       style={[
                         styles.roleStepCircle,
                         {
@@ -3653,6 +3686,8 @@ export default function App() {
                           marginBottom: roleStepCircleMarginBottom,
                         },
                         roleActiveStep === 2 && styles.roleStepCircleActive,
+                        roleActiveStep === 2 && styles.roleStepCircleActiveVehicle,
+                        roleActiveStep === 2 && roleStepPulseStyle,
                         roleStep2Done && roleActiveStep !== 2 && styles.roleStepCircleDone,
                         !roleStep1Done && styles.roleStepCircleMuted,
                       ]}
@@ -3670,12 +3705,13 @@ export default function App() {
                           2
                         </Text>
                       )}
-                    </View>
+                    </Animated.View>
                     <Text
                       style={[
                         styles.roleStepLabel,
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 2 && styles.roleStepLabelActive,
+                        roleActiveStep === 2 && styles.roleStepLabelActiveVehicle,
                         roleStep2Done && styles.roleStepLabelDone,
                         !roleStep1Done && styles.roleStepLabelMuted,
                       ]}
@@ -3686,7 +3722,7 @@ export default function App() {
                   </View>
                   <View style={[styles.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
                   <View style={styles.roleStepSegment}>
-                    <View
+                    <Animated.View
                       style={[
                         styles.roleStepCircle,
                         {
@@ -3696,6 +3732,8 @@ export default function App() {
                           marginBottom: roleStepCircleMarginBottom,
                         },
                         roleActiveStep === 3 && styles.roleStepCircleActive,
+                        roleActiveStep === 3 && styles.roleStepCircleActiveContinue,
+                        roleActiveStep === 3 && roleStepPulseStyle,
                         !rideVehicleKind && styles.roleStepCircleMuted,
                       ]}
                     >
@@ -3708,12 +3746,13 @@ export default function App() {
                       >
                         3
                       </Text>
-                    </View>
+                    </Animated.View>
                     <Text
                       style={[
                         styles.roleStepLabel,
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 3 && styles.roleStepLabelActive,
+                        roleActiveStep === 3 && styles.roleStepLabelActiveContinue,
                       ]}
                       numberOfLines={2}
                     >
@@ -4055,7 +4094,7 @@ export default function App() {
             >
               {selectedRole && rideVehicleKind ? (
                 <LinearGradient
-                  colors={['#38BDF8', '#0EA5E9', '#0284C7', '#0369A1']}
+                  colors={['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.roleContinueBtnGradientFill}
@@ -4166,7 +4205,7 @@ export default function App() {
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      Çok yakında aktif olacak
+                      Şehirler arası yolculuk
                     </Text>
                   </View>
                   <LinearGradient
@@ -19869,13 +19908,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0F2FE',
     shadowColor: '#0369a1',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  roleStepCircleActiveRole: {
+    borderColor: '#38BDF8',
+    backgroundColor: '#E0F2FE',
+    shadowColor: '#0EA5E9',
+  },
+  roleStepCircleActiveVehicle: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FEF3C7',
+    shadowColor: '#F59E0B',
+  },
+  roleStepCircleActiveContinue: {
+    borderColor: '#10B981',
+    backgroundColor: '#D1FAE5',
+    shadowColor: '#10B981',
   },
   roleStepCircleDone: {
-    borderColor: '#059669',
-    backgroundColor: '#10B981',
+    borderColor: '#14B8A6',
+    backgroundColor: '#0F766E',
   },
   roleStepCircleMuted: {
     opacity: 0.45,
@@ -19892,24 +19946,42 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   roleStepLabel: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     color: '#334155',
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 15,
     letterSpacing: -0.2,
   },
   roleStepLabelVery: {
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 11,
+    lineHeight: 14,
     letterSpacing: -0.15,
   },
   roleStepLabelActive: {
-    color: '#0F172A',
+    color: '#075985',
     fontWeight: '900',
   },
-  roleStepLabelDone: {
+  roleStepLabelActiveRole: {
+    color: '#0369A1',
+    textShadowColor: 'rgba(14, 165, 233, 0.22)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
+  },
+  roleStepLabelActiveVehicle: {
+    color: '#B45309',
+    textShadowColor: 'rgba(245, 158, 11, 0.24)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
+  },
+  roleStepLabelActiveContinue: {
     color: '#047857',
+    textShadowColor: 'rgba(16, 185, 129, 0.22)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
+  },
+  roleStepLabelDone: {
+    color: '#0F766E',
   },
   roleStepLabelMuted: {
     color: '#94A3B8',
@@ -20254,21 +20326,21 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     position: 'relative',
     overflow: 'visible',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 9,
   },
   roleCardSelected: {
-    borderColor: '#0284C7',
+    borderColor: '#38BDF8',
     borderWidth: 3,
     backgroundColor: 'rgba(224, 242, 254, 1)',
-    shadowColor: '#0369a1',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.28,
-    shadowRadius: 22,
-    elevation: 14,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.38,
+    shadowRadius: 26,
+    elevation: 16,
   },
   roleIconCircle: {
     width: 78,
@@ -20282,8 +20354,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(14, 165, 233, 0.2)',
   },
   roleIconCircleActive: {
-    backgroundColor: '#0284C7',
-    borderColor: 'rgba(255, 255, 255, 0.45)',
+    backgroundColor: '#0EA5E9',
+    borderColor: 'rgba(255, 255, 255, 0.7)',
     borderWidth: 3,
   },
   roleDriverIconsRow: {
@@ -20395,13 +20467,13 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     minHeight: 64,
     alignSelf: 'stretch',
-    shadowColor: '#0369a1',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.48,
-    shadowRadius: 24,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
     elevation: 14,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: 'rgba(191, 219, 254, 0.8)',
   },
   roleContinueBtnGradientFill: {
     ...StyleSheet.absoluteFillObject,
@@ -20492,9 +20564,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.35)',
     shadowColor: '#92400E',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.48,
+    shadowRadius: 8,
+    elevation: 6,
     zIndex: 2,
   },
   communityBadgeYeniText: {
