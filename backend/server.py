@@ -30105,8 +30105,9 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             raise _MuhabbetTripOpError("expired_qr_token", "QR kodun süresi doldu.")
     now_iso = datetime.now(timezone.utc).isoformat()
     new_brd = list(dict.fromkeys(brd_ids + [uid_lo]))
-    eligible_boarded = [pid for pid in acc_ids if pid in set(new_brd)]
-    all_boarded = len(acc_ids) > 0 and set(acc_ids).issubset(set(new_brd))
+    accepted_all_boarded = len(acc_ids) > 0 and set(acc_ids).issubset(set(new_brd))
+    capacity_full_boarded = sc > 1 and len(new_brd) >= sc
+    all_boarded = capacity_full_boarded
     clear_force = {
         "forced_finish_requested_by_user_id": None,
         "forced_finish_requested_at": None,
@@ -30165,9 +30166,30 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     patch_ms: dict = {}
     patch_keys: list[str] = []
     try:
-        ride_rs = "boarding" if len(new_brd) > 0 else "waiting"
-        if all_boarded:
+        ride_rs = "boarding"
+        if capacity_full_boarded:
             ride_rs = "active"
+        try:
+            logger.info(
+                "[LYO_BOARDING_LIFECYCLE_DECISION] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo[:12],
+                        "passenger_user_id": _lyo_qr_mask_id(uid_lo),
+                        "seat_capacity": sc,
+                        "boarded_count": len(new_brd),
+                        "accepted_count": len(acc_ids),
+                        "accepted_all_boarded": bool(accepted_all_boarded),
+                        "capacity_full_boarded": bool(capacity_full_boarded),
+                        "next_status": "active" if capacity_full_boarded else str(row.get("status") or "ready").strip().lower() or "ready",
+                        "next_ride_status": ride_rs,
+                        "required_count": len(new_brd) if capacity_full_boarded else 0,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
         patch_ms = {
             "boarded_passenger_ids": new_brd,
             "ride_status": ride_rs,
@@ -30176,20 +30198,20 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             **clear_force,
             "updated_at": now_iso,
         }
-        if active_pick and (active_pick == uid_lo or multi_seat_empty_passenger_rows):
+        if active_pick and active_pick == uid_lo:
             patch_ms["active_pickup_passenger_id"] = None
             patch_ms["active_pickup_selected_at"] = None
             patch_ms["active_pickup_selected_by_user_id"] = None
-        if all_boarded:
+        if capacity_full_boarded:
             patch_ms["status"] = "active"
             patch_ms["started_at"] = now_iso
             patch_ms["boarding_qr_token"] = None
             patch_ms["boarding_qr_confirmed_at"] = now_iso
             patch_ms["boarding_qr_confirmed_by_user_id"] = uid_lo
-            patch_ms["required_passenger_ids"] = eligible_boarded or [uid_lo]
+            patch_ms["required_passenger_ids"] = new_brd
             patch_ms["depart_confirmed_at"] = now_iso
             patch_ms["depart_confirmed_by_user_id"] = str(row.get("driver_id") or "").strip().lower() or uid_lo
-            patch_ms["depart_reason"] = "all_boarded"
+            patch_ms["depart_reason"] = "all_seats_boarded"
         patch_keys = list(patch_ms.keys())
         _log_session_patch(patch_keys, patch_ms, all_boarded, attempt="primary")
         step_started = time.perf_counter()
