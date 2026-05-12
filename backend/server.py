@@ -26974,6 +26974,53 @@ def _muhabbet_trip_passenger_rows_for_session(session_id: str) -> list[dict]:
         return []
 
 
+def _muhabbet_trip_passenger_rows_for_session_observed(session_id: str, *, log_tag: str) -> tuple[list[dict], str]:
+    """Confirm observability: keep legacy [] behavior but distinguish true empty vs select exception."""
+    sid = str(session_id or "").strip().lower()
+    if not sid:
+        return [], "missing_session_id"
+    started = time.perf_counter()
+    try:
+        res = supabase.table("muhabbet_trip_passengers").select("*").eq("session_id", sid).execute()
+        rows = [dict(x) for x in (res.data or [])]
+        source = "true_empty" if not rows else "rows"
+        logger.info(
+            "[LYO_QR_PASSENGER_ROWS_SELECT] %s",
+            json.dumps(
+                {
+                    "session_id": sid[:12],
+                    "log_tag": log_tag,
+                    "ok": True,
+                    "source": source,
+                    "row_count": len(rows),
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                },
+                ensure_ascii=False,
+            ),
+        )
+        return rows, source
+    except Exception as e:
+        logger.warning(
+            "[LYO_QR_PASSENGER_ROWS_SELECT] %s",
+            json.dumps(
+                {
+                    "session_id": sid[:12],
+                    "log_tag": log_tag,
+                    "ok": False,
+                    "source": "select_exception",
+                    "row_count": 0,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "error_repr": repr(e),
+                },
+                ensure_ascii=False,
+                default=str,
+            ),
+        )
+        return [], "select_exception"
+
+
 def _muhabbet_trip_status_is_active_leg(status_raw: str) -> bool:
     st = str(status_raw or "").strip().lower()
     return st in ("invited", "accepted", "waiting_pickup", "boarding", "pickup_active", "onboard", "boarded")
@@ -29657,7 +29704,7 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         except Exception:
             pass
 
-    def _log_session_patch(patch_keys: list[str], patch_body: dict, all_boarded_value: bool) -> None:
+    def _log_session_patch(patch_keys: list[str], patch_body: dict, all_boarded_value: bool, *, attempt: str = "primary") -> None:
         try:
             logger.info(
                 "[LYO_QR_SESSION_PATCH] %s",
@@ -29665,10 +29712,36 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
                     {
                         "session_id": sid_lo,
                         "uid": uid_lo,
+                        "attempt": attempt,
                         "all_boarded": bool(all_boarded_value),
                         "seat_capacity": sc,
                         "patch_keys": patch_keys,
                         "patch_ms": patch_body,
+                        "patch_where": {"id": sid_lo},
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+        except Exception:
+            pass
+
+    def _log_session_patch_response(attempt: str, patch_keys_value: list[str], upd_result, started_at: float) -> None:
+        try:
+            data = getattr(upd_result, "data", None)
+            first_row = dict(data[0]) if data else {}
+            logger.info(
+                "[LYO_QR_SESSION_PATCH_RESPONSE] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo,
+                        "uid": uid_lo,
+                        "attempt": attempt,
+                        "patch_keys": patch_keys_value,
+                        "patch_where": {"id": sid_lo},
+                        "row_count": len(data or []),
+                        "first_row_keys": list(first_row.keys())[:80],
+                        "duration_ms": int((time.perf_counter() - started_at) * 1000),
                     },
                     ensure_ascii=False,
                     default=str,
@@ -29682,6 +29755,8 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         patch_body: dict,
         all_boarded_value: bool,
         exc: Exception,
+        *,
+        attempt: str = "primary",
     ) -> None:
         try:
             logger.warning(
@@ -29690,13 +29765,17 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
                     {
                         "session_id": sid_lo,
                         "uid": uid_lo,
+                        "attempt": attempt,
                         "all_boarded": bool(all_boarded_value),
                         "seat_capacity": sc,
                         "patch_keys": patch_keys_value,
                         "patch_ms": patch_body,
+                        "patch_where": {"id": sid_lo},
                         "error_repr": repr(exc),
                         "error_message": str(exc),
                         "error_type": type(exc).__name__,
+                        "error_args": list(getattr(exc, "args", []) or []),
+                        "error_cause_repr": repr(getattr(exc, "__cause__", None)),
                     },
                     ensure_ascii=False,
                     default=str,
@@ -29720,8 +29799,15 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
         raise _MuhabbetTripOpError("bad_request", "QR kodu gerekli.")
     sc = _muhabbet_trip_seat_capacity_int(row.get("seat_capacity"))
     step_started = time.perf_counter()
-    passenger_rows = _muhabbet_trip_passenger_rows_for_session(session_id) if sc > 1 else []
-    _log_confirm_step("passenger_rows", step_started, seat_capacity=sc, row_count=len(passenger_rows))
+    passenger_rows_source = "not_multi_seat"
+    if sc > 1:
+        passenger_rows, passenger_rows_source = _muhabbet_trip_passenger_rows_for_session_observed(
+            session_id,
+            log_tag="boarding_qr_confirm",
+        )
+    else:
+        passenger_rows = []
+    _log_confirm_step("passenger_rows", step_started, seat_capacity=sc, row_count=len(passenger_rows), source=passenger_rows_source)
     multi_seat_empty_passenger_rows = sc > 1 and len(passenger_rows) == 0
     acc_ids = _muhabbet_trip_eligible_passenger_ids(row, passenger_rows) if sc > 1 else _muhabbet_json_uuid_list(row.get("accepted_passenger_ids"))
     if not acc_ids and row.get("passenger_id"):
@@ -29736,6 +29822,28 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
     if sc > 1:
         token_row = _muhabbet_trip_boarding_token_for_confirm(session_id, uid_lo, tok, passenger_user_id, sc)
     _log_confirm_step("token_lookup", step_started, seat_capacity=sc, token_found=bool(token_row))
+    if sc > 1:
+        try:
+            token_pid = str((token_row or {}).get("passenger_user_id") or "").strip().lower()
+            passenger_row_match = bool(token_pid) and any(_muhabbet_passenger_uid_from_row(pr) == token_pid for pr in passenger_rows)
+            logger.info(
+                "[LYO_QR_TOKEN_PASSENGER_ROW_CHECK] %s",
+                json.dumps(
+                    {
+                        "session_id": sid_lo[:12],
+                        "scanner_user_id": _lyo_qr_mask_id(uid_lo),
+                        "token_passenger_user_id": _lyo_qr_mask_id(token_pid),
+                        "parsed_passenger_user_id": _lyo_qr_mask_id(passenger_user_id),
+                        "passenger_rows_source": passenger_rows_source,
+                        "passenger_rows_count": len(passenger_rows),
+                        "passenger_row_match": bool(passenger_row_match),
+                        "fallback_single_session": bool(multi_seat_empty_passenger_rows),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            pass
     if sc > 1:
         try:
             logger.info(
@@ -29917,13 +30025,14 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
             patch_ms["depart_confirmed_by_user_id"] = str(row.get("driver_id") or "").strip().lower() or uid_lo
             patch_ms["depart_reason"] = "all_boarded"
         patch_keys = list(patch_ms.keys())
-        _log_session_patch(patch_keys, patch_ms, all_boarded)
+        _log_session_patch(patch_keys, patch_ms, all_boarded, attempt="primary")
         step_started = time.perf_counter()
         upd = supabase.table("muhabbet_trip_sessions").update(patch_ms).eq("id", session_id).execute()
+        _log_session_patch_response("primary", patch_keys, upd, step_started)
         _log_confirm_step("session_patch", step_started, patch_keys=patch_keys, row_count=len(upd.data or []))
     except Exception as e:
         err_msg = str(e)
-        _log_session_patch_failed(patch_keys, patch_ms, all_boarded, e)
+        _log_session_patch_failed(patch_keys, patch_ms, all_boarded, e, attempt="primary")
         err_low = err_msg.lower()
         status_active_constraint = (
             "status" in patch_ms
@@ -29941,18 +30050,22 @@ async def _muhabbet_trip_boarding_qr_confirm_apply(
                     "session_id": str(session_id or "").strip().lower(),
                     "uid": uid_lo,
                     "patch_keys": retry_keys,
+                    "patch_where": {"id": sid_lo},
+                    "primary_error_type": type(e).__name__,
+                    "primary_error_message": err_msg,
                 },
                 ensure_ascii=False,
             ),
         )
         try:
-            _log_session_patch(retry_keys, retry_patch, all_boarded)
+            _log_session_patch(retry_keys, retry_patch, all_boarded, attempt="retry_without_status")
             step_started = time.perf_counter()
             upd = supabase.table("muhabbet_trip_sessions").update(retry_patch).eq("id", session_id).execute()
+            _log_session_patch_response("retry_without_status", retry_keys, upd, step_started)
             _log_confirm_step("session_patch", step_started, patch_keys=retry_keys, retry_without_status=True, row_count=len(upd.data or []))
             patch_ms = retry_patch
         except Exception as retry_e:
-            _log_session_patch_failed(retry_keys, retry_patch, all_boarded, retry_e)
+            _log_session_patch_failed(retry_keys, retry_patch, all_boarded, retry_e, attempt="retry_without_status")
             raise _MuhabbetTripOpError("session_patch_failed", "Biniş bilgisi güncellenemedi. Lütfen tekrar deneyin.", 503) from retry_e
     next_row = dict(upd.data[0]) if upd.data else {**row, **patch_ms}
     step_started = time.perf_counter()
