@@ -3439,8 +3439,8 @@ export default function App() {
     const roleCheckIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
     const vehicleChipIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
     const continueArrowIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
-    const communityRoutesIconSize = rs.isVeryCompact ? 20 : rs.isCompact ? 22 : 24;
-    const communityChevronSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
+    const communityRoutesIconSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
+    const communityChevronSize = rs.isVeryCompact ? 13 : rs.isCompact ? 14 : 16;
 
     return (
       <ImageBackground 
@@ -4017,7 +4017,7 @@ export default function App() {
                         rs.isVeryCompact && styles.communityBtnTitleProminentVery,
                         rs.isCompact && !rs.isVeryCompact && styles.communityBtnTitleProminentCompact,
                       ]}
-                      numberOfLines={2}
+                      numberOfLines={1}
                       ellipsizeMode="tail"
                     >
                       Leylek Teklif Sende
@@ -19882,14 +19882,14 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumnCompact: {
     paddingTop: 0,
-    paddingBottom: 16,
-    gap: 6,
+    paddingBottom: 14,
+    gap: 3,
     paddingHorizontal: 18,
   },
   roleBottomFooterColumnVery: {
     paddingTop: 0,
-    paddingBottom: 12,
-    gap: 3,
+    paddingBottom: 10,
+    gap: 2,
     paddingHorizontal: 14,
   },
   roleContinueBtnOuterCompact: {
@@ -19914,21 +19914,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.25,
   },
   roleSeparatorCompactVery: {
-    marginVertical: 2,
+    marginVertical: 0,
   },
   communityBtnGradientCompact: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
   communityBtnGradientVery: {
-    paddingVertical: 7,
-    paddingHorizontal: 9,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   communityBadgeYeniVery: {
-    top: 7,
-    right: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    top: 4,
+    right: 7,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
   communityBtnRowVery: {
     paddingTop: 0,
@@ -19938,43 +19938,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   communityIconRouteBoxVery: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
   },
   communityIconRouteBoxCompact: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-  },
-  communityBtnTitleProminentCompact: {
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  communityBtnTitleProminentVery: {
-    fontSize: 14,
-    letterSpacing: 0.05,
-    lineHeight: 18,
-  },
-  communityBtnSubProminentVery: {
-    fontSize: 11,
-    marginTop: 1,
-    lineHeight: 14,
-  },
-  communityBtnSubProminentCompact: {
-    fontSize: 12,
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  communityArrowPremiumVery: {
     width: 34,
     height: 34,
     borderRadius: 17,
   },
+  communityBtnTitleProminentCompact: {
+    fontSize: 14,
+    lineHeight: 17,
+  },
+  communityBtnTitleProminentVery: {
+    fontSize: 12,
+    letterSpacing: 0.05,
+    lineHeight: 14,
+  },
+  communityBtnSubProminentVery: {
+    fontSize: 9,
+    marginTop: 0,
+    lineHeight: 11,
+  },
+  communityBtnSubProminentCompact: {
+    fontSize: 10,
+    marginTop: 1,
+    lineHeight: 12,
+  },
+  communityArrowPremiumVery: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
   communityArrowPremiumCompact: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
   },
   /** Trip uyarısı — Phase 1: üst alanı sadeleştirmek için margin + tipografi StyleSheet’te */
   roleSelectBannerWrap: {
@@ -20098,9 +20098,9 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumn: {
     paddingHorizontal: 20,
-    paddingTop: 2,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 20,
-    gap: 8,
+    paddingTop: 0,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 18,
+    gap: 4,
     alignItems: 'stretch',
   },
   roleCardsRow: {
@@ -20292,7 +20292,7 @@ const styles = StyleSheet.create({
   roleSeparatorCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 1,
     alignSelf: 'stretch',
   },
   roleContinueBtnDisabled: {
@@ -20341,17 +20341,17 @@ const styles = StyleSheet.create({
     opacity: 0.88,
   },
   communityBtnGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     position: 'relative',
   },
   communityBadgeYeni: {
     position: 'absolute',
-    top: 10,
-    right: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    top: 6,
+    right: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
     backgroundColor: 'rgba(245, 158, 11, 0.95)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.35)',
@@ -20363,20 +20363,20 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   communityBadgeYeniText: {
-    fontSize: 10,
+    fontSize: 8,
     fontWeight: '900',
     color: '#FFF',
-    letterSpacing: 0.6,
+    letterSpacing: 0.45,
   },
   communityBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 4,
+    paddingTop: 0,
   },
   communityIconRouteBox: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -20415,7 +20415,7 @@ const styles = StyleSheet.create({
   },
   communityTextBox: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 9,
     minWidth: 0,
     justifyContent: 'center',
   },
@@ -20425,7 +20425,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   communityBtnTitleProminent: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.2,
@@ -20439,10 +20439,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   communityBtnSubProminent: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.95)',
-    marginTop: 3,
+    marginTop: 1,
     textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -20456,9 +20456,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   communityArrowPremium: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
