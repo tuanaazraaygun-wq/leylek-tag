@@ -4560,6 +4560,16 @@ export default function App() {
           kycStatusProp={kycStatus}
           setKycStatusProp={setKycStatus}
           onShowTripEndedBanner={setRoleSelectTripExitBanner}
+          onDriverOfferOpenProfile={() => {
+            void playTapSound();
+            router.push('/settings-hub' as never);
+          }}
+          onDriverOfferGoToRoleSelect={() => {
+            void playTapSound();
+            setSelectedRole(null);
+            setRideVehicleKind(null);
+            setScreen('role-select');
+          }}
         />
       </RuntimeBoundary>
     );
@@ -12555,6 +12565,8 @@ interface DriverDashboardProps {
   kycStatusProp?: { status: string; submitted_at: string | null } | null;
   setKycStatusProp?: (status: { status: string; submitted_at: string | null } | null) => void;
   onShowTripEndedBanner?: (message: string) => void;
+  onDriverOfferOpenProfile?: () => void;
+  onDriverOfferGoToRoleSelect?: () => void;
 }
 
 /** Rolling `remove_offer`: önceki ~30s min-visible kaldırıldı; eşleşme/revoke hızlı kalkmalı. */
@@ -12564,7 +12576,16 @@ const DRIVER_OFFER_SOFT_REMOVE_MAX_MS = 1_200;
 /** Sürücü match overlay: yalnız bu önceki tag status’larından `matched`’e geçişte göster (hydrate/resume değil) */
 const DRIVER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
 
-function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
+function DriverDashboard({
+  user,
+  logout,
+  setScreen,
+  kycStatusProp,
+  setKycStatusProp,
+  onShowTripEndedBanner,
+  onDriverOfferOpenProfile,
+  onDriverOfferGoToRoleSelect,
+}: DriverDashboardProps) {
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
@@ -15575,6 +15596,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               vehicleKind={driverVehicleKind}
               driverId={user.id}
               playTapSound={playTapSound}
+              onOpenProfile={onDriverOfferOpenProfile}
+              onGoToRoleSelect={onDriverOfferGoToRoleSelect}
               homeCity={user?.city || ''}
               driverLocation={userLocation}
               requests={requests.map((req) => {
