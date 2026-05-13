@@ -15570,6 +15570,65 @@ function DriverDashboard({
       <>
         <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
           <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
+            <View style={{ paddingHorizontal: 12, paddingTop: 2, paddingBottom: 4 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 6,
+                  paddingHorizontal: 8,
+                  borderRadius: 14,
+                  backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(56, 189, 248, 0.28)',
+                }}
+              >
+                <TouchableOpacity
+                  style={{
+                    minWidth: 44,
+                    minHeight: 40,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={() => onDriverOfferGoToRoleSelect?.()}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Rol seçimine dön"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#BAE6FD" />
+                </TouchableOpacity>
+                <Text
+                  style={{
+                    flex: 1,
+                    flexShrink: 1,
+                    textAlign: 'center',
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: '#E0F2FE',
+                    letterSpacing: 0.2,
+                  }}
+                  numberOfLines={1}
+                >
+                  Sürücü paneli
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    minWidth: 44,
+                    minHeight: 40,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={() => onDriverOfferOpenProfile?.()}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Profil"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Ionicons name="person-circle-outline" size={26} color="#BAE6FD" />
+                </TouchableOpacity>
+              </View>
+            </View>
             <View style={{ paddingHorizontal: 4, paddingTop: 4, paddingBottom: 6 }}>
               <DriverDashboardPanel
                 userId={user.id}
@@ -15596,8 +15655,6 @@ function DriverDashboard({
               vehicleKind={driverVehicleKind}
               driverId={user.id}
               playTapSound={playTapSound}
-              onOpenProfile={onDriverOfferOpenProfile}
-              onGoToRoleSelect={onDriverOfferGoToRoleSelect}
               homeCity={user?.city || ''}
               driverLocation={userLocation}
               requests={requests.map((req) => {

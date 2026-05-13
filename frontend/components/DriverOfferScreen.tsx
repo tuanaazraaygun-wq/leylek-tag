@@ -267,8 +267,6 @@ interface DriverOfferScreenProps {
   playTapSound?: () => void;
   onDismissRequest: (requestId: string) => void;
   onBack: () => void;
-  onOpenProfile?: () => void;
-  onGoToRoleSelect?: () => void;
   onLogout: () => void;
   vehicleKind?: 'car' | 'motorcycle';
   /** true: üstte panel var; SafeArea üst padding yok, flex ile sığdır */
@@ -760,8 +758,6 @@ export default function DriverOfferScreen({
   playTapSound,
   onDismissRequest,
   onBack,
-  onOpenProfile,
-  onGoToRoleSelect,
   onLogout: _onLogout,
   vehicleKind = 'car',
   embedded = false,
@@ -1101,44 +1097,9 @@ export default function DriverOfferScreen({
   };
 
   const displayRating = driverRating != null ? driverRating.toFixed(1) : '4.0';
-  const handleGoToRoleSelect = onGoToRoleSelect ?? onBack;
-  const topBarHitSlop = { top: 12, bottom: 12, left: 12, right: 12 } as const;
 
   const body = (
     <View style={styles.driverOfferBody}>
-      {embedded ? (
-        <View style={styles.embeddedTopBarOuter}>
-          <View style={styles.embeddedTopBar}>
-            {onOpenProfile ? (
-              <TouchableOpacity
-                style={styles.embeddedTopBarIconBtn}
-                onPress={onOpenProfile}
-                activeOpacity={0.88}
-                accessibilityRole="button"
-                accessibilityLabel="Profil"
-                hitSlop={topBarHitSlop}
-              >
-                <Ionicons name="person-circle-outline" size={26} color="#BAE6FD" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.embeddedTopBarIconBtn} />
-            )}
-            <Text style={styles.embeddedTopBarTitle} numberOfLines={1}>
-              Sürücü paneli
-            </Text>
-            <TouchableOpacity
-              style={styles.embeddedTopBarIconBtn}
-              onPress={handleGoToRoleSelect}
-              activeOpacity={0.88}
-              accessibilityRole="button"
-              accessibilityLabel="Rol seçimine dön"
-              hitSlop={topBarHitSlop}
-            >
-              <Ionicons name="swap-horizontal-outline" size={24} color="#BAE6FD" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
       <View
         style={[
           styles.mapCardShell,
@@ -1298,39 +1259,6 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 0,
     flexDirection: 'column',
-  },
-  embeddedTopBarOuter: {
-    width: '100%',
-    maxWidth: SCREEN_WIDTH,
-    alignSelf: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 4,
-  },
-  embeddedTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.28)',
-    gap: 4,
-  },
-  embeddedTopBarIconBtn: {
-    minWidth: 44,
-    minHeight: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  embeddedTopBarTitle: {
-    flex: 1,
-    flexShrink: 1,
-    textAlign: 'center',
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#E0F2FE',
-    letterSpacing: 0.2,
   },
   mapCardShellExpandedLayer: {
     zIndex: 10,
