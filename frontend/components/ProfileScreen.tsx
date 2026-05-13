@@ -11,7 +11,6 @@ import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect'
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 const VEHICLE_PH = ['#DBEAFE', '#E0E7FF'] as const;
-const ORANGE_GRAD = ['#F59E0B', '#FBBF24'] as const;
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
@@ -24,6 +23,8 @@ const CARD_SHADOW = Platform.select({
 export type PublicProfilePayload = {
   id?: string;
   full_name?: string;
+  /** API legacy alanı — görünümde ilk kelimeye indirgenir */
+  name?: string;
   public_name?: string;
   role_label?: string | null;
   is_kyc_driver?: boolean;
@@ -52,6 +53,20 @@ function initialsFromName(name: string): string {
   return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
 }
 
+/** Soyad gösterme: yalnızca ilk isim (ör. "Mehmet Ahmet Yılmaz" → "Mehmet"). */
+function getSafeDisplayName(profile: PublicProfilePayload | null | undefined): string {
+  if (!profile) return 'Leylek kullanıcısı';
+  const raw = (
+    profile.public_name ||
+    profile.full_name ||
+    profile.name ||
+    ''
+  ).trim();
+  if (!raw) return 'Leylek kullanıcısı';
+  const first = raw.split(/\s+/).filter(Boolean)[0];
+  return first || 'Leylek kullanıcısı';
+}
+
 export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScreenProps) {
   const router = useRouter();
   const base = apiBaseUrl.replace(/\/$/, '');
@@ -62,8 +77,6 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const [savingBio, setSavingBio] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingVehicle, setUploadingVehicle] = useState(false);
-  const [keyBusy, setKeyBusy] = useState(false);
-  const [lastKey, setLastKey] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -103,7 +116,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     void load();
   }, [load]);
 
-  const displayName = isSelf ? p?.full_name || p?.public_name || 'Leylek kullanıcısı' : p?.public_name || 'Leylek kullanıcısı';
+  const displayName = p ? getSafeDisplayName(p) : 'Leylek kullanıcısı';
   const roleLabel = p?.role_label || (p?.is_kyc_driver ? 'Sürücü' : 'Yolcu');
   const photo = (p?.profile_photo_url || '').trim();
   const vehiclePhoto = (p?.vehicle_photo_url || '').trim();
@@ -132,7 +145,8 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         Alert.alert('Profil', typeof d.detail === 'string' && d.detail ? d.detail : 'Kaydedilemedi.');
         return;
       }
-      setP((prev) => (prev ? { ...prev, about: bioDraft.trim() || null } : prev));
+      const nextBio = bioDraft.trim() || null;
+      setP((prev) => (prev ? { ...prev, about: nextBio, muhabbet_bio: nextBio } : prev));
     } catch {
       Alert.alert('Profil', 'Bağlantı hatası.');
     } finally {
@@ -164,10 +178,15 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
       } as never);
       const res = await fetch(`${base}/muhabbet/profile/photo`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; url?: string; detail?: string };
-      if (!res.ok || !d.success || !d.url) return Alert.alert('Fotoğraf', d.detail || 'Yüklenemedi.');
-      setP((prev) => (prev ? { ...prev, profile_photo_url: d.url } : prev));
-    } catch {
-      Alert.alert('Fotoğraf', 'Yükleme hatası.');
+      if (!res.ok || !d.success || !d.url) {
+        console.warn('[ProfileScreen] profile photo upload failed', res.status, d);
+        Alert.alert('Profil', 'Fotoğraf yüklenemedi. Lütfen tekrar deneyin.');
+        return;
+      }
+      void load();
+    } catch (e) {
+      console.warn('[ProfileScreen] profile photo upload error', e);
+      Alert.alert('Profil', 'Fotoğraf yüklenemedi. Lütfen tekrar deneyin.');
     } finally {
       setUploading(false);
     }
@@ -203,25 +222,6 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
       Alert.alert('Araç fotoğrafı', 'Yükleme hatası.');
     } finally {
       setUploadingVehicle(false);
-    }
-  };
-
-  const createLeylekKey = async () => {
-    if (!isSelf) return;
-    setKeyBusy(true);
-    setLastKey(null);
-    try {
-      const token = (await getPersistedAccessToken())?.trim();
-      if (!token) return;
-      const res = await fetch(`${base}/muhabbet/leylek-key/create`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-      if (handleUnauthorizedAndMaybeRedirect(res)) return;
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; key?: string; detail?: string };
-      if (!res.ok || !d.success || !d.key) return Alert.alert('Leylek Anahtar', d.detail || 'Oluşturulamadı.');
-      setLastKey(d.key);
-    } catch {
-      Alert.alert('Leylek Anahtar', 'Bağlantı hatası.');
-    } finally {
-      setKeyBusy(false);
     }
   };
 
@@ -301,7 +301,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   style={styles.bioInput}
                   value={bioDraft}
                   onChangeText={setBioDraft}
-                  placeholder="Kısa açıklama (en fazla 500 karakter)"
+                  placeholder="Kısa açıklama ekleyin."
                   placeholderTextColor={TEXT_SECONDARY}
                   multiline
                   maxLength={500}
@@ -311,22 +311,9 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                 </Pressable>
               </>
             ) : (
-              <Text style={styles.aboutText}>{aboutText || 'Açıklama eklenmemiş.'}</Text>
+              <Text style={styles.aboutText}>{aboutText || 'Henüz bir açıklama eklenmemiş.'}</Text>
             )}
           </View>
-
-          {isSelf ? (
-            <View style={styles.card}>
-              <Text style={styles.section}>Leylek Anahtar</Text>
-              <Text style={styles.helpText}>Sohbet içi güvenli eşleşme için tek kullanımlık anahtar.</Text>
-              <Pressable disabled={keyBusy} onPress={() => void createLeylekKey()} style={styles.keyBtnWrap}>
-                <LinearGradient colors={ORANGE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.keyBtn}>
-                  {keyBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.keyBtnTxt}>Leylek Anahtar Oluştur</Text>}
-                </LinearGradient>
-              </Pressable>
-              {lastKey ? <Text style={styles.keyOut}>{lastKey}</Text> : null}
-            </View>
-          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -367,9 +354,4 @@ const styles = StyleSheet.create({
   bioInput: { minHeight: 84, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(15,23,42,0.2)', borderRadius: 12, padding: 12, fontSize: 15, color: TEXT_PRIMARY, textAlignVertical: 'top' },
   saveBtn: { marginTop: 8, alignSelf: 'flex-end' },
   aboutText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
-  helpText: { color: TEXT_SECONDARY, fontSize: 14, lineHeight: 20, marginBottom: 10 },
-  keyBtnWrap: { borderRadius: 14, overflow: 'hidden' },
-  keyBtn: { minHeight: 48, justifyContent: 'center', alignItems: 'center' },
-  keyBtnTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  keyOut: { marginTop: 10, fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
 });

@@ -60,7 +60,7 @@ export default function SettingsHubScreen() {
       router.push(`/muhabbet-profile/${encodeURIComponent(uid)}` as any);
       return;
     }
-    router.push('/profile' as any);
+    Alert.alert('Profil', 'Profil bilgisi yüklenemedi.');
   };
 
   const handleSafeLogout = async () => {
