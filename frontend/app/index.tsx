@@ -182,7 +182,124 @@ const MATCH_RESUME_UI_RESET_KEY = 'leylek_match_resume_ui_reset_v1';
 function _normTagStatus(st: unknown): string {
   return String(st ?? '')
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+/** Bitmiş / iptal — driver resume (tryResume + login fallback) için */
+const DRIVER_TAG_TERMINAL_STATUSES = ['cancelled', 'completed', 'finished', 'expired'] as const;
+
+function _driverTagStatusIsTerminal(st: string): boolean {
+  return (DRIVER_TAG_TERMINAL_STATUSES as readonly string[]).includes(st);
+}
+
+function _pickDriverVehicleKindForResume(loggedInUser: User, dTag: Record<string, unknown>): 'car' | 'motorcycle' {
+  const fromTagRaw = dTag.driver_vehicle_kind ?? dTag.vehicle_kind ?? (dTag as { vehicleKind?: unknown }).vehicleKind;
+  const fromTag = String(fromTagRaw ?? '').toLowerCase();
+  if (fromTag === 'motorcycle' || fromTag === 'motor' || fromTag === 'moto') return 'motorcycle';
+  const d = loggedInUser.driver_details as { vehicle_kind?: string } | undefined;
+  const fromUser = String(d?.vehicle_kind ?? '').toLowerCase();
+  if (fromUser === 'motorcycle' || fromUser === 'motor' || fromUser === 'moto') return 'motorcycle';
+  return 'car';
+}
+
+/**
+ * tryResumeActiveMatchSession kaçırırsa (ör. çift rol önceliği / edge): driver/active-tag tekrar okunur.
+ * Role-select → Devam ile aynı API; dashboard + DriverDashboard.loadActiveTag ile devam edilir.
+ */
+async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
+  loggedInUser: User,
+  deps: {
+    saveUser: (u: User) => Promise<User>;
+    setUser: (u: User | ((prev: User | null) => User | null)) => void;
+    setSelectedRole: (r: 'passenger' | 'driver') => void;
+    setScreen: (s: AppScreen) => void;
+    setRideVehicleKind: (v: 'car' | 'motorcycle') => void;
+  },
+): Promise<boolean> {
+  if (!loggedInUser?.id) {
+    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
+    return false;
+  }
+  let lr: string | null = null;
+  try {
+    lr = await AsyncStorage.getItem(`last_role_${loggedInUser.id}`);
+  } catch {
+    /* ignore */
+  }
+  const wantDriver = loggedInUser.role === 'driver' || lr === 'driver';
+  if (!wantDriver) {
+    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', {
+      reason: 'not_driver_intent',
+      last_role: lr,
+      userRole: loggedInUser.role,
+    });
+    return false;
+  }
+
+  console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
+  try {
+    const enc = encodeURIComponent(loggedInUser.id);
+    const dr = await fetch(`${API_URL}/driver/active-tag?user_id=${enc}`);
+    const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
+    const dTag = dj?.tag as Record<string, unknown> | undefined;
+    const rawSt = dTag?.status;
+    const st = dTag ? _normTagStatus(dTag.status) : '';
+    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_FETCH', {
+      success: dj.success,
+      was_cancelled: dj.was_cancelled,
+      status: rawSt ?? null,
+      normalizedStatus: st || null,
+    });
+
+    if (!dTag || !dj.success) {
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'no_tag_or_unsuccessful', success: dj.success });
+      return false;
+    }
+    if (dj.was_cancelled === true) {
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'was_cancelled' });
+      return false;
+    }
+    if (st && _driverTagStatusIsTerminal(st)) {
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'terminal_status', st });
+      return false;
+    }
+    if (!(DRIVER_RESUME_STATUSES as readonly string[]).includes(st)) {
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'status_not_allowed', st });
+      return false;
+    }
+
+    const vk = _pickDriverVehicleKindForResume(loggedInUser, dTag);
+    const baseDd =
+      loggedInUser.driver_details && typeof loggedInUser.driver_details === 'object'
+        ? { ...(loggedInUser.driver_details as Record<string, unknown>) }
+        : {};
+    const mergedDd = { ...baseDd, vehicle_kind: vk };
+    const u: User = {
+      ...loggedInUser,
+      role: 'driver',
+      driver_details: mergedDd as User['driver_details'],
+    };
+    const savedUser = await deps.saveUser(u);
+    deps.setUser(savedUser);
+    deps.setSelectedRole('driver');
+    deps.setRideVehicleKind(vk);
+    deps.setScreen('dashboard');
+    try {
+      await AsyncStorage.setItem(MATCH_RESUME_UI_RESET_KEY, loggedInUser.id);
+    } catch {
+      /* ignore */
+    }
+    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_HIT', {
+      userId: loggedInUser.id,
+      status: st,
+      vehicle_kind: vk,
+    });
+    return true;
+  } catch (e) {
+    console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
+    return false;
+  }
 }
 
 /**
@@ -1340,6 +1457,7 @@ export default function App() {
           cleanPhone.endsWith('5326497412');
 
         let resumeResult: TryResumeActiveMatchResult = { resumed: false };
+        let driverLoginResume = false;
         if (!isMainAdmin) {
           setBootSubtitle('Devam eden eşleşmeye bağlanılıyor...');
           try {
@@ -1349,11 +1467,24 @@ export default function App() {
               setSelectedRole,
               setScreen,
             });
+            if (!resumeResult.resumed) {
+              try {
+                driverLoginResume = await tryDriverResumeFromActiveTagAfterPrimaryFailure(parsedUser, {
+                  saveUser,
+                  setUser,
+                  setSelectedRole,
+                  setScreen,
+                  setRideVehicleKind,
+                });
+              } catch (e) {
+                console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
+              }
+            }
           } finally {
             setBootSubtitle(null);
           }
         }
-        const resumedMatch = resumeResult.resumed;
+        const resumedMatch = resumeResult.resumed || driverLoginResume;
 
         if (!resumedMatch) {
           if (isMainAdmin) {
@@ -1388,7 +1519,7 @@ export default function App() {
 
         if (resumedMatch) {
           try {
-            const r = resumeResult.role;
+            const r = resumeResult.role ?? (driverLoginResume ? ('driver' as const) : undefined);
             if (parsedUser.id && r) {
               await loadActiveTagForUserResume(parsedUser.id, r);
             }
@@ -1511,6 +1642,36 @@ export default function App() {
           await loadActiveTagForUserResume(loggedInUser.id, resumeResult.role);
         } catch (e) {
           console.warn('[resume] loadActiveTagForUserResume (after login)', e);
+        }
+        registerPushToken(
+          loggedInUser.id,
+          (ok) => {
+            console.log(
+              '[PUSH] after login tag resume',
+              ok ? 'token saved OK' : 'token save skipped or failed',
+            );
+          },
+          'loginTagResume',
+        );
+        return true;
+      }
+      let driverFb = false;
+      try {
+        driverFb = await tryDriverResumeFromActiveTagAfterPrimaryFailure(loggedInUser, {
+          saveUser,
+          setUser,
+          setSelectedRole,
+          setScreen,
+          setRideVehicleKind,
+        });
+      } catch (e) {
+        console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
+      }
+      if (driverFb && loggedInUser.id) {
+        try {
+          await loadActiveTagForUserResume(loggedInUser.id, 'driver');
+        } catch (e) {
+          console.warn('[resume] loadActiveTagForUserResume (after login driver fb)', e);
         }
         registerPushToken(
           loggedInUser.id,
