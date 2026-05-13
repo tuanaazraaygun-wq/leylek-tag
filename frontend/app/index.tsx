@@ -876,6 +876,43 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
   /** Araç veya motor — yolcu tercihi / sürücü kullandığı tip */
   const [rideVehicleKind, setRideVehicleKind] = useState<'car' | 'motorcycle' | null>(null);
+
+  /** Dashboard dalı erken döndüğü için `playTapSound` burada tanımlı olmalı (PassengerDashboard içindekinden ayrı). */
+  const playTapSound = useCallback(async () => {}, []);
+
+  const handleDriverReturnToRoleSelect = useCallback(() => {
+    console.log('DRIVER_RETURN_TO_ROLE_SELECT');
+    void playTapSound();
+    setSelectedRole(null);
+    setRideVehicleKind(null);
+    setScreen('role-select');
+  }, [playTapSound, setScreen]);
+
+  const handleOpenDriverProfile = useCallback(() => {
+    console.log('DRIVER_PROFILE_OPEN_START');
+    void playTapSound();
+    const uid = user?.id != null ? String(user.id).trim() : '';
+    const openHub = () => router.push('/settings-hub' as never);
+    try {
+      if (uid) {
+        router.push(`/muhabbet-profile/${encodeURIComponent(uid)}` as never);
+        return;
+      }
+      openHub();
+    } catch (e) {
+      console.warn('DRIVER_PROFILE_OPEN_FAILED', e);
+      if (uid) {
+        try {
+          openHub();
+        } catch (e2) {
+          console.warn('DRIVER_PROFILE_OPEN_FAILED', e2);
+          appAlert('Profil', 'Profil ekranı açılamadı. Lütfen tekrar deneyin.');
+        }
+      } else {
+        appAlert('Profil', 'Profil bilgisi yüklenemedi.');
+      }
+    }
+  }, [playTapSound, router, user?.id]);
   
   // KYC Status (Sürücü başvuru durumu)
   const [kycStatus, setKycStatus] = useState<{status: string; submitted_at: string | null} | null>(null);
@@ -4560,16 +4597,8 @@ export default function App() {
           kycStatusProp={kycStatus}
           setKycStatusProp={setKycStatus}
           onShowTripEndedBanner={setRoleSelectTripExitBanner}
-          onDriverOfferOpenProfile={() => {
-            void playTapSound();
-            router.push('/settings-hub' as never);
-          }}
-          onDriverOfferGoToRoleSelect={() => {
-            void playTapSound();
-            setSelectedRole(null);
-            setRideVehicleKind(null);
-            setScreen('role-select');
-          }}
+          onDriverOfferOpenProfile={handleOpenDriverProfile}
+          onDriverOfferGoToRoleSelect={handleDriverReturnToRoleSelect}
         />
       </RuntimeBoundary>
     );
@@ -15788,10 +15817,7 @@ function DriverDashboard({
                   }, TAG_MATCH_TRANSITION_HOLD_MS);
                 }
               }}
-              onBack={() => {
-                playTapSound();
-                setScreen('role-select');
-              }}
+              onBack={() => onDriverOfferGoToRoleSelect?.()}
               onLogout={() => {
                 playTapSound();
                 logout();
