@@ -67,6 +67,7 @@ async function fetchAutocompleteRaw(
     language: string;
     types?: string;
     bias?: GoogleAutocompleteBias | null;
+    signal?: AbortSignal;
   },
 ): Promise<GoogleAutocompletePrediction[]> {
   const params = new URLSearchParams({
@@ -83,7 +84,7 @@ async function fetchAutocompleteRaw(
   }
 
   const url = `${AUTOCOMPLETE_URL}?${params.toString()}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: opts.signal });
   const data = (await res.json()) as GoogleAutocompleteResponse;
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
     throw new Error(
@@ -98,6 +99,7 @@ export async function googlePlacesAutocompleteMerged(
   input: string,
   apiKey: string,
   bias: GoogleAutocompleteBias | null,
+  signal?: AbortSignal,
 ): Promise<GoogleAutocompletePrediction[]> {
   const lang = 'tr';
   const logFail = (branch: string, err: unknown) => {
@@ -115,20 +117,21 @@ export async function googlePlacesAutocompleteMerged(
       }),
     );
   };
+  const acOpts = signal ? { signal } : {};
   const [geo, est, regions, address] = await Promise.all([
-    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'geocode', bias }).catch((e) => {
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'geocode', bias, ...acOpts }).catch((e) => {
       logFail('geocode', e);
       return [];
     }),
-    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'establishment', bias }).catch((e) => {
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'establishment', bias, ...acOpts }).catch((e) => {
       logFail('establishment', e);
       return [];
     }),
-    fetchAutocompleteRaw(input, apiKey, { language: lang, types: '(regions)', bias }).catch((e) => {
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: '(regions)', bias, ...acOpts }).catch((e) => {
       logFail('regions', e);
       return [];
     }),
-    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'address', bias }).catch((e) => {
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'address', bias, ...acOpts }).catch((e) => {
       logFail('address', e);
       return [];
     }),
@@ -172,6 +175,7 @@ export async function googleGeocodeText(
   address: string,
   apiKey: string,
   bias: GoogleAutocompleteBias | null,
+  signal?: AbortSignal,
 ): Promise<{ lat: number; lng: number; formattedAddress: string; placeId?: string; types?: string[] }[]> {
   const params = new URLSearchParams({
     address: address.trim(),
@@ -187,7 +191,7 @@ export async function googleGeocodeText(
       `${bias.latitude - latDelta},${bias.longitude - lngDelta}|${bias.latitude + latDelta},${bias.longitude + lngDelta}`,
     );
   }
-  const res = await fetch(`${GEOCODE_URL}?${params.toString()}`);
+  const res = await fetch(`${GEOCODE_URL}?${params.toString()}`, { signal });
   const data = (await res.json()) as GoogleGeocodeResponse;
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
     throw new Error(data.error_message || data.status || 'geocode_failed');

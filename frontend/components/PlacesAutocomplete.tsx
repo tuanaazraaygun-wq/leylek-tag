@@ -762,8 +762,8 @@ function buildGooglePlacesBias(
     return {
       latitude: biasLatitude,
       longitude: biasLongitude,
-      radiusMeters: strictCityBounds ? 44000 : 38000,
-      strictBounds,
+      radiusMeters: strictCityBounds ? 50000 : 42000,
+      strictBounds: false,
     };
   }
   if (effectiveCityKey && CITY_DATA[effectiveCityKey]) {
@@ -771,8 +771,8 @@ function buildGooglePlacesBias(
     return {
       latitude: d.lat,
       longitude: d.lng,
-      radiusMeters: strictCityBounds ? 52000 : 58000,
-      strictBounds: !!strictCityBounds,
+      radiusMeters: strictCityBounds ? 56000 : 60000,
+      strictBounds: false,
     };
   }
   return null;
@@ -1001,8 +1001,9 @@ export default function PlacesAutocomplete({
     Record<string, { lat: number; lng: number }>
   >({});
   const [searchReplayTick, setSearchReplayTick] = useState(0);
-  const lastBiasReplayKeyRef = useRef('');
   const emptyFallbackLogKeyRef = useRef('');
+  /** Aktif arama iptali — yeni istek veya unmount önceki fetch'leri keser */
+  const placesSearchAbortRef = useRef<AbortController | null>(null);
 
   const compactMerkezEntries = useMemo(() => {
     const empty = {
@@ -1061,6 +1062,13 @@ export default function PlacesAutocomplete({
   }, [city]);
 
   useEffect(() => {
+    return () => {
+      placesSearchAbortRef.current?.abort();
+      placesSearchAbortRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!replayOnBiasChange) return;
     if (query.trim().length < 2) return;
     const replayKey = JSON.stringify({
@@ -1072,8 +1080,6 @@ export default function PlacesAutocomplete({
       biasDeltaDeg,
       forceCityInSearch: !!forceCityInSearch,
     });
-    if (lastBiasReplayKeyRef.current === replayKey) return;
-    lastBiasReplayKeyRef.current = replayKey;
     try {
       console.log(
         'TAG_PLACE_SEARCH_REPLAY_ON_BIAS_CHANGE',
@@ -1087,6 +1093,7 @@ export default function PlacesAutocomplete({
             biasLongitude != null &&
             Number.isFinite(biasLongitude)
           ),
+          replay_key_len: replayKey.length,
         }),
       );
     } catch {
@@ -1150,6 +1157,8 @@ export default function PlacesAutocomplete({
     }
 
     if (query.length < 2) {
+      placesSearchAbortRef.current?.abort();
+      placesSearchAbortRef.current = null;
       autocompleteRequestIdRef.current += 1;
       setPredictions([]);
       setShowPredictions(false);
@@ -1185,6 +1194,10 @@ export default function PlacesAutocomplete({
 
   /** Önce Google Places (Autocomplete + Details ile koordinat); boş / hata → Nominatim (mevcut mantık). */
   const searchPlaces = async (input: string) => {
+    placesSearchAbortRef.current?.abort();
+    const ac = new AbortController();
+    placesSearchAbortRef.current = ac;
+    const signal = ac.signal;
     const requestId = ++autocompleteRequestIdRef.current;
     setSearchRoundDone(false);
     setLoading(true);
@@ -1273,7 +1286,7 @@ export default function PlacesAutocomplete({
               city_label: cityLabel || null,
               request_id: requestId,
             });
-            const raw = await googlePlacesAutocompleteMerged(qTry, apiKey, gBias);
+            const raw = await googlePlacesAutocompleteMerged(qTry, apiKey, gBias, signal);
             if (requestId !== autocompleteRequestIdRef.current) {
               return;
             }
@@ -1317,7 +1330,7 @@ export default function PlacesAutocomplete({
                   city_label: cityLabel || null,
                   request_id: requestId,
                 });
-                const geocoded = await googleGeocodeText(qTry, apiKey, gBias);
+                const geocoded = await googleGeocodeText(qTry, apiKey, gBias, signal);
                 if (requestId !== autocompleteRequestIdRef.current) {
                   return;
                 }
@@ -1356,7 +1369,7 @@ export default function PlacesAutocomplete({
               }
             }
 
-            if (filtered.length === 0 && strictCityBounds && gBias?.strictBounds) {
+            if (filtered.length === 0 && gBias) {
               const gBiasLoose: GoogleAutocompleteBias = { ...gBias, strictBounds: false };
               looseAuto: for (const qTry of searchVariants) {
                 acDiag('AUTOCOMPLETE_PROVIDER_START', {
@@ -1365,7 +1378,7 @@ export default function PlacesAutocomplete({
                   city_label: cityLabel || null,
                   request_id: requestId,
                 });
-                const rawLoose = await googlePlacesAutocompleteMerged(qTry, apiKey, gBiasLoose);
+                const rawLoose = await googlePlacesAutocompleteMerged(qTry, apiKey, gBiasLoose, signal);
                 if (requestId !== autocompleteRequestIdRef.current) {
                   return;
                 }
@@ -1452,6 +1465,7 @@ export default function PlacesAutocomplete({
           const { url } = buildUrl(queryText, bounded, lim);
           const response = await fetch(url, {
             headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
+            signal,
           });
           if (!response.ok) {
             throw new Error(`nominatim_http_${response.status}`);
@@ -1616,6 +1630,7 @@ export default function PlacesAutocomplete({
             )}&accept-language=tr`;
             const response = await fetch(url, {
               headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
+              signal,
             });
             if (!response.ok) continue;
             const data = (await response.json()) as PlaceResult[];
@@ -1695,6 +1710,18 @@ export default function PlacesAutocomplete({
         setShowPredictions(true);
       } else {
         setPredictions([]);
+        try {
+          console.log(
+            'TAG_PLACE_SEARCH_EMPTY',
+            JSON.stringify({
+              request_id: requestId,
+              query_len: input.trim().length,
+              has_city: !!String(city || '').trim(),
+            }),
+          );
+        } catch {
+          /* noop */
+        }
         /** Boş sonuçta da liste alanı açık kalsın; aksi halde "sonuç yok" UI hiç görünmez */
         setShowPredictions(true);
       }
@@ -1717,7 +1744,29 @@ export default function PlacesAutocomplete({
         /* noop */
       }
     } catch (error) {
+      const errName =
+        error instanceof Error
+          ? error.name
+          : typeof error === 'object' && error !== null && 'name' in error
+            ? String((error as { name?: unknown }).name)
+            : '';
+      const isAbort = errName === 'AbortError';
+      if (isAbort) {
+        return;
+      }
       const msg = error instanceof Error ? error.message : String(error);
+      try {
+        console.log(
+          'TAG_PLACE_SEARCH_RECOVER',
+          JSON.stringify({
+            request_id: requestId,
+            query_len: input.trim().length,
+            error: msg.slice(0, 200),
+          }),
+        );
+      } catch {
+        /* noop */
+      }
       acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
         provider: 'nominatim',
         query: input.trim(),
@@ -2252,6 +2301,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minHeight: 120,
     justifyContent: 'flex-end',
+    zIndex: 50,
+    ...(Platform.OS === 'android' ? { elevation: 12 } : {}),
   },
   inputContainer: {
     flexDirection: 'row',
@@ -2453,12 +2504,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(56, 189, 248, 0.35)',
     borderRadius: 16,
     marginTop: 12,
+    zIndex: 60,
+    ...(Platform.OS === 'android' ? { elevation: 16 } : {}),
   },
   predictionsAboveInput: {
     marginTop: 0,
     marginBottom: 10,
     flexGrow: 1,
     minHeight: 120,
+    zIndex: 60,
+    ...(Platform.OS === 'android' ? { elevation: 16 } : {}),
   },
   predictionItem: {
     flexDirection: 'row',

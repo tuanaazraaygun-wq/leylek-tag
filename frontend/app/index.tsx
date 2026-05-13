@@ -6967,6 +6967,13 @@ function PassengerDashboard({
     }
   };
   const insets = useSafeAreaInsets();
+  const { height: paxWindowHeight } = useWindowDimensions();
+  const priceModalSheetMaxHeight = Math.min(
+    paxWindowHeight * 0.92,
+    paxWindowHeight - insets.top - 8,
+  );
+  const priceModalScrollMaxHeight = Math.max(160, priceModalSheetMaxHeight - 200);
+  const priceModalHeroFontSize = paxWindowHeight < 640 ? 34 : paxWindowHeight < 720 ? 42 : 48;
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   /** loadActiveTag yarışları için güncel tag (koruma dalında kullanılır) */
@@ -7165,6 +7172,11 @@ function PassengerDashboard({
   );
   /** Konum + hedef + araç tipi için fiyat/rota önbelleği — “Ara” anında gecikmeyi azaltır */
   const pricePrefetchRef = useRef<{ key: string; data: Record<string, unknown>; ts: number } | null>(null);
+  /** Teklif gönder: çift tap / üst üste async çağrı — senkron erken return */
+  const passengerSendOfferInFlightRef = useRef(false);
+  /** Fiyat hesapla + modal: çift calculate / çift modal engeli */
+  const passengerPriceCalculateInFlightRef = useRef(false);
+  const [offerSendSubmitting, setOfferSendSubmitting] = useState(false);
 
   useEffect(() => {
     if (showPriceModal) {
@@ -9208,85 +9220,105 @@ function PassengerDashboard({
     rideVehiclePreference,
   ]);
 
-  // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
-  const handleCallButton = async () => {
-    playTapSound();
-    console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
-    
-    // Hedef kontrolü (arama tek başına yetmez; haritadan nokta şart)
-    if (!destination) {
-      appAlert(
-        '⚠️ Hedef gerekli',
-        destinationAwaitingMapTap
-          ? 'Listeden bölgeyi seçtikten sonra haritayı sürükleyin ve "Tam burası" ile onaylayın.'
-          : 'Önce hedef seçin: arama veya harita ile tam konumu belirleyin.',
-      );
+  /** TAG yolcu: /price/calculate + fiyat modalı — Teklif Gönder ve Tam burası sonrası ortak */
+  const runTagPassengerPriceFlow = async (opts: {
+    dropLat: number;
+    dropLng: number;
+    playTapSound: boolean;
+    source: 'call_button' | 'destination_confirm';
+  }) => {
+    if (passengerPriceCalculateInFlightRef.current) return;
+    if (showPriceModal || offerSendSubmitting) {
+      if (opts.source === 'destination_confirm') {
+        try {
+          console.log(
+            'TAG_PRICE_MODAL_AUTO_OPEN',
+            JSON.stringify({ skipped: true, reason: 'modal_or_submitting' }),
+          );
+        } catch {
+          /* noop */
+        }
+      }
       return;
     }
+    if (!Number.isFinite(opts.dropLat) || !Number.isFinite(opts.dropLng)) return;
 
-    setPriceLoading(true);
-    
-    // GPS konumu yoksa önce konum izni iste
-    if (!userLocation) {
-      __paxFn('requestLocationPermission', requestLocationPermission);
-      const granted = await requestLocationPermission();
-      if (!granted) {
-        console.log('[PAX_LOC] requestLocationPermission → denied or false');
-        appAlert(
-          'Konum İzni Gerekli',
-          'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
-          [{ text: 'Tamam' }]
-        );
-        setPriceLoading(false);
+    passengerPriceCalculateInFlightRef.current = true;
+    try {
+      if (opts.playTapSound) playTapSound();
+      if (opts.source === 'destination_confirm') {
+        try {
+          console.log(
+            'TAG_PRICE_MODAL_AUTO_OPEN',
+            JSON.stringify({ phase: 'start', dropLat: opts.dropLat, dropLng: opts.dropLng }),
+          );
+        } catch {
+          /* noop */
+        }
+      }
+
+      setPriceLoading(true);
+
+      if (!userLocation) {
+        __paxFn('requestLocationPermission', requestLocationPermission);
+        const granted = await requestLocationPermission();
+        if (!granted) {
+          console.log('[PAX_LOC] requestLocationPermission → denied or false');
+          appAlert(
+            'Konum İzni Gerekli',
+            'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
+            [{ text: 'Tamam' }],
+          );
+          return;
+        }
+        console.log('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
         return;
       }
-      console.log('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
-      // Konum izni alındı, userLocation güncellenene kadar bekle
-      setPriceLoading(false);
-      return;
-    }
-    
-    const pickupLat = userLocation.latitude;
-    const pickupLng = userLocation.longitude;
-    const dropLat = Number(destination.latitude);
-    const dropLng = Number(destination.longitude);
-    const prefetchKey = makePricePrefetchKey(pickupLat, pickupLng, dropLat, dropLng, rideVehiclePreference);
-    const pf = pricePrefetchRef.current;
-    if (
-      !passengerPostForceEndRef.current &&
-      pf &&
-      pf.key === prefetchKey &&
-      Date.now() - pf.ts < 120_000 &&
-      pf.data &&
-      pf.data.suggested_price != null
-    ) {
-      setPriceInfo(pf.data as any);
-      setSelectedPrice(Number((pf.data as { suggested_price: number }).suggested_price));
-      setShowPriceModal(true);
-      setPriceLoading(false);
-      passengerPostForceEndRef.current = false;
-      return;
-    }
 
-    if (passengerPostForceEndRef.current) {
-      console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', {
-        prefetchKey,
-        pickupLat,
-        pickupLng,
-        dropLat,
-        dropLng,
-      });
-    }
+      const pickupLat = userLocation.latitude;
+      const pickupLng = userLocation.longitude;
+      const prefetchKey = makePricePrefetchKey(pickupLat, pickupLng, opts.dropLat, opts.dropLng, rideVehiclePreference);
+      const pf = pricePrefetchRef.current;
+      if (
+        !passengerPostForceEndRef.current &&
+        pf &&
+        pf.key === prefetchKey &&
+        Date.now() - pf.ts < 120_000 &&
+        pf.data &&
+        pf.data.suggested_price != null
+      ) {
+        setPriceInfo(pf.data as any);
+        setSelectedPrice(Number((pf.data as { suggested_price: number }).suggested_price));
+        setShowPriceModal(true);
+        passengerPostForceEndRef.current = false;
+        if (opts.source === 'destination_confirm') {
+          try {
+            console.log('TAG_PRICE_MODAL_AUTO_OPEN', JSON.stringify({ phase: 'prefetch_hit' }));
+          } catch {
+            /* noop */
+          }
+        }
+        return;
+      }
 
-    try {
+      if (passengerPostForceEndRef.current) {
+        console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', {
+          prefetchKey,
+          pickupLat,
+          pickupLng,
+          dropLat: opts.dropLat,
+          dropLng: opts.dropLng,
+        });
+      }
+
       const response = await fetch(`${API_URL}/price/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
-          dropoff_lat: dropLat,
-          dropoff_lng: dropLng,
+          dropoff_lat: opts.dropLat,
+          dropoff_lng: opts.dropLng,
           passenger_vehicle_kind: rideVehiclePreference,
         }),
       });
@@ -9319,6 +9351,13 @@ function PassengerDashboard({
         pricePrefetchRef.current = { key: prefetchKey, data, ts: Date.now() };
         setShowPriceModal(true);
         passengerPostForceEndRef.current = false;
+        if (opts.source === 'destination_confirm') {
+          try {
+            console.log('TAG_PRICE_MODAL_AUTO_OPEN', JSON.stringify({ phase: 'api_ok' }));
+          } catch {
+            /* noop */
+          }
+        }
       } else {
         console.log('NEW_OFFER_API_ERROR', {
           api: `${API_URL}/price/calculate`,
@@ -9352,8 +9391,33 @@ function PassengerDashboard({
             : 'Fiyat hesaplanamadı. Biraz sonra tekrar deneyin.',
       );
     } finally {
+      passengerPriceCalculateInFlightRef.current = false;
       setPriceLoading(false);
     }
+  };
+
+  // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
+  const handleCallButton = async () => {
+    playTapSound();
+    console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
+
+    // Hedef kontrolü (arama tek başına yetmez; haritadan nokta şart)
+    if (!destination) {
+      appAlert(
+        '⚠️ Hedef gerekli',
+        destinationAwaitingMapTap
+          ? 'Listeden bölgeyi seçtikten sonra haritayı sürükleyin ve "Tam burası" ile onaylayın.'
+          : 'Önce hedef seçin: arama veya harita ile tam konumu belirleyin.',
+      );
+      return;
+    }
+
+    await runTagPassengerPriceFlow({
+      dropLat: Number(destination.latitude),
+      dropLng: Number(destination.longitude),
+      playTapSound: false,
+      source: 'call_button',
+    });
   };
 
   // 🆕 Araç/Motor seçimi değişince fiyatı tekrar hesapla
@@ -9429,197 +9493,205 @@ function PassengerDashboard({
       appAlert('Ödeme seçimi', 'Lütfen nakit veya sanal kart ile ödeyeceğinizi seçin.');
       return;
     }
-
-    setShowPriceModal(false);
+    if (passengerSendOfferInFlightRef.current) return;
+    passengerSendOfferInFlightRef.current = true;
+    setOfferSendSubmitting(true);
     setLoading(true);
 
-    if (!userLocation) {
-      appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
-      setLoading(false);
-      return;
-    }
-
-    const pickupLat = userLocation.latitude;
-    const pickupLng = userLocation.longitude;
-
-    let pickupAddress = 'Mevcut Konumunuz';
     try {
-      const geocodeResult = await Location.reverseGeocodeAsync({
-        latitude: pickupLat,
-        longitude: pickupLng,
-      });
-      if (geocodeResult && geocodeResult.length > 0) {
-        const addr = geocodeResult[0];
-        const parts = [];
-        if (addr.street) parts.push(addr.street);
-        if (addr.district) parts.push(addr.district);
-        if (addr.city) parts.push(addr.city);
-        pickupAddress = parts.length > 0 ? parts.join(', ') : 'Mevcut Konumunuz';
+      if (!userLocation) {
+        appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+        return;
       }
-    } catch (err) {
-      console.log('Reverse geocoding hatası:', err);
-    }
 
-    const generateUUID = () =>
-      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-        const r = (Math.random() * 16) | 0;
-        const v = c === 'x' ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-      });
+      const pickupLat = userLocation.latitude;
+      const pickupLng = userLocation.longitude;
 
-    const tagId = generateUUID();
-    const requestId = generateUUID();
-
-    const dLat = Number(destination.latitude);
-    const dLng = Number(destination.longitude);
-    if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
-      appAlert('Hata', 'Alış veya bırakış koordinatları geçersiz. Haritadan konumu tekrar onaylayın.');
-      setLoading(false);
-      return;
-    }
-
-    const distKm = Number(priceInfo.distance_km ?? priceInfo.trip_distance_km ?? 0);
-    const estMin = Number(priceInfo.estimated_minutes ?? 0);
-    const offerAmt = Math.round(Number(selectedPrice));
-    if (!Number.isFinite(offerAmt) || offerAmt < 1) {
-      appAlert('Hata', 'Geçerli bir fiyat seçin.');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      console.log('CREATE RIDE REQUEST SENT');
-      if (passengerPostForceEndRef.current) {
-        console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', { phase: 'ride_create', userId: user?.id ?? null });
-      }
-      // API_URL = {BACKEND}/api → yol /api/ride/create (çift /api olmaması için /ride/create)
-      const res = await fetch(`${API_URL}/ride/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tag_id: tagId,
-          passenger_id: String(user.id),
-          pickup_lat: pickupLat,
-          pickup_lng: pickupLng,
-          pickup_location: pickupAddress || 'Mevcut konum',
-          passenger_vehicle_kind: rideVehiclePreference,
-          dropoff_lat: dLat,
-          dropoff_lng: dLng,
-          dropoff_location: (destination.address && String(destination.address).trim()) || 'Seçilen hedef',
-          offered_price: offerAmt,
-          distance_km: Number.isFinite(distKm) ? distKm : 0,
-          estimated_minutes: Number.isFinite(estMin) ? Math.max(0, Math.round(estMin)) : 0,
-          passenger_preferred_vehicle: rideVehiclePreference,
-          passenger_payment_method: passengerPaymentPreference,
-        }),
-      });
-      let data: Record<string, unknown> = {};
+      let pickupAddress = 'Mevcut Konumunuz';
       try {
-        data = (await res.json()) as Record<string, unknown>;
-      } catch {
-        throw new Error(`Sunucu yanıtı okunamadı (${res.status})`);
-      }
-      console.log('CREATE RIDE RESPONSE', data);
-      try {
-        console.log(
-          '[normal_ride_create_response]',
-          JSON.stringify({
-            ok: res.ok,
-            tag_id: (data.tag as Record<string, unknown> | undefined)?.id ?? tagId,
-            eligible_driver_count: data.eligible_driver_count ?? null,
-            dispatch_mode: data.dispatch_mode ?? null,
-          }),
-        );
-      } catch {
-        /* noop */
-      }
-
-      const detailRaw = data.detail;
-      const detailStr = Array.isArray(detailRaw)
-        ? (detailRaw as { msg?: string }[])
-            .map((x) => (typeof x?.msg === 'string' ? x.msg : ''))
-            .filter(Boolean)
-            .join('; ')
-        : typeof detailRaw === 'string'
-          ? detailRaw
-          : '';
-
-      if (!res.ok) {
-        const apiErr =
-          (typeof data.error === 'string' && data.error) ||
-          detailStr ||
-          `Sunucu yanıtı ${res.status}`;
-        throw new Error(apiErr);
-      }
-      if (!data.tag) {
-        const apiErr =
-          (typeof data.error === 'string' && data.error) ||
-          detailStr ||
-          'Teklif kaydı oluşturulamadı';
-        throw new Error(apiErr);
-      }
-
-      const serverTag = data.tag as Record<string, unknown>;
-      const srvKm = Number(serverTag.distance_km);
-      const srvMin = Number(serverTag.estimated_minutes);
-      const resolvedTagId = String(serverTag.id ?? tagId);
-      const mergedTag = {
-        ...serverTag,
-        id: resolvedTagId,
-        offered_price: selectedPrice,
-        distance_km: Number.isFinite(srvKm) && srvKm > 0 ? srvKm : priceInfo.distance_km,
-        estimated_minutes:
-          Number.isFinite(srvMin) && srvMin > 0 ? Math.round(srvMin) : priceInfo.estimated_minutes,
-        status: serverTag.status || 'waiting',
-        passenger_payment_method:
-          normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ??
-          passengerPaymentPreference,
-      };
-      setActiveTag(mergedTag as Tag);
-      console.log('[normal-passenger-flow] offer_sent tag_id=', resolvedTagId);
-      console.log('[normal-passenger-flow] waiting_screen=true');
-      setScreen('dashboard');
-      setCurrentRequestId(requestId);
-
-      if (emitCreateTagRequest) {
-        emitCreateTagRequest({
-          request_id: requestId,
-          tag_id: resolvedTagId,
-          passenger_id: user.id,
-          passenger_name: user.name || user.phone,
-          pickup_location: pickupAddress,
-          pickup_lat: pickupLat,
-          pickup_lng: pickupLng,
-          dropoff_location: destination.address,
-          dropoff_lat: destination.latitude,
-          dropoff_lng: destination.longitude,
-          offered_price: selectedPrice,
-          distance_km: mergedTag.distance_km,
-          estimated_minutes: mergedTag.estimated_minutes,
-          passenger_preferred_vehicle: rideVehiclePreference,
-          passenger_vehicle_kind: rideVehiclePreference,
-          passenger_payment_method: passengerPaymentPreference,
+        const geocodeResult = await Location.reverseGeocodeAsync({
+          latitude: pickupLat,
+          longitude: pickupLng,
         });
+        if (geocodeResult && geocodeResult.length > 0) {
+          const addr = geocodeResult[0];
+          const parts = [];
+          if (addr.street) parts.push(addr.street);
+          if (addr.district) parts.push(addr.district);
+          if (addr.city) parts.push(addr.city);
+          pickupAddress = parts.length > 0 ? parts.join(', ') : 'Mevcut Konumunuz';
+        }
+      } catch (err) {
+        console.log('Reverse geocoding hatası:', err);
       }
-      console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
-      passengerPostForceEndRef.current = false;
-    } catch (err) {
-      console.log('Backend kayıt hatası:', err);
-      const raw = err instanceof Error ? err.message : String(err);
-      console.log('NEW_OFFER_API_ERROR', {
-        api: `${API_URL}/ride/create`,
-        phase: 'ride_create_catch',
-        message: raw,
-        afterForceEnd: passengerPostForceEndRef.current,
-      });
-      const message =
-        raw === 'Failed to fetch' || raw.includes('Network request failed')
-          ? 'Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.'
-          : raw.length > 0
-            ? raw
-            : 'Teklif oluşturulamadı';
-      appAlert('Hata', message);
+
+      const generateUUID = () =>
+        'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+
+      const tagId = generateUUID();
+      const requestId = generateUUID();
+
+      const dLat = Number(destination.latitude);
+      const dLng = Number(destination.longitude);
+      if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
+        appAlert('Hata', 'Alış veya bırakış koordinatları geçersiz. Haritadan konumu tekrar onaylayın.');
+        return;
+      }
+
+      const distKm = Number(priceInfo.distance_km ?? priceInfo.trip_distance_km ?? 0);
+      const estMin = Number(priceInfo.estimated_minutes ?? 0);
+      let offerAmt = Math.round(Number(selectedPrice));
+      const bMin = Number(priceInfo.min_price);
+      const bMax = Number(priceInfo.max_price);
+      if (Number.isFinite(bMin) && Number.isFinite(bMax) && bMax >= bMin) {
+        offerAmt = Math.round(Math.min(bMax, Math.max(bMin, offerAmt)));
+      }
+      if (!Number.isFinite(offerAmt) || offerAmt < 1) {
+        appAlert('Hata', 'Geçerli bir fiyat seçin.');
+        return;
+      }
+
+      try {
+        console.log('CREATE RIDE REQUEST SENT');
+        if (passengerPostForceEndRef.current) {
+          console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', { phase: 'ride_create', userId: user?.id ?? null });
+        }
+        // API_URL = {BACKEND}/api → yol /api/ride/create (çift /api olmaması için /ride/create)
+        const res = await fetch(`${API_URL}/ride/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tag_id: tagId,
+            passenger_id: String(user.id),
+            pickup_lat: pickupLat,
+            pickup_lng: pickupLng,
+            pickup_location: pickupAddress || 'Mevcut konum',
+            passenger_vehicle_kind: rideVehiclePreference,
+            dropoff_lat: dLat,
+            dropoff_lng: dLng,
+            dropoff_location: (destination.address && String(destination.address).trim()) || 'Seçilen hedef',
+            offered_price: offerAmt,
+            distance_km: Number.isFinite(distKm) ? distKm : 0,
+            estimated_minutes: Number.isFinite(estMin) ? Math.max(0, Math.round(estMin)) : 0,
+            passenger_preferred_vehicle: rideVehiclePreference,
+            passenger_payment_method: passengerPaymentPreference,
+          }),
+        });
+        let data: Record<string, unknown> = {};
+        try {
+          data = (await res.json()) as Record<string, unknown>;
+        } catch {
+          throw new Error(`Sunucu yanıtı okunamadı (${res.status})`);
+        }
+        console.log('CREATE RIDE RESPONSE', data);
+        try {
+          console.log(
+            '[normal_ride_create_response]',
+            JSON.stringify({
+              ok: res.ok,
+              tag_id: (data.tag as Record<string, unknown> | undefined)?.id ?? tagId,
+              eligible_driver_count: data.eligible_driver_count ?? null,
+              dispatch_mode: data.dispatch_mode ?? null,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+
+        const detailRaw = data.detail;
+        const detailStr = Array.isArray(detailRaw)
+          ? (detailRaw as { msg?: string }[])
+              .map((x) => (typeof x?.msg === 'string' ? x.msg : ''))
+              .filter(Boolean)
+              .join('; ')
+          : typeof detailRaw === 'string'
+            ? detailRaw
+            : '';
+
+        if (!res.ok) {
+          const apiErr =
+            (typeof data.error === 'string' && data.error) ||
+            detailStr ||
+            `Sunucu yanıtı ${res.status}`;
+          throw new Error(apiErr);
+        }
+        if (!data.tag) {
+          const apiErr =
+            (typeof data.error === 'string' && data.error) ||
+            detailStr ||
+            'Teklif kaydı oluşturulamadı';
+          throw new Error(apiErr);
+        }
+
+        const serverTag = data.tag as Record<string, unknown>;
+        const srvKm = Number(serverTag.distance_km);
+        const srvMin = Number(serverTag.estimated_minutes);
+        const resolvedTagId = String(serverTag.id ?? tagId);
+        const mergedTag = {
+          ...serverTag,
+          id: resolvedTagId,
+          offered_price: offerAmt,
+          distance_km: Number.isFinite(srvKm) && srvKm > 0 ? srvKm : priceInfo.distance_km,
+          estimated_minutes:
+            Number.isFinite(srvMin) && srvMin > 0 ? Math.round(srvMin) : priceInfo.estimated_minutes,
+          status: serverTag.status || 'waiting',
+          passenger_payment_method:
+            normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ??
+            passengerPaymentPreference,
+        };
+        setShowPriceModal(false);
+        setActiveTag(mergedTag as Tag);
+        console.log('[normal-passenger-flow] offer_sent tag_id=', resolvedTagId);
+        console.log('[normal-passenger-flow] waiting_screen=true');
+        setScreen('dashboard');
+        setCurrentRequestId(requestId);
+
+        if (emitCreateTagRequest) {
+          emitCreateTagRequest({
+            request_id: requestId,
+            tag_id: resolvedTagId,
+            passenger_id: user.id,
+            passenger_name: user.name || user.phone,
+            pickup_location: pickupAddress,
+            pickup_lat: pickupLat,
+            pickup_lng: pickupLng,
+            dropoff_location: destination.address,
+            dropoff_lat: destination.latitude,
+            dropoff_lng: destination.longitude,
+            offered_price: offerAmt,
+            distance_km: mergedTag.distance_km,
+            estimated_minutes: mergedTag.estimated_minutes,
+            passenger_preferred_vehicle: rideVehiclePreference,
+            passenger_vehicle_kind: rideVehiclePreference,
+            passenger_payment_method: passengerPaymentPreference,
+          });
+        }
+        console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
+        passengerPostForceEndRef.current = false;
+      } catch (err) {
+        console.log('Backend kayıt hatası:', err);
+        const raw = err instanceof Error ? err.message : String(err);
+        console.log('NEW_OFFER_API_ERROR', {
+          api: `${API_URL}/ride/create`,
+          phase: 'ride_create_catch',
+          message: raw,
+          afterForceEnd: passengerPostForceEndRef.current,
+        });
+        const message =
+          raw === 'Failed to fetch' || raw.includes('Network request failed')
+            ? 'Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.'
+            : raw.length > 0
+              ? raw
+              : 'Teklif oluşturulamadı';
+        appAlert('Hata', message);
+      }
     } finally {
+      passengerSendOfferInFlightRef.current = false;
+      setOfferSendSubmitting(false);
       setLoading(false);
     }
   };
@@ -9995,7 +10067,12 @@ function PassengerDashboard({
   };
 
   /** Haritadan kesin nokta — hedef geçerli; modal kapanır */
-  const commitDestinationFromMap = async (address: string, lat: number, lng: number) => {
+  const commitDestinationFromMap = async (
+    address: string,
+    lat: number,
+    lng: number,
+    opts?: { autoOpenTagPriceFlow?: boolean },
+  ) => {
     const newDestination = { address, latitude: lat, longitude: lng };
     setDestination(newDestination);
     setDestinationAwaitingMapTap(false);
@@ -10024,6 +10101,28 @@ function PassengerDashboard({
         appAlert('Hata', 'Hedef güncellenemedi');
       }
     }
+
+    const shouldAutoPrice = !!opts?.autoOpenTagPriceFlow && !activeTag;
+    if (shouldAutoPrice) {
+      try {
+        console.log(
+          'TAG_DESTINATION_CONFIRMED',
+          JSON.stringify({
+            lat: Number(lat.toFixed(5)),
+            lng: Number(lng.toFixed(5)),
+            auto_price: true,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      await runTagPassengerPriceFlow({
+        dropLat: lat,
+        dropLng: lng,
+        playTapSound: false,
+        source: 'destination_confirm',
+      });
+    }
   };
 
   /** Arama: yalnızca bölge — haritaya odaklanır; hedef geçerli sayılmaz */
@@ -10038,11 +10137,9 @@ function PassengerDashboard({
     void tapButtonHaptic();
     /** GMS yok (Huawei vb.): MapView mount = crash; arama sonucunu doğrudan hedef kabul et */
     if (!isNativeGoogleMapsSupported()) {
-      void commitDestinationFromMap(
-        place.address,
-        place.latitude,
-        place.longitude,
-      );
+      void commitDestinationFromMap(place.address, place.latitude, place.longitude, {
+        autoOpenTagPriceFlow: true,
+      });
       return;
     }
     setDestination(null);
@@ -10189,7 +10286,7 @@ function PassengerDashboard({
 
     try {
       __paxFn('commitDestinationFromMap', commitDestinationFromMap);
-      await commitDestinationFromMap(address, latitude, longitude);
+      await commitDestinationFromMap(address, latitude, longitude, { autoOpenTagPriceFlow: true });
     } finally {
       setDestinationPickerGeocoding(false);
     }
@@ -10464,217 +10561,282 @@ function PassengerDashboard({
               visible={showPriceModal}
               transparent={true}
               animationType="slide"
-              onRequestClose={() => setShowPriceModal(false)}
+              onRequestClose={() => {
+                if (!offerSendSubmitting) setShowPriceModal(false);
+              }}
             >
               <View style={styles.priceModalOverlay}>
-                <View style={styles.priceModalContent}>
+                <View
+                  style={[styles.priceModalContent, { maxHeight: priceModalSheetMaxHeight }]}
+                >
                   <Text style={styles.priceModalTitle}>Fiyat teklifiniz</Text>
-                  
+
                   {priceInfo && (
                     <>
-                      <Text style={styles.priceModalVehicleSectionTitle}>Bu teklif için araç türü</Text>
-                      <Text style={styles.priceModalVehicleHint}>
-                        Rol ekranındaki seçiminiz burada seçili gelir; göndermeden önce isteğe göre değiştirebilirsiniz.
-                      </Text>
-                      <View style={styles.priceModalVehicleChipsRow}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            void tapButtonHaptic();
-                            setRideVehiclePreference('car');
-                            void recalcPrice('car');
-                          }}
-                          style={[
-                            styles.priceModalVehicleChip,
-                            rideVehiclePreference === 'car' && styles.priceModalVehicleChipCarActive,
-                          ]}
-                          activeOpacity={0.88}
-                        >
-                          <MaterialCommunityIcons
-                            name="car-side"
-                            size={22}
-                            color={rideVehiclePreference === 'car' ? '#FFF' : '#1D4ED8'}
-                          />
-                          <Text
+                      <ScrollView
+                        style={{ maxHeight: priceModalScrollMaxHeight }}
+                        contentContainerStyle={styles.priceModalScrollInner}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                      >
+                        <Text style={styles.priceModalVehicleSectionTitle}>
+                          Bu teklif için araç türü
+                        </Text>
+                        <Text style={styles.priceModalVehicleHint}>
+                          Araç türünüzü seçin, teklifinizi belirleyin.
+                        </Text>
+                        <View style={styles.priceModalVehicleChipsRow}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setRideVehiclePreference('car');
+                              void recalcPrice('car');
+                            }}
                             style={[
-                              styles.priceModalVehicleChipText,
-                              rideVehiclePreference === 'car' && styles.priceModalVehicleChipTextActive,
+                              styles.priceModalVehicleChip,
+                              rideVehiclePreference === 'car' && styles.priceModalVehicleChipCarActive,
                             ]}
+                            activeOpacity={0.88}
                           >
-                            Araç
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => {
-                            void tapButtonHaptic();
-                            setRideVehiclePreference('motorcycle');
-                            void recalcPrice('motorcycle');
-                          }}
-                          style={[
-                            styles.priceModalVehicleChip,
-                            rideVehiclePreference === 'motorcycle' && styles.priceModalVehicleChipMotorActive,
-                          ]}
-                          activeOpacity={0.88}
-                        >
-                          <MaterialCommunityIcons
-                            name="motorbike"
-                            size={22}
-                            color={rideVehiclePreference === 'motorcycle' ? '#FFF' : '#6D28D9'}
-                          />
-                          <Text
-                            style={[
-                              styles.priceModalVehicleChipText,
-                              rideVehiclePreference === 'motorcycle' && styles.priceModalVehicleChipTextActive,
-                            ]}
-                          >
-                            Motor
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      <View style={styles.priceInfoRow}>
-                        <Text style={styles.priceInfoLabel}>Mesafe:</Text>
-                        <Text style={styles.priceInfoValue}>{priceInfo.distance_km} km</Text>
-                      </View>
-                      <View style={styles.priceInfoRow}>
-                        <Text style={styles.priceInfoLabel}>Tahmini Süre:</Text>
-                        <Text style={styles.priceInfoValue}>{priceInfo.estimated_minutes} dk</Text>
-                      </View>
-                      {priceInfo.is_peak_hour && (
-                        <View style={styles.peakHourBadge}>
-                          <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
-                        </View>
-                      )}
-                      
-                      <View style={styles.priceRangeContainer}>
-                        <Text style={styles.priceRangeLabel}>Fiyat Aralığı:</Text>
-                        <Text style={styles.priceRangeValue}>{priceInfo.min_price} - {priceInfo.max_price} TL</Text>
-                      </View>
-                      
-                      <View style={styles.selectedPriceContainer}>
-                        <Text style={styles.selectedPriceLabel}>Teklifiniz:</Text>
-                        <Text style={styles.selectedPriceValue}>{selectedPrice} TL</Text>
-                      </View>
-                      
-                      {/* Slider */}
-                      <View style={styles.sliderContainer}>
-                        <TouchableOpacity 
-                          style={styles.sliderButton}
-                          onPress={() => { void tapButtonHaptic(); setSelectedPrice(Math.max(priceInfo.min_price, selectedPrice - 5)); }}
-                        >
-                          <Text style={styles.sliderButtonText}>-5</Text>
-                        </TouchableOpacity>
-                        
-                        <View style={styles.sliderTrack}>
-                          <View 
-                            style={[
-                              styles.sliderFill, 
-                              { width: `${((selectedPrice - priceInfo.min_price) / (priceInfo.max_price - priceInfo.min_price)) * 100}%` }
-                            ]} 
-                          />
-                        </View>
-                        
-                        <TouchableOpacity 
-                          style={styles.sliderButton}
-                          onPress={() => { void tapButtonHaptic(); setSelectedPrice(Math.min(priceInfo.max_price, selectedPrice + 5)); }}
-                        >
-                          <Text style={styles.sliderButtonText}>+5</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      <Text style={styles.priceModalPaySectionTitle}>Yol paylaşımını nasıl ödeyeceksiniz?</Text>
-                      <Text style={styles.priceModalPayHint}>
-                        Sürücü teklif ve eşleşme ekranında bu seçimi görecek.
-                      </Text>
-                      <View style={styles.priceModalPayChipsRow}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            void tapButtonHaptic();
-                            setPassengerPaymentPreference('cash');
-                          }}
-                          style={[
-                            styles.priceModalPayChip,
-                            passengerPaymentPreference === 'cash' && styles.priceModalPayChipCashActive,
-                          ]}
-                          activeOpacity={0.88}
-                        >
-                          <Ionicons
-                            name="cash-outline"
-                            size={22}
-                            color={passengerPaymentPreference === 'cash' ? '#FFF' : '#047857'}
-                          />
-                          <Text
-                            style={[
-                              styles.priceModalPayChipText,
-                              passengerPaymentPreference === 'cash' && styles.priceModalVehicleChipTextActive,
-                            ]}
-                          >
-                            Nakit
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => {
-                            void tapButtonHaptic();
-                            setPassengerPaymentPreference('card');
-                          }}
-                          style={[
-                            styles.priceModalPayChip,
-                            passengerPaymentPreference === 'card' && styles.priceModalPayChipCardActive,
-                          ]}
-                          activeOpacity={0.88}
-                        >
-                          <Ionicons
-                            name="card-outline"
-                            size={22}
-                            color={passengerPaymentPreference === 'card' ? '#FFF' : '#1D4ED8'}
-                          />
-                          <Text
-                            style={[
-                              styles.priceModalPayChipText,
-                              passengerPaymentPreference === 'card' && styles.priceModalVehicleChipTextActive,
-                            ]}
-                          >
-                            Sanal kart
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                      
-                      <View style={styles.priceModalButtons}>
-                        <TouchableOpacity 
-                          style={styles.priceModalCancelButton}
-                          onPress={() => { void tapButtonHaptic(); setShowPriceModal(false); }}
-                        >
-                          <Text style={styles.priceModalCancelText}>İptal</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity
-                          style={[
-                            styles.priceModalSendWrap,
-                            !passengerPaymentPreference && styles.priceModalSendWrapDisabled,
-                          ]}
-                          activeOpacity={passengerPaymentPreference ? 0.88 : 1}
-                          disabled={!passengerPaymentPreference}
-                          onPress={() => {
-                            if (!passengerPaymentPreference) return;
-                            void tapButtonHaptic();
-                            handleSendPriceOffer();
-                          }}
-                        >
-                          <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
-                            <LinearGradient
-                              colors={
-                                passengerPaymentPreference
-                                  ? ['#0EA5E9', '#2563EB', '#1D4ED8']
-                                  : ['#94A3B8', '#64748B']
-                              }
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 1 }}
-                              style={styles.priceModalSendGradient}
+                            <MaterialCommunityIcons
+                              name="car-side"
+                              size={22}
+                              color={rideVehiclePreference === 'car' ? '#FFF' : '#1D4ED8'}
+                            />
+                            <Text
+                              style={[
+                                styles.priceModalVehicleChipText,
+                                rideVehiclePreference === 'car' && styles.priceModalVehicleChipTextActive,
+                              ]}
                             >
-                              <MaterialCommunityIcons name="rocket-launch-outline" size={28} color="#FFF" />
-                              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={styles.priceModalSendTextLarge}>Teklif Gönder</Text>
-                            </LinearGradient>
-                          </Animated.View>
-                        </TouchableOpacity>
+                              Araç
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setRideVehiclePreference('motorcycle');
+                              void recalcPrice('motorcycle');
+                            }}
+                            style={[
+                              styles.priceModalVehicleChip,
+                              rideVehiclePreference === 'motorcycle' &&
+                                styles.priceModalVehicleChipMotorActive,
+                            ]}
+                            activeOpacity={0.88}
+                          >
+                            <MaterialCommunityIcons
+                              name="motorbike"
+                              size={22}
+                              color={rideVehiclePreference === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                            />
+                            <Text
+                              style={[
+                                styles.priceModalVehicleChipText,
+                                rideVehiclePreference === 'motorcycle' &&
+                                  styles.priceModalVehicleChipTextActive,
+                              ]}
+                            >
+                              Motor
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.priceModalTripCompact}>
+                          {priceInfo.distance_km} km • {priceInfo.estimated_minutes} dk
+                        </Text>
+                        {priceInfo.is_peak_hour && (
+                          <View style={styles.peakHourBadge}>
+                            <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
+                          </View>
+                        )}
+
+                        <View style={styles.priceRangeContainer}>
+                          <Text style={styles.priceRangeSingle}>
+                            Önerilen aralık: {priceInfo.min_price} - {priceInfo.max_price} TL
+                          </Text>
+                        </View>
+
+                        <View style={styles.selectedPriceContainer}>
+                          <Text style={styles.selectedPriceLabel}>Teklifiniz:</Text>
+                          <Text
+                            style={[
+                              styles.selectedPriceValue,
+                              { fontSize: priceModalHeroFontSize },
+                            ]}
+                          >
+                            {selectedPrice} TL
+                          </Text>
+                        </View>
+
+                        <View style={styles.sliderContainer}>
+                          <TouchableOpacity
+                            style={styles.sliderButton}
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setSelectedPrice(
+                                Math.max(priceInfo.min_price, selectedPrice - 10),
+                              );
+                            }}
+                          >
+                            <Text style={styles.sliderButtonText}>-10</Text>
+                          </TouchableOpacity>
+
+                          <View style={styles.sliderTrack}>
+                            <View
+                              style={[
+                                styles.sliderFill,
+                                {
+                                  width: `${
+                                    priceInfo.max_price > priceInfo.min_price
+                                      ? Math.max(
+                                          0,
+                                          Math.min(
+                                            100,
+                                            ((selectedPrice - priceInfo.min_price) /
+                                              (priceInfo.max_price - priceInfo.min_price)) *
+                                              100,
+                                          ),
+                                        )
+                                      : 100
+                                  }%`,
+                                },
+                              ]}
+                            />
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.sliderButton}
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setSelectedPrice(
+                                Math.min(priceInfo.max_price, selectedPrice + 10),
+                              );
+                            }}
+                          >
+                            <Text style={styles.sliderButtonText}>+10</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.priceModalPaySectionTitle}>Ödeme yöntemi</Text>
+                        <View style={styles.priceModalPaySegment}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setPassengerPaymentPreference('cash');
+                            }}
+                            style={[
+                              styles.priceModalPaySegmentItem,
+                              passengerPaymentPreference === 'cash' &&
+                                styles.priceModalPaySegmentItemActive,
+                            ]}
+                            activeOpacity={0.88}
+                          >
+                            <Ionicons
+                              name="cash-outline"
+                              size={20}
+                              color={
+                                passengerPaymentPreference === 'cash' ? '#047857' : '#64748B'
+                              }
+                            />
+                            <Text
+                              style={[
+                                styles.priceModalPaySegmentText,
+                                passengerPaymentPreference === 'cash' &&
+                                  styles.priceModalPaySegmentTextActive,
+                              ]}
+                            >
+                              Nakit
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setPassengerPaymentPreference('card');
+                            }}
+                            style={[
+                              styles.priceModalPaySegmentItem,
+                              passengerPaymentPreference === 'card' &&
+                                styles.priceModalPaySegmentItemActive,
+                            ]}
+                            activeOpacity={0.88}
+                          >
+                            <Ionicons
+                              name="card-outline"
+                              size={20}
+                              color={
+                                passengerPaymentPreference === 'card' ? '#1D4ED8' : '#64748B'
+                              }
+                            />
+                            <Text
+                              style={[
+                                styles.priceModalPaySegmentText,
+                                passengerPaymentPreference === 'card' &&
+                                  styles.priceModalPaySegmentTextActive,
+                              ]}
+                            >
+                              Sanal kart
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </ScrollView>
+
+                      <View style={[styles.priceModalFooter, { paddingBottom: Math.max(12, insets.bottom) }]}>
+                        <View style={styles.priceModalButtons}>
+                          <TouchableOpacity
+                            style={styles.priceModalCancelButton}
+                            disabled={offerSendSubmitting}
+                            onPress={() => {
+                              if (offerSendSubmitting) return;
+                              void tapButtonHaptic();
+                              setShowPriceModal(false);
+                            }}
+                          >
+                            <Text style={styles.priceModalCancelText}>İptal</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.priceModalSendWrap,
+                              (!passengerPaymentPreference || offerSendSubmitting) &&
+                                styles.priceModalSendWrapDisabled,
+                            ]}
+                            activeOpacity={
+                              passengerPaymentPreference && !offerSendSubmitting ? 0.88 : 1
+                            }
+                            disabled={!passengerPaymentPreference || offerSendSubmitting}
+                            onPress={() => {
+                              if (!passengerPaymentPreference || offerSendSubmitting) return;
+                              void tapButtonHaptic();
+                              handleSendPriceOffer();
+                            }}
+                          >
+                            <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
+                              <LinearGradient
+                                colors={
+                                  passengerPaymentPreference && !offerSendSubmitting
+                                    ? ['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']
+                                    : ['#94A3B8', '#64748B']
+                                }
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.priceModalSendGradient}
+                              >
+                                <MaterialCommunityIcons
+                                  name="rocket-launch-outline"
+                                  size={28}
+                                  color="#FFF"
+                                />
+                                <Text
+                                  maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE}
+                                  style={styles.priceModalSendTextLarge}
+                                >
+                                  {offerSendSubmitting ? 'Gönderiliyor...' : 'Teklif Gönder'}
+                                </Text>
+                              </LinearGradient>
+                            </Animated.View>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </>
                   )}
@@ -11566,7 +11728,7 @@ function PassengerDashboard({
                 <KeyboardAvoidingView
                   behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                   style={styles.destinationKeyboardAvoid}
-                  keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+                  keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 20}
                 >
                   <View style={styles.destinationFloatingPanel} pointerEvents="auto">
                     <Animated.View
@@ -11590,13 +11752,14 @@ function PassengerDashboard({
                         city={passengerSearchCityLabel || user?.city || ''}
                         hidePopularChips
                         visualVariant="tech"
-                        suggestionsFirst={false}
+                        suggestionsFirst
                         strictCityBounds={!!(passengerSearchCityLabel || user?.city || '').trim()}
                         biasLatitude={userLocation?.latitude}
                         biasLongitude={userLocation?.longitude}
                         biasDeltaDeg={0.22}
                         inputSize="large"
                         predictionMaxHeightBonus={56}
+                        forceCityInSearch={!!(passengerSearchCityLabel || user?.city || '').trim()}
                         replayOnBiasChange
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
                       />
@@ -12083,8 +12246,9 @@ interface DriverDashboardProps {
   onShowTripEndedBanner?: (message: string) => void;
 }
 
-/** Rolling `remove_offer`: kart en az bu kadar ms görünsün (dalga geçişinde titreşimi keser). */
-const DRIVER_OFFER_MIN_VISIBLE_MS = 30_000;
+/** Rolling `remove_offer`: önceki ~30s min-visible kaldırıldı; eşleşme/revoke hızlı kalkmalı. */
+/** Socket `remove_offer` / soft revoke: log üst sınır referansı (gerçek gecikme schedule içinde 0). */
+const DRIVER_OFFER_SOFT_REMOVE_MAX_MS = 1_200;
 
 /** Sürücü match overlay: yalnız bu önceki tag status’larından `matched`’e geçişte göster (hydrate/resume değil) */
 const DRIVER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
@@ -12105,6 +12269,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       .filter(Boolean);
   const driverOfferFirstShownAtRef = useRef<Record<string, number>>({});
   const driverRemoveOfferTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** POST /driver/accept-offer süresince polling prune bu tag'ı elleme */
+  const driverPendingAcceptTagIdsRef = useRef<Set<string>>(new Set());
+  /** dispatch-pending ile eklendi; bir sonraki driver/requests'ta yoksa kısa süre koru */
+  const driverDispatchProtectedTagIdsRef = useRef<Set<string>>(new Set());
   const clearDriverRemoveOfferTimer = (tagKey: string) => {
     const k = String(tagKey);
     const t = driverRemoveOfferTimersRef.current[k];
@@ -12118,6 +12286,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       clearDriverRemoveOfferTimer(k);
     }
     driverOfferFirstShownAtRef.current = {};
+    driverPendingAcceptTagIdsRef.current.clear();
+    driverDispatchProtectedTagIdsRef.current.clear();
   };
   useEffect(() => {
     return () => {
@@ -12129,7 +12299,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     };
   }, []);
 
-  /** Tüm soft offer kaldırmaları: kart en az DRIVER_OFFER_MIN_VISIBLE_MS kalsın. */
+  /** Soft offer kaldırma: revoke/matched durumunda gecikme üst sınırı (30s değil). */
   function scheduleDriverOfferRemovalAfterMinVisible(
     tagId: string,
     source: string,
@@ -12142,7 +12312,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       driverOfferFirstShownAtRef.current[tagKey] = Date.now();
     }
     const t0 = driverOfferFirstShownAtRef.current[tagKey];
-    const delay = Math.max(0, DRIVER_OFFER_MIN_VISIBLE_MS - (Date.now() - t0));
+    /** Anında kaldır: önceki 30s bekleme kaybı; üst sınır istenirse 0 yerine küçük bir sabit kullanılabilir. */
+    const delay = 0;
     try {
       console.log(
         JSON.stringify({
@@ -12150,7 +12321,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           kind: 'soft_scheduled',
           tag_id: tagKey,
           delay_ms: delay,
-          min_visible_ms: DRIVER_OFFER_MIN_VISIBLE_MS,
+          soft_remove_max_ms: DRIVER_OFFER_SOFT_REMOVE_MAX_MS,
+          first_shown_ms_ago: Date.now() - t0,
           source,
           request_id: request_id ?? null,
           revoke_reason: revoke_reason ?? null,
@@ -12199,6 +12371,36 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       delete driverOfferFirstShownAtRef.current[tagKey];
     }, delay);
   }
+
+  const handleDriverAcceptFlowStart = useCallback((tagId: string) => {
+    const t = String(tagId || '').trim();
+    if (t) driverPendingAcceptTagIdsRef.current.add(t);
+  }, []);
+
+  const handleDriverAcceptFlowEnd = useCallback((tagId: string) => {
+    const t = String(tagId || '').trim();
+    if (t) driverPendingAcceptTagIdsRef.current.delete(t);
+  }, []);
+
+  const handleDriverOfferUnavailable = useCallback((info: { tagId: string; requestId?: string }) => {
+    const tid = String(info.tagId || '').trim();
+    if (!tid) return;
+    const rid = String(info.requestId || '').trim();
+    clearDriverRemoveOfferTimer(tid);
+    driverPendingAcceptTagIdsRef.current.delete(tid);
+    driverDispatchProtectedTagIdsRef.current.delete(tid);
+    delete driverOfferFirstShownAtRef.current[tid];
+    setRequests((prev) =>
+      prev.filter((r) => {
+        const id = String(r.id || '').trim();
+        const tag = String(r.tag_id || '').trim();
+        const rq = String(r.request_id || '').trim();
+        if (rid && rq === rid) return false;
+        if (id === tid || tag === tid) return false;
+        return true;
+      }),
+    );
+  }, []);
 
   const driverDataPollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -13960,19 +14162,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const vis = merged
           .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
           .filter(Boolean);
-        try {
-          console.log(
-            JSON.stringify({
-              evt: 'DRIVER_OFFER_LIST_AFTER_SET',
-              source: 'loadDispatchPendingOffer_append',
-              requests_len: merged.length,
-              visible_request_ids: vis,
-            }),
-          );
-        } catch {
-          /* noop */
-        }
-        return merged;
+      try {
+        console.log(
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+            source: 'loadDispatchPendingOffer_append',
+            requests_len: merged.length,
+            visible_request_ids: vis,
+            dispatch_protect_tag_id: String(data.tag_id || ''),
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      driverDispatchProtectedTagIdsRef.current.add(String(data.tag_id || '').trim());
+      return merged;
       });
     } catch (e) {
       console.warn('dispatch-pending-offer:', e);
@@ -14415,15 +14619,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       if (!data?.success || !Array.isArray(data.requests)) return;
 
       setRequests((prev) => {
-        const existing = new Set(
-          prev
-            .map((r) => String(r.id || r.tag_id || r.request_id || '').trim())
-            .filter(Boolean),
-        );
-        const additions: any[] = [];
-        for (const raw of data.requests as Record<string, unknown>[]) {
+        const serverList = data.requests as Record<string, unknown>[];
+
+        const rowFromPollRaw = (raw: Record<string, unknown>): { id: string; row: any } | null => {
           const id = String(raw.id ?? '').trim();
-          if (!id || existing.has(id)) continue;
+          if (!id) return null;
 
           const pvkSocket = raw.passenger_vehicle_kind ?? raw.passenger_preferred_vehicle;
           if (pvkSocket !== undefined && pvkSocket !== null && String(pvkSocket).trim() !== '') {
@@ -14535,28 +14735,64 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
           }
 
-          existing.add(id);
-          additions.push(row);
+          return { id, row };
+        };
+
+        const serverById = new Map<string, any>();
+        const orderedIds: string[] = [];
+        for (const raw of serverList) {
+          const built = rowFromPollRaw(raw);
+          if (!built) continue;
+          if (!serverById.has(built.id)) {
+            orderedIds.push(built.id);
+          }
+          serverById.set(built.id, built.row);
         }
-        if (additions.length === 0) return prev;
-        const merged = [...prev, ...additions];
-        const vis = merged
-          .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
-          .filter(Boolean);
+
+        for (const sid of serverById.keys()) {
+          driverDispatchProtectedTagIdsRef.current.delete(sid);
+        }
+
+        const pending = driverPendingAcceptTagIdsRef.current;
+        const dispProtect = driverDispatchProtectedTagIdsRef.current;
+
+        const next: any[] = [];
+        const seen = new Set<string>();
+
+        for (const id of orderedIds) {
+          const row = serverById.get(id);
+          if (row) {
+            next.push(row);
+            seen.add(id);
+          }
+        }
+
+        for (const r of prev) {
+          const pid = String(r.id || r.tag_id || r.request_id || '').trim();
+          if (!pid || seen.has(pid)) continue;
+          if (pending.has(pid) || dispProtect.has(pid)) {
+            next.push(r);
+            seen.add(pid);
+          }
+        }
+
         try {
           console.log(
             JSON.stringify({
               evt: 'DRIVER_OFFER_LIST_AFTER_SET',
-              source: 'loadRequests_append',
-              added: additions.length,
-              requests_len: merged.length,
-              visible_request_ids: vis,
+              source: 'loadRequests_merge_prune',
+              requests_len: next.length,
+              server_request_count: serverById.size,
+              kept_only_local: next.length - orderedIds.length,
+              visible_request_ids: next
+                .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+                .filter(Boolean),
             }),
           );
         } catch {
           /* noop */
         }
-        return merged;
+        return next;
       });
     } catch (e) {
       console.warn('driver/requests:', e);
@@ -15091,6 +15327,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               driverRating={user.rating ?? 4.0}
               onSendOffer={sendOfferInstant}
               onDismissRequest={handleDismissRequest}
+              onAcceptFlowStart={handleDriverAcceptFlowStart}
+              onAcceptFlowEnd={handleDriverAcceptFlowEnd}
+              onOfferUnavailable={handleDriverOfferUnavailable}
               onDriverAcceptMatch={(match) => {
                 const data = match as Record<string, unknown>;
                 clearAllDriverOfferRemovalState();
@@ -16836,14 +17075,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  priceModalScrollInner: {
+    paddingBottom: 8,
+  },
+  priceModalFooter: {
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
   },
   priceModalTitle: {
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     color: '#0F172A',
     letterSpacing: -0.3,
   },
@@ -16851,12 +17099,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   priceModalVehicleChipsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   priceModalVehicleChip: {
     flex: 1,
@@ -16888,54 +17136,58 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   priceModalVehicleHint: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 12,
-    lineHeight: 17,
-  },
-  priceModalPaySectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-    marginTop: 4,
-  },
-  priceModalPayHint: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748B',
     marginBottom: 10,
-    lineHeight: 17,
+    lineHeight: 18,
   },
-  priceModalPayChipsRow: {
+  priceModalTripCompact: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  priceModalPaySectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  priceModalPaySegment: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+    marginBottom: 4,
   },
-  priceModalPayChip: {
+  priceModalPaySegmentItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: '#E2E8F0',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 11,
   },
-  priceModalPayChipCashActive: {
-    backgroundColor: '#059669',
-    borderColor: '#047857',
+  priceModalPaySegmentItemActive: {
+    backgroundColor: '#FFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  priceModalPayChipCardActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#1D4ED8',
-  },
-  priceModalPayChipText: {
-    fontSize: 15,
+  priceModalPaySegmentText: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#475569',
+    color: '#64748B',
+  },
+  priceModalPaySegmentTextActive: {
+    color: '#0F172A',
   },
   priceModalSendWrapDisabled: {
     opacity: 0.72,
@@ -16970,45 +17222,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   priceRangeContainer: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
-    padding: 16,
-    marginVertical: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginVertical: 10,
     alignItems: 'center',
   },
-  priceRangeLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  priceRangeValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1B1B1E',
+  priceRangeSingle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'center',
   },
   selectedPriceContainer: {
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: 10,
   },
   selectedPriceLabel: {
     fontSize: 14,
     color: '#666',
   },
   selectedPriceValue: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#87CEEB',
+    fontWeight: '800',
+    color: '#0EA5E9',
+    letterSpacing: -1,
   },
   sliderContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: 12,
   },
   sliderButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#87CEEB',
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    backgroundColor: '#0EA5E9',
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -17027,12 +17276,12 @@ const styles = StyleSheet.create({
   },
   sliderFill: {
     height: '100%',
-    backgroundColor: '#87CEEB',
+    backgroundColor: '#0EA5E9',
     borderRadius: 4,
   },
   priceModalButtons: {
     flexDirection: 'row',
-    marginTop: 20,
+    marginTop: 0,
     gap: 12,
     alignItems: 'center',
   },
@@ -17059,17 +17308,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 16,
     gap: 10,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    elevation: 12,
   },
   priceModalSendTextLarge: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFF',
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
   },
   // 🆕 Eşleşme Sağlanıyor Stili
   matchingOverlay: {

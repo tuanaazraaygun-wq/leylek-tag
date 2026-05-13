@@ -24,6 +24,11 @@ const REQUESTER_TRUST_POLL_MAX_MS = 48000;
 /** Güven görüşmesi UI açıkken trust_session_ended kaçsa bile GET /trust/active ile düşük frekanslı doğrulama */
 const TRUST_VIDEO_ACTIVE_POLL_MS = 2600;
 
+/** Gelen pending güven isteği: socket kaçsa / tag geç hydrate olsa bile GET /trust/active ile toparla */
+const INCOMING_PENDING_TRUST_RECOVERY_INTERVAL_MS = 5200;
+
+const ACTIVE_TAG_INCOMING_RECOVERY_DELAY_MS = 420;
+
 function normTrustId(v: unknown): string {
   return String(v ?? '')
     .trim()
@@ -117,6 +122,7 @@ export function useTrustSessionController({
   const outboundTrustIdRef = useRef<string | null>(null);
   const sendInFlightRef = useRef(false);
   const recoveryInFlightRef = useRef(false);
+  const incomingPendingRecoveryInFlightRef = useRef(false);
   const trustVideoActivePollInFlightRef = useRef(false);
   const openChatRef = useRef(openChatForMatchedTrip);
   openChatRef.current = openChatForMatchedTrip;
@@ -219,6 +225,275 @@ export function useTrustSessionController({
         : displayFirstName(tagSnap?.driver_name, 'Sürücü');
     },
     [role],
+  );
+
+  /** Socket kaçınca / tag geç hydrate: GET /trust/active ile pending + ben target_id isem modal (veya defer). */
+  const recoverIncomingPendingTrust = useCallback(
+    async (opts: { source: string; tagIdOverride?: string | null }) => {
+      const uidRaw = userId?.trim();
+      const tagFromRef = activeTagIdRef.current?.trim() || '';
+      const tagForQuery = (opts.tagIdOverride?.trim() || tagFromRef || '').trim();
+      if (!uidRaw || !tagForQuery) {
+        try {
+          console.log(
+            'TRUST_PENDING_RECOVERY_SKIP',
+            JSON.stringify({ source: opts.source, reason: 'missing_tag_or_user' }),
+          );
+        } catch {
+          /* noop */
+        }
+        return;
+      }
+      if (boardingCommsClosed) {
+        try {
+          console.log(
+            'TRUST_PENDING_RECOVERY_SKIP',
+            JSON.stringify({ source: opts.source, reason: 'boarding_comms_closed_prop' }),
+          );
+        } catch {
+          /* noop */
+        }
+        return;
+      }
+      if (incomingPendingRecoveryInFlightRef.current) {
+        try {
+          console.log(
+            'TRUST_PENDING_RECOVERY_SKIP',
+            JSON.stringify({ source: opts.source, reason: 'already_in_flight' }),
+          );
+        } catch {
+          /* noop */
+        }
+        return;
+      }
+      if (trustVideoSessionRef.current) {
+        try {
+          console.log(
+            'TRUST_PENDING_RECOVERY_SKIP',
+            JSON.stringify({ source: opts.source, reason: 'trust_video_active' }),
+          );
+        } catch {
+          /* noop */
+        }
+        return;
+      }
+
+      const uidLo = normTrustId(uidRaw);
+      try {
+        console.log(
+          'TRUST_PENDING_RECOVERY_CHECK',
+          JSON.stringify({
+            source: opts.source,
+            tag_for_query: tagForQuery,
+            role,
+            has_tag_override: !!opts.tagIdOverride?.trim(),
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+
+      incomingPendingRecoveryInFlightRef.current = true;
+      try {
+        const requestedTag = tagForQuery.toLowerCase();
+        const r = await getTrustActive(tagForQuery);
+
+        if (trustVideoSessionRef.current) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({ source: opts.source, reason: 'trust_video_race_after_fetch' }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        if (!r?.success || !r.session) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({ source: opts.source, reason: 'no_session' }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        const s = r.session as TrustActiveSessionRow;
+        const rowTagLo = normTrustId(s.tag_id ?? '');
+        if (!rowTagLo || rowTagLo !== requestedTag) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({
+                source: opts.source,
+                reason: 'session_tag_mismatch',
+                row_tag: rowTagLo || null,
+                requested: requestedTag,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        const curAfter = activeTagIdRef.current?.trim().toLowerCase() || '';
+        if (!opts.tagIdOverride?.trim()) {
+          if (curAfter !== requestedTag) {
+            try {
+              console.log(
+                'TRUST_PENDING_RECOVERY_SKIP',
+                JSON.stringify({
+                  source: opts.source,
+                  reason: 'active_tag_changed_during_fetch',
+                  curAfter: curAfter || null,
+                  requested: requestedTag,
+                }),
+              );
+            } catch {
+              /* noop */
+            }
+            return;
+          }
+        } else if (curAfter && curAfter !== rowTagLo) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({
+                source: opts.source,
+                reason: 'active_tag_mismatch_after_fetch_override',
+                curAfter,
+                rowTagLo,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        const st = String(s.status ?? '').trim().toLowerCase();
+        if (st !== 'pending') {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({ source: opts.source, reason: 'not_pending', status: st || null }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        const targetLo = normTrustId(s.target_id);
+        if (!targetLo || targetLo !== uidLo) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({ source: opts.source, reason: 'not_target' }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        const trustId = String(s.id ?? '').trim();
+        if (!trustId) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({ source: opts.source, reason: 'missing_trust_id' }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        if (normTrustId(trustRequestModalRef.current?.trustId) === normTrustId(trustId)) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({ source: opts.source, reason: 'modal_already_same_trust', trust_id: trustId }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        if (activeTagRef.current?.boarding_confirmed_at) {
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_SKIP',
+              JSON.stringify({
+                source: opts.source,
+                reason: 'boarding_confirmed_local',
+                trust_id: trustId,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        const rr =
+          String(s.requester_role ?? '').trim().toLowerCase() === 'driver' ? 'driver' : 'passenger';
+        const modalTag = String(s.tag_id ?? tagForQuery).trim();
+
+        const stBlock = blockStateRef.current;
+        if (stBlock.showCallScreen || stBlock.incomingCallBlocked || stBlock.trustVideo) {
+          deferredTrustRequestRef.current = {
+            trustId,
+            tagId: modalTag,
+            requesterRole: rr,
+          };
+          try {
+            console.log(
+              'TRUST_PENDING_RECOVERY_HIT',
+              JSON.stringify({
+                source: opts.source,
+                action: 'deferred',
+                trust_id: trustId,
+                tag_id: modalTag,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+
+        deferredTrustRequestRef.current = null;
+        try {
+          console.log(
+            'TRUST_PENDING_RECOVERY_HIT',
+            JSON.stringify({
+              source: opts.source,
+              action: 'modal',
+              trust_id: trustId,
+              tag_id: modalTag,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+        setTrustRequestModal({
+          trustId,
+          tagId: modalTag,
+          requesterRole: rr,
+        });
+      } finally {
+        incomingPendingRecoveryInFlightRef.current = false;
+      }
+    },
+    [userId, boardingCommsClosed, role],
   );
 
   const tryRecoverAcceptedSession = useCallback(async () => {
@@ -331,10 +606,34 @@ export function useTrustSessionController({
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (next === 'active') {
         void tryRecoverAcceptedSession();
+        void recoverIncomingPendingTrust({ source: 'app_foreground' });
       }
     });
     return () => sub.remove();
-  }, [tryRecoverAcceptedSession]);
+  }, [tryRecoverAcceptedSession, recoverIncomingPendingTrust]);
+
+  useEffect(() => {
+    const tid = activeTag?.id ? String(activeTag.id).trim() : '';
+    if (!tid || !userId?.trim()) return;
+    const t = setTimeout(
+      () => void recoverIncomingPendingTrust({ source: 'active_tag_changed' }),
+      ACTIVE_TAG_INCOMING_RECOVERY_DELAY_MS,
+    );
+    return () => clearTimeout(t);
+  }, [activeTag?.id, userId, recoverIncomingPendingTrust]);
+
+  useEffect(() => {
+    const tid = activeTag?.id ? String(activeTag.id).trim() : '';
+    const uid = userId?.trim();
+    if (!tid || !uid) return;
+    if (boardingCommsClosed) return;
+
+    const id = setInterval(
+      () => void recoverIncomingPendingTrust({ source: 'incoming_pending_tick' }),
+      INCOMING_PENDING_TRUST_RECOVERY_INTERVAL_MS,
+    );
+    return () => clearInterval(id);
+  }, [activeTag?.id, userId, boardingCommsClosed, recoverIncomingPendingTrust]);
 
   useEffect(() => {
     if (activeTag?.id && String(activeTag.status || '') === 'matched') {
@@ -651,11 +950,35 @@ export function useTrustSessionController({
               activeTagIdRef: cur || null,
             }),
           );
+          try {
+            console.log(
+              'TRUST_REQUEST_RETRY_RECOVERY',
+              JSON.stringify({ role, data_tag_id: tid, activeTagIdRef: cur || null }),
+            );
+          } catch {
+            /* noop */
+          }
+          void recoverIncomingPendingTrust({
+            source: 'TRUST_REQUEST_RETRY_RECOVERY',
+            tagIdOverride: tid,
+          });
         }
         return;
       }
 
       if (activeTagRef.current?.boarding_confirmed_at) {
+        try {
+          console.log(
+            'TRUST_BOARDING_INCOMING_TRUST_DROP',
+            JSON.stringify({
+              role,
+              tag_id: tid || null,
+              trust_id: String(data?.trust_id ?? ''),
+            }),
+          );
+        } catch {
+          /* noop */
+        }
         console.log(
           'TRUST_DIAG_MODAL_SKIP',
           JSON.stringify({
@@ -735,7 +1058,7 @@ export function useTrustSessionController({
         requesterRole: rr,
       });
     },
-    [role, scheduleTrustTagRetry],
+    [role, scheduleTrustTagRetry, recoverIncomingPendingTrust],
   );
 
   const processTrustSessionReadyInternal = useCallback(

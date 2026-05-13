@@ -77,10 +77,14 @@ export async function postTrustEnd(trustId: string): Promise<{ success?: boolean
   }
 }
 
-/** GET /trust/active — kabul edilmiş oturumda recovery_* alanları yeniden Agora için dolabilir */
+/** GET /trust/active — pending | accepted satır; accepted için recovery_* alanları dolabilir */
 export type TrustActiveSessionRow = Record<string, unknown> & {
   id?: string;
+  tag_id?: string;
   status?: string;
+  requester_id?: string;
+  target_id?: string;
+  requester_role?: string;
   channel_name?: string;
   session_hard_deadline_at?: string;
   agora_token?: string;

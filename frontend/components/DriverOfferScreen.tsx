@@ -273,6 +273,21 @@ interface DriverOfferScreenProps {
   embedded?: boolean;
   /** POST /driver/accept-offer başarılı olunca (optimistic harita / LiveMapView) */
   onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
+  /** Kabul POST başlamadan / bittiğinde — parent prune sırasında tag'ı korar */
+  onAcceptFlowStart?: (tagId: string) => void;
+  onAcceptFlowEnd?: (tagId: string) => void;
+  /** 409 veya teklif artık yok — parent listeden düşürsün */
+  onOfferUnavailable?: (info: { tagId: string; requestId?: string }) => void;
+}
+
+function isDriverOfferNoLongerAvailable(res: Response, errMsg: string, rawText: string): boolean {
+  if (res.status === 409) return true;
+  const hay = `${errMsg}\n${rawText || ''}`.toLowerCase();
+  return (
+    hay.includes('artık müsait') ||
+    hay.includes('başka sürücü') ||
+    hay.includes('eşleştirilemez')
+  );
 }
 
 // Yolcu Request Kartı Bileşeni - MARTI TAG MODELİ
@@ -283,6 +298,9 @@ function RequestCard({
   playTapSound,
   onDismiss,
   onDriverAcceptMatch,
+  onAcceptFlowStart,
+  onAcceptFlowEnd,
+  onOfferUnavailable,
   index,
   globalAcceptFrozen,
   setGlobalAcceptFrozen,
@@ -293,6 +311,9 @@ function RequestCard({
   playTapSound?: () => void;
   onDismiss: () => void;
   onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
+  onAcceptFlowStart?: (tagId: string) => void;
+  onAcceptFlowEnd?: (tagId: string) => void;
+  onOfferUnavailable?: (info: { tagId: string; requestId?: string }) => void;
   index: number;
   globalAcceptFrozen: boolean;
   setGlobalAcceptFrozen: (v: boolean) => void;
@@ -550,6 +571,7 @@ function RequestCard({
               if (accepting || globalAcceptFrozen) return;
 
               const tagIdForAccept = String(request.tag_id || request.id || '').trim();
+              const requestIdForCb = String(request.request_id || request.id || '').trim();
               const userId = String(driverId || '').trim();
 
               if (!tagIdForAccept || !userId) {
@@ -559,6 +581,7 @@ function RequestCard({
 
               setGlobalAcceptFrozen(true);
               setAccepting(true);
+              onAcceptFlowStart?.(tagIdForAccept);
               try {
                 playTapSound?.();
                 const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
@@ -591,8 +614,6 @@ function RequestCard({
                   return;
                 }
 
-                setGlobalAcceptFrozen(false);
-
                 let errMsg = '';
                 if (body) {
                   const d = (body as { detail?: unknown }).detail;
@@ -607,13 +628,23 @@ function RequestCard({
                       ? 'Bu çağrı artık müsait değil veya başka sürücüye düştü.'
                       : `Sunucu yanıtı: ${res.status}`;
                 }
-                Alert.alert('Eşleşme olmadı', errMsg);
+                const taken = isDriverOfferNoLongerAvailable(res, errMsg, rawText);
+                if (taken) {
+                  onOfferUnavailable?.({
+                    tagId: tagIdForAccept,
+                    requestId: requestIdForCb || undefined,
+                  });
+                  Alert.alert('Eşleşme olmadı', 'Bu teklif başka sürücü tarafından alındı.');
+                } else {
+                  Alert.alert('Eşleşme olmadı', errMsg);
+                }
               } catch (e) {
                 console.error('[driver/accept-offer] fetch', e);
-                setGlobalAcceptFrozen(false);
                 Alert.alert('Hata', 'Bağlantı hatası. Lütfen tekrar deneyin.');
               } finally {
                 setAccepting(false);
+                setGlobalAcceptFrozen(false);
+                onAcceptFlowEnd?.(tagIdForAccept);
               }
             }}
             disabled={accepting || globalAcceptFrozen}
@@ -731,6 +762,9 @@ export default function DriverOfferScreen({
   vehicleKind = 'car',
   embedded = false,
   onDriverAcceptMatch,
+  onAcceptFlowStart,
+  onAcceptFlowEnd,
+  onOfferUnavailable,
 }: DriverOfferScreenProps) {
   const isMotor = vehicleKind === 'motorcycle';
   const [globalAcceptFrozen, setGlobalAcceptFrozen] = useState(false);
@@ -1184,6 +1218,9 @@ export default function DriverOfferScreen({
                 playTapSound={playTapSound}
                 onDismiss={() => onDismissRequest(item.id)}
                 onDriverAcceptMatch={onDriverAcceptMatch}
+                onAcceptFlowStart={onAcceptFlowStart}
+                onAcceptFlowEnd={onAcceptFlowEnd}
+                onOfferUnavailable={onOfferUnavailable}
                 index={index}
                 globalAcceptFrozen={globalAcceptFrozen}
                 setGlobalAcceptFrozen={setGlobalAcceptFrozen}
