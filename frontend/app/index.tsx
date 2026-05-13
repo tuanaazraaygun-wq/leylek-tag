@@ -649,6 +649,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   /** Aktif eşleşme oturumu restore edilirken kısa açıklama (splash sonrası spinner) */
   const [bootSubtitle, setBootSubtitle] = useState<string | null>(null);
+  /** PIN/login sonrası TAG resume denenirken rol ekranı flaşını engelle (loadUser desenine paralel) */
+  const [postLoginTagResumePending, setPostLoginTagResumePending] = useState(false);
   const [screen, setScreen] = useState<AppScreen>('login');
 
   /** Güzergah (route-setup) sonrası Muhabbet ekranına dön */
@@ -1450,6 +1452,69 @@ export default function App() {
     return saved;
   };
 
+  /**
+   * Token + kullanıcı persist sonrası: soğuk `loadUser` ile aynı TAG resume (matched/in_progress).
+   * Başarıda helper zaten dashboard + selectedRole set eder; burada ek olarak loadUser’daki
+   * loadActiveTagForUserResume + push kaydı tekrarlanır.
+   */
+  const completeLoginWithTagResumeFirst = async (loggedInUser: User): Promise<boolean> => {
+    if (!loggedInUser?.id) {
+      console.log('TAG_RESUME_AFTER_LOGIN_MISS', { reason: 'no_user_id' });
+      return false;
+    }
+    const cleanPhone = (loggedInUser.phone || '').replace(/\D/g, '') || '';
+    const isMainAdmin =
+      cleanPhone === '5326497412' ||
+      cleanPhone === '05326497412' ||
+      cleanPhone.endsWith('5326497412');
+    if (isMainAdmin) {
+      console.log('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id, reason: 'main_admin' });
+      return false;
+    }
+
+    console.log('TAG_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
+    setBootSubtitle('Devam eden eşleşmeye bağlanılıyor...');
+    let resumeResult: TryResumeActiveMatchResult = { resumed: false };
+    try {
+      try {
+        resumeResult = await tryResumeActiveMatchSession(loggedInUser, {
+          saveUser,
+          setUser,
+          setSelectedRole,
+          setScreen,
+        });
+      } catch (e) {
+        console.warn('TAG_RESUME_AFTER_LOGIN_ERROR', e);
+      }
+      if (resumeResult.resumed && resumeResult.role && loggedInUser.id) {
+        console.log('TAG_RESUME_AFTER_LOGIN_HIT', {
+          userId: loggedInUser.id,
+          role: resumeResult.role,
+        });
+        try {
+          await loadActiveTagForUserResume(loggedInUser.id, resumeResult.role);
+        } catch (e) {
+          console.warn('[resume] loadActiveTagForUserResume (after login)', e);
+        }
+        registerPushToken(
+          loggedInUser.id,
+          (ok) => {
+            console.log(
+              '[PUSH] after login tag resume',
+              ok ? 'token saved OK' : 'token save skipped or failed',
+            );
+          },
+          'loginTagResume',
+        );
+        return true;
+      }
+      console.log('TAG_RESUME_AFTER_LOGIN_MISS', { userId: loggedInUser.id });
+      return false;
+    } finally {
+      setBootSubtitle(null);
+    }
+  };
+
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
     await persistAccessToken(payload);
     await syncSupabaseSessionFromBackendResponse(payload as unknown as Record<string, unknown>); // Storage RLS: supabase_access_token + refresh
@@ -2162,6 +2227,19 @@ export default function App() {
   }
 
   if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3FA9F5" />
+        {bootSubtitle ? (
+          <Text style={{ color: '#64748B', marginTop: 14, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 }}>
+            {bootSubtitle}
+          </Text>
+        ) : null}
+      </SafeAreaView>
+    );
+  }
+
+  if (postLoginTagResumePending) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#3FA9F5" />
@@ -3022,17 +3100,30 @@ export default function App() {
           } catch {
             /* ignore */
           }
-          await saveUser(data.user as User);
+          const savedUser = await saveUser(data.user as User);
           console.log('USER_SAVED', data.user);
-          await persistAccessTokenAndRefreshUser(data as TokenPayload, (data.user as User)?.id);
-          await afterAuthAccessTokenPersisted((data.user as User)?.id);
-          // Admin kontrolü
-          const cleanPhone = phone.replace(/\D/g, '');
-          if (cleanPhone === '5326497412' || cleanPhone === '05326497412') {
+          await persistAccessTokenAndRefreshUser(data as TokenPayload, savedUser?.id);
+          await afterAuthAccessTokenPersisted(savedUser?.id);
+          const cleanPhone = (savedUser.phone || phone || '').replace(/\D/g, '');
+          const isMainAdmin =
+            cleanPhone === '5326497412' ||
+            cleanPhone === '05326497412' ||
+            cleanPhone.endsWith('5326497412');
+          if (isMainAdmin) {
             setIsAdmin(true);
             setShowAdminPanel(true);
+            setScreen('role-select');
+          } else {
+            setPostLoginTagResumePending(true);
+            try {
+              const resumed = await completeLoginWithTagResumeFirst(savedUser);
+              if (!resumed) {
+                setScreen('role-select');
+              }
+            } finally {
+              setPostLoginTagResumePending(false);
+            }
           }
-          setScreen('role-select');
         } else {
           appAlert('Hata', apiErrMsg(data as { message?: string; detail?: unknown }, 'Yanlış şifre'));
           setPin('');

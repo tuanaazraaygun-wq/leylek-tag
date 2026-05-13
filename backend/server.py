@@ -66,6 +66,8 @@ except ModuleNotFoundError as e:
 
 from supabase_auth_session import attach_supabase_tokens_to_auth_payload, mint_supabase_session_tokens
 
+import tag_pricing as _tag_pricing
+
 
 def _finalize_auth_response_payload(payload: dict, user_id: str, *, path: str = "") -> dict:
     """Leylek yanıtına supabase_access_token / supabase_refresh_token ekler; dönmeden loglar."""
@@ -1073,7 +1075,7 @@ def _canonical_vehicle_kind(value) -> Optional[str]:
     s = str(value).strip().lower()
     if s == "car":
         return "car"
-    if s in ("motorcycle", "motor"):
+    if s in ("motorcycle", "motor", "moto"):
         return "motorcycle"
     return None
 
@@ -17122,30 +17124,28 @@ async def calculate_price(request: CalculatePriceRequest):
         
         # Yoğun saat kontrolü
         peak = is_peak_hour()
-
-        # Yeni: Araç/Motor fiyat parametreleri
-        vk = _canonical_vehicle_kind(request.passenger_vehicle_kind) or "car"
-        if vk == "motorcycle":
-            base = 25
-            per_km = 12
-            minimum = 80
-        else:
-            base = 40
-            per_km = 20
-            minimum = 120
-
         multiplier = 1.15 if peak else 1.0
 
-        price = base + (float(trip_distance_km) * per_km)
-        if price < minimum:
-            price = float(minimum)
-        price = price * multiplier
+        vk = _canonical_vehicle_kind(request.passenger_vehicle_kind) or "car"
 
-        # Tam sayıya yuvarla (TL)
-        price_int_raw = int(round(price))
-        price_int = price_int_raw
         leylek_minimum_price_applied = False
         if bool(request.muhabbet_listing):
+            if vk == "motorcycle":
+                base = 25
+                per_km = 12
+                minimum = 80
+            else:
+                base = 40
+                per_km = 20
+                minimum = 120
+
+            price = base + (float(trip_distance_km) * per_km)
+            if price < minimum:
+                price = float(minimum)
+            price = price * multiplier
+
+            price_int_raw = int(round(price))
+            price_int = price_int_raw
             leylek_minimum_price_applied = price_int_raw < 30
             price_int = max(30, price_int_raw)
             logger.info(
@@ -17158,12 +17158,44 @@ async def calculate_price(request: CalculatePriceRequest):
                 price_int,
             )
 
-        # Range: +/- %10
-        min_price = int(round(price_int * 0.9))
-        max_price = int(round(price_int * 1.1))
-        suggested_price = price_int
-        
-        logger.info(f"💰 Fiyat hesaplama: Yolculuk {trip_distance_km:.1f}km, {estimated_minutes}dk, {min_price}-{max_price}TL (peak={peak})")
+            min_price = int(round(price_int * 0.9))
+            max_price = int(round(price_int * 1.1))
+            suggested_price = price_int
+        else:
+            suggested_price, min_price, max_price, _tag_cfg = _tag_pricing.compute_tag_ride_price(
+                city_key=_tag_pricing.DEFAULT_TAG_PRICING_CITY,
+                vehicle_kind=vk,
+                distance_km=float(trip_distance_km),
+                estimated_minutes=int(estimated_minutes),
+                peak_multiplier=multiplier,
+            )
+            base = int(_tag_cfg.base)
+            per_km = int(_tag_cfg.per_km)
+            minimum = int(_tag_cfg.minimum)
+            price_int = suggested_price
+            try:
+                logger.info(
+                    "[TAG_PRICE_CALCULATE] %s",
+                    json.dumps(
+                        {
+                            "city": _tag_pricing.DEFAULT_TAG_PRICING_CITY,
+                            "vehicle_kind": vk,
+                            "distance_km": round(float(trip_distance_km), 3),
+                            "estimated_minutes": estimated_minutes,
+                            "suggested_price": suggested_price,
+                            "min_price": min_price,
+                            "max_price": max_price,
+                            "peak": peak,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except Exception:
+                pass
+
+        logger.info(
+            f"💰 Fiyat hesaplama: Yolculuk {trip_distance_km:.1f}km, {estimated_minutes}dk, {min_price}-{max_price}TL (peak={peak})"
+        )
         
         out = {
             "success": True,
