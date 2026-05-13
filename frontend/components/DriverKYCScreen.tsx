@@ -24,6 +24,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { EncodingType, readAsStringAsync } from 'expo-file-system/legacy';
 import type { AiMockResult, AiTier } from '../lib/driverKycAiMock';
 import {
   analyzeLicenseMock,
@@ -86,6 +87,13 @@ interface DriverKYCScreenProps {
 }
 
 type PhotoPickKind = 'vehicle' | 'license' | 'motorcycle' | 'selfie';
+
+function kycImageMimeFromAsset(asset: ImagePicker.ImagePickerAsset): string {
+  const m = asset.mimeType;
+  if (typeof m === 'string' && m.startsWith('image/')) return m;
+  if (asset.type === 'image') return 'image/jpeg';
+  return 'image/jpeg';
+}
 
 const CAR_STEP_TITLES = ['Araç bilgileri', 'Araç fotoğrafı', 'Ehliyet', 'Özet', 'Başvuru'];
 const MOTOR_STEP_TITLES = ['Motor bilgileri', 'Motor fotoğrafı', 'Ehliyet', 'Selfie', 'Başvuru'];
@@ -156,7 +164,12 @@ function PhotoCropHintAndPreview({ uri, onCrop }: { uri: string; onCrop: () => v
     <View style={photoHeroStyles.previewColumn}>
       <Text style={photoHeroStyles.cropGuide}>Önizlemeyi kontrol edin; gerekirse aşağıdan kırpın.</Text>
       <View style={photoHeroStyles.previewFrame}>
-        <Image source={{ uri }} style={photoHeroStyles.previewImage} resizeMode="cover" />
+        <Image
+          source={{ uri }}
+          style={photoHeroStyles.previewImage}
+          resizeMode="cover"
+          {...(Platform.OS === 'android' ? { fadeDuration: 0 } : {})}
+        />
       </View>
       <TouchableOpacity
         style={photoHeroStyles.cropBarOuter}
@@ -242,6 +255,7 @@ const photoHeroStyles = StyleSheet.create({
     aspectRatio: 4 / 3,
     minHeight: 232,
     backgroundColor: '#1E293B',
+    opacity: 1,
   },
   cropBarOuter: {
     marginTop: 12,
@@ -726,9 +740,10 @@ export default function DriverKYCScreen({
 
   // Mobile'da fotoğraf çek veya seç
   const pickImageMobile = async (type: PhotoPickKind, source: 'camera' | 'gallery') => {
+    console.log('KYC_IMAGE_PICK_START', { type, source });
     try {
-      let result;
-      
+      let result: ImagePicker.ImagePickerResult;
+
       if (source === 'camera') {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
@@ -757,15 +772,68 @@ export default function DriverKYCScreen({
         });
       }
 
-      if (!result.canceled && result.assets[0].base64) {
-        const base64Data = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        if (type === 'vehicle') setVehiclePhoto(base64Data);
-        else if (type === 'license') setLicensePhoto(base64Data);
-        else if (type === 'motorcycle') setMotorcyclePhoto(base64Data);
-        else if (type === 'selfie') setSelfiePhoto(base64Data);
+      if (result.canceled) {
+        return;
       }
+
+      const asset = result.assets?.[0];
+      if (!asset) {
+        Alert.alert('Fotoğraf', 'Fotoğraf seçilemedi. Lütfen tekrar deneyin.');
+        return;
+      }
+
+      const mime = kycImageMimeFromAsset(asset);
+      const pickerBase64Len = typeof asset.base64 === 'string' ? asset.base64.length : 0;
+      let dataUrl: string | null = null;
+      let fallbackBase64Length = 0;
+
+      if (asset.base64 && asset.base64.length > 0) {
+        dataUrl = `data:${mime};base64,${asset.base64}`;
+      } else if (asset.uri?.startsWith('data:')) {
+        dataUrl = asset.uri;
+      } else if (asset.uri) {
+        try {
+          const raw = await readAsStringAsync(asset.uri, { encoding: EncodingType.Base64 });
+          fallbackBase64Length = raw?.length ?? 0;
+          if (raw.length > 0) {
+            dataUrl = `data:${mime};base64,${raw}`;
+          }
+        } catch {
+          // final branch logs KYC_IMAGE_PICK_NO_BASE64
+        }
+      }
+
+      const hasPickerBase64 = pickerBase64Len > 0;
+      console.log('KYC_IMAGE_PICK_RESULT', {
+        type,
+        source,
+        canceled: false,
+        hasUri: !!asset.uri,
+        hasPickerBase64,
+        pickerBase64Length: pickerBase64Len,
+        mimeType: asset.mimeType ?? null,
+        assetType: asset.type ?? null,
+        fallbackBase64Length,
+        finalDataUrlLength: dataUrl?.length ?? 0,
+      });
+
+      if (!dataUrl) {
+        console.warn('KYC_IMAGE_PICK_NO_BASE64', {
+          type,
+          source,
+          hasUri: !!asset.uri,
+          assetKeys: Object.keys(asset),
+        });
+        Alert.alert('Fotoğraf', 'Fotoğraf okunamadı. Lütfen tekrar deneyin.');
+        return;
+      }
+
+      if (type === 'vehicle') setVehiclePhoto(dataUrl);
+      else if (type === 'license') setLicensePhoto(dataUrl);
+      else if (type === 'motorcycle') setMotorcyclePhoto(dataUrl);
+      else if (type === 'selfie') setSelfiePhoto(dataUrl);
     } catch (error) {
-      console.error('Image pick error:', error);
+      console.warn('KYC_IMAGE_PICK_ERROR', error);
       Alert.alert('Hata', 'Fotoğraf seçilemedi');
     }
   };
@@ -1085,10 +1153,8 @@ export default function DriverKYCScreen({
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerKicker}>Sürücü doğrulama</Text>
-            <Text style={styles.headerTitleLight}>
-              {isMotorKyc ? 'Motor kaydı' : 'Profesyonel başvuru'}
-            </Text>
-            <Text style={styles.headerStepLight}>
+            {isMotorKyc ? <Text style={styles.headerTitleLight}>Motor kaydı</Text> : null}
+            <Text style={[styles.headerStepLight, !isMotorKyc && styles.headerStepLightSolo]}>
               Adım {step + 1} / 5 — {stepTitles[step]}
             </Text>
           </View>
@@ -1708,6 +1774,10 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  /** Araç akışında ara başlık yok; kicker ile adım arasında boşluk */
+  headerStepLightSolo: {
+    marginTop: 10,
   },
   stepDotsRow: {
     flexDirection: 'row',
