@@ -166,7 +166,16 @@ async function joinTripCallAgoraAsCaller(
 /** Rol ekranındayken şikayet — eşleşme zorla bitti / iptal sonrası */
 /** App açılışında aktif tag varsa rol ekranını atla — passenger/active-tag ile aynı status seti */
 const PASSENGER_RESUME_STATUSES = ['matched', 'in_progress'] as const;
-const DRIVER_RESUME_STATUSES = ['matched', 'in_progress'] as const;
+/** Sürücü aktif yolculuk: backend status varyantları (cancelled/finished burada yok) */
+const DRIVER_RESUME_STATUSES = [
+  'matched',
+  'in_progress',
+  'active',
+  'started',
+  'driver_on_way',
+  'arrived',
+  'boarding',
+] as const;
 
 const MATCH_RESUME_UI_RESET_KEY = 'leylek_match_resume_ui_reset_v1';
 
@@ -205,7 +214,7 @@ function _resumePriorityForPassenger(st: string): number {
 }
 
 function _resumePriorityForDriver(st: string): number {
-  if (st === 'matched' || st === 'in_progress') return 4;
+  if ((DRIVER_RESUME_STATUSES as readonly string[]).includes(st)) return 4;
   return 0;
 }
 
@@ -249,6 +258,13 @@ async function tryResumeActiveMatchSession(
     const dTag = dj?.tag as Record<string, unknown> | undefined;
     const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
     const dOk = dTag ? _driverTagResumable(dj, dTag) : false;
+    if (dTag && !dOk) {
+      console.log('TAG_RESUME_DRIVER_MISS_STATUS', {
+        status: dTag.status,
+        success: dj.success,
+        was_cancelled: dj.was_cancelled,
+      });
+    }
 
     let role: 'passenger' | 'driver' | null = null;
     if (pOk && dOk) {
@@ -1743,6 +1759,8 @@ export default function App() {
     }
     setUser(null);
     setScreen('login');
+    setShowDestinationPicker(false);
+    setDestination(null);
     setPhone('');
     setOtp('');
     setName('');
@@ -4346,6 +4364,7 @@ export default function App() {
         userLocation={userLocation}
         showDestinationPicker={showDestinationPicker}
         setShowDestinationPicker={setShowDestinationPicker}
+        postLoginTagResumePending={postLoginTagResumePending}
         setScreen={setScreen}
         requestLocationPermission={requestLocationPermission}
         onShowTripEndedBanner={setRoleSelectTripExitBanner}
@@ -7036,6 +7055,7 @@ function PassengerDashboard({
   userLocation,
   showDestinationPicker,
   setShowDestinationPicker,
+  postLoginTagResumePending = false,
   setScreen,
   requestLocationPermission,
   onShowTripEndedBanner,
@@ -7047,6 +7067,8 @@ function PassengerDashboard({
   userLocation: any;
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
+  /** PIN sonrası TAG resume spinner — hedef modalı erken auto-open etmesin */
+  postLoginTagResumePending?: boolean;
   setScreen: (screen: AppScreen) => void;
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
@@ -7431,6 +7453,7 @@ function PassengerDashboard({
   }, [activeTag]);
 
   useEffect(() => {
+    if (postLoginTagResumePending) return;
     if (activeTag || destination) return;
     if (passengerDestinationAutoOpenedRef.current) return;
     const t = setTimeout(() => {
@@ -7439,7 +7462,22 @@ function PassengerDashboard({
       passengerDestinationAutoOpenedRef.current = true;
     }, 450);
     return () => clearTimeout(t);
-  }, [activeTag, destination, setShowDestinationPicker]);
+  }, [activeTag, destination, postLoginTagResumePending, setShowDestinationPicker]);
+
+  /** Aktif TAG varken hedef/fiyat modalı açık kalmasın (resume sonrası activeTag geç dolunca auto-open yarışı) */
+  useEffect(() => {
+    if (!activeTag) return;
+    console.log('TAG_ACTIVE_TAG_CLOSE_DESTINATION_PICKER', {
+      tagId: activeTag.id,
+      status: activeTag.status,
+    });
+    setShowDestinationPicker(false);
+    setShowPriceModal(false);
+    setDestinationAwaitingMapTap(false);
+    setDestinationPickerPhase('search');
+    setDestinationPickerGeocoding(false);
+    passengerDestinationAutoOpenedRef.current = true;
+  }, [activeTag, setShowDestinationPicker]);
 
   const destinationHeroPulse = useRef(new Animated.Value(1)).current;
   const destPinPulse1 = useRef(new Animated.Value(1)).current;
