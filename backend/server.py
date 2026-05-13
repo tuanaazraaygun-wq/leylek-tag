@@ -27,6 +27,7 @@ import time
 import bcrypt
 import math
 import re
+from urllib.parse import urlparse
 import asyncio
 import sys
 import jwt
@@ -106,6 +107,30 @@ def _mask_log_id(value: Any) -> str:
     if len(s) <= 8:
         return f"***{s[-2:]}"
     return f"{s[:4]}***{s[-4:]}"
+
+
+def _supabase_url_host_for_logs() -> str:
+    """Loglarda tam URL/anahtar yok; yalnızca host (proje eşlemesi için)."""
+    try:
+        raw = (_supabase_core.SUPABASE_URL or "").strip()
+        if not raw:
+            return ""
+        return urlparse(raw).netloc or ""
+    except Exception:
+        return ""
+
+
+def _storage_upload_result_summary(res: Any) -> dict:
+    summary: dict[str, Any] = {"type": type(res).__name__ if res is not None else "None"}
+    if res is None:
+        return summary
+    for attr in ("path", "Key", "key", "full_path"):
+        if hasattr(res, attr):
+            try:
+                summary[attr] = getattr(res, attr)
+            except Exception:
+                pass
+    return summary
 
 
 def _mask_log_sid(value: Any) -> str:
@@ -12927,29 +12952,110 @@ async def admin_get_user_detail(admin_phone: str, user_id: str):
 @api_router.post("/storage/upload-profile-photo")
 async def upload_profile_photo(user_id: str, file: UploadFile = File(...)):
     """Profil fotoğrafı yükle"""
+    bucket = "profile-photos"
+    uid = str(user_id or "").strip().lower()
+    file_path = f"{uid}/profile.jpg"
+    content_type = file.content_type or "image/jpeg"
+    sup_host = _supabase_url_host_for_logs()
     try:
         contents = await file.read()
-        if len(contents) > 5 * 1024 * 1024:
+        size_b = len(contents)
+        if size_b > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="Max 5MB")
-        
-        file_path = f"{user_id}/profile.jpg"
-        
-        # Supabase Storage'a yükle
-        result = supabase.storage.from_("profile-photos").upload(
-            path=file_path,
-            file=contents,
-            file_options={"content-type": file.content_type or "image/jpeg", "upsert": "true"}
+
+        logger.info(
+            "PROFILE_PHOTO_UPLOAD_BACKEND_START %s",
+            json.dumps(
+                {
+                    "user_id": _mask_log_id(uid),
+                    "bucket": bucket,
+                    "file_path": file_path,
+                    "content_type": content_type,
+                    "size_b": size_b,
+                    "supabase_host": sup_host,
+                },
+                ensure_ascii=False,
+            ),
         )
-        
-        public_url = supabase.storage.from_("profile-photos").get_public_url(file_path)
-        
-        # MongoDB'de güncelle
-        supabase.table("users").update({"profile_photo": public_url}).eq("id", user_id).execute()
-        
+
+        try:
+            result = supabase.storage.from_(bucket).upload(
+                path=file_path,
+                file=contents,
+                file_options={"content-type": content_type, "upsert": "true"},
+            )
+        except Exception as storage_exc:
+            logger.exception("PROFILE_PHOTO_UPLOAD_BACKEND_ERROR storage upload")
+            raise HTTPException(status_code=500, detail="Profil fotoğrafı yüklenemedi.") from storage_exc
+
+        logger.info(
+            "PROFILE_PHOTO_UPLOAD_STORAGE_DONE %s",
+            json.dumps(_storage_upload_result_summary(result), ensure_ascii=False, default=str),
+        )
+
+        public_url = supabase.storage.from_(bucket).get_public_url(file_path)
+
+        try:
+            supabase.table("users").update({"profile_photo": public_url}).eq("id", uid).execute()
+        except Exception as db_exc:
+            logger.exception("PROFILE_PHOTO_UPLOAD_BACKEND_ERROR users update")
+            raise HTTPException(status_code=500, detail="Profil fotoğrafı yüklenemedi.") from db_exc
+
+        try:
+            verify = (
+                supabase.table("users")
+                .select("id, profile_photo")
+                .eq("id", uid)
+                .limit(1)
+                .execute()
+            )
+        except Exception as ver_exc:
+            logger.exception("PROFILE_PHOTO_UPLOAD_BACKEND_ERROR verify select")
+            raise HTTPException(status_code=500, detail="Profil fotoğrafı yüklenemedi.") from ver_exc
+
+        if not verify.data:
+            logger.error(
+                "PROFILE_PHOTO_UPLOAD_BACKEND_ERROR %s",
+                json.dumps({"stage": "verify_select_empty", "user_id": _mask_log_id(uid)}, ensure_ascii=False),
+            )
+            raise HTTPException(status_code=500, detail="Profil fotoğrafı yüklenemedi.")
+
+        stored_url = (verify.data[0].get("profile_photo") or "").strip()
+        pub_st = (public_url or "").strip()
+        if stored_url != pub_st:
+            logger.error(
+                "PROFILE_PHOTO_UPLOAD_BACKEND_ERROR %s",
+                json.dumps(
+                    {
+                        "stage": "verify_mismatch",
+                        "user_id": _mask_log_id(uid),
+                        "public_url_host": urlparse(pub_st).netloc if pub_st else "",
+                        "stored_url_host": urlparse(stored_url).netloc if stored_url else "",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            raise HTTPException(status_code=500, detail="Profil fotoğrafı yüklenemedi.")
+
+        pub_host_log = urlparse(pub_st).netloc if pub_st else ""
+        logger.info(
+            "PROFILE_PHOTO_UPLOAD_DB_DONE %s",
+            json.dumps(
+                {
+                    "user_id": _mask_log_id(uid),
+                    "profile_photo_verified": True,
+                    "public_url_host": pub_host_log,
+                },
+                ensure_ascii=False,
+            ),
+        )
+
         return {"success": True, "url": public_url}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Upload profile photo error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("PROFILE_PHOTO_UPLOAD_BACKEND_ERROR unexpected")
+        raise HTTPException(status_code=500, detail="Profil fotoğrafı yüklenemedi.") from e
 
 @api_router.post("/storage/upload-vehicle-photo")
 async def upload_vehicle_photo(user_id: str, file: UploadFile = File(...)):
@@ -23443,20 +23549,84 @@ async def muhabbet_me_bio_update(
     """Leylek Muhabbeti kısa açıklama (KVKK: gönüllü)."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
-        supabase.table("users").update(
-            {
-                "muhabbet_bio": body.bio or None,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ).eq("id", uid).execute()
+        bio_in = (body.bio or "").strip()
+        bio_val: Optional[str] = bio_in if bio_in else None
+        bio_len = len(bio_in)
+
+        logger.info(
+            "PROFILE_BIO_SAVE_BACKEND_START %s",
+            json.dumps({"uid": _mask_log_id(uid), "bio_len": bio_len}, ensure_ascii=False),
+        )
+
+        try:
+            supabase.table("users").update(
+                {
+                    "muhabbet_bio": bio_val,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("id", uid).execute()
+        except Exception as db_exc:
+            logger.exception("PROFILE_BIO_SAVE_BACKEND_ERROR update execute")
+            raise HTTPException(status_code=500, detail="Profil güncellenemedi.") from db_exc
+
+        try:
+            verify = (
+                supabase.table("users")
+                .select("id, muhabbet_bio")
+                .eq("id", uid)
+                .limit(1)
+                .execute()
+            )
+        except Exception as ver_exc:
+            logger.exception("PROFILE_BIO_SAVE_BACKEND_ERROR verify select")
+            raise HTTPException(status_code=500, detail="Profil güncellenemedi.") from ver_exc
+
+        if not verify.data:
+            logger.error(
+                "PROFILE_BIO_SAVE_BACKEND_ERROR %s",
+                json.dumps({"stage": "verify_no_row", "uid": _mask_log_id(uid)}, ensure_ascii=False),
+            )
+            raise HTTPException(status_code=500, detail="Profil güncellenemedi.")
+
+        stored_raw = verify.data[0].get("muhabbet_bio")
+        if isinstance(stored_raw, str):
+            stored_n = stored_raw.strip() or None
+        else:
+            stored_n = None
+
+        if stored_n != bio_val:
+            logger.error(
+                "PROFILE_BIO_SAVE_BACKEND_ERROR %s",
+                json.dumps(
+                    {
+                        "stage": "verify_mismatch",
+                        "uid": _mask_log_id(uid),
+                        "expected_null": bio_val is None,
+                        "stored_null": stored_n is None,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            raise HTTPException(status_code=500, detail="Profil güncellenemedi.")
+
+        logger.info(
+            "PROFILE_BIO_SAVE_DB_DONE %s",
+            json.dumps(
+                {
+                    "uid": _mask_log_id(uid),
+                    "bio_len_after": len(stored_n) if stored_n else 0,
+                },
+                ensure_ascii=False,
+            ),
+        )
         return {"success": True, "bio": body.bio or None}
     except HTTPException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"muhabbet_me_bio_update: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.exception("PROFILE_BIO_SAVE_BACKEND_ERROR unexpected")
+        raise HTTPException(status_code=500, detail="Profil güncellenemedi.") from e
 
 
 @api_router.post("/muhabbet/profile/about")
