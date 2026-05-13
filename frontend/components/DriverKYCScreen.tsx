@@ -158,11 +158,13 @@ function pickKycSubmitErrorMessage(data: unknown, httpStatus: number): string {
   return 'Başvuru gönderilemedi';
 }
 
-/** Önizleme + önizlemenin altında büyük kırp CTA; onCrop = mevcut galeri/düzenleme akışı (allowsEditing). */
-function PhotoCropHintAndPreview({ uri, onCrop }: { uri: string; onCrop: () => void }) {
+/** Önizleme + yeniden seçim CTA; onReplacePhoto = galeri/web dosya akışı (native kırpma yok). */
+function PhotoCropHintAndPreview({ uri, onReplacePhoto }: { uri: string; onReplacePhoto: () => void }) {
   return (
     <View style={photoHeroStyles.previewColumn}>
-      <Text style={photoHeroStyles.cropGuide}>Önizlemeyi kontrol edin; gerekirse aşağıdan kırpın.</Text>
+      <Text style={photoHeroStyles.cropGuide}>
+        Önizlemeyi kontrol edin. Kadrajı beğenmediyseniz yeniden seçin.
+      </Text>
       <View style={photoHeroStyles.previewFrame}>
         <Image
           source={{ uri }}
@@ -173,10 +175,10 @@ function PhotoCropHintAndPreview({ uri, onCrop }: { uri: string; onCrop: () => v
       </View>
       <TouchableOpacity
         style={photoHeroStyles.cropBarOuter}
-        onPress={onCrop}
+        onPress={onReplacePhoto}
         activeOpacity={0.9}
         accessibilityRole="button"
-        accessibilityLabel="Fotoğrafı kırp ve kadrajı düzelt"
+        accessibilityLabel="Fotoğrafı değiştir"
       >
         <LinearGradient
           colors={['#0C4A6E', '#0369A1', '#0284C7']}
@@ -184,14 +186,14 @@ function PhotoCropHintAndPreview({ uri, onCrop }: { uri: string; onCrop: () => v
           end={{ x: 1, y: 0.5 }}
           style={photoHeroStyles.cropBarGradient}
         >
-          <Ionicons name="crop-outline" size={22} color="#FFFFFF" />
-          <Text style={photoHeroStyles.cropBarTitle}>Fotoğrafı kırp ve kadrajı düzelt</Text>
+          <Ionicons name="images-outline" size={22} color="#FFFFFF" />
+          <Text style={photoHeroStyles.cropBarTitle}>Fotoğrafı değiştir</Text>
         </LinearGradient>
       </TouchableOpacity>
       <Text style={photoHeroStyles.cropBarHint}>
         {Platform.OS === 'web'
-          ? 'Dosyayı yeniden seçerek kadrajı güncellersiniz.'
-          : 'Galeri açılır; düzenleme ekranında kırpabilirsiniz.'}
+          ? 'Dosyayı yeniden seçerek güncelleyebilirsiniz.'
+          : 'Başka bir fotoğraf için galeri açılır; isterseniz üstteki Yeniden çek ile kamerayı kullanın.'}
       </Text>
     </View>
   );
@@ -752,8 +754,7 @@ export default function DriverKYCScreen({
         }
         result = await ImagePicker.launchCameraAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [4, 3],
+          allowsEditing: false,
           quality: 0.6,
           base64: true,
         });
@@ -765,8 +766,7 @@ export default function DriverKYCScreen({
         }
         result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [4, 3],
+          allowsEditing: false,
           quality: 0.6,
           base64: true,
         });
@@ -1269,7 +1269,7 @@ export default function DriverKYCScreen({
                       <PhotoUploadedStatusBar />
                       <PhotoCropHintAndPreview
                         uri={vehiclePhoto}
-                        onCrop={() =>
+                        onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('vehicle')
                             : void pickImageMobile('vehicle', 'gallery')
@@ -1331,7 +1331,7 @@ export default function DriverKYCScreen({
                       <PhotoUploadedStatusBar />
                       <PhotoCropHintAndPreview
                         uri={licensePhoto}
-                        onCrop={() =>
+                        onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('license')
                             : void pickImageMobile('license', 'gallery')
@@ -1445,7 +1445,7 @@ export default function DriverKYCScreen({
                       <PhotoUploadedStatusBar />
                       <PhotoCropHintAndPreview
                         uri={motorcyclePhoto}
-                        onCrop={() =>
+                        onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('motorcycle')
                             : void pickImageMobile('motorcycle', 'gallery')
@@ -1501,7 +1501,7 @@ export default function DriverKYCScreen({
                       <PhotoUploadedStatusBar />
                       <PhotoCropHintAndPreview
                         uri={licensePhoto}
-                        onCrop={() =>
+                        onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('license')
                             : void pickImageMobile('license', 'gallery')
@@ -1556,7 +1556,7 @@ export default function DriverKYCScreen({
                       <PhotoUploadedStatusBar />
                       <PhotoCropHintAndPreview
                         uri={selfiePhoto}
-                        onCrop={() =>
+                        onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('selfie')
                             : void pickImageMobile('selfie', 'gallery')
