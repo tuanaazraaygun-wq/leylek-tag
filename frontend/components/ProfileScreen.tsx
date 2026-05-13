@@ -20,11 +20,18 @@ const CARD_SHADOW = Platform.select({
   default: {},
 });
 
+const LEYLEK_NAME_BAD = new Set(
+  ['leylek', 'leylek kullanıcısı', 'leylek kullanicisi'].map((s) => s.toLowerCase()),
+);
+
 export type PublicProfilePayload = {
   id?: string;
+  /** Bazı yanıtlarda ek kimlik alanları */
+  user_id?: string;
   full_name?: string;
   /** API legacy alanı — görünümde ilk kelimeye indirgenir */
   name?: string;
+  first_name?: string;
   public_name?: string;
   role_label?: string | null;
   is_kyc_driver?: boolean;
@@ -46,6 +53,55 @@ export type ProfileScreenProps = {
   onBack?: () => void;
 };
 
+type PersistedForProfile = {
+  idNorm: string;
+  full_name?: string;
+  name?: string;
+  first_name?: string;
+  phone?: string;
+};
+
+function normId(v: unknown): string {
+  return String(v ?? '').trim().toLowerCase();
+}
+
+function parsePersistedForProfile(raw: string): PersistedForProfile | null {
+  try {
+    const u = JSON.parse(raw) as Record<string, unknown>;
+    const idRaw = u.id ?? u.user_id ?? u._id;
+    if (idRaw == null || String(idRaw).trim() === '') return null;
+    return {
+      idNorm: normId(idRaw),
+      full_name: typeof u.full_name === 'string' ? u.full_name : undefined,
+      name: typeof u.name === 'string' ? u.name : undefined,
+      first_name: typeof u.first_name === 'string' ? u.first_name : undefined,
+      phone: typeof u.phone === 'string' ? u.phone : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function maskPhoneShort(phone?: string): string {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.length < 4) return '';
+  return `••••${d.slice(-4)}`;
+}
+
+function detailFromApiBody(d: Record<string, unknown>): string {
+  const det = d.detail;
+  if (typeof det === 'string' && det.trim()) return det.trim();
+  if (Array.isArray(det)) {
+    const parts = det
+      .map((x) => (x && typeof x === 'object' && 'msg' in x ? String((x as { msg?: unknown }).msg ?? '').trim() : ''))
+      .filter(Boolean);
+    if (parts.length) return parts.join(' ');
+  }
+  const err = d.error;
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  return '';
+}
+
 function initialsFromName(name: string): string {
   const parts = name.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return 'LK';
@@ -53,18 +109,40 @@ function initialsFromName(name: string): string {
   return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
 }
 
-/** Soyad gösterme: yalnızca ilk isim (ör. "Mehmet Ahmet Yılmaz" → "Mehmet"). */
-function getSafeDisplayName(profile: PublicProfilePayload | null | undefined): string {
-  if (!profile) return 'Leylek kullanıcısı';
-  const raw = (
-    profile.public_name ||
-    profile.full_name ||
-    profile.name ||
-    ''
-  ).trim();
-  if (!raw) return 'Leylek kullanıcısı';
-  const first = raw.split(/\s+/).filter(Boolean)[0];
-  return first || 'Leylek kullanıcısı';
+/** Soyad gösterme: önce kayıtlı adları topla; yalnızca ilk kelime. "Leylek…" placeholder'larını kullanma. */
+function getSafeDisplayName(
+  profile: PublicProfilePayload | null | undefined,
+  persisted: PersistedForProfile | null | undefined,
+): string {
+  const rawCandidates: string[] = [];
+  const push = (s?: string | null) => {
+    const t = (s || '').trim();
+    if (t) rawCandidates.push(t);
+  };
+  if (profile) {
+    push(profile.public_name);
+    push(profile.full_name);
+    push(profile.name);
+    push(profile.first_name);
+  }
+  if (persisted) {
+    push(persisted.full_name);
+    push(persisted.name);
+    push(persisted.first_name);
+  }
+  const masked = maskPhoneShort(persisted?.phone);
+  if (masked) rawCandidates.push(masked);
+
+  for (const raw of rawCandidates) {
+    const normFull = raw.toLowerCase();
+    if (LEYLEK_NAME_BAD.has(normFull)) continue;
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const first = parts[0] || '';
+    if (!first) continue;
+    if (LEYLEK_NAME_BAD.has(first.toLowerCase())) continue;
+    return first;
+  }
+  return 'Kullanıcı';
 }
 
 export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScreenProps) {
@@ -73,6 +151,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const [loading, setLoading] = useState(true);
   const [p, setP] = useState<PublicProfilePayload | null>(null);
   const [myId, setMyId] = useState<string>('');
+  const [persistedForProfile, setPersistedForProfile] = useState<PersistedForProfile | null>(null);
   const [bioDraft, setBioDraft] = useState('');
   const [savingBio, setSavingBio] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -83,26 +162,73 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
       try {
         const raw = await getPersistedUserRaw();
         if (!raw) return;
-        const u = JSON.parse(raw) as { id?: string };
-        if (u?.id) setMyId(String(u.id).trim().toLowerCase());
+        const parsed = parsePersistedForProfile(raw);
+        if (parsed) {
+          setMyId(parsed.idNorm);
+          setPersistedForProfile(parsed);
+        }
       } catch {
         /* noop */
       }
     })();
   }, []);
 
-  const isSelf = useMemo(() => myId && userId && myId === String(userId).trim().toLowerCase(), [myId, userId]);
+  const isSelf = useMemo(() => {
+    const m = normId(myId);
+    const r = normId(userId);
+    const pid = normId(p?.id);
+    const puid = normId(p?.user_id);
+    if (!m) return false;
+    if (r && m === r) return true;
+    if (pid && m === pid) return true;
+    if (puid && m === puid) return true;
+    return false;
+  }, [myId, userId, p?.id, p?.user_id]);
+
+  useEffect(() => {
+    console.log('PROFILE_SELF_CHECK', {
+      routeUserId: userId,
+      myId,
+      profileId: p?.id,
+      profileUserId: p?.user_id,
+      isSelf,
+    });
+  }, [userId, myId, p?.id, p?.user_id, isSelf]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const token = (await getPersistedAccessToken())?.trim();
-      if (!token) return setP(null);
-      const path = isSelf ? '/muhabbet/profile/me' : `/muhabbet/profile/${encodeURIComponent(userId.trim())}`;
+      if (!token) {
+        setP(null);
+        return;
+      }
+
+      let persistedId = '';
+      try {
+        const raw = await getPersistedUserRaw();
+        if (raw) {
+          const parsed = parsePersistedForProfile(raw);
+          if (parsed) persistedId = parsed.idNorm;
+        }
+      } catch {
+        /* noop */
+      }
+
+      const routeN = normId(userId);
+      const useMe = !!persistedId && !!routeN && persistedId === routeN;
+      const path = useMe ? '/muhabbet/profile/me' : `/muhabbet/profile/${encodeURIComponent(userId.trim())}`;
+
       const res = await fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (handleUnauthorizedAndMaybeRedirect(res)) return setP(null);
+      if (handleUnauthorizedAndMaybeRedirect(res)) {
+        setP(null);
+        return;
+      }
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; profile?: PublicProfilePayload };
-      if (!res.ok || !d.success || !d.profile) return setP(null);
+      if (!res.ok || !d.success || !d.profile) {
+        setP(null);
+        return;
+      }
       setP(d.profile);
       setBioDraft((d.profile.about || d.profile.muhabbet_bio || '').trim());
     } catch {
@@ -110,13 +236,13 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     } finally {
       setLoading(false);
     }
-  }, [base, isSelf, userId]);
+  }, [base, userId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const displayName = p ? getSafeDisplayName(p) : 'Leylek kullanıcısı';
+  const displayName = p ? getSafeDisplayName(p, persistedForProfile) : getSafeDisplayName(null, persistedForProfile);
   const roleLabel = p?.role_label || (p?.is_kyc_driver ? 'Sürücü' : 'Yolcu');
   const photo = (p?.profile_photo_url || '').trim();
   const vehiclePhoto = (p?.vehicle_photo_url || '').trim();
@@ -129,25 +255,36 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const showDriverExtras = p?.is_kyc_driver === true;
 
   const saveBio = async () => {
-    if (!isSelf) return;
+    if (!isSelf) {
+      Alert.alert('Profil', 'Bu profili düzenleyemezsiniz.');
+      return;
+    }
     setSavingBio(true);
     try {
       const token = (await getPersistedAccessToken())?.trim();
-      if (!token) return;
+      if (!token) {
+        Alert.alert('Profil', 'Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
+        return;
+      }
+      console.log('PROFILE_BIO_SAVE_START');
       const res = await fetch(`${base}/muhabbet/profile/about`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ bio: bioDraft.trim() }),
       });
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown> & { success?: boolean; bio?: string | null };
+      console.log('PROFILE_BIO_SAVE_RESPONSE', { status: res.status, body });
       if (handleUnauthorizedAndMaybeRedirect(res)) return;
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
-      if (!res.ok || !d.success) {
-        Alert.alert('Profil', typeof d.detail === 'string' && d.detail ? d.detail : 'Kaydedilemedi.');
+      if (!res.ok || !body.success) {
+        const msg = detailFromApiBody(body) || 'Kaydedilemedi.';
+        Alert.alert('Profil', msg);
         return;
       }
       const nextBio = bioDraft.trim() || null;
       setP((prev) => (prev ? { ...prev, about: nextBio, muhabbet_bio: nextBio } : prev));
-    } catch {
+      void load();
+    } catch (e) {
+      console.warn('PROFILE_BIO_SAVE_ERROR', e);
       Alert.alert('Profil', 'Bağlantı hatası.');
     } finally {
       setSavingBio(false);
@@ -155,7 +292,10 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   };
 
   const pickPhoto = async () => {
-    if (!isSelf) return;
+    if (!isSelf) {
+      Alert.alert('Profil', 'Bu profili düzenleyemezsiniz.');
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -169,7 +309,11 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     setUploading(true);
     try {
       const token = (await getPersistedAccessToken())?.trim();
-      if (!token) return;
+      if (!token) {
+        Alert.alert('Profil', 'Oturum bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
+        return;
+      }
+      console.log('PROFILE_PHOTO_UPLOAD_START');
       const form = new FormData();
       form.append('file', {
         uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
@@ -177,10 +321,13 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         type: 'image/jpeg',
       } as never);
       const res = await fetch(`${base}/muhabbet/profile/photo`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; url?: string; detail?: string };
+      const d = (await res.json().catch(() => ({}))) as Record<string, unknown> & { success?: boolean; url?: string };
+      console.log('PROFILE_PHOTO_UPLOAD_RESPONSE', { status: res.status, body: d });
+      if (handleUnauthorizedAndMaybeRedirect(res)) return;
       if (!res.ok || !d.success || !d.url) {
         console.warn('[ProfileScreen] profile photo upload failed', res.status, d);
-        Alert.alert('Profil', 'Fotoğraf yüklenemedi. Lütfen tekrar deneyin.');
+        const msg = detailFromApiBody(d) || 'Fotoğraf yüklenemedi. Lütfen tekrar deneyin.';
+        Alert.alert('Profil', msg);
         return;
       }
       void load();
@@ -193,7 +340,10 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   };
 
   const pickVehiclePhoto = async () => {
-    if (!isSelf || !showDriverExtras) return;
+    if (!isSelf || !showDriverExtras) {
+      if (!isSelf) Alert.alert('Profil', 'Bu profili düzenleyemezsiniz.');
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
     const result = await ImagePicker.launchImageLibraryAsync({
