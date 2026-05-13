@@ -204,8 +204,9 @@ function _pickDriverVehicleKindForResume(loggedInUser: User, dTag: Record<string
 }
 
 /**
- * tryResumeActiveMatchSession kaçırırsa (ör. çift rol önceliği / edge): driver/active-tag tekrar okunur.
- * Role-select → Devam ile aynı API; dashboard + DriverDashboard.loadActiveTag ile devam edilir.
+ * tryResumeActiveMatchSession kaçırırsa (ör. PIN sonrası user.role hâlâ passenger):
+ * /driver/active-tag okunur — gerçekten sürücü aktif tag varsa dashboard’a alınır.
+ * Role seçimine bağlı kalmaz; sunucu tag dönmezse yan etki yok.
  */
 async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
   loggedInUser: User,
@@ -215,6 +216,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     setSelectedRole: (r: 'passenger' | 'driver') => void;
     setScreen: (s: AppScreen) => void;
     setRideVehicleKind: (v: 'car' | 'motorcycle') => void;
+    requestLocationPermission?: () => Promise<boolean>;
   },
 ): Promise<boolean> {
   if (!loggedInUser?.id) {
@@ -227,17 +229,14 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
   } catch {
     /* ignore */
   }
-  const wantDriver = loggedInUser.role === 'driver' || lr === 'driver';
-  if (!wantDriver) {
-    console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', {
-      reason: 'not_driver_intent',
-      last_role: lr,
-      userRole: loggedInUser.role,
-    });
-    return false;
-  }
 
+  console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_FORCED_CHECK', {
+    userId: loggedInUser.id,
+    userRole: loggedInUser.role,
+    lastRole: lr,
+  });
   console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
+
   try {
     const enc = encodeURIComponent(loggedInUser.id);
     const dr = await fetch(`${API_URL}/driver/active-tag?user_id=${enc}`);
@@ -245,7 +244,12 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     const dTag = dj?.tag as Record<string, unknown> | undefined;
     const rawSt = dTag?.status;
     const st = dTag ? _normTagStatus(dTag.status) : '';
+    const hasTag = !!dTag;
     console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_FETCH', {
+      userId: loggedInUser.id,
+      userRole: loggedInUser.role,
+      lastRole: lr,
+      hasTag,
       success: dj.success,
       was_cancelled: dj.was_cancelled,
       status: rawSt ?? null,
@@ -253,19 +257,23 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     });
 
     if (!dTag || !dj.success) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'no_tag_or_unsuccessful', success: dj.success });
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', {
+        reason: 'no_tag_or_unsuccessful',
+        success: dj.success,
+        hasTag,
+      });
       return false;
     }
     if (dj.was_cancelled === true) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'was_cancelled' });
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'was_cancelled', hasTag });
       return false;
     }
     if (st && _driverTagStatusIsTerminal(st)) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'terminal_status', st });
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'terminal_status', st, hasTag });
       return false;
     }
     if (!(DRIVER_RESUME_STATUSES as readonly string[]).includes(st)) {
-      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'status_not_allowed', st });
+      console.log('TAG_DRIVER_RESUME_AFTER_LOGIN_MISS', { reason: 'status_not_allowed', st, hasTag });
       return false;
     }
 
@@ -284,7 +292,17 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     deps.setUser(savedUser);
     deps.setSelectedRole('driver');
     deps.setRideVehicleKind(vk);
+    try {
+      await AsyncStorage.setItem(`last_role_${loggedInUser.id}`, 'driver');
+    } catch {
+      /* ignore */
+    }
+    void fetch(
+      `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(loggedInUser.id)}&role=driver&vehicle_kind=${vk}`,
+      { method: 'POST' },
+    ).catch(() => {});
     deps.setScreen('dashboard');
+    void deps.requestLocationPermission?.();
     try {
       await AsyncStorage.setItem(MATCH_RESUME_UI_RESET_KEY, loggedInUser.id);
     } catch {
@@ -294,6 +312,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
       userId: loggedInUser.id,
       status: st,
       vehicle_kind: vk,
+      userRoleBefore: loggedInUser.role,
     });
     return true;
   } catch (e) {
@@ -1475,6 +1494,7 @@ export default function App() {
                   setSelectedRole,
                   setScreen,
                   setRideVehicleKind,
+                  requestLocationPermission,
                 });
               } catch (e) {
                 console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
@@ -1663,6 +1683,7 @@ export default function App() {
           setSelectedRole,
           setScreen,
           setRideVehicleKind,
+          requestLocationPermission,
         });
       } catch (e) {
         console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
