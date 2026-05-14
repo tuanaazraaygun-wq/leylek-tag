@@ -4739,6 +4739,7 @@ api_router = APIRouter(prefix="/api")
 from routes.ai import router as leylek_zeka_ai_router
 from routes.ai import LeylekZekaRequest, run_leylek_zeka_chat
 from routes.legal import router as legal_router
+from routes.places_search import router as places_search_router
 
 fastapi_app.include_router(leylek_zeka_ai_router, prefix="/api")
 
@@ -4769,6 +4770,7 @@ async def api_ai_chat(request: Request):
 
 
 api_router.include_router(legal_router)
+api_router.include_router(places_search_router)
 
 # ==================== SOCKET.IO ASGI APP ====================
 # socketio.ASGIApp(..., socketio_path="/socket.io") — istemci path: /socket.io ( /api altında DEĞİL ).
