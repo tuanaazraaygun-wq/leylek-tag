@@ -342,6 +342,48 @@ function prependCityQualifiedSearchVariants(
   return [...front, ...existing];
 }
 
+/**
+ * Tek başına sayı ile başlayan sorguda (446, 446 sokak…) OSM/Google için şehir bağlamı sık sık gerekiyor.
+ * `cityTrim` dolu olmalı; çıktı `prependCityQualifiedSearchVariants` sonrasına eklenir.
+ */
+function prependNumericStreetSearchVariants(
+  rawInput: string,
+  cityTrim: string,
+  explicitOtherKey: string | null,
+  effectiveCityKey: string | null,
+  existing: string[],
+): string[] {
+  const cityKey = explicitOtherKey || effectiveCityKey;
+  if (!cityTrim.trim() || !cityKey || !CITY_DATA[cityKey]) return existing;
+
+  const head = rawInput.trim().replace(/\s+/g, ' ');
+  const mNum = /^(\d{1,5})\b/.exec(head);
+  if (!mNum) return existing;
+
+  const cityName = cityKey;
+  const num = mNum[1];
+  const rawVariants = [
+    `${num}, ${cityName}, Türkiye`,
+    `${num} Sokak, ${cityName}, Türkiye`,
+    `${num}. Sokak, ${cityName}, Türkiye`,
+    `${num} Cadde, ${cityName}, Türkiye`,
+    `${num}. Cadde, ${cityName}, Türkiye`,
+    `${num} Caddesi, ${cityName}, Türkiye`,
+    `${num} Mahallesi, ${cityName}, Türkiye`,
+  ];
+
+  const seen = new Set(existing.map((s) => normCityNeedle(s)));
+  const front: string[] = [];
+  for (const s of rawVariants) {
+    const t = s.trim().replace(/\s+/g, ' ');
+    const kk = normCityNeedle(t);
+    if (!kk || seen.has(kk)) continue;
+    seen.add(kk);
+    front.push(t);
+  }
+  return [...front, ...existing];
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toR = (d: number) => (d * Math.PI) / 180;
@@ -652,6 +694,8 @@ interface PlaceResult {
   structured_main?: string;
   structured_secondary?: string;
   google_types?: string[];
+  /** Ana arama sırası başarılı olunca son çare Nominatim turundan (yanıltıcı olmasın diye ikincil metin) */
+  isSilentRefinement?: boolean;
   address?: {
     neighbourhood?: string;
     suburb?: string;
@@ -804,6 +848,47 @@ function nominatimResultInCityLabel(item: PlaceResult, cityNeedle: string): bool
   ] as const) {
     const v = a[k];
     if (typeof v === 'string' && normalizeText(v).includes(nl)) return true;
+  }
+  return false;
+}
+
+function nominatimRowLikelyTurkey(item: PlaceResult): boolean {
+  const a = (item.address || {}) as Record<string, string | undefined>;
+  const cc = (a.country_code || '').toLowerCase();
+  if (cc === 'tr') return true;
+  const ctry = typeof a.country === 'string' ? normalizeText(a.country) : '';
+  if (ctry && (ctry.includes(normalizeText('Türkiye')) || ctry.includes('turkey'))) return true;
+  const dnRaw = item.display_name || '';
+  const dn = normalizeText(dnRaw);
+  if (dn.includes(normalizeText('Türkiye'))) return true;
+  if (/\bt[uü]rkiye\b/i.test(dnRaw) || /\bturkey\b/i.test(dnRaw)) return true;
+  return false;
+}
+
+/** relaxed guard: liste dışına taşmış “şehir adı geçen” tuzakları kes — bbox/bias kutusu içi + TR + şehir etiketi */
+function nominatimRelaxedPassesSafeGuard(
+  item: PlaceResult,
+  cityCtx: string,
+  localityOptsBase: LocalityFilterOpts,
+): boolean {
+  const lat = parseFloat(item.lat);
+  const lon = parseFloat(item.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (!nominatimRowLikelyTurkey(item)) return false;
+  const ctx = cityCtx.trim();
+  if (!(ctx ? nominatimResultInCityLabel(item, ctx) : true)) return false;
+  const { effectiveCityKey, cityDataEffective, biasLatitude, biasLongitude, biasDeltaDeg } = localityOptsBase;
+  if (cityDataEffective && effectiveCityKey) {
+    return pointInStoredCityBbox(lat, lon, cityDataEffective.bbox);
+  }
+  if (
+    localityOptsBase.usedBiasOnlyBbox &&
+    biasLatitude != null &&
+    biasLongitude != null &&
+    Number.isFinite(biasLatitude) &&
+    Number.isFinite(biasLongitude)
+  ) {
+    return pointInGpsBiasBox(lat, lon, biasLatitude, biasLongitude, biasDeltaDeg);
   }
   return false;
 }
@@ -1001,7 +1086,10 @@ export default function PlacesAutocomplete({
     Record<string, { lat: number; lng: number }>
   >({});
   const [searchReplayTick, setSearchReplayTick] = useState(0);
-  const emptyFallbackLogKeyRef = useRef('');
+  /** Popüler mahalle / Nominatim tek atış hata metni (Alert yok) */
+  const [popularGeocodeError, setPopularGeocodeError] = useState<string | null>(null);
+  /** Öneri seçimi (Places Details / koordinat) */
+  const [predictionActionError, setPredictionActionError] = useState<string | null>(null);
   /** Aktif arama iptali — yeni istek veya unmount önceki fetch'leri keser */
   const placesSearchAbortRef = useRef<AbortController | null>(null);
 
@@ -1138,8 +1226,10 @@ export default function PlacesAutocomplete({
             if (cancelled || gen !== districtMerkezFetchGenRef.current) return;
             districtMerkezCoordsRef.current[key] = { lat, lng };
             setDistrictMerkezCoords((prev) => ({ ...prev, [key]: { lat, lng } }));
-          } catch {
-            /* sessiz */
+          } catch (e) {
+            if (SHOW_PLACES_DIAG) {
+              console.warn('[PlacesAutocomplete] districtMerkez nominatim', e);
+            }
           }
         }
       })();
@@ -1166,6 +1256,8 @@ export default function PlacesAutocomplete({
       setLoading(false);
       setSearchRoundDone(false);
       if (SHOW_PLACES_DIAG) setSearchDiag(null);
+      setPopularGeocodeError(null);
+      setPredictionActionError(null);
       return;
     }
 
@@ -1201,6 +1293,8 @@ export default function PlacesAutocomplete({
     const requestId = ++autocompleteRequestIdRef.current;
     setSearchRoundDone(false);
     setLoading(true);
+    setPopularGeocodeError(null);
+    setPredictionActionError(null);
     const apiKey = getGoogleMapsApiKey();
     let googleHadError = false;
     let googleErrorHint: string | undefined;
@@ -1238,6 +1332,13 @@ export default function PlacesAutocomplete({
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
       let searchVariants = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
       searchVariants = prependCityQualifiedSearchVariants(input, effectiveCityKey, explicitOtherKey, searchVariants);
+      searchVariants = prependNumericStreetSearchVariants(
+        input,
+        String(city || '').trim(),
+        explicitOtherKey,
+        effectiveCityKey,
+        searchVariants,
+      );
       const primarySearchQuery = searchVariants[0] || input.trim();
       const sortNeedle = effectiveCityKey || cityLabel;
         const compareRows = (a: PlaceResult, b: PlaceResult): number => {
@@ -1335,7 +1436,7 @@ export default function PlacesAutocomplete({
                   return;
                 }
                 googleRawLen = googleRawLen ?? geocoded.length;
-                const geoMapped = geocoded.map((r, ix) => ({
+                const geoMapped: PlaceResult[] = geocoded.map((r, ix) => ({
                   place_id: r.placeId || `google_geocode_${ix}_${r.lat}_${r.lng}`,
                   display_name: r.formattedAddress,
                   lat: String(r.lat),
@@ -1489,7 +1590,9 @@ export default function PlacesAutocomplete({
         };
 
         const filterAndRank = (rows: PlaceResult[]) => {
-          let rowsIn = rows.filter((item) => !['country', 'state'].includes(item.type));
+          let rowsIn = rows.filter(
+            (item) => !['country', 'state'].includes(String(item.type || '').toLowerCase()),
+          );
           const afterTypeFilter = rowsIn;
 
           if (strictCityBounds) {
@@ -1589,6 +1692,32 @@ export default function PlacesAutocomplete({
           nom = filterAndRank(Array.from(byId.values()));
         }
 
+        if (nom.length === 0 && strictCityBounds) {
+          const unionRaw = dedupePlaceResults([...pooledBounded, ...looseAccum]).filter(
+            (item) => !['country', 'state'].includes(String(item.type || '').toLowerCase()),
+          );
+          if (unionRaw.length > 0) {
+            const cityCtx = (sortNeedle || cityLabel || '').trim();
+            const relaxedRows = unionRaw.filter((item) =>
+              nominatimRelaxedPassesSafeGuard(item, cityCtx, localityOptsBase),
+            );
+            if (relaxedRows.length > 0) {
+              diagFallbackUsed = true;
+              relaxedRows.sort(compareRows);
+              nom = relaxedRows;
+              acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+                provider: 'nominatim',
+                query: input.trim(),
+                city_label: cityLabel || null,
+                raw_result_count: unionRaw.length,
+                final_result_count: relaxedRows.length,
+                phase: 'relaxed_tr_city_guard',
+                request_id: requestId,
+              });
+            }
+          }
+        }
+
         nominatimRawTotal = dedupePlaceResults([...pooledBounded, ...looseAccum]).length;
 
         const nCap = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
@@ -1610,13 +1739,38 @@ export default function PlacesAutocomplete({
       }
 
       if (filtered.length === 0 && input.trim().length >= 2) {
+        const useRegisteredCityBboxSilent = !!(cityDataEffective && (!widerSearch || strictCityBounds));
+        let usedBiasOnlyBboxSilent = false;
+        if (
+          !useRegisteredCityBboxSilent &&
+          strictCityBounds &&
+          biasLatitude != null &&
+          biasLongitude != null &&
+          Number.isFinite(biasLatitude) &&
+          Number.isFinite(biasLongitude)
+        ) {
+          usedBiasOnlyBboxSilent = true;
+        }
+        const silentLocalityOpts: LocalityFilterOpts = {
+          strictCityBounds,
+          cityLabel,
+          effectiveCityKey,
+          cityDataEffective,
+          biasLatitude,
+          biasLongitude,
+          biasDeltaDeg,
+          usedBiasOnlyBbox: usedBiasOnlyBboxSilent,
+          rawQueryLower: input.trim().toLocaleLowerCase('tr-TR'),
+        };
+
         const normalizedCity = (cityLabel || '').trim();
+        const q0 = input.trim();
         const silentQueries = [
-          normalizedCity ? normalizePlaceQuery(input.trim(), normalizedCity) : '',
-          normalizedCity ? `${input.trim()} Mahallesi, ${normalizedCity}, Türkiye` : '',
-          normalizedCity ? `${input.trim()} Caddesi, ${normalizedCity}, Türkiye` : '',
-          `${input.trim()}, İstanbul, Türkiye`,
-          `${input.trim()}, Ankara, Türkiye`,
+          normalizedCity ? normalizePlaceQuery(q0, normalizedCity) : '',
+          normalizedCity ? `${q0} Mahallesi, ${normalizedCity}, Türkiye` : '',
+          normalizedCity ? `${q0} Caddesi, ${normalizedCity}, Türkiye` : '',
+          ...(effectiveCityKey === 'İstanbul' ? [`${q0}, İstanbul, Türkiye`] : []),
+          ...(effectiveCityKey === 'Ankara' ? [`${q0}, Ankara, Türkiye`] : []),
         ].filter(Boolean);
         const nCapSilent =
           widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
@@ -1639,12 +1793,36 @@ export default function PlacesAutocomplete({
             if (requestId !== autocompleteRequestIdRef.current) {
               return;
             }
-            const rowsIn = rows.filter((item) => !['country', 'state'].includes(item.type));
-            rowsIn.sort(compareRows);
-            filtered = rowsIn.slice(0, nCapSilent);
+            let silentCand = rows.filter(
+              (item) => !['country', 'state'].includes(String(item.type || '').toLowerCase()),
+            );
+            let silentUsedSoftOnlyBranch = false;
+            if (strictCityBounds) {
+              const strictRows = silentCand.filter((item) =>
+                passesStrictLocality(item, silentLocalityOpts),
+              );
+              const softRows = silentCand.filter((item) =>
+                passesSoftLocality(item, silentLocalityOpts),
+              );
+              if (strictRows.length > 0) {
+                silentCand = strictRows;
+                silentUsedSoftOnlyBranch = false;
+              } else {
+                silentCand = softRows;
+                silentUsedSoftOnlyBranch = true;
+              }
+            }
+            if (silentCand.length === 0) continue;
+            silentCand.sort(compareRows);
+            filtered = silentCand.slice(0, nCapSilent).map((item) => ({
+              ...item,
+              isSilentRefinement: strictCityBounds ? silentUsedSoftOnlyBranch : true,
+            }));
             if (filtered.length > 0) break;
-          } catch {
-            /* sessiz metro fallback */
+          } catch (e) {
+            if (SHOW_PLACES_DIAG) {
+              console.warn('[PlacesAutocomplete] silent nominatim fallback failed', e);
+            }
           }
         }
       }
@@ -1711,14 +1889,24 @@ export default function PlacesAutocomplete({
       } else {
         setPredictions([]);
         try {
-          console.log(
-            'TAG_PLACE_SEARCH_EMPTY',
-            JSON.stringify({
-              request_id: requestId,
-              query_len: input.trim().length,
-              has_city: !!String(city || '').trim(),
-            }),
-          );
+          const payload: Record<string, unknown> = {
+            request_id: requestId,
+            query_len: input.trim().length,
+            city_len: String(city || '').trim().length,
+            has_city: !!String(city || '').trim(),
+            google_key_present: !!apiKey,
+            google_raw_count: googleRawLen ?? 0,
+            nominatim_raw_count: nominatimRawTotal,
+            filtered_count: filtered.length,
+            strict_city_bounds: !!strictCityBounds,
+          };
+          if (SHOW_PLACES_DIAG) {
+            const qTrim = input.trim();
+            const cityTrim = String(city || '').trim();
+            payload.query = qTrim.length > 120 ? `${qTrim.slice(0, 120)}…` : qTrim;
+            payload.city = cityTrim.length > 40 ? `${cityTrim.slice(0, 40)}…` : cityTrim;
+          }
+          console.log('TAG_PLACE_SEARCH_EMPTY', JSON.stringify(payload));
         } catch {
           /* noop */
         }
@@ -1836,11 +2024,13 @@ export default function PlacesAutocomplete({
       Keyboard.dismiss();
     }
 
+    setPredictionActionError(null);
     const formatted = formatAddress(item);
 
     if (item.source === 'google' && item.google_place_id) {
       const key = getGoogleMapsApiKey();
       if (!key) {
+        setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
         return;
       }
       setLoading(true);
@@ -1856,10 +2046,17 @@ export default function PlacesAutocomplete({
           longitude: det.lng,
         });
       } catch {
-        /* noop */
+        setPredictionActionError('Adres doğrulanamadı. Başka bir sonuç seçin veya tekrar arayın.');
       } finally {
         setLoading(false);
       }
+      return;
+    }
+
+    const latitude = parseFloat(item.lat);
+    const longitude = parseFloat(item.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setPredictionActionError('Bu konum seçilemedi. Başka bir sonuç deneyin.');
       return;
     }
 
@@ -1870,8 +2067,8 @@ export default function PlacesAutocomplete({
 
     onPlaceSelected({
       address: item.display_name,
-      latitude: parseFloat(item.lat),
-      longitude: parseFloat(item.lon),
+      latitude,
+      longitude,
     });
   };
 
@@ -1895,33 +2092,57 @@ export default function PlacesAutocomplete({
   const handleSelectPopular = async (placeName: string) => {
     setLoading(true);
     Keyboard.dismiss();
-    
+    setPopularGeocodeError(null);
+
     try {
       const searchQuery = city.trim()
         ? normalizePlaceQuery(placeName, city.trim())
         : `${placeName}, Türkiye`;
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=tr&limit=1&accept-language=tr`;
-      
+
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'LeylekTAG-App/1.0' }
+        headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
       });
-      
+
+      if (!response.ok) {
+        if (SHOW_PLACES_DIAG) {
+          console.warn('[PlacesAutocomplete] handleSelectPopular HTTP', response.status, searchQuery.slice(0, 80));
+        }
+        setPopularGeocodeError('Konum bulunamadı. Aramayı daha açık yazıp tekrar deneyin.');
+        return;
+      }
+
       const data: PlaceResult[] = await response.json();
-      
+
       if (data && data.length > 0) {
         const item = data[0];
+        const lat = parseFloat(item.lat);
+        const lng = parseFloat(item.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          setPopularGeocodeError('Konum bulunamadı. Aramayı daha açık yazıp tekrar deneyin.');
+          return;
+        }
         setQuery(placeName);
         setShowPredictions(false);
         setShowPopular(false);
-        
+
         onPlaceSelected({
           address: item.display_name,
-          latitude: parseFloat(item.lat),
-          longitude: parseFloat(item.lon),
+          latitude: lat,
+          longitude: lng,
         });
+      } else {
+        if (SHOW_PLACES_DIAG) {
+          console.warn('[PlacesAutocomplete] handleSelectPopular empty result', searchQuery.slice(0, 80));
+        }
+        setPopularGeocodeError('Konum bulunamadı. Aramayı daha açık yazıp tekrar deneyin.');
       }
-    } catch {
-      /* noop */
+    } catch (e) {
+      if (SHOW_PLACES_DIAG) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('[PlacesAutocomplete] handleSelectPopular', msg);
+      }
+      setPopularGeocodeError('Konum bulunamadı. Aramayı daha açık yazıp tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -1933,75 +2154,10 @@ export default function PlacesAutocomplete({
     setShowPredictions(false);
     setShowPopular(true);
     setSearchRoundDone(false);
+    setPopularGeocodeError(null);
+    setPredictionActionError(null);
   };
 
-  const emptyFallbackSuggestions = useMemo(() => {
-    const q = query.trim();
-    if (q.length < 2) return [];
-    const cityTrim = (city || '').trim();
-    const cityKey = resolveCityDataKey(cityTrim);
-    const base = [
-      cityTrim ? `${q}, ${cityTrim}` : `${q}, Türkiye`,
-      cityTrim ? `${q} Mahallesi, ${cityTrim}` : `${q} Mahallesi`,
-      cityTrim ? `${q} Caddesi, ${cityTrim}` : `${q} Caddesi`,
-      cityTrim ? `${q} Sokak, ${cityTrim}` : `${q} Sokak`,
-    ];
-    const popular =
-      cityKey && POPULAR_PLACES[cityKey]
-        ? POPULAR_PLACES[cityKey]
-            .filter((p) => normalizeText(p).includes(normalizeText(q)))
-            .slice(0, 2)
-            .map((p) => `${p}, ${cityKey}`)
-        : [];
-    const uniq = new Set<string>();
-    const out: string[] = [];
-    for (const s of [...base, ...popular]) {
-      const t = s.trim().replace(/\s+/g, ' ');
-      if (!t) continue;
-      const key = normalizeText(t);
-      if (uniq.has(key)) continue;
-      uniq.add(key);
-      out.push(t);
-      if (out.length >= 5) break;
-    }
-    return out;
-  }, [query, city]);
-
-  useEffect(() => {
-    const canShow =
-      showPredictions &&
-      predictions.length === 0 &&
-      query.length >= 2 &&
-      !loading &&
-      searchRoundDone &&
-      emptyFallbackSuggestions.length > 0;
-    if (!canShow) return;
-    const logKey = `${normalizeText(query)}|${emptyFallbackSuggestions.length}`;
-    if (emptyFallbackLogKeyRef.current === logKey) return;
-    emptyFallbackLogKeyRef.current = logKey;
-    try {
-      console.log(
-        'TAG_PLACE_SEARCH_EMPTY_FALLBACK',
-        JSON.stringify({
-          query_len: query.trim().length,
-          fallback_count: emptyFallbackSuggestions.length,
-          has_city: !!city.trim(),
-        }),
-      );
-    } catch {
-      /* noop */
-    }
-  }, [
-    showPredictions,
-    predictions.length,
-    query,
-    loading,
-    searchRoundDone,
-    emptyFallbackSuggestions,
-    city,
-  ]);
-
-  // Popüler yerler listesi
   const popularCityKey = resolveCityDataKey(city);
   const popularPlaces =
     hidePopularChips || !popularCityKey || !POPULAR_PLACES[popularCityKey]
@@ -2053,6 +2209,14 @@ export default function PlacesAutocomplete({
                         >
                           {formatted.secondary}
                         </Text>
+                        {item.isSilentRefinement ? (
+                          <Text
+                            style={[styles.predictionRefineHint, tech && styles.predictionRefineHintTech]}
+                            numberOfLines={1}
+                          >
+                            Konumu haritadan doğrulamanız önerilir
+                          </Text>
+                        ) : null}
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
                     </TouchableOpacity>
@@ -2085,7 +2249,11 @@ export default function PlacesAutocomplete({
           placeholder={placeholder}
           placeholderTextColor={tech ? 'rgba(148, 163, 184, 0.95)' : '#999'}
           value={query}
-          onChangeText={setQuery}
+          onChangeText={(t) => {
+            setPopularGeocodeError(null);
+            setPredictionActionError(null);
+            setQuery(t);
+          }}
           autoFocus={true}
           returnKeyType="search"
         />
@@ -2102,6 +2270,24 @@ export default function PlacesAutocomplete({
           </TouchableOpacity>
         )}
       </View>
+
+      {popularGeocodeError ? (
+        <Text
+          style={[styles.geocodeInlineError, tech && styles.geocodeInlineErrorTech]}
+          numberOfLines={2}
+        >
+          {popularGeocodeError}
+        </Text>
+      ) : null}
+
+      {predictionActionError ? (
+        <Text
+          style={[styles.geocodeInlineError, tech && styles.geocodeInlineErrorTech]}
+          numberOfLines={2}
+        >
+          {predictionActionError}
+        </Text>
+      ) : null}
 
       {showCompactMerkezRow ? (
         <ScrollView
@@ -2246,6 +2432,14 @@ export default function PlacesAutocomplete({
                     >
                       {formatted.secondary}
                     </Text>
+                    {item.isSilentRefinement ? (
+                      <Text
+                        style={[styles.predictionRefineHint, tech && styles.predictionRefineHintTech]}
+                        numberOfLines={1}
+                      >
+                        Konumu haritadan doğrulamanız önerilir
+                      </Text>
+                    ) : null}
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
                 </TouchableOpacity>
@@ -2264,28 +2458,13 @@ export default function PlacesAutocomplete({
           <Ionicons name="location-outline" size={48} color={tech ? '#475569' : '#DDD'} />
           <Text style={[styles.noResultsText, tech && styles.noResultsTextTech]}>Sonuç bulunamadı</Text>
           <Text style={[styles.noResultsHint, tech && styles.noResultsHintTech]}>
-            Daha açık yazmayı deneyin. Örn: Çankaya, Ankara
+            Daha açık yazın: mahalle, cadde/sokak ve şehir adıyla deneyin.{'\n'}
+            Örn: Çankaya, Ankara
           </Text>
           {SHOW_PLACES_DIAG && searchDiag ? (
             <Text style={[styles.noResultsDiag, tech && styles.noResultsDiagTech]} numberOfLines={2}>
               {`diag: ${searchDiag.code}${searchDiag.hint ? ` · ${searchDiag.hint}` : ''}`}
             </Text>
-          ) : null}
-          {emptyFallbackSuggestions.length > 0 ? (
-            <View style={styles.emptyFallbackWrap}>
-              {emptyFallbackSuggestions.map((hint) => (
-                <TouchableOpacity
-                  key={hint}
-                  style={[styles.emptyFallbackChip, tech && styles.emptyFallbackChipTech]}
-                  onPress={() => void handleSelectPopular(hint)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.emptyFallbackChipText, tech && styles.emptyFallbackChipTextTech]} numberOfLines={1}>
-                    {hint}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
           ) : null}
         </View>
       )}
@@ -2558,6 +2737,15 @@ const styles = StyleSheet.create({
   predictionSecondaryTextTech: {
     color: '#94A3B8',
   },
+  predictionRefineHint: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  predictionRefineHintTech: {
+    color: '#64748B',
+  },
   separator: {
     height: 1,
     backgroundColor: '#F3F4F6',
@@ -2609,32 +2797,13 @@ const styles = StyleSheet.create({
   noResultsDiagTech: {
     color: '#475569',
   },
-  emptyFallbackWrap: {
-    marginTop: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
+  geocodeInlineError: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#DC2626',
+    paddingHorizontal: 4,
   },
-  emptyFallbackChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    maxWidth: '100%',
-  },
-  emptyFallbackChipTech: {
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-    borderColor: 'rgba(56, 189, 248, 0.45)',
-  },
-  emptyFallbackChipText: {
-    color: '#4338CA',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  emptyFallbackChipTextTech: {
-    color: '#E0F2FE',
+  geocodeInlineErrorTech: {
+    color: '#FCA5A5',
   },
 });
