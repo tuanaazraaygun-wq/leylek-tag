@@ -17,154 +17,282 @@ const SUPPORT_LINE = "Destek: info@karekodteknoloji.com | 0850 307 80 29";
 export const legalDocuments: Record<LegalDocument["slug"], LegalDocument> = {
   "gizlilik-politikasi": {
     slug: "gizlilik-politikasi",
-    title: "Gizlilik Politikasi",
-    updatedAt: "Mayis 2026",
+    title: "Gizlilik Politikası",
+    updatedAt: "Mayıs 2026",
     intro:
-      "Karekod Teknoloji ve Yazilim A.S. olarak Leylek TAG hizmetlerinde kisisel verilerin korunmasina onem veririz. Bu metin, urun kapsaminda verilerin hangi amaclarla islenebilecegini genel olarak aciklar.",
+      "Karekod Teknoloji ve Yazılım A.Ş. olarak Leylek Tag hizmetlerinde kişisel verilerin korunmasına önem veririz. Bu metin, hizmet kapsamında verilerin nasıl işlendiğini açıklar.",
     sections: [
       {
-        heading: "Toplanan Veri Gruplari",
-        bullets: [
-          "Kimlik ve iletisim bilgileri (ad, telefon)",
-          "Konum bilgisi (eslesme ve yolculuk akislarinda)",
-          "Cihaz, log ve guvenlik kayitlari",
-          "Yolculuk, teklif ve eslesme kayitlari",
-        ],
-      },
-      {
-        heading: "Urun Kapsami Bilgilendirmesi",
-        bullets: [
-          "Surucu/yolcu eslesme ve teklif sistemi",
-          "Leylek Teklifi / Muhabbet mesajlasma",
-          "Sesli gorusme / VoIP kullanimi",
-          "Sesli mesaj veya ses kaydi ozelligi varsa ilgili veri islemesi",
-        ],
-      },
-      {
-        heading: "Saklama Yaklasimi",
+        heading: "Genel İlke",
         paragraphs: [
-          "Standart VoIP gorusmelerinde cagri icerigi kaydedilmez; baglanti ve arama metadata'si urun ve guvenlik operasyonlari kapsaminda islenebilir.",
-          "Muhabbet mesaj icerikleri ve ozellik aktifse sesli mesaj/ses kaydi verileri urun ve guvenlik operasyonlari kapsaminda 7 gune kadar saklanabilir.",
+          "Leylek Tag, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.",
         ],
       },
       {
-        heading: "Hesap ve KVKK Haklari",
+        heading: "Konum Verisi",
         paragraphs: [
-          "Kullanicilar uygulama icinden hesap silme / veri silme sureclerini baslatabilir.",
-          "KVKK kapsamindaki basvurularinizi destek iletisim kanallarindan iletebilirsiniz.",
+          "Konum verisi yalnızca yolculuk oluşturma ve aktif yolculuk süresi boyunca kullanılır. Sürekli arka plan takibi yapılmaz.",
+        ],
+      },
+      {
+        heading: "Ürün Kapsamı (Bilgilendirme)",
+        bullets: [
+          "Sürücü/yolcu eşleşme ve teklif sistemi",
+          "Leylek Teklifi / Muhabbet mesajlaşma",
+          "Sesli görüşme / VoIP kullanımı",
+          "Sesli mesaj veya ses verisi özellikleri (varsa)",
+          "Cihaz, log ve güvenlik kayıtları",
+        ],
+      },
+      {
+        heading: "Sürücü Doğrulama",
+        paragraphs: [
+          "Ehliyet ve araç görselleri kimlik doğrulama, güvenlik ve dolandırıcılığı önleme amaçlı işlenir; kamuya açık paylaşılmaz.",
+        ],
+      },
+      {
+        heading: "Muhabbet İçerik Saklama",
+        paragraphs: [
+          "Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse), ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.",
+        ],
+      },
+      {
+        heading: "Güvenlik",
+        bullets: [
+          "HTTPS şifreleme",
+          "Yetkilendirme sistemi",
+          "Rol bazlı erişim",
+          "Sunucu taraflı güvenlik önlemleri",
+        ],
+      },
+      {
+        heading: "Hesap Silme / Veri Silme",
+        paragraphs: [
+          "Kullanıcılar uygulama içinden hesaplarını silebilir. Silme sonrası veriler yasal zorunluluklar saklı kalmak kaydıyla silinir veya anonimleştirilir.",
+        ],
+      },
+      {
+        heading: "KVKK Başvuru Hakları",
+        paragraphs: [
+          "KVKK kapsamındaki başvuru haklarınızı kullanmak için aşağıdaki iletişim kanallarını kullanabilirsiniz.",
           SUPPORT_LINE,
+        ],
+      },
+      {
+        heading: "5651 Uyum",
+        paragraphs: [
+          "Şirket, 5651 sayılı Kanun kapsamında hukuka aykırı içerikleri bildirim üzerine kaldırma yükümlülüğünü yerine getirir.",
         ],
       },
     ],
   },
   "kullanim-sartlari": {
     slug: "kullanim-sartlari",
-    title: "Kullanim Sartlari",
-    updatedAt: "Mayis 2026",
+    title: "Hizmet Şartları",
+    updatedAt: "Mayıs 2026",
     intro:
-      "Bu sayfa Leylek TAG platformunun genel kullanim kosullarini ozetler. Detayli veri islemesi icin Gizlilik Politikasi ve KVKK Aydinlatma Metni ile birlikte degerlendirilmelidir.",
+      "Bu sayfa Leylek Tag platformunun kullanım koşullarını özetler. Veri işlemesine ilişkin ayrıntılar Gizlilik Politikası ve KVKK Aydınlatma Metni ile birlikte değerlendirilmelidir.",
     sections: [
       {
-        heading: "Hizmet Tanimi",
+        heading: "Hizmet Tanımı",
         paragraphs: [
-          "Leylek TAG, surucu ve yolcularin teklif/rota bazli eslesmesini kolaylastiran dijital bir platformdur.",
-          "Platform aracilik altyapisi sunar; tasimacilik hizmeti saglamaz.",
+          "Leylek Tag, yolcu ve sürücü kullanıcıları dijital ortamda eşleştiren bir platformdur. Şirket taşımacılık hizmeti sunmaz.",
         ],
       },
       {
-        heading: "Kullanici Yukumlulukleri",
-        bullets: [
-          "Dogrulugu olan bilgilerle hesap olusturmak",
-          "Topluluk kurallarina uygun davranmak",
-          "Diger kullanicilarin haklarina ve guvenligine saygi gostermek",
-        ],
-      },
-      {
-        heading: "Urun Modulleri",
-        bullets: [
-          "Konum verisi ile eslesme ve teklif surecleri",
-          "Leylek Teklifi / Muhabbet mesajlasma",
-          "Sesli gorusme / VoIP",
-          "Ozellik aktifse sesli mesaj/ses kaydi",
-          "Cihaz, log ve guvenlik kayitlari",
-        ],
-      },
-      {
-        heading: "Saklama ve Destek",
+        heading: "Sorumluluk",
         paragraphs: [
-          "Muhabbet mesaj icerikleri ve ozellik aktifse sesli mesaj/ses kaydi verileri urun ve guvenlik operasyonlari kapsaminda 7 gune kadar saklanabilir.",
+          "Yolculuk sırasında meydana gelebilecek trafik kazaları, maddi/manevi zararlar ve kullanıcılar arası uyuşmazlıklar taraflar arasındadır.",
+        ],
+      },
+      {
+        heading: "Sürücü Sorumluluğu",
+        bullets: [
+          "Geçerli sürücü belgesine sahip olduğunu beyan etmek",
+          "Aracın trafiğe uygun olduğunu beyan etmek",
+          "Sigortasının geçerli olduğunu beyan etmek",
+        ],
+      },
+      {
+        heading: "Topluluk Kuralları",
+        bullets: [
+          "Hakaret, tehdit, dolandırıcılık ve kişisel veri paylaşımı yasaktır",
+          "Şirket içerik kaldırma ve hesap kapatma hakkını saklı tutar",
+        ],
+      },
+      {
+        heading: "Ücretlendirme",
+        paragraphs: [
+          "Yolculuk ücretleri uygulama içi hesaplama veya teklif sistemiyle belirlenir. Şirket komisyon veya üyelik modeli uygulayabilir.",
+        ],
+      },
+      {
+        heading: "Ürün Kapsamı (Bilgilendirme)",
+        bullets: [
+          "Konum verisi ile sürücü/yolcu eşleşme ve teklif sistemi",
+          "Leylek Teklifi / Muhabbet mesajlaşma",
+          "Sesli görüşme / VoIP ve ilgili teknik kayıtlar",
+          "Sesli mesaj veya ses verisi özellikleri (varsa)",
+          "Cihaz, log ve güvenlik kayıtları",
+        ],
+        paragraphs: [
+          "Detaylar Gizlilik Politikası ve KVKK Aydınlatma Metni'nde açıklanır.",
+        ],
+      },
+      {
+        heading: "Muhabbet Kayıt Süresi (Bilgilendirme)",
+        paragraphs: [
+          "Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.",
+        ],
+      },
+      {
+        heading: "Hesap Silme / Veri Silme",
+        paragraphs: [
+          "Kullanıcı, uygulama içinden hesap silme talebi oluşturabilir. İşlem koşulları ve detaylar hesap silme açıklama sayfasında yer alır.",
+        ],
+      },
+      {
+        heading: "KVKK Başvuru Hakları ve Destek",
+        paragraphs: [
+          "KVKK kapsamındaki başvuru hakları ve destek iletişimi için aşağıdaki kanallar kullanılabilir.",
           SUPPORT_LINE,
         ],
+      },
+      {
+        heading: "Uyuşmazlık",
+        paragraphs: ["Uyuşmazlıklarda Ankara Mahkemeleri yetkilidir."],
       },
     ],
   },
   kvkk: {
     slug: "kvkk",
-    title: "KVKK Aydinlatma Metni",
-    updatedAt: "Mayis 2026",
+    title: "KVKK Aydınlatma Metni",
+    updatedAt: "Mayıs 2026",
     intro:
-      "6698 sayili KVKK kapsaminda veri sorumlusu Karekod Teknoloji ve Yazilim A.S. olarak, Leylek TAG urunlerinde kisisel veri isleme sureclerine iliskin genel bilgilendirme sunuyoruz.",
+      "6698 sayılı KVKK kapsamında veri sorumlusu Karekod Teknoloji ve Yazılım A.Ş. olarak, Leylek Tag ürünlerinde kişisel veri işleme süreçlerine ilişkin bilgilendirme sunuyoruz.",
     sections: [
       {
-        heading: "Veri Sorumlusu ve Iletisim",
+        heading: "Veri Sorumlusu",
         paragraphs: [
-          "Karekod Teknoloji ve Yazilim A.S.",
+          "Leylek Tag mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla Karekod Teknoloji ve Yazılım A.Ş. tarafından işlenmektedir.",
+          "Meşrutiyet Mah. Konur Sk. Özsoy İş Hanı No: 25 İç Kapı No: 13 Çankaya / Ankara",
           "E-posta: info@karekodteknoloji.com",
           "Telefon: 0850 307 80 29",
         ],
       },
       {
-        heading: "Islenen Veri ve Amaclar",
+        heading: "İşlenen Veriler — Yolcu Kullanıcılar",
         bullets: [
-          "Kimlik/iletisim, konum, cihaz ve guvenlik verileri",
-          "Surucu/yolcu eslesme ve teklif surecleri",
-          "Leylek Teklifi / Muhabbet mesajlasma",
-          "Sesli gorusme / VoIP ve ozellik aktifse sesli mesaj/ses kaydi",
+          "Ad, soyad",
+          "Telefon numarası",
+          "Şehir bilgisi",
+          "Konum verisi (aktif kullanım sırasında)",
+          "Mesaj içerikleri",
+          "Yolculuk geçmişi",
         ],
       },
       {
-        heading: "Saklama ve Guvenlik",
-        paragraphs: [
-          "Standart VoIP gorusmelerinde cagri icerigi kaydedilmez; baglanti/arama metadata'si islenebilir.",
-          "Muhabbet mesaj icerikleri ve ozellik aktifse sesli mesaj/ses kaydi verileri urun ve guvenlik operasyonlari kapsaminda 7 gune kadar saklanabilir.",
+        heading: "İşlenen Veriler — Sürücü Kullanıcılar (ek olarak)",
+        bullets: [
+          "Ehliyet görseli",
+          "Araç ön ve arka fotoğrafları (plaka dahil)",
+          "Plaka numarası",
+          "Araç bilgileri",
         ],
       },
       {
-        heading: "Basvuru Haklari",
+        heading: "İşlenen Veriler — Teknik",
+        bullets: [
+          "IP adresi",
+          "Cihaz bilgisi",
+          "Push bildirim token'ı",
+          "Sistem log ve güvenlik kayıtları",
+        ],
+      },
+      {
+        heading: "İşleme Amaçları",
+        bullets: [
+          "Kullanıcı kaydı ve kimlik doğrulama",
+          "Yolcu–sürücü eşleştirme",
+          "Sürücü/yolcu teklif sistemi",
+          "Leylek Teklifi / Muhabbet mesajlaşma hizmetleri",
+          "Sesli görüşme / VoIP hizmetleri",
+          "Sesli mesaj veya ses verisi özellikleri (varsa)",
+          "Güvenliğin sağlanması",
+          "Hukuki yükümlülüklerin yerine getirilmesi",
+          "Dolandırıcılığın önlenmesi",
+          "Topluluk alanının yönetimi",
+        ],
+      },
+      {
+        heading: "Saklama Süreleri",
+        bullets: [
+          "Hesap bilgileri: üyelik süresince",
+          "Trip kayıtları: 5 yıl",
+          "Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse): 7 güne kadar",
+          "Ehliyet ve araç görselleri: üyelik süresince",
+          "Log kayıtları: mevzuat süresi boyunca",
+        ],
+      },
+      {
+        heading: "Yurt Dışına Aktarım",
         paragraphs: [
-          "KVKK m.11 kapsamindaki haklarinizi destek iletisim kanallarindan iletebilirsiniz.",
-          SUPPORT_LINE,
+          "Altyapı hizmetleri (Supabase, Google Maps vb.) nedeniyle veriler yurt dışında bulunan sunucularda saklanabilir.",
+        ],
+      },
+      {
+        heading: "Haklarınız",
+        paragraphs: [
+          "KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz. Destek hattı: 0850 307 80 29.",
         ],
       },
     ],
   },
   "hesap-silme": {
     slug: "hesap-silme",
-    title: "Hesap Silme ve Veri Silme Aciklamasi",
-    updatedAt: "Mayis 2026",
+    title: "Hesap Silme ve Veri Silme",
+    updatedAt: "Mayıs 2026",
     intro:
-      "Kullanicilar Leylek TAG uygulamasi icinden hesap silme surecini baslatabilir. Bu metin, surece iliskin genel bilgilendirme amaciyla hazirlanmistir.",
+      "Hesabınızı silmek istediğinizde aşağıdaki bilgileri dikkate alın. Hesap silme talebi Leylek Tag uygulaması içinden başlatılır; bu sayfa süreci açıklar.",
     sections: [
       {
-        heading: "Genel Surec",
+        heading: "Uygulama İçinden Silme",
+        paragraphs: [
+          "Hesap silme işlemi uygulama içindeki Hesap Silme ekranından başlatılır. İşlem onayınızla hesabınız devre dışı bırakılır ve oturumunuz kapatılır.",
+          "Aktif yolculuk veya aktif Leylek Teklifi yolculuğu varken hesap silinemez.",
+        ],
+      },
+      {
+        heading: "Silinecek Veriler",
         bullets: [
-          "Hesap silme talebi uygulama icinden baslatilabilir",
-          "Aktif yolculuklar varsa islem kosullara bagli olarak sinirlanabilir",
-          "Silme sonrasi veriler yasal yukumluluklar kapsaminda silinir veya anonimlestirilir",
+          "Profil bilgileriniz",
+          "Yolculuk geçmişiniz",
+          "Mesajlarınız",
+          "Puanlarınız ve değerlendirmeleriniz",
+          "Ehliyet ve araç bilgileriniz (sürücüler için)",
         ],
       },
       {
-        heading: "Urun ve Guvenlik Operasyonlari",
-        paragraphs: [
-          "Muhabbet mesaj icerikleri ve ozellik aktifse sesli mesaj/ses kaydi verileri urun ve guvenlik operasyonlari kapsaminda 7 gune kadar saklanabilir.",
-          "Cihaz, log ve guvenlik kayitlari mevzuat ve guvenlik gerekleri kapsaminda islenebilir.",
+        heading: "Silme Süreci",
+        bullets: [
+          "Hesabınız hemen devre dışı bırakılır",
+          "Kişisel verileriniz 30 gün içinde silinir",
+          "Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir",
+          "Yasal zorunluluklar kapsamındaki veriler anonimleştirilir",
+          "Bu işlem geri alınamaz",
         ],
       },
       {
-        heading: "Destek ve KVKK Basvuru",
+        heading: "Destek ve KVKK Başvurusu",
         paragraphs: [
-          "Hesap/veri silme veya KVKK basvuru talepleriniz icin:",
+          "Hesap veya veri silme talepleriniz ve KVKK başvurularınız için:",
           SUPPORT_LINE,
+        ],
+      },
+      {
+        heading: "İlgili Yasal Metinler",
+        paragraphs: [
+          "Gizlilik Politikası, Hizmet Şartları ve KVKK Aydınlatma Metni bu süreçle birlikte değerlendirilmelidir.",
         ],
       },
     ],

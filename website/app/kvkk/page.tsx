@@ -3,8 +3,8 @@ import { LegalPage } from "@/components/legal-page";
 import { legalDocuments } from "@/lib/legal-content";
 
 export const metadata: Metadata = {
-  title: "KVKK Aydinlatma Metni",
-  description: "Leylek TAG KVKK aydinlatma metni ve basvuru haklari.",
+  title: "KVKK Aydınlatma Metni",
+  description: "Leylek Tag KVKK aydınlatma metni, veri işleme ve başvuru hakları.",
 };
 
 export default function KvkkPage() {
