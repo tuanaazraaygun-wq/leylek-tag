@@ -925,6 +925,8 @@ export default function App() {
   const roleStepPulse = useRef(new Animated.Value(1)).current;
   /** Rol kartı / araç chip alt metni — opacity pulse (roleStepPulse ile karıştırılmaz) */
   const roleSelectUiPulse = useRef(new Animated.Value(1)).current;
+  /** Yolcu/Sürücü kart alt yazısı — belirgin fade (Araç chip Çağır’daki roleSelectUiPulse’a dokunmaz) */
+  const roleSelectCardSubtitlePulse = useRef(new Animated.Value(1)).current;
 
   /** Role-select Phase B — görsel giriş (yan etki yok; sıralama/state değiştirmez) */
   const roleCardPassengerTranslateX = useRef(new Animated.Value(-26)).current;
@@ -1096,6 +1098,35 @@ export default function App() {
       roleSelectUiPulse.setValue(1);
     };
   }, [screen, roleSelectUiPulse]);
+
+  useEffect(() => {
+    if (screen !== 'role-select') {
+      roleSelectCardSubtitlePulse.stopAnimation();
+      roleSelectCardSubtitlePulse.setValue(1);
+      return undefined;
+    }
+    roleSelectCardSubtitlePulse.setValue(1);
+    const subtitlePulseMs = Math.round(Math.max(900, Math.min(1200, 1050)));
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(roleSelectCardSubtitlePulse, {
+          toValue: 0.25,
+          duration: subtitlePulseMs,
+          useNativeDriver: true,
+        }),
+        Animated.timing(roleSelectCardSubtitlePulse, {
+          toValue: 1,
+          duration: subtitlePulseMs,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulse.start();
+    return () => {
+      pulse.stop();
+      roleSelectCardSubtitlePulse.setValue(1);
+    };
+  }, [screen, roleSelectCardSubtitlePulse]);
 
   useEffect(() => {
     if (!roleSelectTripExitBanner) return undefined;
@@ -3835,7 +3866,13 @@ export default function App() {
     const roleIconMarginBottom = Math.round(Math.max(6, Math.min(12, 12 * roleScale)));
     const roleCardLabelFontSize = Math.round(Math.max(15, Math.min(19, 19 * roleScale)));
     const roleCardDescFontSize = Math.round(Math.max(10, Math.min(12, 12 * roleScale)));
-    const roleCardDescLineHeight = Math.round(Math.max(14, Math.min(17, 17 * roleScale)));
+    /** Kart altı tek satır; uzun yolcu metni için simetrik taban + sığdırma */
+    const roleCardSubtitleOneLineFont = Math.round(
+      Math.max(9, Math.min(12, roleCardDescFontSize * 0.94)),
+    );
+    const roleCardSubtitleOneLineHeight = Math.round(
+      Math.max(12, Math.min(16, roleCardSubtitleOneLineFont * 1.22)),
+    );
     const roleContinueMinHeight = Math.round(Math.max(48, Math.min(64, rs.usableHeight * 0.078)));
     const roleContinuePadV = Math.round(Math.max(11, Math.min(20, roleContinueMinHeight * 0.31)));
     const roleContinueTextSize = Math.round(Math.max(18, Math.min(23, 23 * roleScale)));
@@ -3892,6 +3929,12 @@ export default function App() {
     const vchCallFontSize = Math.max(
       9,
       Math.min(13, Math.round(11 * Math.min(vehicleDeckBoost, 1.22))),
+    );
+    /** Sürücü deck — Çağır yok; etiket biraz büyük, responsive clamp */
+    const showPassengerVehicleCall = selectedRole === 'passenger';
+    const vchLabelFontSizeDriver = Math.min(
+      rs.isVeryCompact ? 17 : rs.isCompact && !rs.isVeryCompact ? 20 : 23,
+      Math.round(vchLabelFontSize * 1.1),
     );
     const continueArrowIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
     const communityRoutesIconSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
@@ -4237,18 +4280,22 @@ export default function App() {
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
                             {
-                              fontSize: Math.round(roleCardDescFontSize * 1.08 * 10) / 10,
-                              lineHeight: Math.round(roleCardDescLineHeight * 1.08),
-                              color: '#FACC15',
+                              width: '100%',
+                              textAlign: 'center',
+                              fontSize: roleCardSubtitleOneLineFont,
+                              lineHeight: roleCardSubtitleOneLineHeight,
+                              color: '#1E3A8A',
                               fontWeight: '800',
-                              textShadowColor: 'rgba(250, 204, 21, 0.5)',
+                              textShadowColor: 'rgba(30, 64, 175, 0.42)',
                               textShadowOffset: { width: 0, height: 0 },
-                              textShadowRadius: 7,
-                              opacity: roleSelectUiPulse,
+                              textShadowRadius: 8,
+                              opacity: roleSelectCardSubtitlePulse,
                             },
                           ]}
-                          numberOfLines={2}
+                          numberOfLines={1}
                           ellipsizeMode="tail"
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.78}
                         >
                           Sürücülere teklif gönder
                         </Animated.Text>
@@ -4327,18 +4374,22 @@ export default function App() {
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
                             {
-                              fontSize: Math.round(roleCardDescFontSize * 1.08 * 10) / 10,
-                              lineHeight: Math.round(roleCardDescLineHeight * 1.08),
+                              width: '100%',
+                              textAlign: 'center',
+                              fontSize: roleCardSubtitleOneLineFont,
+                              lineHeight: roleCardSubtitleOneLineHeight,
                               color: '#22C55E',
                               fontWeight: '800',
-                              textShadowColor: 'rgba(34, 197, 94, 0.45)',
+                              textShadowColor: 'rgba(34, 197, 94, 0.48)',
                               textShadowOffset: { width: 0, height: 0 },
-                              textShadowRadius: 7,
-                              opacity: roleSelectUiPulse,
+                              textShadowRadius: 8,
+                              opacity: roleSelectCardSubtitlePulse,
                             },
                           ]}
-                          numberOfLines={2}
+                          numberOfLines={1}
                           ellipsizeMode="tail"
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.78}
                         >
                           Yolculardan teklif al
                         </Animated.Text>
@@ -4411,7 +4462,9 @@ export default function App() {
                               paddingVertical: vchPadV,
                               paddingHorizontal: vchPadH,
                               borderRadius: vchBorderRadius,
-                              gap: Math.max(3, Math.round(4 * vehicleDeckBoost)),
+                              gap: showPassengerVehicleCall
+                                ? Math.max(3, Math.round(4 * vehicleDeckBoost))
+                                : 0,
                             },
                           ]}
                           onPress={() => {
@@ -4440,13 +4493,14 @@ export default function App() {
                                 styles.roleVehicleChipText,
                                 rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
                                 rs.isVeryCompact && styles.roleVehicleChipTextVery,
-                                { fontSize: vchLabelFontSize },
+                                { fontSize: showPassengerVehicleCall ? vchLabelFontSize : vchLabelFontSizeDriver },
                               ]}
                               numberOfLines={1}
                             >
                               Araba
                             </Text>
                           </View>
+                          {showPassengerVehicleCall ? (
                           <Animated.Text
                             style={{
                               opacity: roleSelectUiPulse,
@@ -4465,6 +4519,7 @@ export default function App() {
                           >
                             Çağır
                           </Animated.Text>
+                          ) : null}
                         </TouchableOpacity>
                       </Animated.View>
                       <Animated.View
@@ -4490,7 +4545,9 @@ export default function App() {
                               paddingVertical: vchPadV,
                               paddingHorizontal: vchPadH,
                               borderRadius: vchBorderRadius,
-                              gap: Math.max(3, Math.round(4 * vehicleDeckBoost)),
+                              gap: showPassengerVehicleCall
+                                ? Math.max(3, Math.round(4 * vehicleDeckBoost))
+                                : 0,
                             },
                           ]}
                           onPress={() => {
@@ -4519,13 +4576,14 @@ export default function App() {
                                 styles.roleVehicleChipText,
                                 rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
                                 rs.isVeryCompact && styles.roleVehicleChipTextVery,
-                                { fontSize: vchLabelFontSize },
+                                { fontSize: showPassengerVehicleCall ? vchLabelFontSize : vchLabelFontSizeDriver },
                               ]}
                               numberOfLines={1}
                             >
                               Motor
                             </Text>
                           </View>
+                          {showPassengerVehicleCall ? (
                           <Animated.Text
                             style={{
                               opacity: roleSelectUiPulse,
@@ -4544,6 +4602,7 @@ export default function App() {
                           >
                             Çağır
                           </Animated.Text>
+                          ) : null}
                         </TouchableOpacity>
                       </Animated.View>
                     </View>
