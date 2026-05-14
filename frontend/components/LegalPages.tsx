@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const COLORS = {
   primary: '#3FA9F5',
@@ -34,7 +33,7 @@ export function LegalPage({ type, visible, onClose }: LegalPageProps) {
     setLoading(true);
     try {
       const endpoint = type === 'privacy' ? 'privacy' : type === 'terms' ? 'terms' : 'kvkk';
-      const res = await fetch(`${API_URL}/legal/${endpoint}`);
+      const res = await fetch(`${API_BASE_URL}/legal/${endpoint}`);
       const data = await res.json();
       if (data.success) setContent(data);
     } catch (e) {
@@ -116,7 +115,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               <View style={styles.consentTextContainer}>
                 <Text style={styles.consentText}>
                   <Text style={styles.linkText} onPress={() => setShowPrivacy(true)}>Gizlilik Politikası</Text>
-                  'nı okudum ve kabul ediyorum.
+                  {"'nı okudum ve kabul ediyorum."}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -132,7 +131,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               <View style={styles.consentTextContainer}>
                 <Text style={styles.consentText}>
                   <Text style={styles.linkText} onPress={() => setShowTerms(true)}>Kullanım Şartları</Text>
-                  'nı okudum ve kabul ediyorum.
+                  {"'nı okudum ve kabul ediyorum."}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -148,7 +147,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               <View style={styles.consentTextContainer}>
                 <Text style={styles.consentText}>
                   <Text style={styles.linkText} onPress={() => setShowKvkk(true)}>KVKK Aydınlatma Metni</Text>
-                  'ni okudum, kişisel verilerimin işlenmesini onaylıyorum.
+                  {"'ni okudum, kişisel verilerimin işlenmesini onaylıyorum."}
                 </Text>
               </View>
             </TouchableOpacity>
