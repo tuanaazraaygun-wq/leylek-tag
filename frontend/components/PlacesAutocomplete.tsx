@@ -398,6 +398,82 @@ function prependNumericStreetSearchVariants(
   return [...front, ...existing];
 }
 
+/** Tek turda çok fazla provider isteği yöneltmeyelim (Google merged = 4×/varyant). */
+const PLACES_SEARCH_VARIANT_CAP = 5;
+/** Google autocomplete+geocode+loose: en fazla bu kadar farklı dize */
+const PLACES_GOOGLE_VARIANT_ATTEMPT_CAP = 2;
+/** Nominatim bounded/loose: en fazla bu kadar sorgu */
+const PLACES_NOMINATIM_VARIANT_ATTEMPT_CAP = 2;
+
+/**
+ * Ham + prepend sonrası listeyi 4–5 güçlü varyanta indirir:
+ * ham → şehir,Türkiye → Çankaya (Ankara) → sayı+sokak/cad… → geri kalan sırayla dolum.
+ */
+function capPlacesSearchVariants(
+  full: string[],
+  rawInput: string,
+  cityLabel: string,
+  effectiveCityKey: string | null,
+): string[] {
+  const head = rawInput.trim().replace(/\s+/g, ' ');
+  if (head.length < 2) return [];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  const tryAdd = (s: string): void => {
+    if (out.length >= PLACES_SEARCH_VARIANT_CAP) return;
+    const t = s.trim().replace(/\s+/g, ' ');
+    if (t.length < 2) return;
+    const k = normCityNeedle(t);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push(t);
+  };
+
+  tryAdd(head);
+
+  const cityTrim = String(cityLabel || '').trim();
+  if (cityTrim) {
+    tryAdd(`${head}, ${cityTrim}, Türkiye`);
+    const nq = normalizePlaceQuery(head, cityTrim);
+    if (nq) tryAdd(nq);
+  }
+
+  const nHead = normalizeText(head);
+  if (effectiveCityKey === 'Ankara' && nHead.includes('cankaya')) {
+    tryAdd('Çankaya, Ankara, Türkiye');
+    tryAdd('Cankaya, Ankara, Türkiye');
+    tryAdd(`${head}, Ankara, Türkiye`);
+    tryAdd('Çankaya Mahallesi, Ankara, Türkiye');
+    tryAdd('Cankaya Mahallesi, Ankara, Türkiye');
+    tryAdd('Çankaya İlçesi, Ankara, Türkiye');
+    tryAdd('Cankaya İlçesi, Ankara, Türkiye');
+    tryAdd('Cankaya, Ankara, Turkey');
+  }
+
+  const headNk = normCityNeedle(head);
+  if (/^\d{1,5}\b/.test(head)) {
+    let numPicked = 0;
+    for (const v of full) {
+      if (out.length >= PLACES_SEARCH_VARIANT_CAP || numPicked >= 3) break;
+      const vn = v.trim().replace(/\s+/g, ' ');
+      if (vn.length < 2 || normCityNeedle(vn) === headNk) continue;
+      if (!/^\d{1,5}\b/.test(vn)) continue;
+      const lenBefore = out.length;
+      tryAdd(vn);
+      if (out.length > lenBefore) numPicked += 1;
+    }
+  }
+
+  for (const v of full) {
+    if (out.length >= PLACES_SEARCH_VARIANT_CAP) break;
+    tryAdd(v.trim().replace(/\s+/g, ' '));
+  }
+
+  return out;
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toR = (d: number) => (d * Math.PI) / 180;
@@ -1383,15 +1459,29 @@ export default function PlacesAutocomplete({
       const explicitOtherKey = explicitOtherMajorCityKeyFromQuery(input, cityKeyHome);
       const effectiveCityKey = explicitOtherKey || cityKeyHome;
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
-      let searchVariants = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
-      searchVariants = prependCityQualifiedSearchVariants(input, effectiveCityKey, explicitOtherKey, searchVariants);
-      searchVariants = prependNumericStreetSearchVariants(
+      let searchVariantsUncapped = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
+      searchVariantsUncapped = prependCityQualifiedSearchVariants(
+        input,
+        effectiveCityKey,
+        explicitOtherKey,
+        searchVariantsUncapped,
+      );
+      searchVariantsUncapped = prependNumericStreetSearchVariants(
         input,
         String(city || '').trim(),
         explicitOtherKey,
         effectiveCityKey,
-        searchVariants,
+        searchVariantsUncapped,
       );
+      const searchVariants = capPlacesSearchVariants(
+        searchVariantsUncapped,
+        input,
+        cityLabel,
+        effectiveCityKey,
+      );
+      const googleAttemptVariants = searchVariants.slice(0, PLACES_GOOGLE_VARIANT_ATTEMPT_CAP);
+      const nominatimAttemptVariants = searchVariants.slice(0, PLACES_NOMINATIM_VARIANT_ATTEMPT_CAP);
+      let nominatimRateLimited = false;
       const primarySearchQuery = searchVariants[0] || input.trim();
       const sortNeedle = effectiveCityKey || cityLabel;
         const compareRows = (a: PlaceResult, b: PlaceResult): number => {
@@ -1433,7 +1523,7 @@ export default function PlacesAutocomplete({
             strictCityBounds,
           );
 
-          googleAuto: for (const qTry of searchVariants) {
+          googleAuto: for (const qTry of googleAttemptVariants) {
             acDiag('AUTOCOMPLETE_PROVIDER_START', {
               provider: 'google_autocomplete',
               query: qTry,
@@ -1476,7 +1566,7 @@ export default function PlacesAutocomplete({
               rawQueryLower: input.trim().toLocaleLowerCase('tr-TR'),
             };
 
-            googleGeo: for (const qTry of searchVariants) {
+            googleGeo: for (const qTry of googleAttemptVariants) {
               try {
                 acDiag('AUTOCOMPLETE_PROVIDER_START', {
                   provider: 'google_geocode',
@@ -1525,7 +1615,7 @@ export default function PlacesAutocomplete({
 
             if (filtered.length === 0 && gBias) {
               const gBiasLoose: GoogleAutocompleteBias = { ...gBias, strictBounds: false };
-              looseAuto: for (const qTry of searchVariants) {
+              looseAuto: for (const qTry of googleAttemptVariants) {
                 acDiag('AUTOCOMPLETE_PROVIDER_START', {
                   provider: 'google_autocomplete_loose',
                   query: qTry,
@@ -1615,13 +1705,18 @@ export default function PlacesAutocomplete({
           return { url, usedBiasOnlyBbox };
         };
 
-        const runFetch = async (queryText: string, bounded: boolean, lim: number) => {
+        const runFetch = async (queryText: string, bounded: boolean, lim: number): Promise<PlaceResult[]> => {
+          if (nominatimRateLimited) return [];
           const { url } = buildUrl(queryText, bounded, lim);
           const response = await fetch(url, {
             headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
             signal,
           });
           if (!response.ok) {
+            if (response.status === 429 || response.status === 403) {
+              nominatimRateLimited = true;
+              return [];
+            }
             throw new Error(`nominatim_http_${response.status}`);
           }
           const data: PlaceResult[] = await response.json();
@@ -1701,7 +1796,7 @@ export default function PlacesAutocomplete({
         let nom: PlaceResult[] = [];
         const pooledBounded: PlaceResult[] = [];
 
-        for (const variant of searchVariants) {
+        for (const variant of nominatimAttemptVariants) {
           const boundedRows = await runFetch(variant, true, Math.max(8, limitPrimary));
           if (!matchesActivePlacesJob(requestId, searchedTrim)) {
             return;
@@ -1728,7 +1823,7 @@ export default function PlacesAutocomplete({
 
         const looseAccum: PlaceResult[] = [];
         if (nom.length < 5 && strictCityBounds) {
-          for (const variant of searchVariants) {
+          for (const variant of nominatimAttemptVariants) {
             const looseRows = await runFetch(variant, false, 35);
             if (!matchesActivePlacesJob(requestId, searchedTrim)) {
               return;
@@ -1791,7 +1886,7 @@ export default function PlacesAutocomplete({
         return;
       }
 
-      if (filtered.length === 0 && searchedTrim.length >= 2) {
+      if (filtered.length === 0 && searchedTrim.length >= 2 && !nominatimRateLimited) {
         const useRegisteredCityBboxSilent = !!(cityDataEffective && (!widerSearch || strictCityBounds));
         let usedBiasOnlyBboxSilent = false;
         if (
@@ -1818,19 +1913,13 @@ export default function PlacesAutocomplete({
 
         const normalizedCity = (cityLabel || '').trim();
         const q0 = searchedTrim;
-        const silentQueries = [
-          normalizedCity ? normalizePlaceQuery(q0, normalizedCity) : '',
-          normalizedCity ? `${q0} Mahallesi, ${normalizedCity}, Türkiye` : '',
-          normalizedCity ? `${q0} Caddesi, ${normalizedCity}, Türkiye` : '',
-          ...(effectiveCityKey === 'İstanbul' ? [`${q0}, İstanbul, Türkiye`] : []),
-          ...(effectiveCityKey === 'Ankara' ? [`${q0}, Ankara, Türkiye`] : []),
-        ].filter(Boolean);
+        const silentSingleQuery = normalizedCity ? normalizePlaceQuery(q0, normalizedCity) : '';
         const nCapSilent =
           widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
-        for (const sq of silentQueries) {
+        if (silentSingleQuery) {
           try {
             const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-              sq,
+              silentSingleQuery,
             )}&countrycodes=tr&addressdetails=1&extratags=1&limit=${Math.max(
               10,
               nCapSilent,
@@ -1839,39 +1928,43 @@ export default function PlacesAutocomplete({
               headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
               signal,
             });
-            if (!response.ok) continue;
-            const data = (await response.json()) as PlaceResult[];
-            const rows = Array.isArray(data) ? data : [];
-            if (rows.length === 0) continue;
-            if (!matchesActivePlacesJob(requestId, searchedTrim)) {
-              return;
-            }
-            let silentCand = rows.filter(
-              (item) => !['country', 'state'].includes(String(item.type || '').toLowerCase()),
-            );
-            let silentUsedSoftOnlyBranch = false;
-            if (strictCityBounds) {
-              const strictRows = silentCand.filter((item) =>
-                passesStrictLocality(item, silentLocalityOpts),
-              );
-              const softRows = silentCand.filter((item) =>
-                passesSoftLocality(item, silentLocalityOpts),
-              );
-              if (strictRows.length > 0) {
-                silentCand = strictRows;
-                silentUsedSoftOnlyBranch = false;
-              } else {
-                silentCand = softRows;
-                silentUsedSoftOnlyBranch = true;
+            if (response.ok) {
+              const data = (await response.json()) as PlaceResult[];
+              const rows = Array.isArray(data) ? data : [];
+              if (rows.length > 0) {
+                if (!matchesActivePlacesJob(requestId, searchedTrim)) {
+                  return;
+                }
+                let silentCand = rows.filter(
+                  (item) => !['country', 'state'].includes(String(item.type || '').toLowerCase()),
+                );
+                let silentUsedSoftOnlyBranch = false;
+                if (strictCityBounds) {
+                  const strictRows = silentCand.filter((item) =>
+                    passesStrictLocality(item, silentLocalityOpts),
+                  );
+                  const softRows = silentCand.filter((item) =>
+                    passesSoftLocality(item, silentLocalityOpts),
+                  );
+                  if (strictRows.length > 0) {
+                    silentCand = strictRows;
+                    silentUsedSoftOnlyBranch = false;
+                  } else {
+                    silentCand = softRows;
+                    silentUsedSoftOnlyBranch = true;
+                  }
+                }
+                if (silentCand.length > 0) {
+                  silentCand.sort(compareRows);
+                  filtered = silentCand.slice(0, nCapSilent).map((item) => ({
+                    ...item,
+                    isSilentRefinement: strictCityBounds ? silentUsedSoftOnlyBranch : true,
+                  }));
+                }
               }
+            } else if (response.status === 429 || response.status === 403) {
+              nominatimRateLimited = true;
             }
-            if (silentCand.length === 0) continue;
-            silentCand.sort(compareRows);
-            filtered = silentCand.slice(0, nCapSilent).map((item) => ({
-              ...item,
-              isSilentRefinement: strictCityBounds ? silentUsedSoftOnlyBranch : true,
-            }));
-            if (filtered.length > 0) break;
           } catch (e) {
             if (SHOW_PLACES_DIAG) {
               console.warn('[PlacesAutocomplete] silent nominatim fallback failed', e);
