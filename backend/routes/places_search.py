@@ -23,6 +23,11 @@ GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
+# Eski (filtresiz) cache girdilerini deploy sonrası baypas etmek için
+_CACHE_KEY_VER = "v2"
+
+# normalized city key -> (min_lon, min_lat, max_lon, max_lat)
+CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
 
 
 def _norm_key(s: str) -> str:
@@ -32,6 +37,125 @@ def _norm_key(s: str) -> str:
     except Exception:
         pass
     return " ".join(t.split())
+
+
+def _register_city_bbox(label: str, min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> None:
+    CITY_BBOX[_norm_key(label)] = (min_lon, min_lat, max_lon, max_lat)
+
+
+_register_city_bbox("Ankara", 32.2, 39.5, 33.5, 40.4)
+_register_city_bbox("İstanbul", 28.5, 40.8, 29.9, 41.7)
+_register_city_bbox("İzmir", 26.5, 38.0, 27.8, 39.0)
+_register_city_bbox("Bursa", 28.4, 39.8, 30.0, 40.6)
+_register_city_bbox("Antalya", 29.8, 36.1, 32.5, 37.5)
+_register_city_bbox("Adana", 34.5, 36.5, 36.2, 38.0)
+_register_city_bbox("Konya", 31.5, 36.8, 34.5, 38.8)
+_register_city_bbox("Gaziantep", 36.5, 36.5, 38.2, 37.8)
+_register_city_bbox("Şanlıurfa", 38.0, 36.5, 40.5, 38.0)
+_register_city_bbox("Kocaeli", 29.3, 40.5, 30.5, 41.2)
+_register_city_bbox("Mersin", 33.5, 36.0, 35.5, 37.5)
+_register_city_bbox("Diyarbakır", 39.5, 37.3, 41.2, 38.8)
+_register_city_bbox("Hatay", 35.5, 35.8, 37.0, 37.0)
+_register_city_bbox("Manisa", 27.0, 38.2, 28.5, 39.2)
+_register_city_bbox("Kayseri", 34.5, 38.0, 36.5, 39.5)
+_register_city_bbox("Samsun", 35.5, 40.8, 37.2, 41.8)
+_register_city_bbox("Balıkesir", 27.0, 39.0, 29.0, 40.5)
+_register_city_bbox("Kahramanmaraş", 36.2, 37.0, 37.8, 38.3)
+_register_city_bbox("Van", 42.5, 37.8, 44.5, 39.5)
+_register_city_bbox("Aydın", 27.0, 37.3, 28.8, 38.5)
+_register_city_bbox("Denizli", 28.5, 37.2, 30.0, 38.3)
+_register_city_bbox("Sakarya", 29.8, 40.3, 31.0, 41.2)
+_register_city_bbox("Tekirdağ", 26.5, 40.5, 28.5, 41.5)
+_register_city_bbox("Muğla", 27.5, 36.5, 29.5, 37.8)
+_register_city_bbox("Eskişehir", 29.8, 39.0, 31.5, 40.5)
+_register_city_bbox("Mardin", 40.0, 36.8, 41.5, 37.8)
+_register_city_bbox("Trabzon", 38.8, 40.5, 40.5, 41.5)
+_register_city_bbox("Malatya", 37.5, 37.8, 39.2, 38.9)
+_register_city_bbox("Erzurum", 40.3, 39.3, 42.5, 40.5)
+_register_city_bbox("Adıyaman", 37.4, 37.3, 38.8, 38.2)
+_register_city_bbox("Ağrı", 42.45, 39.20, 44.55, 40.15)
+
+
+def _result_lon_lat(result: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
+    """(lon, lat) veya eksik/boş koordinatta (None, None)."""
+    try:
+        la = result.get("lat")
+        lo = result.get("lng")
+        if la is None or lo is None:
+            return None, None
+        latf = float(la)
+        lonf = float(lo)
+        if abs(latf) < 1e-9 and abs(lonf) < 1e-9:
+            return None, None
+        return lonf, latf
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _point_in_city_bbox(lon: float, lat: float, bbox: tuple[float, float, float, float]) -> bool:
+    min_lon, min_lat, max_lon, max_lat = bbox
+    return min_lon <= lon <= max_lon and min_lat <= lat <= max_lat
+
+
+def city_match(result: dict[str, Any], city: str) -> bool:
+    """
+    Sonucun istenen şehre ait sayılması: bbox içi koordinat VEYA normalize metinde şehir adı.
+    city boşsa filtre yok (True).
+    """
+    ct = (city or "").strip()
+    if not ct:
+        return True
+    nk = _norm_key(ct)
+    if not nk:
+        return True
+    blob = _norm_key(
+        " ".join(
+            [
+                str(result.get("display_name") or ""),
+                str(result.get("title") or ""),
+                str(result.get("subtitle") or ""),
+            ]
+        )
+    )
+    if nk in blob:
+        return True
+    bbox = CITY_BBOX.get(nk)
+    lo, la = _result_lon_lat(result)
+    if bbox is not None and lo is not None and la is not None and _point_in_city_bbox(lo, la, bbox):
+        return True
+    if bbox is None:
+        return nk in blob
+    return False
+
+
+def _filter_results_city(items: list[dict[str, Any]], city: str) -> list[dict[str, Any]]:
+    if not (city or "").strip():
+        return list(items)
+    return [it for it in items if city_match(it, city)]
+
+
+def _nominatim_try_order(trimmed: str, city: str, base_candidates: list[str]) -> list[str]:
+    """city doluysa önce {q}, {city}[, Türkiye]; sonra diğer adaylar (ham q dahil)."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def push(s: str) -> None:
+        t = " ".join(s.strip().split())
+        if len(t) < 2:
+            return
+        k = _norm_key(t)
+        if k in seen:
+            return
+        seen.add(k)
+        out.append(t)
+
+    ct = (city or "").strip()
+    if ct:
+        push(f"{trimmed}, {ct}, Türkiye")
+        push(f"{trimmed}, {ct}")
+    for c in base_candidates:
+        push(c)
+    return out
 
 
 def _cache_get(key: str) -> Optional[dict[str, Any]]:
@@ -325,6 +449,7 @@ async def api_places_search(
             _norm_key(city),
             _rnd(lat),
             _rnd(lng),
+            _CACHE_KEY_VER,
         ]
     )
 
@@ -346,23 +471,30 @@ async def api_places_search(
     outbound: Optional[dict[str, Any]] = None
 
     async with httpx.AsyncClient(timeout=timeout, headers=headers) as http:
-        # --- Google en fazla 2 HTTP: autocomplete + opsiyonel geocode ---
+        city_trim = (city or "").strip()
+
+        # --- Google en fazla 2 HTTP: autocomplete + geocode (city varsa her ikisi de şehir bağlamlı metin) ---
         if GOOGLE_MAPS_API_KEY:
             try:
-                sc, pdata = await _google_autocomplete(http, candidates[0], lat, lng)
+                google_ac_input = (
+                    f"{trimmed}, {city_trim}, Türkiye" if city_trim else trimmed
+                )
+                sc, pdata = await _google_autocomplete(http, google_ac_input, lat, lng)
                 if sc == 200 and pdata.get("status") == "OK":
                     preds = pdata.get("predictions") if isinstance(pdata.get("predictions"), list) else []
                     preds = [p for p in preds if isinstance(p, dict)]
                     if preds:
                         outbound = _result_google_autocomplete(preds)
-                        _cache_set(cache_key_raw, outbound)
-                        return outbound
+                        fr = _filter_results_city(outbound.get("results") or [], city)
+                        if fr:
+                            outbound["results"] = _dedupe_results(fr)
+                            _cache_set(cache_key_raw, outbound)
+                            return outbound
 
-                geo_addr = ""
-                if len(candidates) > 1:
+                if city_trim:
+                    geo_addr = f"{trimmed}, {city_trim}, Türkiye"
+                elif len(candidates) > 1:
                     geo_addr = candidates[1]
-                elif city and city.strip():
-                    geo_addr = f"{trimmed}, {city.strip()}, Türkiye"
                 else:
                     geo_addr = trimmed
 
@@ -370,21 +502,24 @@ async def api_places_search(
                 if sc2 == 200 and isinstance(gdata, dict) and str(gdata.get("status")) in ("OK", "ZERO_RESULTS"):
                     gb = _results_from_google_geocode(gdata)
                     if gb:
-                        outbound = gb
-                        _cache_set(cache_key_raw, outbound)
-                        return outbound
+                        fr2 = _filter_results_city(gb.get("results") or [], city)
+                        if fr2:
+                            gb["results"] = _dedupe_results(fr2)
+                            _cache_set(cache_key_raw, gb)
+                            return gb
             except httpx.TimeoutException:
                 pass
             except Exception:
                 pass
 
-        # --- Nominatim en fazla 2 deneme ---
-        merged_rows: list[dict[str, Any]] = []
-        for cand in candidates[:2]:
+        # --- Nominatim en fazla 2 deneme; ham sonuç yerine city filtreli birleşik liste ---
+        nom_cands = _nominatim_try_order(trimmed, city, candidates)
+        acc_nom: list[dict[str, Any]] = []
+        for cand in nom_cands[:2]:
             if nominatim_rate_blocked:
                 break
             try:
-                nst, nrows, rate_hit = await _nominatim_search(http, cand)
+                _nst, nrows, rate_hit = await _nominatim_search(http, cand)
                 if rate_hit:
                     nominatim_rate_blocked = True
                     stale2 = _cache_get(cache_key_raw)
@@ -397,21 +532,20 @@ async def api_places_search(
                     outbound["rate_limited"] = True
                     return outbound
 
-                merged_rows.extend(nrows)
-
                 nr = _results_from_nominatim(nrows)
-                if nr.get("results"):
-                    nr["results"] = _dedupe_results(nr["results"])
-                    if nr["results"]:
-                        _cache_set(cache_key_raw, nr)
-                        return nr
+                raw_rows = nr.get("results") if isinstance(nr.get("results"), list) else []
+                acc_nom.extend(_filter_results_city(raw_rows, city))
 
             except httpx.TimeoutException:
                 continue
 
-        fin = _results_from_nominatim(merged_rows[:12])
-        fin["results"] = _dedupe_results(fin["results"]) if fin.get("results") else []
-        if fin["results"]:
+        if acc_nom:
+            fin: dict[str, Any] = {
+                "success": True,
+                "cached": False,
+                "provider_used": "nominatim",
+                "results": _dedupe_results(acc_nom)[:12],
+            }
             _cache_set(cache_key_raw, fin)
             return fin
 
