@@ -923,6 +923,8 @@ export default function App() {
   const [roleSelectTripExitBanner, setRoleSelectTripExitBanner] = useState<string | null>(null);
   const roleSelectBannerShimmer = useRef(new Animated.Value(1)).current;
   const roleStepPulse = useRef(new Animated.Value(1)).current;
+  /** Rol kartı / araç chip alt metni — opacity pulse (roleStepPulse ile karıştırılmaz) */
+  const roleSelectUiPulse = useRef(new Animated.Value(1)).current;
 
   /** Role-select Phase B — görsel giriş (yan etki yok; sıralama/state değiştirmez) */
   const roleCardPassengerTranslateX = useRef(new Animated.Value(-26)).current;
@@ -1067,6 +1069,33 @@ export default function App() {
       roleStepPulse.setValue(1);
     };
   }, [screen, selectedRole, rideVehicleKind, roleStepPulse]);
+
+  useEffect(() => {
+    if (screen !== 'role-select') {
+      roleSelectUiPulse.stopAnimation();
+      roleSelectUiPulse.setValue(1);
+      return undefined;
+    }
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(roleSelectUiPulse, {
+          toValue: 0.82,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(roleSelectUiPulse, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulse.start();
+    return () => {
+      pulse.stop();
+      roleSelectUiPulse.setValue(1);
+    };
+  }, [screen, roleSelectUiPulse]);
 
   useEffect(() => {
     if (!roleSelectTripExitBanner) return undefined;
@@ -3828,6 +3857,42 @@ export default function App() {
     const driverBikeIconSize = rs.isVeryCompact ? 24 : rs.isCompact ? 28 : 30;
     const roleCheckIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
     const vehicleChipIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
+    /** Araba/Motor deck — ~1.5× görünüm; clamp ile taşma yok */
+    const vehicleDeckBoost = rs.isVeryCompact
+      ? 1.12
+      : rs.isCompact && !rs.isVeryCompact
+        ? 1.28
+        : Math.min(1.46, Math.max(1.22, 1.42 * Math.min(1.08, Math.max(roleScale, 0.92))));
+    const vchBasePv = rs.isVeryCompact ? 9 : rs.isCompact && !rs.isVeryCompact ? 12 : 15;
+    const vchBasePh = rs.isVeryCompact ? 6 : rs.isCompact && !rs.isVeryCompact ? 8 : 10;
+    const vchBaseRowGap = rs.isVeryCompact ? 5 : rs.isCompact && !rs.isVeryCompact ? 6 : 8;
+    const vchBaseLabel = rs.isVeryCompact ? 13 : 15;
+    const vchPadV = Math.min(
+      rs.isVeryCompact ? 12 : rs.isCompact && !rs.isVeryCompact ? 18 : 21,
+      Math.round(vchBasePv * vehicleDeckBoost),
+    );
+    const vchPadH = Math.min(
+      rs.isVeryCompact ? 11 : rs.isCompact && !rs.isVeryCompact ? 12 : 15,
+      Math.round(vchBasePh * vehicleDeckBoost),
+    );
+    const vchBorderRadius = rs.isVeryCompact
+      ? 14
+      : rs.isCompact && !rs.isVeryCompact
+        ? 16
+        : Math.min(21, Math.round(18 * Math.min(vehicleDeckBoost, 1.36)));
+    const vchRowGap = Math.min(11, Math.round(vchBaseRowGap * vehicleDeckBoost));
+    const vchIconSize = Math.min(
+      rs.isVeryCompact ? 26 : rs.isCompact && !rs.isVeryCompact ? 34 : 38,
+      Math.round(vehicleChipIconSize * vehicleDeckBoost),
+    );
+    const vchLabelFontSize = Math.min(
+      rs.isVeryCompact ? 16 : rs.isCompact && !rs.isVeryCompact ? 18 : 20,
+      Math.round(vchBaseLabel * vehicleDeckBoost),
+    );
+    const vchCallFontSize = Math.max(
+      9,
+      Math.min(13, Math.round(11 * Math.min(vehicleDeckBoost, 1.22))),
+    );
     const continueArrowIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
     const communityRoutesIconSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
     const communityChevronSize = rs.isVeryCompact ? 13 : rs.isCompact ? 14 : 16;
@@ -4167,17 +4232,26 @@ export default function App() {
                         >
                           Yolcu
                         </Text>
-                        <Text
+                        <Animated.Text
                           style={[
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
-                            selectedRole === 'passenger' && styles.roleCardDescActive,
-                            { fontSize: roleCardDescFontSize, lineHeight: roleCardDescLineHeight },
+                            {
+                              fontSize: Math.round(roleCardDescFontSize * 1.08 * 10) / 10,
+                              lineHeight: Math.round(roleCardDescLineHeight * 1.08),
+                              color: '#FACC15',
+                              fontWeight: '800',
+                              textShadowColor: 'rgba(250, 204, 21, 0.5)',
+                              textShadowOffset: { width: 0, height: 0 },
+                              textShadowRadius: 7,
+                              opacity: roleSelectUiPulse,
+                            },
                           ]}
                           numberOfLines={2}
+                          ellipsizeMode="tail"
                         >
                           Sürücülere teklif gönder
-                        </Text>
+                        </Animated.Text>
                         {selectedRole === 'passenger' && (
                           <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
                             <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
@@ -4248,17 +4322,26 @@ export default function App() {
                         >
                           Sürücü
                         </Text>
-                        <Text
+                        <Animated.Text
                           style={[
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
-                            selectedRole === 'driver' && styles.roleCardDescActive,
-                            { fontSize: roleCardDescFontSize, lineHeight: roleCardDescLineHeight },
+                            {
+                              fontSize: Math.round(roleCardDescFontSize * 1.08 * 10) / 10,
+                              lineHeight: Math.round(roleCardDescLineHeight * 1.08),
+                              color: '#22C55E',
+                              fontWeight: '800',
+                              textShadowColor: 'rgba(34, 197, 94, 0.45)',
+                              textShadowOffset: { width: 0, height: 0 },
+                              textShadowRadius: 7,
+                              opacity: roleSelectUiPulse,
+                            },
                           ]}
                           numberOfLines={2}
+                          ellipsizeMode="tail"
                         >
                           Yolculardan teklif al
-                        </Text>
+                        </Animated.Text>
                         {selectedRole === 'driver' && (
                           <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
                             <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
@@ -4321,6 +4404,15 @@ export default function App() {
                             rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
                             styles.roleVehicleChipDeck,
                             rideVehicleKind === 'car' && styles.roleVehicleChipActive,
+                            {
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              paddingVertical: vchPadV,
+                              paddingHorizontal: vchPadH,
+                              borderRadius: vchBorderRadius,
+                              gap: Math.max(3, Math.round(4 * vehicleDeckBoost)),
+                            },
                           ]}
                           onPress={() => {
                             roleScreenHaptic();
@@ -4328,20 +4420,51 @@ export default function App() {
                           }}
                           activeOpacity={0.85}
                         >
-                          <MaterialCommunityIcons
-                            name="car-side"
-                            size={vehicleChipIconSize}
-                            color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
-                          />
-                          <Text
-                            style={[
-                              styles.roleVehicleChipText,
-                              rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
-                              rs.isVeryCompact && styles.roleVehicleChipTextVery,
-                            ]}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: vchRowGap,
+                              flexShrink: 1,
+                              minWidth: 0,
+                            }}
                           >
-                            Araba
-                          </Text>
+                            <MaterialCommunityIcons
+                              name="car-side"
+                              size={vchIconSize}
+                              color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
+                            />
+                            <Text
+                              style={[
+                                styles.roleVehicleChipText,
+                                rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
+                                rs.isVeryCompact && styles.roleVehicleChipTextVery,
+                                { fontSize: vchLabelFontSize },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              Araba
+                            </Text>
+                          </View>
+                          <Animated.Text
+                            style={{
+                              opacity: roleSelectUiPulse,
+                              fontSize: vchCallFontSize,
+                              fontWeight: '900',
+                              textAlign: 'center',
+                              letterSpacing: -0.15,
+                              color:
+                                rideVehicleKind === 'car'
+                                  ? 'rgba(255,254,237,0.98)'
+                                  : '#CA8A04',
+                              textShadowColor: 'rgba(250, 204, 21, 0.45)',
+                              textShadowOffset: { width: 0, height: 0 },
+                              textShadowRadius: 6,
+                            }}
+                          >
+                            Çağır
+                          </Animated.Text>
                         </TouchableOpacity>
                       </Animated.View>
                       <Animated.View
@@ -4360,6 +4483,15 @@ export default function App() {
                             rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
                             styles.roleVehicleChipDeck,
                             rideVehicleKind === 'motorcycle' && styles.roleVehicleChipActiveMotor,
+                            {
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              paddingVertical: vchPadV,
+                              paddingHorizontal: vchPadH,
+                              borderRadius: vchBorderRadius,
+                              gap: Math.max(3, Math.round(4 * vehicleDeckBoost)),
+                            },
                           ]}
                           onPress={() => {
                             roleScreenHaptic();
@@ -4367,20 +4499,51 @@ export default function App() {
                           }}
                           activeOpacity={0.85}
                         >
-                          <MaterialCommunityIcons
-                            name="motorbike"
-                            size={vehicleChipIconSize}
-                            color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
-                          />
-                          <Text
-                            style={[
-                              styles.roleVehicleChipText,
-                              rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
-                              rs.isVeryCompact && styles.roleVehicleChipTextVery,
-                            ]}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: vchRowGap,
+                              flexShrink: 1,
+                              minWidth: 0,
+                            }}
                           >
-                            Motor
-                          </Text>
+                            <MaterialCommunityIcons
+                              name="motorbike"
+                              size={vchIconSize}
+                              color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                            />
+                            <Text
+                              style={[
+                                styles.roleVehicleChipText,
+                                rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
+                                rs.isVeryCompact && styles.roleVehicleChipTextVery,
+                                { fontSize: vchLabelFontSize },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              Motor
+                            </Text>
+                          </View>
+                          <Animated.Text
+                            style={{
+                              opacity: roleSelectUiPulse,
+                              fontSize: vchCallFontSize,
+                              fontWeight: '900',
+                              textAlign: 'center',
+                              letterSpacing: -0.15,
+                              color:
+                                rideVehicleKind === 'motorcycle'
+                                  ? '#FFEDD5'
+                                  : '#EA580C',
+                              textShadowColor: 'rgba(234, 88, 12, 0.4)',
+                              textShadowOffset: { width: 0, height: 0 },
+                              textShadowRadius: 6,
+                            }}
+                          >
+                            Çağır
+                          </Animated.Text>
                         </TouchableOpacity>
                       </Animated.View>
                     </View>

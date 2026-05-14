@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
+import { API_BASE_URL } from '../lib/backendConfig';
 const maskIdForLog = (v: string): string => {
   const s = String(v || '').trim();
   if (!s) return 'n/a';
@@ -56,12 +56,22 @@ export default function RatingModal({
     setLoading(true);
     try {
       const response = await fetch(
-        `${API_URL}/api/qr/rate-user?rater_user_id=${userId}&rated_user_id=${rateUserId}&tag_id=${tagId}&rating=${rating}`,
+        `${API_BASE_URL}/qr/rate-user?rater_user_id=${encodeURIComponent(userId)}&rated_user_id=${encodeURIComponent(rateUserId)}&tag_id=${encodeURIComponent(tagId)}&rating=${rating}`,
         { method: 'POST' }
       );
       const result = await response.json();
 
       if (result.success) {
+        if (result.already_rated === true) {
+          setSubmitted(false);
+          setRating(5);
+          setLoading(false);
+          onClose();
+          if (onRatingComplete) {
+            onRatingComplete();
+          }
+          return;
+        }
         console.log(
           'RATING_SUBMIT_DONE',
           JSON.stringify({
@@ -138,7 +148,7 @@ export default function RatingModal({
               <Text style={styles.successIcon}>✓</Text>
               <Text style={styles.successTitle}>Teşekkürler!</Text>
               <Text style={styles.successText}>
-                {firstName}'a {rating} ⭐ verdiniz
+                {`${firstName}'a ${rating} ⭐ verdiniz`}
               </Text>
               <Text style={styles.pointsText}>+3 puan kazandınız!</Text>
             </View>
@@ -146,7 +156,7 @@ export default function RatingModal({
             <>
               <Text style={styles.title}>Yolculuk Tamamlandı!</Text>
               <Text style={styles.subtitle}>
-                {firstName}'ı puanlayın
+                {`${firstName}'ı puanlayın`}
               </Text>
 
               {renderStars()}

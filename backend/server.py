@@ -530,6 +530,64 @@ def _normalize_user_room(user_id: str) -> str:
     return f"user_{str(user_id).strip().lower()}"
 
 
+async def _emit_show_rating_modals_for_normal_tag_complete(
+    tag_id: str,
+    passenger_id: Optional[str],
+    driver_id: Optional[str],
+) -> None:
+    """Normal TAG tamamlandıktan sonra iki tarafa show_rating_modal (QR complete-qr ile aynı payload)."""
+    if not tag_id or not passenger_id or not driver_id:
+        return
+    driver_user = await get_cached_user(str(driver_id))
+    passenger_user = await get_cached_user(str(passenger_id))
+
+    def _safe_first_name(user_obj: Any, fallback: str) -> str:
+        if not user_obj:
+            return fallback
+        first = str(user_obj.get("first_name") or "").strip()
+        if first:
+            return first
+        full = str(user_obj.get("name") or "").strip()
+        if not full:
+            return fallback
+        parts = full.split()
+        return parts[0] if parts else fallback
+
+    driver_name = _safe_first_name(driver_user, "Sürücü")
+    passenger_name = _safe_first_name(passenger_user, "Yolcu")
+    try:
+        await sio.emit(
+            "show_rating_modal",
+            {
+                "tag_id": tag_id,
+                "rate_user_id": driver_id,
+                "rate_user_name": driver_name,
+                "message": "Yolculuk tamamlandı!",
+                "should_rate": True,
+            },
+            room=_normalize_user_room(str(passenger_id)),
+        )
+        await sio.emit(
+            "show_rating_modal",
+            {
+                "tag_id": tag_id,
+                "rate_user_id": passenger_id,
+                "rate_user_name": passenger_name,
+                "message": "Yolculuk tamamlandı!",
+                "should_rate": True,
+            },
+            room=_normalize_user_room(str(driver_id)),
+        )
+        logger.info(
+            "✅ complete_trip: Puanlama modalları yolcu=%s şoför=%s tag=%s",
+            str(passenger_id)[:13],
+            str(driver_id)[:13],
+            tag_id,
+        )
+    except Exception as socket_err:
+        logger.warning("complete_trip show_rating_modal emit: %s", socket_err)
+
+
 @sio.event
 async def register(sid, data):
     """Kullanıcı kaydı — JWT (delete-account ile aynı access token) zorunlu; user_id yalnızca token sub."""
@@ -10710,7 +10768,7 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
 
         tag_pre = (
             supabase.table("tags")
-            .select("id, status, started_at, passenger_id, driver_id")
+            .select("id, status, started_at, passenger_id, driver_id, type")
             .eq("id", tag_id)
             .limit(1)
             .execute()
@@ -10814,6 +10872,13 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
                     ))
             except Exception as notif_err:
                 logger.warning(f"⚠️ Trip completed push gönderilemedi: {notif_err}")
+
+        tag_typ = str(row0.get("type") or "").strip().lower()
+        if tag_typ != TAG_TYPE_MUHABBET and (not tag_typ or tag_typ == TAG_TYPE_NORMAL):
+            try:
+                await _emit_show_rating_modals_for_normal_tag_complete(tag_id, str(passenger_id), str(drv_id))
+            except Exception as _rate_emit_err:
+                logger.warning("complete_trip rating modal emit skipped: %s", _rate_emit_err)
         
         logger.info(f"✅ Yolculuk tamamlandı: {tag_id}")
         return {"success": True, "message": "Yolculuk tamamlandı"}
@@ -15403,8 +15468,54 @@ async def rate_user_after_trip(
     try:
         if rating < 1 or rating > 5:
             return {"success": False, "detail": "Puan 1-5 arasında olmalı"}
+
+        rater_lc = str(rater_user_id or "").strip().lower()
+        rated_lc = str(rated_user_id or "").strip().lower()
+
+        tag_result = (
+            supabase.table("tags")
+            .select("passenger_id, driver_id, type, rating_by_passenger, rating_by_driver")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        if not tag_result.data:
+            return {"success": False, "detail": "Yolculuk bulunamadı"}
+        tag = tag_result.data[0]
+        typ = str(tag.get("type") or "").strip().lower()
+        if typ == TAG_TYPE_MUHABBET:
+            return {"success": False, "detail": "Bu uç yalnızca normal TAG için"}
+
+        p_raw = tag.get("passenger_id")
+        d_raw = tag.get("driver_id")
+        p_id = str(p_raw or "").strip().lower()
+        d_id = str(d_raw or "").strip().lower()
+
+        if rater_lc == p_id:
+            if rated_lc != d_id:
+                return {"success": False, "detail": "Puanlanan kullanıcı bu yolculuktaki sürücü olmalı"}
+            existing = tag.get("rating_by_passenger")
+        elif rater_lc == d_id:
+            if rated_lc != p_id:
+                return {"success": False, "detail": "Puanlanan kullanıcı bu yolculuktaki yolcu olmalı"}
+            existing = tag.get("rating_by_driver")
+        else:
+            return {"success": False, "detail": "Bu yolculuk için puanlama yetkiniz yok"}
+
+        if existing is not None:
+            user_snapshot = (
+                supabase.table("users").select("rating").eq("id", rated_user_id).execute()
+            )
+            cur_r = 4.0
+            if user_snapshot.data:
+                cur_r = float(user_snapshot.data[0].get("rating", 4.0) or 4.0)
+            return {
+                "success": True,
+                "already_rated": True,
+                "message": "Zaten puanlandı",
+                "new_rating": round(cur_r, 2),
+            }
         
-        # Kullanıcının mevcut puanını al
         user_result = supabase.table("users").select("rating, total_ratings").eq("id", rated_user_id).execute()
         
         if not user_result.data:
@@ -15414,30 +15525,23 @@ async def rate_user_after_trip(
         current_rating = user.get("rating", 4.0) or 4.0
         total_ratings = user.get("total_ratings", 0) or 0
         
-        # Yeni ortalama hesapla
         new_total = total_ratings + 1
         new_rating = ((current_rating * total_ratings) + rating) / new_total
         new_rating = round(new_rating, 2)
         
-        # Güncelle
         supabase.table("users").update({
             "rating": new_rating,
             "total_ratings": new_total
         }).eq("id", rated_user_id).execute()
         
-        # Tag'e puanlama bilgisi ekle
         try:
-            tag_result = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).execute()
-            if tag_result.data:
-                tag = tag_result.data[0]
-                if rater_user_id == tag.get("passenger_id"):
-                    supabase.table("tags").update({"rating_by_passenger": rating}).eq("id", tag_id).execute()
-                elif rater_user_id == tag.get("driver_id"):
-                    supabase.table("tags").update({"rating_by_driver": rating}).eq("id", tag_id).execute()
-        except:
+            if rater_lc == p_id:
+                supabase.table("tags").update({"rating_by_passenger": rating}).eq("id", tag_id).execute()
+            else:
+                supabase.table("tags").update({"rating_by_driver": rating}).eq("id", tag_id).execute()
+        except Exception:
             pass
         
-        # Cache temizle
         cache_key = f"user:{rated_user_id}"
         if cache_key in _user_cache:
             del _user_cache[cache_key]
@@ -15446,8 +15550,9 @@ async def rate_user_after_trip(
         
         return {
             "success": True,
+            "already_rated": False,
             "message": f"{rating} yıldız verildi!",
-            "new_rating": new_rating
+            "new_rating": new_rating,
         }
         
     except Exception as e:
