@@ -86,6 +86,12 @@ function placesSearchStableKey(queryTrim: string, cityRaw: string): string {
   return `${normCityNeedle(queryTrim)}|${normCityNeedle(String(cityRaw || '').trim())}`;
 }
 
+/** replayOnBiasChange: GPS titreşiminde tick artmasın — anlamlı konum sıçraması için yeterince kaba grid */
+function roundPlacesReplayCoord(n: number | undefined): number | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  return Math.round(n * 1e4) / 1e4;
+}
+
 /** Karşılaştırma için Türkçe toleranslı normalize */
 export function normalizeText(s: string): string {
   return foldTrAscii(String(s || ''))
@@ -326,8 +332,11 @@ function prependCityQualifiedSearchVariants(
   if (cityKey === 'Ankara' && nHead.includes('cankaya')) {
     extras.push(
       'Çankaya, Ankara, Türkiye',
+      'Cankaya, Ankara, Türkiye',
       'Çankaya Mahallesi, Ankara, Türkiye',
+      'Cankaya Mahallesi, Ankara, Türkiye',
       'Çankaya İlçesi, Ankara, Türkiye',
+      'Cankaya İlçesi, Ankara, Türkiye',
       'Cankaya, Ankara, Turkey',
     );
   }
@@ -1103,6 +1112,8 @@ export default function PlacesAutocomplete({
   const [predictionActionError, setPredictionActionError] = useState<string | null>(null);
   /** Aktif arama iptali — yeni istek veya unmount önceki fetch'leri keser */
   const placesSearchAbortRef = useRef<AbortController | null>(null);
+  /** replayOnBiasChange: aynı semantik anahtarda searchReplayTick artırılmasın (abort/replan döngüsü) */
+  const lastPlacesReplayKeyRef = useRef<string>('');
 
   const matchesActivePlacesJob = (jobRequestId: number, searchedTrim: string): boolean =>
     jobRequestId === autocompleteRequestIdRef.current && searchedTrim === latestQueryRef.current.trim();
@@ -1180,11 +1191,13 @@ export default function PlacesAutocomplete({
       q: normalizeText(query),
       city: normalizeText(city || ''),
       strict: !!strictCityBounds,
-      hasBiasLat: biasLatitude != null && Number.isFinite(biasLatitude),
-      hasBiasLng: biasLongitude != null && Number.isFinite(biasLongitude),
-      biasDeltaDeg,
+      biasLat: roundPlacesReplayCoord(biasLatitude ?? undefined),
+      biasLng: roundPlacesReplayCoord(biasLongitude ?? undefined),
+      biasDeltaDeg: Math.round(biasDeltaDeg * 10000) / 10000,
       forceCityInSearch: !!forceCityInSearch,
     });
+    if (replayKey === lastPlacesReplayKeyRef.current) return;
+    lastPlacesReplayKeyRef.current = replayKey;
     try {
       console.log(
         'TAG_PLACE_SEARCH_REPLAY_ON_BIAS_CHANGE',
@@ -1286,14 +1299,22 @@ export default function PlacesAutocomplete({
     }, debounceMs);
 
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
+      const pendingTimerId = debounceRef.current;
+      const hadScheduledTimer = pendingTimerId != null;
+      if (hadScheduledTimer) {
+        clearTimeout(pendingTimerId);
+        debounceRef.current = null;
       }
-      placesSearchAbortRef.current?.abort();
-      placesSearchAbortRef.current = null;
-      autocompleteRequestIdRef.current += 1;
-      setLoading(false);
-      setSearchRoundDone(false);
+      const hadInflightPlacesSearch = placesSearchAbortRef.current != null;
+      if (hadInflightPlacesSearch) {
+        placesSearchAbortRef.current?.abort();
+        placesSearchAbortRef.current = null;
+      }
+      if (hadScheduledTimer || hadInflightPlacesSearch) {
+        autocompleteRequestIdRef.current += 1;
+        setLoading(false);
+        setSearchRoundDone(false);
+      }
     };
   }, [
     query,
