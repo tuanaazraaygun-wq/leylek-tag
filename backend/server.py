@@ -52,7 +52,6 @@ try:
 except Exception:
     pass
 load_dotenv(str(ROOT_DIR / ".env"), override=True)
-print("NETGSM_MSGHEADER:", os.getenv("NETGSM_MSGHEADER"))
 
 # Supabase — tek service role client: backend/supabase_client.py (VPS'te server.py ile aynı klasörde olmalı)
 from supabase import Client
@@ -378,11 +377,14 @@ CORS_ALLOW_ORIGINS = _build_cors_allow_origins()
 logger.info("🌐 CORS allow_origins (%d): %s", len(CORS_ALLOW_ORIGINS), ", ".join(CORS_ALLOW_ORIGINS))
 
 # ==================== SOCKET.IO SERVER ====================
+_socket_debug_raw = (os.getenv("SOCKET_DEBUG") or "").strip().lower()
+_socket_debug_enabled = _socket_debug_raw in ("1", "true", "yes", "on")
+
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins=CORS_ALLOW_ORIGINS,
-    logger=True,
-    engineio_logger=True,
+    logger=_socket_debug_enabled,
+    engineio_logger=_socket_debug_enabled,
 )
 
 # Aktif kullanıcılar: {user_id: socket_id}
@@ -4662,6 +4664,13 @@ TURKEY_CITIES = [
 # Create FastAPI app (app alias keeps all existing routes working)
 fastapi_app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
 app = fastapi_app
+
+
+@fastapi_app.get("/health")
+async def health_check():
+    return {"ok": True, "service": "leylektag", "status": "healthy"}
+
+
 app.include_router(admin_ai_router, prefix="/api")
 app.include_router(admin_answer_engine_router, prefix="/api")
 app.include_router(admin_leylek_zeka_kb_router, prefix="/api")
