@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CityDistrictCommandMap } from "@/components/city-district-command-map";
 import { LiveDashboardTrustStrip, LiveSparseBanner } from "@/components/live-dashboard-chrome";
@@ -126,9 +125,6 @@ export function CityLiveMap() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex rounded-full border border-white/10 bg-white/[0.06] p-1">
               <span className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-black text-slate-950">Şehir içi</span>
-              <Link href="/sehirler-arasi" className="rounded-full px-4 py-2 text-xs font-bold text-slate-300 transition hover:text-white">
-                Şehirler arası
-              </Link>
             </div>
             <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-bold text-slate-300">
               Şehir

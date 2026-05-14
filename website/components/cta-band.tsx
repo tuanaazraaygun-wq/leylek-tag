@@ -18,8 +18,8 @@ export function CtaBand() {
             </div>
             <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
               <ButtonLink href="/indir">Uygulamayı İndir</ButtonLink>
-              <ButtonLink href="/sehirler-arasi" variant="secondary">
-                İlanları Gör
+              <ButtonLink href="/nasil-calisir" variant="secondary">
+                Nasıl çalışır
               </ButtonLink>
             </div>
           </div>

@@ -12,7 +12,7 @@ const steps = [
   {
     eyebrow: "Adım 1",
     title: "Teklif oluştur",
-    description: "Yolcu veya sürücü olarak şehir içi ya da dışı teklifini aç.",
+    description: "Yolcu veya sürücü olarak şehir içi teklifini aç.",
   },
   {
     eyebrow: "Adım 2",

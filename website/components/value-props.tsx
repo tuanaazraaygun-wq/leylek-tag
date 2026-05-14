@@ -12,7 +12,7 @@ const values = [
   {
     title: "Aynı yöne gidenlerle paylaşım",
     description:
-      "Şehir içi ve şehirler arası akışlarda aynı yöne gidenler, masraf paylaşımı fikri etrafında buluşur.",
+      "Şehir içi ve teklif akışlarında aynı yöne gidenler, masraf paylaşımı fikri etrafında buluşur.",
   },
 ];
 

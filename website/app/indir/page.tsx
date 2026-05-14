@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 const downloadNotes = [
   {
     title: "Teklif ve rotalar",
-    description: "Uygulamada teklifini oluştur; şehir içi veya şehir dışı akışta sürdür.",
+    description: "Uygulamada teklifini oluştur; şehir içi akışta sürdür.",
   },
   {
     title: "Eşleşme ve görüşme",

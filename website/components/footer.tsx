@@ -5,10 +5,16 @@ import { Container } from "@/components/container";
 const footerLinks = [
   { href: "/sehir-ici", label: "Hızlı Yolculuk" },
   { href: "/muhabbet", label: "Leylek Teklifi" },
-  { href: "/sehirler-arasi", label: "Şehirler Arası" },
   { href: "/guvenlik", label: "Güvenlik" },
   { href: "/nasil-calisir", label: "Nasıl Çalışır" },
   { href: "/indir", label: "İndir" },
+];
+
+const legalLinks = [
+  { href: "/gizlilik-politikasi", label: "Gizlilik Politikası" },
+  { href: "/kullanim-sartlari", label: "Kullanım Şartları" },
+  { href: "/kvkk", label: "KVKK" },
+  { href: "/hesap-silme", label: "Hesap Silme" },
 ];
 
 export function Footer() {
@@ -38,17 +44,30 @@ export function Footer() {
             Bu web sitesi bilgilendirme ve erken erişim amacıyla hazırlanmıştır. Canlı eşleşme ve ilan bağlantıları uygulama deneyimi içinde sunulacaktır.
           </p>
         </div>
-        <nav className="grid grid-cols-2 gap-3 text-sm text-slate-300 sm:flex sm:flex-wrap lg:max-w-md lg:justify-end" aria-label="Alt menü">
-          {footerLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-center transition hover:border-cyan-200/40 hover:text-cyan-100"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex flex-col gap-6 lg:items-end">
+          <nav className="grid grid-cols-2 gap-3 text-sm text-slate-300 sm:flex sm:flex-wrap lg:max-w-md lg:justify-end" aria-label="Alt menü">
+            {footerLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-center transition hover:border-cyan-200/40 hover:text-cyan-100"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+          <nav className="grid grid-cols-2 gap-3 text-sm text-slate-400 sm:flex sm:flex-wrap lg:max-w-md lg:justify-end" aria-label="Yasal">
+            {legalLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-center transition hover:border-cyan-200/30 hover:text-cyan-100/90"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </Container>
     </footer>
   );

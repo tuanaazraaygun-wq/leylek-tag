@@ -4,12 +4,12 @@ const audiences = [
     description: "Rota görünürlüğü ve güvenli eşleşme ile gündelik şehir içi planlarını daha kontrollü yönetmek isteyenler.",
   },
   {
-    title: "Şehirler arası boş koltuk paylaşanlar",
-    description: "Gideceği rotayı, saatini ve boş koltuk sayısını paylaşarak aynı yöne gidenlerle masraf paylaşımı yapmak isteyenler.",
+    title: "Günlük planını paylaşanlar",
+    description: "Rota, saat ve koşulları netleştirerek aynı yöne gidenlerle masraf paylaşımı yapmak isteyenler.",
   },
   {
     title: "Önce teklifi netleştirip güvenmek isteyenler",
-    description: "Leylek Teklifi ile şehir dışı tekliflerini netleştirip karşılıklı onayla güvenli eşleşmek isteyenler.",
+    description: "Leylek Teklifi ile yolculuk tekliflerini netleştirip karşılıklı onayla güvenli eşleşmek isteyenler.",
   },
   {
     title: "Topluluk içinde yolculuk planlayanlar",

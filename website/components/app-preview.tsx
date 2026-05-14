@@ -14,17 +14,17 @@ const previews = [
     accent: "from-violet-200 to-cyan-300",
   },
   {
-    title: "Şehirler arası ilan",
-    eyebrow: "boş koltuk",
-    primary: "Ankara → İstanbul",
-    meta: "3 koltuk · masraf paylaşımı",
+    title: "Güven Al",
+    eyebrow: "doğrulama",
+    primary: "QR ile biniş kontrolü",
+    meta: "Güvenli eşleşme adımları",
     accent: "from-blue-200 to-cyan-300",
   },
 ];
 
 export function AppPreview() {
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
+    <div className="grid gap-6 lg:grid-cols-2">
       {previews.map((preview) => (
         <article
           key={preview.title}

@@ -5,14 +5,14 @@ const faqs = [
       "Leylek Tag, aynı yöne gidenlerin yolculuk paylaşımı, teklif görüşmesi ve güvenli eşleşme katmanlarıyla buluşmasını hedefleyen bir topluluk platformudur.",
   },
   {
-    question: "Şehirler arası yol paylaşımı nasıl çalışır?",
+    question: "Hızlı yolculuk nasıl çalışır?",
     answer:
-      "Kullanıcılar gidecekleri rota, tarih/saat, boş koltuk ve tahmini masraf paylaşımı bilgisini ilan olarak paylaşır. Canlı ilan ve eşleşme bağlantıları uygulama deneyimi içinde sunulur.",
+      "Kullanıcılar rota, zaman ve koşulları teklif görüşmesinde netleştirir. Canlı eşleşme ve teklif adımları uygulama deneyimi içinde sunulur.",
   },
   {
     question: "Leylek Teklifi nedir?",
     answer:
-      "Leylek Teklifi, şehir içi veya şehir dışı yolculuk tekliflerini netleştirdiğiniz, karşılıklı onay ve teklif doğrulama ile güvenli eşleşmeye geçtiğiniz akıştır.",
+      "Leylek Teklifi, yolculuk tekliflerini netleştirdiğiniz, karşılıklı onay ve teklif doğrulama ile güvenli eşleşmeye geçtiğiniz akıştır.",
   },
   {
     question: "Masraf paylaşımı ne demek?",

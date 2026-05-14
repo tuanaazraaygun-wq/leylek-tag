@@ -2,7 +2,7 @@ const rows = [
   {
     label: "Hızlı eşleşme",
     classic: "Genellikle tek akışa odaklanır",
-    leylek: "Şehir içi, teklif akışı ve şehirler arası akışları birlikte düşünür",
+    leylek: "Şehir içi ve teklif akışlarını birlikte düşünür",
   },
   {
     label: "Teklif görüşmesiyle karar verme",
@@ -10,7 +10,7 @@ const rows = [
     leylek: "Leylek Teklifi ile teklif netleştirme ve yolculuk öncesi anlaşma alanı açar",
   },
   {
-    label: "Şehirler arası masraf paylaşımı",
+    label: "Masraf paylaşımı",
     classic: "Uzun rota ve boş koltuk paylaşımı sınırlı kalabilir",
     leylek: "Rota, saat, boş koltuk ve masraf paylaşımı bilgisini görünür yapar",
   },

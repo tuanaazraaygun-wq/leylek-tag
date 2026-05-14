@@ -20,10 +20,8 @@ import { ValueProps } from "@/components/value-props";
 import { featurePillars } from "@/lib/mock-data";
 import { HeroTrustStrip } from "@/components/hero-trust-strip";
 import { HomeFourSteps } from "@/components/home-four-steps";
-import { HomeLivePulse } from "@/components/home-live-pulse";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
 import { SectionMidCta } from "@/components/section-mid-cta";
-import { IntercityList } from "@src/components/IntercityList";
 
 const experiences = [
   {
@@ -37,15 +35,8 @@ const experiences = [
     title: "Leylek Teklifi",
     eyebrow: "önce teklif",
     description:
-      "Teklif görüşmesi, karşılıklı onay ve yolculuk öncesi anlaşma ile şehir dışı yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
+      "Teklif görüşmesi, karşılıklı onay ve yolculuk öncesi anlaşma ile yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
     tone: "violet" as const,
-  },
-  {
-    title: "Şehirler Arası",
-    eyebrow: "şehir dışı teklif",
-    description:
-      "Aynı yöne gidenler için tarih, saat, boş koltuk ve tahmini masraf paylaşımı bilgisiyle ilan deneyimi.",
-    tone: "blue" as const,
   },
 ];
 
@@ -93,7 +84,7 @@ export default function Home() {
                     Aynı yöne gidenlerle eşleş, yolculuğu güvenle paylaş.
                   </h1>
                   <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
-                    Leylek Tag, yolcu ve sürücülerin şehir içi ve şehir dışı yolculuk tekliflerini netleştirip karşılıklı onayla güvenli eşleşmesini sağlar.
+                    Leylek Tag, yolcu ve sürücülerin yolculuk tekliflerini netleştirip karşılıklı onayla güvenli eşleşmesini sağlar.
                   </p>
                   <p className="mt-4 text-center text-sm font-semibold text-white/75 sm:text-left">
                     Her gün yeni yolculuklar oluşturuluyor
@@ -118,9 +109,6 @@ export default function Home() {
                 <ButtonLink href="/muhabbet" variant="secondary" className="w-full sm:w-auto">
                   İlk teklifini oluştur
                 </ButtonLink>
-                <ButtonLink href="/sehirler-arasi" variant="ghost" className="w-full sm:w-auto">
-                  Şehirler Arası İlanları Gör
-                </ButtonLink>
               </div>
               <HeroTrustStrip />
               <div className="mt-10">
@@ -131,7 +119,6 @@ export default function Home() {
               <LiveMapVisual />
             </div>
           </div>
-          <HomeLivePulse />
           <div id="hero-yol" className="scroll-mt-28 mt-8 min-w-0 w-full md:mt-10">
             <HeroEngagement />
           </div>
@@ -172,47 +159,15 @@ export default function Home() {
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
-          <div className="mb-8">
-            <SectionHeading
-              eyebrow="kimler için?"
-              title="Leylek Tag, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
-              description="Günlük şehir içi planlardan şehirler arası boş koltuk paylaşımına kadar, aynı yöne gidenleri topluluk içinde daha kontrollü buluşturur."
-            />
-          </div>
-          <AudienceSection />
-        </Container>
-        </ScrollReveal>
-      </section>
-
-      <SectionMidCta />
-
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
-          <Container>
-          <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.8fr_1fr]">
-            <ActivityFeed />
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-3 lg:gap-8">
-              {experiences.map((experience) => (
-                <ModeCard key={experience.title} {...experience} />
-              ))}
+            <div className="mb-8">
+              <SectionHeading
+                eyebrow="kimler için?"
+                title="Leylek Tag, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
+                description="Günlük şehir içi planlardan teklif görüşmesine kadar, aynı yöne gidenleri topluluk içinde daha kontrollü buluşturur."
+              />
             </div>
-          </div>
-        </Container>
-        </ScrollReveal>
-      </section>
-
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
-          <Container>
-          <div className="mb-8">
-            <SectionHeading
-              eyebrow="neden farklı?"
-              title="Klasik yolculuk deneyiminden daha topluluk odaklı."
-              description="Leylek Tag hızlı eşleşmeyi, teklif görüşmesiyle karar vermeyi, şehirler arası masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
-            />
-          </div>
-          <ComparisonSection />
-        </Container>
+            <AudienceSection />
+          </Container>
         </ScrollReveal>
       </section>
 
@@ -221,55 +176,30 @@ export default function Home() {
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
-          <div className="mb-8">
-            <SectionHeading
-              eyebrow="uygulama ön izlemesi"
-              title="Üç akış, tek premium mobil deneyim."
-              description="Gerçek ekran görüntüsü kullanılmadan tasarlanan cihaz çerçeveleri şehir içi, Leylek Teklifi ve şehirler arası ilan akışını sade şekilde gösterir."
-            />
-          </div>
-          <AppPreview />
-        </Container>
+            <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.8fr_1fr]">
+              <ActivityFeed />
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-2 lg:gap-8">
+                {experiences.map((experience) => (
+                  <ModeCard key={experience.title} {...experience} />
+                ))}
+              </div>
+            </div>
+          </Container>
         </ScrollReveal>
       </section>
 
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
-          <div className="mb-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-100/85 sm:text-sm">canlı · şehirler arası</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Şehirler Arası Yol Paylaşımı</h2>
-            <p className="mt-3 max-w-2xl break-words text-sm leading-relaxed text-white/80 sm:text-base">
-              Güncel ilanlar api.leylektag.com üzerinden canlı olarak yüklenir.
-            </p>
-          </div>
-          <IntercityList />
-        </Container>
-        </ScrollReveal>
-      </section>
-
-      <SectionMidCta />
-
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
-          <Container>
-          <div className="mb-8">
-            <SectionHeading
-              eyebrow="beta süreci"
-              title="Önce kontrollü beta, sonra daha geniş topluluk."
-              description="Leylek Tag’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
-            />
-          </div>
-          <BetaProcess />
-        </Container>
-        </ScrollReveal>
-      </section>
-
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
-          <Container>
-          <SocialProofPlaceholder />
-        </Container>
+            <div className="mb-8">
+              <SectionHeading
+                eyebrow="neden farklı?"
+                title="Klasik yolculuk deneyiminden daha topluluk odaklı."
+                description="Leylek Tag hızlı eşleşmeyi, teklif görüşmesiyle karar vermeyi, masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
+              />
+            </div>
+            <ComparisonSection />
+          </Container>
         </ScrollReveal>
       </section>
 
@@ -278,15 +208,57 @@ export default function Home() {
       <section className="py-10 sm:py-14 md:py-20">
         <ScrollReveal>
           <Container>
-          <div className="mb-8">
-            <SectionHeading
-              eyebrow="sık sorulan sorular"
-              title="Leylek Tag hakkında merak edilenler"
-              description="Yolculuk paylaşımı, masraf paylaşımı, Leylek Teklifi ve güvenli eşleşme akışına dair kısa yanıtlar."
-            />
-          </div>
-          <FaqSection />
-        </Container>
+            <div className="mb-8">
+              <SectionHeading
+                eyebrow="uygulama ön izlemesi"
+                title="İki akış, tek premium mobil deneyim."
+                description="Gerçek ekran görüntüsü kullanılmadan tasarlanan cihaz çerçeveleri şehir içi ve Leylek Teklifi akışını sade şekilde gösterir."
+              />
+            </div>
+            <AppPreview />
+          </Container>
+        </ScrollReveal>
+      </section>
+
+      <SectionMidCta />
+
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
+            <div className="mb-8">
+              <SectionHeading
+                eyebrow="beta süreci"
+                title="Önce kontrollü beta, sonra daha geniş topluluk."
+                description="Leylek Tag’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
+              />
+            </div>
+            <BetaProcess />
+          </Container>
+        </ScrollReveal>
+      </section>
+
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
+            <SocialProofPlaceholder />
+          </Container>
+        </ScrollReveal>
+      </section>
+
+      <SectionMidCta />
+
+      <section className="py-10 sm:py-14 md:py-20">
+        <ScrollReveal>
+          <Container>
+            <div className="mb-8">
+              <SectionHeading
+                eyebrow="sık sorulan sorular"
+                title="Leylek Tag hakkında merak edilenler"
+                description="Yolculuk paylaşımı, masraf paylaşımı, Leylek Teklifi ve güvenli eşleşme akışına dair kısa yanıtlar."
+              />
+            </div>
+            <FaqSection />
+          </Container>
         </ScrollReveal>
       </section>
 

@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 
-const interests = ["şehir içi", "teklif akışı", "şehirler arası"];
+const interests = ["şehir içi", "teklif akışı", "güvenlik"];
 
 export function EarlyAccessForm() {
   const [isSubmitted, setIsSubmitted] = useState(false);

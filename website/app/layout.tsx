@@ -20,11 +20,10 @@ export const metadata: Metadata = {
     template: "%s | Leylek Tag",
   },
   description:
-    "Leylek Tag; yolculuk paylaşımı, şehirler arası yol paylaşımı, masraf paylaşımı ve güvenli eşleşme için geliştirilen modern topluluk platformudur.",
+    "Leylek Tag; yolculuk paylaşımı, masraf paylaşımı ve güvenli eşleşme için geliştirilen modern topluluk platformudur.",
   keywords: [
     "Leylek Tag",
     "yolculuk paylaşımı",
-    "şehirler arası yol paylaşımı",
     "masraf paylaşımı",
     "güvenli eşleşme",
     "aynı yöne gidenler",

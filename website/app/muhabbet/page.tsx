@@ -13,7 +13,7 @@ const features = [
   {
     title: "Teklifleri netleştir",
     description:
-      "Şehir içi ve şehir dışı yolculuk tekliflerini teklif görüşmesiyle netleştir; koşullar yolculuk öncesi anlaşmaya döner.",
+      "Yolculuk tekliflerini teklif görüşmesiyle netleştir; koşullar yolculuk öncesi anlaşmaya döner.",
   },
   {
     title: "Karşılıklı onay",
@@ -33,7 +33,7 @@ export default function MuhabbetPage() {
       <PageHero
         eyebrow="leylek teklifi"
         title="Yolculuk tekliflerini güvenli eşleşmeye dönüştür."
-        description="Leylek Teklifi, yolcu ve sürücülerin şehir içi veya şehir dışı yolculuk tekliflerini netleştirdiği, karşılıklı onayla eşleştiği güvenli teklif akışıdır."
+        description="Leylek Teklifi, yolcu ve sürücülerin yolculuk tekliflerini netleştirdiği, karşılıklı onayla eşleştiği güvenli teklif akışıdır."
         primaryLabel="Teklif Akışını Keşfet"
         ctaHint="Ücretsiz • 30 saniyede teklif oluştur"
       />
