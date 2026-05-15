@@ -6307,6 +6307,29 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     # Normalize to 905XXXXXXXXX format
     cleaned_phone = normalize_turkish_phone(result)
     logger.info(f"📱 OTP request for: {cleaned_phone}")
+    # Google Play reviewer: yalnız REVIEWER_LOGIN_ENABLED + iki env telefon + REVIEWER_LOGIN_OTP (6 hane)
+    if _truthy_reviewer_login_enabled():
+        wl_roles = _reviewer_whitelist_roles()
+        if cleaned_phone in wl_roles:
+            rev_otp = _reviewer_login_otp_from_env()
+            if rev_otp:
+                current_time = time.time()
+                otp_storage[cleaned_phone] = {
+                    "code": rev_otp,
+                    "expires": current_time + OTP_TTL_SECONDS,
+                    "last_sms_ok": current_time,
+                    "last_api_attempt": current_time,
+                }
+                logger.info(
+                    "REVIEWER_LOGIN send_otp sms_bypass phone=%s role=%s",
+                    _reviewer_mask_phone(cleaned_phone),
+                    wl_roles.get(cleaned_phone),
+                )
+                return {"success": True, "message": "OTP gönderildi"}
+            logger.warning(
+                "REVIEWER_LOGIN açık ve numara listede ancak REVIEWER_LOGIN_OTP eksik/geçersiz — normal SMS akışına düşülüyor phone=%s",
+                _reviewer_mask_phone(cleaned_phone),
+            )
     # Test bypass hatları: SMS gönderme; depoda sabit kod (verify ile uyumlu, maliyet yok)
     if _allow_test_login_bypass() and cleaned_phone in TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE:
         current_time = time.time()
@@ -6439,7 +6462,21 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
         # Başarılı - OTP'yi sil
         del otp_storage[phone_number]
         logger.info(f"✅ OTP verified for: {phone_number}")
+        wl_ok = _reviewer_whitelist_roles()
+        rr = wl_ok.get(phone_number)
+        if rr:
+            logger.info(
+                "REVIEWER_LOGIN verify_otp success phone=%s role=%s",
+                _reviewer_mask_phone(phone_number),
+                rr,
+            )
     else:
+        # Reviewer hesapları: genel 123456 yedeği kullanılamaz (çift koruma)
+        if phone_number in _reviewer_whitelist_roles():
+            raise HTTPException(
+                status_code=400,
+                detail="Geçersiz OTP veya önce doğrulama kodu istenmedi. Kod gelmediyse tekrar 'Kod gönder' deneyin.",
+            )
         # Fallback: Test modu için 123456 kabul et
         if otp_code != "123456":
             raise HTTPException(
@@ -6509,6 +6546,56 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
 def _allow_test_login_bypass() -> bool:
     # Varsayılan kapalı: yalnızca ALLOW_TEST_LOGIN_BYPASS=1 (veya true/yes/on) ile açılır
     return os.getenv("ALLOW_TEST_LOGIN_BYPASS", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _truthy_reviewer_login_enabled() -> bool:
+    """
+    Google Play reviewer-only OTP SMS bypass.
+    Varsayılan kapalı; yalnızca REVIEWER_LOGIN_ENABLED=1|true|yes (on hariç).
+    """
+    return os.getenv("REVIEWER_LOGIN_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+
+
+def _parse_reviewer_phone_env(var_name: str) -> Optional[str]:
+    raw = os.getenv(var_name, "").strip()
+    if not raw:
+        return None
+    is_valid, result = validate_turkish_phone(raw)
+    if not is_valid:
+        logger.warning("REVIEWER_LOGIN env %s geçersiz numara — yok sayılıyor", var_name)
+        return None
+    return normalize_turkish_phone(result)
+
+
+def _reviewer_whitelist_roles() -> dict[str, str]:
+    """905… kanonik → passenger|driver. Boş env ile boş sözlük (bypass çalışmaz)."""
+    out: dict[str, str] = {}
+    p = _parse_reviewer_phone_env("REVIEWER_PASSENGER_PHONE")
+    d = _parse_reviewer_phone_env("REVIEWER_DRIVER_PHONE")
+    if p:
+        out[p] = "passenger"
+    if d:
+        if p and d == p:
+            logger.error(
+                "REVIEWER_LOGIN REVIEWER_DRIVER_PHONE yolcu numarası ile aynı — iki ayrı hesap için farklı numaralar gerekli"
+            )
+        else:
+            out[d] = "driver"
+    return out
+
+
+def _reviewer_login_otp_from_env() -> Optional[str]:
+    raw = os.getenv("REVIEWER_LOGIN_OTP", "").strip()
+    if not raw.isdigit() or len(raw) != 6:
+        return None
+    return raw
+
+
+def _reviewer_mask_phone(canonical_905: str) -> str:
+    s = str(canonical_905 or "").strip()
+    if len(s) >= 8:
+        return f"{s[:4]}****{s[-4:]}"
+    return "****"
 
 
 def _test_driver_details_seed() -> dict:
@@ -13269,17 +13356,62 @@ def generate_muhabbet_agora_token(
         logger.error("Muhabbet Agora token üretme hatası: %s", e)
         return ""
 
-@api_router.get("/voice/get-token")
-async def get_agora_token(channel_name: str, uid: int = 0):
-    """Agora RTC token al"""
+
+def _authorize_voice_or_trust_agora_channel(channel_name: str, canonical_user_id: str) -> bool:
+    """Voice GET token: kanal için ya aktif ses aramasına ya da accepted trust_sessions satırına katılımcı mı."""
+    ch = str(channel_name or "").strip()
+    uid = str(canonical_user_id or "").strip().lower()
+    if not ch or not uid:
+        return False
     try:
-        token = generate_agora_token(channel_name, uid)
+        r_call = (
+            supabase.table("calls")
+            .select("call_id")
+            .eq("channel_name", ch)
+            .in_("status", ["ringing", "connected"])
+            .or_(f"caller_id.eq.{uid},receiver_id.eq.{uid}")
+            .limit(1)
+            .execute()
+        )
+        if r_call.data:
+            return True
+    except Exception as e_call:
+        logger.warning("authorize voice channel calls lookup skipped: %s", e_call)
+    try:
+        r_trust = (
+            supabase.table("trust_sessions")
+            .select("id")
+            .eq("channel_name", ch)
+            .eq("status", "accepted")
+            .or_(f"requester_id.eq.{uid},target_id.eq.{uid}")
+            .limit(1)
+            .execute()
+        )
+        if r_trust.data:
+            return True
+    except Exception as e_trust:
+        logger.warning("authorize voice channel trust_sessions lookup skipped: %s", e_trust)
+    return False
+
+
+@api_router.get("/voice/get-token")
+async def get_agora_token(
+    channel_name: str,
+    uid: int = 0,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Agora RTC token al"""
+    if not _authorize_voice_or_trust_agora_channel(channel_name, authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Bu kanal için token üretilemez")
+    try:
+        token = generate_agora_token(channel_name, user_id=authenticated_user_id)
+        agora_uid = agora_uid_from_user_id(authenticated_user_id)
         return {
             "success": True,
             "token": token,
             "app_id": AGORA_APP_ID,
             "channel_name": channel_name,
-            "uid": uid
+            "uid": agora_uid,
         }
     except Exception as e:
         logger.error(f"Get token error: {e}")
@@ -13287,17 +13419,30 @@ async def get_agora_token(channel_name: str, uid: int = 0):
 
 # Frontend uyumluluğu için alias - /api/agora/token
 @api_router.get("/agora/token")
-async def get_agora_token_alias(channel_name: str, uid: int = 0):
+async def get_agora_token_alias(
+    channel_name: str,
+    uid: int = 0,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
     """Agora RTC token al (alias endpoint)"""
+    if not _authorize_voice_or_trust_agora_channel(channel_name, authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Bu kanal için token üretilemez")
     try:
-        token = generate_agora_token(channel_name, uid)
-        logger.info(f"🎫 Token istendi: channel={channel_name}, uid={uid}, token_length={len(token) if token else 0}")
+        token = generate_agora_token(channel_name, user_id=authenticated_user_id)
+        agora_uid = agora_uid_from_user_id(authenticated_user_id)
+        logger.info(
+            "🎫 Token istendi: channel=%s, jwt_uid=%s, resolved_agora_uid=%s, token_length=%s",
+            channel_name,
+            _mask_log_id(authenticated_user_id),
+            agora_uid,
+            len(token) if token else 0,
+        )
         return {
             "success": True,
             "token": token,
             "app_id": AGORA_APP_ID,
             "channel_name": channel_name,
-            "uid": uid
+            "uid": agora_uid,
         }
     except Exception as e:
         logger.error(f"Get token error: {e}")
@@ -13309,38 +13454,50 @@ async def get_agora_token_alias(channel_name: str, uid: int = 0):
 # Tablo adı: calls
 
 class StartCallRequest(BaseModel):
-    caller_id: str
+    caller_id: Optional[str] = None
     receiver_id: Optional[str] = None
     call_type: str = "voice"
     tag_id: Optional[str] = None
     caller_name: Optional[str] = None
 
 @api_router.post("/voice/start-call")
-async def start_call(request: StartCallRequest):
+async def start_call(
+    request: StartCallRequest,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
     """Arama başlat - Supabase'e kaydet"""
     try:
+        caller_resolved = authenticated_user_id
+        if request.caller_id is not None and str(request.caller_id).strip():
+            if str(request.caller_id).strip().lower() != caller_resolved:
+                raise HTTPException(status_code=403, detail="caller_id oturum ile uyuşmuyor")
+
         call_id = f"call_{secrets.token_urlsafe(8)}"
         channel_name = f"leylek_{call_id}"
         
         # Son 5 saniyede arama yapılmış mı kontrol et (cooldown)
         five_seconds_ago = (datetime.utcnow() - timedelta(seconds=5)).isoformat()
         try:
-            recent_call = supabase.table("calls").select("id").eq("caller_id", request.caller_id).gte("created_at", five_seconds_ago).execute()
+            recent_call = supabase.table("calls").select("id").eq("caller_id", caller_resolved).gte("created_at", five_seconds_ago).execute()
             if recent_call.data:
                 return {"success": False, "detail": "Lütfen 5 saniye bekleyin"}
         except:
             pass  # Tablo yoksa devam et
         
         # receiver_id yoksa tag_id'den bul
-        receiver_id = request.receiver_id
+        receiver_id = str(request.receiver_id).strip().lower() if request.receiver_id else None
         if not receiver_id and request.tag_id:
             tag_result = supabase.table("tags").select("passenger_id, driver_id").eq("id", request.tag_id).execute()
             if tag_result.data:
                 tag = tag_result.data[0]
-                if tag.get("passenger_id") == request.caller_id:
-                    receiver_id = tag.get("driver_id")
+                pid = str(tag.get("passenger_id") or "").strip().lower()
+                did = str(tag.get("driver_id") or "").strip().lower()
+                if pid == caller_resolved:
+                    receiver_id = str(tag.get("driver_id") or "").strip().lower()
+                elif did == caller_resolved:
+                    receiver_id = str(tag.get("passenger_id") or "").strip().lower()
                 else:
-                    receiver_id = tag.get("passenger_id")
+                    return {"success": False, "detail": "Bu etiket için arama başlatma yetkiniz yok"}
         
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
@@ -13433,7 +13590,7 @@ async def start_call(request: StartCallRequest):
             supabase.table("calls").update({
                 "status": "cancelled",
                 "ended_at": datetime.utcnow().isoformat()
-            }).eq("status", "ringing").or_(f"caller_id.eq.{request.caller_id},receiver_id.eq.{request.caller_id}").execute()
+            }).eq("status", "ringing").or_(f"caller_id.eq.{caller_resolved},receiver_id.eq.{caller_resolved}").execute()
         except:
             pass
 
@@ -13477,16 +13634,14 @@ async def start_call(request: StartCallRequest):
             logger.warning(f"Voice busy check skipped: {busy_err}")
         
         # Agora: arayan ve alıcı için ayrı uid + token
-        caller_uid = agora_uid_from_user_id(request.caller_id)
-        receiver_uid = agora_uid_from_user_id(receiver_id)
-        caller_token = generate_agora_token(channel_name, user_id=request.caller_id)
+        caller_token = generate_agora_token(channel_name, user_id=caller_resolved)
         receiver_token = generate_agora_token(channel_name, user_id=receiver_id)
         
         # Arayan bilgisi
         caller_name = request.caller_name
         if not caller_name:
             try:
-                caller_result = supabase.table("users").select("name").eq("id", request.caller_id).execute()
+                caller_result = supabase.table("users").select("name").eq("id", caller_resolved).execute()
                 caller_name = caller_result.data[0]["name"] if caller_result.data else "Kullanıcı"
             except:
                 caller_name = "Kullanıcı"
@@ -13495,7 +13650,7 @@ async def start_call(request: StartCallRequest):
         call_data = {
             "call_id": call_id,
             "channel_name": channel_name,
-            "caller_id": request.caller_id,
+            "caller_id": caller_resolved,
             "receiver_id": receiver_id,
             "tag_id": request.tag_id,
             "call_type": request.call_type,
@@ -13514,7 +13669,7 @@ async def start_call(request: StartCallRequest):
                 {
                     "event": "voice_start_call_http",
                     "call_id": _short_log_id(call_id),
-                    "caller_id": _mask_log_id(request.caller_id),
+                    "caller_id": _mask_log_id(caller_resolved),
                     "receiver_id": _mask_log_id(receiver_id),
                     "tag_id": _short_log_id(request.tag_id),
                 },
@@ -13531,7 +13686,7 @@ async def start_call(request: StartCallRequest):
                 _ic_body_http,
                 build_call_push_payload(
                     "incoming_call",
-                    request.caller_id,
+                    caller_resolved,
                     caller_name,
                     request.call_type,
                     call_id=call_id,
@@ -13548,7 +13703,7 @@ async def start_call(request: StartCallRequest):
         try:
             incoming_payload = {
                 "call_id": call_id,
-                "caller_id": request.caller_id,
+                "caller_id": caller_resolved,
                 "caller_name": caller_name,
                 "channel_name": channel_name,
                 "agora_token": receiver_token,
@@ -13574,16 +13729,24 @@ async def start_call(request: StartCallRequest):
             "caller_name": caller_name,
             "receiver_id": receiver_id
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Start call error: {e}")
         return {"success": False, "detail": str(e)}
 
 @api_router.get("/voice/check-incoming")
-async def check_incoming_call(user_id: str):
+async def check_incoming_call(
+    user_id: Optional[str] = None,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
     """Gelen arama var mı kontrol et - Supabase'den oku"""
+    effective_uid = authenticated_user_id
+    if user_id is not None and str(user_id).strip().lower() != effective_uid:
+        raise HTTPException(status_code=403, detail="Kimlik uyuşmazlığı")
     try:
         # Bu kullanıcıya gelen aktif (ringing) arama var mı?
-        result = supabase.table("calls").select("*").eq("receiver_id", user_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
+        result = supabase.table("calls").select("*").eq("receiver_id", effective_uid).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
         
         if result.data:
             call = result.data[0]
@@ -13624,7 +13787,7 @@ async def check_incoming_call(user_id: str):
             }
         
         # Son iptal edilen aramayı kontrol et - ARAYAN İPTAL ETTİ Mİ?
-        cancelled_result = supabase.table("calls").select("*").eq("receiver_id", user_id).in_("status", ["cancelled", "ended", "rejected"]).order("ended_at", desc=True).limit(1).execute()
+        cancelled_result = supabase.table("calls").select("*").eq("receiver_id", effective_uid).in_("status", ["cancelled", "ended", "rejected"]).order("ended_at", desc=True).limit(1).execute()
         
         if cancelled_result.data:
             cancelled_call = cancelled_result.data[0]
@@ -13650,22 +13813,29 @@ async def check_incoming_call(user_id: str):
         return {"success": True, "has_incoming": False, "call": None}
 
 @api_router.post("/voice/accept-call")
-async def accept_call(user_id: str, call_id: str):
+async def accept_call(
+    call_id: str,
+    user_id: Optional[str] = None,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
     """Aramayı kabul et - Supabase'de güncelle"""
+    receiver_uid = authenticated_user_id
+    if user_id is not None and str(user_id).strip().lower() != receiver_uid:
+        raise HTTPException(status_code=403, detail="Kimlik uyuşmazlığı")
     try:
         # Aramayı bul ve güncelle
         result = supabase.table("calls").update({
             "status": "connected",
             "answered_at": datetime.utcnow().isoformat()
-        }).eq("call_id", call_id).eq("receiver_id", user_id).eq("status", "ringing").execute()
+        }).eq("call_id", call_id).eq("receiver_id", receiver_uid).eq("status", "ringing").execute()
         
         if result.data:
             call = result.data[0]
             logger.info("✅ SUPABASE: Arama kabul edildi: %s", _short_log_id(call_id))
-            fresh_token = generate_agora_token(call["channel_name"], user_id=user_id)
+            fresh_token = generate_agora_token(call["channel_name"], user_id=receiver_uid)
             try:
                 cid_raw = str(call.get("caller_id") or "").strip()
-                rid_raw = str(user_id).strip()
+                rid_raw = str(receiver_uid).strip()
                 _started_http = {
                     "call_id": call_id,
                     "caller_id": cid_raw,
@@ -13686,6 +13856,8 @@ async def accept_call(user_id: str, call_id: str):
             }
         
         return {"success": False, "detail": "Arama bulunamadı veya zaten cevaplanmış"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Accept call error: {e}")
         return {"success": False, "detail": str(e)}
