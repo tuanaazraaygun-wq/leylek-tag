@@ -6507,7 +6507,8 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
 
 
 def _allow_test_login_bypass() -> bool:
-    return os.getenv("ALLOW_TEST_LOGIN_BYPASS", "1").strip().lower() in ("1", "true", "yes", "on")
+    # Varsayılan kapalı: yalnızca ALLOW_TEST_LOGIN_BYPASS=1 (veya true/yes/on) ile açılır
+    return os.getenv("ALLOW_TEST_LOGIN_BYPASS", "0").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _test_driver_details_seed() -> dict:

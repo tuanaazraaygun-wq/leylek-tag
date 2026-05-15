@@ -93,6 +93,7 @@ import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
+import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import { playMatchChimeSound } from '../utils/sound';
 import { useLeylekZekaChrome, type LeylekZekaHomeFlowScreen } from '../contexts/LeylekZekaChromeContext';
 
@@ -124,11 +125,6 @@ function loginPhoneToCleanTen(raw: string): string {
   if (c.startsWith('90') && c.length >= 12) c = c.slice(2);
   if (c.startsWith('0') && c.length === 11 && c.charAt(1) === '5') c = c.slice(1);
   return c;
-}
-
-/** Sabit test hatları — OTP yok, şifre ile /auth/test-password-login */
-function isTestLoginPhone(phone: string) {
-  return phone === '5321111111' || phone === '5322222222';
 }
 
 /** start-call sonrası arayan tarafı Agora kanalına alır (receiver ekranı açılmadan önce). */
@@ -2055,7 +2051,7 @@ export default function App() {
       return;
     }
     const cleanTen = loginPhoneToCleanTen(phone);
-    if (!/^5\d{9}$/.test(cleanTen) || !isTestLoginPhone(cleanTen)) {
+    if (!/^5\d{9}$/.test(cleanTen) || !isReviewerDemoLoginPhone(cleanTen)) {
       appAlert('Hata', 'Geçersiz test numarası');
       setScreen('login');
       return;
@@ -2144,8 +2140,8 @@ export default function App() {
     }
     setPhone(cleanPhone);
 
-    /** Sabit test hatları: OTP yok — şifre ekranı (sunucu: /auth/test-password-login). */
-    if (isTestLoginPhone(cleanPhone)) {
+    /** Reviewer/demo hatları: yalnız EXPO_PUBLIC_ENABLE_DEMO_REVIEWER_LOGIN=1 (veya extra) açıkken; sunucu ALLOW_TEST_LOGIN_BYPASS=1 ile eşleşmeli. */
+    if (isReviewerDemoLoginPhone(cleanPhone)) {
       try {
         const currentDeviceId = deviceId || await getOrCreateDeviceId();
         const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
@@ -14527,12 +14523,33 @@ function DriverDashboard({
     const subRef = { current: null as { remove: () => void } | null };
     const intervalRef = { current: null as ReturnType<typeof setInterval> | null };
 
+    const lastApplyRef = {
+      current: null as { latitude: number; longitude: number; t: number } | null,
+    };
+    const MAX_LOC_ACCURACY_M = 30;
+    const MIN_MOVE_SKIP_M = 4;
+    const MIN_UI_INTERVAL_MS = 750;
+
     const applyLocation = async (location: Location.LocationObject) => {
       if (cancelled || !user?.id) return;
+      const acc = location.coords.accuracy;
+      if (typeof acc === 'number' && acc > MAX_LOC_ACCURACY_M) {
+        return;
+      }
       const coords = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
+      const now = Date.now();
+      const prev = lastApplyRef.current;
+      if (prev) {
+        const d = haversineMetersLatLng(prev, coords);
+        const dt = now - prev.t;
+        if (d < MIN_MOVE_SKIP_M && dt < MIN_UI_INTERVAL_MS) {
+          return;
+        }
+      }
+      lastApplyRef.current = { ...coords, t: now };
       setUserLocation(coords);
       if (emitDriverLocationUpdate) {
         emitDriverLocationUpdate({

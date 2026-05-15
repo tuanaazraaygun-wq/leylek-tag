@@ -1118,8 +1118,8 @@ function resolveNavigationAnchor(
 
 /** Rota üzerine snap + mikro drift filtre — yol dışına taşmış GPS’i zorla çekmez (sıkı) */
 const NAV_MARKER_SNAP_MAX_M = 25;
-/** 3 m altı: marker güncelleme yok (mikro jitter) */
-const NAV_MARKER_MICRO_IGNORE_M = 3;
+/** ~5 m altı: marker güncelleme yok (GPS mikro jitter — Yolcuya Git sıçramasını keser) */
+const NAV_MARKER_MICRO_IGNORE_M = 5;
 const NAV_MARKER_SOFT_BLEND_MAX_M = 22;
 /** Yumuşak yaklaşmada her karede hedefe yaklaşma oranı */
 const NAV_MARKER_LERP = 0.15;
@@ -1680,8 +1680,8 @@ const NAV_CENTER_LERP_FULL = 0.76;
 const NAV_RESUME_SOFT_MS = 960;
 const NAV_CENTER_LERP_RESUME_MOVE = 0.44;
 const NAV_CENTER_LERP_RESUME_STILL = 0.36;
-/** Mikro GPS / heading gürültüsü — eşikler biraz sıkı: daha az mikro hareket */
-const NAV_JITTER_MAX_STEP_M = 0.62;
+/** Mikro GPS / heading gürültüsü — kamera anim için üst adım eşiği (m); MERGE center/heading ile AND */
+const NAV_CAMERA_JITTER_SKIP_STEP_M = 2.8;
 const NAV_JITTER_MAX_HEADING_DEG = 1.45;
 const NAV_JITTER_MIN_CENTER_MOVE_M = 0.55;
 const NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG = 1.12;
@@ -1693,6 +1693,11 @@ const NAV_SPEECH_MIN_GAP_MS = 4100;
 const NAV_HANDOFF_TO_DESTINATION_M = 45;
 /** Harita sürükleme / dokunma sonrası otomatik takip bu kadar ms durur; sonra yumuşakça devam */
 const NAV_MAP_GESTURE_MS = 9_000;
+
+/** Aynı buluşma leg’i: sürücü/yolcu pin’i az oynadıysa OSRM tekrar çağırma */
+const OSRM_REFETCH_DRIVER_MIN_M = 35;
+const OSRM_REFETCH_DEST_MIN_M = 13;
+const OSRM_REFETCH_MIN_INTERVAL_MS = 10_000;
 
 function smoothZoomToward(prev: number | null, target: number): number {
   if (prev == null || !Number.isFinite(prev)) return target;
@@ -2574,6 +2579,15 @@ export default function LiveMapView({
   });
   const lastOsrmAtRef = useRef(0);
   const lastOsrmKeyRef = useRef('');
+  /** Sürücü pickup OSRM: küçük GPS oynamasında gereksiz yeniden fetch engeli */
+  const meetingOsrmRefetchGuardRef = useRef<{
+    legKey: string;
+    fetchOrigin: MapLatLng;
+    fetchDest: MapLatLng;
+    fetchedAtMs: number;
+  } | null>(null);
+  /** Yolcuya Git / rotayı yenile — guard’ı baypas et */
+  const navForceMeetingOsrmOnceRef = useRef(false);
 
   useEffect(() => {
     if (!isDriver || !otherLocationFromPickupFallback) {
@@ -2591,6 +2605,8 @@ export default function LiveMapView({
     clearMeetingRouteRef.current('tag_id_reset');
     lastOsrmKeyRef.current = '';
     lastOsrmAtRef.current = 0;
+    meetingOsrmRefetchGuardRef.current = null;
+    navForceMeetingOsrmOnceRef.current = false;
     mapFitRef.current = { initialDone: false, hadDestination: false };
     setNavigationMode(false);
     setNavigationStage('pickup');
@@ -2896,7 +2912,7 @@ export default function LiveMapView({
     const skipForJitter =
       !bypassCameraGuards &&
       navCamInitializedRef.current &&
-      stepMovedM < NAV_JITTER_MAX_STEP_M &&
+      stepMovedM < NAV_CAMERA_JITTER_SKIP_STEP_M &&
       centerMovedM < NAV_JITTER_MIN_CENTER_MOVE_M &&
       headingDeltaSinceLast < NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG;
 
@@ -3432,6 +3448,7 @@ export default function LiveMapView({
       setNavDriverMapCoord(null);
       navDriverMarkerSmoothedBearingRef.current = null;
       setNavigationMode(true);
+      navForceMeetingOsrmOnceRef.current = true;
       console.log('YOLCUYA_GIT_SET_NAV', {
         nextNavigationMode: true,
         nextNavigationStage: 'pickup',
@@ -3446,6 +3463,7 @@ export default function LiveMapView({
       }
       /* meeting-route effect navigationMode ile zaten tetiklenir; microtask ile ikinci fetch iptal/flicker üretiyordu */
     } else {
+      navForceMeetingOsrmOnceRef.current = true;
       lastNavCameraAtRef.current = 0;
       navUserMapGestureUntilRef.current = 0;
       navForceRecenterOnceRef.current = true;
@@ -4464,19 +4482,77 @@ export default function LiveMapView({
         return;
       }
 
-      if (__DEV__) console.log('TRIGGER ROUTE FETCH', {
-        isDriver,
-        navigationMode: navOn,
-        navigationStage: navStage,
-        userLocation,
-        otherLocation,
-      });
-
       const start = isDriver ? uMeet : oMeet;
       const end = isDriver ? oMeet : uMeet;
 
       const meetingEndpointsKeyHere = () =>
         meetingEndpointsKey(start.latitude, start.longitude, end.latitude, end.longitude);
+
+      const recordOsrmRefetchGuard = () => {
+        if (!isDriver) return;
+        meetingOsrmRefetchGuardRef.current = {
+          legKey: meetingEndpointsKeyHere(),
+          fetchOrigin: { latitude: start.latitude, longitude: start.longitude },
+          fetchDest: { latitude: end.latitude, longitude: end.longitude },
+          fetchedAtMs: Date.now(),
+        };
+      };
+
+      const legKeyForLoading = meetingEndpointsKeyHere();
+      const forceMeetingOsrmBypass = navForceMeetingOsrmOnceRef.current;
+      if (forceMeetingOsrmBypass) {
+        navForceMeetingOsrmOnceRef.current = false;
+      }
+
+      const hasPolylineForLeg =
+        meetingRouteCoordinatesRef.current.length >= 2 &&
+        lastOsrmKeyRef.current === legKeyForLoading;
+
+      if (
+        !forceMeetingOsrmBypass &&
+        isDriver &&
+        navOn &&
+        navStage === 'pickup' &&
+        hasPolylineForLeg
+      ) {
+        const g = meetingOsrmRefetchGuardRef.current;
+        if (g && g.legKey === legKeyForLoading) {
+          const dDriver = haversineMeters(g.fetchOrigin, start);
+          const dDest = haversineMeters(g.fetchDest, end);
+          const dt = Date.now() - g.fetchedAtMs;
+          if (
+            dDriver < OSRM_REFETCH_DRIVER_MIN_M &&
+            dDest < OSRM_REFETCH_DEST_MIN_M &&
+            dt < OSRM_REFETCH_MIN_INTERVAL_MS
+          ) {
+            if (__DEV__) {
+              try {
+                console.log(
+                  'OSRM route refetch skipped by guard',
+                  JSON.stringify({
+                    dDriverM: Math.round(dDriver),
+                    dDestM: Math.round(dDest),
+                    dtMs: dt,
+                  }),
+                );
+              } catch {
+                /* noop */
+              }
+            }
+            return;
+          }
+        }
+      }
+
+      if (__DEV__) {
+        console.log('TRIGGER ROUTE FETCH', {
+          isDriver,
+          navigationMode: navOn,
+          navigationStage: navStage,
+          userLocation,
+          otherLocation,
+        });
+      }
 
       /** Stale fetch veya boş geometri ile mevcut rotayı silme — yalnızca geçerli yeni polyline ile güncelle */
       const commitMeetingPolyline = (coords: MapLatLng[]): boolean => {
@@ -4536,6 +4612,7 @@ export default function LiveMapView({
                   meetingHasOsrmPolylineRef.current = coords.length >= 3;
                   pickupNavStepsRef.current = null;
                   lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+                  recordOsrmRefetchGuard();
                   if (!navigationModeRef.current) {
                     fitNavigationViewportRef.current?.(coords);
                   }
@@ -4607,7 +4684,6 @@ export default function LiveMapView({
         }
       };
 
-      const legKeyForLoading = meetingEndpointsKeyHere();
       const alreadyDrawingThisLeg =
         meetingRouteCoordinatesRef.current.length >= 2 &&
         lastOsrmKeyRef.current === legKeyForLoading;
@@ -4657,6 +4733,7 @@ export default function LiveMapView({
                 meetingHasOsrmPolylineRef.current = coordsPre.length >= 3;
                 pickupNavStepsRef.current = null;
                 lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+                recordOsrmRefetchGuard();
                 if (!navigationModeRef.current) {
                   fitNavigationViewportRef.current?.(coordsPre);
                 }
@@ -4701,6 +4778,7 @@ export default function LiveMapView({
               meetingHasOsrmPolylineRef.current = serverPolyline.length >= 3;
               pickupNavStepsRef.current = null;
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+              recordOsrmRefetchGuard();
               if (!navigationModeRef.current) {
                 fitNavigationViewportRef.current?.(serverPolyline);
               }
@@ -4790,6 +4868,7 @@ export default function LiveMapView({
               });
               lastOsrmAtRef.current = Date.now();
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+              recordOsrmRefetchGuard();
               if (!navigationModeRef.current) {
                 fitNavigationViewportRef.current?.(rw.coordinates);
               }
@@ -4848,6 +4927,7 @@ export default function LiveMapView({
               });
               lastOsrmAtRef.current = Date.now();
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+              recordOsrmRefetchGuard();
               fitNavigationViewportRef.current?.(polyPax);
               console.log('ROUTE FETCH OK', { points: polyPax.length });
             }

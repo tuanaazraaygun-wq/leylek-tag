@@ -90,6 +90,20 @@ export default function CallScreenV2({
   const prevSessionKeyRef = useRef('');
   /** Caller oturumunda useEffect’in ikinci kez startOutgoing çalıştırmasını engeller */
   const callerJoinExecutedRef = useRef(false);
+  /** Çift teardown / Agora offline + socket callEnded aynı anda — tek seferlik kapat */
+  const remoteTeardownHandledRef = useRef(false);
+  const remoteCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearRemoteCloseTimer = useCallback(() => {
+    if (remoteCloseTimerRef.current) {
+      clearTimeout(remoteCloseTimerRef.current);
+      remoteCloseTimerRef.current = null;
+    }
+  }, []);
+  /** `attachEngineHandlers` üstte tanımlı; Agora offline anında güncel finalize çağrısı için ref */
+  const finalizeRemoteTeardownRef = useRef<
+    ((statusText: string, closeDelayMs: number) => Promise<void>) | null
+  >(null);
   /** Oturum effect cleanup / visible=false: giden arama async’i ringback’i yeniden başlatmasın */
   const callSessionAbortRef = useRef(false);
   const hangUpRef = useRef<(reason?: string) => void>(() => {});
@@ -195,9 +209,7 @@ export default function CallScreenV2({
       },
       onUserOffline: (_connection: RtcConnection, uid: number) => {
         LOG('Karşı taraf ayrıldı', { uid });
-        setRemoteUid(0);
-        setStatus('Bağlantı kesildi');
-        setPhase('ended');
+        void finalizeRemoteTeardownRef.current?.('Bağlantı kesildi', 1100);
       },
       onError: (err, msg) => {
         console.log('AGORA JOIN ERROR', err);
@@ -379,6 +391,8 @@ export default function CallScreenV2({
     async (reason: string = 'user') => {
       console.log('HANGUP TRIGGERED', reason);
       LOG('Arama bitiriliyor', { reason });
+      remoteTeardownHandledRef.current = true;
+      clearRemoteCloseTimer();
       stopTimersAndRing();
       await runCleanup();
       setPhase('ended');
@@ -388,10 +402,34 @@ export default function CallScreenV2({
       onEnd();
       setTimeout(onClose, reason === 'time_limit' ? 400 : 250);
     },
-    [onClose, onEnd, runCleanup, stopTimersAndRing]
+    [onClose, onEnd, runCleanup, stopTimersAndRing, clearRemoteCloseTimer]
   );
 
   hangUpRef.current = hangUp;
+
+  /**
+   * Karşı taraf kanaldan düştü (Agora) veya socket ile görüşme bitti —
+   * yalnızca "Bağlantı kesildi" bırakıp overlay’de kalmayı önle.
+   */
+  const finalizeRemoteTeardown = useCallback(
+    async (statusText: string, closeDelayMs: number) => {
+      if (remoteTeardownHandledRef.current) return;
+      remoteTeardownHandledRef.current = true;
+      clearRemoteCloseTimer();
+      setRemoteUid(0);
+      setStatus(statusText);
+      setPhase('ended');
+      stopTimersAndRing();
+      countdownStartedRef.current = false;
+      await runCleanup();
+      remoteCloseTimerRef.current = setTimeout(() => {
+        remoteCloseTimerRef.current = null;
+        onClose();
+      }, Math.max(200, closeDelayMs));
+    },
+    [clearRemoteCloseTimer, onClose, runCleanup, stopTimersAndRing],
+  );
+  finalizeRemoteTeardownRef.current = finalizeRemoteTeardown;
 
   const endWithoutNotify = useCallback(
     async (reason: string) => {
@@ -430,6 +468,8 @@ export default function CallScreenV2({
   useEffect(() => {
     if (!visible) {
       callSessionAbortRef.current = true;
+      clearRemoteCloseTimer();
+      remoteTeardownHandledRef.current = false;
       void runCleanup();
       prevSessionKeyRef.current = '';
       return;
@@ -450,6 +490,8 @@ export default function CallScreenV2({
 
       prevSessionKeyRef.current = sessionKey;
       callSessionAbortRef.current = false;
+      clearRemoteCloseTimer();
+      remoteTeardownHandledRef.current = false;
 
       LOG('CallScreenV2 açıldı', { mode, callId, channelName });
       setRemoteUid(0);
@@ -488,10 +530,11 @@ export default function CallScreenV2({
       callSessionAbortRef.current = true;
       cancelled = true;
       pulseAnim.stopAnimation();
+      clearRemoteCloseTimer();
       void runCleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startOutgoing/runCleanup dep'e alınmaz
-  }, [visible, callId, mode, channelName, pulseAnim, runCleanup]);
+  }, [visible, callId, mode, channelName, pulseAnim, runCleanup, clearRemoteCloseTimer]);
 
   /** Karşı taraf hattı kabul etti (socket) — arayan: çalma tonu kesilir, yeşil “Bağlandı” */
   useEffect(() => {
@@ -518,11 +561,8 @@ export default function CallScreenV2({
 
   useEffect(() => {
     if (!callEnded) return;
-    setStatus('Görüşme sonlandı');
-    setPhase('ended');
-    const t = setTimeout(() => void endWithoutNotify('remote_call_ended'), 400);
-    return () => clearTimeout(t);
-  }, [callEnded, endWithoutNotify]);
+    void finalizeRemoteTeardown('Görüşme sonlandı', 650);
+  }, [callEnded, finalizeRemoteTeardown]);
 
   useEffect(() => {
     if (!receiverOffline) return;
@@ -568,7 +608,11 @@ export default function CallScreenV2({
     if (status === 'Aranıyor…' || status.startsWith('Aranıyor')) {
       return { text: status, style: styles.subRinging };
     }
-    if (status === 'Görüşme süresi doldu' || status === 'Görüşme sonlandı') {
+    if (
+      status === 'Görüşme süresi doldu' ||
+      status === 'Görüşme sonlandı' ||
+      status === 'Bağlantı kesildi'
+    ) {
       return { text: status, style: styles.subMuted };
     }
     return { text: status || '—', style: styles.sub };

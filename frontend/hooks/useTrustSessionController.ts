@@ -881,6 +881,9 @@ export function useTrustSessionController({
   const respondTrust = useCallback(
     async (accept: boolean) => {
       if (!trustRequestModal?.trustId) return;
+      const tagIdForRecovery = String(
+        trustRequestModal.tagId ?? activeTagIdRef.current ?? '',
+      ).trim();
       setTrustModalLoading(true);
       const res = await postTrustRespond(trustRequestModal.trustId, accept);
       setTrustModalLoading(false);
@@ -890,8 +893,27 @@ export function useTrustSessionController({
         return;
       }
       setTrustRequestModal(null);
+      /**
+       * Kabul eden taraf güven kanalına yalnızca `trust_session_ready` socket’i ile giriyordu;
+       * event kaçarsa karşı taraf bağlı kalıp bu taraf beklemeye düşebiliyordu.
+       * Sunucu zaten iki tarafa da aynı channel + token yayınlıyor — GET /trust/active ile hydrate et.
+       */
+      if (!accept || !tagIdForRecovery) return;
+
+      const bootstrapAfterAccept = async () => {
+        const staggerMs = [0, 240, 520, 1100];
+        for (let i = 0; i < staggerMs.length; i++) {
+          if (staggerMs[i] > 0) {
+            await new Promise((r) => setTimeout(r, staggerMs[i]! - staggerMs[i - 1]!));
+          }
+          if (trustVideoSessionRef.current) return;
+          await recoverTrustVideoByTagId(tagIdForRecovery, `respond_accept_try_${i}`);
+          if (trustVideoSessionRef.current) return;
+        }
+      };
+      void bootstrapAfterAccept();
     },
-    [trustRequestModal],
+    [trustRequestModal, recoverTrustVideoByTagId],
   );
 
   const processTrustSocketRequestInternal = useCallback(
