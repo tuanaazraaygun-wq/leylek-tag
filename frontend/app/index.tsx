@@ -4513,7 +4513,7 @@ export default function App() {
                               textShadowRadius: 6,
                             }}
                           >
-                            Çağır
+                            Eşleşmesi
                           </Animated.Text>
                           ) : null}
                         </TouchableOpacity>
@@ -4589,14 +4589,14 @@ export default function App() {
                               letterSpacing: -0.15,
                               color:
                                 rideVehicleKind === 'motorcycle'
-                                  ? '#FFEDD5'
-                                  : '#EA580C',
-                              textShadowColor: 'rgba(234, 88, 12, 0.4)',
+                                  ? 'rgba(255,254,237,0.98)'
+                                  : '#CA8A04',
+                              textShadowColor: 'rgba(250, 204, 21, 0.45)',
                               textShadowOffset: { width: 0, height: 0 },
                               textShadowRadius: 6,
                             }}
                           >
-                            Çağır
+                            Eşleşmesi
                           </Animated.Text>
                           ) : null}
                         </TouchableOpacity>
@@ -10352,9 +10352,13 @@ function PassengerDashboard({
         JSON.stringify({ role: 'passenger', tag_id: _tagPress, receiver_id: receiverId }),
       );
       const tReq = Date.now();
+      const accessToken = (await getPersistedAccessToken())?.trim();
       const response = await fetch(`${API_URL}/voice/start-call`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           caller_id: user.id,
           receiver_id: receiverId,
@@ -14123,9 +14127,13 @@ function DriverDashboard({
         JSON.stringify({ role: 'driver', tag_id: _tagPressD, receiver_id: receiverId }),
       );
       const tReqD = Date.now();
+      const accessTokenD = (await getPersistedAccessToken())?.trim();
       const response = await fetch(`${API_URL}/voice/start-call`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessTokenD ? { Authorization: `Bearer ${accessTokenD}` } : {}),
+        },
         body: JSON.stringify({
           caller_id: user.id,
           receiver_id: receiverId,

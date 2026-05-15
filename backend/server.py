@@ -1252,6 +1252,64 @@ def _passenger_preferred_vehicle_from_row(user_row: dict) -> Optional[str]:
     return _canonical_vehicle_kind(dd.get("passenger_preferred_vehicle"))
 
 
+def _canonical_vehicle_type_legacy_optional(raw: Any) -> Optional[str]:
+    """driver_details.vehicle_type (sedan vb.) için car|motorcycle; bilinmeyen -> None."""
+    if raw is None or raw == "":
+        return None
+    ck = _canonical_vehicle_kind(raw)
+    if ck is not None:
+        return ck
+    s = str(raw).strip().lower()
+    car_labels = frozenset(
+        (
+            "sedan",
+            "hatchback",
+            "suv",
+            "van",
+            "pickup",
+            "coupe",
+            "wagon",
+            "minivan",
+            "araba",
+            "otomobil",
+            "car",
+            "cip",
+        )
+    )
+    mot_labels = frozenset(("motorcycle", "motor", "scooter", "motosiklet", "moto", "enduro"))
+    if s in car_labels:
+        return "car"
+    if s in mot_labels:
+        return "motorcycle"
+    return None
+
+
+def _driver_registered_vehicle_kind_for_auth(user_row: dict) -> Optional[str]:
+    """
+    Yetkilendirme için onaylı/kayıtlı tek araç tipi (varsayılan car YOK).
+    Öncelik: kyc_vehicle_kind -> vehicle_kind -> vehicle_type (legacy).
+    """
+    dd = _driver_details_as_dict(user_row)
+    for key in ("kyc_vehicle_kind", "vehicle_kind"):
+        raw = dd.get(key)
+        c = _canonical_vehicle_kind(raw)
+        if c is not None:
+            return c
+    vt = _canonical_vehicle_type_legacy_optional(dd.get("vehicle_type"))
+    if vt is not None:
+        return vt
+    return None
+
+
+def _driver_is_allowed_for_trip_vehicle(driver_row: dict, trip_vehicle_kind: Any) -> bool:
+    """Sürücünün kayıtlı tipi ile yolculuk talebi (car|motorcycle) birebir eşleşmeli."""
+    trip = _canonical_vehicle_kind(trip_vehicle_kind) or "car"
+    reg = _driver_registered_vehicle_kind_for_auth(driver_row)
+    if reg is None:
+        return False
+    return reg == trip
+
+
 def _effective_driver_vehicle_kind(driver_row: dict) -> Optional[str]:
     """
     Sürücü kayıtlı tipi; yoksa eski hesaplar için 'car' (motor özelliği öncesi tüm sürücüler araç sayılır).
@@ -1632,10 +1690,7 @@ async def find_eligible_drivers(
                 continue
 
             if vehicle_filter:
-                eff = _driver_vehicle_kind_from_row(driver)
-                if eff is None:
-                    eff = "car"
-                if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                if not _driver_is_allowed_for_trip_vehicle(driver, pref):
                     vehicle_mismatch += 1
                     continue
 
@@ -1987,8 +2042,6 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
         if driver_lat is None or driver_lng is None:
             return
 
-        driver_eff = _effective_driver_vehicle_kind(drv) or "car"
-
         waiting_tags = (
             supabase.table("tags")
             .select(
@@ -2013,8 +2066,8 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
             tag_lng = tag.get("pickup_lng")
             if tag_lat is None or tag_lng is None:
                 continue
-            passenger_pref = _canonical_vehicle_kind(tag.get("passenger_preferred_vehicle")) or "car"
-            if not _driver_matches_passenger_vehicle_pref(driver_eff, passenger_pref):
+            trip_vk_emit = _trip_passenger_vehicle_pref(tag, None)
+            if not _driver_is_allowed_for_trip_vehicle(drv, trip_vk_emit):
                 continue
             try:
                 tla = float(tag_lat)
@@ -3286,8 +3339,7 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
                 continue
             if passenger_pid and str(driver["id"]) == str(passenger_pid):
                 continue
-            eff = _effective_driver_vehicle_kind(driver)
-            if not _driver_matches_passenger_vehicle_pref(eff, pref):
+            if not _driver_is_allowed_for_trip_vehicle(driver, pref):
                 continue
             try:
                 d_laf = float(d_lat)
@@ -8627,6 +8679,17 @@ async def set_ride_vehicle_kind(user_id: str, role: str, vehicle_kind: str):
         if not isinstance(dd, dict):
             dd = {}
         if role == "driver":
+            allowed_reg = _driver_registered_vehicle_kind_for_auth(row)
+            if allowed_reg is None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Onaylı sürücü araç tipi bulunamadı. Lütfen sürücü doğrulamasını tamamlayın.",
+                )
+            if vehicle_kind != allowed_reg:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.",
+                )
             dd["vehicle_kind"] = vehicle_kind
         else:
             dd["passenger_preferred_vehicle"] = vehicle_kind
@@ -8946,9 +9009,31 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         tag_result = supabase.table("tags").select("*").eq("id", tag_id_final).limit(1).execute()
         tag = tag_result.data[0] if tag_result.data else {}
         
-        # Şoför bilgisi
-        driver_result = supabase.table("users").select("name").eq("id", driver_id_final).execute()
+        pu_row_accept = None
+        if tag.get("passenger_id"):
+            try:
+                pid_acc = await resolve_user_id(str(tag["passenger_id"]).strip())
+                pu_sel = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", pid_acc)
+                    .limit(1)
+                    .execute()
+                )
+                if pu_sel.data:
+                    pu_row_accept = pu_sel.data[0]
+            except Exception:
+                pass
+        trip_vk_accept = _trip_passenger_vehicle_pref(tag, pu_row_accept)
+
+        driver_result = supabase.table("users").select("name, driver_details").eq("id", driver_id_final).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Şoför"
+        drv_row_accept = driver_result.data[0] if driver_result.data else {}
+        if not _driver_is_allowed_for_trip_vehicle(drv_row_accept, trip_vk_accept):
+            raise HTTPException(
+                status_code=403,
+                detail="Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.",
+            )
         passenger_id_final = tag.get("passenger_id")
         passenger_name = "Yolcu"
         if passenger_id_final:
@@ -9362,9 +9447,9 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             .execute()
         )
         
-        driver_eff = _effective_driver_vehicle_kind(
-            driver_result.data[0] if driver_result.data else {}
-        )
+        driver_row_req = driver_result.data[0] if driver_result.data else {}
+        if _driver_registered_vehicle_kind_for_auth(driver_row_req) is None:
+            return {"success": True, "requests": []}
         tag_points: list[tuple[str, float, float]] = []
         tag_ctx: dict[str, tuple] = {}
         for tag in result.data:
@@ -9372,7 +9457,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 continue
             passenger_info = tag.get("users", {}) or {}
             trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
-            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+            if not _driver_is_allowed_for_trip_vehicle(driver_row_req, trip_pref):
                 continue
             if tag.get("pickup_lat") is None or tag.get("pickup_lng") is None:
                 continue
@@ -9569,7 +9654,7 @@ async def get_driver_nearby_passengers_map(
         blocked_by_ids = {r["user_id"] for r in (blocked_by_result.data or [])}
         all_blocked = blocked_ids | blocked_by_ids
 
-        driver_eff = _effective_driver_vehicle_kind(driver_result.data[0] if driver_result.data else {})
+        driver_row_nm = driver_result.data[0] if driver_result.data else {}
 
         ten_min_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
         tag_res = (
@@ -9596,7 +9681,7 @@ async def get_driver_nearby_passengers_map(
                 continue
             passenger_info = tag.get("users", {}) or {}
             trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
-            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+            if not _driver_is_allowed_for_trip_vehicle(driver_row_nm, trip_pref):
                 continue
             plat = tag.get("pickup_lat")
             plng = tag.get("pickup_lng")
@@ -9715,7 +9800,7 @@ async def get_driver_nearby_passengers_map(
                 continue
             passenger_info = tag.get("users", {}) or {}
             trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
-            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+            if not _driver_is_allowed_for_trip_vehicle(driver_row_nm, trip_pref):
                 continue
             try:
                 plat_f = float(tag.get("pickup_lat"))
@@ -9908,11 +9993,10 @@ async def send_offer(
             except Exception:
                 pass
         trip_pref = trip_pref or "car"
-        driver_eff = _effective_driver_vehicle_kind(driver)
-        if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+        if not _driver_is_allowed_for_trip_vehicle(driver, trip_pref):
             raise HTTPException(
                 status_code=403,
-                detail="Bu talep için araç tipiniz uygun değil",
+                detail="Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.",
             )
         
         # ⚡ ÖNCE TEKLİFİ KAYDET - MESAFE SONRA HESAPLANACAK (ANINDA YANIT)
@@ -10147,7 +10231,7 @@ async def driver_accept_offer_http(
             .limit(1)
             .execute()
         )
-        driver_eff_acc = _effective_driver_vehicle_kind(drv_chk.data[0] if drv_chk.data else {})
+        drv_row_acc = drv_chk.data[0] if drv_chk.data else {}
         pu_row_acc = None
         pid_acc = tag_row_pre.get("passenger_id")
         if pid_acc:
@@ -10165,9 +10249,10 @@ async def driver_accept_offer_http(
             except Exception:
                 pass
         trip_pref_acc = _trip_passenger_vehicle_pref(tag_row_pre, pu_row_acc)
-        if not _driver_matches_passenger_vehicle_pref(driver_eff_acc, trip_pref_acc):
+        if not _driver_is_allowed_for_trip_vehicle(drv_row_acc, trip_pref_acc):
             raise HTTPException(
-                status_code=403, detail="Bu talep için araç tipiniz uygun değil"
+                status_code=403,
+                detail="Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.",
             )
 
         driver_name = (
@@ -10740,8 +10825,8 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
                 .limit(1)
                 .execute()
             )
-            driver_eff = _effective_driver_vehicle_kind(drv.data[0] if drv.data else {})
-            if not _driver_matches_passenger_vehicle_pref(driver_eff, pvk):
+            drv_row_dp = drv.data[0] if drv.data else {}
+            if not _driver_is_allowed_for_trip_vehicle(drv_row_dp, pvk):
                 continue
             trip_km = tag.get("distance_km") or 0
             trip_min = tag.get("estimated_minutes") or 0
@@ -16583,7 +16668,7 @@ async def handle_driver_accept_offer(sid, data):
             driver_name = dr.data[0]["name"]
         driver_phone = (dr.data[0].get("phone") or "").strip() if dr.data else None
 
-        driver_eff_sock = _effective_driver_vehicle_kind(dr.data[0] if dr.data else {})
+        drv_row_sock = dr.data[0] if dr.data else {}
         pu_row_sock = None
         if tag.get("passenger_id"):
             try:
@@ -16600,10 +16685,10 @@ async def handle_driver_accept_offer(sid, data):
             except Exception:
                 pass
         trip_pref_sock = _trip_passenger_vehicle_pref(tag, pu_row_sock)
-        if not _driver_matches_passenger_vehicle_pref(driver_eff_sock, trip_pref_sock):
+        if not _driver_is_allowed_for_trip_vehicle(drv_row_sock, trip_pref_sock):
             await sio.emit(
                 "offer_accepted_error",
-                {"error": "Bu talep için araç tipiniz uygun değil"},
+                {"error": "Bu araç tipi için onaylı sürücü kaydınız bulunmuyor."},
                 room=sid,
             )
             return
@@ -18193,7 +18278,7 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
         driver_result = supabase.table("users").select("name, phone, driver_details").eq("id", resolved_driver_id).execute()
         if not driver_result.data:
             return {"success": False, "error": "Şoför bulunamadı"}
-        driver_eff_ar = _effective_driver_vehicle_kind(driver_result.data[0])
+        drv_row_ar = driver_result.data[0]
         pu_row_ar = None
         pida = tag.get("passenger_id")
         if pida:
@@ -18211,8 +18296,11 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
             except Exception:
                 pass
         trip_pref_ar = _trip_passenger_vehicle_pref(tag, pu_row_ar)
-        if not _driver_matches_passenger_vehicle_pref(driver_eff_ar, trip_pref_ar):
-            return {"success": False, "error": "Bu talep için araç tipiniz uygun değil"}
+        if not _driver_is_allowed_for_trip_vehicle(drv_row_ar, trip_pref_ar):
+            return {
+                "success": False,
+                "error": "Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.",
+            }
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
         
         # Yolcu bilgisini al - passenger_id kullan (tag'da bazen user_id olarak da saklanabilir)
@@ -18394,7 +18482,7 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
             .limit(1)
             .execute()
         )
-        driver_eff = _effective_driver_vehicle_kind(dr_row.data[0] if dr_row.data else {})
+        dr_row_avail = dr_row.data[0] if dr_row.data else {}
 
         # Tüm bekleyen teklifleri al
         result = (
@@ -18410,7 +18498,7 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
         offers = []
         for tag in result.data or []:
             trip_pref = _trip_passenger_vehicle_pref(tag, None)
-            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+            if not _driver_is_allowed_for_trip_vehicle(dr_row_avail, trip_pref):
                 continue
             try:
                 p_la = float(tag["pickup_lat"])
@@ -34976,7 +35064,7 @@ async def get_nearby_drivers(
         nearby_drivers = []
         for driver in (drivers_result.data or []):
             if pref is not None:
-                if _effective_driver_vehicle_kind(driver) != pref:
+                if not _driver_is_allowed_for_trip_vehicle(driver, pref):
                     continue
             d_lat = driver.get("latitude")
             d_lng = driver.get("longitude")
@@ -35027,7 +35115,7 @@ async def get_nearby_activity(
     user_id/driver_id verilirse nearby_tags yalnız bu sürücünün araç tipiyle eşleşen talepleri listeler."""
     try:
         pref = _canonical_vehicle_kind(passenger_vehicle_kind)
-        driver_eff_map = None
+        drv_row_map = None
         did = driver_id or user_id
         if did:
             try:
@@ -35040,7 +35128,7 @@ async def get_nearby_activity(
                     .execute()
                 )
                 if du.data:
-                    driver_eff_map = _effective_driver_vehicle_kind(du.data[0])
+                    drv_row_map = du.data[0]
             except Exception:
                 pass
         # 1. Yakındaki aktif (bekleyen) yolculukları al
@@ -35061,9 +35149,9 @@ async def get_nearby_activity(
             if tag_lat and tag_lng:
                 distance = haversine_distance(lat, lng, tag_lat, tag_lng)
                 if distance <= radius_km:
-                    if driver_eff_map is not None:
+                    if drv_row_map is not None:
                         pref_tag = _trip_passenger_vehicle_pref(tag, None)
-                        if not _driver_matches_passenger_vehicle_pref(driver_eff_map, pref_tag):
+                        if not _driver_is_allowed_for_trip_vehicle(drv_row_map, pref_tag):
                             continue
                     nearby_tags.append({
                         "id": tag["id"],
@@ -35095,7 +35183,7 @@ async def get_nearby_activity(
         nearby_drivers = 0
         for d in (drivers_result.data or []):
             if pref is not None:
-                if _effective_driver_vehicle_kind(d) != pref:
+                if not _driver_is_allowed_for_trip_vehicle(d, pref):
                     continue
             d_lat, d_lng = d.get("latitude"), d.get("longitude")
             if d_lat and d_lng:

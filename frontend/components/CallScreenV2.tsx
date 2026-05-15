@@ -17,6 +17,7 @@ import type { RtcConnection } from 'react-native-agora';
 import { agoraVoiceService } from '../services/agoraVoiceService';
 import { agoraUidFromUserId } from '../lib/agoraUid';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 
 type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'ended';
 
@@ -311,11 +312,15 @@ export default function CallScreenV2({
     stopTimersAndRing();
 
     try {
+      const accessToken = (await getPersistedAccessToken())?.trim();
       const response = await fetch(
         `${API_BASE_URL}/voice/accept-call?user_id=${encodeURIComponent(
           userId
         )}&call_id=${encodeURIComponent(callId)}`,
-        { method: 'POST' }
+        {
+          method: 'POST',
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+        }
       );
       const data = await response.json();
 
