@@ -274,6 +274,23 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     }
 
     const vk = _pickDriverVehicleKindForResume(loggedInUser, dTag);
+    const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(loggedInUser.id)}&role=driver&vehicle_kind=${vk}`;
+    let setRideRes: Response;
+    try {
+      setRideRes = await fetch(setRideUrl, { method: 'POST' });
+    } catch {
+      appAlert('Hata', 'Bağlantı hatası');
+      return false;
+    }
+    const { data: setRideData } = await parseApiJson(setRideRes);
+    if (!setRideRes.ok) {
+      appAlert(
+        'Hata',
+        apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
+      );
+      return false;
+    }
+
     const baseDd =
       loggedInUser.driver_details && typeof loggedInUser.driver_details === 'object'
         ? { ...(loggedInUser.driver_details as Record<string, unknown>) }
@@ -293,10 +310,6 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     } catch {
       /* ignore */
     }
-    void fetch(
-      `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(loggedInUser.id)}&role=driver&vehicle_kind=${vk}`,
-      { method: 'POST' },
-    ).catch(() => {});
     deps.setScreen('dashboard');
     void deps.requestLocationPermission?.();
     try {
@@ -3773,10 +3786,26 @@ export default function App() {
       });
       try {
         if (user?.id) {
-          await fetch(
-            `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=${selectedRole}&vehicle_kind=${rideVehicleKind}`,
-            { method: 'POST' }
-          ).catch(() => {});
+          const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=${selectedRole}&vehicle_kind=${rideVehicleKind}`;
+          if (selectedRole === 'driver') {
+            let setRideRes: Response;
+            try {
+              setRideRes = await fetch(setRideUrl, { method: 'POST' });
+            } catch {
+              appAlert('Hata', 'Bağlantı hatası');
+              return;
+            }
+            const { data: setRideData } = await parseApiJson(setRideRes);
+            if (!setRideRes.ok) {
+              appAlert(
+                'Hata',
+                apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
+              );
+              return;
+            }
+          } else {
+            await fetch(setRideUrl, { method: 'POST' }).catch(() => {});
+          }
         }
         // Sürücü seçildiyse KYC kontrolü yap
         if (selectedRole === 'driver') {
@@ -3823,7 +3852,7 @@ export default function App() {
         }
       } catch (error) {
         console.error('Role kaydedilemedi:', error);
-        if (selectedRole && user) {
+        if (selectedRole === 'passenger' && user) {
           const updatedUser = mergeVehicleIntoUser(user);
           await saveUser(updatedUser);
           
