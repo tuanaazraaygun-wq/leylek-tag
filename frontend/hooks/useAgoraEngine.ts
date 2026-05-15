@@ -17,17 +17,8 @@ import {
   IRtcEngineEventHandler,
 } from 'react-native-agora';
 import { Platform, PermissionsAndroid } from 'react-native';
-import Constants from 'expo-constants';
-
-const AGORA_APP_ID = Constants.expoConfig?.extra?.agoraAppId || 
-                     process.env.EXPO_PUBLIC_AGORA_APP_ID || 
-                     '43c07f0cef814fd4a5ae3283c8bd77de';
-
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://leylektag-debug.preview.emergentagent.com';
-
-console.log('🎙️ Agora App ID:', AGORA_APP_ID);
+import { BACKEND_BASE_URL } from '../lib/backendConfig';
+import { AGORA_APP_ID } from '../lib/agoraAppId';
 
 // Singleton engine instance
 let engineInstance: IRtcEngine | null = null;
@@ -179,7 +170,7 @@ export default function useAgoraEngine({
       console.log('🎫 Fetching Agora token for channel:', channelName);
       
       const response = await fetch(
-        `${BACKEND_URL}/api/agora/token?channel_name=${channelName}&uid=0`
+        `${BACKEND_BASE_URL}/api/agora/token?channel_name=${channelName}&uid=0`
       );
       const data = await response.json();
       

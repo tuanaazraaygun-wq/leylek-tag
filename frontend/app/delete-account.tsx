@@ -17,13 +17,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
 import { clearSessionStorage, getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
-
-const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL 
-  || process.env.EXPO_PUBLIC_BACKEND_URL 
-  || 'https://api.leylektag.com';
-const API_URL = `${BACKEND_URL}/api`;
+import { API_BASE_URL } from '../lib/backendConfig';
 
 export default function DeleteAccountScreen() {
   const router = useRouter();
@@ -69,7 +64,7 @@ export default function DeleteAccountScreen() {
       }
 
       // user_id backend tarafından Bearer token'dan belirlenir
-      const response = await fetch(`${API_URL}/user/delete-account`, {
+      const response = await fetch(`${API_BASE_URL}/user/delete-account`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -96,7 +91,7 @@ export default function DeleteAccountScreen() {
           const parsed = raw ? (JSON.parse(raw) as { id?: string }) : null;
           const uid = String(parsed?.id || '').trim();
           if (uid) {
-            await fetch(`${API_URL}/user/remove-push-token?user_id=${encodeURIComponent(uid)}`, {
+            await fetch(`${API_BASE_URL}/user/remove-push-token?user_id=${encodeURIComponent(uid)}`, {
               method: 'DELETE',
             });
           }

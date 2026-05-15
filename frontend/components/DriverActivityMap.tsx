@@ -15,12 +15,10 @@ import {
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_HEIGHT = 220;
-
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
-const API_URL = `${BACKEND_URL}/api`;
 
 interface NearbyTag {
   id: string;
@@ -67,7 +65,7 @@ export default function DriverActivityMap({ userLocation, city, driverUserId }: 
           ? `&user_id=${encodeURIComponent(String(driverUserId).trim())}`
           : '';
       const response = await fetch(
-        `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20${uidQ}`
+        `${API_BASE_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20${uidQ}`
       );
       const data = await response.json();
       

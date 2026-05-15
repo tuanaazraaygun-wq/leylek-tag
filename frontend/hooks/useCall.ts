@@ -11,22 +11,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, Platform, PermissionsAndroid } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
-import Constants from 'expo-constants';
-
-// ==================== CONFIG ====================
-
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    'https://leylektag-debug.preview.emergentagent.com';
-const API_URL = `${BACKEND_URL}/api`;
-
-const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k';
-const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// ==================== TYPES ====================
+import { RealtimeChannel } from '@supabase/supabase-js';
+import { API_BASE_URL } from '../lib/backendConfig';
+import { getSupabase } from '../lib/supabase';
+import { AGORA_APP_ID } from '../lib/agoraAppId';
 
 export interface Call {
   id: string;
@@ -181,11 +169,16 @@ export function useCall(options: UseCallOptions) {
   
   useEffect(() => {
     if (!enabled || !userId) return;
-    
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.warn('useCall: Supabase yapılandırması eksik; arama bildirimi devre dışı');
+      return;
+    }
+
     isMountedRef.current = true;
     console.log('📡 Calls realtime subscription başlatılıyor...');
-    
-    // calls tablosunu realtime subscribe et
+
     const channel = supabase
       .channel(`calls_${userId}`)
       .on(
@@ -221,7 +214,7 @@ export function useCall(options: UseCallOptions) {
       
       // Supabase subscription cleanup
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        getSupabase()?.removeChannel(channelRef.current);
         channelRef.current = null;
         console.log('🧹 Supabase channel removed');
       }
@@ -328,7 +321,7 @@ export function useCall(options: UseCallOptions) {
     
     try {
       // Backend'e arama başlat
-      const response = await fetch(`${API_URL}/voice/start-call`, {
+      const response = await fetch(`${API_BASE_URL}/voice/start-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -406,7 +399,7 @@ export function useCall(options: UseCallOptions) {
     }
     
     try {
-      const response = await fetch(`${API_URL}/voice/answer-call`, {
+      const response = await fetch(`${API_BASE_URL}/voice/answer-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -480,7 +473,7 @@ export function useCall(options: UseCallOptions) {
     
     try {
       // SADECE backend'e yaz - Agora cleanup realtime'da yapılacak
-      await fetch(`${API_URL}/voice/end-call`, {
+      await fetch(`${API_BASE_URL}/voice/end-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -511,7 +504,7 @@ export function useCall(options: UseCallOptions) {
     if (!incomingCall) return false;
     
     try {
-      await fetch(`${API_URL}/voice/end-call`, {
+      await fetch(`${API_BASE_URL}/voice/end-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -20,19 +20,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { Audio } from 'expo-av';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { getSupabase } from '../lib/supabase';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Supabase credentials
-const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k';
-
-// Supabase client singleton
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 interface Message {
   id: string;
@@ -135,9 +129,15 @@ export default function ChatBubble({
   // ═══════════════════════════════════════════════════════════════
   
   useEffect(() => {
-    // 🔥 Chat kapalı olsa bile channel açık olsun - mesajları almak için!
     if (!tagId || !userId) return;
-    
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.warn('[ChatBubble] Supabase yapılandırması eksik; anlık sohbet kanalı bağlanmadı');
+      setIsConnected(false);
+      return;
+    }
+
     console.log('🔔 [ChatBubble] Realtime Broadcast başlatılıyor:', { tagId, userId, visible });
     
     // Broadcast channel oluştur - HER İKİ KULLANICI AYNI CHANNEL'A BAĞLANIR
@@ -195,7 +195,7 @@ export default function ChatBubble({
     return () => {
       console.log('🔔 [ChatBubble] Broadcast channel kapatılıyor');
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        getSupabase()?.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };

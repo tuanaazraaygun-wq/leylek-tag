@@ -7,8 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 interface DriverStatusBarProps {
   userId: string;
@@ -73,7 +72,7 @@ export default function DriverStatusBar({
 
   const fetchStatus = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/driver/status?user_id=${userId}`);
+      const response = await fetch(`${API_BASE_URL}/driver/status?user_id=${userId}`);
       const data = await response.json();
       
       if (data.success) {
@@ -95,7 +94,7 @@ export default function DriverStatusBar({
     try {
       const endpoint = isOnline ? 'go-offline' : 'go-online';
       const response = await fetch(
-        `${API_URL}/api/driver/${endpoint}?user_id=${userId}`,
+        `${API_BASE_URL}/driver/${endpoint}?user_id=${userId}`,
         { method: 'POST' }
       );
       const data = await response.json();

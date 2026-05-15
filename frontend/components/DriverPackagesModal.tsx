@@ -8,12 +8,14 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../lib/backendConfig';
 
-const { width } = Dimensions.get('window');
+/** Çok yakında: kart ödemesi / iyzico entegrasyonundan sonra EAS'ta 1 yapılacak */
+const DRIVER_PACKAGE_PURCHASE_ENABLED =
+  typeof process.env.EXPO_PUBLIC_ENABLE_DRIVER_PACKAGE_PURCHASE === 'string' &&
+  process.env.EXPO_PUBLIC_ENABLE_DRIVER_PACKAGE_PURCHASE.trim() === '1';
 
 interface Package {
   id: string;
@@ -73,41 +75,14 @@ export default function DriverPackagesModal({
     }
   };
 
-  const handlePurchase = async (packageId: string) => {
-    // TODO: iyzico entegrasyonu eklenecek
-    // Şimdilik direkt aktifleştirme yapıyoruz (test için)
-    
+  const handlePurchase = async (_packageId: string) => {
+    if (!DRIVER_PACKAGE_PURCHASE_ENABLED) {
+      return;
+    }
     Alert.alert(
       'Ödeme',
-      'iyzico entegrasyonu yakında eklenecek. Test için paketi direkt aktifleştirmek ister misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Aktifleştir (Test)',
-          onPress: async () => {
-            setPurchasing(packageId);
-            try {
-              const response = await fetch(
-                `${API_BASE_URL}/driver/activate-package?user_id=${userId}&package_id=${packageId}`,
-                { method: 'POST' }
-              );
-              const data = await response.json();
-              
-              if (data.success) {
-                Alert.alert('Başarılı', data.message);
-                onPackagePurchased?.();
-                onClose();
-              } else {
-                Alert.alert('Hata', data.detail || 'Paket aktifleştirilemedi');
-              }
-            } catch (error) {
-              Alert.alert('Hata', 'Bağlantı hatası');
-            } finally {
-              setPurchasing(null);
-            }
-          }
-        }
-      ]
+      'Paket ödemesi kart ile tamamlanacaktır. Ödeme akışı yayımlandığında buradan devam edebileceksiniz.',
+      [{ text: 'Tamam', style: 'default' }]
     );
   };
 
@@ -131,10 +106,14 @@ export default function DriverPackagesModal({
       <View style={styles.overlay}>
         <View style={styles.container}>
           {/* Header */}
-          <View style={styles.header}>
+            <View style={styles.header}>
             <View>
               <Text style={styles.title}>Sürücü Paketleri</Text>
-              <Text style={styles.subtitle}>Yolcu bulmak için paket satın alın</Text>
+              <Text style={styles.subtitle}>
+                {DRIVER_PACKAGE_PURCHASE_ENABLED
+                  ? 'Yolcu bulmak için paket satın alın'
+                  : 'Paket satın alma çok yakında — ödeme altyapısı hazırlanıyor.'}
+              </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color="white" />
@@ -171,19 +150,24 @@ export default function DriverPackagesModal({
                   
                   <View style={styles.packagePriceContainer}>
                     <Text style={styles.packagePrice}>{pkg.price_tl} ₺</Text>
-                    {selectedPackage === pkg.id && (
-                      <TouchableOpacity
-                        style={[styles.buyBtn, { backgroundColor: getPackageColor(pkg.hours) }]}
-                        onPress={() => handlePurchase(pkg.id)}
-                        disabled={purchasing !== null}
-                      >
-                        {purchasing === pkg.id ? (
-                          <ActivityIndicator size="small" color="white" />
-                        ) : (
-                          <Text style={styles.buyBtnText}>Satın Al</Text>
-                        )}
-                      </TouchableOpacity>
-                    )}
+                    {selectedPackage === pkg.id &&
+                      (DRIVER_PACKAGE_PURCHASE_ENABLED ? (
+                        <TouchableOpacity
+                          style={[styles.buyBtn, { backgroundColor: getPackageColor(pkg.hours) }]}
+                          onPress={() => handlePurchase(pkg.id)}
+                          disabled={purchasing !== null}
+                        >
+                          {purchasing === pkg.id ? (
+                            <ActivityIndicator size="small" color="white" />
+                          ) : (
+                            <Text style={styles.buyBtnText}>Satın Al</Text>
+                          )}
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={[styles.buyBtn, styles.buyBtnDisabled]}>
+                          <Text style={styles.buyBtnTextMuted}>Yakında</Text>
+                        </View>
+                      ))}
                   </View>
                 </TouchableOpacity>
               ))}
@@ -303,6 +287,18 @@ const styles = StyleSheet.create({
   },
   buyBtnText: {
     color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  buyBtnDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  buyBtnTextMuted: {
+    color: '#9CA3AF',
     fontSize: 14,
     fontWeight: '600',
   },

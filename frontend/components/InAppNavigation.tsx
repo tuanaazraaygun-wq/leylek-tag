@@ -11,9 +11,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
+import { BACKEND_BASE_URL } from '../lib/backendConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 interface NavigationInstruction {
   maneuver: string;
@@ -119,7 +119,7 @@ export default function InAppNavigation({
     setLoading(true);
     try {
       const response = await fetch(
-        `${API_URL}/api/directions?` +
+        `${BACKEND_BASE_URL}/api/directions?` +
         `origin_lat=${origin.latitude}&origin_lng=${origin.longitude}` +
         `&dest_lat=${destination.latitude}&dest_lng=${destination.longitude}`
       );

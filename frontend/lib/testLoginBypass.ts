@@ -1,6 +1,6 @@
 /**
- * Test hatları (5321111111 / 5322222222) için yardımcılar.
- * Giriş: OTP yerine şifre — POST /api/auth/test-password-login (bcrypt, sunucu allowlist).
+ * İki sabit review numarası (5321111111 / 5322222222) için normalize yardımcıları.
+ * Üretimde akış yalnızca frontend `EXPO_PUBLIC_ENABLE_DEMO_REVIEWER_LOGIN` + backend `ALLOW_TEST_LOGIN_BYPASS` ile açıldığında kullanılır.
  */
 const E164_TR_PASSENGER = '905321111111';
 const E164_TR_DRIVER = '905322222222';

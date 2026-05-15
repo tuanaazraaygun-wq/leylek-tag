@@ -15,9 +15,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, BorderRadius, FontSize } from '../constants/Colors';
-
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const API_URL = `${BACKEND_URL}/api`;
+import { API_BASE_URL } from '../lib/backendConfig';
 
 interface User {
   id: string;
@@ -107,7 +105,7 @@ export default function DriverVerificationScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/auth/user/${user.id}/driver-details`, {
+      const response = await fetch(`${API_BASE_URL}/auth/user/${user.id}/driver-details`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

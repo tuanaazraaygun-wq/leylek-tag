@@ -12,9 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, BorderRadius, FontSize } from '../constants/Colors';
-
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const API_URL = `${BACKEND_URL}/api`;
+import { API_BASE_URL } from '../lib/backendConfig';
 
 interface Tag {
   id: string;
@@ -64,8 +62,8 @@ export default function HistoryScreen() {
   const loadHistory = async (currentUser: User) => {
     try {
       const endpoint = currentUser.role === 'passenger'
-        ? `${API_URL}/passenger/history?user_id=${currentUser.id}`
-        : `${API_URL}/driver/history?user_id=${currentUser.id}`;
+        ? `${API_BASE_URL}/passenger/history?user_id=${currentUser.id}`
+        : `${API_BASE_URL}/driver/history?user_id=${currentUser.id}`;
       
       const response = await fetch(endpoint);
       const data = await response.json();
