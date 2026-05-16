@@ -24,8 +24,8 @@ GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
-# Eski (filtresiz / zayıf metin filtresi) cache girdilerini deploy sonrası baypas etmek için
-_CACHE_KEY_VER = "v6_city_strict_multi_source"
+# Eski cache girdilerini deploy sonrası baypas; Overpass şehir-kutu sokak/POI
+_CACHE_KEY_VER = "v7_overpass_city_street_search"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -45,6 +45,10 @@ _BOX_POI_QUERY_TERMS: frozenset[str] = frozenset(
     ("cami", "camii", "mescit", "okul", "okullar", "hastane", "eczane", "market", "avm")
 )
 
+# Overpass (httpx ile; anahtar yok)
+OVERPASS_INTERPRETER_URL = (os.getenv("OVERPASS_INTERPRETER_URL") or "https://overpass-api.de/api/interpreter").strip()
+_OVERPASS_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("OVERPASS_HTTP_TIMEOUT_SEC", "8") or "8"))
+
 
 def _looks_like_box_poi_query(trimmed: str) -> bool:
     """Kısa kategori sorgusu (cami/okul/…); virgüllü uzun aramada tetikleme."""
@@ -55,6 +59,247 @@ def _looks_like_box_poi_query(trimmed: str) -> bool:
         return False
     first = t.split()[0].strip().lower()
     return _norm_key(first) in _BOX_POI_QUERY_TERMS
+
+
+def _numeric_street_prefix_token(trimmed: str) -> str:
+    """Sorgu rakam/soy ile başlıyorsa ilk number token (örn. '446'); yoksa ''."""
+    t = (trimmed or "").strip()
+    if not t:
+        return ""
+    m = re.match(r"^(\d{1,5})\b", t)
+    return m.group(1) if m else ""
+
+
+def _looks_like_numeric_street_query(trimmed: str) -> bool:
+    t = " ".join((trimmed or "").strip().split())
+    if not t or "," in t or len(t) > 96:
+        return False
+    return bool(_numeric_street_prefix_token(t))
+
+
+def _text_has_bounded_street_number(hay_raw: str, num: str) -> bool:
+    """
+    Sokak/soy rakamını güçlü eşle: 446 kabul; 3446 içinde yanlış 446 yok.
+    Türkçe varyantlar: başta veya kelime/devam sınırlayıcı sonra.
+    """
+    if not num or not hay_raw.strip():
+        return False
+    h = hay_raw.lower()
+    return bool(re.search(rf"(^|[^\d]){re.escape(num)}(?:\.|,|\s|/|$)", h))
+
+
+def _numeric_street_gate_keeps_item(it: dict[str, Any], num: str) -> bool:
+    if not num:
+        return True
+    blob = f"{it.get('title','')} {it.get('display_name','')} {it.get('subtitle','')}"
+    return _text_has_bounded_street_number(blob, num)
+
+
+def _bbox_to_overpass_quad(bbox: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    """CITY_BBOX (min_lon, min_lat, max_lon, max_lat) -> south,west,north,east"""
+    min_lon, min_lat, max_lon, max_lat = bbox
+    return min_lat, min_lon, max_lat, max_lon
+
+
+def _build_overpass_numeric_street_ql(num: str, south: float, west: float, north: float, east: float) -> str:
+    """POSIX ERE ([[:space:]]); Overpass \\s kullanmaz."""
+    ne = re.escape(num)
+    name_rx = f"^{ne}(\\.|[[:space:]]|,|$)"
+    b = f"{south},{west},{north},{east}"
+    return (
+        "[out:json][timeout:8];\n"
+        "(\n"
+        f'  way["highway"]["name"~"{name_rx}",i]({b});\n'
+        f'  relation["highway"]["name"~"{name_rx}",i]({b});\n'
+        ");\n"
+        "out center tags 25;\n"
+    )
+
+
+def _elements_to_overpass_place_rows(
+    elements: list[dict[str, Any]],
+    *,
+    city_label: str,
+    num_strict: Optional[str],
+    poi_mode: bool,
+    max_rows: int = 35,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    ct = (city_label or "").strip()
+
+    def center_of(el: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
+        c = el.get("center") if isinstance(el.get("center"), dict) else None
+        if c:
+            try:
+                la = float(c.get("lat"))
+                lo = float(c.get("lon"))
+                return la, lo
+            except (TypeError, ValueError):
+                pass
+        lat = el.get("lat")
+        lon = el.get("lon")
+        try:
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+        except (TypeError, ValueError):
+            pass
+        return None, None
+
+    seen_id: set[str] = set()
+    for el in elements:
+        if not isinstance(el, dict):
+            continue
+        et = str(el.get("type") or "")
+        eid = el.get("id")
+        pid = f"overpass:{et}:{eid}"
+        sk = pid
+        if sk in seen_id:
+            continue
+
+        tags = el.get("tags") if isinstance(el.get("tags"), dict) else {}
+        name = str(tags.get("name:tr") or tags.get("name") or "").strip()
+        if poi_mode:
+            if not name:
+                name = str(tags.get("amenity") or tags.get("shop") or tags.get("tourism") or tags.get("leisure") or "").strip()
+        else:
+            if not name:
+                continue
+            if num_strict and not _text_has_bounded_street_number(name, num_strict):
+                continue
+
+        la, lo = center_of(el)
+        if la is None or lo is None:
+            continue
+
+        title = (name or "OSM")[:120]
+        ref = str(tags.get("ref") or "").strip()
+        sub_parts = [p for p in (ref, ct) if p]
+        subtitle = ", ".join(sub_parts)[:200]
+        disp = f"{title}, {ct}, Türkiye" if ct else f"{title}, Türkiye"
+
+        row = {
+            "place_id": pid,
+            "google_place_id": None,
+            "title": title,
+            "subtitle": subtitle,
+            "display_name": disp[:300],
+            "lat": str(round(float(la), 7)),
+            "lng": str(round(float(lo), 7)),
+            "provider": "overpass",
+        }
+        out.append(row)
+        seen_id.add(sk)
+        if len(out) >= max_rows:
+            break
+    return out
+
+
+def _build_overpass_poi_ql(south: float, west: float, north: float, east: float, keyword_nk: str) -> str:
+    b = f"{south},{west},{north},{east}"
+    lines: list[str] = ["[out:json][timeout:8];", "("]
+
+    def add(*parts: str) -> None:
+        for p in parts:
+            lines.append(f"  {p}")
+
+    if keyword_nk in ("cami", "camii", "mescit"):
+        add(
+            f'node["amenity"="place_of_worship"]({b});',
+            f'way["amenity"="place_of_worship"]({b});',
+            f'relation["amenity"="place_of_worship"]({b});',
+        )
+    elif keyword_nk in ("okul", "okullar"):
+        add(
+            f'node["amenity"="school"]({b});',
+            f'way["amenity"="school"]({b});',
+            f'relation["amenity"="school"]({b});',
+        )
+    elif keyword_nk == "hastane":
+        add(
+            f'node["amenity"="hospital"]({b});',
+            f'way["amenity"="hospital"]({b});',
+            f'relation["amenity"="hospital"]({b});',
+        )
+    elif keyword_nk == "eczane":
+        add(
+            f'node["amenity"="pharmacy"]({b});',
+            f'way["amenity"="pharmacy"]({b});',
+            f'relation["amenity"="pharmacy"]({b});',
+        )
+    elif keyword_nk == "market":
+        add(
+            f'node["shop"="supermarket"]({b});',
+            f'way["shop"="supermarket"]({b});',
+            f'node["shop"="convenience"]({b});',
+            f'way["shop"="convenience"]({b});',
+            f'node["amenity"="marketplace"]({b});',
+            f'way["amenity"="marketplace"]({b});',
+        )
+    elif keyword_nk == "avm":
+        add(
+            f'node["shop"="mall"]({b});',
+            f'way["shop"="mall"]({b});',
+            f'relation["shop"="mall"]({b});',
+        )
+    else:
+        return ""
+
+    lines.append(");")
+    lines.append("out center tags 30;")
+    return "\n".join(lines) + "\n"
+
+
+async def _overpass_interpreter(
+    client: httpx.AsyncClient,
+    ql: str,
+) -> list[dict[str, Any]]:
+    if not ql.strip():
+        return []
+    url = OVERPASS_INTERPRETER_URL
+    to = httpx.Timeout(_OVERPASS_HTTP_TIMEOUT_SEC, connect=min(5.0, _OVERPASS_HTTP_TIMEOUT_SEC))
+    try:
+        r = await client.post(url, data={"data": ql}, timeout=to)
+    except (httpx.TimeoutException, httpx.RequestError):
+        return []
+    if r.status_code != 200 or not r.text:
+        return []
+    try:
+        data = r.json()
+    except ValueError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    els = data.get("elements")
+    if not isinstance(els, list):
+        return []
+    return [x for x in els if isinstance(x, dict)]
+
+
+async def _overpass_city_scoped_search(
+    client: httpx.AsyncClient,
+    trimmed: str,
+    city_trim: str,
+    bbox: tuple[float, float, float, float],
+) -> list[dict[str, Any]]:
+    south, west, north, east = _bbox_to_overpass_quad(bbox)
+    num = _numeric_street_prefix_token(trimmed)
+
+    if num and _looks_like_numeric_street_query(trimmed):
+        ql = _build_overpass_numeric_street_ql(num, south, west, north, east)
+        els = await _overpass_interpreter(client, ql)
+        rows = _elements_to_overpass_place_rows(els, city_label=city_trim, num_strict=num, poi_mode=False)
+        return _filter_results_city(rows, city_trim)
+
+    if _looks_like_box_poi_query(trimmed):
+        first = _norm_key(trimmed.split()[0].strip().lower())
+        ql = _build_overpass_poi_ql(south, west, north, east, first)
+        if not ql:
+            return []
+        els = await _overpass_interpreter(client, ql)
+        rows = _elements_to_overpass_place_rows(els, city_label=city_trim, num_strict=None, poi_mode=True)
+        return _filter_results_city(rows, city_trim)
+
+    return []
 
 
 def _register_city_bbox(label: str, min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> None:
@@ -202,7 +447,23 @@ def _rank_city_scoped_results(
     numtok = numeric_head.group(1) if numeric_head else ""
 
     def text_tier(it: dict[str, Any]) -> int:
-        hay = _norm_key(f"{it.get('display_name', '')} {it.get('title', '')} {it.get('subtitle', '')}")
+        raw_hay = f"{it.get('display_name', '')} {it.get('title', '')} {it.get('subtitle', '')}"
+        prov = str(it.get("provider") or "")
+
+        num_ok = bool(numtok and _text_has_bounded_street_number(raw_hay, numtok))
+
+        if numtok:
+            # Rakamlı soy: yalın metin yüzünden yakındaki alakasız satırlar alta (veya filtre öncesi atılır).
+            if prov == "overpass" and num_ok:
+                return -5
+            if num_ok:
+                return -3
+            return 42
+
+        if prov == "overpass":
+            return -4
+
+        hay = _norm_key(raw_hay)
         if not nq or len(nq) < 2:
             return 2
         if nq in hay:
@@ -210,11 +471,10 @@ def _rank_city_scoped_results(
         ws = [w for w in nq.split() if len(w) >= 2]
         if ws and any(w in hay for w in ws):
             return 1
-        if numtok and numtok in hay.replace(" ", ""):
-            return 1
         return 2
 
-    def key_row(it: dict[str, Any]) -> tuple[int, float]:
+    def key_row(ix_it: tuple[int, dict[str, Any]]) -> tuple[int, float, int]:
+        ix, it = ix_it
         tt = text_tier(it)
         lo, la = _result_lon_lat(it)
         gdist = 1e12
@@ -236,9 +496,9 @@ def _rank_city_scoped_results(
             dist_soft += 120.0
         if cdist >= 1e11:
             dist_soft += 80.0
-        return (tt, dist_soft)
+        return tt, dist_soft, ix
 
-    return sorted(items, key=key_row)
+    return [it for _ix, it in sorted(enumerate(items), key=key_row)]
 
 
 async def _geocode_first_point_in_bbox(
@@ -848,8 +1108,8 @@ async def api_places_search(
     lng: Optional[float] = Query(None),
 ):
     """
-    CITY_BBOX ile bilinen şehir: Google (otomatik + geocode) + Nominatim birleşir, en fazla 20 sonuç.
-    Diğerleri: tek kaynak sırası (Google → tek geocode → Nominatim) korunur.
+    CITY_BBOX şehir: OSM Overpass (sıkı kutu içi soy/POI) + Google (otomatik + geocode)
+    + Nominatim; en fazla 20 birleştirilir. Diğerleri: tek kaynak sırası korunur.
     """
     trimmed = " ".join((q or "").strip().split())
     if len(trimmed) < 2:
@@ -891,9 +1151,19 @@ async def api_places_search(
         nk_ct = _norm_key(city_trim)
         city_boxed = bool(city_trim and nk_ct in CITY_BBOX)
 
-        # --- CITY_BBOX: tüm kaynakları birleştir (Google + Geocode + Nominatim), erken return yok ---
+        # --- CITY_BBOX: Overpass (sıkı sokak/POI) + Google + Geocode + Nominatim ---
         if city_boxed:
             collected: list[dict[str, Any]] = []
+            over_primary: list[dict[str, Any]] = []
+            bbox_ct = CITY_BBOX.get(nk_ct)
+            try:
+                if bbox_ct is not None:
+                    over_primary = await _overpass_city_scoped_search(http, trimmed, city_trim, bbox_ct)
+            except (httpx.TimeoutException, httpx.RequestError):
+                over_primary = []
+            except Exception:
+                over_primary = []
+
             geocode_budget: list[int] = [6]
             try:
                 if GOOGLE_MAPS_API_KEY:
@@ -946,7 +1216,7 @@ async def api_places_search(
                 except httpx.TimeoutException:
                     continue
 
-            if nominatim_rate_blocked and not collected:
+            if nominatim_rate_blocked and not (over_primary or collected):
                 stale2 = _cache_get(cache_key_raw)
                 if stale2:
                     stale2 = dict(stale2)
@@ -957,7 +1227,12 @@ async def api_places_search(
                 outbound_r["rate_limited"] = True
                 return outbound_r
 
-            fr_box = _filter_results_city(collected, city)
+            combined_city: list[dict[str, Any]] = list(over_primary) + collected
+            ng = _numeric_street_prefix_token(trimmed)
+            if ng:
+                combined_city = [x for x in combined_city if _numeric_street_gate_keeps_item(x, ng)]
+
+            fr_box = _filter_results_city(combined_city, city)
             fr_box = _dedupe_merged_city_results(fr_box)
             fr_box = _rank_city_scoped_results(fr_box, trimmed, city_trim, lat, lng)
             payload_box: dict[str, Any] = {
