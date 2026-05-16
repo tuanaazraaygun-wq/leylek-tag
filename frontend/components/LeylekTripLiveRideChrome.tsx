@@ -7,6 +7,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -166,6 +167,9 @@ export default function LeylekTripLiveRideChrome({
   muhabbetFinishQrReady = false,
 }: LeylekTripLiveRideChromeProps) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  /** Küçük Android’lerde alt aksiyonların güvenli alanda kalması; büyük telefonlarda etkisiz */
+  const compactMode = windowHeight < 712;
   const pulse = useRef(new Animated.Value(0.45)).current;
   const metaTitle = String(roleTitle || '').trim();
   const metaDetail = String(statusDetail || '').trim();
@@ -179,6 +183,9 @@ export default function LeylekTripLiveRideChrome({
     anim.start();
     return () => anim.stop();
   }, [pulse]);
+  useEffect(() => {
+    console.log('[MATCH_LAYOUT]', { height: windowHeight, compactMode });
+  }, [windowHeight, compactMode]);
   useEffect(() => {
     console.log('[leylek-trip-ui] action layout rendered role=%s', isDriver ? 'driver' : 'passenger');
   }, [isDriver]);
@@ -311,6 +318,11 @@ export default function LeylekTripLiveRideChrome({
             styles.topInfoBorder,
             modernLeylekOfferUi && styles.topInfoBorderModern,
             modernLeylekOfferUi && styles.topInfoBorderModernCompact,
+            modernLeylekOfferUi &&
+              compactMode && {
+                maxHeight: windowHeight * 0.24,
+                marginBottom: 3,
+              },
           ]}
         >
           <LinearGradient
@@ -461,18 +473,32 @@ export default function LeylekTripLiveRideChrome({
         <View
           style={[
             styles.bottomGradient,
+            compactMode &&
+              !modernLeylekOfferUi && {
+                paddingTop: 10,
+                paddingBottom: insets.bottom + 12,
+              },
             modernLeylekOfferUi && styles.bottomSheetModern,
-            modernLeylekOfferUi && { paddingBottom: insets.bottom + 14 },
+            modernLeylekOfferUi && {
+              paddingBottom: insets.bottom + (compactMode ? 10 : 14),
+              ...(compactMode ? { paddingTop: 12 } : {}),
+            },
           ]}
         >
           {modernLeylekOfferUi ? (
-            <View style={styles.sheetHandleWrap}>
+            <View style={[styles.sheetHandleWrap, compactMode && styles.sheetHandleWrapCompact]}>
               <View style={styles.sheetHandle} />
             </View>
           ) : null}
 
           {finishSummary ? (
-            <View style={[styles.finishSummary, finishMethod === 'qr' ? styles.finishSummaryQr : styles.finishSummaryForced]}>
+            <View
+              style={[
+                styles.finishSummary,
+                finishMethod === 'qr' ? styles.finishSummaryQr : styles.finishSummaryForced,
+                compactMode && styles.finishSummaryCompact,
+              ]}
+            >
               <Ionicons name={finishMethod === 'qr' ? 'checkmark-circle' : 'warning'} size={16} color={finishMethod === 'qr' ? '#15803D' : '#92400E'} />
               <Text style={[styles.finishSummaryText, finishMethod === 'qr' ? styles.finishSummaryTextQr : styles.finishSummaryTextForced]}>
                 {finishSummary}
@@ -490,6 +516,7 @@ export default function LeylekTripLiveRideChrome({
                   }
                   style={({ pressed }) => [
                     styles.modernPrimaryCall,
+                    compactMode && styles.modernPrimaryCallCompact,
                     (pressed ||
                       voiceCallComingSoon ||
                       !tripInfoReady ||
@@ -515,6 +542,7 @@ export default function LeylekTripLiveRideChrome({
                 disabled={!tripInfoReady || navigationDisabled || isTerminal}
                 style={({ pressed }) => [
                   styles.modernSecondaryNav,
+                  compactMode && styles.modernSecondaryNavCompact,
                   (pressed || !tripInfoReady || navigationDisabled || isTerminal) && { opacity: 0.78 },
                 ]}
               >
@@ -524,7 +552,7 @@ export default function LeylekTripLiveRideChrome({
 
               {!isTerminal ? (
                 <View style={styles.forceFinishCol}>
-                  <View style={styles.finishActionRow}>
+                  <View style={[styles.finishActionRow, compactMode && styles.finishActionRowCompact]}>
                     <Animated.View style={[styles.finishButton, qrActionActive ? { opacity: pulse } : null]}>
                       <Pressable
                         style={({ pressed }) => [
@@ -538,7 +566,7 @@ export default function LeylekTripLiveRideChrome({
                           colors={
                             !qrChromeTripReady ? ['#64748B', '#475569'] : qrActionActive ? ['#F97316', '#EA580C'] : ['#8B5CF6', '#7C3AED']
                           }
-                          style={styles.finishButtonGradient}
+                          style={[styles.finishButtonGradient, compactMode && styles.finishButtonGradientCompact]}
                         >
                           <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
                           <Text style={styles.finishButtonText}>{qrChromeTripReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
@@ -552,7 +580,7 @@ export default function LeylekTripLiveRideChrome({
                     >
                       <LinearGradient
                         colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
-                        style={styles.finishButtonGradient}
+                        style={[styles.finishButtonGradient, compactMode && styles.finishButtonGradientCompact]}
                       >
                         <Ionicons name="warning-outline" size={18} color="#FFF" />
                         <Text style={styles.finishButtonText}>Zorla Bitir</Text>
@@ -560,20 +588,23 @@ export default function LeylekTripLiveRideChrome({
                     </Pressable>
                   </View>
                   {forceFinishBoardedHint ? (
-                    <Text style={styles.forceFinishBoardedHint}>{forceFinishBoardedHint}</Text>
+                    <Text style={[styles.forceFinishBoardedHint, compactMode && styles.forceFinishBoardedHintCompact]}>
+                      {forceFinishBoardedHint}
+                    </Text>
                   ) : null}
                 </View>
               ) : null}
             </>
           ) : (
             <>
-              <View style={styles.primaryActionRow} pointerEvents="box-none">
+              <View style={[styles.primaryActionRow, compactMode && styles.primaryActionRowCompact]} pointerEvents="box-none">
                 <Pressable
                   onPress={handleCallPress}
                   disabled={voiceCallComingSoon || !tripInfoReady || callBusy || callDialDisabled || isTerminal}
                   style={({ pressed }) => [
                     styles.primaryCircleButton,
                     styles.callCircleButton,
+                    compactMode && styles.primaryCircleButtonCompact,
                     (pressed ||
                       voiceCallComingSoon ||
                       !tripInfoReady ||
@@ -589,7 +620,7 @@ export default function LeylekTripLiveRideChrome({
                 </Pressable>
               </View>
               <View style={styles.forceFinishCol}>
-                <View style={styles.finishActionRow}>
+                <View style={[styles.finishActionRow, compactMode && styles.finishActionRowCompact]}>
                   <Animated.View style={[styles.finishButton, qrActionActive && !isTerminal ? { opacity: pulse } : null]}>
                     <Pressable
                       style={({ pressed }) => [
@@ -607,7 +638,7 @@ export default function LeylekTripLiveRideChrome({
                               ? ['#F97316', '#EA580C']
                               : ['#8B5CF6', '#7C3AED']
                         }
-                        style={styles.finishButtonGradient}
+                        style={[styles.finishButtonGradient, compactMode && styles.finishButtonGradientCompact]}
                       >
                         <Ionicons name={isDriver ? 'qr-code-outline' : 'qr-code'} size={18} color="#FFF" />
                         <Text style={styles.finishButtonText}>{qrChromeTripReady ? qrButtonLabel : 'Hazırlanıyor'}</Text>
@@ -622,7 +653,7 @@ export default function LeylekTripLiveRideChrome({
                     >
                       <LinearGradient
                         colors={forceFinishDisabled ? ['#64748B', '#475569'] : ['#DC2626', '#B91C1C']}
-                        style={styles.finishButtonGradient}
+                        style={[styles.finishButtonGradient, compactMode && styles.finishButtonGradientCompact]}
                       >
                         <Ionicons name="warning-outline" size={18} color="#FFF" />
                         <Text style={styles.finishButtonText}>Zorla Bitir</Text>
@@ -631,7 +662,9 @@ export default function LeylekTripLiveRideChrome({
                   ) : null}
                 </View>
                 {!isTerminal && forceFinishBoardedHint ? (
-                  <Text style={styles.forceFinishBoardedHint}>{forceFinishBoardedHint}</Text>
+                  <Text style={[styles.forceFinishBoardedHint, compactMode && styles.forceFinishBoardedHintCompact]}>
+                    {forceFinishBoardedHint}
+                  </Text>
                 ) : null}
               </View>
             </>
@@ -989,6 +1022,9 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginBottom: 12,
   },
+  sheetHandleWrapCompact: {
+    marginBottom: 8,
+  },
   sheetHandle: {
     width: 40,
     height: 5,
@@ -1011,6 +1047,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
+  modernPrimaryCallCompact: {
+    minHeight: 48,
+    marginBottom: 8,
+  },
   modernPrimaryCallPressed: { opacity: 0.92 },
   modernPrimaryCallLabel: {
     color: '#FFFFFF',
@@ -1031,6 +1071,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 16,
   },
+  modernSecondaryNavCompact: {
+    minHeight: 44,
+    marginBottom: 8,
+  },
   modernSecondaryNavLabel: {
     fontSize: 15,
     fontWeight: '800',
@@ -1046,12 +1090,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 9,
   },
+  finishSummaryCompact: {
+    marginBottom: 8,
+    paddingVertical: 7,
+  },
   finishSummaryQr: { backgroundColor: 'rgba(220, 252, 231, 0.95)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.28)' },
   finishSummaryForced: { backgroundColor: 'rgba(254, 243, 199, 0.95)', borderWidth: 1, borderColor: 'rgba(217,119,6,0.25)' },
   finishSummaryText: { flex: 1, fontSize: 12, fontWeight: '900', lineHeight: 17 },
   finishSummaryTextQr: { color: '#15803D' },
   finishSummaryTextForced: { color: '#92400E' },
   primaryActionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 18, marginBottom: 12 },
+  primaryActionRowCompact: { marginBottom: 8 },
   primaryCircleButton: {
     flex: 1,
     minHeight: 70,
@@ -1066,6 +1115,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
   },
+  primaryCircleButtonCompact: { minHeight: 62 },
   callCircleButton: { backgroundColor: '#16A34A', shadowColor: '#064E3B' },
   primaryCircleLabel: { color: '#FFF', fontSize: 13, fontWeight: '900', letterSpacing: 0.2 },
   tripActionBar: { width: '100%', marginBottom: 10 },
@@ -1129,6 +1179,7 @@ const styles = StyleSheet.create({
   },
   tripInlineChatBtnText: { color: '#FFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.15 },
   finishActionRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 10 },
+  finishActionRowCompact: { marginTop: 6, gap: 8 },
   forceFinishCol: { width: '100%' },
   forceFinishBoardedHint: {
     marginTop: 8,
@@ -1139,9 +1190,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     paddingHorizontal: 6,
   },
+  forceFinishBoardedHintCompact: { marginTop: 6 },
   finishButton: { flex: 1, borderRadius: 20, overflow: 'hidden' },
   finishButtonPressable: { flex: 1, borderRadius: 20, overflow: 'hidden' },
   finishButtonGradient: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12 },
+  finishButtonGradientCompact: { minHeight: 56 },
   finishButtonText: { color: '#FFF', fontSize: 15, fontWeight: '900', textAlign: 'center' },
   actionButtons: { flexDirection: 'row', gap: 12, alignItems: 'flex-end' },
   tripAiFabWrap: { alignItems: 'center', justifyContent: 'center', minWidth: 52, maxWidth: 56 },

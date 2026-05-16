@@ -7897,9 +7897,6 @@ function PassengerDashboard({
   } | null>(null);
   const [selectedPrice, setSelectedPrice] = useState<number>(0);
   const [priceLoading, setPriceLoading] = useState(false);
-  const [passengerPaymentPreference, setPassengerPaymentPreference] = useState<'cash' | 'card' | null>(
-    null,
-  );
   /** Konum + hedef + araç tipi için fiyat/rota önbelleği — “Ara” anında gecikmeyi azaltır */
   const pricePrefetchRef = useRef<{ key: string; data: Record<string, unknown>; ts: number } | null>(null);
   /** Teklif gönder: çift tap / üst üste async çağrı — senkron erken return */
@@ -7907,11 +7904,15 @@ function PassengerDashboard({
   /** Fiyat hesapla + modal: çift calculate / çift modal engeli */
   const passengerPriceCalculateInFlightRef = useRef(false);
   const [offerSendSubmitting, setOfferSendSubmitting] = useState(false);
+  /** Nakit satırına dokunuldu mu (varsayılan görünüm tek başına yetmez) */
+  const priceOfferPaymentExplicitRef = useRef(false);
+  const [priceOfferPaymentWarnVisible, setPriceOfferPaymentWarnVisible] = useState(false);
 
   useEffect(() => {
     if (showPriceModal) {
       setRideVehiclePreference(passengerVehicleFromRole);
-      setPassengerPaymentPreference(null);
+      priceOfferPaymentExplicitRef.current = false;
+      setPriceOfferPaymentWarnVisible(false);
     }
   }, [showPriceModal, passengerVehicleFromRole]);
   
@@ -10266,16 +10267,11 @@ function PassengerDashboard({
   };
   
   // MARTI TAG: Fiyat teklifi gönder — önce backend tag oluşturur, rolling dispatch tetiklenir; sonra bekleme UI
-  const handleSendPriceOffer = async () => {
-    playTapSound();
+  const submitPassengerPriceOfferCore = async () => {
     if (!destination || !priceInfo || !selectedPrice || !user?.id) {
       if (!destination) {
         appAlert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
       }
-      return;
-    }
-    if (!passengerPaymentPreference) {
-      appAlert('Ödeme seçimi', 'Lütfen nakit veya sanal kart ile ödeyeceğinizi seçin.');
       return;
     }
     if (passengerSendOfferInFlightRef.current) return;
@@ -10363,7 +10359,7 @@ function PassengerDashboard({
             distance_km: Number.isFinite(distKm) ? distKm : 0,
             estimated_minutes: Number.isFinite(estMin) ? Math.max(0, Math.round(estMin)) : 0,
             passenger_preferred_vehicle: rideVehiclePreference,
-            passenger_payment_method: passengerPaymentPreference,
+            passenger_payment_method: 'cash',
           }),
         });
         let data: Record<string, unknown> = {};
@@ -10425,8 +10421,7 @@ function PassengerDashboard({
             Number.isFinite(srvMin) && srvMin > 0 ? Math.round(srvMin) : priceInfo.estimated_minutes,
           status: serverTag.status || 'waiting',
           passenger_payment_method:
-            normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ??
-            passengerPaymentPreference,
+            normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ?? 'cash',
         };
         setShowPriceModal(false);
         setActiveTag(mergedTag as Tag);
@@ -10452,7 +10447,7 @@ function PassengerDashboard({
             estimated_minutes: mergedTag.estimated_minutes,
             passenger_preferred_vehicle: rideVehiclePreference,
             passenger_vehicle_kind: rideVehiclePreference,
-            passenger_payment_method: passengerPaymentPreference,
+            passenger_payment_method: 'cash',
           });
         }
         console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
@@ -10479,6 +10474,22 @@ function PassengerDashboard({
       setOfferSendSubmitting(false);
       setLoading(false);
     }
+  };
+
+  const handlePriceOfferSendPress = () => {
+    playTapSound();
+    if (!destination || !priceInfo || !selectedPrice || !user?.id) {
+      if (!destination) {
+        appAlert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
+      }
+      return;
+    }
+    if (passengerSendOfferInFlightRef.current || offerSendSubmitting) return;
+    if (!priceOfferPaymentExplicitRef.current) {
+      setPriceOfferPaymentWarnVisible(true);
+      return;
+    }
+    void submitPassengerPriceOfferCore();
   };
 
   // 📤 TEKLİF PAYLAŞMA - Cross-platform (Web, Android, iOS)
@@ -11509,66 +11520,76 @@ function PassengerDashboard({
                           </TouchableOpacity>
                         </View>
 
-                        <Text style={styles.priceModalPaySectionTitle}>Ödeme yöntemi</Text>
-                        <View style={styles.priceModalPaySegment}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              void tapButtonHaptic();
-                              setPassengerPaymentPreference('cash');
-                            }}
-                            style={[
-                              styles.priceModalPaySegmentItem,
-                              passengerPaymentPreference === 'cash' &&
-                                styles.priceModalPaySegmentItemActive,
-                            ]}
-                            activeOpacity={0.88}
-                          >
-                            <Ionicons
-                              name="cash-outline"
-                              size={20}
-                              color={
-                                passengerPaymentPreference === 'cash' ? '#047857' : '#64748B'
-                              }
-                            />
-                            <Text
-                              style={[
-                                styles.priceModalPaySegmentText,
-                                passengerPaymentPreference === 'cash' &&
-                                  styles.priceModalPaySegmentTextActive,
-                              ]}
-                            >
-                              Nakit
+                        <View style={styles.priceModalPayScrollHint}>
+                          <Ionicons name="chevron-down" size={16} color="#64748B" />
+                          <Text style={styles.priceModalPayScrollHintText}>
+                            Ödeme yöntemini görmek için aşağı kaydırın
+                          </Text>
+                        </View>
+
+                        <View style={styles.priceModalPayLockHeader}>
+                          <Ionicons name="lock-closed-outline" size={18} color="#334155" />
+                          <Text style={styles.priceModalPayLockTitle}>Ödeme yöntemi</Text>
+                        </View>
+                        <Text style={styles.priceModalPaySubtitle}>
+                          Sürücü yolculuk sonunda tahsil eder
+                        </Text>
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            void tapButtonHaptic();
+                            priceOfferPaymentExplicitRef.current = true;
+                          }}
+                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash]}
+                          activeOpacity={0.88}
+                        >
+                          <View style={styles.priceModalPayOptionLeft}>
+                            <Ionicons name="wallet-outline" size={22} color="#2563EB" />
+                          </View>
+                          <View style={styles.priceModalPayOptionBody}>
+                            <View style={styles.priceModalPayOptionTitleRow}>
+                              <Text style={styles.priceModalPayOptionTitle}>Nakit</Text>
+                              <View style={styles.priceModalPayBadgeRecommended}>
+                                <Text style={styles.priceModalPayBadgeRecommendedText}>Önerilen</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.priceModalPayOptionDesc}>
+                              Yolculuk sonunda sürücüye nakit ödeme yaparsınız.
                             </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              void tapButtonHaptic();
-                              setPassengerPaymentPreference('card');
-                            }}
-                            style={[
-                              styles.priceModalPaySegmentItem,
-                              passengerPaymentPreference === 'card' &&
-                                styles.priceModalPaySegmentItemActive,
-                            ]}
-                            activeOpacity={0.88}
-                          >
-                            <Ionicons
-                              name="card-outline"
-                              size={20}
-                              color={
-                                passengerPaymentPreference === 'card' ? '#1D4ED8' : '#64748B'
-                              }
-                            />
-                            <Text
-                              style={[
-                                styles.priceModalPaySegmentText,
-                                passengerPaymentPreference === 'card' &&
-                                  styles.priceModalPaySegmentTextActive,
-                              ]}
-                            >
-                              Sanal kart
+                          </View>
+                          <View style={styles.priceModalPayRadioOuterActive}>
+                            <View style={styles.priceModalPayRadioInnerActive} />
+                          </View>
+                        </TouchableOpacity>
+
+                        <View
+                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardDisabled]}
+                          accessibilityState={{ disabled: true }}
+                        >
+                          <View style={styles.priceModalPayOptionLeft}>
+                            <Ionicons name="card-outline" size={22} color="#94A3B8" />
+                          </View>
+                          <View style={styles.priceModalPayOptionBody}>
+                            <View style={styles.priceModalPayOptionTitleRow}>
+                              <Text style={styles.priceModalPayOptionTitleMuted}>Kart ile Öde</Text>
+                              <View style={styles.priceModalPayBadgeSoon}>
+                                <Text style={styles.priceModalPayBadgeSoonText}>Yakında</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.priceModalPayOptionDesc}>
+                              Güvenli kart ödemesi kısa süre içinde aktif olacak.
                             </Text>
-                          </TouchableOpacity>
+                          </View>
+                          <View style={styles.priceModalPayRadioOuterMuted}>
+                            <View style={styles.priceModalPayRadioInnerMuted} />
+                          </View>
+                        </View>
+
+                        <View style={styles.priceModalPayDefaultNote}>
+                          <Ionicons name="information-circle-outline" size={17} color="#64748B" />
+                          <Text style={styles.priceModalPayDefaultNoteText}>
+                            Herhangi bir seçim yapmazsanız varsayılan olarak Nakit seçeneği kullanılacaktır.
+                          </Text>
                         </View>
                       </ScrollView>
 
@@ -11587,27 +11608,21 @@ function PassengerDashboard({
                           </TouchableOpacity>
 
                           <TouchableOpacity
-                            style={[
-                              styles.priceModalSendWrap,
-                              (!passengerPaymentPreference || offerSendSubmitting) &&
-                                styles.priceModalSendWrapDisabled,
-                            ]}
-                            activeOpacity={
-                              passengerPaymentPreference && !offerSendSubmitting ? 0.88 : 1
-                            }
-                            disabled={!passengerPaymentPreference || offerSendSubmitting}
+                            style={[styles.priceModalSendWrap, offerSendSubmitting && styles.priceModalSendWrapDisabled]}
+                            activeOpacity={offerSendSubmitting ? 1 : 0.88}
+                            disabled={offerSendSubmitting}
                             onPress={() => {
-                              if (!passengerPaymentPreference || offerSendSubmitting) return;
+                              if (offerSendSubmitting) return;
                               void tapButtonHaptic();
-                              handleSendPriceOffer();
+                              handlePriceOfferSendPress();
                             }}
                           >
                             <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
                               <LinearGradient
                                 colors={
-                                  passengerPaymentPreference && !offerSendSubmitting
-                                    ? ['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']
-                                    : ['#94A3B8', '#64748B']
+                                  offerSendSubmitting
+                                    ? ['#94A3B8', '#64748B']
+                                    : ['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']
                                 }
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
@@ -11631,6 +11646,61 @@ function PassengerDashboard({
                       </View>
                     </>
                   )}
+                </View>
+              </View>
+            </Modal>
+
+            <Modal
+              visible={priceOfferPaymentWarnVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => {
+                if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
+              }}
+            >
+              <View style={styles.priceOfferPaymentWarnOverlay}>
+                <TouchableOpacity
+                  style={StyleSheet.absoluteFill}
+                  activeOpacity={1}
+                  onPress={() => {
+                    if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
+                  }}
+                />
+                <View style={styles.priceOfferPaymentWarnCard}>
+                  <Ionicons
+                    name="warning"
+                    size={40}
+                    color="#CA8A04"
+                    style={{ alignSelf: 'center', marginBottom: 10 }}
+                  />
+                  <Text style={styles.priceOfferPaymentWarnTitle}>Ödeme yöntemi seçilmedi</Text>
+                  <Text style={styles.priceOfferPaymentWarnBody}>
+                    Herhangi bir yöntem seçmezseniz yolculuk sonunda varsayılan olarak Nakit ile ödeme
+                    yapılacaktır.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.priceOfferPaymentWarnPrimary}
+                    activeOpacity={0.88}
+                    disabled={offerSendSubmitting}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setPriceOfferPaymentWarnVisible(false);
+                      void submitPassengerPriceOfferCore();
+                    }}
+                  >
+                    <Text style={styles.priceOfferPaymentWarnPrimaryText}>Tamam, devam et</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.priceOfferPaymentWarnSecondary}
+                    activeOpacity={0.88}
+                    disabled={offerSendSubmitting}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setPriceOfferPaymentWarnVisible(false);
+                    }}
+                  >
+                    <Text style={styles.priceOfferPaymentWarnSecondaryText}>Geri dön, seçim yap</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </Modal>
@@ -18102,46 +18172,223 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
   },
-  priceModalPaySectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  priceModalPaySegment: {
-    flexDirection: 'row',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
-    marginBottom: 4,
-  },
-  priceModalPaySegmentItem: {
-    flex: 1,
+  priceModalPayScrollHint: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    paddingVertical: 6,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  priceModalPayScrollHintText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    flexShrink: 1,
+    textAlign: 'center',
+  },
+  priceModalPayLockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  priceModalPayLockTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  priceModalPaySubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 12,
+    marginLeft: 26,
+    lineHeight: 17,
+  },
+  priceModalPayOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 11,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 2,
+    marginBottom: 10,
   },
-  priceModalPaySegmentItemActive: {
-    backgroundColor: '#FFF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    elevation: 2,
+  priceModalPayOptionCardCash: {
+    borderColor: '#2563EB',
+    backgroundColor: 'rgba(37, 99, 235, 0.07)',
   },
-  priceModalPaySegmentText: {
-    fontSize: 14,
+  priceModalPayOptionCardDisabled: {
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    opacity: 0.92,
+  },
+  priceModalPayOptionLeft: {
+    marginRight: 10,
+    paddingTop: 2,
+  },
+  priceModalPayOptionBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  priceModalPayOptionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
+  priceModalPayOptionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  priceModalPayOptionTitleMuted: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#64748B',
   },
-  priceModalPaySegmentTextActive: {
+  priceModalPayBadgeRecommended: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  priceModalPayBadgeRecommendedText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  priceModalPayBadgeSoon: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  priceModalPayBadgeSoonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  priceModalPayOptionDesc: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    lineHeight: 17,
+  },
+  priceModalPayRadioOuterActive: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginLeft: 6,
+    backgroundColor: '#FFF',
+  },
+  priceModalPayRadioInnerActive: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: '#2563EB',
+  },
+  priceModalPayRadioOuterMuted: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginLeft: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  priceModalPayRadioInnerMuted: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: 'transparent',
+  },
+  priceModalPayDefaultNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 2,
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  priceModalPayDefaultNoteText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    lineHeight: 17,
+  },
+  priceOfferPaymentWarnOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+  },
+  priceOfferPaymentWarnCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 12,
+    zIndex: 2,
+  },
+  priceOfferPaymentWarnTitle: {
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  priceOfferPaymentWarnBody: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 18,
+  },
+  priceOfferPaymentWarnPrimary: {
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  priceOfferPaymentWarnPrimaryText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  priceOfferPaymentWarnSecondary: {
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  priceOfferPaymentWarnSecondaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#475569',
   },
   priceModalSendWrapDisabled: {
     opacity: 0.72,
