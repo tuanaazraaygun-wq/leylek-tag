@@ -7602,6 +7602,67 @@ function roundPassengerGpsCoordForSearch(n: number | undefined): number | null {
   return Math.round(n * 1000) / 1000;
 }
 
+/** Nominatim reverse address alanları — ilçe ile il sırasında il’i tercih et */
+function foldTrAsciiCityLookup(s: string): string {
+  return s
+    .trim()
+    .replace(/İ/g, 'i')
+    .replace(/ı/g, 'i')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .trim();
+}
+
+const ANKARA_METRO_ILCE_LOOKUP = new Set(
+  [
+    'Yenimahalle',
+    'Keçiören',
+    'Çankaya',
+    'Mamak',
+    'Altındağ',
+    'Sincan',
+    'Etimesgut',
+    'Pursaklar',
+    'Gölbaşı',
+  ].map((x) => foldTrAsciiCityLookup(x)),
+);
+
+function metroIlceOrRawToProvinceDisplay(raw: string): string {
+  const t = typeof raw === 'string' ? raw.trim() : '';
+  if (!t) return '';
+  const k = foldTrAsciiCityLookup(t);
+  if (ANKARA_METRO_ILCE_LOOKUP.has(k)) return 'Ankara';
+  return t;
+}
+
+/**
+ * Türkiye Nominatim address bloklarında arama şehir kapsamı (il düzeyi).
+ * Öncelik: province → state → city → town; county/yerel osm alanları yalın son çare (municipality).
+ */
+function passengerCityScopeFromNominatimAddress(addr: unknown): string {
+  if (!addr || typeof addr !== 'object') return '';
+  const a = addr as Record<string, unknown>;
+  const ordered: readonly string[] = ['province', 'state', 'city', 'town', 'county'];
+  for (const key of ordered) {
+    const v = a[key];
+    if (typeof v === 'string' && v.trim()) {
+      return metroIlceOrRawToProvinceDisplay(v.trim());
+    }
+  }
+  const mun = a.municipality;
+  if (typeof mun === 'string' && mun.trim()) {
+    return metroIlceOrRawToProvinceDisplay(mun.trim());
+  }
+  return '';
+}
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ 
   user, 
@@ -8022,11 +8083,9 @@ function PassengerDashboard({
         const r = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
         const j = await r.json();
         if (cancelled || gen !== passengerGpsRgGenRef.current) return;
-        const a = j?.address;
-        const city =
-          a?.city || a?.town || a?.municipality || a?.county || a?.province || a?.state;
-        if (typeof city === 'string' && city.trim()) {
-          setPassengerGpsCityLabel(city.trim());
+        const scope = passengerCityScopeFromNominatimAddress(j?.address);
+        if (scope) {
+          setPassengerGpsCityLabel(scope);
         } else {
           setPassengerGpsCityLabel('');
         }

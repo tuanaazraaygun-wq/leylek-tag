@@ -24,8 +24,8 @@ GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
-# Eski cache girdilerini deploy sonrası baypas; Overpass şehir-kutu sokak/POI
-_CACHE_KEY_VER = "v7_overpass_city_street_search"
+# Eski cache girdilerini deploy sonrası baypas; Ankara ilçe → il normalizasyonu
+_CACHE_KEY_VER = "v8_ankara_district_city_scope"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -39,6 +39,29 @@ def _norm_key(s: str) -> str:
         pass
     return " ".join(t.split())
 
+
+_ANKARA_METRO_ILCE_NAMES: tuple[str, ...] = (
+    "Yenimahalle",
+    "Keçiören",
+    "Çankaya",
+    "Mamak",
+    "Altındağ",
+    "Sincan",
+    "Etimesgut",
+    "Pursaklar",
+    "Gölbaşı",
+)
+_ANKARA_METRO_ILCE_NORM_KEYS: frozenset[str] = frozenset(_norm_key(nm) for nm in _ANKARA_METRO_ILCE_NAMES)
+
+
+def _canonical_places_city_scope_label(city: str) -> str:
+    """İl kutusu için: Büyükşehir ilçe adları → ili (Ankara)."""
+    ct = (city or "").strip()
+    if not ct:
+        return ""
+    if _norm_key(ct) in _ANKARA_METRO_ILCE_NORM_KEYS:
+        return "Ankara"
+    return ct
 
 # Kutu içi bbox şehirde kısa POI/soy sorgusu (Nominatim + iki geocode varyantı)
 _BOX_POI_QUERY_TERMS: frozenset[str] = frozenset(
@@ -1114,6 +1137,8 @@ async def api_places_search(
     trimmed = " ".join((q or "").strip().split())
     if len(trimmed) < 2:
         return dict(EMPTY_OK)
+
+    city = _canonical_places_city_scope_label((city or "").strip())
 
     def _rnd(x: Optional[float]) -> str:
         if x is None or x != x:
