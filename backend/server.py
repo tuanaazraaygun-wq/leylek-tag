@@ -1284,30 +1284,36 @@ def _canonical_vehicle_type_legacy_optional(raw: Any) -> Optional[str]:
     return None
 
 
-def _driver_registered_vehicle_kind_for_auth(user_row: dict) -> Optional[str]:
-    """
-    Yetkilendirme için onaylı/kayıtlı tek araç tipi (varsayılan car YOK).
-    Öncelik: kyc_vehicle_kind -> vehicle_kind -> vehicle_type (legacy).
-    """
+def _driver_approved_vehicle_kinds_for_auth(user_row: dict) -> List[str]:
+    """Set-ride, KYC ve teklif eşleştirme için aynı kaynak: _kyc_approved_vehicle_kinds_from_details."""
     dd = _driver_details_as_dict(user_row)
-    for key in ("kyc_vehicle_kind", "vehicle_kind"):
-        raw = dd.get(key)
-        c = _canonical_vehicle_kind(raw)
-        if c is not None:
-            return c
-    vt = _canonical_vehicle_type_legacy_optional(dd.get("vehicle_type"))
-    if vt is not None:
-        return vt
-    return None
+    return list(_kyc_approved_vehicle_kinds_from_details(dd))
+
+
+def _log_set_ride_vehicle_kind_403_driver(
+    user_id_full: str, requested_kind: str, user_row_or_dd_source: dict
+) -> None:
+    dd = _driver_details_as_dict(user_row_or_dd_source)
+    raw_avk = dd.get("approved_vehicle_kinds")
+    logger.warning(
+        "SET_RIDE_VEHICLE_KIND_403 driver user_id=%s requested=%s approved_vehicle_kinds=%s "
+        "kyc_vehicle_kind=%s vehicle_kind=%s kyc_status=%s",
+        _short_log_id(user_id_full),
+        requested_kind,
+        raw_avk,
+        dd.get("kyc_vehicle_kind"),
+        dd.get("vehicle_kind"),
+        dd.get("kyc_status"),
+    )
 
 
 def _driver_is_allowed_for_trip_vehicle(driver_row: dict, trip_vehicle_kind: Any) -> bool:
-    """Sürücünün kayıtlı tipi ile yolculuk talebi (car|motorcycle) birebir eşleşmeli."""
+    """Sürücünün onaylı araç listesi ile yolculuk talebi (car|motorcycle) eşleşmelidir."""
     trip = _canonical_vehicle_kind(trip_vehicle_kind) or "car"
-    reg = _driver_registered_vehicle_kind_for_auth(driver_row)
-    if reg is None:
+    allowed = _driver_approved_vehicle_kinds_for_auth(driver_row)
+    if not allowed:
         return False
-    return reg == trip
+    return trip in allowed
 
 
 def _effective_driver_vehicle_kind(driver_row: dict) -> Optional[str]:
@@ -8826,13 +8832,15 @@ async def set_ride_vehicle_kind(user_id: str, role: str, vehicle_kind: str):
         if not isinstance(dd, dict):
             dd = {}
         if role == "driver":
-            allowed_reg = _driver_registered_vehicle_kind_for_auth(row)
-            if allowed_reg is None:
+            approved_kinds = _driver_approved_vehicle_kinds_for_auth(row)
+            if not approved_kinds:
+                _log_set_ride_vehicle_kind_403_driver(resolved_id, vehicle_kind, row)
                 raise HTTPException(
                     status_code=403,
                     detail="Onaylı sürücü araç tipi bulunamadı. Lütfen sürücü doğrulamasını tamamlayın.",
                 )
-            if vehicle_kind != allowed_reg:
+            if vehicle_kind not in approved_kinds:
+                _log_set_ride_vehicle_kind_403_driver(resolved_id, vehicle_kind, row)
                 raise HTTPException(
                     status_code=403,
                     detail="Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.",
@@ -9610,7 +9618,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         )
         
         driver_row_req = driver_result.data[0] if driver_result.data else {}
-        if _driver_registered_vehicle_kind_for_auth(driver_row_req) is None:
+        if not _driver_approved_vehicle_kinds_for_auth(driver_row_req):
             return {"success": True, "requests": []}
         tag_points: list[tuple[str, float, float]] = []
         tag_ctx: dict[str, tuple] = {}
