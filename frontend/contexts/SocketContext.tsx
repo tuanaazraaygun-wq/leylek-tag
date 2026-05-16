@@ -731,7 +731,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
       }
       registerAckOkRef.current = false;
       setIsRegistered(false);
-      console.warn('⚠️ [SocketProvider] register başarısız veya room yok:', data);
+      if (__DEV__) {
+        console.warn('⚠️ [SocketProvider] register başarısız veya room yok:', data);
+      } else {
+        console.warn('⚠️ [SocketProvider] register başarısız veya room yok');
+      }
       registerTimerRef.current = setTimeout(() => {
         scheduleSocketRegister('register_ack_failed', { force: true });
       }, 1500);
@@ -744,9 +748,26 @@ export function SocketProvider({ children }: SocketProviderProps) {
     
     // 🔥 GELEN ARAMA - DİREKT DİNLE!
     const handleIncomingCall = (data: any) => {
-      console.log('🔔 [SocketProvider] GELEN ARAMA (incoming_call)', data);
       const callId = data?.call_id != null ? String(data.call_id) : null;
       const sessionId = data?.session_id != null ? String(data.session_id) : null;
+      if (__DEV__) {
+        console.log(
+          '[incoming_call]',
+          JSON.stringify({
+            call_id: callId,
+            session_id: sessionId,
+            caller_id:
+              data?.caller_id != null ? maskIdForLog(String(data.caller_id)) : null,
+            target_user_id:
+              data?.target_user_id != null
+                ? maskIdForLog(String(data.target_user_id).trim())
+                : null,
+            call_type: data?.call_type ?? null,
+            has_agora_token: Boolean(data?.agora_token ?? data?.agoraToken),
+            has_channel_name: Boolean(data?.channel_name),
+          }),
+        );
+      }
       const myId = userIdRef.current;
       const targetId = data?.target_user_id != null ? String(data.target_user_id).trim() : '';
       const myNorm = String(myId ?? '').trim().toLowerCase();
@@ -1066,7 +1087,9 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const emitWithLogFromContext = useCallback((event: string, payload: any, ack?: (response: any) => void) => {
     const socket = getOrCreateSocket();
     const run = () => {
-      console.log('📤 EMIT:', event, payload);
+      if (__DEV__) {
+        console.log('📤 EMIT:', event, payload);
+      }
       if (typeof ack === 'function') {
         socket.emit(event, payload, ack);
       } else {

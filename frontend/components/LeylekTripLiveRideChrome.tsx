@@ -184,7 +184,9 @@ export default function LeylekTripLiveRideChrome({
     return () => anim.stop();
   }, [pulse]);
   useEffect(() => {
-    console.log('[MATCH_LAYOUT]', { height: windowHeight, compactMode });
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[MATCH_LAYOUT]', { height: windowHeight, compactMode });
+    }
   }, [windowHeight, compactMode]);
   useEffect(() => {
     console.log('[leylek-trip-ui] action layout rendered role=%s', isDriver ? 'driver' : 'passenger');

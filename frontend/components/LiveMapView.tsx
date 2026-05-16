@@ -5724,7 +5724,7 @@ export default function LiveMapView({
             <View style={styles.driverRidePriceRow}>
               {passengerPaymentMethod ? (
                 <Text style={styles.driverRidePayHint} numberOfLines={1}>
-                  {passengerPaymentMethod === 'card' ? 'Sanal kart' : 'Nakit'}
+                  {passengerPaymentMethod === 'card' ? 'Kart ile Öde · Yakında' : 'Nakit'}
                 </Text>
               ) : (
                 <View style={styles.driverRidePriceRowSpacer} />
@@ -5964,7 +5964,7 @@ export default function LiveMapView({
                       driverNavImmersive ? styles.paymentMethodPillTextNav : null,
                     ]}
                   >
-                    {passengerPaymentMethod === 'card' ? 'Yolcu: sanal kart' : 'Yolcu: nakit'}
+                    {passengerPaymentMethod === 'card' ? 'Yolcu: Kart ile Öde · Yakında' : 'Yolcu: nakit'}
                   </Text>
                 </View>
               ) : null}

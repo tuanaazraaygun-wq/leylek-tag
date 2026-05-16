@@ -2364,7 +2364,16 @@ export default function App() {
       });
 
       const { data } = await parseApiJson(response);
-      console.log('🔐 Verify OTP response:', data, 'status', response.status);
+      if (__DEV__) {
+        const d = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+        console.log('[auth] verify_otp', {
+          status: response.status,
+          ok: response.ok,
+          success: d.success === true,
+          user_exists: d.user_exists === true,
+          keys: typeof data === 'object' && data && !Array.isArray(data) ? Object.keys(data as object) : [],
+        });
+      }
       if (!response.ok) {
         appAlert('Hata', apiErrMsg(data, 'OTP doğrulanamadı'));
         return;
@@ -2376,14 +2385,12 @@ export default function App() {
           const loggedUser = data.user as User;
           const savedUser = await saveUser(loggedUser);
 
-          console.log('OTP RESPONSE:', data);
-
           await persistAccessTokenAndRefreshUser(data as TokenPayload, loggedUser?.id);
 
           const sb = getSupabase();
-          if (sb) {
+          if (sb && __DEV__) {
             const { data: sess } = await sb.auth.getSession();
-            console.log('SESSION AFTER OTP:', sess?.session?.user?.id);
+            console.log('[auth] session_after_otp_user_id', sess?.session?.user?.id);
           }
 
           if (data.has_pin) {
@@ -2420,20 +2427,23 @@ export default function App() {
               });
               
               const registerData = await registerResponse.json();
-              console.log('📝 Register response:', registerData);
-              
+              if (__DEV__) {
+                console.log('[auth] register_after_otp', {
+                  ok: registerResponse.ok,
+                  success: registerData?.success === true,
+                  has_user: Boolean(registerData?.user),
+                });
+              }
+
               if (registerData.success && registerData.user) {
                 await saveUser(registerData.user);
-                console.log('USER_SAVED', registerData.user);
-
-                console.log('OTP RESPONSE:', registerData);
 
                 await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
 
                 const sbReg = getSupabase();
-                if (sbReg) {
+                if (sbReg && __DEV__) {
                   const { data: sessReg } = await sbReg.auth.getSession();
-                  console.log('SESSION AFTER OTP:', sessReg?.session?.user?.id);
+                  console.log('[auth] session_after_otp_user_id', sessReg?.session?.user?.id);
                 }
 
                 await afterAuthAccessTokenPersisted(registerData.user.id);

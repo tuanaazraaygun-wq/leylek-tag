@@ -252,7 +252,7 @@ export interface PassengerRequest {
   created_at?: string;
   /** Yolcu talebi: car | motorcycle (socket / dispatch) */
   passenger_vehicle_kind?: 'car' | 'motorcycle';
-  /** Yolcu ödeme: nakit | sanal kart */
+  /** Yolcu ödeme: nakit | card (UI: kart yakında — iş mantığı değişmez) */
   passenger_payment_method?: 'cash' | 'card';
 }
 
@@ -535,7 +535,7 @@ function RequestCard({
             </View>
             {request.passenger_payment_method === 'card' ? (
               <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
-                <Text style={styles.reqPaymentPillText}>Sanal kart</Text>
+                <Text style={styles.reqPaymentPillText}>Kart ile Öde · Yakında</Text>
               </View>
             ) : request.passenger_payment_method === 'cash' ? (
               <View style={[styles.reqPaymentPill, styles.reqPaymentPillCash]}>
