@@ -199,17 +199,25 @@ function _pickDriverVehicleKindForResume(loggedInUser: User, dTag: Record<string
   return 'car';
 }
 
-/** Car-only vb. için motor seçimi reddedildiğinde: KYC’ye motor ön seçimi ile yönlendir (yerel araç tipi yazılmaz). */
-function alertMotorVehicleRegistrationRequired(openMotorcycleKyc: () => void): void {
+/** Sürücü rolünde araç tipi sunucuda onaylı değilken (403): KYC\'ye gönder; yerel mode / persist yok (yalnızca ekran). */
+function alertVehicleRegistrationRequired(
+  requestedKind: 'car' | 'motorcycle',
+  openKycPrefilled: () => void,
+): void {
+  const isMotor = requestedKind === 'motorcycle';
+  const primaryLabel = isMotor ? 'Motor Kaydı Oluştur' : 'Araba Kaydı Oluştur';
+  const body = isMotor
+    ? 'Motor TAG tekliflerine erişebilmek için motor sürücü kaydınızı tamamlamanız gerekir.'
+    : 'Araba TAG tekliflerine erişebilmek için araba sürücü kaydınızı tamamlamanız gerekir.';
   appAlert(
     'Araç Kaydı Gerekli',
-    'Motor TAG tekliflerine erişebilmek için motor sürücü kaydınızı tamamlamanız gerekir.',
+    body,
     [
       { text: 'Vazgeç', style: 'cancel' },
       {
-        text: 'Motor Kaydı Oluştur',
+        text: primaryLabel,
         style: 'default',
-        onPress: openMotorcycleKyc,
+        onPress: openKycPrefilled,
       },
     ],
     { variant: 'info', cancelable: true },
@@ -230,7 +238,8 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     setScreen: (s: AppScreen) => void;
     setRideVehicleKind: (v: 'car' | 'motorcycle') => void;
     requestLocationPermission?: () => Promise<boolean>;
-    openMotorcycleRegistrationFlow?: () => void;
+    /** 403 araç yükseltmesi: KYC aç (kind parametreli); persist / dashboard yok */
+    openDriverVehicleUpgradeKyc?: (kind: 'car' | 'motorcycle') => void;
   },
 ): Promise<boolean> {
   if (!loggedInUser?.id) {
@@ -302,8 +311,8 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     }
     const { data: setRideData } = await parseApiJson(setRideRes);
     if (!setRideRes.ok) {
-      if (vk === 'motorcycle' && setRideRes.status === 403 && deps.openMotorcycleRegistrationFlow) {
-        alertMotorVehicleRegistrationRequired(deps.openMotorcycleRegistrationFlow);
+      if (setRideRes.status === 403 && deps.openDriverVehicleUpgradeKyc) {
+        alertVehicleRegistrationRequired(vk, () => deps.openDriverVehicleUpgradeKyc!(vk));
         return false;
       }
       appAlert(
@@ -1627,8 +1636,8 @@ export default function App() {
                   setScreen,
                   setRideVehicleKind,
                   requestLocationPermission,
-                  openMotorcycleRegistrationFlow: () => {
-                    setDriverKycScreenVehicleKind('motorcycle');
+                  openDriverVehicleUpgradeKyc: (kind) => {
+                    setDriverKycScreenVehicleKind(kind);
                     setScreen('driver-kyc');
                   },
                 });
@@ -1820,8 +1829,8 @@ export default function App() {
           setScreen,
           setRideVehicleKind,
           requestLocationPermission,
-          openMotorcycleRegistrationFlow: () => {
-            setDriverKycScreenVehicleKind('motorcycle');
+          openDriverVehicleUpgradeKyc: (kind) => {
+            setDriverKycScreenVehicleKind(kind);
             setScreen('driver-kyc');
           },
         });
@@ -3831,9 +3840,12 @@ export default function App() {
             }
             const { data: setRideData } = await parseApiJson(setRideRes);
             if (!setRideRes.ok) {
-              if (rideVehicleKind === 'motorcycle' && setRideRes.status === 403) {
-                alertMotorVehicleRegistrationRequired(() => {
-                  setDriverKycScreenVehicleKind('motorcycle');
+              if (
+                setRideRes.status === 403 &&
+                (rideVehicleKind === 'motorcycle' || rideVehicleKind === 'car')
+              ) {
+                alertVehicleRegistrationRequired(rideVehicleKind, () => {
+                  setDriverKycScreenVehicleKind(rideVehicleKind);
                   setScreen('driver-kyc');
                 });
               } else {

@@ -24,7 +24,7 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski (filtresiz) cache girdilerini deploy sonrası baypas etmek için
-_CACHE_KEY_VER = "v2"
+_CACHE_KEY_VER = "v3_citywide_merge"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -240,14 +240,15 @@ def _build_search_candidates(raw_q: str, city: str) -> list[str]:
         ):
             push(s)
 
-    m = re.match(r"^(\d{1,5})\b", head)
-    if m and ct and ("ankara" in _fold_city(ct)):
-        num = m.group(1)
-        city_name = "Ankara"
+    m_num = re.match(r"^(\d{1,5})\b", head)
+    if m_num and ct and _norm_key(ct) in CITY_BBOX:
+        num = m_num.group(1)
+        city_disp = ct.strip()
         extras = (
-            f"{num}, {city_name}, Türkiye",
-            f"{num} Sokak, {city_name}, Türkiye",
-            f"{num} Cadde, {city_name}, Türkiye",
+            f"{num}, {city_disp}, Türkiye",
+            f"{num} Sokak, {city_disp}, Türkiye",
+            f"{num} Cadde, {city_disp}, Türkiye",
+            f"{num} Bulvarı, {city_disp}, Türkiye",
         )
         for s in extras:
             push(s)
@@ -263,14 +264,93 @@ def _build_search_candidates(raw_q: str, city: str) -> list[str]:
     return out[:5]
 
 
+def _city_bbox_center_lat_lon(nk_city: str) -> Optional[tuple[float, float]]:
+    """Kayıtlı şehir bbox merkezi (lat, lng)."""
+    bbox = CITY_BBOX.get(nk_city)
+    if bbox is None:
+        return None
+    min_lon, min_lat, max_lon, max_lat = bbox
+    return ((min_lat + max_lat) * 0.5, (min_lon + max_lon) * 0.5)
+
+
+def _flatten_google_autocomplete_inputs(trimmed: str, city_trim: str, *, max_queries: int = 8) -> list[str]:
+    """Birleşik otomatik tamamlama girdileri; tekrarsız."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def push(s: str) -> None:
+        t = " ".join((s or "").strip().split())
+        if len(t) < 2:
+            return
+        k = _norm_key(t)
+        if k in seen:
+            return
+        seen.add(k)
+        out.append(t)
+
+    push(trimmed)
+    ct = (city_trim or "").strip()
+    if ct:
+        push(f"{trimmed}, {ct}, Türkiye")
+
+    tk = trimmed.lower()
+    addr_tokens = (
+        " sokak" in tk
+        or " cadde" in tk
+        or " mahalle" in tk
+        or "mah." in tk
+        or " bulvar" in tk
+        or " ilçe" in tk
+        or tk.strip().startswith("mah ")
+    )
+    if ct and addr_tokens:
+        push(f"{trimmed}, {ct}, Türkiye")
+
+    for cand in _build_search_candidates(trimmed, ct):
+        push(cand)
+        if len(out) >= max_queries:
+            break
+    return out[:max_queries]
+
+
+def _extract_ok_predictions(pdata: dict[str, Any]) -> list[dict[str, Any]]:
+    if pdata.get("status") != "OK":
+        return []
+    preds = pdata.get("predictions")
+    if not isinstance(preds, list):
+        return []
+    return [p for p in preds if isinstance(p, dict)]
+
+
+def _merge_predictions_by_place_id(chunks: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Önce ilk chunk sırası (genelde GPS ağırlıklı); sonra şehir/geniş — place_id/description ile dedupe."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def key_of(p: dict[str, Any]) -> str:
+        pid = str(p.get("place_id") or "").strip()
+        if pid:
+            return f"id:{pid}"
+        return f"d:{_norm_key(str(p.get('description') or ''))}"
+
+    for chunk in chunks:
+        for p in chunk:
+            k = key_of(p)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(p)
+    return out
+
+
 def _geo_fallback_id(s: str) -> str:
     return f"geo_{hash(s) & 0xFFFFFFF}"
 
 
-def _result_google_autocomplete(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _result_google_autocomplete(rows: list[dict[str, Any]], *, max_predictions: int = 20) -> dict[str, Any]:
     """predictions[].description, structured_formatting, place_id."""
     mapped: list[dict[str, Any]] = []
-    for p in rows[:14]:
+    for p in rows[:max_predictions]:
         desc = str(p.get("description") or "")
         pid = str(p.get("place_id") or "")
         sf = (p.get("structured_formatting") or {}) if isinstance(p.get("structured_formatting"), dict) else {}
@@ -363,21 +443,118 @@ def _dedupe_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-async def _google_autocomplete(client: httpx.AsyncClient, input_text: str, lat_o: Optional[float], lng_o: Optional[float]):
+async def _google_autocomplete(
+    client: httpx.AsyncClient,
+    input_text: str,
+    lat_o: Optional[float],
+    lng_o: Optional[float],
+    *,
+    use_location_bias: bool = True,
+    radius_cap_m: int = 25000,
+) -> tuple[int, dict[str, Any]]:
+    """Google Places Autocomplete (Legacy). strictbounds yok."""
     params: dict[str, Any] = {
         "input": input_text.strip(),
         "key": GOOGLE_MAPS_API_KEY,
         "language": "tr",
         "components": "country:tr",
     }
-    if lat_o is not None and lng_o is not None and all(map(lambda x: isinstance(x, float) and x == x, (lat_o, lng_o))):
-        params["location"] = f"{lat_o:.5f},{lng_o:.5f}"
-        params["radius"] = str(min(45000, max(7000, 25000)))
+    if use_location_bias and lat_o is not None and lng_o is not None:
+        latf = float(lat_o)
+        lngf = float(lng_o)
+        if latf == latf and lngf == lngf:
+            params["location"] = f"{latf:.5f},{lngf:.5f}"
+            rr = max(7000, min(45000, int(radius_cap_m)))
+            params["radius"] = str(rr)
 
     url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
     r = await client.get(url, params=params)
     data = json.loads(r.text) if r.text else {}
     return r.status_code, data
+
+
+async def _merged_google_autocomplete_predictions(
+    http: httpx.AsyncClient,
+    trimmed: str,
+    city_trim: str,
+    lat: Optional[float],
+    lng: Optional[float],
+    *,
+    max_http: int = 4,
+    max_predictions: int = 20,
+) -> list[dict[str, Any]]:
+    """
+    Yakın (GPS ~25km) sonuçlar + şehir geneli (konumsuz + bbox merkez ~68km) + ek sorgular.
+    max_http ile Google kota.
+    """
+    chunk_groups: list[list[dict[str, Any]]] = []
+    http_used = 0
+
+    def latlng_pair_ok(lat_o: Optional[float], lng_o: Optional[float]) -> bool:
+        if lat_o is None or lng_o is None:
+            return False
+        try:
+            y = float(lat_o)
+            x = float(lng_o)
+        except (TypeError, ValueError):
+            return False
+        return x == x and y == y
+
+    async def call_ac(
+        inp: str,
+        la: Optional[float],
+        ln: Optional[float],
+        *,
+        bias: bool,
+        rad_m: int,
+    ) -> None:
+        nonlocal http_used
+        tinp = inp.strip()
+        if len(tinp) < 2 or http_used >= max_http:
+            return
+        http_used += 1
+        sc, pdata = await _google_autocomplete(http, tinp, la, ln, use_location_bias=bias, radius_cap_m=rad_m)
+        if sc != 200:
+            return
+        preds = _extract_ok_predictions(pdata)
+        if preds:
+            chunk_groups.append(preds[: max_predictions + 8])
+
+    if city_trim.strip():
+        primary_q = f"{trimmed}, {city_trim}, Türkiye"
+        nk_city = _norm_key(city_trim)
+        metro = _city_bbox_center_lat_lon(nk_city)
+        gps_la = float(lat) if latlng_pair_ok(lat, lng) else None
+        gps_ln = float(lng) if latlng_pair_ok(lat, lng) else None
+
+        if gps_la is not None and gps_ln is not None:
+            await call_ac(primary_q, gps_la, gps_ln, bias=True, rad_m=25000)
+
+        await call_ac(primary_q, None, None, bias=False, rad_m=25000)
+
+        if metro is not None:
+            mla, mln = metro
+            await call_ac(primary_q, mla, mln, bias=True, rad_m=68000)
+
+        flat = _flatten_google_autocomplete_inputs(trimmed, city_trim)
+        nk_pri = _norm_key(primary_q)
+        for alt in flat:
+            if http_used >= max_http:
+                break
+            nk_a = _norm_key(alt)
+            if nk_a == nk_pri:
+                continue
+            await call_ac(alt, None, None, bias=False, rad_m=25000)
+
+        merged = _merge_predictions_by_place_id(chunk_groups)
+        return merged[:max_predictions]
+
+    if latlng_pair_ok(lat, lng):
+        await call_ac(trimmed, float(lat), float(lng), bias=True, rad_m=25000)
+    if http_used < max_http:
+        await call_ac(trimmed, None, None, bias=False, rad_m=25000)
+    merged = _merge_predictions_by_place_id(chunk_groups)
+    return merged[:max_predictions]
 
 
 async def _google_geocode(client: httpx.AsyncClient, address: str):
@@ -473,23 +650,19 @@ async def api_places_search(
     async with httpx.AsyncClient(timeout=timeout, headers=headers) as http:
         city_trim = (city or "").strip()
 
-        # --- Google en fazla 2 HTTP: autocomplete + geocode (city varsa her ikisi de şehir bağlamlı metin) ---
+        # --- Google: birleştirilmiş autocomplete (GPS + şehir geneli + bbox merkez) -> geocode yedek ---
         if GOOGLE_MAPS_API_KEY:
             try:
-                google_ac_input = (
-                    f"{trimmed}, {city_trim}, Türkiye" if city_trim else trimmed
+                preds_merged = await _merged_google_autocomplete_predictions(
+                    http, trimmed, city_trim, lat, lng, max_http=4, max_predictions=20
                 )
-                sc, pdata = await _google_autocomplete(http, google_ac_input, lat, lng)
-                if sc == 200 and pdata.get("status") == "OK":
-                    preds = pdata.get("predictions") if isinstance(pdata.get("predictions"), list) else []
-                    preds = [p for p in preds if isinstance(p, dict)]
-                    if preds:
-                        outbound = _result_google_autocomplete(preds)
-                        fr = _filter_results_city(outbound.get("results") or [], city)
-                        if fr:
-                            outbound["results"] = _dedupe_results(fr)
-                            _cache_set(cache_key_raw, outbound)
-                            return outbound
+                if preds_merged:
+                    outbound = _result_google_autocomplete(preds_merged, max_predictions=20)
+                    fr = _filter_results_city(outbound.get("results") or [], city)
+                    if fr:
+                        outbound["results"] = _dedupe_results(fr)
+                        _cache_set(cache_key_raw, outbound)
+                        return outbound
 
                 if city_trim:
                     geo_addr = f"{trimmed}, {city_trim}, Türkiye"
