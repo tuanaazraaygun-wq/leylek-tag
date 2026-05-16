@@ -127,13 +127,28 @@ function parseKycSubmitResponseJson(raw: string, httpStatus: number, contentType
   }
 }
 
+const KYC_SAME_KIND_APPROVED_LEGACY = 'Bu araç tipi için zaten onaylı sürücüsünüz.';
+const KYC_SAME_KIND_APPROVED_CANONICAL =
+  'Bu araç tipi için zaten onaylı sürücü kaydınız bulunuyor.';
+
+/** Aynı tür için tekrar başvuru: API eski/imzalı metni dönerse bile tek metne çevir. */
+function normalizeKycSameKindAlreadyApproved(msg: string): string {
+  const t = msg.trim();
+  if (t === KYC_SAME_KIND_APPROVED_LEGACY || t === KYC_SAME_KIND_APPROVED_CANONICAL) {
+    return KYC_SAME_KIND_APPROVED_CANONICAL;
+  }
+  return t;
+}
+
 /** FastAPI: detail string | dizi; özel cevaplarda message. */
 function pickKycSubmitErrorMessage(data: unknown, httpStatus: number): string {
   if (data && typeof data === 'object') {
     const d = data as Record<string, unknown>;
-    if (typeof d.message === 'string' && d.message.trim()) return d.message.trim();
+    if (typeof d.message === 'string' && d.message.trim())
+      return normalizeKycSameKindAlreadyApproved(d.message.trim());
     const detail = d.detail;
-    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+    if (typeof detail === 'string' && detail.trim())
+      return normalizeKycSameKindAlreadyApproved(detail.trim());
     if (Array.isArray(detail)) {
       const parts = detail.map((item) => {
         if (typeof item === 'string') return item;
@@ -147,7 +162,8 @@ function pickKycSubmitErrorMessage(data: unknown, httpStatus: number): string {
       const t = parts.filter(Boolean).join(' — ');
       if (t) return t;
     }
-    if (typeof d.error === 'string' && d.error.trim()) return d.error.trim();
+    if (typeof d.error === 'string' && d.error.trim())
+      return normalizeKycSameKindAlreadyApproved(d.error.trim());
   }
   if (httpStatus === 413) {
     return 'İstek çok büyük (413). Fotoğrafları daha düşük çözünürlükte yükleyin.';

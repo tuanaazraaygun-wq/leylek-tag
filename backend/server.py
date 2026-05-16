@@ -7632,8 +7632,17 @@ async def register_driver(
 def _normalize_kyc_vehicle_kinds_list(raw: Any) -> List[str]:
     """approved_vehicle_kinds JSON dizisinden benzersiz car|motorcycle listesi."""
     out: List[str] = []
-    if isinstance(raw, list):
-        for x in raw:
+
+    parsed: Any = raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw.strip())
+        except Exception:
+            parsed = None
+
+    seq = parsed if isinstance(parsed, list) else raw if isinstance(raw, list) else None
+    if isinstance(seq, list):
+        for x in seq:
             c = _canonical_vehicle_kind(x)
             if c and c not in out:
                 out.append(c)
@@ -7641,12 +7650,18 @@ def _normalize_kyc_vehicle_kinds_list(raw: Any) -> List[str]:
 
 
 def _derive_legacy_single_approved_vehicle_kind(dd: dict) -> Optional[str]:
-    """Legacy tek onaylı tür: kyc_vehicle_kind -> vehicle_kind -> vehicle_type."""
-    for key in ("kyc_vehicle_kind", "vehicle_kind"):
-        c = _canonical_vehicle_kind(dd.get(key))
-        if c is not None:
-            return c
-    return _canonical_vehicle_type_legacy_optional(dd.get("vehicle_type"))
+    """Legacy tek onaylı tür: kyc_vehicle_kind -> vehicle_type -> vehicle_kind.
+
+    vehicle_kind sonda; bazı istemcilerde çalışma anı araba önceliği yanlışlıkla
+    'onaylı car' sanılmasını engeller (motor onaylıyken araç başvurusunu bloklar).
+    """
+    c = _canonical_vehicle_kind(dd.get("kyc_vehicle_kind"))
+    if c is not None:
+        return c
+    c = _canonical_vehicle_type_legacy_optional(dd.get("vehicle_type"))
+    if c is not None:
+        return c
+    return _canonical_vehicle_kind(dd.get("vehicle_kind"))
 
 
 def _kyc_approved_vehicle_kinds_from_details(dd: dict) -> List[str]:
@@ -7727,7 +7742,7 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
         if requested_kind in approved_already:
             return {
                 "success": False,
-                "message": "Bu araç tipi için zaten onaylı sürücüsünüz.",
+                "message": "Bu araç tipi için zaten onaylı sürücü kaydınız bulunuyor.",
                 "kyc_status": dd_in.get("kyc_status") or "approved",
             }
 
@@ -8966,13 +8981,23 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
             # Eğer şoför atandıysa, şoförün konumunu al
             driver_location = None
             if tag.get("driver_id"):
-                driver_result = supabase.table("users").select("latitude, longitude, name").eq("id", tag["driver_id"]).execute()
+                driver_result = (
+                    supabase.table("users")
+                    .select("latitude, longitude, name, driver_details")
+                    .eq("id", tag["driver_id"])
+                    .execute()
+                )
                 if driver_result.data and driver_result.data[0].get("latitude"):
                     driver_location = {
                         "latitude": float(driver_result.data[0]["latitude"]),
-                        "longitude": float(driver_result.data[0]["longitude"])
+                        "longitude": float(driver_result.data[0]["longitude"]),
                     }
-            
+                if driver_result.data:
+                    tag["driver_vehicle_kind"] = (
+                        _canonical_vehicle_kind(_effective_driver_vehicle_kind(driver_result.data[0]))
+                        or "car"
+                    )
+
             # TAG'e driver_location ekle
             tag["driver_location"] = driver_location
             await _enrich_tag_trip_distance_if_missing(tag)
@@ -9306,6 +9331,10 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         supabase.table("offers").update({"status": "accepted"}).eq("id", real_offer_id).execute()
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tag_id_final).neq("id", real_offer_id).execute()
 
+        drv_vk_eff = (
+            _canonical_vehicle_kind(_effective_driver_vehicle_kind(drv_row_accept)) or "car"
+        )
+
         match_payload = {
             "tag_id": tag_id_final,
             "offer_id": real_offer_id,
@@ -9313,6 +9342,7 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             "passenger_name": passenger_name,
             "driver_id": driver_id_final,
             "driver_name": driver_name,
+            "driver_vehicle_kind": drv_vk_eff,
             "pickup_location": tag.get("pickup_location"),
             "dropoff_location": tag.get("dropoff_location"),
             "pickup_lat": tag.get("pickup_lat"),

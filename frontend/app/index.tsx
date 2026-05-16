@@ -199,6 +199,29 @@ function _pickDriverVehicleKindForResume(loggedInUser: User, dTag: Record<string
   return 'car';
 }
 
+/** Yolcu eşleşme socket'i: önce incoming canonical kind; yoksa prev activeTag.driver_vehicle_kind (motorcycle güvenliyse korunur). */
+function _mergePassengerMatchSocketDriverVehicleKind(
+  prev: Tag | null,
+  payload: Record<string, unknown>,
+): 'car' | 'motorcycle' {
+  const raw =
+    payload.driver_vehicle_kind !== undefined && payload.driver_vehicle_kind !== ''
+      ? payload.driver_vehicle_kind
+      : payload.vehicle_kind !== undefined && payload.vehicle_kind !== ''
+        ? payload.vehicle_kind
+        : null;
+  if (raw != null) {
+    const s = String(raw).trim().toLowerCase();
+    if (s === 'motorcycle' || s === 'motor' || s === 'moto') return 'motorcycle';
+    if (s === 'car') return 'car';
+  }
+  const pv = prev?.driver_vehicle_kind;
+  const pvStr = typeof pv === 'string' ? pv.trim().toLowerCase() : '';
+  if (pvStr === 'motorcycle' || pvStr === 'motor' || pvStr === 'moto') return 'motorcycle';
+  if (/motor/i.test(String(pv ?? ''))) return 'motorcycle';
+  return 'car';
+}
+
 /** Sürücü rolünde araç tipi sunucuda onaylı değilken (403): KYC\'ye gönder; yerel mode / persist yok (yalnızca ekran). */
 function alertVehicleRegistrationRequired(
   requestedKind: 'car' | 'motorcycle',
@@ -8579,16 +8602,17 @@ function PassengerDashboard({
           status: 'matched',
           matched_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
-          driver_vehicle_kind:
-            d.driver_vehicle_kind === 'motorcycle' || d.vehicle_kind === 'motorcycle'
-              ? 'motorcycle'
-              : 'car',
+          driver_vehicle_kind: 'car' as const,
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
-        console.log('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', matchedTag);
-        setActiveTag(matchedTag as Tag);
+        setActiveTag((prev) => {
+          const nk = _mergePassengerMatchSocketDriverVehicleKind(prev, d);
+          const next = { ...matchedTag, driver_vehicle_kind: nk } as Tag;
+          console.log('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', next);
+          return next;
+        });
       }
       
       // Backend'den de çek (ekstra bilgiler için)
@@ -8636,15 +8660,15 @@ function PassengerDashboard({
           status: 'matched',
           matched_at: data.matched_at || new Date().toISOString(),
           created_at: new Date().toISOString(),
-          driver_vehicle_kind:
-            d.driver_vehicle_kind === 'motorcycle' || d.vehicle_kind === 'motorcycle'
-              ? 'motorcycle'
-              : 'car',
+          driver_vehicle_kind: 'car' as const,
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
-        setActiveTag(matchedTag as Tag);
+        setActiveTag((prev) => ({
+          ...matchedTag,
+          driver_vehicle_kind: _mergePassengerMatchSocketDriverVehicleKind(prev, d),
+        }) as Tag);
       }
       setScreen('dashboard');
       setTimeout(() => loadActiveTag(), 1000);
@@ -8690,15 +8714,15 @@ function PassengerDashboard({
           status: 'matched' as const,
           matched_at: data.matched_at || new Date().toISOString(),
           created_at: new Date().toISOString(),
-          driver_vehicle_kind:
-            d.driver_vehicle_kind === 'motorcycle' || d.vehicle_kind === 'motorcycle'
-              ? 'motorcycle'
-              : 'car',
+          driver_vehicle_kind: 'car' as const,
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
-        setActiveTag(matchedTag as Tag);
+        setActiveTag((prev) => ({
+          ...matchedTag,
+          driver_vehicle_kind: _mergePassengerMatchSocketDriverVehicleKind(prev, d),
+        }) as Tag);
       }
       setScreen('dashboard');
       setTimeout(() => loadActiveTag(), 1000);
@@ -10647,14 +10671,21 @@ function PassengerDashboard({
         setSelectedDriverName(selectedOffer.driver_name);
         
         // 🚀 ANINDA state'i güncelle - gecikme YOK
-        setActiveTag(prev => prev ? {
-          ...prev,
-          status: 'matched',
-          driver_id: selectedOffer.driver_id,
-          driver_name: selectedOffer.driver_name,
-          final_price: selectedOffer.price,
-          matched_at: new Date().toISOString()
-        } : null);
+        setActiveTag((prev) => {
+          if (!prev) return null;
+          const ovk = (selectedOffer as { driver_vehicle_kind?: string }).driver_vehicle_kind;
+          const vkFromOffer =
+            ovk === 'motorcycle' || ovk === 'car' ? ovk : undefined;
+          return {
+            ...prev,
+            status: 'matched',
+            driver_id: selectedOffer.driver_id,
+            driver_name: selectedOffer.driver_name,
+            final_price: selectedOffer.price,
+            matched_at: new Date().toISOString(),
+            ...(vkFromOffer !== undefined ? { driver_vehicle_kind: vkFromOffer } : {}),
+          };
+        });
         
         // Teklifleri temizle
         clearOffers();

@@ -1527,10 +1527,17 @@ export default function PlacesAutocomplete({
         request_id: requestId,
       });
 
+      const bypassBackendPlaces =
+        typeof process !== 'undefined' &&
+        typeof __DEV__ !== 'undefined' &&
+        __DEV__ &&
+        process.env.EXPO_PUBLIC_PLACES_CLIENT_FALLBACK === '1';
+
+      /** Prod: her zaman backend; dev'de yalnız FALLBACK=1 ile doğrudan Google/Nominatim. */
       const canUsePlacesBackend =
         typeof process !== 'undefined' &&
-        process.env.EXPO_PUBLIC_PLACES_CLIENT_FALLBACK !== '1' &&
-        String(API_BASE_URL || '').trim().length > 0;
+        String(API_BASE_URL || '').trim().length > 0 &&
+        !bypassBackendPlaces;
 
       let nominatimRateLimited = false;
       let usedPlacesBackendProxy = false;
@@ -1542,7 +1549,7 @@ export default function PlacesAutocomplete({
         try {
           const params = new URLSearchParams();
           params.set('q', searchedTrim);
-          const ct0 = String(city || '').trim();
+          const ct0 = String(cityLabel || city || '').trim();
           if (ct0) params.set('city', ct0);
           if (biasLatitude != null && Number.isFinite(biasLatitude)) params.set('lat', String(biasLatitude));
           if (biasLongitude != null && Number.isFinite(biasLongitude)) params.set('lng', String(biasLongitude));
