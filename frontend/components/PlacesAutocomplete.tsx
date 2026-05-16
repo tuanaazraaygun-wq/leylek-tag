@@ -1527,17 +1527,17 @@ export default function PlacesAutocomplete({
         request_id: requestId,
       });
 
-      const bypassBackendPlaces =
-        typeof process !== 'undefined' &&
+      const placesClientDirectFallbackEnabled =
         typeof __DEV__ !== 'undefined' &&
         __DEV__ &&
+        typeof process !== 'undefined' &&
         process.env.EXPO_PUBLIC_PLACES_CLIENT_FALLBACK === '1';
 
-      /** Prod: her zaman backend; dev'de yalnız FALLBACK=1 ile doğrudan Google/Nominatim. */
+      /** Prod / normal dev: backend; yalnızca __DEV__ + PLACES_CLIENT_FALLBACK=1 doğrudan Google+Nominatim. */
       const canUsePlacesBackend =
         typeof process !== 'undefined' &&
         String(API_BASE_URL || '').trim().length > 0 &&
-        !bypassBackendPlaces;
+        !placesClientDirectFallbackEnabled;
 
       let nominatimRateLimited = false;
       let usedPlacesBackendProxy = false;
@@ -1554,6 +1554,13 @@ export default function PlacesAutocomplete({
           if (biasLatitude != null && Number.isFinite(biasLatitude)) params.set('lat', String(biasLatitude));
           if (biasLongitude != null && Number.isFinite(biasLongitude)) params.set('lng', String(biasLongitude));
           const url = `${String(API_BASE_URL).replace(/\/$/, '')}/places/search?${params.toString()}`;
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            try {
+              console.log('[PlacesAutocomplete] TAG_PLACES_BACKEND_URL', JSON.stringify({ url, city: ct0 || null }));
+            } catch {
+              /* noop */
+            }
+          }
           const resp = await fetch(url, { signal });
           if (!matchesActivePlacesJob(requestId, searchedTrim)) {
             return;
@@ -1575,7 +1582,7 @@ export default function PlacesAutocomplete({
         }
       }
 
-      if (!usedPlacesBackendProxy) {
+      if (!usedPlacesBackendProxy && placesClientDirectFallbackEnabled) {
       let searchVariantsUncapped = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
       searchVariantsUncapped = prependCityQualifiedSearchVariants(
         input,
