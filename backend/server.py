@@ -7628,6 +7628,47 @@ async def register_driver(
         logger.error(f"Register driver error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def _normalize_kyc_vehicle_kinds_list(raw: Any) -> List[str]:
+    """approved_vehicle_kinds JSON dizisinden benzersiz car|motorcycle listesi."""
+    out: List[str] = []
+    if isinstance(raw, list):
+        for x in raw:
+            c = _canonical_vehicle_kind(x)
+            if c and c not in out:
+                out.append(c)
+    return out
+
+
+def _derive_legacy_single_approved_vehicle_kind(dd: dict) -> Optional[str]:
+    """Legacy tek onaylı tür: kyc_vehicle_kind -> vehicle_kind -> vehicle_type."""
+    for key in ("kyc_vehicle_kind", "vehicle_kind"):
+        c = _canonical_vehicle_kind(dd.get(key))
+        if c is not None:
+            return c
+    return _canonical_vehicle_type_legacy_optional(dd.get("vehicle_type"))
+
+
+def _kyc_approved_vehicle_kinds_from_details(dd: dict) -> List[str]:
+    """
+    Diskteki approved_vehicle_kinds veya (yalnızca kyc_status==approved iken) legacy tek alan türetmesi.
+    Pending ikinci başvuru: önceki onaylar approved_vehicle_kinds içinde saklanır (submit yazar).
+    """
+    norm = _normalize_kyc_vehicle_kinds_list(dd.get("approved_vehicle_kinds"))
+    if norm:
+        return norm
+    if dd.get("kyc_status") == "approved":
+        one = _derive_legacy_single_approved_vehicle_kind(dd)
+        return [one] if one else []
+    return []
+
+
+def _kyc_pending_vehicle_kind_from_details(dd: dict) -> Optional[str]:
+    return _canonical_vehicle_kind(dd.get("pending_vehicle_kind")) or _canonical_vehicle_kind(
+        dd.get("kyc_vehicle_kind")
+    )
+
+
 # ==================== SÜRÜCÜ KYC SİSTEMİ ====================
 
 class DriverKYCSubmit(BaseModel):
@@ -7678,18 +7719,25 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
         user = user_result.data[0]
-        
-        # driver_details'i güvenli al
-        driver_details = user.get("driver_details") or {}
-        
-        # Zaten onaylı sürücü mü?
-        if driver_details.get("kyc_status") == "approved":
-            return {"success": False, "message": "Zaten onaylı sürücüsünüz", "kyc_status": "approved"}
-        
-        # Bekleyen başvuru var mı?
-        if driver_details.get("kyc_status") == "pending":
-            return {"success": False, "message": "Başvurunuz inceleniyor", "kyc_status": "pending"}
-        
+
+        dd_in = _driver_details_as_dict(user)
+        requested_kind = "motorcycle" if is_motorcycle else "car"
+        approved_already = _kyc_approved_vehicle_kinds_from_details(dd_in)
+
+        if requested_kind in approved_already:
+            return {
+                "success": False,
+                "message": "Bu araç tipi için zaten onaylı sürücüsünüz.",
+                "kyc_status": dd_in.get("kyc_status") or "approved",
+            }
+
+        if dd_in.get("kyc_status") == "pending":
+            pk = _kyc_pending_vehicle_kind_from_details(dd_in)
+            if pk is None:
+                return {"success": False, "message": "Başvurunuz inceleniyor", "kyc_status": "pending"}
+            if pk == requested_kind:
+                return {"success": False, "message": "Başvurunuz inceleniyor", "kyc_status": "pending"}
+
         # Fotoğrafları Supabase Storage'a yükle
         license_photo_data = base64.b64decode(data.license_photo_base64.split(",")[-1] if "," in data.license_photo_base64 else data.license_photo_base64)
         
@@ -7737,10 +7785,13 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             _upload("vehicle-photos", selfie_filename, selfie_data)
             selfie_url = supabase.storage.from_("vehicle-photos").get_public_url(selfie_filename)
         
-        driver_details = user.get("driver_details") or {}
+        approved_saved = list(approved_already)
+
+        driver_details = dict(dd_in)
         driver_details.update({
-            "vehicle_kind": "motorcycle" if is_motorcycle else "car",
-            "kyc_vehicle_kind": "motorcycle" if is_motorcycle else "car",
+            "vehicle_kind": requested_kind,
+            "kyc_vehicle_kind": requested_kind,
+            "pending_vehicle_kind": requested_kind,
             "plate_number": (data.plate_number or "").strip().upper() if data.plate_number else None,
             "license_photo_url": license_url,
             "vehicle_brand": data.vehicle_brand,
@@ -7749,8 +7800,12 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             "vehicle_color": data.vehicle_color,
             "kyc_status": "pending",
             "kyc_submitted_at": datetime.utcnow().isoformat(),
-            "is_verified": False,
+            "is_verified": bool(approved_saved),
         })
+        if approved_saved:
+            driver_details["approved_vehicle_kinds"] = approved_saved
+        else:
+            driver_details.pop("approved_vehicle_kinds", None)
         if data.ai_status is not None and str(data.ai_status).strip():
             s = str(data.ai_status).strip().lower()[:16]
             if s in ("green", "yellow", "red"):
@@ -7792,7 +7847,14 @@ async def get_driver_kyc_status(user_id: str):
     try:
         result = supabase.table("users").select("phone, driver_details").eq("id", user_id).execute()
         if not result.data:
-            return {"kyc_status": "none", "is_driver": False, "vehicle_kind": "car", "passenger_preferred_vehicle": "car"}
+            return {
+                "kyc_status": "none",
+                "is_driver": False,
+                "vehicle_kind": "car",
+                "passenger_preferred_vehicle": "car",
+                "approved_vehicle_kinds": [],
+                "pending_vehicle_kind": None,
+            }
         
         user = result.data[0]
         phone = (user.get("phone") or "").replace("+90", "").replace(" ", "").replace("-", "")
@@ -7801,6 +7863,16 @@ async def get_driver_kyc_status(user_id: str):
             dd0 = _driver_details_as_dict(user)
             vk0 = _canonical_vehicle_kind(dd0.get("vehicle_kind"))
             pp0 = _canonical_vehicle_kind(dd0.get("passenger_preferred_vehicle"))
+            avk_admin = list(_normalize_kyc_vehicle_kinds_list(dd0.get("approved_vehicle_kinds")))
+            if not avk_admin and dd0.get("kyc_status") == "approved":
+                one_ad = _derive_legacy_single_approved_vehicle_kind(dd0)
+                if one_ad:
+                    avk_admin = [one_ad]
+            pv_ad = None
+            if dd0.get("kyc_status") == "pending":
+                pv_ad = _canonical_vehicle_kind(dd0.get("pending_vehicle_kind")) or _canonical_vehicle_kind(
+                    dd0.get("kyc_vehicle_kind")
+                )
             return {
                 "kyc_status": "approved",
                 "is_driver": True,
@@ -7809,6 +7881,8 @@ async def get_driver_kyc_status(user_id: str):
                 "submitted_at": None,
                 "vehicle_kind": vk0 or "car",
                 "passenger_preferred_vehicle": pp0 or "car",
+                "approved_vehicle_kinds": avk_admin,
+                "pending_vehicle_kind": pv_ad,
             }
         
         driver_details = _driver_details_as_dict(user)
@@ -7817,18 +7891,41 @@ async def get_driver_kyc_status(user_id: str):
         vk = _canonical_vehicle_kind(driver_details.get("vehicle_kind")) or "car"
         pp = _canonical_vehicle_kind(driver_details.get("passenger_preferred_vehicle")) or "car"
 
+        avk_list = list(_normalize_kyc_vehicle_kinds_list(driver_details.get("approved_vehicle_kinds")))
+        if not avk_list and kyc_status == "approved":
+            one = _derive_legacy_single_approved_vehicle_kind(driver_details)
+            if one:
+                avk_list = [one]
+
+        pending_vk_out: Optional[str] = None
+        if kyc_status == "pending":
+            pending_vk_out = _canonical_vehicle_kind(driver_details.get("pending_vehicle_kind")) or _canonical_vehicle_kind(
+                driver_details.get("kyc_vehicle_kind")
+            )
+
+        is_driver = bool(is_verified) and (kyc_status == "approved" or len(avk_list) > 0)
+
         return {
             "kyc_status": kyc_status,
-            "is_driver": kyc_status == "approved" and is_verified,
+            "is_driver": is_driver,
             "is_verified": is_verified,
             "rejection_reason": driver_details.get("kyc_rejection_reason"),
             "submitted_at": driver_details.get("kyc_submitted_at"),
             "vehicle_kind": vk,
             "passenger_preferred_vehicle": pp,
+            "approved_vehicle_kinds": avk_list,
+            "pending_vehicle_kind": pending_vk_out,
         }
     except Exception as e:
         logger.error(f"KYC status error: {e}")
-        return {"kyc_status": "none", "is_driver": False, "vehicle_kind": "car", "passenger_preferred_vehicle": "car"}
+        return {
+            "kyc_status": "none",
+            "is_driver": False,
+            "vehicle_kind": "car",
+            "passenger_preferred_vehicle": "car",
+            "approved_vehicle_kinds": [],
+            "pending_vehicle_kind": None,
+        }
 
 @api_router.get("/admin/kyc/pending")
 async def get_pending_kyc_requests(admin_phone: str):
@@ -7881,13 +7978,31 @@ async def approve_driver_kyc(admin_phone: str, user_id: str):
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
         user = result.data[0]
-        driver_details = user.get("driver_details") or {}
+        driver_details = _driver_details_as_dict(user)
+        if driver_details.get("kyc_status") != "pending":
+            raise HTTPException(status_code=400, detail="Bekleyen KYC başvurusu yok")
+
+        kind_to_add = (
+            _canonical_vehicle_kind(driver_details.get("pending_vehicle_kind"))
+            or _canonical_vehicle_kind(driver_details.get("kyc_vehicle_kind"))
+            or _canonical_vehicle_kind(driver_details.get("vehicle_kind"))
+            or "car"
+        )
+
+        avk = list(_normalize_kyc_vehicle_kinds_list(driver_details.get("approved_vehicle_kinds")))
+        if not avk:
+            avk = []
+        if kind_to_add not in avk:
+            avk.append(kind_to_add)
+
+        driver_details["approved_vehicle_kinds"] = avk
+        driver_details.pop("pending_vehicle_kind", None)
         driver_details.update({
             "kyc_status": "approved",
             "is_verified": True,
-            "kyc_approved_at": datetime.utcnow().isoformat()
+            "kyc_approved_at": datetime.utcnow().isoformat(),
         })
-        
+
         # Yeni kayıtlar: 2 ay ücretsiz (tüm onaylanan sürücülere)
         now = datetime.utcnow()
         active_until = (now + timedelta(days=60)).isoformat()
@@ -7931,14 +8046,26 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
         user = result.data[0]
-        driver_details = user.get("driver_details") or {}
-        driver_details.update({
-            "kyc_status": "rejected",
-            "is_verified": False,
-            "kyc_rejection_reason": reason,
-            "kyc_rejected_at": datetime.utcnow().isoformat()
-        })
-        
+        driver_details = _driver_details_as_dict(user)
+        if driver_details.get("kyc_status") != "pending":
+            raise HTTPException(status_code=400, detail="Bekleyen KYC başvurusu yok")
+
+        approved_remain = list(_normalize_kyc_vehicle_kinds_list(driver_details.get("approved_vehicle_kinds")))
+        if not approved_remain:
+            approved_remain = []
+
+        driver_details.pop("pending_vehicle_kind", None)
+        driver_details["kyc_rejection_reason"] = reason
+        driver_details["kyc_rejected_at"] = datetime.utcnow().isoformat()
+
+        if approved_remain:
+            driver_details["kyc_status"] = "approved"
+            driver_details["is_verified"] = True
+            driver_details["approved_vehicle_kinds"] = approved_remain
+        else:
+            driver_details["kyc_status"] = "rejected"
+            driver_details["is_verified"] = False
+
         supabase.table("users").update({
             "driver_details": driver_details,
             "updated_at": datetime.utcnow().isoformat()
@@ -7950,7 +8077,7 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
             try:
                 await send_push_notification(
                     user_id,
-                    "Sürücü başvurunuz reddedildi",
+                    "Ek sürücü başvurunuz reddedildi" if approved_remain else "Sürücü başvurunuz reddedildi",
                     (
                         f"Sebep: {str(reason)[:32]}… • Yeniden başvur"
                         if len(str(reason)) > 33

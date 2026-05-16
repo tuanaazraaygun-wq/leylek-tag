@@ -94,7 +94,7 @@ import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers'
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
-import { playMatchChimeSound } from '../utils/sound';
+import { playMatchChimeSound, playDriverNewOfferLuxuryTone, unloadDriverNewOfferLuxuryTone } from '../utils/sound';
 import { useLeylekZekaChrome, type LeylekZekaHomeFlowScreen } from '../contexts/LeylekZekaChromeContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -199,6 +199,23 @@ function _pickDriverVehicleKindForResume(loggedInUser: User, dTag: Record<string
   return 'car';
 }
 
+/** Car-only vb. için motor seçimi reddedildiğinde: KYC’ye motor ön seçimi ile yönlendir (yerel araç tipi yazılmaz). */
+function alertMotorVehicleRegistrationRequired(openMotorcycleKyc: () => void): void {
+  appAlert(
+    'Araç Kaydı Gerekli',
+    'Motor TAG tekliflerine erişebilmek için motor sürücü kaydınızı tamamlamanız gerekir.',
+    [
+      { text: 'Vazgeç', style: 'cancel' },
+      {
+        text: 'Motor Kaydı Oluştur',
+        style: 'default',
+        onPress: openMotorcycleKyc,
+      },
+    ],
+    { variant: 'info', cancelable: true },
+  );
+}
+
 /**
  * tryResumeActiveMatchSession kaçırırsa (ör. PIN sonrası user.role hâlâ passenger):
  * /driver/active-tag okunur — gerçekten sürücü aktif tag varsa dashboard’a alınır.
@@ -213,6 +230,7 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     setScreen: (s: AppScreen) => void;
     setRideVehicleKind: (v: 'car' | 'motorcycle') => void;
     requestLocationPermission?: () => Promise<boolean>;
+    openMotorcycleRegistrationFlow?: () => void;
   },
 ): Promise<boolean> {
   if (!loggedInUser?.id) {
@@ -284,6 +302,10 @@ async function tryDriverResumeFromActiveTagAfterPrimaryFailure(
     }
     const { data: setRideData } = await parseApiJson(setRideRes);
     if (!setRideRes.ok) {
+      if (vk === 'motorcycle' && setRideRes.status === 403 && deps.openMotorcycleRegistrationFlow) {
+        alertMotorVehicleRegistrationRequired(deps.openMotorcycleRegistrationFlow);
+        return false;
+      }
       appAlert(
         'Hata',
         apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
@@ -925,6 +947,10 @@ export default function App() {
   
   // KYC Status (Sürücü başvuru durumu)
   const [kycStatus, setKycStatus] = useState<{status: string; submitted_at: string | null} | null>(null);
+  /** Roller ekranından motor kaydı upgrade: KYC başlıkta motor akışı; persist edilmiş vehicle_kind yazılmaz. */
+  const [driverKycScreenVehicleKind, setDriverKycScreenVehicleKind] = useState<'car' | 'motorcycle' | null>(
+    null,
+  );
   
   // Animation for role selection
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -1601,6 +1627,10 @@ export default function App() {
                   setScreen,
                   setRideVehicleKind,
                   requestLocationPermission,
+                  openMotorcycleRegistrationFlow: () => {
+                    setDriverKycScreenVehicleKind('motorcycle');
+                    setScreen('driver-kyc');
+                  },
                 });
               } catch (e) {
                 console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
@@ -1790,6 +1820,10 @@ export default function App() {
           setScreen,
           setRideVehicleKind,
           requestLocationPermission,
+          openMotorcycleRegistrationFlow: () => {
+            setDriverKycScreenVehicleKind('motorcycle');
+            setScreen('driver-kyc');
+          },
         });
       } catch (e) {
         console.warn('TAG_DRIVER_RESUME_AFTER_LOGIN_ERROR', e);
@@ -3797,10 +3831,17 @@ export default function App() {
             }
             const { data: setRideData } = await parseApiJson(setRideRes);
             if (!setRideRes.ok) {
-              appAlert(
-                'Hata',
-                apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
-              );
+              if (rideVehicleKind === 'motorcycle' && setRideRes.status === 403) {
+                alertMotorVehicleRegistrationRequired(() => {
+                  setDriverKycScreenVehicleKind('motorcycle');
+                  setScreen('driver-kyc');
+                });
+              } else {
+                appAlert(
+                  'Hata',
+                  apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
+                );
+              }
               return;
             }
           } else {
@@ -3814,6 +3855,7 @@ export default function App() {
           
           if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
             if (user) await saveUser(mergeVehicleIntoUser(user));
+            setDriverKycScreenVehicleKind(null);
             setScreen('driver-kyc');
             return;
           } else if (kycData.kyc_status === 'pending') {
@@ -4881,12 +4923,17 @@ export default function App() {
         userId={user.id}
         userName={user.name || 'Kullanıcı'}
         vehicleKind={
-          (user.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind === 'motorcycle'
+          driverKycScreenVehicleKind ??
+          ((user.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind === 'motorcycle'
             ? 'motorcycle'
-            : 'car'
+            : 'car')
         }
-        onBack={() => setScreen('role-select')}
+        onBack={() => {
+          setDriverKycScreenVehicleKind(null);
+          setScreen('role-select');
+        }}
         onSuccess={() => {
+          setDriverKycScreenVehicleKind(null);
           appAlert(
             '✅ Başvuru Alındı',
             'Başvurunuz inceleniyor. Onaylandığında sürücü olarak giriş yapabilirsiniz.',
@@ -12911,6 +12958,42 @@ function DriverDashboard({
     };
   }, []);
 
+  const driverNewOfferSoundHydratedRef = useRef(false);
+  const driverNewOfferSoundSeenIdsRef = useRef<Set<string>>(new Set());
+  const driverPollOrderedIdsForSoundRef = useRef<string[]>([]);
+
+  const notifyDriverNewOfferSoundIfNeeded = useCallback((tagKey: string | null | undefined) => {
+    const id = String(tagKey || '').trim();
+    if (!id) return;
+    if (!driverNewOfferSoundHydratedRef.current) {
+      driverNewOfferSoundSeenIdsRef.current.add(id);
+      return;
+    }
+    if (driverNewOfferSoundSeenIdsRef.current.has(id)) return;
+    driverNewOfferSoundSeenIdsRef.current.add(id);
+    void playDriverNewOfferLuxuryTone();
+  }, []);
+
+  const finalizeDriverOfferPollSound = useCallback((orderedTagIds: string[]) => {
+    const uniq = [...new Set(orderedTagIds.filter(Boolean))];
+    if (!driverNewOfferSoundHydratedRef.current) {
+      uniq.forEach((tid) => driverNewOfferSoundSeenIdsRef.current.add(tid));
+      driverNewOfferSoundHydratedRef.current = true;
+      return;
+    }
+    for (const tid of uniq) {
+      if (!tid || driverNewOfferSoundSeenIdsRef.current.has(tid)) continue;
+      driverNewOfferSoundSeenIdsRef.current.add(tid);
+      void playDriverNewOfferLuxuryTone();
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      void unloadDriverNewOfferLuxuryTone();
+    };
+  }, []);
+
   /** Soft offer kaldırma: revoke/matched durumunda gecikme üst sınırı (30s değil). */
   function scheduleDriverOfferRemovalAfterMinVisible(
     tagId: string,
@@ -13150,6 +13233,7 @@ function DriverDashboard({
             : 'Hedef (haritada işaretli)');
         const tkm = Number(tag.distance_km);
         const tripK = Number.isFinite(tkm) && tkm > 0 ? tkm : null;
+        queueMicrotask(() => notifyDriverNewOfferSoundIfNeeded(tag.id));
         return [...prev, {
           id: tag.id,
           tag_id: tag.id,
@@ -13181,7 +13265,7 @@ function DriverDashboard({
     } catch (e) {
       console.warn('Teklif trip yüklenemedi:', e);
     }
-  }, [driverVehicleKind]);
+  }, [driverVehicleKind, notifyDriverNewOfferSoundIfNeeded]);
   
   const playMatchSound = () => {
     void playMatchChimeSound();
@@ -13764,6 +13848,7 @@ function DriverDashboard({
             /* noop */
           }
         }
+        queueMicrotask(() => notifyDriverNewOfferSoundIfNeeded(data.tag_id));
         return nextList;
       });
       
@@ -14813,6 +14898,7 @@ function DriverDashboard({
         /* noop */
       }
       driverDispatchProtectedTagIdsRef.current.add(String(data.tag_id || '').trim());
+      queueMicrotask(() => notifyDriverNewOfferSoundIfNeeded(data.tag_id));
       return merged;
       });
     } catch (e) {
@@ -15429,8 +15515,10 @@ function DriverDashboard({
         } catch {
           /* noop */
         }
+        driverPollOrderedIdsForSoundRef.current = [...orderedIds];
         return next;
       });
+      queueMicrotask(() => finalizeDriverOfferPollSound(driverPollOrderedIdsForSoundRef.current));
     } catch (e) {
       console.warn('driver/requests:', e);
     }
@@ -15822,6 +15910,7 @@ function DriverDashboard({
                   }
                 } else if (data.kyc_status === 'rejected') {
                   setKycStatus(null);
+                  setDriverKycScreenVehicleKind(null);
                   setScreen('driver-kyc');
                   if (Platform.OS === 'web') {
                     window.alert('❌ Başvurunuz reddedildi: ' + (data.rejection_reason || 'Belgeler uygun değil'));

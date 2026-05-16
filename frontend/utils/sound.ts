@@ -2,7 +2,7 @@
  * Küçük UI sesleri — expo-av ile uzak URI (APK / tüm platformlar).
  * index.tsx bu modülü import eder; dosya yoksa EAS bundle patlıyordu.
  */
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { Audio } from 'expo-av';
 
 const SOUND_URLS = {
@@ -14,6 +14,10 @@ const SOUND_URLS = {
 
 const MATCH_CHIME_VOLUME = 0.46;
 const MATCH_CHIME_DEBOUNCE_MS = 2800;
+
+/** Sürücü — yeni TAG / istek ön planda yumuşak bildirim */
+const DRIVER_NEW_OFFER_VOLUME = 0.38;
+const DRIVER_NEW_OFFER_COOLDOWN_MS = 1000;
 
 let matchChimeLoadPromise: Promise<Audio.Sound | null> | null = null;
 let lastMatchChimeAt = 0;
@@ -110,5 +114,72 @@ export async function playMatchChimeSound(): Promise<void> {
     await sound.playAsync();
   } catch (e) {
     if (__DEV__) console.warn('playMatchChimeSound', e);
+  }
+}
+
+let driverOfferLuxurySound: Audio.Sound | null = null;
+let driverOfferLuxuryLoadPromise: Promise<Audio.Sound | null> | null = null;
+let lastDriverOfferLuxuryAt = 0;
+
+async function ensureDriverOfferLuxuryLoaded(): Promise<Audio.Sound | null> {
+  if (Platform.OS === 'web') return null;
+  if (!driverOfferLuxuryLoadPromise) {
+    driverOfferLuxuryLoadPromise = (async (): Promise<Audio.Sound | null> => {
+      try {
+        await loadSounds();
+        const { sound } = await Audio.Sound.createAsync(
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require('../assets/sounds/leylektag-luxury-tone.wav'),
+          {
+            shouldPlay: false,
+            volume: DRIVER_NEW_OFFER_VOLUME,
+            isLooping: false,
+          },
+        );
+        driverOfferLuxurySound = sound;
+        return sound;
+      } catch (e) {
+        if (__DEV__) console.warn('utils/sound driver-offer luxury wav', e);
+        driverOfferLuxuryLoadPromise = null;
+        return null;
+      }
+    })();
+  }
+  return driverOfferLuxuryLoadPromise;
+}
+
+/**
+ * Sürücü paneli — yeni talep/teklif (foreground). Çift tetik ve çakışma için cooldown.
+ */
+export async function playDriverNewOfferLuxuryTone(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  const now = Date.now();
+  if (now - lastDriverOfferLuxuryAt < DRIVER_NEW_OFFER_COOLDOWN_MS) return;
+  try {
+    await loadSounds();
+    const sound = await ensureDriverOfferLuxuryLoaded();
+    if (!sound) return;
+    lastDriverOfferLuxuryAt = now;
+    await sound.setVolumeAsync(DRIVER_NEW_OFFER_VOLUME);
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+  } catch (e) {
+    if (__DEV__) console.warn('playDriverNewOfferLuxuryTone', e);
+  }
+}
+
+/** DriverDashboard unmount — ses nesnesini boşalt */
+export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
+  driverOfferLuxuryLoadPromise = null;
+  lastDriverOfferLuxuryAt = 0;
+  const s = driverOfferLuxurySound;
+  driverOfferLuxurySound = null;
+  if (!s) return;
+  try {
+    await s.stopAsync();
+    await s.unloadAsync();
+  } catch {
+    /* ignore */
   }
 }

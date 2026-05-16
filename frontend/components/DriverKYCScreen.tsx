@@ -2037,6 +2037,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     fontSize: 16,
+    color: '#111827',
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
@@ -2170,6 +2171,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
     fontSize: 16,
+    color: '#111827',
   },
   listItem: {
     flexDirection: 'row',
