@@ -7596,6 +7596,12 @@ const BOARDING_STATE_MAX_ATTEMPTS = 8;
 /** Normal TAG yolcu: socket/poll ile matched — overlay yalnız bu önceki status’tan `matched`’e geçişte */
 const PASSENGER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
 
+/** Yolcu adres araması: ters geokod sıklığını düşürmek için ~110m grid */
+function roundPassengerGpsCoordForSearch(n: number | undefined): number | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ 
   user, 
@@ -7943,10 +7949,22 @@ function PassengerDashboard({
   const DESTINATION_PICKER_SEARCH_DELTA = 0.11;
   /** Pin / mahalle seçim sonrası yakın zoom (initialRegion + animateToRegion ile aynı) */
   const DESTINATION_PICKER_PIN_DELTA = 0.026;
-  /** Adres önerileri: profil şehri; yoksa konumdan ters geokod */
+  /** Kayıtlı şehir (GPS kapsayıcısı yokken adres araması fallback) — GPS ile ezilmez */
   const [passengerSearchCityLabel, setPassengerSearchCityLabel] = useState(() =>
     (user?.city && String(user.city).trim()) || '',
   );
+  /** Anlık konumdan nominatim ters geokod; arama şehir kapsamı için user.city yerine kullanılır */
+  const [passengerGpsCityLabel, setPassengerGpsCityLabel] = useState('');
+  const passengerGpsRgGenRef = useRef(0);
+  const passengerAddressSearchCityScope = useMemo(() => {
+    const g = passengerGpsCityLabel.trim();
+    if (g) return g;
+    const r = passengerSearchCityLabel.trim();
+    if (r) return r;
+    return (user?.city && String(user.city).trim()) || '';
+  }, [passengerGpsCityLabel, passengerSearchCityLabel, user?.city]);
+  const passengerRevGeoLatKey = roundPassengerGpsCoordForSearch(userLocation?.latitude);
+  const passengerRevGeoLngKey = roundPassengerGpsCoordForSearch(userLocation?.longitude);
   const passengerDestinationAutoOpenedRef = useRef(false);
   const prevHadActiveTagRef = useRef(!!activeTag);
   const prevPaxUserLocRef = useRef<{ lat: number | undefined; lng: number | undefined }>({
@@ -7956,8 +7974,13 @@ function PassengerDashboard({
 
   useEffect(() => {
     const c = user?.city && String(user.city).trim();
-    if (c) setPassengerSearchCityLabel(c);
-  }, [user?.city]);
+    if (!c) {
+      setPassengerSearchCityLabel('');
+      return;
+    }
+    if (passengerGpsCityLabel.trim()) return;
+    setPassengerSearchCityLabel(c);
+  }, [user?.city, passengerGpsCityLabel]);
 
   useEffect(() => {
     const lat = userLocation?.latitude;
@@ -7972,28 +7995,51 @@ function PassengerDashboard({
   }, [userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
-    if (user?.city?.trim() || !userLocation?.latitude || !userLocation?.longitude) return;
+    const lat = userLocation?.latitude;
+    const lng = userLocation?.longitude;
+    if (
+      lat == null ||
+      lng == null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      passengerRevGeoLatKey == null ||
+      passengerRevGeoLngKey == null
+    ) {
+      setPassengerGpsCityLabel('');
+      return;
+    }
+    const gen = ++passengerGpsRgGenRef.current;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         if (__DEV__) {
-          console.log('TAG_PAX_REVERSE_GEOCODE_START', { has_coords: true });
+          console.log('TAG_PAX_REVERSE_GEOCODE_START', {
+            lat_grid: passengerRevGeoLatKey,
+            lng_grid: passengerRevGeoLngKey,
+          });
         }
-        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.latitude}&lon=${userLocation.longitude}&accept-language=tr&addressdetails=1`;
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=tr&addressdetails=1`;
         const r = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
         const j = await r.json();
+        if (cancelled || gen !== passengerGpsRgGenRef.current) return;
         const a = j?.address;
         const city =
           a?.city || a?.town || a?.municipality || a?.county || a?.province || a?.state;
-        if (!cancelled && city) setPassengerSearchCityLabel(String(city));
+        if (typeof city === 'string' && city.trim()) {
+          setPassengerGpsCityLabel(city.trim());
+        } else {
+          setPassengerGpsCityLabel('');
+        }
       } catch {
-        /* sessiz */
+        if (!cancelled && gen === passengerGpsRgGenRef.current) {
+          setPassengerGpsCityLabel('');
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.city, userLocation?.latitude, userLocation?.longitude]);
+  }, [passengerRevGeoLatKey, passengerRevGeoLngKey]);
 
   useEffect(() => {
     if (prevHadActiveTagRef.current && !activeTag) {
@@ -10869,9 +10915,7 @@ function PassengerDashboard({
     if (showDestinationPicker) {
       setDestinationPickerGeocoding(false);
       __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
-      const cityLL = getRegisteredCityCenter(
-        (passengerSearchCityLabel || user?.city || '').trim(),
-      );
+      const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
       const lat =
         userLocation?.latitude ??
         destination?.latitude ??
@@ -10892,8 +10936,7 @@ function PassengerDashboard({
     userLocation?.longitude,
     destination?.latitude,
     destination?.longitude,
-    passengerSearchCityLabel,
-    user?.city,
+    passengerAddressSearchCityScope,
   ]);
 
   useEffect(() => {
@@ -11003,9 +11046,7 @@ function PassengerDashboard({
   };
 
   __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
-  const destinationPickerCityLLResolved = getRegisteredCityCenter(
-    (passengerSearchCityLabel || user?.city || '').trim(),
-  );
+  const destinationPickerCityLLResolved = getRegisteredCityCenter(passengerAddressSearchCityScope);
   const destinationPickerMapLatResolved =
     destinationPickerPin?.latitude ??
     userLocation?.latitude ??
@@ -12440,17 +12481,17 @@ function PassengerDashboard({
                       <PlacesAutocomplete
                         key={destinationPickerAutocompleteMountKey}
                         placeholder="Mahalle, sokak, mekan ara…"
-                        city={passengerSearchCityLabel || user?.city || ''}
+                        city={passengerAddressSearchCityScope}
                         hidePopularChips
                         visualVariant="tech"
                         suggestionsFirst
-                        strictCityBounds={!!(passengerSearchCityLabel || user?.city || '').trim()}
+                        strictCityBounds={!!passengerAddressSearchCityScope.trim()}
                         biasLatitude={userLocation?.latitude}
                         biasLongitude={userLocation?.longitude}
                         biasDeltaDeg={0.22}
                         inputSize="large"
                         predictionMaxHeightBonus={56}
-                        forceCityInSearch={!!(passengerSearchCityLabel || user?.city || '').trim()}
+                        forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
                         replayOnBiasChange
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
                       />
