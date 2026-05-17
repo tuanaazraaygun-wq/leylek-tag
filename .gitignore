@@ -171,3 +171,4 @@ website/node_modules/
 website/.next/
 website/node_modules/
 backup_mongodb.json
+frontend/android/app/leylektag-release.keystore
