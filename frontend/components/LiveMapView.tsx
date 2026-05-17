@@ -5382,7 +5382,13 @@ export default function LiveMapView({
                   }
                 : driverNavActive
                 ? { top: 270, right: 12, bottom: 300, left: 12 }
-                : { top: 200, right: 14, bottom: 268, left: 14 }
+                : {
+                    top: 200,
+                    right: 14,
+                    bottom:
+                      268 + (!isDriver ? Math.max(insets.bottom, 0) : 0),
+                    left: 14,
+                  }
           }
           followsUserLocation={false}
           showsUserLocation={false}
@@ -6186,7 +6192,12 @@ export default function LiveMapView({
 
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
-        <View style={styles.bottomGradient}>
+        <View
+          style={[
+            styles.bottomGradient,
+            !driverRideUiModern ? { paddingBottom: 18 + Math.max(insets.bottom, 0) } : null,
+          ]}
+        >
           {driverRideUiModern ? (
             <View
               style={[
@@ -6442,7 +6453,7 @@ export default function LiveMapView({
                   </Animated.View>
                 )}
                 <View style={styles.tripCallGuvenRow}>
-                  <View style={styles.tripCallChatCluster}>
+                  <View style={styles.tripCallFabSlot} pointerEvents="box-none">
                     <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
                       <TouchableOpacity
                         style={[
@@ -6467,6 +6478,8 @@ export default function LiveMapView({
                         )}
                       </TouchableOpacity>
                     </Animated.View>
+                  </View>
+                  <View style={styles.tripCallChatMid}>
                     {onChat ? (
                       <TouchableOpacity
                         style={[styles.tripInlineChatBtn, boardingConfirmed && { opacity: 0.45 }]}
@@ -6952,8 +6965,14 @@ const mapStyle = [
 ];
 
 const styles = StyleSheet.create({
-  container: { flex: 1, position: 'relative' },
-  
+  container: {
+    flex: 1,
+    position: 'relative',
+    width: '100%',
+    minHeight: 0,
+    overflow: 'hidden',
+  },
+
   // 🆕 Bulutlu Arkaplan - Sadece üst kısım
   cloudBackground: {
     position: 'absolute',
@@ -6975,6 +6994,7 @@ const styles = StyleSheet.create({
   
   mapSlot: {
     flex: 1,
+    minHeight: 0,
     position: 'relative',
   },
   map: { flex: 1 },
@@ -7268,23 +7288,30 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 2,
   },
+  /** Üst aksiyon: sol sabit Ara, orta esnek Yaz, sağ sabit Güven AL */
   tripCallGuvenRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    width: '100%',
     marginTop: 8,
   },
-  tripCallChatCluster: {
-    flexDirection: 'row',
+  tripCallFabSlot: {
+    width: 52,
     alignItems: 'center',
-    gap: 10,
-    flexShrink: 1,
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  tripCallChatMid: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 6,
+    justifyContent: 'center',
   },
   tripInlineChatBtn: {
     borderRadius: 14,
     overflow: 'hidden',
-    maxWidth: SCREEN_WIDTH * 0.48,
-    flexShrink: 1,
+    alignSelf: 'stretch',
+    width: '100%',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.22)',
     shadowColor: '#0f172a',
@@ -7309,10 +7336,12 @@ const styles = StyleSheet.create({
   },
   tripGuvenMirrorWrap: {
     marginTop: -4,
+    flexShrink: 0,
   },
   tripGuvenMirrorSpacer: {
     width: 48,
     height: 48,
+    flexShrink: 0,
   },
   tripActionBarRow: {
     flexDirection: 'row',
@@ -7902,7 +7931,14 @@ const styles = StyleSheet.create({
   },
   
   // Bottom Panel
-  bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
+  bottomPanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    elevation: 28,
+  },
   bottomGradient: {
     paddingHorizontal: 16,
     paddingTop: 12,

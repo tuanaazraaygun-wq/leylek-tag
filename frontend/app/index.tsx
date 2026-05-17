@@ -11307,416 +11307,15 @@ function PassengerDashboard({
       
       {/* Üst Header - KALDIRILDI - TAM EKRAN */}
       
-      <ScrollView 
-        style={styles.contentFullScreen}
-        contentContainerStyle={styles.passengerHomeScrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {!activeTag ? (
-          <View style={styles.emptyStateContainerFull}>
-            {/* Geri ve Çıkış Butonları */}
-            <View style={styles.fullScreenTopBar}>
-              <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={styles.fullScreenBackBtn}>
-                <Ionicons name="chevron-back" size={26} color="#3FA9F5" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { playTapSound(); logout(); }} style={styles.fullScreenLogoutBtn}>
-                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-            
-            {/* Nereye Gitmek İstiyorsunuz - EN ÜSTTE, leyleklerin üstünde */}
-            <Text style={styles.welcomeQuestionVeryTop}>Nereye Gitmek İstiyorsunuz?</Text>
-            
-            {/* Kişi Adı - Leyleklerin arasında */}
-            <Text style={styles.welcomeNameBetweenStorks}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
-            
-            {/* Hedef Seçme Alanı - DAHA BÜYÜK VE EFEKTLİ */}
-            <TouchableOpacity
-              style={styles.destinationBoxBig}
-              onPress={() => {
-                playTapSound();
-                setShowDestinationPicker(true);
-                setShowArrowHint(false);
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.destinationIconBig}>
-                <Ionicons name="navigate" size={32} color="#FFF" />
-              </View>
-              <Text
-                style={styles.destinationTextBig}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {destination ? destination.address : 'Hedef Seçin'}
-              </Text>
-              <View style={styles.destinationArrowBig}>
-                <Ionicons name="arrow-forward" size={24} color="#FFF" />
-              </View>
-            </TouchableOpacity>
-
-            {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
-            {showArrowHint && (
-              <View style={styles.arrowHintSky}>
-                <Text style={styles.arrowTextSky}>☝️ Önce hedef seçin!</Text>
-              </View>
-            )}
-            
-            <AnimatedPulseButton 
-              onPress={handleCallButton} 
-              loading={loading || priceLoading}
-              disabled={!destination}
-            />
-            
-            {/* 🆕 MARTI TAG - Fiyat Teklif Modal */}
-            <Modal
-              visible={showPriceModal}
-              transparent={true}
-              animationType="slide"
-              onRequestClose={() => {
-                if (!offerSendSubmitting) setShowPriceModal(false);
-              }}
-            >
-              <View style={styles.priceModalOverlay}>
-                <View
-                  style={[styles.priceModalContent, { maxHeight: priceModalSheetMaxHeight }]}
-                >
-                  <Text style={styles.priceModalTitle}>Fiyat teklifiniz</Text>
-
-                  {priceInfo && (
-                    <>
-                      <ScrollView
-                        style={{ maxHeight: priceModalScrollMaxHeight }}
-                        contentContainerStyle={styles.priceModalScrollInner}
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator={false}
-                      >
-                        <Text style={styles.priceModalVehicleSectionTitle}>
-                          Bu teklif için araç türü
-                        </Text>
-                        <Text style={styles.priceModalVehicleHint}>
-                          Araç türünüzü seçin, teklifinizi belirleyin.
-                        </Text>
-                        <View style={styles.priceModalVehicleChipsRow}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              void tapButtonHaptic();
-                              setRideVehiclePreference('car');
-                              void recalcPrice('car');
-                            }}
-                            style={[
-                              styles.priceModalVehicleChip,
-                              rideVehiclePreference === 'car' && styles.priceModalVehicleChipCarActive,
-                            ]}
-                            activeOpacity={0.88}
-                          >
-                            <MaterialCommunityIcons
-                              name="car-side"
-                              size={22}
-                              color={rideVehiclePreference === 'car' ? '#FFF' : '#1D4ED8'}
-                            />
-                            <Text
-                              style={[
-                                styles.priceModalVehicleChipText,
-                                rideVehiclePreference === 'car' && styles.priceModalVehicleChipTextActive,
-                              ]}
-                            >
-                              Araç
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              void tapButtonHaptic();
-                              setRideVehiclePreference('motorcycle');
-                              void recalcPrice('motorcycle');
-                            }}
-                            style={[
-                              styles.priceModalVehicleChip,
-                              rideVehiclePreference === 'motorcycle' &&
-                                styles.priceModalVehicleChipMotorActive,
-                            ]}
-                            activeOpacity={0.88}
-                          >
-                            <MaterialCommunityIcons
-                              name="motorbike"
-                              size={22}
-                              color={rideVehiclePreference === 'motorcycle' ? '#FFF' : '#6D28D9'}
-                            />
-                            <Text
-                              style={[
-                                styles.priceModalVehicleChipText,
-                                rideVehiclePreference === 'motorcycle' &&
-                                  styles.priceModalVehicleChipTextActive,
-                              ]}
-                            >
-                              Motor
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-
-                        <Text style={styles.priceModalTripCompact}>
-                          {priceInfo.distance_km} km • {priceInfo.estimated_minutes} dk
-                        </Text>
-                        {priceInfo.is_peak_hour && (
-                          <View style={styles.peakHourBadge}>
-                            <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
-                          </View>
-                        )}
-
-                        <View style={styles.priceRangeContainer}>
-                          <Text style={styles.priceRangeSingle}>
-                            Önerilen aralık: {priceInfo.min_price} - {priceInfo.max_price} TL
-                          </Text>
-                        </View>
-
-                        <View style={styles.selectedPriceContainer}>
-                          <Text style={styles.selectedPriceLabel}>Teklifiniz:</Text>
-                          <Text
-                            style={[
-                              styles.selectedPriceValue,
-                              { fontSize: priceModalHeroFontSize },
-                            ]}
-                          >
-                            {selectedPrice} TL
-                          </Text>
-                        </View>
-
-                        <View style={styles.sliderContainer}>
-                          <TouchableOpacity
-                            style={styles.sliderButton}
-                            onPress={() => {
-                              void tapButtonHaptic();
-                              setSelectedPrice(
-                                Math.max(priceInfo.min_price, selectedPrice - 10),
-                              );
-                            }}
-                          >
-                            <Text style={styles.sliderButtonText}>-10</Text>
-                          </TouchableOpacity>
-
-                          <View style={styles.sliderTrack}>
-                            <View
-                              style={[
-                                styles.sliderFill,
-                                {
-                                  width: `${
-                                    priceInfo.max_price > priceInfo.min_price
-                                      ? Math.max(
-                                          0,
-                                          Math.min(
-                                            100,
-                                            ((selectedPrice - priceInfo.min_price) /
-                                              (priceInfo.max_price - priceInfo.min_price)) *
-                                              100,
-                                          ),
-                                        )
-                                      : 100
-                                  }%`,
-                                },
-                              ]}
-                            />
-                          </View>
-
-                          <TouchableOpacity
-                            style={styles.sliderButton}
-                            onPress={() => {
-                              void tapButtonHaptic();
-                              setSelectedPrice(
-                                Math.min(priceInfo.max_price, selectedPrice + 10),
-                              );
-                            }}
-                          >
-                            <Text style={styles.sliderButtonText}>+10</Text>
-                          </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.priceModalPayScrollHint}>
-                          <Ionicons name="chevron-down" size={16} color="#64748B" />
-                          <Text style={styles.priceModalPayScrollHintText}>
-                            Ödeme yöntemini görmek için aşağı kaydırın
-                          </Text>
-                        </View>
-
-                        <View style={styles.priceModalPayLockHeader}>
-                          <Ionicons name="lock-closed-outline" size={18} color="#334155" />
-                          <Text style={styles.priceModalPayLockTitle}>Ödeme yöntemi</Text>
-                        </View>
-                        <Text style={styles.priceModalPaySubtitle}>
-                          Sürücü yolculuk sonunda tahsil eder
-                        </Text>
-
-                        <TouchableOpacity
-                          onPress={() => {
-                            void tapButtonHaptic();
-                            priceOfferPaymentExplicitRef.current = true;
-                          }}
-                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash]}
-                          activeOpacity={0.88}
-                        >
-                          <View style={styles.priceModalPayOptionLeft}>
-                            <Ionicons name="wallet-outline" size={22} color="#2563EB" />
-                          </View>
-                          <View style={styles.priceModalPayOptionBody}>
-                            <View style={styles.priceModalPayOptionTitleRow}>
-                              <Text style={styles.priceModalPayOptionTitle}>Nakit</Text>
-                              <View style={styles.priceModalPayBadgeRecommended}>
-                                <Text style={styles.priceModalPayBadgeRecommendedText}>Önerilen</Text>
-                              </View>
-                            </View>
-                            <Text style={styles.priceModalPayOptionDesc}>
-                              Yolculuk sonunda sürücüye nakit ödeme yaparsınız.
-                            </Text>
-                          </View>
-                          <View style={styles.priceModalPayRadioOuterActive}>
-                            <View style={styles.priceModalPayRadioInnerActive} />
-                          </View>
-                        </TouchableOpacity>
-
-                        <View
-                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardDisabled]}
-                          accessibilityState={{ disabled: true }}
-                        >
-                          <View style={styles.priceModalPayOptionLeft}>
-                            <Ionicons name="card-outline" size={22} color="#94A3B8" />
-                          </View>
-                          <View style={styles.priceModalPayOptionBody}>
-                            <View style={styles.priceModalPayOptionTitleRow}>
-                              <Text style={styles.priceModalPayOptionTitleMuted}>Kart ile Öde</Text>
-                              <View style={styles.priceModalPayBadgeSoon}>
-                                <Text style={styles.priceModalPayBadgeSoonText}>Yakında</Text>
-                              </View>
-                            </View>
-                            <Text style={styles.priceModalPayOptionDesc}>
-                              Güvenli kart ödemesi kısa süre içinde aktif olacak.
-                            </Text>
-                          </View>
-                          <View style={styles.priceModalPayRadioOuterMuted}>
-                            <View style={styles.priceModalPayRadioInnerMuted} />
-                          </View>
-                        </View>
-
-                        <View style={styles.priceModalPayDefaultNote}>
-                          <Ionicons name="information-circle-outline" size={17} color="#64748B" />
-                          <Text style={styles.priceModalPayDefaultNoteText}>
-                            Herhangi bir seçim yapmazsanız varsayılan olarak Nakit seçeneği kullanılacaktır.
-                          </Text>
-                        </View>
-                      </ScrollView>
-
-                      <View style={[styles.priceModalFooter, { paddingBottom: Math.max(12, insets.bottom) }]}>
-                        <View style={styles.priceModalButtons}>
-                          <TouchableOpacity
-                            style={styles.priceModalCancelButton}
-                            disabled={offerSendSubmitting}
-                            onPress={() => {
-                              if (offerSendSubmitting) return;
-                              void tapButtonHaptic();
-                              setShowPriceModal(false);
-                            }}
-                          >
-                            <Text style={styles.priceModalCancelText}>İptal</Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[styles.priceModalSendWrap, offerSendSubmitting && styles.priceModalSendWrapDisabled]}
-                            activeOpacity={offerSendSubmitting ? 1 : 0.88}
-                            disabled={offerSendSubmitting}
-                            onPress={() => {
-                              if (offerSendSubmitting) return;
-                              void tapButtonHaptic();
-                              handlePriceOfferSendPress();
-                            }}
-                          >
-                            <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
-                              <LinearGradient
-                                colors={
-                                  offerSendSubmitting
-                                    ? ['#94A3B8', '#64748B']
-                                    : ['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']
-                                }
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.priceModalSendGradient}
-                              >
-                                <MaterialCommunityIcons
-                                  name="rocket-launch-outline"
-                                  size={28}
-                                  color="#FFF"
-                                />
-                                <Text
-                                  maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE}
-                                  style={styles.priceModalSendTextLarge}
-                                >
-                                  {offerSendSubmitting ? 'Gönderiliyor...' : 'Teklif Gönder'}
-                                </Text>
-                              </LinearGradient>
-                            </Animated.View>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </>
-                  )}
-                </View>
-              </View>
-            </Modal>
-
-            <Modal
-              visible={priceOfferPaymentWarnVisible}
-              transparent
-              animationType="fade"
-              onRequestClose={() => {
-                if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
-              }}
-            >
-              <View style={styles.priceOfferPaymentWarnOverlay}>
-                <TouchableOpacity
-                  style={StyleSheet.absoluteFill}
-                  activeOpacity={1}
-                  onPress={() => {
-                    if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
-                  }}
-                />
-                <View style={styles.priceOfferPaymentWarnCard}>
-                  <Ionicons
-                    name="warning"
-                    size={40}
-                    color="#CA8A04"
-                    style={{ alignSelf: 'center', marginBottom: 10 }}
-                  />
-                  <Text style={styles.priceOfferPaymentWarnTitle}>Ödeme yöntemi seçilmedi</Text>
-                  <Text style={styles.priceOfferPaymentWarnBody}>
-                    Herhangi bir yöntem seçmezseniz yolculuk sonunda varsayılan olarak Nakit ile ödeme
-                    yapılacaktır.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.priceOfferPaymentWarnPrimary}
-                    activeOpacity={0.88}
-                    disabled={offerSendSubmitting}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      setPriceOfferPaymentWarnVisible(false);
-                      void submitPassengerPriceOfferCore();
-                    }}
-                  >
-                    <Text style={styles.priceOfferPaymentWarnPrimaryText}>Tamam, devam et</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.priceOfferPaymentWarnSecondary}
-                    activeOpacity={0.88}
-                    disabled={offerSendSubmitting}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      setPriceOfferPaymentWarnVisible(false);
-                    }}
-                  >
-                    <Text style={styles.priceOfferPaymentWarnSecondaryText}>Geri dön, seçim yap</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-          </View>
-        ) : null}
-
+      {activeTag ? (
+        <View
+          style={{
+            flex: 1,
+            minHeight: 0,
+            width: '100%',
+            overflow: 'hidden',
+          }}
+        >
             {/* CANLI HARİTA - Tam Ekran (Yolcu) - SADECE MATCHED/IN_PROGRESS'DE */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
@@ -11877,18 +11476,15 @@ function PassengerDashboard({
                     trip_distance_km: activeTag?.trip_distance_km ?? activeTag?.distance_km ?? null,
                     trip_duration_min: activeTag?.trip_duration_min ?? activeTag?.estimated_minutes ?? null,
                   }}
-                  otherUserDetails={otherUserDetails || undefined}
-                  onShowQRModal={() => setShowQRModal(true)}
-                  onShowBoardingScanModal={() => setPassengerBoardingScanVisible(true)}
                   onCall={async (type) => {
                     await startTripCallAsPassenger(type);
                   }}
                   voiceCallPending={calling}
+                  trustRequestDisabled={passengerTrustGuvenButtonDisabled}
+                  trustRequestPending={trustOutgoingPending}
                   onTrustRequest={() => {
                     void sendPassengerTrustRequest();
                   }}
-                  trustRequestDisabled={passengerTrustGuvenButtonDisabled}
-                  trustRequestPending={trustOutgoingPending}
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
                     setPassengerChatVisible(true);
@@ -12459,7 +12055,419 @@ function PassengerDashboard({
                 />
               </View>
             ) : null}
+        </View>
+      ) : (
+      <ScrollView 
+        style={styles.contentFullScreen}
+        contentContainerStyle={styles.passengerHomeScrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {!activeTag ? (
+          <View style={styles.emptyStateContainerFull}>
+            {/* Geri ve Çıkış Butonları */}
+            <View style={styles.fullScreenTopBar}>
+              <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={styles.fullScreenBackBtn}>
+                <Ionicons name="chevron-back" size={26} color="#3FA9F5" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { playTapSound(); logout(); }} style={styles.fullScreenLogoutBtn}>
+                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Nereye Gitmek İstiyorsunuz - EN ÜSTTE, leyleklerin üstünde */}
+            <Text style={styles.welcomeQuestionVeryTop}>Nereye Gitmek İstiyorsunuz?</Text>
+            
+            {/* Kişi Adı - Leyleklerin arasında */}
+            <Text style={styles.welcomeNameBetweenStorks}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
+            
+            {/* Hedef Seçme Alanı - DAHA BÜYÜK VE EFEKTLİ */}
+            <TouchableOpacity
+              style={styles.destinationBoxBig}
+              onPress={() => {
+                playTapSound();
+                setShowDestinationPicker(true);
+                setShowArrowHint(false);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.destinationIconBig}>
+                <Ionicons name="navigate" size={32} color="#FFF" />
+              </View>
+              <Text
+                style={styles.destinationTextBig}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {destination ? destination.address : 'Hedef Seçin'}
+              </Text>
+              <View style={styles.destinationArrowBig}>
+                <Ionicons name="arrow-forward" size={24} color="#FFF" />
+              </View>
+            </TouchableOpacity>
+
+            {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
+            {showArrowHint && (
+              <View style={styles.arrowHintSky}>
+                <Text style={styles.arrowTextSky}>☝️ Önce hedef seçin!</Text>
+              </View>
+            )}
+            
+            <AnimatedPulseButton 
+              onPress={handleCallButton} 
+              loading={loading || priceLoading}
+              disabled={!destination}
+            />
+            
+            {/* 🆕 MARTI TAG - Fiyat Teklif Modal */}
+            <Modal
+              visible={showPriceModal}
+              transparent={true}
+              animationType="slide"
+              onRequestClose={() => {
+                if (!offerSendSubmitting) setShowPriceModal(false);
+              }}
+            >
+              <View style={styles.priceModalOverlay}>
+                <View
+                  style={[styles.priceModalContent, { maxHeight: priceModalSheetMaxHeight }]}
+                >
+                  <Text style={styles.priceModalTitle}>Fiyat teklifiniz</Text>
+
+                  {priceInfo && (
+                    <>
+                      <ScrollView
+                        style={{ maxHeight: priceModalScrollMaxHeight }}
+                        contentContainerStyle={styles.priceModalScrollInner}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                      >
+                        <Text style={styles.priceModalVehicleSectionTitle}>
+                          Bu teklif için araç türü
+                        </Text>
+                        <Text style={styles.priceModalVehicleHint}>
+                          Araç türünüzü seçin, teklifinizi belirleyin.
+                        </Text>
+                        <View style={styles.priceModalVehicleChipsRow}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setRideVehiclePreference('car');
+                              void recalcPrice('car');
+                            }}
+                            style={[
+                              styles.priceModalVehicleChip,
+                              rideVehiclePreference === 'car' && styles.priceModalVehicleChipCarActive,
+                            ]}
+                            activeOpacity={0.88}
+                          >
+                            <MaterialCommunityIcons
+                              name="car-side"
+                              size={22}
+                              color={rideVehiclePreference === 'car' ? '#FFF' : '#1D4ED8'}
+                            />
+                            <Text
+                              style={[
+                                styles.priceModalVehicleChipText,
+                                rideVehiclePreference === 'car' && styles.priceModalVehicleChipTextActive,
+                              ]}
+                            >
+                              Araç
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setRideVehiclePreference('motorcycle');
+                              void recalcPrice('motorcycle');
+                            }}
+                            style={[
+                              styles.priceModalVehicleChip,
+                              rideVehiclePreference === 'motorcycle' &&
+                                styles.priceModalVehicleChipMotorActive,
+                            ]}
+                            activeOpacity={0.88}
+                          >
+                            <MaterialCommunityIcons
+                              name="motorbike"
+                              size={22}
+                              color={rideVehiclePreference === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                            />
+                            <Text
+                              style={[
+                                styles.priceModalVehicleChipText,
+                                rideVehiclePreference === 'motorcycle' &&
+                                  styles.priceModalVehicleChipTextActive,
+                              ]}
+                            >
+                              Motor
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.priceModalTripCompact}>
+                          {priceInfo.distance_km} km • {priceInfo.estimated_minutes} dk
+                        </Text>
+                        {priceInfo.is_peak_hour && (
+                          <View style={styles.peakHourBadge}>
+                            <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
+                          </View>
+                        )}
+
+                        <View style={styles.priceRangeContainer}>
+                          <Text style={styles.priceRangeSingle}>
+                            Önerilen aralık: {priceInfo.min_price} - {priceInfo.max_price} TL
+                          </Text>
+                        </View>
+
+                        <View style={styles.selectedPriceContainer}>
+                          <Text style={styles.selectedPriceLabel}>Teklifiniz:</Text>
+                          <Text
+                            style={[
+                              styles.selectedPriceValue,
+                              { fontSize: priceModalHeroFontSize },
+                            ]}
+                          >
+                            {selectedPrice} TL
+                          </Text>
+                        </View>
+
+                        <View style={styles.sliderContainer}>
+                          <TouchableOpacity
+                            style={styles.sliderButton}
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setSelectedPrice(
+                                Math.max(priceInfo.min_price, selectedPrice - 10),
+                              );
+                            }}
+                          >
+                            <Text style={styles.sliderButtonText}>-10</Text>
+                          </TouchableOpacity>
+
+                          <View style={styles.sliderTrack}>
+                            <View
+                              style={[
+                                styles.sliderFill,
+                                {
+                                  width: `${
+                                    priceInfo.max_price > priceInfo.min_price
+                                      ? Math.max(
+                                          0,
+                                          Math.min(
+                                            100,
+                                            ((selectedPrice - priceInfo.min_price) /
+                                              (priceInfo.max_price - priceInfo.min_price)) *
+                                              100,
+                                          ),
+                                        )
+                                      : 100
+                                  }%`,
+                                },
+                              ]}
+                            />
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.sliderButton}
+                            onPress={() => {
+                              void tapButtonHaptic();
+                              setSelectedPrice(
+                                Math.min(priceInfo.max_price, selectedPrice + 10),
+                              );
+                            }}
+                          >
+                            <Text style={styles.sliderButtonText}>+10</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.priceModalPayScrollHint}>
+                          <Ionicons name="chevron-down" size={16} color="#64748B" />
+                          <Text style={styles.priceModalPayScrollHintText}>
+                            Ödeme yöntemini görmek için aşağı kaydırın
+                          </Text>
+                        </View>
+
+                        <View style={styles.priceModalPayLockHeader}>
+                          <Ionicons name="lock-closed-outline" size={18} color="#334155" />
+                          <Text style={styles.priceModalPayLockTitle}>Ödeme yöntemi</Text>
+                        </View>
+                        <Text style={styles.priceModalPaySubtitle}>
+                          Sürücü yolculuk sonunda tahsil eder
+                        </Text>
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            void tapButtonHaptic();
+                            priceOfferPaymentExplicitRef.current = true;
+                          }}
+                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash]}
+                          activeOpacity={0.88}
+                        >
+                          <View style={styles.priceModalPayOptionLeft}>
+                            <Ionicons name="wallet-outline" size={22} color="#2563EB" />
+                          </View>
+                          <View style={styles.priceModalPayOptionBody}>
+                            <View style={styles.priceModalPayOptionTitleRow}>
+                              <Text style={styles.priceModalPayOptionTitle}>Nakit</Text>
+                              <View style={styles.priceModalPayBadgeRecommended}>
+                                <Text style={styles.priceModalPayBadgeRecommendedText}>Önerilen</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.priceModalPayOptionDesc}>
+                              Yolculuk sonunda sürücüye nakit ödeme yaparsınız.
+                            </Text>
+                          </View>
+                          <View style={styles.priceModalPayRadioOuterActive}>
+                            <View style={styles.priceModalPayRadioInnerActive} />
+                          </View>
+                        </TouchableOpacity>
+
+                        <View
+                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardDisabled]}
+                          accessibilityState={{ disabled: true }}
+                        >
+                          <View style={styles.priceModalPayOptionLeft}>
+                            <Ionicons name="card-outline" size={22} color="#94A3B8" />
+                          </View>
+                          <View style={styles.priceModalPayOptionBody}>
+                            <View style={styles.priceModalPayOptionTitleRow}>
+                              <Text style={styles.priceModalPayOptionTitleMuted}>Kart ile Öde</Text>
+                              <View style={styles.priceModalPayBadgeSoon}>
+                                <Text style={styles.priceModalPayBadgeSoonText}>Yakında</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.priceModalPayOptionDesc}>
+                              Güvenli kart ödemesi kısa süre içinde aktif olacak.
+                            </Text>
+                          </View>
+                          <View style={styles.priceModalPayRadioOuterMuted}>
+                            <View style={styles.priceModalPayRadioInnerMuted} />
+                          </View>
+                        </View>
+
+                        <View style={styles.priceModalPayDefaultNote}>
+                          <Ionicons name="information-circle-outline" size={17} color="#64748B" />
+                          <Text style={styles.priceModalPayDefaultNoteText}>
+                            Herhangi bir seçim yapmazsanız varsayılan olarak Nakit seçeneği kullanılacaktır.
+                          </Text>
+                        </View>
+                      </ScrollView>
+
+                      <View style={[styles.priceModalFooter, { paddingBottom: Math.max(12, insets.bottom) }]}>
+                        <View style={styles.priceModalButtons}>
+                          <TouchableOpacity
+                            style={styles.priceModalCancelButton}
+                            disabled={offerSendSubmitting}
+                            onPress={() => {
+                              if (offerSendSubmitting) return;
+                              void tapButtonHaptic();
+                              setShowPriceModal(false);
+                            }}
+                          >
+                            <Text style={styles.priceModalCancelText}>İptal</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.priceModalSendWrap, offerSendSubmitting && styles.priceModalSendWrapDisabled]}
+                            activeOpacity={offerSendSubmitting ? 1 : 0.88}
+                            disabled={offerSendSubmitting}
+                            onPress={() => {
+                              if (offerSendSubmitting) return;
+                              void tapButtonHaptic();
+                              handlePriceOfferSendPress();
+                            }}
+                          >
+                            <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
+                              <LinearGradient
+                                colors={
+                                  offerSendSubmitting
+                                    ? ['#94A3B8', '#64748B']
+                                    : ['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']
+                                }
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.priceModalSendGradient}
+                              >
+                                <MaterialCommunityIcons
+                                  name="rocket-launch-outline"
+                                  size={28}
+                                  color="#FFF"
+                                />
+                                <Text
+                                  maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE}
+                                  style={styles.priceModalSendTextLarge}
+                                >
+                                  {offerSendSubmitting ? 'Gönderiliyor...' : 'Teklif Gönder'}
+                                </Text>
+                              </LinearGradient>
+                            </Animated.View>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            </Modal>
+
+            <Modal
+              visible={priceOfferPaymentWarnVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => {
+                if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
+              }}
+            >
+              <View style={styles.priceOfferPaymentWarnOverlay}>
+                <TouchableOpacity
+                  style={StyleSheet.absoluteFill}
+                  activeOpacity={1}
+                  onPress={() => {
+                    if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
+                  }}
+                />
+                <View style={styles.priceOfferPaymentWarnCard}>
+                  <Ionicons
+                    name="warning"
+                    size={40}
+                    color="#CA8A04"
+                    style={{ alignSelf: 'center', marginBottom: 10 }}
+                  />
+                  <Text style={styles.priceOfferPaymentWarnTitle}>Ödeme yöntemi seçilmedi</Text>
+                  <Text style={styles.priceOfferPaymentWarnBody}>
+                    Herhangi bir yöntem seçmezseniz yolculuk sonunda varsayılan olarak Nakit ile ödeme
+                    yapılacaktır.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.priceOfferPaymentWarnPrimary}
+                    activeOpacity={0.88}
+                    disabled={offerSendSubmitting}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setPriceOfferPaymentWarnVisible(false);
+                      void submitPassengerPriceOfferCore();
+                    }}
+                  >
+                    <Text style={styles.priceOfferPaymentWarnPrimaryText}>Tamam, devam et</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.priceOfferPaymentWarnSecondary}
+                    activeOpacity={0.88}
+                    disabled={offerSendSubmitting}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setPriceOfferPaymentWarnVisible(false);
+                    }}
+                  >
+                    <Text style={styles.priceOfferPaymentWarnSecondaryText}>Geri dön, seçim yap</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+          </View>
+        ) : null}
       </ScrollView>
+      )}
 
       {/* Hedef Seçme — Google haritası + üstte arama paneli (akış: handleDestinationSelect aynı) */}
       <Modal
@@ -20812,8 +20820,9 @@ const styles = StyleSheet.create({
   fullScreenMapContainer: {
     flex: 1,
     width: '100%',
-    height: SCREEN_HEIGHT,
+    minHeight: 0,
     position: 'relative',
+    overflow: 'hidden',
     backgroundColor: '#000',
   },
   mapView: {
