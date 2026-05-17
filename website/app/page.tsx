@@ -25,7 +25,7 @@ import { SectionMidCta } from "@/components/section-mid-cta";
 
 const experiences = [
   {
-    title: "Hızlı Yolculuk",
+    title: "Şehir içi",
     eyebrow: "şehir içi teklif",
     description:
       "Rota görünürlüğü, QR doğrulama ve Güven Al adımlarıyla şehir içinde kontrollü güvenli eşleşme.",
@@ -84,13 +84,13 @@ export default function Home() {
                     Aynı yöne gidenlerle eşleş, yolculuğu güvenle paylaş.
                   </h1>
                   <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
-                    Leylek Tag, yolcu ve sürücülerin yolculuk tekliflerini netleştirip karşılıklı onayla güvenli eşleşmesini sağlar.
+                    Leylek TAG, yolcu ve sürücüleri karşılıklı teklif ve onay mantığıyla buluşturan, QR doğrulama destekli yolculuk eşleştirme platformudur.
                   </p>
                   <p className="mt-4 text-center text-sm font-semibold text-white/75 sm:text-left">
-                    Her gün yeni yolculuklar oluşturuluyor
+                    Beta sürecinde gerçek kullanıcı geri bildirimleriyle gelişiyoruz.
                   </p>
                   <p className="mt-2 text-center text-sm font-bold leading-snug text-amber-200/95 sm:text-left">
-                    İlk eşleşmeler için erken erişim avantajını kaçırma
+                    Erken erişim ve açık teste katılarak sürece dahil olabilirsin.
                   </p>
                 </div>
               </div>
@@ -100,10 +100,10 @@ export default function Home() {
                     Teklif Oluşturmaya Başla
                   </ButtonLink>
                   <p className="mt-2 text-center text-[11px] font-semibold leading-relaxed text-white/58 sm:text-left sm:text-xs">
-                    Ücretsiz • 30 saniyede teklif oluştur • Anında eşleşme
+                    Ücretsiz • Birkaç adımda teklif oluştur • Eşleşme karşılıklı onayla tamamlanır.
                   </p>
                   <p className="mt-2 text-center text-xs text-white/60 sm:text-left">
-                    Şu anda kullanıcılar yeni rotalar oluşturuyor
+                    Teklif ve rotanı netleştirmek için uygulamayı kullanabilirsin.
                   </p>
                 </div>
                 <ButtonLink href="/muhabbet" variant="secondary" className="w-full sm:w-auto">
@@ -124,7 +124,7 @@ export default function Home() {
           </div>
           <a
             href="#nasil-calisir-flow"
-            className="mt-4 block text-center text-xs text-white/50 animate-pulse motion-reduce:animate-none sm:text-left"
+            className="mt-4 block text-center text-xs text-white/50 sm:text-left"
           >
             ↓ Nasıl çalıştığını gör
           </a>
@@ -148,7 +148,7 @@ export default function Home() {
               <SectionHeading
                 eyebrow="neden leylek tag?"
                 title="Yolculuk paylaşımında güven, kontrol ve topluluk aynı yerde."
-                description="Leylek Tag, yalnızca bir rota ekranı değil; aynı yöne gidenlerin detayları netleştirerek, doğrulayarak ve şeffaf bilgiyle anlaşabildiği modern bir topluluk deneyimidir."
+                description="Leylek TAG yalnızca bir rota ekranı değil; aynı yöne gidenlerin detayları netleştirerek, doğrulayarak ve şeffaf bilgiyle anlaşabildiği modern bir topluluk deneyimidir."
               />
             </div>
             <ValueProps />
@@ -162,7 +162,7 @@ export default function Home() {
             <div className="mb-8">
               <SectionHeading
                 eyebrow="kimler için?"
-                title="Leylek Tag, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
+                title="Leylek TAG, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
                 description="Günlük şehir içi planlardan teklif görüşmesine kadar, aynı yöne gidenleri topluluk içinde daha kontrollü buluşturur."
               />
             </div>
@@ -195,7 +195,7 @@ export default function Home() {
               <SectionHeading
                 eyebrow="neden farklı?"
                 title="Klasik yolculuk deneyiminden daha topluluk odaklı."
-                description="Leylek Tag hızlı eşleşmeyi, teklif görüşmesiyle karar vermeyi, masraf paylaşımını ve güvenli eşleşme yaklaşımını aynı deneyimde toplar."
+                description="Leylek TAG teklif görüşmesiyle karar vermeyi, masraf paylaşımını şeffaf şekilde konuşmayı ve güvenli eşleşme yaklaşımını aynı deneyimde bir araya getirir."
               />
             </div>
             <ComparisonSection />
@@ -211,8 +211,8 @@ export default function Home() {
             <div className="mb-8">
               <SectionHeading
                 eyebrow="uygulama ön izlemesi"
-                title="İki akış, tek premium mobil deneyim."
-                description="Gerçek ekran görüntüsü kullanılmadan tasarlanan cihaz çerçeveleri şehir içi ve Leylek Teklifi akışını sade şekilde gösterir."
+                title="İki akış; sade, güvenli ve kontrollü yolculuk deneyimi."
+                description="Örnek cihaz çerçeveleri şehir içi ve Leylek Teklifi akışını sade şekilde özetler."
               />
             </div>
             <AppPreview />
@@ -229,7 +229,7 @@ export default function Home() {
               <SectionHeading
                 eyebrow="beta süreci"
                 title="Önce kontrollü beta, sonra daha geniş topluluk."
-                description="Leylek Tag’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
+                description="Leylek TAG’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
               />
             </div>
             <BetaProcess />
@@ -253,7 +253,7 @@ export default function Home() {
             <div className="mb-8">
               <SectionHeading
                 eyebrow="sık sorulan sorular"
-                title="Leylek Tag hakkında merak edilenler"
+                title="Leylek TAG hakkında merak edilenler"
                 description="Yolculuk paylaşımı, masraf paylaşımı, Leylek Teklifi ve güvenli eşleşme akışına dair kısa yanıtlar."
               />
             </div>

@@ -20,12 +20,12 @@ export const legalDocuments: Record<LegalDocument["slug"], LegalDocument> = {
     title: "Gizlilik Politikası",
     updatedAt: "Mayıs 2026",
     intro:
-      "Karekod Teknoloji ve Yazılım A.Ş. olarak Leylek Tag hizmetlerinde kişisel verilerin korunmasına önem veririz. Bu metin, hizmet kapsamında verilerin nasıl işlendiğini açıklar.",
+      "Karekod Teknoloji ve Yazılım A.Ş. olarak Leylek TAG hizmetlerinde kişisel verilerin korunmasına önem veririz. Bu metin, hizmet kapsamında verilerin nasıl işlendiğini açıklar.",
     sections: [
       {
         heading: "Genel İlke",
         paragraphs: [
-          "Leylek Tag, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.",
+          "Leylek TAG, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.",
         ],
       },
       {
@@ -91,12 +91,12 @@ export const legalDocuments: Record<LegalDocument["slug"], LegalDocument> = {
     title: "Hizmet Şartları",
     updatedAt: "Mayıs 2026",
     intro:
-      "Bu sayfa Leylek Tag platformunun kullanım koşullarını özetler. Veri işlemesine ilişkin ayrıntılar Gizlilik Politikası ve KVKK Aydınlatma Metni ile birlikte değerlendirilmelidir.",
+      "Bu sayfa Leylek TAG platformunun kullanım koşullarını özetler. Veri işlemesine ilişkin ayrıntılar Gizlilik Politikası ve KVKK Aydınlatma Metni ile birlikte değerlendirilmelidir.",
     sections: [
       {
         heading: "Hizmet Tanımı",
         paragraphs: [
-          "Leylek Tag, yolcu ve sürücü kullanıcıları dijital ortamda eşleştiren bir platformdur. Şirket taşımacılık hizmeti sunmaz.",
+          "Leylek TAG, yolcu ve sürücü kullanıcıları dijital ortamda eşleştiren bir platformdur. Şirket taşımacılık hizmeti sunmaz.",
         ],
       },
       {
@@ -169,12 +169,12 @@ export const legalDocuments: Record<LegalDocument["slug"], LegalDocument> = {
     title: "KVKK Aydınlatma Metni",
     updatedAt: "Mayıs 2026",
     intro:
-      "6698 sayılı KVKK kapsamında veri sorumlusu Karekod Teknoloji ve Yazılım A.Ş. olarak, Leylek Tag ürünlerinde kişisel veri işleme süreçlerine ilişkin bilgilendirme sunuyoruz.",
+      "6698 sayılı KVKK kapsamında veri sorumlusu Karekod Teknoloji ve Yazılım A.Ş. olarak, Leylek TAG ürünlerinde kişisel veri işleme süreçlerine ilişkin bilgilendirme sunuyoruz.",
     sections: [
       {
         heading: "Veri Sorumlusu",
         paragraphs: [
-          "Leylek Tag mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla Karekod Teknoloji ve Yazılım A.Ş. tarafından işlenmektedir.",
+          "Leylek TAG mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla Karekod Teknoloji ve Yazılım A.Ş. tarafından işlenmektedir.",
           "Meşrutiyet Mah. Konur Sk. Özsoy İş Hanı No: 25 İç Kapı No: 13 Çankaya / Ankara",
           "E-posta: info@karekodteknoloji.com",
           "Telefon: 0850 307 80 29",
@@ -253,7 +253,7 @@ export const legalDocuments: Record<LegalDocument["slug"], LegalDocument> = {
     title: "Hesap Silme ve Veri Silme",
     updatedAt: "Mayıs 2026",
     intro:
-      "Hesabınızı silmek istediğinizde aşağıdaki bilgileri dikkate alın. Hesap silme talebi Leylek Tag uygulaması içinden başlatılır; bu sayfa süreci açıklar.",
+      "Hesabınızı silmek istediğinizde aşağıdaki bilgileri dikkate alın. Hesap silme talebi Leylek TAG uygulaması içinden başlatılır; bu sayfa süreci açıklar.",
     sections: [
       {
         heading: "Uygulama İçinden Silme",

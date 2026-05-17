@@ -20,7 +20,7 @@ export function EarlyAccessForm() {
         <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">erken erişim formu</p>
         <h2 className="mt-4 text-2xl font-black tracking-tight text-white sm:text-3xl">Beta topluluğuna katıl</h2>
         <p className="mt-3 text-sm leading-7 text-slate-300">
-          Bilgilerini bırak, Leylek Tag beta süreci ve uygulama yayını için seni bilgilendirelim.
+          Bilgilerini bırak; Leylek TAG beta süreci, Google Play erken erişim/açık test ve App Store hazırlık süreci hakkında seni bilgilendirelim.
         </p>
       </div>
 
@@ -82,7 +82,7 @@ export function EarlyAccessForm() {
 
       {isSubmitted ? (
         <p className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-4 py-3 text-sm font-semibold text-emerald-100">
-          Teşekkürler, erken erişim talebin yerel olarak alındı. API bağlantısı eklendiğinde bu form canlı çalışacak.
+          Teşekkürler; talebini kaydettik. Yayına yaklaştıkça seninle iletişime geçeceğiz.
         </p>
       ) : null}
     </form>

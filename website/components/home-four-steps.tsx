@@ -50,7 +50,7 @@ const STEPS = [
   },
   {
     title: "Yola çık",
-    blurb: "QR ile doğrula, başla.",
+    blurb: "QR ile doğrula; süreci başlat.",
     icon: (
       <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" aria-hidden>
         <path

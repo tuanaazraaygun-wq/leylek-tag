@@ -33,9 +33,9 @@ export default function MuhabbetPage() {
       <PageHero
         eyebrow="leylek teklifi"
         title="Yolculuk tekliflerini güvenli eşleşmeye dönüştür."
-        description="Leylek Teklifi, yolcu ve sürücülerin yolculuk tekliflerini netleştirdiği, karşılıklı onayla eşleştiği güvenli teklif akışıdır."
+        description="Leylek Teklifi, Leylek TAG içinde yolcu ve sürücülerin yolculuk tekliflerini netleştirdiği, karşılıklı onayla eşleştiği güvenli teklif akışıdır."
         primaryLabel="Teklif Akışını Keşfet"
-        ctaHint="Ücretsiz • 30 saniyede teklif oluştur"
+        ctaHint="Ücretsiz • Birkaç adımda teklif oluştur"
       />
       <section className="border-t border-white/10 bg-white/[0.02] py-10 sm:py-12">
         <Container>
@@ -65,7 +65,7 @@ export default function MuhabbetPage() {
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-400/15 text-xs font-black text-cyan-100">
                     4
                   </span>
-                  <span>QR ile yolculuğa başla</span>
+                  <span>QR ile yolculuk doğrulamasına başla</span>
                 </li>
               </ol>
             </div>

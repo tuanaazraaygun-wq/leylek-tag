@@ -214,7 +214,7 @@ function buildHudLines(
       },
       {
         key: "demo-r2",
-        text: `${routes[0]?.from ?? districts[0]?.name ?? ""} hattı aktif`,
+        text: `${routes[0]?.from ?? districts[0]?.name ?? ""} hattı öne çıkan`,
         time: "1 dk",
       },
       {
@@ -260,7 +260,7 @@ export default function RealCityMap({
     return districts.find((district) => district.name === name) ?? districts[0];
   }
 
-  const heatBadge = dataMode === "live" ? "canlı" : "özet";
+  const heatBadge = dataMode === "live" ? "güncel" : "özet";
 
   const outerMapClass =
     `relative h-full min-h-[640px] overflow-hidden rounded-[2rem] ${liveSparse ? "ring-1 ring-cyan-400/10 shadow-[inset_0_0_80px_rgba(34,211,238,0.04)]" : ""}`;
@@ -347,14 +347,14 @@ export default function RealCityMap({
       <div className="pointer-events-none absolute left-4 top-4 rounded-2xl border border-cyan-200/15 bg-slate-950/68 px-4 py-3 shadow-soft-card backdrop-blur-xl">
         <div className="flex items-center gap-2">
           <span className="live-canli-dot" aria-hidden />
-          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-100">CANLI ŞEHİR İÇİ AĞ</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-100">ŞEHİR İÇİ YOLCULUK AĞI</p>
         </div>
         <p className="mt-1 text-xs font-semibold text-slate-400">{mapHudSubtitle}</p>
       </div>
 
       <div className="pointer-events-none absolute inset-x-4 top-24 text-center sm:top-20">
         <p className="text-xl font-black tracking-[0.08em] text-cyan-50 drop-shadow-[0_0_16px_rgba(34,211,238,0.45)] sm:text-2xl">
-          {city.toLocaleUpperCase("tr-TR")} CANLI BÖLGE HARİTASI
+          {city.toLocaleUpperCase("tr-TR")} BÖLGE GÖRÜNÜMÜ
         </p>
       </div>
 
@@ -365,8 +365,8 @@ export default function RealCityMap({
       <div className="pointer-events-none absolute bottom-24 left-4 right-4 grid gap-3 lg:grid-cols-[260px_1fr_260px]">
         <div className="map-hud-panel leylek-feed-cycle">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">Anlık eşleşmeler</p>
-            <span className="rounded-full bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">canlı</span>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">Örnek eşleşme akışı</p>
+            <span className="rounded-full bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">örnek</span>
           </div>
           <div className="space-y-1.5">
             {hudLeft.map((row, index) => (
@@ -411,7 +411,7 @@ export default function RealCityMap({
 
         <div className="map-hud-panel leylek-feed-cycle">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">Canlı aktivite</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">Yolculuk görünümü</p>
             <span className="rounded-full bg-cyan-300/10 px-2 py-0.5 text-[10px] font-black text-cyan-100">akış</span>
           </div>
           <div className="space-y-1.5">
@@ -428,7 +428,7 @@ export default function RealCityMap({
 
       <div className="pointer-events-none absolute bottom-4 left-4 right-4 rounded-2xl border border-cyan-200/15 bg-slate-950/64 p-3 shadow-soft-card backdrop-blur-xl">
         <div className="grid gap-2 md:grid-cols-3">
-          {[`Seçili şehir: ${city}`, `En yoğun bölge: ${districts[1]?.name ?? districts[0]?.name}`, `En aktif hat: ${activeLine}`].map((item) => (
+          {[`Seçili şehir: ${city}`, `En yoğun bölge: ${districts[1]?.name ?? districts[0]?.name}`, `Öne çıkan hat: ${activeLine}`].map((item) => (
             <div key={item} className="rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2">
               <p className="truncate text-[11px] font-semibold text-cyan-100">{item}</p>
             </div>

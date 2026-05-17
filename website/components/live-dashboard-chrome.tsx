@@ -7,7 +7,7 @@ export const LiveDashboardTrustStrip = memo(function LiveDashboardTrustStrip({ c
     <div
       className={`rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-[11px] leading-relaxed text-slate-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:text-xs ${className ?? ""}`}
     >
-      <p>Canlı veriler anonim ve bölge düzeyinde gösterilir.</p>
+      <p>Gösterilen özetler anonim ve bölge düzeyindedir.</p>
       <p className="mt-1.5">Tam adres ve kişisel bilgiler paylaşılmaz.</p>
       <p className="mt-1.5">Yolculuk paylaşımı kontrollü ve görünür akışla takip edilir.</p>
     </div>
@@ -23,7 +23,7 @@ export const LiveSparseBanner = memo(function LiveSparseBanner({ variant }: { va
   return (
     <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-r from-cyan-400/[0.06] to-transparent px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
       <p className="text-sm font-bold text-cyan-50">{title}</p>
-      <p className="mt-1 text-[11px] font-semibold text-slate-400">Özet görünüm · Canlı bağlantıyla güncellenir</p>
+      <p className="mt-1 text-[11px] font-semibold text-slate-400">Özet görünüm · Bağlantı varsa güncellenir</p>
     </div>
   );
 });
@@ -39,7 +39,7 @@ export const CityMapLegend = memo(function CityMapLegend() {
         </li>
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--route" aria-hidden />
-          <span>Aktif hat</span>
+          <span>Yoğun hat</span>
         </li>
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--pulse" aria-hidden />
@@ -57,7 +57,7 @@ export const IntercityMapLegend = memo(function IntercityMapLegend() {
       <ul className="space-y-2 text-[10px] font-semibold text-slate-300 sm:text-[11px]">
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--steady" aria-hidden />
-          <span>Aktif şehir dışı teklif</span>
+          <span>Şehir dışı teklif</span>
         </li>
         <li className="flex items-center gap-2">
           <span className="map-legend-swatch map-legend-swatch--matching" aria-hidden />

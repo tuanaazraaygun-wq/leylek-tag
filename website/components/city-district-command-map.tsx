@@ -54,7 +54,7 @@ export function CityDistrictCommandMap({
       />
       <div className="pointer-events-none absolute right-4 top-4 z-[500] hidden grid-cols-3 gap-2 rounded-2xl border border-cyan-200/15 bg-slate-950/78 p-2 shadow-soft-card backdrop-blur-xl sm:grid">
         {[
-          ["aktif yolculuk", activeTrips],
+          ["devam eden yolculuk", activeTrips],
           ["bekleyen teklif", pendingOffers],
           ["yoğun bölge", busiestRegion],
         ].map(([statLabel, value]) => (

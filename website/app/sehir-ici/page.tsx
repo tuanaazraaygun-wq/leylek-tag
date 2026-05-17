@@ -6,13 +6,13 @@ import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 
 export const metadata: Metadata = {
-  title: "Hızlı Yolculuk",
+  title: "Şehir İçi",
 };
 
 const steps = [
   {
-    title: "Şehir içi hızlı eşleşme",
-    description: "Yakındaki aynı yöne gidenler rota uyumuna göre görünür ve akış hızlıca başlar.",
+    title: "Şehir içi kontrollü eşleşme",
+    description: "Yakındaki aynı yöne gidenler rota uyumuna göre görünür; süreç karşılıklı onayla ilerler.",
   },
   {
     title: "Rota ve QR doğrulama",
@@ -28,9 +28,9 @@ export default function CityPage() {
   return (
     <>
       <PageHero
-        eyebrow="hızlı yolculuk"
-        title="Şehir içinde aynı yöne gidenlerle hızlı ve güvenli eşleşme."
-        description="Leylek Tag, rota odaklı eşleşme, QR doğrulama ve Güven Al katmanıyla şehir içi yolculuk paylaşımını sadeleştirir."
+        eyebrow="şehir içi"
+        title="Şehir içinde aynı yöne gidenlerle güvenli ve kontrollü eşleşme."
+        description="Leylek TAG, rota odaklı eşleşme, QR doğrulama ve Güven Al katmanıyla şehir içi yolculuk paylaşımını sadeleştirir."
       />
       <section className="py-12">
         <Container>

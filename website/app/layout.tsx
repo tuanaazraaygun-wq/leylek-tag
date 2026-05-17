@@ -16,13 +16,13 @@ const siteUrl = new URL("https://leylektag.com");
 export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: {
-    default: "Leylek Tag | Güvenli Yolculuk Paylaşımı Topluluğu",
-    template: "%s | Leylek Tag",
+    default: "Leylek TAG | Güvenli Yolculuk Paylaşımı Topluluğu",
+    template: "%s | Leylek TAG",
   },
   description:
-    "Leylek Tag; yolculuk paylaşımı, masraf paylaşımı ve güvenli eşleşme için geliştirilen modern topluluk platformudur.",
+    "Leylek TAG, yolcu ve sürücüleri karşılıklı teklif ve onay mantığıyla buluşturan, QR doğrulama destekli yolculuk eşleştirme platformudur.",
   keywords: [
-    "Leylek Tag",
+    "Leylek TAG",
     "yolculuk paylaşımı",
     "masraf paylaşımı",
     "güvenli eşleşme",
@@ -30,10 +30,10 @@ export const metadata: Metadata = {
     "Leylek Teklifi",
     "boş koltuk paylaşımı",
   ],
-  applicationName: "Leylek Tag",
-  authors: [{ name: "Leylek Tag" }],
-  creator: "Leylek Tag",
-  publisher: "Leylek Tag",
+  applicationName: "Leylek TAG",
+  authors: [{ name: "Leylek TAG" }],
+  creator: "Leylek TAG",
+  publisher: "Leylek TAG",
   alternates: {
     canonical: "/",
   },
@@ -41,24 +41,24 @@ export const metadata: Metadata = {
     type: "website",
     locale: "tr_TR",
     url: "/",
-    siteName: "Leylek Tag",
-    title: "Leylek Tag | Güvenli Yolculuk Paylaşımı Topluluğu",
+    siteName: "Leylek TAG",
+    title: "Leylek TAG | Güvenli Yolculuk Paylaşımı Topluluğu",
     description:
-      "Aynı yöne gidenler için yolculuk paylaşımı, masraf paylaşımı ve güvenli eşleşme deneyimini keşfet.",
+      "Leylek TAG ile karşılıklı teklif ve onayla güvenli eşleşme; QR doğrulama ile kontrollü yolculuk akışı.",
     images: [
       {
         url: "/logo-leylek.svg",
         width: 160,
         height: 160,
-        alt: "Leylek Tag logo",
+        alt: "Leylek TAG logo",
       },
     ],
   },
   twitter: {
     card: "summary",
-    title: "Leylek Tag | Güvenli Yolculuk Paylaşımı",
+    title: "Leylek TAG | Güvenli Yolculuk Paylaşımı",
     description:
-      "Leylek Tag ile aynı yöne gidenler, yolculuk paylaşımı ve masraf paylaşımı için güvenli eşleşme deneyimi yaşar.",
+      "Leylek TAG ile yolcu ve sürücüleri şeffaf teklif süreci ve QR doğrulama ile güvenli şekilde buluşturun.",
     images: ["/logo-leylek.svg"],
   },
   icons: {

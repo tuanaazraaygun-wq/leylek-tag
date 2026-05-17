@@ -366,7 +366,7 @@ function mergeIntercityFromApi(data: PublicIntercityResponse): IntercityDashboar
   const telemetry: IntercityTelemetry = {
     busiestLine: stats.busiestLine,
     averageSuggestedCost: averageSuggestedCostFromRoutes(routes),
-    disclaimer: "Canlı şehir dışı teklif özeti · Rota verisi bağlandığında güncellenir",
+    disclaimer: "Şehir dışı teklif özeti · Rota verisi bağlandığında güncellenir",
   };
 
   return { routes, stats, activityFeed, routeInfoPreviews, telemetry, uiHints: { liveSparse } };
@@ -396,7 +396,7 @@ export async function loadIntercityDashboard(
         ...merged,
         telemetry: {
           ...merged.telemetry,
-          disclaimer: "Canlı veri · şehirler arası ilan özeti",
+          disclaimer: "Bağlı özet · şehirler arası ilan özeti",
         },
       },
       source: "live",

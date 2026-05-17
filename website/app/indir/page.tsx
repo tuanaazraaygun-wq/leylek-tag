@@ -10,9 +10,9 @@ import { PageHero } from "@/components/page-hero";
 import { StoreButton } from "@/components/store-button";
 
 export const metadata: Metadata = {
-  title: "Uygulamayı Aç | Leylek Tag",
+  title: "Uygulamayı Aç | Leylek TAG",
   description:
-    "Canlı teklifler, güvenli eşleşme ve QR ile yolculuk kontrolü Leylek Tag uygulamasında. Webde keşfet, gerçek eşleşmeyi uygulamada başlat.",
+    "Teklif oluşturma, karşılıklı onay ve QR ile yolculuk doğrulaması Leylek TAG uygulamasında tamamlanır. Web’de özet görünüm; süreç için uygulamaya geç.",
 };
 
 const downloadNotes = [
@@ -25,8 +25,8 @@ const downloadNotes = [
     description: "Karşılıklı onay ve güvenli teklif görüşmesi adımlarını mobil deneyimde tamamla.",
   },
   {
-    title: "QR ile yolculuk",
-    description: "Biniş ve kontrol QR doğrulamasıyla uygulama içinde yönetilir.",
+    title: "QR ile doğrulama",
+    description: "Yolculuk başlangıcı ve kontrol adımları QR doğrulamasıyla uygulama içinde yönetilir.",
   },
 ];
 
@@ -35,13 +35,13 @@ export default function DownloadPage() {
     <>
       <PageHero
         eyebrow="uygulama"
-        title="Gerçek eşleşme uygulamada başlar"
-        description="Canlı teklifler, güvenli eşleşme ve QR ile yolculuk kontrolü Leylek Tag uygulamasında seni bekliyor."
+        title="Teklif ve eşleşme sürecini uygulamada tamamla"
+        description="Karşılıklı onay, güvenli teklif görüşmesi ve QR ile yolculuk doğrulaması Leylek TAG mobil deneyiminde bir araya gelir."
         primaryHref="/indir#indir-magaza"
         primaryLabel="Uygulamayı Aç"
         secondaryHref="/indir#uygulama-akisi"
         secondaryLabel="Uygulama Akışını Gör"
-        ctaHint="Web ile akışı keşfet; teklif ve eşleşme için uygulamaya geç."
+        ctaHint="Web’de bilgilendirici içerik ve özet görünüm; tam akış için uygulamaya geç."
       />
 
       <section className="border-y border-white/[0.06] bg-white/[0.02] py-10 sm:py-12">
@@ -61,18 +61,17 @@ export default function DownloadPage() {
               <div className="min-w-0">
                 <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">indirme</p>
                 <h2 className="mt-4 text-3xl font-black leading-tight text-white sm:text-4xl">
-                  Mağaza bağlantıları yayına süreçte bağlanıyor
+                  Mağaza bağlantıları yayına bağlanma sürecinde
                 </h2>
                 <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
-                  App Store ve Google Play bağlantıları aktifleştikinde tek dokunuşla resmi sayfaya gideceksin. Şimdilik
-                  erken erişim formuyla bildirim alabilirsin.
+                  Google Play için erken erişim ve açık test süreçleri değerlendirilirken, App Store yayını hazırlık sürecindedir. Bağlantılar hazır olduğunda tek dokunuşla resmi sayfaya yönlendireceğiz; güncel haber için erken erişim formunu kullanabilirsin.
                 </p>
                 <p className="mt-4 text-sm font-semibold text-emerald-200/90">
-                  İlk kullanıcılar teklif akışını keşfediyor — sen de sıraya katıl.
+                  Beta sürecine dahil olarak geri bildirimle ürünün şekillenmesine katkı verebilirsin.
                 </p>
                 <div className="mt-8 flex w-full max-w-md flex-col gap-4">
-                  <StoreButton eyebrow="süreçte" label="App Store" />
-                  <StoreButton eyebrow="süreçte" label="Google Play" />
+                  <StoreButton eyebrow="hazırlık sürecinde" label="App Store" />
+                  <StoreButton eyebrow="erken erişim / açık test" label="Google Play" />
                 </div>
                 <div className="mt-6">
                   <ButtonLink href="#erken-erisim" variant="secondary" className="w-full sm:w-auto sm:min-w-[240px]">
@@ -97,7 +96,7 @@ export default function DownloadPage() {
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">erken erişim</p>
               <h2 className="mt-4 text-3xl font-black leading-tight text-white">Uygulama açıldığında haber verelim.</h2>
               <p className="mt-4 text-sm leading-7 text-slate-300">
-                Form yerel olarak gönderim onayı gösterir; ürün yayına yaklaştıkça seni bilgilendiririz.
+                Form gönderildiğinde yerel olarak onay görürsün; yayına yaklaştıkça seni bilgilendiririz.
               </p>
             </div>
             <EarlyAccessForm />

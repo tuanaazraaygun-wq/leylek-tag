@@ -28,7 +28,7 @@ export function getDemoCityActivity(): CityActivity[] {
   return [
     {
       id: "kizilay-cankaya-start",
-      label: "Kızılay → Çankaya anında yolculuk başladı",
+      label: "Kızılay → Çankaya için örnek yolculuk akışı",
       district: "Kızılay",
       tone: "cyan",
       x: 50,
@@ -81,7 +81,7 @@ export function getDemoRegionIntensity(): RegionIntensity[] {
       id: "kizilay",
       region: "Kızılay",
       level: 78,
-      note: "Aynı yöne gidenler için aktif rota ilgisi",
+      note: "Aynı yöne gidenler için ilgili rota talebi",
     },
     {
       id: "ulus",

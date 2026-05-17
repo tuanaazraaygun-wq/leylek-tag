@@ -218,10 +218,10 @@ export default function IntercityRealMap({
 
   const mapHudLine =
     dataMode === "live"
-      ? "Canlı şehir dışı teklif görünümü · Bölgesel rota özeti"
-      : "Aktif rota teklifleri · Güvenli eşleşme akışı";
+      ? "Şehir dışı teklif görünümü · Bölgesel rota özeti"
+      : "Rota teklif özeti · Güvenli eşleşme akışı";
 
-  const routePanelBadge = dataMode === "live" ? "canlı" : "özet";
+  const routePanelBadge = dataMode === "live" ? "güncel" : "özet";
 
   const outerClass = `relative isolate h-[420px] w-full overflow-hidden rounded-2xl sm:h-[460px] md:h-[520px] lg:h-[680px] ${liveSparse ? "ring-1 ring-cyan-400/10 shadow-[inset_0_0_80px_rgba(34,211,238,0.04)]" : ""}`;
 
@@ -295,7 +295,7 @@ export default function IntercityRealMap({
       <div className="pointer-events-none absolute right-3 top-3 z-[400] hidden max-w-[min(100%,17rem)] rounded-2xl border border-cyan-200/15 bg-slate-950/72 px-3 py-2.5 shadow-soft-card backdrop-blur-xl md:right-4 md:top-4 md:block md:max-w-[18.5rem] md:px-4 md:py-3">
         <div className="grid gap-2 text-[10px] md:text-[11px]">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-1.5">
-            <span className="font-semibold text-slate-400">Aktif şehir dışı teklif</span>
+            <span className="font-semibold text-slate-400">Şehir dışı teklif özeti</span>
             <span className="font-black text-cyan-100">
               <IntercityStatNumber value={dashboard.stats.activeListings} />
             </span>
@@ -321,9 +321,9 @@ export default function IntercityRealMap({
         <div className="map-hud-panel leylek-feed-cycle max-h-[150px] overflow-y-auto overscroll-contain p-2.5 sm:max-h-[min(36vh,220px)] sm:p-3 lg:max-h-none">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100 sm:text-[11px] sm:tracking-[0.18em]">
-              Aktif şehir dışı teklif akışı
+              Şehir dışı teklif özeti
             </p>
-            <span className="shrink-0 rounded-full bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">canlı</span>
+            <span className="shrink-0 rounded-full bg-emerald-300/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">örnek</span>
           </div>
           <div className="space-y-1.5">
             {dashboard.activityFeed.slice(0, 5).map((item, index) => (
@@ -342,7 +342,7 @@ export default function IntercityRealMap({
         <div className="map-hud-panel max-h-[150px] overflow-y-auto overscroll-contain p-2.5 sm:max-h-[min(36vh,220px)] sm:p-3 lg:max-h-none">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100 sm:text-[11px] sm:tracking-[0.18em]">
-              Aktif rota teklifleri
+              Rota teklif özeti
             </p>
             <span className="text-[10px] font-bold text-slate-400">{routePanelBadge}</span>
           </div>
@@ -392,13 +392,13 @@ function IntercityMobileRouteSummary({
   dataMode: IntercityDataMode;
   className?: string;
 }) {
-  const badge = dataMode === "live" ? "canlı" : "özet";
+  const badge = dataMode === "live" ? "güncel" : "özet";
   return (
     <div className={`glass-card max-w-full rounded-2xl border border-white/10 bg-white/[0.05] p-4 ${className ?? ""}`}>
       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200/80">Güvenli eşleşme özeti</p>
       <div className="mt-3 space-y-3">
         <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-slate-400">Aktif şehir dışı teklif</span>
+          <span className="text-slate-400">Şehir dışı teklif özeti</span>
           <span className="font-black text-cyan-100">
             <IntercityStatNumber value={dashboard.stats.activeListings} />
           </span>

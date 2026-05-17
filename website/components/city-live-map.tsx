@@ -104,10 +104,10 @@ export function CityLiveMap() {
     };
   }, [selectedCity]);
 
-  const label = wantLiveData && dataSource === "live" ? "Canlı veri" : "Şu anda teklifler analiz ediliyor";
+  const label = wantLiveData && dataSource === "live" ? "Özet bağlı" : "Örnek şehir içi görünümü";
   const mapHudSubtitle =
     dataSource === "live"
-      ? "Harita görünümü · Canlı şehir içi teklif yoğunluğu"
+      ? "Harita görünümü · Şehir içi teklif yoğunluğu özeti"
       : "Bölgesel şehir içi teklif görünümü · Güvenli eşleşme akışı";
 
   const liveSparse = useMemo(() => Boolean(dashboard.uiHints?.liveSparse), [dashboard.uiHints?.liveSparse]);
@@ -120,7 +120,7 @@ export function CityLiveMap() {
         <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">şehir içi komuta paneli</p>
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.03em] text-white">Canlı şehir içi hareket haritası</h2>
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.03em] text-white">Şehir içi yolculuk görünümü</h2>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex rounded-full border border-white/10 bg-white/[0.06] p-1">

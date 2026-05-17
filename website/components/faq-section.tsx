@@ -1,13 +1,23 @@
 const faqs = [
   {
-    question: "Leylek Tag nedir?",
+    question: "Leylek TAG nedir?",
     answer:
-      "Leylek Tag, aynı yöne gidenlerin yolculuk paylaşımı, teklif görüşmesi ve güvenli eşleşme katmanlarıyla buluşmasını hedefleyen bir topluluk platformudur.",
+      "Leylek TAG, yolcu ve sürücüleri karşılıklı teklif ve onay mantığıyla buluşturan, QR doğrulama destekli yolculuk eşleştirme platformudur.",
   },
   {
-    question: "Hızlı yolculuk nasıl çalışır?",
+    question: "Ödeme ve ücretler nasıl işler?",
     answer:
-      "Kullanıcılar rota, zaman ve koşulları teklif görüşmesinde netleştirir. Canlı eşleşme ve teklif adımları uygulama deneyimi içinde sunulur.",
+      "Leylek TAG uygulama içinde ödeme tahsilatı yapmaz. Yolculuk ücreti, yolculuk sonunda taraflar arasında nakit olarak tamamlanır. Kart ile ödeme özelliği aktif değildir; ilerleyen süreçte uygun altyapı ile değerlendirilecektir.",
+  },
+  {
+    question: "Şehirler arası yolculuk ne zaman?",
+    answer:
+      "Şehirler arası yolculuk akışı geliştirme sürecindedir. Planlı uzun yol eşleşmeleri yakında aktif edilecektir. Şu anda şehir içi yolculuk eşleşmesi önceliklidir.",
+  },
+  {
+    question: "Şehir içi akış nasıl işler?",
+    answer:
+      "Kullanıcılar rota, zaman ve koşulları teklif görüşmesinde netleştirir. Karşılıklı onay ve QR ile yolculuk doğrulama adımları Leylek TAG mobil uygulamasında tamamlanır.",
   },
   {
     question: "Leylek Teklifi nedir?",
@@ -17,17 +27,17 @@ const faqs = [
   {
     question: "Masraf paylaşımı ne demek?",
     answer:
-      "Masraf paylaşımı, aynı yöne gidenlerin yolculuk giderlerini şeffaf ve karşılıklı anlaşmaya dayalı şekilde paylaşmasıdır.",
+      "Masraf paylaşımı, aynı yöne gidenlerin yolculuk giderlerini şeffaf ve karşılıklı anlaşmaya dayalı şekilde konuşmasıdır; tahsilat uygulama üzerinden yapılmaz.",
   },
   {
     question: "Güvenlik nasıl sağlanır?",
     answer:
-      "QR doğrulama, Güven Al, rota görünürlüğü, detayları netleştirme ve yolculuk öncesi anlaşma ile topluluk sinyalleri güvenli eşleşme deneyimini destekler.",
+      "QR ile yolculuk doğrulaması, Güven Al, rota görünürlüğü, detayları netleştirme ve yolculuk öncesi anlaşma ile güvenli eşleşme deneyimi desteklenir.",
   },
   {
-    question: "Uygulama ne zaman yayında?",
+    question: "Uygulama mağazalarında durum nedir?",
     answer:
-      "Web sitesi keşif alanıdır. Yayın takvimi netleştiğinde indirme sayfası ve beta topluluğu üzerinden duyurulacaktır.",
+      "Google Play tarafında erken erişim ve açık test süreçleri değerlendirilirken, App Store yayını hazırlık sürecindedir. Güncel bağlantılar için indirme sayfasını takip edebilirsin.",
   },
 ];
 

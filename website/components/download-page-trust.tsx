@@ -1,6 +1,6 @@
 const ITEMS = [
   "Karşılıklı onayla eşleşme",
-  "QR ile doğrulanmış yolculuk",
+  "QR ile doğrulanmış yolculuk süreci",
   "Detayları netleştir, sürpriz yaşamadan yola çık",
 ] as const;
 

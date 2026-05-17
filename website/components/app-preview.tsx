@@ -3,7 +3,7 @@ const previews = [
     title: "Şehir içi yolculuk",
     eyebrow: "rota hazır",
     primary: "Kadıköy → Levent",
-    meta: "12 dk içinde güvenli eşleşme",
+    meta: "Uygunluk ve karşılıklı onaya göre eşleşme",
     accent: "from-cyan-200 to-blue-400",
   },
   {
@@ -16,7 +16,7 @@ const previews = [
   {
     title: "Güven Al",
     eyebrow: "doğrulama",
-    primary: "QR ile biniş kontrolü",
+    primary: "QR ile yolculuk doğrulaması",
     meta: "Güvenli eşleşme adımları",
     accent: "from-blue-200 to-cyan-300",
   },
@@ -49,7 +49,7 @@ export function AppPreview() {
                 </div>
                 <div className="rounded-2xl bg-white/[0.06] p-3">
                   <p className="text-[11px] text-slate-400">Güven</p>
-                  <p className="mt-1 text-xs font-bold text-cyan-100">aktif</p>
+                  <p className="mt-1 text-xs font-bold text-cyan-100">açık</p>
                 </div>
               </div>
               <div className="rounded-2xl border border-cyan-200/10 bg-cyan-300/10 p-3 text-xs font-semibold text-cyan-50">

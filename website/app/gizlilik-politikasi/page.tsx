@@ -5,7 +5,7 @@ import { legalDocuments } from "@/lib/legal-content";
 export const metadata: Metadata = {
   title: "Gizlilik Politikası",
   description:
-    "Leylek Tag gizlilik politikası: veri işleme, konum kullanımı, hesap silme ve KVKK başvuru hakları.",
+    "Leylek TAG gizlilik politikası: veri işleme, konum kullanımı, hesap silme ve KVKK başvuru hakları.",
 };
 
 export default function PrivacyPolicyPage() {

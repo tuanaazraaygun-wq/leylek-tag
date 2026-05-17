@@ -13,12 +13,12 @@ export function ActivityFeed() {
     <div className="glass-panel overflow-hidden rounded-3xl p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-white">Canlı hareket</p>
-          <p className="text-xs text-slate-400">Anonim topluluk akışı</p>
+          <p className="text-sm font-semibold text-white">Örnek yolculuk akışı</p>
+          <p className="text-xs text-slate-400">Tanıştırma amaçlı örnek satırlar</p>
         </div>
         <span className="flex items-center gap-2 rounded-full bg-emerald-300/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
-          aktif
+          <span className="h-2 w-2 rounded-full bg-emerald-300" />
+          Örnek
         </span>
       </div>
 

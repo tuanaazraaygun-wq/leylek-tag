@@ -5,7 +5,7 @@ import { legalDocuments } from "@/lib/legal-content";
 export const metadata: Metadata = {
   title: "Hesap Silme ve Veri Silme",
   description:
-    "Leylek Tag hesap silme: uygulama içi talep, silinen veriler, süreç ve destek iletişimi.",
+    "Leylek TAG hesap silme: uygulama içi talep, silinen veriler, süreç ve destek iletişimi.",
 };
 
 export default function AccountDeletionPage() {

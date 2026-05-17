@@ -13,7 +13,7 @@ export function ScrollReveal({ children, className = "" }: ScrollRevealProps) {
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
+      queueMicrotask(() => setVisible(true));
       return;
     }
     const el = ref.current;

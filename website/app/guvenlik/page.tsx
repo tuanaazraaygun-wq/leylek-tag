@@ -33,7 +33,7 @@ export default function SafetyPage() {
       <PageHero
         eyebrow="güvenlik"
         title="Güvenli eşleşme, doğrulama ve topluluk sinyalleriyle başlar."
-        description="Leylek Tag, yolculuk paylaşımını yalnızca rota üzerinden değil, güven katmanları ve teklif netliği üzerinden de ele alır."
+        description="Leylek TAG, yolculuk paylaşımını yalnızca rota üzerinden değil, güven katmanları ve teklif netliği üzerinden de ele alır."
       />
       <section className="border-t border-white/10 py-10">
         <Container>
@@ -41,7 +41,7 @@ export default function SafetyPage() {
             {[
               "Karşılıklı onayla eşleşme",
               "Yolculuk öncesi detayları netleştirme",
-              "QR ile biniş ve varış kontrolü",
+              "QR ile yolculuk doğrulaması ve varış kontrolü",
               "Şikayet ve güvenlik akışı",
               "Kişisel bilgileri gereksiz paylaşmadan teklif süreci",
             ].map((item) => (

@@ -26,8 +26,8 @@ const steps = [
   },
   {
     eyebrow: "Adım 4",
-    title: "Yolculuğa başla",
-    description: "QR ile doğrula; kontrollü şekilde yola çık.",
+    title: "Doğrula ve yola çık",
+    description: "QR ile yolculuk doğrulamasını tamamlayıp kontrollü şekilde yola çık.",
   },
 ];
 
@@ -37,7 +37,7 @@ export default function HowItWorksPage() {
       <PageHero
         eyebrow="nasıl çalışır"
         title="Dört adımda tekliften yolculuğa."
-        description="Teklifini aç, detayları netleştir, karşılıklı onayla eşleş; QR ile güvenli şekilde yola çık."
+        description="Teklifini aç, detayları netleştir, karşılıklı onayla eşleş; QR ile yolculuk doğrulamasını tamamlayıp güvenli şekilde yola çık."
       />
       <section className="py-12">
         <Container>

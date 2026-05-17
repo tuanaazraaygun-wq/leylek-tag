@@ -1,6 +1,6 @@
 const rows = [
   {
-    label: "Hızlı eşleşme",
+    label: "Eşleşme süreci",
     classic: "Genellikle tek akışa odaklanır",
     leylek: "Şehir içi ve teklif akışlarını birlikte düşünür",
   },
@@ -30,7 +30,7 @@ export function ComparisonSection() {
           Klasik yolculuk uygulamaları
         </div>
         <div className="border-t border-white/10 bg-cyan-300/10 p-5 text-sm font-black text-cyan-100 sm:border-l sm:border-t-0">
-          Leylek Tag yaklaşımı
+          Leylek TAG yaklaşımı
         </div>
       </div>
       {rows.map((row) => (

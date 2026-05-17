@@ -1,7 +1,7 @@
 const trustBadges = [
   { label: "Karşılıklı onayla eşleşme", detail: "iki taraf onayı olmadan yolculuk başlamaz" },
   { label: "Yolculuk öncesi netleştirme", detail: "masraf, rota ve zaman şeffaf" },
-  { label: "QR ile biniş ve varış", detail: "kontrollü yolculuk başlangıcı" },
+  { label: "QR ile yolculuk doğrulaması", detail: "başlangıç ve bitişte kontrollü teyit" },
   { label: "Şikayet ve güvenlik", detail: "topluluk güvenlik akışı" },
   { label: "Minimal kişisel bilgi", detail: "gereksiz paylaşım olmadan teklif süreci" },
 ];

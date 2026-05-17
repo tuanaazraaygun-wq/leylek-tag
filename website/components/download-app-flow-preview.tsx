@@ -8,7 +8,7 @@ const STEPS: readonly {
 }[] = [
   { title: "Teklif oluşturuldu", detail: "Rota ve koşullar kayıtta", done: true },
   { title: "Eşleşme bekleniyor", detail: "Karşılıklı onay sürecinde", done: false, pulse: true },
-  { title: "QR ile yolculuk başlar", detail: "Biniş doğrulaması aktif", done: false },
+  { title: "QR ile doğrulama", detail: "Biniş ve bitiş için kontrollü teyit", done: false },
 ];
 
 export function DownloadAppFlowPreview() {
@@ -23,7 +23,7 @@ export function DownloadAppFlowPreview() {
           <div className="relative w-full max-w-[340px] rounded-[2.25rem] border border-white/15 bg-slate-950/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
             <div className="mx-auto mb-5 h-1.5 w-[4.5rem] rounded-full bg-white/25" />
             <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200/80">Leylek Tag</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200/80">Leylek TAG</p>
               <p className="mt-2 text-lg font-black text-white">Yolculuk akışı</p>
               <ol className="relative mt-6 space-y-5 border-l border-white/15 pl-6">
                 {STEPS.map((step, i) => (

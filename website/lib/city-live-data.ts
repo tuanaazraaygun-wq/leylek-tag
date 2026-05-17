@@ -401,7 +401,7 @@ export function getCityActivities(city: string): CityActivity[] {
   return [
     {
       id: "start-now",
-      title: `${first.name} → ${second.name} anında yolculuk başladı`,
+      title: `${first.name} → ${second.name} için örnek yolculuk akışı`,
       subtitle: "Yerel rota ağı üzerinde hareket başladı",
       time: "Şimdi",
       type: "trip",
@@ -587,7 +587,7 @@ export function buildMapRoutesAndTiers(
         id: p.routeId,
         from: p.from,
         to: p.to,
-        status: "Canlı",
+        status: "Özet",
         time: "Şimdi",
       });
       tiers.set(p.routeId, "idle");

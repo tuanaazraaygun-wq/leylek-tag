@@ -61,7 +61,7 @@ export function ScrollCtaPopup() {
           Yolunu gerçekten bulmak ister misin?
         </p>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">
-          Gerçek eşleşme ve QR adımları uygulamada tamamlanır.
+          Teklif, karşılıklı onay ve QR ile yolculuk doğrulaması adımları uygulamada tamamlanır.
         </p>
         <Link
           href="/indir#indir-magaza"

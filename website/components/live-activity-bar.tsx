@@ -24,7 +24,7 @@ export function LiveActivityBar({ stats }: { stats: PulseStats }) {
   if (stats.users > 0) {
     parts.push(
       <span key="u" className="tabular-nums">
-        👥 <strong className="font-semibold text-white/85">{stats.users}</strong> aktif kullanıcı
+        👥 <strong className="font-semibold text-white/85">{stats.users}</strong> katılımcı (örnek)
       </span>,
     );
   }

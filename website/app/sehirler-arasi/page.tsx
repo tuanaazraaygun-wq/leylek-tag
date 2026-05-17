@@ -14,17 +14,17 @@ export default function IntercityPage() {
     <>
       <PageHero
         eyebrow="şehirler arası"
-        title="Boş koltuk paylaşımıyla aynı yöne gidenleri buluştur."
-        description="Kullanıcılar gidecekleri şehirleri, tarih/saat bilgisini, boş koltuk sayısını ve tahmini masraf paylaşımını net şekilde paylaşabilir."
+        title="Şehirler arası akış geliştirme sürecinde"
+        description="Şehirler arası yolculuk akışı geliştirme sürecindedir. Planlı uzun yol eşleşmeleri yakında aktif edilecektir. Şu anda şehir içi yolculuk eşleşmesi önceliklidir."
         primaryLabel="Uygulamada Gör"
       />
       <section className="overflow-x-hidden py-10 sm:py-14 md:py-20">
         <Container className="min-w-0 max-w-full">
           <div className="flex min-w-0 flex-col gap-6 lg:gap-10">
             <SectionHeading
-              eyebrow="şehirler arası dashboard"
-              title="Türkiye genelinde şehir dışı teklif ve güvenli eşleşme görünümü"
-              description="Şehirler arası rota ağı üzerinden aktif teklifleri ve yoğun hatları izleyin. Canlı bağlantı aktif olduğunda özet otomatik güncellenir."
+              eyebrow="şehirler arası özet"
+              title="Şehir dışı teklif görünümü (bilgilendirici)"
+              description="Bu alan şehirler arası akış hazırlanırken özet bilgi sunar; bağlantı kurulduğunda özet yenilenebilir. Şu anda şehir içi yolculuk eşleşmesi önceliklidir."
             />
             <div className="min-w-0 max-w-full overflow-hidden">
               <IntercityLiveMap />

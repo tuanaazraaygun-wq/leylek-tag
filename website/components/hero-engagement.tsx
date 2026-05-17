@@ -23,14 +23,14 @@ function HeroDiscoveryHint() {
       className="live-activity-bar mt-6 flex flex-col gap-2 border-y border-white/[0.06] py-3 text-center text-xs font-semibold text-white/72 sm:mt-8 sm:flex-row sm:flex-wrap sm:justify-start sm:gap-x-4 sm:gap-y-1 sm:text-left sm:text-sm"
       aria-live="polite"
     >
-      <span className="text-white/85">İlk kullanıcılar teklif akışını keşfediyor</span>
+      <span className="text-white/85">Beta sürecinde geri bildirimlerini paylaşan kullanıcılarla gelişiyoruz</span>
       <span className="hidden text-white/35 sm:inline" aria-hidden>
         •
       </span>
       <span>
-        Web: keşif · Uygulama:{" "}
+        Web’de bilgi ve özet görünüm · Tam süreç için{" "}
         <Link href="/indir" className="font-bold text-cyan-200/95 underline-offset-2 hover:underline">
-          gerçek eşleşme
+          Leylek TAG uygulaması
         </Link>
       </span>
     </div>
@@ -50,7 +50,8 @@ function HeroDestinationInput() {
       const raw = localStorage.getItem(LS_ROUTE_KEY);
       if (!raw) return;
       const p = JSON.parse(raw) as { label?: string };
-      if (p.label && typeof p.label === "string") setRemembered(p.label);
+      const label = p.label;
+      if (typeof label === "string" && label.length > 0) queueMicrotask(() => setRemembered(label));
     } catch {
       /* ignore */
     }
@@ -114,7 +115,7 @@ function HeroDestinationInput() {
         ) : null}
         {focused && !loading ? (
           <div className="absolute left-0 right-0 top-full z-30 mt-2 rounded-xl border border-white/15 bg-white/10 p-2 text-xs shadow-lg backdrop-blur-md">
-            <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wide text-white/50">Popüler rotalar</p>
+            <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-wide text-white/50">Örnek rotalar</p>
             <ul className="space-y-0.5">
               {ROUTE_SUGGESTIONS.map((s) => (
                 <li key={s}>
@@ -137,7 +138,7 @@ function HeroDestinationInput() {
       </div>
       {focused && !loading ? (
         <p className="mt-2 text-xs font-semibold leading-relaxed text-cyan-200/90 animate-fade-in-up motion-reduce:animate-none">
-          Gideceğin yeri yaz, sana uygun yolculukları gösterelim
+          Gideceğin yeri yaz; uygun akış için rotanı netleştir
         </p>
       ) : null}
       {remembered && !focused ? (
