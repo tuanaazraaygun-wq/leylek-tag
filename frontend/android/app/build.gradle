@@ -36,8 +36,8 @@ android {
         applicationId = 'com.leylektag.app'
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 24
-        versionName = "1.0.22"
+        versionCode = 28
+        versionName = "1.0.4"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -48,13 +48,20 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            def uploadStoreFile = findProperty('MYAPP_UPLOAD_STORE_FILE') ?: 'leylektag-release.keystore'
+            storeFile file(uploadStoreFile)
+            storePassword findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: ''
+            keyAlias findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'leylektag'
+            keyPassword findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: ''
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

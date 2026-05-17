@@ -21,5 +21,13 @@ allprojects {
   }
 }
 
+// Drop Agora screen-sharing AAR so FOREGROUND_SERVICE_MEDIA_PROJECTION is not merged.
+// Voice + camera RTC remain via io.agora.rtc:full-sdk (react-native-agora).
+subprojects { proj ->
+  proj.configurations.configureEach {
+    exclude group: 'io.agora.rtc', module: 'full-screen-sharing'
+  }
+}
+
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
