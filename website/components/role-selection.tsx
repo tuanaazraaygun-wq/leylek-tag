@@ -51,7 +51,7 @@ export function RoleSelection() {
   const pathname = usePathname();
 
   return (
-    <section className="relative py-10 sm:py-14 md:py-20" aria-labelledby="role-selection-heading">
+    <section className="depth-well section-seam relative py-10 sm:py-14 md:py-20" aria-labelledby="role-selection-heading">
       <div className="absolute inset-x-0 top-0 -z-10 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       <Container className="max-w-4xl text-center">
         <h2

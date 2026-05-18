@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { ActivityFeed } from "@/components/activity-feed";
 import { AppPreview } from "@/components/app-preview";
 import { AudienceSection } from "@/components/audience-section";
@@ -8,20 +7,30 @@ import { ButtonLink } from "@/components/button-link";
 import { ComparisonSection } from "@/components/comparison-section";
 import { Container } from "@/components/container";
 import { HeroEngagement } from "@/components/hero-engagement";
+import { HeroPremiumBackdrop } from "@/components/hero-premium-backdrop";
+import { HeroScrollHint } from "@/components/hero-scroll-hint";
+import { HeroShell } from "@/components/hero-shell";
+import { HeroTrustMicro } from "@/components/hero-trust-micro";
 import { ScrollReveal } from "@/components/scroll-reveal";
 import { FaqSection } from "@/components/faq-section";
-import { LiveMapVisual } from "@/components/live-map-visual";
 import { ModeCard } from "@/components/mode-card";
 import { RoleSelection } from "@/components/role-selection";
 import { SectionHeading } from "@/components/section-heading";
 import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
-import { TrustBadges } from "@/components/trust-badges";
+import { HeroShowcaseStack } from "@/components/hero-showcase-stack";
 import { ValueProps } from "@/components/value-props";
-import { featurePillars } from "@/lib/mock-data";
 import { HeroTrustStrip } from "@/components/hero-trust-strip";
 import { HomeFourSteps } from "@/components/home-four-steps";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
 import { SectionMidCta } from "@/components/section-mid-cta";
+
+function NasipPlayGlyph() {
+  return (
+    <svg className="h-4 w-4 shrink-0 text-cyan-100/92" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M9.5 7.85v8.3c0 .52.54.83.96.54l6.62-4.08a.65.65 0 0 0 0-1.1l-6.62-4.09a.62.62 0 0 0-.96.53Z" opacity={0.96} />
+    </svg>
+  );
+}
 
 const experiences = [
   {
@@ -44,107 +53,79 @@ export default function Home() {
   return (
     <>
       <MobileStickyCta />
-      <section className="relative overflow-x-hidden pt-10 pb-12 md:py-24">
-        <div className="pointer-events-none absolute inset-0 -z-10 max-w-[100vw] overflow-x-hidden">
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,#050b14_0%,#0a1628_42%,#120a22_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_85%_65%_at_88%_8%,rgba(0,198,255,0.272),transparent_55%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_12%_32%,rgba(108,99,255,0.255),transparent_52%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_50%_100%,rgba(0,114,255,0.102),transparent_60%)]" />
-        </div>
-        <div className="subtle-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[22rem] max-w-[100vw] overflow-x-hidden opacity-30 sm:h-[28rem] sm:opacity-35 md:h-[32rem]" />
+      <HeroShell className="overflow-x-clip pb-14 pt-10 sm:pb-16 sm:pt-10 md:pb-20 md:pt-12 lg:pb-[5.25rem]">
+        <HeroPremiumBackdrop />
         <Container>
-          <div className="grid animate-fade-in-up grid-cols-1 items-start gap-8 md:gap-12 lg:grid-cols-2 lg:items-center lg:gap-10 xl:gap-12">
-            <div className="min-w-0">
-              <div className="mb-6 flex flex-col items-center gap-6 sm:mb-8 sm:flex-row sm:items-start">
-                <div className="relative shrink-0">
-                  <div className="absolute -inset-2 rounded-3xl bg-gradient-to-tr from-[#00C6FF] via-[#6C63FF] to-[#FF7A18] opacity-50 blur-lg" />
-                  <div className="relative rounded-2xl bg-gradient-to-br from-[#00C6FF] via-[#6C63FF] to-[#0072FF] p-[3px] shadow-xl">
-                    <Image
-                      src="/app-icon.png"
-                      alt=""
-                      width={96}
-                      height={96}
-                      className="rounded-[13px] bg-[#0a1628] object-cover [filter:drop-shadow(0_0_20px_rgba(0,198,255,0.55))_drop-shadow(0_0_28px_rgba(108,99,255,0.35))]"
-                      priority
-                    />
-                  </div>
-                </div>
-                <div className="min-w-0 flex-1 text-center sm:text-left">
-                  <div className="mb-6 flex flex-wrap justify-center gap-2 sm:justify-start">
-                    {featurePillars.slice(0, 4).map((pillar) => (
-                      <span
-                        key={pillar}
-                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-50 shadow-sm backdrop-blur-md sm:text-xs"
-                      >
-                        {pillar}
-                      </span>
-                    ))}
-                  </div>
-                  <h1 className="max-w-4xl break-words text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl md:text-6xl">
-                    Aynı yöne gidenlerle eşleş, yolculuğu güvenle paylaş.
-                  </h1>
-                  <p className="mt-5 max-w-full break-words text-sm leading-relaxed text-white/80 sm:mt-6 sm:max-w-xl sm:text-base">
-                    Leylek TAG, yolcu ve sürücüleri karşılıklı teklif ve onay mantığıyla buluşturan, QR doğrulama destekli yolculuk eşleştirme platformudur.
-                  </p>
-                  <p className="mt-4 text-center text-sm font-semibold text-white/75 sm:text-left">
-                    Beta sürecinde gerçek kullanıcı geri bildirimleriyle gelişiyoruz.
-                  </p>
-                  <p className="mt-2 text-center text-sm font-bold leading-snug text-amber-200/95 sm:text-left">
-                    Erken erişim ve açık teste katılarak sürece dahil olabilirsin.
-                  </p>
-                </div>
+          <div className="grid animate-fade-in-up grid-cols-1 gap-10 md:gap-11 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.02fr)] lg:items-start lg:gap-6 xl:gap-8">
+            <div className="min-w-0 px-px text-center lg:max-w-[36.75rem] lg:pr-1 lg:text-left">
+              <div className="mx-auto lg:mx-0 lg:max-w-none">
+                <p className="text-[11px] font-black uppercase tracking-[0.34em] text-cyan-200/78 sm:text-xs">yolculuk paylaşımı</p>
               </div>
-              <div className="mt-5 flex w-full max-w-xl flex-col gap-3 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-start">
-                <div className="flex w-full flex-col sm:w-auto sm:max-w-none">
-                  <ButtonLink href="/indir" className="w-full px-5 text-center sm:w-auto sm:min-w-[220px] sm:text-[0.8125rem]">
-                    Teklif Oluşturmaya Başla
-                  </ButtonLink>
-                  <p className="mt-2 text-center text-[11px] font-semibold leading-relaxed text-white/58 sm:text-left sm:text-xs">
-                    Ücretsiz • Birkaç adımda teklif oluştur • Eşleşme karşılıklı onayla tamamlanır.
-                  </p>
-                  <p className="mt-2 text-center text-xs text-white/60 sm:text-left">
-                    Teklif ve rotanı netleştirmek için uygulamayı kullanabilirsin.
-                  </p>
-                </div>
-                <ButtonLink href="/muhabbet" variant="secondary" className="w-full sm:w-auto">
-                  İlk teklifini oluştur
+              <h1 className="mx-auto mt-[1.125rem] max-w-[min(22rem,calc(100vw-2rem))] text-balance text-[clamp(2rem,calc(0.92rem+5.2vw),2.62rem)] font-black leading-[0.99] tracking-[-0.044em] text-white antialiased contrast-more:tracking-normal sm:max-w-2xl sm:leading-[0.988] md:max-w-[min(42rem,calc(100vw-4rem))] md:text-[2.825rem] md:leading-[0.985] lg:mx-0 lg:max-w-[36rem] xl:text-[2.9375rem]">
+                <span className="block">Aynı yöne gidenlerle</span>
+                <span className="mt-[0.4rem] block tracking-tight md:mt-2">
+                  <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#73eafd_43%,#0e9fe6_73%,#0066ef_100%)] bg-clip-text text-transparent [text-decoration:none] [text-shadow:none]">
+                    güvenli
+                  </span>
+                  <span className="mx-px font-semibold text-white/[0.77]">{` ve `}</span>
+                  <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#6be7fd_43%,#0d96de_73%,#005ee8_100%)] bg-clip-text text-transparent [text-decoration:none] [text-shadow:none]">
+                    kontrollü
+                  </span>
+                </span>
+                <span className="mt-[0.375rem] block md:mt-3">eşleşme.</span>
+              </h1>
+
+              <div className="[&_ul]:mt-4 sm:[&_ul]:mt-[1.125rem]">
+                <HeroTrustMicro />
+              </div>
+
+              <p className="mx-auto mt-5 max-w-lg text-[0.9575rem] leading-[1.66] tracking-[0.01em] text-slate-300 sm:mt-6 sm:text-base md:mx-0 md:max-w-[26.5rem]">
+                Leylek TAG, rota odaklı eşleşme, QR doğrulama ve güven katmanlarıyla şehir içi yolculuk paylaşımını sadeleştirir.
+              </p>
+
+              <div className="mx-auto mt-[1.375rem] flex max-w-xl flex-col items-stretch justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-[0.9375rem] md:mx-0 md:justify-start lg:max-w-none">
+                <ButtonLink href="/indir" className="w-full px-9 !py-[0.96rem] text-center text-[0.9375rem] sm:w-auto">
+                  Uygulamayı İndir
+                </ButtonLink>
+                <ButtonLink
+                  href="/nasil-calisir"
+                  variant="secondary"
+                  className="inline-flex w-full items-center justify-center gap-2.5 border-white/[0.072] bg-transparent px-[1.825rem] !py-[0.78rem] text-[0.9rem] font-semibold tracking-tight shadow-none backdrop-blur-sm hover:bg-white/[0.028] hover:shadow-none sm:w-auto sm:justify-center sm:gap-2"
+                >
+                  <NasipPlayGlyph /> Nasıl Çalışır?
                 </ButtonLink>
               </div>
+
               <HeroTrustStrip />
-              <div className="mt-10">
-                <TrustBadges />
-              </div>
             </div>
-            <div className="min-w-0 w-full lg:min-h-0">
-              <LiveMapVisual />
+
+            <div className="relative min-h-0 w-full lg:-mt-2 lg:flex lg:min-w-0 lg:justify-end lg:pr-2">
+              <HeroShowcaseStack />
             </div>
           </div>
-          <div id="hero-yol" className="scroll-mt-28 mt-8 min-w-0 w-full md:mt-10">
+
+          <div id="hero-yol" className="scroll-mt-28 mt-14 min-w-0 w-full sm:mt-16 md:mt-[4.25rem]">
             <HeroEngagement />
           </div>
-          <a
-            href="#nasil-calisir-flow"
-            className="mt-4 block text-center text-xs text-white/50 sm:text-left"
-          >
-            ↓ Nasıl çalıştığını gör
-          </a>
-        </Container>
-      </section>
 
-      <ScrollReveal>
+          <HeroScrollHint />
+        </Container>
+      </HeroShell>
+
+      <ScrollReveal staggerDelayMs={0} className="w-full">
         <HomeFourSteps />
       </ScrollReveal>
 
-      <ScrollReveal>
+      <ScrollReveal staggerDelayMs={48} className="w-full">
         <RoleSelection />
       </ScrollReveal>
 
       <SectionMidCta />
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-ambient section-soft-vignette section-seam py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={96}>
           <Container>
-            <div className="mb-8">
+            <div className="mb-8 md:mb-10">
               <SectionHeading
                 eyebrow="neden leylek tag?"
                 title="Yolculuk paylaşımında güven, kontrol ve topluluk aynı yerde."
@@ -156,10 +137,10 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-well section-seam py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={140}>
           <Container>
-            <div className="mb-8">
+            <div className="mb-8 md:mb-10">
               <SectionHeading
                 eyebrow="kimler için?"
                 title="Leylek TAG, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
@@ -173,8 +154,8 @@ export default function Home() {
 
       <SectionMidCta />
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-glass section-seam py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={182}>
           <Container>
             <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.8fr_1fr]">
               <ActivityFeed />
@@ -188,10 +169,10 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-well section-soft-vignette py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={226}>
           <Container>
-            <div className="mb-8">
+            <div className="mb-8 md:mb-10">
               <SectionHeading
                 eyebrow="neden farklı?"
                 title="Klasik yolculuk deneyiminden daha topluluk odaklı."
@@ -205,14 +186,14 @@ export default function Home() {
 
       <SectionMidCta />
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-ambient section-seam py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={274}>
           <Container>
-            <div className="mb-8">
+            <div className="mb-8 md:mb-10">
               <SectionHeading
-                eyebrow="uygulama ön izlemesi"
-                title="İki akış; sade, güvenli ve kontrollü yolculuk deneyimi."
-                description="Örnek cihaz çerçeveleri şehir içi ve Leylek Teklifi akışını sade şekilde özetler."
+                eyebrow="uygulama vitrini"
+                title="Sekiz profesyonel ekran · backend destekli üründen sıralı seçki"
+                description="Gerçek sürücü ve yolcu panelleri: teklif yönetimi, karşılıklı onay ve QR doğrulama ile şehir içi eşleşme hissi masaüstünde ve mobilde carousel ile tam kadraj (contain)."
               />
             </div>
             <AppPreview />
@@ -222,10 +203,10 @@ export default function Home() {
 
       <SectionMidCta />
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-glass py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={318}>
           <Container>
-            <div className="mb-8">
+            <div className="mb-8 md:mb-10">
               <SectionHeading
                 eyebrow="beta süreci"
                 title="Önce kontrollü beta, sonra daha geniş topluluk."
@@ -237,8 +218,8 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-well section-seam py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={366}>
           <Container>
             <SocialProofPlaceholder />
           </Container>
@@ -247,10 +228,10 @@ export default function Home() {
 
       <SectionMidCta />
 
-      <section className="py-10 sm:py-14 md:py-20">
-        <ScrollReveal>
+      <section className="depth-ambient py-11 sm:py-14 md:py-[4.75rem]">
+        <ScrollReveal staggerDelayMs={412}>
           <Container>
-            <div className="mb-8">
+            <div className="mb-8 md:mb-10">
               <SectionHeading
                 eyebrow="sık sorulan sorular"
                 title="Leylek TAG hakkında merak edilenler"
@@ -262,7 +243,7 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <ScrollReveal>
+      <ScrollReveal staggerDelayMs={468} className="w-full">
         <BetaCta />
       </ScrollReveal>
     </>

@@ -5,6 +5,7 @@ import { DownloadAppFlowPreview } from "@/components/download-app-flow-preview";
 import { DownloadPageTrust } from "@/components/download-page-trust";
 import { DownloadWebAppCompare } from "@/components/download-web-app-compare";
 import { EarlyAccessForm } from "@/components/early-access-form";
+import { PlayStoreScreenshotStrip } from "@/components/play-store-screenshot-strip";
 import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 import { StoreButton } from "@/components/store-button";
@@ -49,6 +50,8 @@ export default function DownloadPage() {
           <DownloadPageTrust />
         </Container>
       </section>
+
+      <PlayStoreScreenshotStrip />
 
       <DownloadWebAppCompare />
 

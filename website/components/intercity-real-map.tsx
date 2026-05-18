@@ -192,6 +192,8 @@ function collectEndpoints(routes: IntercityRouteItem[]) {
   return [...map.values()];
 }
 
+const SSR_CLIENT_INITIAL_ZOOM = 6;
+
 export default function IntercityRealMap({
   dashboard,
   dataMode = "demo",
@@ -199,10 +201,8 @@ export default function IntercityRealMap({
   liveSparse = false,
 }: IntercityRealMapProps) {
   const center: LatLngExpression = [39.0, 35.0];
-  const [zoom, setZoom] = useState(() => {
-    if (typeof window === "undefined") return 6;
-    return window.matchMedia("(min-width: 768px)").matches ? 6 : 4.9;
-  });
+  /** Mobil/desktop ayrımı yalnızca mount sonrası; böylece SSR ile hydration metni uyumlu kalır */
+  const [zoom, setZoom] = useState(SSR_CLIENT_INITIAL_ZOOM);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");

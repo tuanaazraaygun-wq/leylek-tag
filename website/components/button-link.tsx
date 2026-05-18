@@ -9,9 +9,9 @@ type ButtonLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
 
 const variants = {
   primary:
-    "bg-gradient-to-br from-[#00C6FF] to-[#0072FF] text-white shadow-lg shadow-cyan-500/25 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,198,255,0.4)] active:translate-y-0 active:scale-[0.96]",
+    "bg-gradient-to-br from-[#00C6FF] to-[#0072FF] text-white shadow-[0_16px_52px_-14px_rgba(0,198,255,0.55),0_0_42px_-20px_rgba(0,114,255,0.22)] ring-1 ring-cyan-300/25 hover:-translate-y-0.5 hover:shadow-[0_22px_60px_-12px_rgba(0,198,255,0.58),0_0_56px_-18px_rgba(0,198,255,0.28)] active:translate-y-0 active:scale-[0.975]",
   secondary:
-    "border border-white/20 bg-white/5 text-white backdrop-blur-xl hover:bg-white/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.96]",
+    "border border-white/[0.12] bg-white/[0.038] text-white/95 shadow-none backdrop-blur-xl hover:border-white/[0.2] hover:bg-white/[0.06] hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] active:translate-y-0 active:scale-[0.975]",
   ghost:
     "border border-transparent text-white/80 hover:-translate-y-0.5 hover:bg-white/10 hover:text-white active:translate-y-0 active:scale-[0.96]",
 };

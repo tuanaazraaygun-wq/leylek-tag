@@ -1,55 +1,45 @@
+import Link from "next/link";
 import { Container } from "@/components/container";
-
-const STEPS: readonly {
-  title: string;
-  detail: string;
-  done: boolean;
-  pulse?: boolean;
-}[] = [
-  { title: "Teklif oluşturuldu", detail: "Rota ve koşullar kayıtta", done: true },
-  { title: "Eşleşme bekleniyor", detail: "Karşılıklı onay sürecinde", done: false, pulse: true },
-  { title: "QR ile doğrulama", detail: "Biniş ve bitiş için kontrollü teyit", done: false },
-];
+import { ButtonLink } from "@/components/button-link";
 
 export function DownloadAppFlowPreview() {
   return (
     <section id="uygulama-akisi" className="scroll-mt-28 py-12 sm:py-16">
       <Container>
-        <p className="text-center text-[10px] font-black uppercase tracking-[0.28em] text-cyan-200/75">uygulama içi akış</p>
+        <p className="text-center text-[10px] font-black uppercase tracking-[0.28em] text-cyan-200/75">sunucu destekli akış özetleri</p>
         <h2 className="mt-3 text-center text-2xl font-black tracking-tight text-white sm:text-3xl">
-          Uygulamada böyle ilerlersin
+          Yolunda kalan güvenilir süreç
         </h2>
-        <div className="mx-auto mt-10 flex justify-center">
-          <div className="relative w-full max-w-[340px] rounded-[2.25rem] border border-white/15 bg-slate-950/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-            <div className="mx-auto mb-5 h-1.5 w-[4.5rem] rounded-full bg-white/25" />
-            <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200/80">Leylek TAG</p>
-              <p className="mt-2 text-lg font-black text-white">Yolculuk akışı</p>
-              <ol className="relative mt-6 space-y-5 border-l border-white/15 pl-6">
-                {STEPS.map((step, i) => (
-                  <li key={step.title} className="relative">
-                    <span
-                      className={`absolute -left-[1.6rem] top-1 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-black ${
-                        step.done
-                          ? "border-emerald-400/50 bg-emerald-400/20 text-emerald-100"
-                          : step.pulse === true
-                            ? "motion-safe:animate-pulse border-cyan-400/60 bg-cyan-400/15 text-cyan-50"
-                            : "border-white/20 bg-white/10 text-white/70"
-                      }`}
-                      aria-hidden
-                    >
-                      {step.done ? "✓" : i + 1}
-                    </span>
-                    <p className="font-black text-white">{step.title}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-400">{step.detail}</p>
-                  </li>
-                ))}
-              </ol>
-            </div>
-            <p className="mt-4 text-center text-[11px] font-semibold text-slate-500">
-              Özet görünüm · Gerçek ekranlar uygulamada
-            </p>
-          </div>
+        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-relaxed text-slate-400">
+          Backend tarafından yönlendirilen teklif yaşam döngüsü: karşılıklı onaya kadar süreç açıkta kalır, QR doğrulama kritik düğümde bağlamı doğrular. Sahte güven iddiası olmadan, üretim uygulamasının ekranlarının tamamına{" "}
+          <Link href="/indir#play-vitrin" className="font-semibold text-cyan-200/95 underline-offset-2 hover:underline">
+            vitrin carousel
+          </Link>{" "}
+          veya ana sayfadaki vitrin bloklarından göz atabilirsin.
+        </p>
+        <p className="mx-auto mt-3 max-w-lg text-center text-xs font-semibold text-cyan-100/85">
+          Geri bildirimin bizim için önemli; beta ile birlikte bu akış daha da sağlamlaşır.
+        </p>
+        <div className="mx-auto mt-10 grid max-w-3xl gap-4 rounded-3xl border border-white/[0.08] bg-white/[0.04] p-5 sm:grid-cols-2 sm:p-7">
+          {[
+            { t: "Karşılıklı teklif yönetimi", d: "Taraflar aynı ekrandan teklifi netleştirir; onay süresi bağlama bağlıdır." },
+            { t: "QR ile yerinde doğrulama", d: "Buluşmadan sonra QR adımı bağlam sürekliliği ve kontrolleri güçlendirir." },
+            { t: "Şehir içi / yolcular", d: "Yolcu panellerinden uygunluk sıralamasına göre ilerlenebilir; sunucudan güncel özete erişilir." },
+            { t: "Sürücü paneli ve rota özeti", d: "Masraf katmanının hesaplanması ve rota seçimi yapısal kurallara göre bağlanmıştır." },
+          ].map((item) => (
+            <article key={item.t} className="rounded-2xl border border-white/[0.06] bg-black/25 p-4">
+              <h3 className="text-base font-black text-white">{item.t}</h3>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">{item.d}</p>
+            </article>
+          ))}
+        </div>
+        <div className="mt-10 flex flex-wrap justify-center gap-4">
+          <ButtonLink href="/indir#play-vitrin" className="min-w-[200px] text-center">
+            Tüm mobil ekranları gör
+          </ButtonLink>
+          <ButtonLink href="/nasil-calisir" variant="secondary" className="min-w-[180px] text-center">
+            Nasıl çalışır
+          </ButtonLink>
         </div>
       </Container>
     </section>

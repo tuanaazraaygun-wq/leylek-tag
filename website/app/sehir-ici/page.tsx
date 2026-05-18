@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CityInteriorShowcase } from "@/components/city-interior-showcase";
 import { CityLiveMap } from "@/components/city-live-map";
 import { Container } from "@/components/container";
 import { CtaBand } from "@/components/cta-band";
@@ -41,6 +42,7 @@ export default function CityPage() {
           </div>
         </Container>
       </section>
+      <CityInteriorShowcase />
       <section className="py-12">
         <Container>
           <div className="mx-auto max-w-[1600px]">

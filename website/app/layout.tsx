@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Footer } from "@/components/footer";
+import { SiteSupportPanel } from "@/components/site-support-panel";
 import { Navbar } from "@/components/navbar";
 import { SiteActionProvider } from "@/components/site-action-context";
+import { BRANDING_PATHS } from "@/lib/branding-assets";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
@@ -47,24 +49,27 @@ export const metadata: Metadata = {
       "Leylek TAG ile karşılıklı teklif ve onayla güvenli eşleşme; QR doğrulama ile kontrollü yolculuk akışı.",
     images: [
       {
-        url: "/logo-leylek.svg",
-        width: 160,
-        height: 160,
-        alt: "Leylek TAG logo",
+        url: BRANDING_PATHS.ogImage,
+        width: 1200,
+        height: 630,
+        alt: "Leylek TAG",
       },
     ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Leylek TAG | Güvenli Yolculuk Paylaşımı",
     description:
       "Leylek TAG ile yolcu ve sürücüleri şeffaf teklif süreci ve QR doğrulama ile güvenli şekilde buluşturun.",
-    images: ["/logo-leylek.svg"],
+    images: [BRANDING_PATHS.ogImage],
   },
   icons: {
-    icon: "/logo-leylek.svg",
-    shortcut: "/logo-leylek.svg",
-    apple: "/logo-leylek.svg",
+    icon: [
+      { url: BRANDING_PATHS.icon192, sizes: "192x192", type: "image/png" },
+      { url: BRANDING_PATHS.icon512, sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: BRANDING_PATHS.favicon,
+    apple: BRANDING_PATHS.appleTouch,
   },
 };
 
@@ -82,11 +87,12 @@ export default function RootLayout({
       <body className={inter.className}>
         <Navbar />
         <SiteActionProvider>
-          <main className="min-w-0 overflow-x-hidden pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0">
+          <main className="relative z-[1] min-w-0 overflow-x-hidden pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0">
             {children}
           </main>
         </SiteActionProvider>
         <Footer />
+        <SiteSupportPanel />
       </body>
     </html>
   );

@@ -22,7 +22,7 @@ export function ValueProps() {
       {values.map((value, index) => (
         <article
           key={value.title}
-          className="glass-panel group relative cursor-default overflow-hidden rounded-3xl p-5 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-cyan-200/40 hover:brightness-110 sm:p-6"
+          className="vitrin-card group relative cursor-default overflow-hidden rounded-3xl border border-white/[0.062] bg-white/[0.038] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition-[border-color,box-shadow] duration-[400ms] sm:p-6"
         >
           <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full bg-cyan-300/10 blur-3xl transition group-hover:bg-cyan-300/20" />
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-sm font-black text-cyan-100 ring-1 ring-white/10">

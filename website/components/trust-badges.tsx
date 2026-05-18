@@ -1,38 +1,47 @@
 const trustBadges = [
-  { label: "Karşılıklı onayla eşleşme", detail: "iki taraf onayı olmadan yolculuk başlamaz" },
-  { label: "Yolculuk öncesi netleştirme", detail: "masraf, rota ve zaman şeffaf" },
-  { label: "QR ile yolculuk doğrulaması", detail: "başlangıç ve bitişte kontrollü teyit" },
-  { label: "Şikayet ve güvenlik", detail: "topluluk güvenlik akışı" },
-  { label: "Minimal kişisel bilgi", detail: "gereksiz paylaşım olmadan teklif süreci" },
+  { label: "Karşılıklı onayla eşleşme", detail: "İki taraf onayı olmadan yolculuk başlamaz." },
+  { label: "Yolculuk öncesi netleştirme", detail: "Masraf, rota ve zaman önceden şeffaftır." },
+  { label: "QR ile doğrulama", detail: "Başlangıç ve bitişte kontrollü teyit akışı." },
+  { label: "Güvenlik ve şikayet", detail: "Şikâyet kanalları topluluk güven sürecinin parçasıdır." },
+  { label: "Minimal kişisel bilgi", detail: "Gereksiz paylaşım olmadan teklif süreci." },
 ];
 
 export function TrustBadges() {
+  const top = trustBadges.slice(0, 3);
+  const bottom = trustBadges.slice(3);
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-      {trustBadges.map((badge) => (
-        <div
-          key={badge.label}
-          className="rounded-2xl border border-white/10 bg-white/[0.07] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-cyan-200/40 hover:bg-white/[0.1]"
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-300/15 text-cyan-100">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
-                <path
-                  d="M5 12.5L10 17L19 7"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <div>
-              <p className="text-sm font-black text-white">{badge.label}</p>
-              <p className="mt-0.5 text-xs text-slate-400">{badge.detail}</p>
-            </div>
+    <div className="space-y-5 sm:space-y-6">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+        {top.map((badge) => (
+          <BadgeCard key={badge.label} badge={badge} />
+        ))}
+      </div>
+      <div className="flex flex-wrap justify-center gap-5 lg:gap-6">
+        {bottom.map((badge) => (
+          <div key={badge.label} className="w-full sm:min-w-[min(100%,340px)] sm:max-w-lg sm:flex-1 lg:max-w-xl">
+            <BadgeCard badge={badge} />
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BadgeCard({ badge }: { badge: { label: string; detail: string } }) {
+  return (
+    <div className="h-full rounded-2xl border border-white/[0.09] bg-white/[0.04] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-sm transition duration-300 hover:border-cyan-400/35 hover:bg-white/[0.055] sm:p-6">
+      <div className="flex items-start gap-4">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-400/[0.15] bg-cyan-400/[0.08] text-cyan-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden stroke="currentColor" strokeWidth={1.6}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
+        <div className="min-w-0">
+          <p className="text-[15px] font-black leading-snug text-white sm:text-base">{badge.label}</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-slate-400 sm:text-[14px]">{badge.detail}</p>
         </div>
-      ))}
+      </div>
     </div>
   );
 }

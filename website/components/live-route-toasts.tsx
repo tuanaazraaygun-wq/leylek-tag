@@ -12,6 +12,12 @@ const CITY_PAIRS = [
   ["Trabzon", "İstanbul"],
 ] as const;
 
+/** SSR ile ilk istemci boyaması eşleşsin (hydration); sonrasında useEffect ile rastgele döngü. */
+function initialToastMessage(): string {
+  const [a, b] = CITY_PAIRS[0];
+  return `🚗 ${a} → ${b} için yeni teklif açıldı`;
+}
+
 function pickToastMessage(): string {
   const roll = Math.random();
   if (roll < 0.38) {
@@ -27,7 +33,7 @@ function pickToastMessage(): string {
 
 export function LiveRouteToasts() {
   const [visible, setVisible] = useState(false);
-  const [message, setMessage] = useState(() => pickToastMessage());
+  const [message, setMessage] = useState(initialToastMessage);
 
   useEffect(() => {
     let cancelled = false;
