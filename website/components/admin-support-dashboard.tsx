@@ -285,7 +285,23 @@ function deskParticipantInitials(name: string | null | undefined, email: string 
 }
 
 const SYSTEM_DESK_WELCOME =
-  "Destek ekibimize hoş geldiniz.\nGörüşmeniz kısa süre içinde temsilciye aktarılacaktır.";
+  "LeylekTAG kurumsal canlı destek hattına hoş geldiniz.\nKonunuz sıraya alındı; temsilcimiz bağlandığında yanıtlar bu akışta görünür.";
+
+/** Kabul sonrası otomatik mesaj — RLS: `sender_type=admin`, jwt e-postasıyla eşleşmeli */
+const ACCEPT_CONVERSATION_WELCOME_BODY = `Merhaba 👋
+LeylekTAG canlı destek ekibine hoş geldiniz.
+Görüşmeniz bir temsilciye aktarılmıştır.
+Size yardımcı olmaktan memnuniyet duyarız.`;
+
+const CANNED_REPLY_PRESETS = [
+  "Merhaba, size nasıl yardımcı olabilirim?",
+  "Talebinizi inceliyorum.",
+  "Kısa süre içinde dönüş sağlayacağım.",
+  "Sorununuz çözüldü mü?",
+  "İyi yolculuklar dileriz.",
+  "Belgelerinizi kontrol ediyoruz.",
+  "Teknik ekibe yönlendirildi.",
+] as const;
 
 function deskVisitorTypingLabel(row: SupportMessageRow): string {
   const first = row.name?.trim().split(/\s+/)[0];
@@ -354,6 +370,9 @@ function AdminSupportChatSection({
   viewerId,
   variant = "default",
   typingIndicatorLabel = "Ziyaretçi yazıyor…",
+  composerStamp,
+  onComposerStampConsumed,
+  onDeskToast,
 }: {
   ticketId: string;
   ticketMessageBody: string;
@@ -363,6 +382,9 @@ function AdminSupportChatSection({
   viewerId: string;
   variant?: "default" | "embed";
   typingIndicatorLabel?: string;
+  composerStamp?: { nonce: number; text: string } | null;
+  onComposerStampConsumed?: () => void;
+  onDeskToast?: (tone: "success" | "error", message: string) => void;
 }) {
   const [rows, setRows] = useState<SupportChatMessageRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -386,6 +408,8 @@ function AdminSupportChatSection({
   const typingBurstRef = useRef(0);
   const typingBridgeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userTypingHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendInFlightRef = useRef(false);
+  const processedComposerStampNonceRef = useRef<number | null>(null);
 
   const bumpUserTyping = useCallback(() => {
     setUserTypingPeek(true);
@@ -395,6 +419,10 @@ function AdminSupportChatSection({
       userTypingHideTimerRef.current = null;
     }, 2600);
   }, []);
+
+  useEffect(() => {
+    processedComposerStampNonceRef.current = null;
+  }, [ticketId]);
 
   useEffect(() => {
     viewerEmailRef.current = viewerEmail;
@@ -432,50 +460,49 @@ function AdminSupportChatSection({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
+  const fetchChatMessages = useCallback(async (): Promise<boolean> => {
+    setLoading(true);
+    setFetchHadError(false);
+    const { data, error } = await supabase
+      .from("support_chat_messages")
+      .select("id,support_message_id,sender_type,sender_email,body,created_at")
+      .eq("support_message_id", ticketId)
+      .order("created_at", { ascending: true });
+
+    setLoading(false);
+    if (error) {
+      setFetchHadError(true);
+      setRows([]);
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[AdminSupportChat] support_chat_messages select failed", {
+          code: error.code,
+          message: error.message,
+          selectedRowId: ticketId,
+          sessionUserId: viewerIdRef.current,
+          sessionEmail: viewerEmailRef.current,
+        });
+      }
+      return false;
+    }
+    setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
+    return true;
+  }, [supabase, ticketId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      void fetchChatMessages();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchChatMessages]);
+
   useEffect(() => {
     scrollToBottom();
   }, [displayRows.length, scrollToBottom]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setFetchHadError(false);
-      setSendError(null);
-      const { data, error } = await supabase
-        .from("support_chat_messages")
-        .select("id,support_message_id,sender_type,sender_email,body,created_at")
-        .eq("support_message_id", ticketId)
-        .order("created_at", { ascending: true });
-
-      if (cancelled) return;
-      setLoading(false);
-      if (error) {
-        setFetchHadError(true);
-        setRows([]);
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[AdminSupportChat] support_chat_messages select failed", {
-            code: error.code,
-            message: error.message,
-            selectedRowId: ticketId,
-            sessionUserId: viewerIdRef.current,
-            sessionEmail: viewerEmailRef.current,
-          });
-        }
-        return;
-      }
-      setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, ticketId]);
-
-  /** Postgres realtime: tek effect, callbackler subscribe ÖNCESİ; topic her kuruluşta benzersiz. */
   useEffect(() => {
     let mounted = true;
     const instanceId = newRealtimeInstanceId();
@@ -619,40 +646,77 @@ function AdminSupportChatSection({
     const body = draft.trim();
     if (body.length < 1 || !canUseComposer || sending) return;
 
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     setSending(true);
-    try {
-      const { data, error } = await supabase
-        .from("support_chat_messages")
-        .insert({
-          support_message_id: ticketId,
-          sender_type: "admin",
-          sender_email: viewerEmail.trim() || null,
-          body,
-        })
-        .select("id,support_message_id,sender_type,sender_email,body,created_at")
-        .maybeSingle();
 
-      if (error || !data) {
-        setSendError("Mesaj gönderilemedi.");
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[AdminSupportChat] support_chat_messages insert failed", {
-            code: error?.code ?? null,
-            message: error?.message ?? (data ? null : "insert returned no row"),
-            selectedRowId: ticketId,
-            sessionUserId: viewerId,
-            sessionEmail: viewerEmail,
-          });
-        }
+    try {
+      const {
+        data: { session: liveSession },
+      } = await supabase.auth.getSession();
+      const jwtEmail =
+        liveSession?.user?.email?.trim().toLowerCase() ?? viewerEmail.trim().toLowerCase();
+      if (!jwtEmail) {
+        const msg =
+          "Oturum e-postası okunamadı. Güvenlik için çıkış yapıp yeniden giriş yapın, ardından tekrar deneyin.";
+        setSendError(msg);
+        onDeskToast?.("error", msg);
         return;
       }
+
+      const { error } = await supabase.from("support_chat_messages").insert({
+        support_message_id: ticketId,
+        sender_type: "admin",
+        sender_email: jwtEmail,
+        body,
+      });
+
+      if (error) {
+        const detail =
+          error.code === "42501" || /rls/i.test(error.message ?? "")
+            ? "Yetki reddedildi. Görüşme size atanmış olmalı ve oturum e-postanız yönetici kaydıyla eşleşmeli."
+            : error.message || "Mesaj kaydedilemedi.";
+        setSendError(detail);
+        onDeskToast?.("error", detail);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[AdminSupportChat] support_chat_messages insert failed", {
+            code: error.code,
+            message: error.message,
+            selectedRowId: ticketId,
+            sessionUserId: viewerId,
+          });
+        }
+        void fetchChatMessages();
+        return;
+      }
+
       setDraft("");
-      setRows((prev) =>
-        prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatMessageRow],
-      );
+      queueMicrotask(() => {
+        scrollToBottom();
+      });
+      const synced = await fetchChatMessages();
+      if (!synced) {
+        onDeskToast?.("error", "Mesaj gönderildi ancak liste yenilenemedi.");
+      }
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   };
+
+  /** Hazır cevap → composer (aynı nonce double-invoke Strict guard) */
+
+  useEffect(() => {
+    const n = composerStamp?.nonce ?? 0;
+    const txt = composerStamp?.text ?? "";
+    if (!n || !txt.trim()) return;
+    if (processedComposerStampNonceRef.current === n) return;
+    processedComposerStampNonceRef.current = n;
+    setDraft((d) => (d.trim().length ? `${d.trim()}\n\n` : "") + txt.trim());
+    queueMicrotask(() => {
+      onComposerStampConsumed?.();
+    });
+  }, [composerStamp?.nonce, composerStamp?.text, onComposerStampConsumed]);
 
   const composerHint = (() => {
     switch (composerMode) {
@@ -805,27 +869,52 @@ function AdminSupportChatSection({
 
           if (st === "admin") {
             return (
-              <div key={ln.id} className="mb-2 flex justify-end">
+              <div key={ln.id} className="mb-3 flex justify-end motion-safe:transition-opacity motion-safe:duration-200">
                 <div
-                  className={`${base} border-cyan-400/22 bg-gradient-to-br from-cyan-500/[0.16] to-black/52 text-slate-50/96`}
+                  className={`${base} border-cyan-400/24 bg-gradient-to-br from-cyan-500/[0.2] via-cyan-500/[0.1] to-black/55 text-slate-50/96`}
                 >
-                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/75">Yanıtın</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/80">Destek ekibi</span>
                   <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
                   {ln.sender_email?.trim() ? (
-                    <div className="mt-1 font-mono text-[9px] text-cyan-200/55">{ln.sender_email.trim()}</div>
+                    <div className="mt-1 font-mono text-[9px] text-cyan-200/45">{ln.sender_email.trim()}</div>
                   ) : null}
-                  {timeEl}
+                  <div className="mt-2 flex items-end justify-between gap-6">
+                    {ln.created_at ? (
+                      <time
+                        className="font-mono text-[9px] text-slate-500/90"
+                        dateTime={ln.created_at}
+                      >
+                        {createdLabel}
+                      </time>
+                    ) : (
+                      <span />
+                    )}
+                    <span className="text-[10px] text-cyan-200/52" aria-hidden title="Okundu (sohbette)">
+                      ✓✓
+                    </span>
+                  </div>
                 </div>
               </div>
             );
           }
 
           return (
-            <div key={ln.id} className="mb-2 flex justify-start">
-              <div className={`${base} border-white/[0.08] bg-black/55 text-slate-100/94`}>
+            <div key={ln.id} className="mb-3 flex justify-start motion-safe:transition-opacity motion-safe:duration-200">
+              <div className={`${base} border-white/[0.1] bg-black/58 text-slate-100/94`}>
                 <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Ziyaretçi</span>
                 <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
-                {timeEl}
+                <div className="mt-2 flex flex-wrap items-end justify-between gap-6">
+                  {ln.created_at ? (
+                    <time className="font-mono text-[9px] text-slate-500/92" dateTime={ln.created_at}>
+                      {createdLabel}
+                    </time>
+                  ) : (
+                    <span />
+                  )}
+                  <span className="text-[9px] text-slate-600" title="Okundu bilgisi yakında">
+                    Okundu: —
+                  </span>
+                </div>
               </div>
             </div>
           );
@@ -857,16 +946,27 @@ function AdminSupportChatSection({
           className="space-y-2.5 rounded-xl border border-white/[0.06] bg-slate-950/55 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl sm:p-3.5"
         >
           <label className="grid gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Mesaj yaz</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+              Composer
+              {sendError ? (
+                <span className="ml-2 rounded-md border border-rose-500/30 bg-rose-500/[0.1] px-1.5 py-px text-[10px] font-semibold lowercase text-rose-100/92">
+                  hata
+                </span>
+              ) : null}
+            </span>
             <textarea
               value={draft}
               onChange={(ev) => setDraft(ev.target.value)}
               onKeyDown={onComposerKeyDown}
-              rows={3}
+              rows={4}
               disabled={!canUseComposer || sending}
-              placeholder={canUseComposer ? "Profesyonel ve net yanıt…" : composerHint ?? "Önce görüşmeyi kabul et."}
+              placeholder={
+                canUseComposer
+                  ? "Mesajınızı yazın… — Enter ile gönder, Shift+Enter ile satır sonu."
+                  : composerHint ?? "Önce görüşmeyi kabul et."
+              }
               aria-label="Admin yanıtı"
-              className="min-h-[88px] w-full resize-none rounded-xl border border-white/[0.1] bg-black/52 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none ring-0 transition placeholder:text-slate-600 focus:border-cyan-400/38 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[100px] w-full resize-y rounded-xl border border-white/[0.1] bg-black/52 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none ring-0 transition placeholder:text-slate-600 focus:border-cyan-400/38 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)] disabled:cursor-not-allowed disabled:opacity-55"
             />
             {canUseComposer ? (
               <span className="text-[10px] text-slate-600">Enter ile gönder · Shift+Enter satır sonu</span>
@@ -880,6 +980,7 @@ function AdminSupportChatSection({
           <button
             type="submit"
             disabled={!canUseComposer || sending || draft.trim().length < 1}
+            aria-busy={sending}
             className="inline-flex min-h-[46px] w-full touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-black text-white shadow-[0_12px_36px_-14px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/22 transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-45"
           >
             {sending ? "Gönderiliyor…" : "Gönder"}
@@ -929,8 +1030,10 @@ function AdminDeskSidePanel({
   onMarkResolved,
   updating,
   lastActivityIso,
-}: AdminDeskSharedProps & { lastActivityIso: string | null }) {
+  onAppendCanned,
+}: AdminDeskSharedProps & { lastActivityIso: string | null; onAppendCanned?: (text: string) => void }) {
   const st = rowStatusValue(row.status);
+  const [cannedOpen, setCannedOpen] = useState(false);
   return (
     <aside
       aria-label="Görüşme özeti"
@@ -1008,14 +1111,47 @@ function AdminDeskSidePanel({
 
         <p className="mt-6 text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/75">Hızlı işlemler</p>
         <div className="mt-3 grid gap-2">
-          <button
-            type="button"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-cyan-400/22 bg-gradient-to-r from-cyan-500/[0.18] to-blue-600/[0.12] px-3 text-[12px] font-bold text-cyan-50/95 ring-1 ring-cyan-400/15 transition hover:brightness-110"
-            disabled
-            title="Yakında"
-          >
-            Hazır cevaplar
-          </button>
+          <div className="relative z-[30]">
+            <button
+              type="button"
+              aria-expanded={cannedOpen}
+              className="inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border border-cyan-400/22 bg-gradient-to-r from-cyan-500/[0.18] to-blue-600/[0.12] px-3 text-[12px] font-bold text-cyan-50/95 ring-1 ring-cyan-400/15 transition hover:brightness-110"
+              onClick={() => setCannedOpen((open) => !open)}
+            >
+              Hazır cevaplar
+            </button>
+            {cannedOpen ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="Hazır cevap listesini kapat"
+                  className="fixed inset-0 z-[35] cursor-default bg-black/50 backdrop-blur-[2px]"
+                  onClick={() => setCannedOpen(false)}
+                />
+                <div className="absolute bottom-full left-0 right-0 z-[45] mb-2 max-h-[min(55vh,20rem)] overflow-y-auto rounded-xl border border-white/[0.12] bg-slate-950/98 p-2 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.85)] ring-1 ring-cyan-400/10 backdrop-blur-xl">
+                  <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    Metin seç — composer’a eklenir
+                  </p>
+                  <ul className="space-y-0.5">
+                    {CANNED_REPLY_PRESETS.map((preset) => (
+                      <li key={preset}>
+                        <button
+                          type="button"
+                          className="w-full rounded-lg px-2.5 py-2.5 text-left text-[12px] font-medium leading-snug text-slate-200 transition hover:bg-cyan-500/[0.12]"
+                          onClick={() => {
+                            onAppendCanned?.(preset);
+                            setCannedOpen(false);
+                          }}
+                        >
+                          {preset}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            ) : null}
+          </div>
           {viewerState === "self_reviewing" ? (
             <button
               type="button"
@@ -1059,7 +1195,18 @@ function AdminDeskSidePanel({
   );
 }
 
-function AdminDeskMainColumn(props: AdminDeskSharedProps) {
+type AdminDeskMainColumnProps = AdminDeskSharedProps & {
+  composerStamp: { nonce: number; text: string } | null;
+  onComposerStampConsumed: () => void;
+  onDeskToast?: (tone: "success" | "error", message: string) => void;
+};
+
+function AdminDeskMainColumn({
+  composerStamp,
+  onComposerStampConsumed,
+  onDeskToast,
+  ...props
+}: AdminDeskMainColumnProps) {
   const { row, viewerState, updating, onAccept, onMarkResolved, supabaseClient, viewerEmail, viewerId } = props;
   const st = rowStatusValue(row.status);
 
@@ -1221,6 +1368,9 @@ function AdminDeskMainColumn(props: AdminDeskSharedProps) {
           viewerId={viewerId}
           variant="embed"
           typingIndicatorLabel={deskVisitorTypingLabel(row)}
+          composerStamp={composerStamp}
+          onComposerStampConsumed={onComposerStampConsumed}
+          onDeskToast={onDeskToast}
         />
       </div>
     </div>
@@ -1330,9 +1480,21 @@ export function AdminSupportDashboard() {
   const [updatingIds, setUpdatingIds] = useState<Record<string, boolean>>({});
   /** ticket id → son sohbet satırının created_at ISO */
   const [lastChatAtByTicket, setLastChatAtByTicket] = useState<Record<string, string>>({});
+  const [composerCannedStamp, setComposerCannedStamp] = useState<{ nonce: number; text: string } | null>(null);
   const [oauthProviderBusy, setOauthProviderBusy] = useState<null | "google" | "apple">(null);
+  const [deskToast, setDeskToast] = useState<null | { tone: "success" | "error"; message: string }>(null);
 
   const authUiLocked = otpSending || oauthProviderBusy !== null;
+
+  const pushDeskToast = useCallback((tone: "success" | "error", message: string) => {
+    setDeskToast({ tone, message });
+  }, []);
+
+  useEffect(() => {
+    if (!deskToast) return undefined;
+    const id = window.setTimeout(() => setDeskToast(null), 4800);
+    return () => window.clearTimeout(id);
+  }, [deskToast]);
 
   const signInWithOAuthProvider = useCallback(
     async (provider: "google" | "apple") => {
@@ -1544,6 +1706,7 @@ export function AdminSupportDashboard() {
     setDeskFilter("all");
     setTicketSearch("");
     setDeskCounts({});
+    setComposerCannedStamp(null);
     setLastChatAtByTicket({});
   }, [client]);
 
@@ -1579,6 +1742,27 @@ export function AdminSupportDashboard() {
           return;
         }
 
+        const emailNorm = adminEmail.trim().toLowerCase();
+        if (emailNorm) {
+          const { error: greetErr } = await client.from("support_chat_messages").insert({
+            support_message_id: rowId,
+            sender_type: "admin",
+            sender_email: emailNorm,
+            body: ACCEPT_CONVERSATION_WELCOME_BODY,
+          });
+          if (greetErr) {
+            if (process.env.NODE_ENV !== "production") {
+              console.error("[AdminSupportDashboard] Karşılama mesajı eklenemedi", greetErr);
+            }
+            pushDeskToast(
+              "error",
+              "Görüşme kabul edildi ancak otomatik karşılama kaydedilemedi. İlk yanıtı manuel yazın.",
+            );
+          }
+        } else {
+          pushDeskToast("error", "Oturum e-postası okunamadı; otomatik karşılama gönderilemedi.");
+        }
+
         await refreshDashboard();
       } finally {
         setUpdatingIds((m) => {
@@ -1588,7 +1772,7 @@ export function AdminSupportDashboard() {
         });
       }
     },
-    [client, refreshDashboard],
+    [client, refreshDashboard, pushDeskToast],
   );
 
   const markConversationResolved = useCallback(
@@ -1665,6 +1849,12 @@ export function AdminSupportDashboard() {
       resolvedListSelectionId != null ? rows.find((row) => row.id === resolvedListSelectionId) ?? null : null,
     [rows, resolvedListSelectionId],
   );
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setComposerCannedStamp(null);
+    });
+  }, [resolvedListSelectionId]);
 
   if (!configured || !client) {
     return (
@@ -2058,7 +2248,7 @@ export function AdminSupportDashboard() {
               <p className="font-bold uppercase tracking-[0.14em] text-emerald-200/85">Canlı destek sistemi</p>
               <p className="mt-1.5 flex items-center gap-2 text-[12px] font-semibold text-emerald-100/95">
                 <span className="livePulse h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-                Çevrimiçi
+                Çevrimiçi • canlı masa açık
               </p>
             </div>
           </div>
@@ -2077,6 +2267,9 @@ export function AdminSupportDashboard() {
                 supabaseClient={client}
                 viewerEmail={viewerEmail}
                 viewerId={viewerId}
+                composerStamp={composerCannedStamp}
+                onComposerStampConsumed={() => setComposerCannedStamp(null)}
+                onDeskToast={pushDeskToast}
               />
             ) : (
               <div className="flex min-h-[20rem] flex-col items-center justify-center rounded-[1.35rem] border border-dashed border-white/[0.12] bg-black/35 px-6 py-16 text-center backdrop-blur-md">
@@ -2100,6 +2293,7 @@ export function AdminSupportDashboard() {
                 viewerEmail={viewerEmail}
                 viewerId={viewerId}
                 lastActivityIso={resolveLastActivityIso(selectedRow, lastChatAtByTicket[selectedRow.id])}
+                onAppendCanned={(text) => setComposerCannedStamp({ nonce: Date.now(), text })}
               />
             ) : (
               <div className="hidden h-full min-h-[16rem] flex-col justify-center rounded-[1.15rem] border border-white/[0.07] bg-black/28 p-6 text-center backdrop-blur-md xl:flex">
@@ -2109,6 +2303,18 @@ export function AdminSupportDashboard() {
           </div>
         </div>
       )}
+      {deskToast ? (
+        <div
+          role="alert"
+          className={`fixed bottom-6 right-5 z-[220] max-w-[min(92vw,22rem)] rounded-xl border px-4 py-3 text-[13px] font-semibold shadow-[0_16px_48px_-12px_rgba(0,0,0,0.65)] backdrop-blur-xl ${
+            deskToast.tone === "error"
+              ? "border-rose-500/38 bg-rose-950/94 text-rose-50"
+              : "border-emerald-400/38 bg-slate-950/94 text-emerald-50"
+          }`}
+        >
+          {deskToast.message}
+        </div>
+      ) : null}
     </section>
   );
 }

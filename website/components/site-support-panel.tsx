@@ -37,7 +37,7 @@ const USER_AGENT_MAX = 512;
 
 /** Karşılama balonunda sabit sistem metni (AI iddiası yok). */
 const LIVE_SUPPORT_WELCOME =
-  "Merhaba, Leylek TAG destek hattına hoş geldin. Konunu kısaca yaz; ekibimiz uygun olduğunda bu görüşmeye katılır.";
+  "Merhaba, Leylek TAG kurumsal canlı destek hattına hoş geldin. Konunu kısaca yazabilirsin; bir temsilci bağlandığında yanıtlar bu akışta görünür.";
 
 type SupportTicketMetaRow = {
   id: string;
