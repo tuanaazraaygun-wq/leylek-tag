@@ -17,16 +17,21 @@ ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS admin_users_self_read ON public.admin_users;
 
--- Oturumdaki kullanıcı yalnızca kendi e-postasına denk satırı görebilir (EXISTS alt sorguları için gerekli).
+-- Oturumu olan kullanıcı yalnızca kendi e-postasıyla eşleşen satırı görebilir (panel admin kontrolü + EXISTS için).
 CREATE POLICY admin_users_self_read ON public.admin_users
 FOR SELECT
 TO authenticated
 USING (
-  lower(trim(coalesce(admin_users.email, ''))) = lower(trim(coalesce(auth.jwt() ->> 'email', '')))
+  lower(trim(coalesce(email, ''))) =
+  lower(trim(coalesce(auth.jwt() ->> 'email', '')))
 );
 
--- Kayıt ekleme yalnızca SQL Editor / service role ile (authenticated ve anon için policy yok).
+-- anon/public okuyamaz: SELECT politikası tanımlanmıyor.
+REVOKE ALL ON TABLE public.admin_users FROM PUBLIC;
+REVOKE ALL ON TABLE public.admin_users FROM anon;
 GRANT SELECT ON TABLE public.admin_users TO authenticated;
+
+-- Küçük harf + trim normalizasyonu ve çift adres önüme (migration): website/supabase/admin_users_normalize.sql
 
 -- ---------------------------------------------------------------------------
 -- support_messages — admin SELECT / UPDATE (+ tarayıcıda oturum varken public INSERT için authenticated INSERT)
@@ -47,7 +52,7 @@ USING (
   )
 );
 
--- Status güncelleme (değer sınırlı).
+-- Güncelleme politikası — support_assignments.sql çalıştırılırsa bu politika REPLACE edilir (atama RLS önceliği).
 CREATE POLICY support_messages_authenticated_admin_update ON public.support_messages
 FOR UPDATE
 TO authenticated

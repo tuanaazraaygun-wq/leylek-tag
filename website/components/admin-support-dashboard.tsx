@@ -269,15 +269,40 @@ async function reconcileSession(
     const {
       data: { session },
     } = await supabase.auth.getSession();
+
     if (!session?.user.email) {
       setSession(null);
       setIsAdmin(false);
       return;
     }
 
-    const { data: adminRow } = await supabase.from("admin_users").select("id").maybeSingle();
+    const normalizedEmail = session.user.email?.trim().toLowerCase() ?? "";
+
+    const { data: adminRow, error: adminUsersError } = await supabase
+      .from("admin_users")
+      .select("id,email")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (adminUsersError) {
+      console.error("[AdminSupportDashboard] admin_users doğrulanamadı", {
+        userId: session.user.id,
+        sessionEmail: session.user.email,
+        normalizedEmail,
+        code: adminUsersError.code,
+        message: adminUsersError.message,
+      });
+      setSession(session);
+      setIsAdmin(false);
+      return;
+    }
+
     setSession(session);
     setIsAdmin(Boolean(adminRow));
+  } catch (e) {
+    console.error("[AdminSupportDashboard] reconcileSession beklenmeyen hata", e);
+    setSession(null);
+    setIsAdmin(false);
   } finally {
     setBusy(false);
   }
