@@ -850,8 +850,8 @@ export function SiteSupportPanel() {
               </div>
             ) : panelView === "thread" && ticketMeta?.id ? (
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="shrink-0 border-b border-white/[0.07] px-5 pb-3 pt-4 sm:px-6 sm:pt-5">
-                  <div className="flex items-start justify-between gap-3">
+                <div className="shrink-0 border-b border-white/[0.07] px-4 pb-2 pt-3 sm:px-5 sm:pb-3 sm:pt-4 md:px-6">
+                  <div className="flex items-start justify-between gap-2 sm:gap-3">
                     <div className="min-w-0">
                       <p
                         id={titleId}
@@ -903,13 +903,13 @@ export function SiteSupportPanel() {
                   </div>
                 </div>
 
-                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
-                  <div className="flex min-w-0 flex-col gap-3 pb-2">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2 sm:px-4 sm:py-3 md:px-5">
+                  <div className="flex min-w-0 flex-col gap-2 pb-1.5 sm:gap-2.5">
                     {threadBootstrap ? (
                       <p className="text-[12px] text-slate-500">Senkronize ediliyor…</p>
                     ) : null}
 
-                    <div className="rounded-2xl rounded-tl-md border border-cyan-400/26 bg-[linear-gradient(148deg,rgba(34,211,238,0.12)_0%,rgba(15,23,42,0.88)_48%,rgba(8,47,73,0.55)_100%)] px-3.5 py-3 shadow-[0_0_32px_-12px_rgba(34,211,238,0.35),inset_0_0_0_1px_rgba(103,232,249,0.14)] backdrop-blur-md">
+                    <div className="rounded-xl rounded-tl-sm border border-cyan-400/26 bg-[linear-gradient(148deg,rgba(34,211,238,0.12)_0%,rgba(15,23,42,0.88)_48%,rgba(8,47,73,0.55)_100%)] px-3 py-2.5 shadow-[0_0_24px_-10px_rgba(34,211,238,0.3),inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-md sm:rounded-2xl sm:px-3.5 sm:py-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/78">
                         Destek karşılaması
                       </p>
@@ -919,7 +919,7 @@ export function SiteSupportPanel() {
                     </div>
 
                     {!resolvedStatus && !hasAdminReplyInThread && !hasAssignedAdmin ? (
-                      <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-cyan-400/22 bg-[linear-gradient(148deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.75)_55%)] px-3.5 py-3 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-sm">
+                      <div className="max-w-[min(100%,21rem)] self-start rounded-xl rounded-tl-sm border border-cyan-400/22 bg-[linear-gradient(148deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.75)_55%)] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-sm sm:rounded-2xl sm:px-3.5 sm:py-3">
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200/78">
                           Beklemede
                         </p>
@@ -929,7 +929,7 @@ export function SiteSupportPanel() {
                       </div>
                     ) : null}
                     {!resolvedStatus && !hasAdminReplyInThread && hasAssignedAdmin ? (
-                      <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-emerald-400/26 bg-emerald-500/[0.08] px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)] backdrop-blur-sm">
+                      <div className="max-w-[min(100%,21rem)] self-start rounded-xl rounded-tl-sm border border-emerald-400/26 bg-emerald-500/[0.08] px-3 py-2 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)] backdrop-blur-sm sm:rounded-2xl sm:px-3.5 sm:py-2.5">
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-200/88">
                           Temsilci
                         </p>
@@ -943,21 +943,21 @@ export function SiteSupportPanel() {
                       const timeLabel = formatChatTimeTr(ln.created_at);
 
                       const baseWrap =
-                        "max-w-[min(100%,19rem)] break-words rounded-2xl border px-3.5 py-2.5 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm";
+                        "max-w-[min(100%,18.5rem)] break-words rounded-xl border px-2.5 py-2 text-[13px] leading-snug shadow-sm backdrop-blur-sm sm:rounded-2xl sm:px-3 sm:py-2";
 
                       if (sender === "system") {
                         return (
                           <div
                             key={ln.id}
-                            className={`mx-auto ${baseWrap} max-w-[95%] self-center rounded-2xl border-amber-400/28 bg-amber-500/[0.08] text-center text-slate-100/94`}
+                            className={`mx-auto ${baseWrap} max-w-[min(96%,24rem)] self-center border-amber-400/32 bg-gradient-to-br from-amber-500/[0.12] to-black/55 text-center text-amber-50/95 ring-1 ring-amber-400/15`}
                           >
                             <span className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-200/85">
                               Sistem
                             </span>
-                            <div className="mt-2 text-[12px] whitespace-pre-wrap">{ln.body}</div>
+                            <div className="mt-1.5 text-[12px] font-medium whitespace-pre-wrap leading-snug">{ln.body}</div>
                             {timeLabel ? (
                               <time
-                                className="mt-2 block font-mono text-[9px] text-amber-100/55"
+                                className="mt-1.5 block font-mono text-[10px] font-medium tabular-nums text-amber-100/55"
                                 dateTime={ln.created_at}
                               >
                                 {timeLabel}
@@ -971,15 +971,15 @@ export function SiteSupportPanel() {
                         return (
                           <div
                             key={ln.id}
-                            className={`${baseWrap} max-w-[min(100%,19rem)] self-end rounded-tr-md border-violet-400/22 bg-black/52 text-slate-50/96`}
+                            className={`${baseWrap} max-w-[min(100%,18.5rem)] self-end rounded-tr-sm border-cyan-400/35 bg-gradient-to-br from-cyan-600/22 to-slate-950/85 text-slate-50 ring-1 ring-cyan-400/12 sm:rounded-tr-md`}
                           >
-                            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-violet-200/75">
+                            <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/92">
                               Destek Ekibi
                             </span>
-                            <div className="mt-2 whitespace-pre-wrap">{ln.body}</div>
+                            <div className="mt-1 whitespace-pre-wrap">{ln.body}</div>
                             {timeLabel ? (
                               <time
-                                className="mt-2 block text-right font-mono text-[9px] text-slate-500/90"
+                                className="mt-1 block text-right font-mono text-[10px] font-medium tabular-nums text-cyan-100/50"
                                 dateTime={ln.created_at}
                               >
                                 {timeLabel}
@@ -993,14 +993,14 @@ export function SiteSupportPanel() {
                       return (
                         <div
                           key={ln.id}
-                          className={`${baseWrap} self-start rounded-tl-md border-white/[0.08] bg-black/52 text-slate-100/94`}
+                          className={`${baseWrap} self-start rounded-tl-sm border-white/[0.1] bg-slate-900/80 text-slate-100 ring-1 ring-white/[0.04] sm:rounded-tl-md`}
                         >
-                          <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
                             Sen
                           </span>
-                          <div className="mt-2 whitespace-pre-wrap">{ln.body}</div>
+                          <div className="mt-1 whitespace-pre-wrap">{ln.body}</div>
                           {timeLabel ? (
-                            <time className="mt-2 block font-mono text-[9px] text-slate-500/92" dateTime={ln.created_at}>
+                            <time className="mt-1 block font-mono text-[10px] font-medium tabular-nums text-slate-500" dateTime={ln.created_at}>
                               {timeLabel}
                             </time>
                           ) : null}
@@ -1008,25 +1008,25 @@ export function SiteSupportPanel() {
                       );
                     })}
                     {chatSending ? (
-                      <div className="flex justify-start px-1" role="status" aria-live="polite">
-                        <div className="inline-flex items-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.05] px-3.5 py-2 text-[11px] font-semibold text-slate-400/95 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm">
+                      <div className="flex justify-start px-0.5" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/35 bg-cyan-500/[0.12] px-3 py-2 text-[12px] font-bold text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.15)] ring-1 ring-cyan-400/20">
                           <span
                             aria-hidden
-                            className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-cyan-300"
+                            className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-cyan-200/25 border-t-cyan-100"
                           />
                           Gönderiliyor…
                         </div>
                       </div>
                     ) : null}
                     {adminTypingPeek ? (
-                      <div className="flex justify-end px-1 pb-2" role="status" aria-live="polite">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/26 bg-black/52 px-3 py-1.5 backdrop-blur-sm shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]">
+                      <div className="flex justify-end px-0.5 pb-1" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/35 bg-gradient-to-r from-cyan-500/15 to-slate-950/80 px-3.5 py-2 shadow-[0_0_20px_-8px_rgba(34,211,238,0.35)] ring-1 ring-cyan-400/15 backdrop-blur-sm">
                           <span className="flex gap-1" aria-hidden>
-                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-300" />
-                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-300 [animation-delay:150ms]" />
-                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-300 [animation-delay:280ms]" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200 [animation-delay:150ms]" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200 [animation-delay:280ms]" />
                           </span>
-                          <span className="text-[11px] font-semibold text-violet-100/92">Destek yazıyor…</span>
+                          <span className="text-[12px] font-bold text-cyan-50/95">Destek Ekibi yazıyor…</span>
                         </div>
                       </div>
                     ) : null}
@@ -1045,38 +1045,38 @@ export function SiteSupportPanel() {
                   </div>
                 ) : null}
 
-                <div className="relative shrink-0 border-t border-white/[0.07] bg-black/35 px-4 py-3 sm:px-5">
+                <div className="relative shrink-0 border-t border-white/[0.07] bg-black/45 px-3 py-2.5 backdrop-blur-md sm:px-4 sm:py-3 md:px-5">
                   <form onSubmit={handleSendChat}>
                     <textarea
                       value={chatInput}
                       aria-label="Sohbet mesajı"
                       rows={resolvedStatus ? 3 : 2}
                       placeholder={
-                        resolvedStatus ? "Çözülü görüşmede yazı gönderilemez." : "Yanıt yaz…"
+                        resolvedStatus ? "Çözülü görüşmede yazı gönderilemez." : "Yanıtınızı yazın…"
                       }
                       disabled={resolvedStatus || chatSending}
                       onChange={(ev) => setChatInput(ev.target.value)}
-                      className="min-h-[76px] w-full resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/18 bg-gradient-to-br from-white/[0.07] to-black/40 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] outline-none transition focus:border-cyan-400/40 disabled:cursor-not-allowed disabled:opacity-45"
+                      className="min-h-[72px] w-full resize-none rounded-xl rounded-tr-md border border-cyan-400/22 bg-gradient-to-br from-white/[0.08] to-black/45 px-3 py-2.5 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] outline-none transition focus:border-cyan-400/45 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)] disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-[76px] sm:px-3.5 sm:py-3"
                     />
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       <button
                         type="submit"
                         disabled={resolvedStatus || chatSending}
-                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black text-white shadow-[0_14px_36px_-18px_rgba(0,198,255,0.45)] ring-1 ring-cyan-300/18 transition hover:brightness-[1.04] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="inline-flex min-h-[48px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-3 text-[14px] font-black tracking-tight text-white shadow-[0_14px_40px_-14px_rgba(0,198,255,0.48)] ring-1 ring-cyan-300/22 transition hover:brightness-[1.05] disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {resolvedStatus ? "Kapalı" : chatSending ? "Gönderiliyor…" : "Gönder"}
                       </button>
                       <button
                         type="button"
-                        className={`inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl border px-4 py-2.5 text-[13px] font-semibold transition ${
+                        className={`inline-flex min-h-[48px] touch-manipulation items-center justify-center rounded-xl border px-3 py-3 text-[13px] font-bold leading-tight transition sm:px-4 ${
                           resolvedStatus
-                            ? "border-emerald-400/45 bg-emerald-500/[0.1] text-emerald-50/95 hover:border-emerald-400/62"
-                            : "border-white/[0.1] bg-white/[0.04] text-slate-200 hover:border-white/[0.15]"
+                            ? "border-emerald-400/45 bg-emerald-500/[0.12] text-emerald-50/95 hover:border-emerald-400/62"
+                            : "border-white/[0.12] bg-white/[0.06] text-slate-50 hover:border-cyan-400/25 hover:bg-white/[0.08]"
                         }`}
                         disabled={chatSending || threadBootstrap}
                         onClick={() => void onNewConversationClick()}
                       >
-                        {resolvedStatus ? "Yeni görüşme" : "Yeni mesaj"}
+                        Yeni görüşme başlat
                       </button>
                     </div>
 
@@ -1290,7 +1290,7 @@ export function SiteSupportPanel() {
         onClick={togglePanel}
         aria-expanded={open}
         aria-controls={dialogId}
-        aria-label="Destek paneli · canlı yazışma"
+        aria-label="Leylek TAG canlı destek — sohbeti aç"
         className="tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full border border-cyan-400/35 bg-slate-950/92 px-3 py-3 pr-[1.375rem] text-[13px] font-black shadow-[0_14px_52px_rgba(0,114,255,0.38),0_0_32px_-8px_rgba(34,211,238,0.22)] backdrop-blur-md transition-[border-color,box-shadow] hover:border-cyan-300/55 hover:shadow-[0_18px_56px_rgba(0,198,255,0.32),0_0_38px_-6px_rgba(34,211,238,0.28)] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none"
       >
         <span
