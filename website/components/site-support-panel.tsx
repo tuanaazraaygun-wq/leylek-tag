@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { usePathname } from "next/navigation";
 import {
   useCallback,
@@ -12,6 +13,11 @@ import {
 } from "react";
 import { useSiteAuth } from "@/components/site-auth-provider";
 import { getSupabaseTicketChatClient } from "@/lib/support-chat-client";
+import {
+  SUPPORT_ADMIN_TYPING_EVENT,
+  SUPPORT_USER_TYPING_EVENT,
+  supportTypingBridgeTopic,
+} from "@/lib/support-typing-realtime";
 import { SUPPORT_EMAIL } from "@/lib/site-contact";
 import {
   clearStoredSupportTicket,
@@ -176,10 +182,18 @@ export function SiteSupportPanel() {
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatBanner, setChatBanner] = useState<string | null>(null);
+  const [adminTypingPeek, setAdminTypingPeek] = useState(false);
+  const [postgresRepairKey, setPostgresRepairKey] = useState(0);
+  const [typingPipeReady, setTypingPipeReady] = useState(false);
 
   const chatScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const knownChatIdsRef = useRef<Set<string>>(new Set());
   const siteSupportRealtimeSeqRef = useRef(0);
+  const typingChannelRef = useRef<RealtimeChannel | null>(null);
+  const typingBurstRef = useRef(0);
+  const adminTypingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeRetryAttemptsRef = useRef(0);
+  const realtimeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Gönder sonrası bekleme bitiş zamanı (ms epoch); 0 = soğuma yok */
   const cooldownEndsAtRef = useRef(0);
@@ -192,7 +206,7 @@ export function SiteSupportPanel() {
 
   useEffect(() => {
     scrollChatToBottom();
-  }, [chatLines, scrollChatToBottom]);
+  }, [chatLines, adminTypingPeek, scrollChatToBottom]);
 
   useEffect(() => {
     const endAt = cooldownEndsAtRef.current;
@@ -211,6 +225,34 @@ export function SiteSupportPanel() {
   }, [cooldownSession]);
 
   const cooldownActiveForUi = cooldownRemainSec > 0;
+
+  const bumpAdminTyping = useCallback(() => {
+    setAdminTypingPeek(true);
+    if (adminTypingHideRef.current) clearTimeout(adminTypingHideRef.current);
+    adminTypingHideRef.current = setTimeout(() => {
+      setAdminTypingPeek(false);
+      adminTypingHideRef.current = null;
+    }, 2600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (adminTypingHideRef.current) clearTimeout(adminTypingHideRef.current);
+      if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+    };
+  }, []);
+
+  const realtimeTicketId = ticketMeta?.id ?? null;
+
+  useEffect(() => {
+    realtimeRetryAttemptsRef.current = 0;
+    typingChannelRef.current = null;
+    queueMicrotask(() => {
+      setPostgresRepairKey(0);
+      setTypingPipeReady(false);
+      setAdminTypingPeek(false);
+    });
+  }, [realtimeTicketId, supportClientToken]);
 
   const closePanel = useCallback(() => setOpen(false), []);
 
@@ -236,6 +278,7 @@ export function SiteSupportPanel() {
     knownChatIdsRef.current = new Set();
     setChatInput("");
     setChatBanner(null);
+    setAdminTypingPeek(false);
     setPanelView("composer");
     resetComposerOnly();
   }, [resetComposerOnly]);
@@ -321,8 +364,6 @@ export function SiteSupportPanel() {
     };
   }, [open, configured, fetchThreadSnapshot]);
 
-  const realtimeTicketId = ticketMeta?.id ?? null;
-
   useEffect(() => {
     const tk = supportClientToken?.trim() ?? "";
     if (!open || !configured || !realtimeTicketId || !tk) return undefined;
@@ -330,8 +371,25 @@ export function SiteSupportPanel() {
     const tc = getSupabaseTicketChatClient(tk);
     if (!tc) return undefined;
 
+    let cleaned = false;
     const seq = ++siteSupportRealtimeSeqRef.current;
     const topic = `site-support-chat:${realtimeTicketId}:${seq}`;
+
+    const scheduleRepair = () => {
+      if (cleaned) return;
+      realtimeRetryAttemptsRef.current += 1;
+      const n = realtimeRetryAttemptsRef.current;
+      if (n > 8) return;
+      const delayMs = Math.min(30_000, 900 * 1.45 ** Math.min(n - 1, 12));
+      if (process.env.NODE_ENV !== "production" && (n === 1 || n % 3 === 0)) {
+        console.warn("[SiteSupportPanel] realtime repair scheduled", { ticketId: realtimeTicketId, n, delayMs });
+      }
+      if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+      realtimeRepairTimerRef.current = setTimeout(() => {
+        realtimeRepairTimerRef.current = null;
+        if (!cleaned) setPostgresRepairKey((v) => v + 1);
+      }, delayMs);
+    };
 
     const channel = tc
       .channel(topic)
@@ -344,11 +402,17 @@ export function SiteSupportPanel() {
           filter: `support_message_id=eq.${realtimeTicketId}`,
         },
         (payload) => {
-          const row = payload.new as SupportChatRow;
-          setChatLines((prev) => {
-            if (prev.some((r) => r.id === row.id)) return prev;
-            return [...prev, row];
-          });
+          if (cleaned) return;
+          try {
+            const row = payload.new as SupportChatRow;
+            if (!row?.id) return;
+            setChatLines((prev) => {
+              if (prev.some((r) => r.id === row.id)) return prev;
+              return [...prev, row];
+            });
+          } catch {
+            /* ignore */
+          }
         },
       )
       .on(
@@ -360,24 +424,91 @@ export function SiteSupportPanel() {
           filter: `id=eq.${realtimeTicketId}`,
         },
         (payload) => {
-          const nw = payload.new as SupportTicketMetaRow;
-          setTicketMeta(nw);
+          if (cleaned) return;
+          try {
+            const nw = payload.new as SupportTicketMetaRow;
+            setTicketMeta(nw);
+          } catch {
+            /* ignore */
+          }
         },
       )
       .subscribe((status, err) => {
-        if (status === "CHANNEL_ERROR" && err) {
-          console.error("[SiteSupportPanel] realtime channel error", {
-            topic,
-            ticketId: realtimeTicketId,
-            message: err.message,
-          });
+        if (cleaned) return;
+        if (status === "SUBSCRIBED") {
+          realtimeRetryAttemptsRef.current = 0;
+          return;
+        }
+        if (status === "CHANNEL_ERROR" && process.env.NODE_ENV !== "production" && err) {
+          console.warn("[SiteSupportPanel] realtime channel warning", err.message);
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          scheduleRepair();
         }
       });
 
     return () => {
+      cleaned = true;
+      if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+      realtimeRepairTimerRef.current = null;
       void tc.removeChannel(channel);
     };
-  }, [configured, open, realtimeTicketId, supportClientToken]);
+  }, [configured, open, realtimeTicketId, supportClientToken, postgresRepairKey]);
+
+  useEffect(() => {
+    const tk = supportClientToken?.trim() ?? "";
+    if (!open || !configured || !realtimeTicketId || !tk) return undefined;
+
+    const tc = getSupabaseTicketChatClient(tk);
+    if (!tc) return undefined;
+
+    let disposed = false;
+    const bridgeTopic = supportTypingBridgeTopic(realtimeTicketId);
+    const ch = tc
+      .channel(bridgeTopic, { config: { broadcast: { ack: false } } })
+      .on("broadcast", { event: SUPPORT_ADMIN_TYPING_EVENT }, () => {
+        if (!disposed) bumpAdminTyping();
+      })
+      .subscribe((status) => {
+        if (disposed) return;
+        if (status === "SUBSCRIBED") {
+          typingChannelRef.current = ch;
+          setTypingPipeReady(true);
+          return;
+        }
+        typingChannelRef.current = null;
+        setTypingPipeReady(false);
+      });
+
+    return () => {
+      disposed = true;
+      typingChannelRef.current = null;
+      setTypingPipeReady(false);
+      void tc.removeChannel(ch);
+    };
+  }, [configured, open, realtimeTicketId, supportClientToken, bumpAdminTyping]);
+
+  useEffect(() => {
+    if (!typingPipeReady || !open || realtimeTicketId == null) return undefined;
+    const ch = typingChannelRef.current;
+    if (!ch) return undefined;
+    const trimmed = chatInput.trim();
+    if (trimmed.length < 1) return undefined;
+
+    typingBurstRef.current += 1;
+    const burst = typingBurstRef.current;
+    const t = window.setTimeout(() => {
+      if (burst !== typingBurstRef.current) return;
+      void ch
+        .send({
+          type: "broadcast",
+          event: SUPPORT_USER_TYPING_EVENT,
+          payload: { at: Date.now() },
+        })
+        .catch(() => {});
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [chatInput, typingPipeReady, open, realtimeTicketId]);
 
   const mergeChatBootstrap = useCallback((rows: SupportChatRow[]) => {
     setChatLines(rows);
@@ -804,6 +935,18 @@ export function SiteSupportPanel() {
                         </div>
                       );
                     })}
+                    {adminTypingPeek ? (
+                      <div className="flex justify-end px-1 pb-2" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/26 bg-black/52 px-3 py-1.5 backdrop-blur-sm shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]">
+                          <span className="flex gap-1" aria-hidden>
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-300" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-300 [animation-delay:150ms]" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-300 [animation-delay:280ms]" />
+                          </span>
+                          <span className="text-[11px] font-semibold text-violet-100/92">Destek yazıyor…</span>
+                        </div>
+                      </div>
+                    ) : null}
                     <div ref={chatScrollAnchorRef} aria-hidden className="h-px w-full shrink-0" />
                   </div>
                 </div>

@@ -3,8 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAdminSupportMagicLinkRedirectTo } from "@/lib/site-origin";
+import {
+  SUPPORT_ADMIN_TYPING_EVENT,
+  SUPPORT_USER_TYPING_EVENT,
+  supportTypingBridgeTopic,
+} from "@/lib/support-typing-realtime";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
+import type { Session, SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 
 const STATUSES = ["new", "reviewing", "resolved"] as const;
 type RowStatus = (typeof STATUSES)[number];
@@ -50,7 +55,7 @@ function viewerConversationState(row: SupportMessageRow, viewerId: string | unde
   const vid = viewerId?.trim() ?? "";
   const assigned = row.assigned_admin_id?.trim() ?? "";
 
-  const st = row.status.trim().toLowerCase();
+  const st = String(row.status ?? "").trim().toLowerCase();
   if (st === "resolved") {
     if (vid && assigned === vid) return "self_resolved";
     return "other_resolved";
@@ -71,7 +76,57 @@ function listMessagePreview(row: SupportMessageRow, viewerId: string | undefined
   const v = viewerConversationState(row, viewerId);
   if (v === "other_reviewing") return "Başka admin tarafından alınmış görüşme.";
   if (v === "other_resolved") return "Çözüldü — başka yönetici.";
-  return row.message;
+  return row.message ?? "";
+}
+
+function ticketDeskPresenceLabel(
+  row: SupportMessageRow,
+  viewerId: string,
+): { label: string; dotClass: string; textClass: string } {
+  const st = rowStatusValue(row.status);
+  const vid = viewerId.trim();
+  const assigned = row.assigned_admin_id?.trim() ?? "";
+
+  if (st === "new") {
+    return {
+      label: "Kuyruk · temsilci atanmadı",
+      dotClass: "bg-violet-400",
+      textClass: "text-violet-200/88",
+    };
+  }
+  if (st === "reviewing") {
+    if (!assigned) {
+      return {
+        label: "İnceleniyor · atama eksik",
+        dotClass: "bg-amber-400",
+        textClass: "text-amber-100/90",
+      };
+    }
+    if (vid && assigned === vid) {
+      return {
+        label: "Sana atanmış · aktif",
+        dotClass: "bg-emerald-400",
+        textClass: "text-emerald-100/90",
+      };
+    }
+    return {
+      label: "Başka temsilci üzerinde",
+      dotClass: "bg-slate-500",
+      textClass: "text-slate-400/95",
+    };
+  }
+  if (st === "resolved") {
+    return {
+      label: "Çözüldü",
+      dotClass: "bg-emerald-500/70",
+      textClass: "text-emerald-200/75",
+    };
+  }
+  return {
+    label: "—",
+    dotClass: "bg-slate-600",
+    textClass: "text-slate-500",
+  };
 }
 
 function statusLabel(s: RowStatus): string {
@@ -87,9 +142,75 @@ function statusLabel(s: RowStatus): string {
   }
 }
 
-function rowStatusValue(raw: string): RowStatus {
-  const t = raw.trim() as RowStatus;
+function rowStatusValue(raw: string | null | undefined): RowStatus {
+  const t = String(raw ?? "").trim() as RowStatus;
   return STATUSES.includes(t) ? t : "new";
+}
+
+type AdminRealtimeConnection = "connecting" | "live" | "reconnecting" | "offline";
+
+function isoToMs(iso: string | null | undefined): number | null {
+  if (!iso?.trim()) return null;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+function formatMediumIsoTr(iso: string | null | undefined): string {
+  const ms = isoToMs(iso);
+  return ms === null
+    ? "—"
+    : new Date(ms).toLocaleString("tr-TR", { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** Kısa relative (liste satırı) */
+function formatShortRelativeTr(iso: string | null | undefined): string {
+  const ms = isoToMs(iso);
+  if (ms === null) return "—";
+  const sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (sec < 45) return "şimdi";
+  if (sec < 3600) return `${Math.floor(sec / 60)} dk`;
+  if (sec < 86_400) return `${Math.floor(sec / 3600)} sa`;
+  return `${Math.floor(sec / 86_400)} g`;
+}
+
+function resolveLastActivityIso(
+  row: SupportMessageRow,
+  lastChatAt: string | undefined,
+): string | null {
+  const candidates = [
+    isoToMs(lastChatAt),
+    isoToMs(row.closed_at),
+    isoToMs(row.accepted_at),
+    isoToMs(row.created_at),
+  ].filter((v): v is number => typeof v === "number");
+  if (!candidates.length) return row.created_at?.trim() ?? null;
+  const best = candidates.reduce((a, b) => Math.max(a, b));
+  return new Date(best).toISOString();
+}
+
+async function mergeLastChatTimestamps(
+  client: SupabaseClient,
+  ids: string[],
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (!ids.length) return out;
+  const BATCH = 45;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const { data, error } = await client
+      .from("support_chat_messages")
+      .select("support_message_id, created_at")
+      .in("support_message_id", slice);
+    if (error || !Array.isArray(data)) continue;
+    for (const r of data as { support_message_id: string; created_at: string }[]) {
+      const sid = r.support_message_id;
+      const cur = out[sid];
+      const nextMs = isoToMs(r.created_at);
+      const curMs = isoToMs(cur);
+      if (nextMs !== null && (curMs === null || nextMs > curMs)) out[sid] = r.created_at;
+    }
+  }
+  return out;
 }
 
 function listStatusBadgeClass(st: RowStatus): string {
@@ -214,15 +335,51 @@ function AdminSupportChatSection({
   const [sendError, setSendError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [rtConn, setRtConn] = useState<AdminRealtimeConnection>("connecting");
+  const [userTypingPeek, setUserTypingPeek] = useState(false);
+  const [typingPipeReady, setTypingPipeReady] = useState(false);
+  const [realtimeRepairKey, setRealtimeRepairKey] = useState(0);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const viewerEmailRef = useRef(viewerEmail);
   const viewerIdRef = useRef(viewerId);
   const realtimeSetupSeqRef = useRef(0);
+  const realtimeRetryAttemptsRef = useRef(0);
+  const realtimeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingBurstRef = useRef(0);
+  const typingChannelRef = useRef<RealtimeChannel | null>(null);
+  const userTypingHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const bumpUserTyping = useCallback(() => {
+    setUserTypingPeek(true);
+    if (userTypingHideTimerRef.current) clearTimeout(userTypingHideTimerRef.current);
+    userTypingHideTimerRef.current = setTimeout(() => {
+      setUserTypingPeek(false);
+      userTypingHideTimerRef.current = null;
+    }, 2600);
+  }, []);
 
   useEffect(() => {
     viewerEmailRef.current = viewerEmail;
     viewerIdRef.current = viewerId;
   }, [viewerEmail, viewerId]);
+
+  useEffect(() => {
+    realtimeRetryAttemptsRef.current = 0;
+    queueMicrotask(() => {
+      setRtConn("connecting");
+      setRealtimeRepairKey(0);
+      setTypingPipeReady(false);
+      setUserTypingPeek(false);
+    });
+  }, [ticketId]);
+
+  useEffect(() => {
+    return () => {
+      if (userTypingHideTimerRef.current) clearTimeout(userTypingHideTimerRef.current);
+      if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+    };
+  }, []);
 
   const composerMode = adminComposerModeFromViewerState(viewerState);
   const canUseComposer = composerMode === "active";
@@ -258,13 +415,15 @@ function AdminSupportChatSection({
       if (error) {
         setFetchHadError(true);
         setRows([]);
-        console.error("[AdminSupportChat] support_chat_messages select failed", {
-          code: error.code,
-          message: error.message,
-          selectedRowId: ticketId,
-          sessionUserId: viewerIdRef.current,
-          sessionEmail: viewerEmailRef.current,
-        });
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[AdminSupportChat] support_chat_messages select failed", {
+            code: error.code,
+            message: error.message,
+            selectedRowId: ticketId,
+            sessionUserId: viewerIdRef.current,
+            sessionEmail: viewerEmailRef.current,
+          });
+        }
         return;
       }
       setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
@@ -278,8 +437,33 @@ function AdminSupportChatSection({
   }, [supabase, ticketId]);
 
   useEffect(() => {
+    let cleaned = false;
     const seq = ++realtimeSetupSeqRef.current;
     const topic = `admin-support-chat:${ticketId}:${seq}`;
+
+    const scheduleRepair = () => {
+      if (cleaned) return;
+      realtimeRetryAttemptsRef.current += 1;
+      const n = realtimeRetryAttemptsRef.current;
+      if (n > 8) {
+        setRtConn("offline");
+        return;
+      }
+      const delayMs = Math.min(30_000, 900 * 1.45 ** Math.min(n - 1, 12));
+      if (process.env.NODE_ENV !== "production" && (n === 1 || n % 3 === 0)) {
+        console.warn("[AdminSupportChat] realtime repair scheduled", { ticketId, n, delayMs });
+      }
+      setRtConn("reconnecting");
+      if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+      realtimeRepairTimerRef.current = setTimeout(() => {
+        realtimeRepairTimerRef.current = null;
+        if (!cleaned) setRealtimeRepairKey((k) => k + 1);
+      }, delayMs);
+    };
+
+    queueMicrotask(() => {
+      setRtConn("connecting");
+    });
 
     const channel = supabase
       .channel(topic)
@@ -292,27 +476,89 @@ function AdminSupportChatSection({
           filter: `support_message_id=eq.${ticketId}`,
         },
         (payload) => {
-          const row = payload.new as SupportChatMessageRow;
-          setRows((prev) => {
-            if (prev.some((r) => r.id === row.id)) return prev;
-            return [...prev, row];
-          });
+          if (cleaned) return;
+          try {
+            const row = payload.new as SupportChatMessageRow;
+            if (!row?.id) return;
+            setRows((prev) => {
+              if (prev.some((r) => r.id === row.id)) return prev;
+              return [...prev, row];
+            });
+          } catch {
+            /* ignore coercion */
+          }
         },
       )
       .subscribe((status, err) => {
-        if (status === "CHANNEL_ERROR" && err) {
-          console.error("[AdminSupportChat] realtime channel error", {
-            topic,
-            ticketId,
-            message: err.message,
-          });
+        if (cleaned) return;
+        if (status === "SUBSCRIBED") {
+          realtimeRetryAttemptsRef.current = 0;
+          setRtConn("live");
+          return;
+        }
+        if (status === "CHANNEL_ERROR" && process.env.NODE_ENV !== "production" && err) {
+          console.warn("[AdminSupportChat] realtime channel warning", err.message);
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          scheduleRepair();
         }
       });
 
     return () => {
+      cleaned = true;
+      if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+      realtimeRepairTimerRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, ticketId]);
+  }, [supabase, ticketId, realtimeRepairKey]);
+
+  useEffect(() => {
+    let disposed = false;
+    const bridgeTopic = supportTypingBridgeTopic(ticketId);
+
+    const ch = supabase
+      .channel(bridgeTopic, { config: { broadcast: { ack: false } } })
+      .on("broadcast", { event: SUPPORT_USER_TYPING_EVENT }, () => {
+        if (!disposed) bumpUserTyping();
+      })
+      .subscribe((status) => {
+        if (disposed) return;
+        if (status === "SUBSCRIBED") {
+          typingChannelRef.current = ch;
+          setTypingPipeReady(true);
+          return;
+        }
+        typingChannelRef.current = null;
+        setTypingPipeReady(false);
+      });
+
+    return () => {
+      disposed = true;
+      typingChannelRef.current = null;
+      setTypingPipeReady(false);
+      void supabase.removeChannel(ch);
+    };
+  }, [supabase, ticketId, bumpUserTyping]);
+
+  useEffect(() => {
+    if (!typingPipeReady || !canUseComposer || draft.trim().length < 1) return undefined;
+    const ch = typingChannelRef.current;
+    if (!ch) return undefined;
+
+    typingBurstRef.current += 1;
+    const burst = typingBurstRef.current;
+    const t = window.setTimeout(() => {
+      if (burst !== typingBurstRef.current) return;
+      void ch
+        .send({
+          type: "broadcast",
+          event: SUPPORT_ADMIN_TYPING_EVENT,
+          payload: { at: Date.now() },
+        })
+        .catch(() => {});
+    }, 520);
+    return () => window.clearTimeout(t);
+  }, [draft, canUseComposer, typingPipeReady]);
 
   const sendAdminMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -335,17 +581,21 @@ function AdminSupportChatSection({
 
       if (error || !data) {
         setSendError("Mesaj gönderilemedi.");
-        console.error("[AdminSupportChat] support_chat_messages insert failed", {
-          code: error?.code ?? null,
-          message: error?.message ?? (data ? null : "insert returned no row"),
-          selectedRowId: ticketId,
-          sessionUserId: viewerId,
-          sessionEmail: viewerEmail,
-        });
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[AdminSupportChat] support_chat_messages insert failed", {
+            code: error?.code ?? null,
+            message: error?.message ?? (data ? null : "insert returned no row"),
+            selectedRowId: ticketId,
+            sessionUserId: viewerId,
+            sessionEmail: viewerEmail,
+          });
+        }
         return;
       }
       setDraft("");
-      setRows((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatMessageRow]));
+      setRows((prev) =>
+        prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatMessageRow],
+      );
     } finally {
       setSending(false);
     }
@@ -354,7 +604,7 @@ function AdminSupportChatSection({
   const composerHint = (() => {
     switch (composerMode) {
       case "claimable_new":
-        return "Cevap yazmak için görüşmeyi kabul et.";
+        return "Önce görüşmeyi kabul etmelisin.";
       case "other_admin":
         return "Bu görüşme başka bir yönetici tarafından alınmış.";
       case "missing_assignment":
@@ -375,28 +625,62 @@ function AdminSupportChatSection({
     }
   };
 
+  const liveStatusClass =
+    rtConn === "live"
+      ? "border-emerald-400/38 bg-emerald-500/[0.12] text-emerald-100/95"
+      : rtConn === "reconnecting"
+        ? "border-amber-400/35 bg-amber-500/[0.1] text-amber-100/95"
+        : rtConn === "offline"
+          ? "border-rose-400/38 bg-rose-500/[0.1] text-rose-100/95"
+          : "border-white/[0.1] bg-white/[0.05] text-slate-200";
+
+  const liveStatusLabel =
+    rtConn === "live"
+      ? "Canlı"
+      : rtConn === "reconnecting"
+        ? "Yeniden bağlanıyor"
+        : rtConn === "offline"
+          ? "Kopuk — yeniden dene (sayfa yenile)"
+          : "Bağlanıyor";
+
   return (
     <section
       aria-label="Canlı sohbet"
       className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-white/[0.06] pt-5"
     >
-      <div className="flex shrink-0 items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Canlı sohbet</p>
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Canlı masa</p>
           <p className="mt-1 text-[11px] leading-snug text-slate-500">
-            Kullanıcı mesajları solda, yanıtlarınız sağda görünür.
+            Anlık sohbet; kullanıcıda “destek yazıyor…” göstergesi paylaşılır (site paneli güncelse).
           </p>
+          {viewerState === "claimable_new" ? (
+            <p className="mt-2 max-w-prose rounded-lg border border-white/[0.06] bg-black/30 px-2.5 py-2 text-[11px] font-medium leading-relaxed text-slate-400">
+              Bu ticket kabul edilene kadar ziyaretçi tarafında genelde aktif temsilci yok hissi oluşabilir —
+              süreci hızlı kabul ederek sıcak bağ kur.
+            </p>
+          ) : null}
         </div>
-        {loading ? (
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">yükleniyor</span>
-        ) : (
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200/82">● canlı akış</span>
-        )}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span
+            className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] ring-1 ring-white/[0.05] backdrop-blur-sm ${liveStatusClass}`}
+          >
+            ● {liveStatusLabel}
+          </span>
+          {loading ? (
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">mesaj yükleme</span>
+          ) : null}
+          {typingPipeReady ? (
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-200/72">
+              yazma sinyali açık
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {fetchHadError ? (
-        <p className="mt-2 shrink-0 text-[12px] leading-relaxed text-rose-300/90" role="alert">
-          Sohbet mesajları yüklenemedi (RLS veya ağ). Detaylar için tarayıcı konsoluna bakın.
+        <p className="mt-2 shrink-0 rounded-xl border border-rose-500/25 bg-rose-500/[0.08] px-3 py-2 text-[12px] font-medium leading-relaxed text-rose-100/95" role="alert">
+          Sohbet mesajları yüklenemedi (RLS veya ağ). Listeyi yenileyin veya daha sonra yeniden deneyin.
         </p>
       ) : null}
 
@@ -406,17 +690,25 @@ function AdminSupportChatSection({
         </p>
       ) : null}
 
-      <div className="relative mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[1rem] border border-white/[0.07] bg-black/35 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="relative mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[1rem] border border-white/[0.07] bg-gradient-to-b from-black/45 to-black/30 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md md:px-3.5">
         {displayRows.length === 0 && !loading ? (
           <p className="px-1 py-6 text-center text-[12px] leading-relaxed text-slate-500">
-            Henüz sohbet satırı yok. Görüşmeyi kabul ettikten sonra yanıt yazabilirsin.
+            Henüz sohbet satırı yok. Önce görüşmeyi kabul et; sonra yanıt yaz.
           </p>
         ) : null}
 
         {displayRows.map((ln) => {
-          const st = ln.sender_type.trim().toLowerCase();
+          const st = String(ln.sender_type ?? "").trim().toLowerCase();
           const base =
-            "max-w-[min(100%,19rem)] rounded-2xl border px-3 py-2.5 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]";
+            "max-w-[min(100%,21rem)] rounded-2xl border px-3 py-2.5 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]";
+
+          const createdLabel = formatMediumIsoTr(ln.created_at);
+
+          const timeEl = ln.created_at ? (
+            <time className="mt-2 block font-mono text-[9px] text-slate-500/92" dateTime={ln.created_at}>
+              {createdLabel}
+            </time>
+          ) : null;
 
           if (st === "system") {
             return (
@@ -426,6 +718,7 @@ function AdminSupportChatSection({
                 >
                   <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Sistem</span>
                   <div className="mt-1.5 whitespace-pre-wrap text-[12px]">{ln.body}</div>
+                  {timeEl}
                 </div>
               </div>
             );
@@ -435,13 +728,14 @@ function AdminSupportChatSection({
             return (
               <div key={ln.id} className="mb-2 flex justify-end">
                 <div
-                  className={`${base} border-cyan-400/22 bg-gradient-to-br from-cyan-500/[0.12] to-black/45 text-slate-50/96`}
+                  className={`${base} border-cyan-400/22 bg-gradient-to-br from-cyan-500/[0.16] to-black/52 text-slate-50/96`}
                 >
-                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/75">Yönetici</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/75">Yanıtın</span>
                   <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
                   {ln.sender_email?.trim() ? (
-                    <div className="mt-1.5 font-mono text-[9px] text-cyan-200/55">{ln.sender_email.trim()}</div>
+                    <div className="mt-1 font-mono text-[9px] text-cyan-200/55">{ln.sender_email.trim()}</div>
                   ) : null}
+                  {timeEl}
                 </div>
               </div>
             );
@@ -449,37 +743,50 @@ function AdminSupportChatSection({
 
           return (
             <div key={ln.id} className="mb-2 flex justify-start">
-              <div className={`${base} border-white/[0.08] bg-black/45 text-slate-100/94`}>
-                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Kullanıcı</span>
+              <div className={`${base} border-white/[0.08] bg-black/55 text-slate-100/94`}>
+                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Ziyaretçi</span>
                 <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
+                {timeEl}
               </div>
             </div>
           );
         })}
+
+        {userTypingPeek ? (
+          <div className="mb-2 px-1" role="status" aria-live="polite">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-black/55 px-3 py-1.5 backdrop-blur-sm">
+              <span className="flex gap-1" aria-hidden>
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300 [animation-delay:280ms]" />
+              </span>
+              <span className="text-[11px] font-semibold tracking-tight text-slate-400">Ziyaretçi yazıyor…</span>
+            </div>
+          </div>
+        ) : null}
+
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.06] bg-slate-950/50 pt-4">
+      <div className="admin-support-chat-composer shrink-0 border-t border-white/[0.06] bg-gradient-to-t from-slate-950/90 to-transparent pt-4">
         <form
           onSubmit={(ev) => void sendAdminMessage(ev)}
-          className="space-y-2.5"
+          className="space-y-2.5 rounded-xl border border-white/[0.06] bg-slate-950/55 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl sm:p-3.5"
         >
           <label className="grid gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Yanıt yaz</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Mesaj yaz</span>
             <textarea
               value={draft}
               onChange={(ev) => setDraft(ev.target.value)}
               onKeyDown={onComposerKeyDown}
               rows={3}
               disabled={!canUseComposer || sending}
-              placeholder={
-                canUseComposer ? "Yanıtınızı yazın…" : composerHint ?? "Yanıt yazılamıyor."
-              }
+              placeholder={canUseComposer ? "Profesyonel ve net yanıt…" : composerHint ?? "Önce görüşmeyi kabul et."}
               aria-label="Admin yanıtı"
-              className="min-h-[88px] w-full resize-none rounded-xl border border-white/[0.1] bg-black/50 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none transition focus:border-cyan-400/35 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[88px] w-full resize-none rounded-xl border border-white/[0.1] bg-black/52 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none ring-0 transition placeholder:text-slate-600 focus:border-cyan-400/38 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)] disabled:cursor-not-allowed disabled:opacity-50"
             />
             {canUseComposer ? (
-              <span className="text-[10px] text-slate-600">Enter gönderir · Shift+Enter yeni satır</span>
+              <span className="text-[10px] text-slate-600">Enter ile gönder · Shift+Enter satır sonu</span>
             ) : null}
           </label>
           {sendError ? (
@@ -490,7 +797,7 @@ function AdminSupportChatSection({
           <button
             type="submit"
             disabled={!canUseComposer || sending || draft.trim().length < 1}
-            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-black text-white shadow-[0_12px_36px_-14px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/25 disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex min-h-[46px] w-full touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-black text-white shadow-[0_12px_36px_-14px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/22 transition hover:brightness-105 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-45"
           >
             {sending ? "Gönderiliyor…" : "Gönder"}
           </button>
@@ -533,13 +840,10 @@ function SupportAdminMessageDetail({
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
             <time
-              dateTime={row.created_at}
+              dateTime={isoToMs(row.created_at) !== null ? row.created_at : undefined}
               className="text-slate-400 [font-variant-numeric:tabular-nums]"
             >
-              {new Date(row.created_at).toLocaleString("tr-TR", {
-                dateStyle: "medium",
-                timeStyle: "short",
-              })}
+              {formatMediumIsoTr(row.created_at)}
             </time>
             <span
               className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${listStatusBadgeClass(st)}`}
@@ -663,11 +967,11 @@ function SupportAdminMessageDetail({
             {viewerState === "self_resolved" && row.closed_at ? (
               <p className="mt-5 text-[12px] font-medium text-slate-500">
                 Kapatıldı:{" "}
-                <time dateTime={row.closed_at} className="text-slate-400">
-                  {new Date(row.closed_at).toLocaleString("tr-TR", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                <time
+                  dateTime={isoToMs(row.closed_at) !== null ? row.closed_at! : undefined}
+                  className="text-slate-400"
+                >
+                  {formatMediumIsoTr(row.closed_at)}
                 </time>
               </p>
             ) : null}
@@ -791,6 +1095,8 @@ export function AdminSupportDashboard() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [updatingIds, setUpdatingIds] = useState<Record<string, boolean>>({});
+  /** ticket id → son sohbet satırının created_at ISO */
+  const [lastChatAtByTicket, setLastChatAtByTicket] = useState<Record<string, string>>({});
   const [oauthProviderBusy, setOauthProviderBusy] = useState<null | "google" | "apple">(null);
 
   const authUiLocked = otpSending || oauthProviderBusy !== null;
@@ -883,9 +1189,23 @@ export function AdminSupportDashboard() {
     if (error) {
       setLoadError("Mesajlar yüklenemedi. Oturumu kontrol et veya tekrar dene.");
       setRows([]);
+      setLastChatAtByTicket({});
       return;
     }
-    setRows(Array.isArray(data) ? (data as SupportMessageRow[]) : []);
+    const tickets = Array.isArray(data) ? (data as SupportMessageRow[]) : [];
+
+    try {
+      if (tickets.length) {
+        const lastMap = await mergeLastChatTimestamps(client, tickets.map((t) => t.id));
+        setLastChatAtByTicket(lastMap);
+      } else {
+        setLastChatAtByTicket({});
+      }
+    } catch {
+      setLastChatAtByTicket({});
+    }
+
+    setRows(tickets);
   }, [client, session, isAdmin, statusFilter]);
 
   useEffect(() => {
@@ -942,6 +1262,7 @@ export function AdminSupportDashboard() {
     setOtpSent(false);
     setEmailInput("");
     setStatusFilter("all");
+    setLastChatAtByTicket({});
   }, [client]);
 
   const acceptConversation = useCallback(
@@ -1226,10 +1547,14 @@ export function AdminSupportDashboard() {
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/78">Admin</p>
           <h1 className="mt-2 flex flex-wrap items-center gap-2.5 text-[1.5rem] font-black tracking-[-0.02em] text-white sm:gap-3 md:text-[1.85rem] xl:text-[2rem]">
-            <span className="leading-tight">Destek gelen kutusu</span>
+            <span className="leading-tight">Kurumsal canlı destek</span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/32 bg-slate-950/70 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.24em] text-emerald-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.16),0_0_32px_-10px_rgba(34,211,238,0.45)] backdrop-blur-xl">
               <span className="livePulse h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden />
               CANLI
+            </span>
+            <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-black/40 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-50/90 backdrop-blur-xl">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" aria-hidden />
+              Temsilci çevrimiçi
             </span>
           </h1>
           <p className="mt-3 max-w-xl text-[13px] leading-relaxed text-slate-400 md:text-[13.5px]">
@@ -1314,40 +1639,59 @@ export function AdminSupportDashboard() {
       ) : (
         <>
           <div className="mt-8 space-y-2 md:hidden">
+            <div className="rounded-[1rem] border border-white/[0.065] bg-gradient-to-br from-black/52 to-black/38 p-4 text-[11px] leading-relaxed text-slate-500 backdrop-blur-md">
+              <p className="font-bold uppercase tracking-[0.14em] text-slate-400">Ziyaretçi bildirimi</p>
+              <p className="mt-2">
+                Yeni bilette sık görülen:{" "}
+                <span className="font-semibold text-slate-400">«Şu anda aktif destek temsilcisi bulunmuyor.»</span>{" "}
+                — kabul yazıcısı sen ol.
+              </p>
+            </div>
             {rows.map((row) => {
               const active = row.id === resolvedListSelectionId;
               const st = rowStatusValue(row.status);
+              const lastAct = resolveLastActivityIso(row, lastChatAtByTicket[row.id]);
+              const presence = ticketDeskPresenceLabel(row, viewerId);
               return (
                 <button
                   key={`m-${row.id}`}
                   type="button"
                   onClick={() => setPickedId(row.id)}
-                  className={`admin-support-list-card w-full rounded-xl border border-white/[0.08] bg-black/52 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-md ${
+                  className={`admin-support-list-card w-full rounded-[1rem] border border-white/[0.08] bg-gradient-to-br from-black/62 to-black/44 p-3.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl ${
                     active
-                      ? "admin-support-list-card--active border-cyan-400/45 bg-white/[0.07]"
-                      : "border-white/[0.06]"
+                      ? "admin-support-list-card--active border-cyan-400/50 bg-white/[0.08]"
+                      : "border-white/[0.065]"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <time
-                      dateTime={row.created_at}
-                      className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 [font-variant-numeric:tabular-nums]"
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${presence.textClass}`}
                     >
-                      {new Date(row.created_at).toLocaleString("tr-TR", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
-                    </time>
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${presence.dotClass}`} aria-hidden />
+                      <span>{presence.label}</span>
+                    </span>
                     <span
                       className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] ${listStatusBadgeClass(st)}`}
                     >
                       {statusLabel(st)}
                     </span>
                   </div>
-                  <div className="mt-1.5 truncate text-[12px] font-semibold text-slate-200/94">
+                  <div className="mt-2 truncate text-[12.5px] font-semibold text-slate-100/94">
                     {row.name?.trim() || row.email?.trim() || "Kimlik bilgisi yok"}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-[12px] leading-snug text-slate-500">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <time
+                      dateTime={lastAct ?? row.created_at}
+                      className="rounded-md border border-white/[0.06] bg-black/35 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-400 [font-variant-numeric:tabular-nums]"
+                      title={
+                        formatMediumIsoTr(lastAct ?? row.created_at ?? undefined) ??
+                        ""
+                      }
+                    >
+                      Son: {formatShortRelativeTr(lastAct ?? row.created_at ?? undefined)}
+                    </time>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-[12px] leading-snug text-slate-500">
                     {listMessagePreview(row, viewerId)}
                   </p>
                 </button>
@@ -1370,51 +1714,71 @@ export function AdminSupportDashboard() {
           </div>
 
           <div className="mt-8 hidden md:grid md:grid-cols-[minmax(260px,min(32vw,340px))_1fr] md:items-start md:gap-6 lg:gap-8 xl:grid-cols-[minmax(280px,360px)_1fr]">
-            <aside
-              className="admin-support-inbox-scroll max-h-[calc(100vh-10rem)] space-y-1.5 overflow-y-auto overscroll-contain pr-1.5 lg:max-h-[calc(100vh-9rem)]"
-              aria-label="Mesaj listesi"
-            >
-              {rows.map((row) => {
-                const active = row.id === resolvedListSelectionId;
-                const st = rowStatusValue(row.status);
-                return (
-                  <button
-                    key={`d-${row.id}`}
-                    type="button"
-                    aria-current={active ? "true" : undefined}
-                    onClick={() => setPickedId(row.id)}
-                    className={`admin-support-list-card w-full rounded-xl border border-white/[0.07] bg-black/52 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur-md ${
-                      active
-                        ? "admin-support-list-card--active border-cyan-400/48 bg-white/[0.08]"
-                        : "border-white/[0.055]"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <time
-                        dateTime={row.created_at}
-                        className="font-mono text-[9px] font-semibold uppercase tracking-wide text-slate-500 [font-variant-numeric:tabular-nums]"
-                      >
-                        {new Date(row.created_at).toLocaleDateString("tr-TR", {
-                          day: "numeric",
-                          month: "short",
-                        })}
-                      </time>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] ${listStatusBadgeClass(st)}`}
-                      >
-                        {statusLabel(st)}
-                      </span>
-                    </div>
-                    <p className="mt-1.5 truncate text-[11.5px] font-semibold text-slate-200/93">
-                      {row.name?.trim() || row.email?.trim() || "Kimlik bilgisi yok"}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-500">
-                      {listMessagePreview(row, viewerId)}
-                    </p>
-                  </button>
-                );
-              })}
-            </aside>
+            <div className="flex min-h-0 flex-col gap-5 pr-1.5">
+              <aside
+                className="admin-support-inbox-scroll max-h-[calc(100vh-14rem)] space-y-1.5 overflow-y-auto overscroll-contain lg:max-h-[calc(100vh-12rem)]"
+                aria-label="Mesaj listesi"
+              >
+                {rows.map((row) => {
+                  const active = row.id === resolvedListSelectionId;
+                  const st = rowStatusValue(row.status);
+                  const lastAct = resolveLastActivityIso(row, lastChatAtByTicket[row.id]);
+                  const presence = ticketDeskPresenceLabel(row, viewerId);
+                  return (
+                    <button
+                      key={`d-${row.id}`}
+                      type="button"
+                      aria-current={active ? "true" : undefined}
+                      onClick={() => setPickedId(row.id)}
+                      className={`admin-support-list-card w-full rounded-[1rem] border border-white/[0.07] bg-gradient-to-br from-black/62 to-black/44 p-3.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl ${
+                        active
+                          ? "admin-support-list-card--active border-cyan-400/52 bg-white/[0.09]"
+                          : "border-white/[0.055]"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide ${presence.textClass}`}>
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${presence.dotClass}`} aria-hidden />
+                          <span>{presence.label}</span>
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] ${listStatusBadgeClass(st)}`}
+                        >
+                          {statusLabel(st)}
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-[12px] font-semibold tracking-tight text-slate-100/93">
+                        {row.name?.trim() || row.email?.trim() || "Kimlik bilgisi yok"}
+                      </p>
+                      <div className="mt-2">
+                        <span
+                          className="rounded-md border border-white/[0.066] bg-black/38 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-400 [font-variant-numeric:tabular-nums]"
+                          title={formatMediumIsoTr(lastAct ?? row.created_at ?? undefined) ?? ""}
+                        >
+                          Son aktivite · {formatShortRelativeTr(lastAct ?? row.created_at ?? undefined)}
+                        </span>
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-500">
+                        {listMessagePreview(row, viewerId)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </aside>
+              <div
+                className="rounded-[1rem] border border-white/[0.065] bg-gradient-to-br from-black/55 to-black/35 p-4 text-[11px] leading-relaxed text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur-xl"
+                aria-label="Masaya not"
+              >
+                <p className="font-bold uppercase tracking-[0.16em] text-slate-400">Ziyaretçi bildirimi</p>
+                <p className="mt-2 text-slate-500">
+                  Bekleyen biletlerde site tarafında{" "}
+                  <span className="font-semibold text-slate-400">
+                    «Şu anda aktif destek temsilcisi bulunmuyor.»
+                  </span>{" "}
+                  benzeri mesaj sık görülür — görüşmeyi üstlenerek sıcak bağ kur.
+                </p>
+              </div>
+            </div>
             <div className="flex min-h-0 flex-col md:sticky md:top-5 lg:top-7">
               {selectedRow ? (
                 <SupportAdminMessageDetail
