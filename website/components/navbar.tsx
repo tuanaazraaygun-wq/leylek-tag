@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BrandingImage } from "@/components/branding-image";
 import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
+import { NavbarSiteAuthDrawer, NavbarSiteAuthTop } from "@/components/navbar-site-auth";
 import { BRANDING_PATHS, LEGACY_FALLBACK_ICON } from "@/lib/branding-assets";
 
 const navItems = [
@@ -93,7 +94,8 @@ export function Navbar() {
               ))}
             </nav>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <NavbarSiteAuthTop />
               <ButtonLink
                 href="/indir"
                 className="hidden !min-h-[44px] whitespace-nowrap !rounded-full !px-4 !py-2.5 !text-[13px] !shadow-[0_10px_28px_-6px_rgba(0,198,255,0.35)] hover:!shadow-[0_14px_36px_-4px_rgba(0,198,255,0.42)] sm:inline-flex"
@@ -133,6 +135,7 @@ export function Navbar() {
                 {item.label}
               </Link>
             ))}
+            <NavbarSiteAuthDrawer onNavigate={() => setIsOpen(false)} />
             <ButtonLink href="/indir" className="mt-1 w-full !py-3" onClick={() => setIsOpen(false)}>
               Uygulamayı İndir
             </ButtonLink>

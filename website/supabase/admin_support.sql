@@ -79,5 +79,8 @@ GRANT UPDATE ON TABLE public.support_messages TO authenticated;
 GRANT INSERT ON TABLE public.support_messages TO authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Atama yaşam döngüsü + sıkı UPDATE RLS: website/supabase/support_assignments.sql
+-- Kolonları ve politikayı yüklemeden önce üst iki dosyanın projede çalıştığından emin olun.
+--
 -- Örnek yetkili e-posta eklemek (yorum satırından çıkarın, e-postayı düzenleyin):
 -- insert into public.admin_users (email) values ('admin@leylektag.com');

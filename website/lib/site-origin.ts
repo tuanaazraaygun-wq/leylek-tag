@@ -13,6 +13,10 @@
  *   http://localhost:3000/support/admin
  *   http://127.0.0.1:3000/support/admin
  *   https://leylektag.com/support/admin
+ *
+ * Navbar “Google ile giriş” ana sayfa dönüşü (Site URL / root):
+ *   http://localhost:3000/
+ *   https://leylektag.com/
  */
 
 /** Tek canonical pathname (leading slash ile). Bazı CDN/WAF yapıları /admin altını 404 yapabiliyor. */
@@ -40,4 +44,10 @@ export function getSiteOriginForRedirect(): string {
 export function getAdminSupportMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${ADMIN_SUPPORT_ROUTE_PATH}`;
+}
+
+/** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */
+export function getWebsiteOAuthRedirectToHome(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}/`;
 }

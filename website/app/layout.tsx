@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { SiteSupportPanel } from "@/components/site-support-panel";
 import { Navbar } from "@/components/navbar";
+import { SiteAuthProvider } from "@/components/site-auth-provider";
 import { SiteActionProvider } from "@/components/site-action-context";
 import { BRANDING_PATHS } from "@/lib/branding-assets";
 import "leaflet/dist/leaflet.css";
@@ -85,14 +86,16 @@ export default function RootLayout({
   return (
     <html lang="tr">
       <body className={inter.className}>
-        <Navbar />
-        <SiteActionProvider>
-          <main className="relative z-[1] min-w-0 overflow-x-hidden pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0">
-            {children}
-          </main>
-        </SiteActionProvider>
-        <Footer />
-        <SiteSupportPanel />
+        <SiteAuthProvider>
+          <Navbar />
+          <SiteActionProvider>
+            <main className="relative z-[1] min-w-0 overflow-x-hidden pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0">
+              {children}
+            </main>
+          </SiteActionProvider>
+          <Footer />
+          <SiteSupportPanel />
+        </SiteAuthProvider>
       </body>
     </html>
   );
