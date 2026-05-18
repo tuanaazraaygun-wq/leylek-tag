@@ -46,6 +46,22 @@ function formatMmSs(totalSec: number): string {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+/** Premium trust video shell — görsel tokenlar (logic yok). */
+const P = {
+  bgDeep: '#08111F',
+  bgMid: '#0B1220',
+  bgElev: '#101A2B',
+  border: '#1E3A5F',
+  accent: '#22D3EE',
+  text: 'rgba(243,248,255,0.94)',
+  muted: 'rgba(186,201,222,0.82)',
+  cyanEdge: 'rgba(34,211,238,0.42)',
+  dangerGlass: 'rgba(185,28,28,0.38)',
+  dangerGlassBorder: 'rgba(248,113,113,0.42)',
+  hudBg: 'rgba(8,17,31,0.82)',
+  blackVideo: '#020617',
+};
+
 const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   visible,
   trustId,
@@ -290,7 +306,9 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
     return (
       <Modal visible transparent animationType="fade">
         <View style={[styles.webBlock, { paddingTop: insets.top }]}>
-          <Text style={styles.webBlockText}>{error || 'Güven görüşmesi yalnızca uygulamada kullanılabilir.'}</Text>
+          <Text style={styles.webBlockText}>
+            {error || 'Güven görüşmesi yalnızca uygulamada kullanılabilir.'}
+          </Text>
           <Pressable onPress={onClose} style={styles.endBtn}>
             <Text style={styles.endBtnText}>Kapat</Text>
           </Pressable>
@@ -304,7 +322,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen">
       <View style={[styles.root, { paddingTop: insets.top }]}>
-        <LinearGradient colors={['#0F172A', '#1E293B']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[P.bgDeep, P.bgMid, P.bgElev]} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.header}>
           <View style={styles.headerTextCol}>
             <Text style={styles.headerLabel}>Güven alınıyor</Text>
@@ -313,7 +331,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
             </Text>
           </View>
           <View style={styles.timerPill}>
-            <Ionicons name="time-outline" size={18} color="#FDE68A" />
+            <Ionicons name="time-outline" size={18} color={P.accent} />
             <Text style={styles.timerText}>{formatMmSs(remainingSec)}</Text>
           </View>
         </View>
@@ -327,7 +345,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
           </View>
         ) : joining ? (
           <View style={styles.centerBox}>
-            <ActivityIndicator size="large" color="#5EEAD4" />
+            <ActivityIndicator size="large" color={P.accent} />
             <Text style={styles.joiningText}>Güven kanalına bağlanılıyor…</Text>
           </View>
         ) : (
@@ -335,7 +353,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
             <View style={styles.remoteWrap}>
               <RtcSurfaceView style={styles.remoteView} canvas={{ uid: remoteCanvasUid }} />
               <LinearGradient
-                colors={['transparent', 'rgba(15,23,42,0.85)']}
+                colors={['transparent', 'rgba(8,17,31,0.88)']}
                 style={styles.remoteFade}
               />
             </View>
@@ -350,7 +368,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
             onPress={() => void finalizeEnd()}
             style={({ pressed }) => [styles.hangup, pressed && { opacity: 0.9 }]}
           >
-            <Ionicons name="call" size={26} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
+            <Ionicons name="call" size={26} color={P.text} style={{ transform: [{ rotate: '135deg' }] }} />
             <Text style={styles.hangupText}>Görüşmeyi bitir</Text>
           </Pressable>
         </View>
@@ -362,7 +380,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: P.bgDeep,
   },
   header: {
     flexDirection: 'row',
@@ -370,39 +388,48 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 18,
     paddingVertical: 12,
+    backgroundColor: P.hudBg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(30,58,95,0.5)',
   },
   headerTextCol: {
     flex: 1,
     marginRight: 12,
   },
   headerLabel: {
-    color: '#94A3B8',
+    color: P.muted,
     fontSize: 13,
     fontWeight: '600',
-    letterSpacing: 0.3,
+    letterSpacing: 0.35,
   },
   peerName: {
-    color: '#F8FAFC',
-    fontSize: 17,
+    color: P.text,
+    fontSize: 16,
     fontWeight: '700',
     marginTop: 2,
+    letterSpacing: 0.2,
   },
   timerPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    backgroundColor: 'rgba(8,17,31,0.72)',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: 'rgba(250, 204, 21, 0.35)',
+    borderColor: P.cyanEdge,
+    shadowColor: P.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
   },
   timerText: {
-    color: '#FDE68A',
-    fontSize: 18,
+    color: P.text,
+    fontSize: 17,
     fontVariant: ['tabular-nums'],
-    fontWeight: '800',
+    fontWeight: '700',
+    letterSpacing: 0.6,
   },
   videoStack: {
     flex: 1,
@@ -410,12 +437,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 16,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 16,
   },
   remoteWrap: {
     flex: 1,
-    backgroundColor: '#020617',
+    backgroundColor: P.blackVideo,
     borderRadius: 16,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: P.border,
   },
   remoteView: {
     flex: 1,
@@ -436,8 +470,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: 'rgba(148, 163, 184, 0.5)',
-    backgroundColor: '#0F172A',
+    borderColor: P.border,
+    backgroundColor: P.bgElev,
+    shadowColor: P.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
   },
   localView: {
     flex: 1,
@@ -450,14 +489,16 @@ const styles = StyleSheet.create({
   },
   joiningText: {
     marginTop: 14,
-    color: '#94A3B8',
+    color: P.muted,
     fontSize: 15,
+    letterSpacing: 0.15,
   },
   errorText: {
-    color: '#FCA5A5',
+    color: 'rgba(243,248,255,0.88)',
     textAlign: 'center',
     fontSize: 15,
     marginBottom: 20,
+    lineHeight: 22,
   },
   footer: {
     paddingHorizontal: 20,
@@ -467,12 +508,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#B91C1C',
+    backgroundColor: P.dangerGlass,
+    borderWidth: 1,
+    borderColor: P.dangerGlassBorder,
     paddingVertical: 16,
     borderRadius: 16,
+    shadowColor: 'rgba(220,38,38,0.35)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
   },
   hangupText: {
-    color: '#FFF',
+    color: P.text,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -480,24 +528,27 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    backgroundColor: '#334155',
+    backgroundColor: 'rgba(8,17,31,0.75)',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: P.border,
   },
   endBtnText: {
-    color: '#F8FAFC',
+    color: P.text,
     fontWeight: '600',
   },
   webBlock: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.92)',
+    backgroundColor: 'rgba(8,17,31,0.94)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
   webBlockText: {
-    color: '#E2E8F0',
+    color: P.muted,
     textAlign: 'center',
     fontSize: 15,
+    lineHeight: 22,
   },
 });
 

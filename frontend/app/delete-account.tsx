@@ -9,12 +9,12 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Alert,
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { clearSessionStorage, getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -123,12 +123,12 @@ export default function DeleteAccountScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+      <StatusBar barStyle="light-content" backgroundColor="#08111F" />
       
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#22D3EE" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Hesap Silme</Text>
         <View style={{ width: 40 }} />
@@ -233,7 +233,7 @@ export default function DeleteAccountScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#08111F',
   },
   header: {
     flexDirection: 'row',
@@ -241,7 +241,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#16213e',
+    backgroundColor: 'rgba(11, 18, 32, 0.95)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1E3A5F',
   },
   backButton: {
     padding: 8,
@@ -249,17 +251,17 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: 'rgba(243, 248, 255, 0.96)',
   },
   content: {
     flex: 1,
     padding: 20,
   },
   warningBox: {
-    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
     borderWidth: 1,
-    borderColor: '#E74C3C',
-    borderRadius: 12,
+    borderColor: 'rgba(248, 113, 113, 0.45)',
+    borderRadius: 16,
     padding: 20,
     alignItems: 'center',
     marginBottom: 24,
@@ -267,58 +269,66 @@ const styles = StyleSheet.create({
   warningTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#E74C3C',
+    color: 'rgba(252, 165, 165, 0.98)',
     marginTop: 12,
     marginBottom: 8,
   },
   warningText: {
     fontSize: 15,
-    color: '#ddd',
+    color: 'rgba(203, 213, 225, 0.95)',
     textAlign: 'center',
     lineHeight: 22,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: 'rgba(243, 248, 255, 0.95)',
     marginBottom: 16,
   },
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(30, 58, 95, 0.55)',
   },
   listText: {
     fontSize: 15,
-    color: '#ddd',
+    color: 'rgba(203, 213, 225, 0.92)',
     marginLeft: 12,
   },
   infoTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: 'rgba(243, 248, 255, 0.95)',
     marginTop: 24,
     marginBottom: 12,
   },
   infoText: {
     fontSize: 15,
-    color: '#999',
+    color: 'rgba(172, 188, 212, 0.92)',
     lineHeight: 24,
   },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E74C3C',
+    backgroundColor: 'rgba(220, 38, 38, 0.95)',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     marginTop: 32,
     gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.35)',
+    shadowColor: '#7f1d1d',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 6,
   },
   deleteButtonDisabled: {
-    backgroundColor: '#666',
+    backgroundColor: 'rgba(51, 65, 85, 0.85)',
+    borderColor: 'rgba(30, 58, 95, 0.6)',
   },
   deleteButtonText: {
     fontSize: 16,
@@ -328,24 +338,24 @@ const styles = StyleSheet.create({
   supportCard: {
     marginTop: 20,
     borderWidth: 1,
-    borderColor: '#2a3b5f',
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: '#182640',
+    borderColor: '#1E3A5F',
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: 'rgba(16, 26, 43, 0.82)',
   },
   supportTitle: {
-    color: '#fff',
+    color: 'rgba(243, 248, 255, 0.96)',
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 6,
   },
   supportCompany: {
-    color: '#b8c7e0',
+    color: 'rgba(172, 188, 212, 0.9)',
     fontSize: 13,
     marginBottom: 10,
   },
   supportLink: {
-    color: '#6fb7ff',
+    color: '#22D3EE',
     fontSize: 14,
     textDecorationLine: 'underline',
     marginBottom: 6,
@@ -353,19 +363,19 @@ const styles = StyleSheet.create({
   legalCard: {
     marginTop: 14,
     borderWidth: 1,
-    borderColor: '#2a3b5f',
-    borderRadius: 12,
-    padding: 14,
-    backgroundColor: '#182640',
+    borderColor: '#1E3A5F',
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: 'rgba(16, 26, 43, 0.82)',
   },
   legalTitle: {
-    color: '#fff',
+    color: 'rgba(243, 248, 255, 0.96)',
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 8,
   },
   legalLink: {
-    color: '#6fb7ff',
+    color: '#22D3EE',
     fontSize: 14,
     textDecorationLine: 'underline',
     marginBottom: 6,

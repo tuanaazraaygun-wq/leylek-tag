@@ -327,7 +327,7 @@ export default function PassengerWaitingScreen({
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#F8FAFC', '#EFF6FF', '#DBEAFE', '#E0F2FE']}
+        colors={['#08111F', '#0B1220', '#101A2B']}
         style={StyleSheet.absoluteFillObject}
       />
 
@@ -344,7 +344,7 @@ export default function PassengerWaitingScreen({
           accessibilityRole="button"
           accessibilityLabel="Geri"
         >
-          <Ionicons name="chevron-back" size={28} color="#3FA9F5" />
+          <Ionicons name="chevron-back" size={28} color="#22D3EE" />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
@@ -407,8 +407,8 @@ export default function PassengerWaitingScreen({
             <Circle
               center={userLocation}
               radius={20000}
-              strokeColor="rgba(96, 165, 250, 0.4)"
-              fillColor="rgba(96, 165, 250, 0.08)"
+              strokeColor="rgba(34, 211, 238, 0.35)"
+              fillColor="rgba(34, 211, 238, 0.06)"
               strokeWidth={2}
             />
             
@@ -416,8 +416,8 @@ export default function PassengerWaitingScreen({
             <Circle
               center={userLocation}
               radius={10000}
-              strokeColor="rgba(96, 165, 250, 0.6)"
-              fillColor="rgba(96, 165, 250, 0.12)"
+              strokeColor="rgba(34, 211, 238, 0.5)"
+              fillColor="rgba(34, 211, 238, 0.1)"
               strokeWidth={1}
             />
             
@@ -483,7 +483,7 @@ export default function PassengerWaitingScreen({
           </MapView>
         ) : (
           <View style={styles.mapPlaceholder}>
-            <Ionicons name="map" size={48} color="#60a5fa" />
+            <Ionicons name="map" size={48} color="#22D3EE" />
             <Text style={styles.mapPlaceholderText}>
               {userLocation && !isNativeGoogleMapsSupported()
                 ? 'Bu cihazda harita kapalı; eşleşme ve sürücü listesi normal çalışır.'
@@ -500,7 +500,7 @@ export default function PassengerWaitingScreen({
         
         {/* Sürücü Sayısı Badge */}
         <View style={styles.driverCountBadge}>
-          <Ionicons name="car" size={20} color="#fff" />
+          <Ionicons name="car" size={20} color="#22D3EE" />
           <Text style={styles.driverCountText}>{nearbyDriverCount}</Text>
           <Text style={styles.driverCountLabel}>sürücü</Text>
         </View>
@@ -510,7 +510,7 @@ export default function PassengerWaitingScreen({
       <View style={styles.locationCard}>
         <View style={styles.locationRow}>
           <View style={styles.locationDot}>
-            <View style={[styles.dot, { backgroundColor: '#60a5fa' }]} />
+            <View style={[styles.dot, { backgroundColor: '#22D3EE' }]} />
           </View>
           <Text style={styles.locationText} numberOfLines={1}>
             {pickupAddress || 'Alış noktası'}
@@ -531,7 +531,7 @@ export default function PassengerWaitingScreen({
         </View>
         
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-outline" size={18} color="#2563EB" />
+          <Ionicons name="share-outline" size={18} color="#22D3EE" />
           <Text style={styles.shareButtonText}>Paylaş</Text>
         </TouchableOpacity>
       </View>
@@ -564,7 +564,7 @@ export default function PassengerWaitingScreen({
         {dispatchStatus.current_driver_index > 0 && (
           <View style={styles.dispatchInfo}>
             <View style={styles.dispatchBadge}>
-              <Ionicons name="people" size={14} color="#fff" />
+              <Ionicons name="people" size={14} color="rgba(254, 215, 170, 0.95)" />
               <Text style={styles.dispatchBadgeText}>
                 {dispatchStatus.current_driver_index} / {dispatchStatus.total_drivers} sürücüye gösterildi
               </Text>
@@ -639,7 +639,7 @@ export default function PassengerWaitingScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#08111F',
   },
   waitingScroll: {
     flex: 1,
@@ -668,9 +668,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(63, 169, 245, 0.12)',
+    backgroundColor: 'rgba(16, 26, 43, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.18)',
   },
   headerCenter: {
     alignItems: 'center',
@@ -678,38 +680,42 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243, 248, 255, 0.94)',
   },
   headerSubtitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(172, 188, 212, 0.9)',
     marginTop: 2,
   },
   priceTag: {
-    backgroundColor: '#10B981',
+    backgroundColor: 'rgba(16, 26, 43, 0.9)',
     paddingHorizontal: 16,
     paddingVertical: 5,
     borderRadius: 20,
     marginTop: 6,
-    shadowColor: '#10B981',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 4,
   },
   priceText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#fff',
+    color: '#22D3EE',
   },
   cancelButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    backgroundColor: 'rgba(16, 26, 43, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.25)',
   },
   headerRightCluster: {
     flexDirection: 'row',
@@ -770,11 +776,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.25)',
-    shadowColor: '#3FA9F5',
+    borderColor: 'rgba(30, 58, 95, 0.85)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
     elevation: 6,
   },
   map: {
@@ -784,17 +790,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#0B1220',
   },
   mapPlaceholderText: {
-    color: '#3FA9F5',
+    color: 'rgba(34, 211, 238, 0.92)',
     marginTop: 8,
     fontWeight: '600',
     textAlign: 'center',
     paddingHorizontal: 20,
   },
   mapPlaceholderSub: {
-    color: '#64748B',
+    color: 'rgba(172, 188, 212, 0.88)',
     marginTop: 6,
     fontSize: 13,
     fontWeight: '600',
@@ -811,7 +817,7 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 3,
-    borderColor: 'rgba(63, 169, 245, 0.65)',
+    borderColor: 'rgba(34, 211, 238, 0.45)',
     backgroundColor: 'transparent',
   },
   
@@ -828,11 +834,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#3b82f6',
+    backgroundColor: 'rgba(34, 211, 238, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#fff',
+    borderColor: 'rgba(243, 248, 255, 0.9)',
   },
   destinationMarker: {
     width: 26,
@@ -842,7 +848,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: 'rgba(243, 248, 255, 0.95)',
   },
   driverMarker: {
     width: 36,
@@ -869,38 +875,46 @@ const styles = StyleSheet.create({
     elevation: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.95)',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.25)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
   driverCountText: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#fff',
+    color: 'rgba(243, 248, 255, 0.96)',
   },
   driverCountLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#fff',
-    opacity: 0.9,
+    color: 'rgba(172, 188, 212, 0.95)',
+    opacity: 0.95,
   },
   
   // Konum Kartı
   locationCard: {
     marginHorizontal: 16,
     marginTop: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.2)',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.18)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 6,
   },
   locationRow: {
     flexDirection: 'row',
@@ -919,7 +933,7 @@ const styles = StyleSheet.create({
   locationText: {
     flex: 1,
     fontSize: 14,
-    color: '#1E293B',
+    color: 'rgba(243, 248, 255, 0.92)',
     fontWeight: '600',
     marginLeft: 12,
   },
@@ -939,14 +953,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12,
     paddingVertical: 10,
-    backgroundColor: 'rgba(63, 169, 245, 0.12)',
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
     borderRadius: 10,
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
   },
   shareButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#2563EB',
+    color: '#22D3EE',
   },
   
   // Durum Paneli
@@ -960,9 +976,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 12,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    backgroundColor: 'rgba(16, 26, 43, 0.75)',
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderColor: 'rgba(30, 58, 95, 0.85)',
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
@@ -970,7 +986,7 @@ const styles = StyleSheet.create({
   calmWaitingLine: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0F172A',
+    color: 'rgba(243, 248, 255, 0.93)',
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -978,7 +994,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(172, 188, 212, 0.92)',
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -993,7 +1009,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#3FA9F5',
+    backgroundColor: '#22D3EE',
   },
   loadingDotDelay1: {
     opacity: 0.6,
@@ -1004,13 +1020,13 @@ const styles = StyleSheet.create({
   statusTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243, 248, 255, 0.96)',
     textAlign: 'center',
   },
   statusSubtitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(172, 188, 212, 0.9)',
     marginTop: 6,
     textAlign: 'center',
   },
@@ -1020,31 +1036,33 @@ const styles = StyleSheet.create({
   dispatchBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(249, 115, 22, 0.2)',
+    backgroundColor: 'rgba(16, 26, 43, 0.9)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.35)',
   },
   dispatchBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#C2410C',
+    color: 'rgba(254, 215, 170, 0.95)',
   },
   
   // İptal Butonu
   cancelTagButton: {
     paddingVertical: 14,
-    backgroundColor: 'rgba(254, 226, 226, 0.98)',
+    backgroundColor: 'rgba(16, 26, 43, 0.82)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderColor: 'rgba(248, 113, 113, 0.35)',
     alignItems: 'center',
   },
   cancelTagButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#DC2626',
+    color: 'rgba(252, 165, 165, 0.98)',
   },
   
   // Modal
@@ -1054,11 +1072,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   driverProfileModal: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#101A2B',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: 40,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderBottomWidth: 0,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1078,10 +1099,12 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#3b82f6',
+    backgroundColor: 'rgba(34, 211, 238, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   driverName: {
     fontSize: 20,
@@ -1106,7 +1129,7 @@ const styles = StyleSheet.create({
   },
   driverDistance: {
     fontSize: 14,
-    color: '#60a5fa',
+    color: 'rgba(34, 211, 238, 0.9)',
     marginTop: 4,
   },
 });

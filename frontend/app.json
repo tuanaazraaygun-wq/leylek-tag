@@ -5,7 +5,7 @@
     "owner": "leylektagappp",
     "version": "1.0.22",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.png",
+    "icon": "./assets/images/leylek-logo-premium.png",
     "scheme": "leylektag",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
@@ -37,7 +37,7 @@
       "versionCode": 24,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/leylek-logo-premium.png",
         "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
@@ -126,7 +126,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/logo.png",
+          "icon": "./assets/images/leylek-logo-premium.png",
           "color": "#3FA9F5",
           "sounds": [],
           "defaultChannelId": "default"
@@ -139,7 +139,7 @@
     },
 
     "splash": {
-      "image": "./assets/images/logo.png",
+      "image": "./assets/images/leylek-logo-premium.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },

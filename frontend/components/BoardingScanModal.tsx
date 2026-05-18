@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 
 type Props = {
@@ -65,7 +65,7 @@ export default function BoardingScanModal({
       try {
         const tok = await waitForPersistedAccessToken();
         if (!tok?.trim()) {
-          Alert.alert('Oturum', 'Biniş doğrulamak için yeniden giriş yapın.');
+          appAlert('Oturum', 'Biniş doğrulamak için yeniden giriş yapın.');
           return;
         }
         const res = await fetch(`${API_BASE_URL}/qr/verify-boarding`, {
@@ -86,11 +86,11 @@ export default function BoardingScanModal({
         try {
           json = raw ? JSON.parse(raw) : {};
         } catch {
-          Alert.alert('Hata', 'Sunucu yanıtı okunamadı');
+          appAlert('Hata', 'Sunucu yanıtı okunamadı');
           return;
         }
         if (res.status === 401) {
-          Alert.alert('Oturum', json.detail || 'Oturum süresi dolmuş olabilir; yeniden giriş yapın.');
+          appAlert('Oturum', json.detail || 'Oturum süresi dolmuş olabilir; yeniden giriş yapın.');
           return;
         }
         if (json.success) {
@@ -118,13 +118,13 @@ export default function BoardingScanModal({
             detail.includes('kullanılmış');
           if (expiredOrInvalid) {
             cooldownUntilRef.current = Date.now() + BOARDING_SCAN_RESCAN_COOLDOWN_MS;
-            Alert.alert('Biniş doğrulanamadı', 'Sürücüden yeni biniş kodu isteyin.');
+            appAlert('Biniş doğrulanamadı', 'Sürücüden yeni biniş kodu isteyin.');
           } else {
-            Alert.alert('Biniş doğrulanamadı', json.detail || 'Tekrar deneyin');
+            appAlert('Biniş doğrulanamadı', json.detail || 'Tekrar deneyin');
           }
         }
       } catch {
-        Alert.alert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
+        appAlert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
       } finally {
         setProcessing(false);
         lastScannedValueRef.current = { data: '', ts: 0 };
@@ -196,7 +196,7 @@ export default function BoardingScanModal({
               <View style={styles.frame} pointerEvents="none" />
               {processing ? (
                 <View style={styles.processing}>
-                  <ActivityIndicator size="large" color="#fff" />
+                  <ActivityIndicator size="large" color="#22D3EE" />
                   <Text style={styles.processingText}>Doğrulanıyor…</Text>
                 </View>
               ) : null}
@@ -211,46 +211,77 @@ export default function BoardingScanModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.88)',
+    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0f172a',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    backgroundColor: 'rgba(16, 26, 43, 0.98)',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingBottom: 28,
     paddingHorizontal: 16,
     paddingTop: 12,
     maxHeight: '88%',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderBottomWidth: 0,
+    borderTopColor: 'rgba(34, 211, 238, 0.26)',
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { color: '#f8fafc', fontSize: 18, fontWeight: '800', flex: 1 },
+  title: {
+    color: 'rgba(243, 248, 255, 0.94)',
+    fontSize: 18,
+    fontWeight: '800',
+    flex: 1,
+  },
   closeBtn: { padding: 8 },
-  closeText: { color: '#94a3b8', fontSize: 20, fontWeight: '600' },
-  hint: { color: '#94a3b8', fontSize: 13, marginTop: 10, lineHeight: 18 },
+  closeText: { color: 'rgba(186, 201, 222, 0.82)', fontSize: 20, fontWeight: '600' },
+  hint: {
+    color: 'rgba(186, 201, 222, 0.82)',
+    fontSize: 13,
+    marginTop: 10,
+    lineHeight: 18,
+  },
   centerBox: { paddingVertical: 40, alignItems: 'center' },
-  muted: { color: '#94a3b8', marginBottom: 12 },
-  permBtn: { backgroundColor: '#2563eb', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 },
-  permBtnText: { color: '#fff', fontWeight: '700' },
+  muted: { color: 'rgba(186, 201, 222, 0.82)', marginBottom: 12, fontWeight: '600' },
+  permBtn: {
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+  },
+  permBtnText: {
+    color: '#22D3EE',
+    fontWeight: '700',
+    fontSize: 15,
+  },
   cameraBox: {
     marginTop: 16,
     height: 320,
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#020617',
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 95, 0.55)',
   },
   frame: {
     ...StyleSheet.absoluteFillObject,
     borderWidth: 2,
-    borderColor: 'rgba(14,165,233,0.85)',
+    borderColor: 'rgba(34, 211, 238, 0.42)',
     borderRadius: 14,
     margin: 36,
   },
   processing: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(8, 17, 31, 0.82)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  processingText: { color: '#e2e8f0', marginTop: 12, fontWeight: '600' },
+  processingText: {
+    color: 'rgba(186,201,222,0.88)',
+    marginTop: 12,
+    fontWeight: '600',
+  },
 });

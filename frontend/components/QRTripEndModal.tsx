@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Dimensions,
   Vibration,
   ScrollView,
@@ -16,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { appAlert } from '../contexts/AppAlertContext';
 
 const { width } = Dimensions.get('window');
 
@@ -103,7 +103,7 @@ export default function QRTripEndModal({
           result = raw ? JSON.parse(raw) : {};
         } catch {
           console.error('QR complete-qr non-JSON:', raw.slice(0, 200));
-          Alert.alert(
+          appAlert(
             'Hata',
             response.ok ? 'Sunucu yanıtı okunamadı' : `Sunucu hatası (${response.status})`,
           );
@@ -115,11 +115,11 @@ export default function QRTripEndModal({
           onComplete(true, driverUserId, result.driver_name || firstName);
           onClose();
         } else {
-          Alert.alert('Hata', result.detail || `Yolculuk bitirilemedi (${response.status})`);
+          appAlert('Hata', result.detail || `Yolculuk bitirilemedi (${response.status})`);
         }
       } catch (error) {
         console.error('QR complete error:', error);
-        Alert.alert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+        appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
       } finally {
         setProcessing(false);
       }
@@ -151,14 +151,14 @@ export default function QRTripEndModal({
       const qrTagId = params.get('t');
 
       if (!driverUserId || !qrTagId) {
-        Alert.alert('Hata', 'Geçersiz QR kod');
+        appAlert('Hata', 'Geçersiz QR kod');
         lastScannedValueRef.current = { data: '', ts: 0 };
         setScanned(false);
         return;
       }
 
       if (qrTagId !== tagId) {
-        Alert.alert('Hata', 'Bu QR kod bu yolculuğa ait değil');
+        appAlert('Hata', 'Bu QR kod bu yolculuğa ait değil');
         lastScannedValueRef.current = { data: '', ts: 0 };
         setScanned(false);
         return;
@@ -175,7 +175,7 @@ export default function QRTripEndModal({
 
   const handlePassengerPaymentConfirm = (method: PaymentMethod) => {
     if (!pendingDriverId) {
-      Alert.alert('Hata', 'Önce QR kodunu tarayın');
+      appAlert('Hata', 'Önce QR kodunu tarayın');
       return;
     }
     void submitCompleteQr(method, pendingDriverId);
@@ -183,7 +183,7 @@ export default function QRTripEndModal({
 
   const handleLegacyConfirm = () => {
     if (!legacyPaymentPick || !pendingDriverId) {
-      Alert.alert('Seçim gerekli', 'Nakit veya kart ile ödemeyi tamamladığınızı seçin.');
+      appAlert('Seçim gerekli', 'Nakit veya kart ile ödemeyi tamamladığınızı seçin.');
       return;
     }
     void submitCompleteQr(legacyPaymentPick, pendingDriverId);
@@ -217,7 +217,7 @@ export default function QRTripEndModal({
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={styles.container}>
-          <LinearGradient colors={['#041e33', '#0c4a6e', '#0369a1']} style={styles.header}>
+          <LinearGradient colors={['#08111F', '#0B1220', '#101A2B']} style={styles.header}>
             <Text style={styles.title}>
               {isDriver
                 ? 'QR Kodunuz'
@@ -257,7 +257,7 @@ export default function QRTripEndModal({
 
                 {processing && (
                   <View style={styles.processingOverlay}>
-                    <ActivityIndicator size="large" color="white" />
+                    <ActivityIndicator size="large" color="#22D3EE" />
                     <Text style={styles.processingText}>İşleniyor…</Text>
                   </View>
                 )}
@@ -300,12 +300,9 @@ export default function QRTripEndModal({
               </View>
             ) : (
               <View style={styles.paymentPanel}>
-                <LinearGradient
-                  colors={['rgba(224,242,254,0.95)', 'rgba(255,255,255,0.98)']}
-                  style={styles.paymentCard}
-                >
+                <View style={styles.paymentCard}>
                   <View style={styles.paymentIconWrap}>
-                    <Ionicons name="wallet-outline" size={32} color="#0369a1" />
+                    <Ionicons name="wallet-outline" size={32} color="#22D3EE" />
                   </View>
                   <Text style={styles.paymentHeading}>{paymentTitle}</Text>
                   <Text style={styles.paymentBody}>{paymentSubtitle}</Text>
@@ -317,10 +314,10 @@ export default function QRTripEndModal({
                       disabled={processing}
                       activeOpacity={0.88}
                     >
-                      <LinearGradient colors={['#059669', '#047857']} style={styles.primaryPayGradient}>
-                        <Ionicons name="cash-outline" size={24} color="#FFF" />
+                      <View style={[styles.primaryPayGradient, styles.primaryPayGlass]}>
+                        <Ionicons name="cash-outline" size={24} color="#22D3EE" />
                         <Text style={styles.primaryPayText}>Nakit ödemeyi tamamladım</Text>
-                      </LinearGradient>
+                      </View>
                     </TouchableOpacity>
                   )}
 
@@ -331,10 +328,10 @@ export default function QRTripEndModal({
                       disabled={processing}
                       activeOpacity={0.88}
                     >
-                      <LinearGradient colors={['#2563EB', '#1D4ED8']} style={styles.primaryPayGradient}>
-                        <Ionicons name="card-outline" size={24} color="#FFF" />
+                      <View style={[styles.primaryPayGradient, styles.primaryPayGlass]}>
+                        <Ionicons name="card-outline" size={24} color="#22D3EE" />
                         <Text style={styles.primaryPayText}>Kart ile ödemeyi tamamladım</Text>
-                      </LinearGradient>
+                      </View>
                     </TouchableOpacity>
                   )}
 
@@ -345,14 +342,18 @@ export default function QRTripEndModal({
                         <TouchableOpacity
                           style={[
                             styles.legacyChip,
-                            legacyPaymentPick === 'cash' && styles.legacyChipActiveCash,
+                            legacyPaymentPick === 'cash' && styles.legacyChipActive,
                           ]}
                           onPress={() => setLegacyPaymentPick('cash')}
                         >
                           <Ionicons
                             name="cash-outline"
                             size={22}
-                            color={legacyPaymentPick === 'cash' ? '#FFF' : '#047857'}
+                            color={
+                              legacyPaymentPick === 'cash'
+                                ? 'rgba(243,248,255,0.94)'
+                                : '#22D3EE'
+                            }
                           />
                           <Text
                             style={[
@@ -366,14 +367,18 @@ export default function QRTripEndModal({
                         <TouchableOpacity
                           style={[
                             styles.legacyChip,
-                            legacyPaymentPick === 'card' && styles.legacyChipActiveCard,
+                            legacyPaymentPick === 'card' && styles.legacyChipActive,
                           ]}
                           onPress={() => setLegacyPaymentPick('card')}
                         >
                           <Ionicons
                             name="card-outline"
                             size={22}
-                            color={legacyPaymentPick === 'card' ? '#FFF' : '#1D4ED8'}
+                            color={
+                              legacyPaymentPick === 'card'
+                                ? 'rgba(243,248,255,0.94)'
+                                : '#22D3EE'
+                            }
                           />
                           <Text
                             style={[
@@ -394,10 +399,15 @@ export default function QRTripEndModal({
                         <LinearGradient
                           colors={
                             legacyPaymentPick
-                              ? ['#0EA5E9', '#0284c7']
-                              : ['#94A3B8', '#64748B']
+                              ? ['rgba(8,36,52,0.95)', '#0E7490', '#22D3EE']
+                              : ['rgba(30,58,95,0.45)', 'rgba(16,26,43,0.88)']
                           }
-                          style={styles.primaryPayGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={[
+                            styles.primaryPayGradient,
+                            legacyPaymentPick && styles.primaryPayGradientAccentBorder,
+                          ]}
                         >
                           <Text style={styles.primaryPayText}>Onayla ve yolculuğu bitir</Text>
                         </LinearGradient>
@@ -406,7 +416,7 @@ export default function QRTripEndModal({
                   )}
 
                   {processing ? (
-                    <ActivityIndicator style={{ marginTop: 16 }} color="#0369a1" />
+                    <ActivityIndicator style={{ marginTop: 16 }} color="#22D3EE" />
                   ) : null}
 
                   <TouchableOpacity
@@ -418,7 +428,7 @@ export default function QRTripEndModal({
                   >
                     <Text style={styles.backScanText}>← QR taramaya dön</Text>
                   </TouchableOpacity>
-                </LinearGradient>
+                </View>
               </View>
             )}
           </ScrollView>
@@ -439,11 +449,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#08111F',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: 28,
     maxHeight: '92%',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderBottomWidth: 0,
   },
   header: {
     flexDirection: 'row',
@@ -456,20 +469,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 19,
     fontWeight: '700',
-    color: 'white',
+    color: 'rgba(243, 248, 255, 0.94)',
     flex: 1,
   },
   closeBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.65)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeBtnText: {
     fontSize: 18,
-    color: 'white',
+    color: 'rgba(186,201,222,0.88)',
     fontWeight: '600',
   },
   scroll: {
@@ -484,7 +499,7 @@ const styles = StyleSheet.create({
   },
   instruction: {
     fontSize: 17,
-    color: '#E2E8F0',
+    color: 'rgba(243, 248, 255, 0.94)',
     marginBottom: 16,
     textAlign: 'center',
     fontWeight: '600',
@@ -493,16 +508,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     padding: 20,
     borderRadius: 16,
-    shadowColor: '#3FA9F5',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 6,
   },
   hint: {
     marginTop: 16,
     fontSize: 13,
-    color: '#94A3B8',
+    color: 'rgba(186, 201, 222, 0.82)',
     textAlign: 'center',
     paddingHorizontal: 16,
   },
@@ -515,7 +532,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 60,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
@@ -523,7 +540,7 @@ const styles = StyleSheet.create({
   },
   processingText: {
     marginTop: 12,
-    color: 'white',
+    color: 'rgba(186,201,222,0.88)',
     fontSize: 16,
     fontWeight: '500',
   },
@@ -555,7 +572,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 28,
     height: 28,
-    borderColor: '#38BDF8',
+    borderColor: 'rgba(34, 211, 238, 0.72)',
   },
   topLeft: {
     top: 0,
@@ -586,13 +603,15 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 8,
   },
   permissionBtn: {
-    backgroundColor: '#3FA9F5',
+    backgroundColor: 'rgba(16, 26, 43, 0.95)',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   permissionBtnText: {
-    color: 'white',
+    color: '#22D3EE',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -604,7 +623,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: '#94A3B8',
+    color: 'rgba(186, 201, 222, 0.82)',
     fontSize: 16,
     fontWeight: '500',
   },
@@ -615,7 +634,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    borderColor: '#1E3A5F',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
   },
   paymentIconWrap: {
     alignSelf: 'center',
@@ -624,13 +644,13 @@ const styles = StyleSheet.create({
   paymentHeading: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243, 248, 255, 0.96)',
     textAlign: 'center',
     marginBottom: 8,
   },
   paymentBody: {
     fontSize: 14,
-    color: '#475569',
+    color: 'rgba(186, 201, 222, 0.82)',
     textAlign: 'center',
     lineHeight: 21,
     marginBottom: 20,
@@ -647,16 +667,27 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 16,
     paddingHorizontal: 16,
+    borderRadius: 14,
+  },
+  primaryPayGlass: {
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.24)',
+  },
+  primaryPayGradientAccentBorder: {
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
   },
   primaryPayText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 16,
     fontWeight: '700',
   },
   legacyPickLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#334155',
+    color: 'rgba(243, 248, 255, 0.9)',
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -673,32 +704,29 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: '#E2E8F0',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    backgroundColor: 'rgba(8, 17, 31, 0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 95, 0.65)',
   },
-  legacyChipActiveCash: {
-    backgroundColor: '#059669',
-    borderColor: '#047857',
-  },
-  legacyChipActiveCard: {
-    backgroundColor: '#2563EB',
-    borderColor: '#1D4ED8',
+  legacyChipActive: {
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderColor: 'rgba(34, 211, 238, 0.48)',
+    borderTopColor: 'rgba(34, 211, 238, 0.35)',
   },
   legacyChipText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#475569',
+    color: 'rgba(186, 201, 222, 0.82)',
   },
   legacyChipTextActive: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
   },
   backScan: {
     marginTop: 18,
     alignItems: 'center',
   },
   backScanText: {
-    color: '#0369a1',
+    color: '#22D3EE',
     fontSize: 14,
     fontWeight: '600',
   },

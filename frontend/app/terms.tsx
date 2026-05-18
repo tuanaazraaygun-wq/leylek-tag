@@ -80,7 +80,7 @@ export default function TermsScreen() {
           • Sesli görüşme / VoIP ve ilgili teknik kayıtlar{"\n"}
           • Sesli mesaj veya ses verisi özellikleri (varsa){"\n"}
           • Cihaz, log ve güvenlik kayıtları{"\n\n"}
-          Detaylar Gizlilik Politikası ve KVKK Aydınlatma Metni'nde açıklanır.
+          Detaylar Gizlilik Politikası ve KVKK Aydınlatma Metni{'\''}nde açıklanır.
         </Text>
 
         <Text style={styles.sectionTitle}>7. Muhabbet Kayıt Süresi (Bilgilendirme)</Text>

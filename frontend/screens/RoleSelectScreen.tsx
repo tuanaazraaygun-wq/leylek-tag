@@ -6,7 +6,8 @@ export function RoleSelectLeylekAIFloating() {
   return (
     <LeylekAIFloating
       position="center-bottom"
-      message="Leylek'e sor. Sürücü olmak için şartları öğrenmek ister misin?"
+      visualPreset="roleCockpit"
+      message="Leylek'e sor. Sana en iyi seçeneği bulmama yardım edeyim."
     />
   );
 }

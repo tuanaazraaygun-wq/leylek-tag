@@ -6,10 +6,21 @@ import {
   StyleSheet,
   ActivityIndicator,
   Animated,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_NAVY_CARD,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_NAVY_MID,
+  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_TEXT_SOFT,
+} from './auth/premiumAuthStyles';
 
 interface DriverDashboardPanelProps {
   userId: string;
@@ -204,7 +215,7 @@ export default function DriverDashboardPanel({
   if (loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="small" color="#3FA9F5" />
+        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
       </View>
     );
   }
@@ -219,7 +230,7 @@ export default function DriverDashboardPanel({
   return (
     <Animated.View style={[styles.container, { height: panelHeight }]}>
       <LinearGradient
-        colors={['#0c1222', '#151b2e', '#1a1f35', '#12182a']}
+        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_MID, PREMIUM_NAVY_CARD, PREMIUM_NAVY_MID]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
@@ -229,7 +240,11 @@ export default function DriverDashboardPanel({
         <TouchableOpacity style={styles.topRow} onPress={onExpandToggle} activeOpacity={0.85}>
           {/* Çevrimiçi süre */}
           <View style={styles.timeBox}>
-            <Ionicons name="time-outline" size={17} color={data.active_time.is_active ? '#34D399' : '#94A3B8'} />
+            <Ionicons
+              name="time-outline"
+              size={17}
+              color={data.active_time.is_active ? 'rgba(34,211,238,0.88)' : 'rgba(148,163,184,0.72)'}
+            />
             <Text style={[styles.timeText, !data.active_time.is_active && styles.timeTextInactive]}>
               {data.active_time.is_active
                 ? /ücret/i.test(remainingText)
@@ -264,7 +279,7 @@ export default function DriverDashboardPanel({
           <Ionicons
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={22}
-            color="#CBD5E1"
+            color={PREMIUM_TEXT_MUTED}
             style={styles.expandIcon}
           />
         </TouchableOpacity>
@@ -274,7 +289,7 @@ export default function DriverDashboardPanel({
             <View style={styles.statsRow}>
               <View style={styles.statColumn}>
                 <View style={styles.statIconWrap}>
-                  <Ionicons name="car-outline" size={20} color="#38BDF8" />
+                  <Ionicons name="car-outline" size={20} color="rgba(34,211,238,0.88)" />
                 </View>
                 <Text style={styles.statValue}>{data.today.trips_count}</Text>
                 <Text style={styles.statLabel}>Bugünkü sefer</Text>
@@ -284,7 +299,7 @@ export default function DriverDashboardPanel({
 
               <View style={styles.statColumn}>
                 <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
-                  <Ionicons name="wallet-outline" size={20} color="#C4B5FD" />
+                  <Ionicons name="wallet-outline" size={20} color="rgba(226,232,240,0.88)" />
                 </View>
                 <Text style={styles.statValue}>{data.weekly.earnings} ₺</Text>
                 <Text style={styles.statLabel}>Haftalık kazanç</Text>
@@ -294,7 +309,7 @@ export default function DriverDashboardPanel({
 
               <View style={styles.statColumn}>
                 <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
-                  <Ionicons name="star" size={20} color="#FBBF24" />
+                  <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
                 </View>
                 <Text style={styles.statValue}>
                   {(Number.isFinite(data.stats.rating) ? data.stats.rating : 5).toFixed(1)}
@@ -315,24 +330,30 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderRadius: 22,
     overflow: 'hidden',
-    elevation: 14,
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.42,
+        shadowRadius: 22,
+      },
+      android: { elevation: 13 },
+      default: {},
+    }),
   },
   gradient: {
     flex: 1,
     borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: 'rgba(148, 163, 184, 0.22)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.72)',
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
   },
   gradientInnerStroke: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 20,
-    margin: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    margin: 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   topRow: {
     flexDirection: 'row',
@@ -344,24 +365,25 @@ const styles = StyleSheet.create({
   timeBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(8,17,31,0.65)',
     paddingVertical: 8,
     paddingHorizontal: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(52, 211, 153, 0.35)',
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.75)',
+    borderTopColor: 'rgba(34,211,238,0.14)',
     maxWidth: '34%',
   },
   timeText: {
-    color: '#6EE7B7',
+    color: 'rgba(94,209,226,0.92)',
     fontSize: 13,
     fontWeight: '800',
     marginLeft: 6,
     fontVariant: ['tabular-nums'],
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   timeTextInactive: {
-    color: '#94A3B8',
+    color: 'rgba(148,163,184,0.75)',
   },
   earningsBox: {
     flex: 1,
@@ -371,56 +393,76 @@ const styles = StyleSheet.create({
   },
   earningsLabel: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: PREMIUM_TEXT_MUTED,
     fontWeight: '700',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
+    opacity: 0.92,
   },
   earningsValue: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: PREMIUM_TEXT_SOFT,
     marginTop: 2,
-    letterSpacing: -0.3,
+    letterSpacing: -0.35,
+    fontVariant: ['tabular-nums'],
   },
   onlineBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 15,
     borderRadius: 14,
-    minWidth: 72,
-    borderWidth: 1,
+    minWidth: 74,
+    borderWidth: StyleSheet.hairlineWidth + 1,
   },
   onlineBtnActive: {
-    backgroundColor: '#059669',
-    borderColor: 'rgba(167, 243, 208, 0.55)',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
-    elevation: 6,
+    backgroundColor: 'rgba(6,55,52,0.92)',
+    borderColor: 'rgba(34,211,238,0.22)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01060e',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
   },
   onlineBtnInactive: {
-    backgroundColor: 'rgba(51, 65, 85, 0.95)',
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    backgroundColor: 'rgba(16,26,43,0.95)',
+    borderColor: PREMIUM_BORDER_SLATE,
   },
   onlineDot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 4,
-    backgroundColor: '#94A3B8',
+    backgroundColor: 'rgba(148,163,184,0.55)',
     marginRight: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30,58,95,0.6)',
   },
   onlineDotActive: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: 'rgba(34,211,238,0.95)',
+    borderColor: 'rgba(243,248,255,0.35)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.22,
+        shadowRadius: 6,
+      },
+      default: {},
+    }),
   },
   onlineText: {
-    color: '#F8FAFC',
-    fontSize: 13,
+    color: PREMIUM_TEXT_SOFT,
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
+    fontVariant: ['tabular-nums'],
   },
   expandIcon: {
     marginLeft: 2,
@@ -435,12 +477,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: 'rgba(8,17,31,0.48)',
     borderRadius: 16,
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.15)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.55)',
+    borderTopColor: 'rgba(34,211,238,0.09)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 12,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
   },
   statColumn: {
     alignItems: 'center',
@@ -452,40 +505,42 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.28)',
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
   statIconWrapViolet: {
-    backgroundColor: 'rgba(139, 92, 246, 0.14)',
-    borderColor: 'rgba(196, 181, 253, 0.28)',
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    borderColor: 'rgba(148,163,184,0.22)',
   },
   statIconWrapAmber: {
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    borderColor: 'rgba(251, 191, 36, 0.35)',
+    backgroundColor: 'rgba(251,191,36,0.08)',
+    borderColor: 'rgba(251,191,36,0.22)',
   },
   statValue: {
     fontSize: 17,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: PREMIUM_TEXT_SOFT,
     marginTop: 0,
-    letterSpacing: -0.2,
+    letterSpacing: -0.22,
+    fontVariant: ['tabular-nums'],
   },
   statLabel: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: PREMIUM_TEXT_MUTED,
     marginTop: 4,
     fontWeight: '700',
     textAlign: 'center',
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
+    opacity: 0.9,
   },
   statDivider: {
     width: StyleSheet.hairlineWidth,
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(148, 163, 184, 0.25)',
+    backgroundColor: 'rgba(30,58,95,0.55)',
     marginVertical: 4,
   },
 });

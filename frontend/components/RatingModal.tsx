@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 
 import { API_BASE_URL } from '../lib/backendConfig';
@@ -169,7 +170,7 @@ export default function RatingModal({
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="white" />
+                  <ActivityIndicator color="#08111F" />
                 ) : (
                   <Text style={styles.submitBtnText}>Puanla</Text>
                 )}
@@ -189,27 +190,44 @@ export default function RatingModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(8,17,31,0.82)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
   },
   container: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: 'rgba(16, 26, 43, 0.95)',
     borderRadius: 24,
-    padding: 32,
-    width: '85%',
+    padding: 28,
+    width: '100%',
+    maxWidth: 400,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.2)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#010818',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.45,
+        shadowRadius: 24,
+      },
+      android: { elevation: 12 },
+      default: {},
+    }),
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
+    fontSize: 22,
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.96)',
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    marginBottom: 24,
+    fontSize: 15,
+    color: 'rgba(172, 188, 212, 0.92)',
+    marginBottom: 22,
+    textAlign: 'center',
   },
   starsContainer: {
     flexDirection: 'row',
@@ -220,63 +238,76 @@ const styles = StyleSheet.create({
   },
   star: {
     fontSize: 40,
-    color: '#4B5563',
+    color: 'rgba(100, 116, 139, 0.55)',
   },
   starActive: {
     color: '#FCD34D',
+    textShadowColor: 'rgba(252, 211, 77, 0.35)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
   },
   ratingText: {
-    fontSize: 18,
-    color: 'white',
-    marginBottom: 24,
+    fontSize: 17,
+    color: 'rgba(243, 248, 255, 0.94)',
+    marginBottom: 22,
+    fontWeight: '700',
   },
   submitBtn: {
-    backgroundColor: '#3FA9F5',
+    backgroundColor: '#22D3EE',
     paddingVertical: 16,
     paddingHorizontal: 48,
-    borderRadius: 12,
+    borderRadius: 14,
     width: '100%',
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 6,
   },
   submitBtnDisabled: {
-    opacity: 0.7,
+    opacity: 0.65,
   },
   submitBtnText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#08111F',
+    fontSize: 17,
+    fontWeight: '800',
   },
   skipBtn: {
     paddingVertical: 12,
   },
   skipBtnText: {
-    color: '#9CA3AF',
+    color: 'rgba(172, 188, 212, 0.9)',
     fontSize: 14,
+    fontWeight: '600',
   },
   successContainer: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   successIcon: {
-    fontSize: 60,
-    color: '#10B981',
-    marginBottom: 16,
+    fontSize: 56,
+    color: 'rgba(52, 211, 153, 0.95)',
+    marginBottom: 14,
   },
   successTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
+    fontSize: 22,
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.96)',
     marginBottom: 8,
   },
   successText: {
-    fontSize: 16,
-    color: '#9CA3AF',
+    fontSize: 15,
+    color: 'rgba(172, 188, 212, 0.92)',
     marginBottom: 8,
+    textAlign: 'center',
   },
   pointsText: {
-    fontSize: 18,
-    color: '#10B981',
-    fontWeight: '600',
+    fontSize: 17,
+    color: 'rgba(52, 211, 153, 0.95)',
+    fontWeight: '700',
   },
 });

@@ -159,7 +159,7 @@ export default function SearchingMapView({
     return (
       <View style={[styles.container, { height }]}>
         <View style={styles.webFallback}>
-          <Ionicons name="map" size={40} color="#3FA9F5" />
+          <Ionicons name="map" size={40} color="#22D3EE" />
           <Text style={styles.webFallbackText}>Harita - {driverLocations.length} sürücü</Text>
           {driverLocations.map((driver, i) => (
             <Text key={driver.driver_id} style={styles.driverItem}>
@@ -274,7 +274,7 @@ export default function SearchingMapView({
 
       {/* Sürücü Sayısı Badge */}
       <View style={styles.driverCountBadge}>
-        <Ionicons name="car" size={16} color="#FFF" />
+        <Ionicons name="car" size={16} color="#22D3EE" />
         <Text style={styles.driverCountText}>
           {displayDriverCount} sürücü yakında
         </Text>
@@ -295,7 +295,14 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#101A2B',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
   },
   map: {
     flex: 1,
@@ -304,18 +311,20 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#0B1220',
     padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#1E3A5F',
   },
   webFallbackText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: 'rgba(186, 201, 222, 0.88)',
     marginTop: 8,
     fontWeight: '600',
   },
   driverItem: {
     fontSize: 12,
-    color: '#4B5563',
+    color: 'rgba(243, 248, 255, 0.85)',
     marginTop: 4,
   },
   // Yolcu marker
@@ -327,12 +336,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#3B82F6',
+    backgroundColor: 'rgba(34, 211, 238, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#FFF',
-    shadowColor: '#000',
+    borderColor: 'rgba(243, 248, 255, 0.95)',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
@@ -343,7 +352,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    backgroundColor: 'rgba(34, 211, 238, 0.2)',
   },
   // Hedef marker
   destinationMarker: {
@@ -356,9 +365,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#22C55E',
-    borderWidth: 3,
-    borderColor: '#FFF',
+    backgroundColor: 'rgba(16, 26, 43, 0.95)',
+    borderWidth: 2,
+    borderColor: '#1E3A5F',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -368,17 +377,19 @@ const styles = StyleSheet.create({
   priceTag: {
     position: 'absolute',
     top: -20,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#0B1220',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   priceText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 10,
     fontWeight: '700',
   },
-  
+
   // 🆕 Profesyonel Yolcu Pin Marker
   passengerMarker: {
     alignItems: 'center',
@@ -390,12 +401,12 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#0891b2',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#FFF',
-    shadowColor: '#3B82F6',
+    borderColor: 'rgba(243, 248, 255, 0.95)',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
@@ -409,7 +420,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 14,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: '#3B82F6',
+    borderTopColor: '#0891b2',
     marginTop: -2,
   },
   markerShadow: {
@@ -419,7 +430,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 4,
   },
-  
+
   // 🆕 Bayrak Stili Hedef Marker
   flagMarker: {
     alignItems: 'flex-start',
@@ -427,8 +438,10 @@ const styles = StyleSheet.create({
   flagPole: {
     width: 3,
     height: 45,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#101A2B',
     borderRadius: 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#1E3A5F',
   },
   flagBody: {
     position: 'absolute',
@@ -436,7 +449,7 @@ const styles = StyleSheet.create({
     left: 3,
     width: 36,
     height: 24,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#DC2626',
     borderTopRightRadius: 4,
     borderBottomRightRadius: 4,
     justifyContent: 'center',
@@ -450,11 +463,11 @@ const styles = StyleSheet.create({
   flagBase: {
     width: 12,
     height: 6,
-    backgroundColor: '#374151',
+    backgroundColor: '#1E3A5F',
     borderRadius: 3,
     marginLeft: -4,
   },
-  
+
   // 🆕 Profesyonel Araç Marker
   carMarker: {
     alignItems: 'center',
@@ -463,12 +476,12 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#F97316',
+    backgroundColor: 'rgba(14, 165, 233, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#FFF',
-    shadowColor: '#F97316',
+    borderColor: 'rgba(243, 248, 255, 0.9)',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
@@ -477,15 +490,16 @@ const styles = StyleSheet.create({
   carPriceTag: {
     position: 'absolute',
     top: -22,
-    backgroundColor: '#1E293B',
+    backgroundColor: 'rgba(16, 26, 43, 0.96)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#374151',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderLeftColor: 'rgba(34, 211, 238, 0.45)',
   },
   carPriceText: {
-    color: '#FFF',
+    color: '#22D3EE',
     fontSize: 11,
     fontWeight: '700',
   },
@@ -496,19 +510,22 @@ const styles = StyleSheet.create({
     right: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#22C55E',
+    backgroundColor: 'rgba(16, 26, 43, 0.94)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 16,
     gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.28)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
   },
   driverCountText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -517,14 +534,17 @@ const styles = StyleSheet.create({
     bottom: 12,
     left: 12,
     right: 12,
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    backgroundColor: 'rgba(8, 17, 31, 0.94)',
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.92)',
+    borderTopColor: 'rgba(34, 211, 238, 0.15)',
   },
   infoBannerText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.93)',
     fontSize: 14,
     fontWeight: '600',
   },

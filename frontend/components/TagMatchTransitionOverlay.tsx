@@ -176,14 +176,14 @@ export default function TagMatchTransitionOverlay({ active }: Props) {
       style={[styles.root, { opacity, transform: [{ scale }] }]}
     >
       <LinearGradient
-        colors={['#020617', '#0c1222', '#020617']}
-        locations={[0, 0.42, 1]}
+        colors={['#08111F', '#0B1220', '#101A2B']}
+        locations={[0, 0.45, 1]}
         style={StyleSheet.absoluteFillObject}
       />
       <LinearGradient
-        colors={['rgba(59,130,246,0.12)', 'transparent', 'rgba(168,85,247,0.08)']}
-        locations={[0, 0.5, 1]}
-        style={[StyleSheet.absoluteFillObject, { opacity: 0.9 }]}
+        colors={['rgba(34,211,238,0.08)', 'transparent', 'rgba(8,17,31,0.35)']}
+        locations={[0, 0.48, 1]}
+        style={[StyleSheet.absoluteFillObject, { opacity: 0.95 }]}
         pointerEvents="none"
       />
 
@@ -195,12 +195,12 @@ export default function TagMatchTransitionOverlay({ active }: Props) {
           StyleSheet.absoluteFillObject,
           {
             transform: [{ translateX: shimmerX.interpolate({ inputRange: [-1, 1], outputRange: [-SCREEN_W * 0.5, SCREEN_W * 0.5] }) }],
-            opacity: 0.18,
+            opacity: 0.12,
           },
         ]}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(56,189,248,0.35)', 'rgba(250,204,21,0.2)', 'transparent']}
+          colors={['transparent', 'rgba(34,211,238,0.18)', 'rgba(30,58,95,0.12)', 'transparent']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={{ flex: 1, width: SCREEN_W * 0.55 }}
@@ -214,8 +214,8 @@ export default function TagMatchTransitionOverlay({ active }: Props) {
             <Defs>
               <SvgLinearGradient id={`titleGrad-${gid}`} x1="0" y1="0" x2="1" y2="0">
                 <Stop offset="0" stopColor="#22D3EE" />
-                <Stop offset="0.45" stopColor="#FACC15" />
-                <Stop offset="1" stopColor="#F97316" />
+                <Stop offset="0.55" stopColor="#7DD3FC" />
+                <Stop offset="1" stopColor="rgba(241,245,249,0.94)" />
               </SvgLinearGradient>
             </Defs>
             <SvgText
@@ -252,7 +252,7 @@ export default function TagMatchTransitionOverlay({ active }: Props) {
 
             <Animated.View style={[styles.checkWrap, { shadowOpacity: checkGlow }]}>
               <LinearGradient
-                colors={['rgba(34,197,94,0.45)', 'rgba(16,185,129,0.25)']}
+                colors={['rgba(34,211,238,0.22)', 'rgba(30,58,95,0.35)', 'rgba(8,17,31,0.6)']}
                 style={styles.checkGlowGrad}
               />
               <View style={styles.checkInner}>
@@ -279,17 +279,17 @@ function RainbowRings({ gid, variant }: { gid: string; variant: 'outer' | 'inner
     <Svg width={dim} height={dim} viewBox={`0 0 ${dim} ${dim}`}>
       <Defs>
         <SvgLinearGradient id={a} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor="#A855F7" />
-          <Stop offset="0.25" stopColor="#3B82F6" />
-          <Stop offset="0.5" stopColor="#22C55E" />
-          <Stop offset="0.75" stopColor="#EAB308" />
-          <Stop offset="1" stopColor="#F97316" />
+          <Stop offset="0" stopColor="#22D3EE" />
+          <Stop offset="0.35" stopColor="#1E3A5F" />
+          <Stop offset="0.55" stopColor="#38BDF8" />
+          <Stop offset="0.8" stopColor="#0EA5E9" />
+          <Stop offset="1" stopColor="rgba(15,118,223,0.85)" />
         </SvgLinearGradient>
         <SvgLinearGradient id={b} x1="1" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#EC4899" />
-          <Stop offset="0.35" stopColor="#6366F1" />
-          <Stop offset="0.65" stopColor="#06B6D4" />
-          <Stop offset="1" stopColor="#84CC16" />
+          <Stop offset="0" stopColor="rgba(56,189,248,0.75)" />
+          <Stop offset="0.35" stopColor="#1E3A5F" />
+          <Stop offset="0.65" stopColor="#22D3EE" />
+          <Stop offset="1" stopColor="rgba(16,26,43,0.9)" />
         </SvgLinearGradient>
       </Defs>
       <G opacity={outer ? 0.88 : 0.95}>
@@ -375,7 +375,13 @@ function useParticleField(active: boolean) {
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
       {nodes.map((n, i) => {
-        const palette = ['#22D3EE', '#A855F7', '#FBBF24', '#4ADE80', '#FB923C'];
+        const palette = [
+          '#22D3EE',
+          'rgba(34,211,238,0.55)',
+          '#38BDF8',
+          'rgba(56,189,248,0.45)',
+          'rgba(186,201,222,0.35)',
+        ];
         const c = palette[i % palette.length];
         return (
           <Animated.View
@@ -421,7 +427,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   titleWhite: {
-    color: '#F8FAFC',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 28,
     fontWeight: '800',
     letterSpacing: -0.6,
@@ -454,9 +460,9 @@ const styles = StyleSheet.create({
     borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#22C55E',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 22,
+    shadowRadius: 20,
     elevation: 12,
     zIndex: 10,
   },
@@ -468,24 +474,25 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(6,95,70,0.95)',
+    backgroundColor: 'rgba(8,17,31,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(187,247,208,0.9)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34,211,238,0.35)',
   },
   checkMark: {
-    color: '#DCFCE7',
+    color: 'rgba(34,211,238,0.98)',
     fontSize: 30,
     fontWeight: '900',
     marginTop: -2,
   },
   footer: {
     marginTop: 28,
-    color: 'rgba(248,250,252,0.92)',
-    fontSize: 17,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+    color: 'rgba(186,201,222,0.88)',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.15,
   },
   spark: {
     position: 'absolute',

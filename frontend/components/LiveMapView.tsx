@@ -436,12 +436,14 @@ function RouteCalculatingPremium({
   const fs = compact ? U.fontSizeMapCompact : U.fontSizeMap;
   const dotSz = compact ? U.dotSizeMapCompact : U.dotSizeMap;
   const dotGap = compact ? U.dotGapMapCompact : U.dotGapMap;
+  const cockpitLoadingText = 'rgba(186,201,222,0.88)';
+  const cockpitLoadingDots = '#22D3EE';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
       <Text
         style={[
           {
-            color: U.textColor,
+            color: cockpitLoadingText,
             fontSize: fs,
             fontWeight: U.fontWeight,
             letterSpacing: U.letterSpacing,
@@ -468,7 +470,7 @@ function RouteCalculatingPremium({
               height: dotSz,
               marginLeft: i === 0 ? 0 : dotGap,
               borderRadius: 1,
-              backgroundColor: U.dotColor,
+              backgroundColor: cockpitLoadingDots,
               opacity: v,
             }}
           />
@@ -490,7 +492,7 @@ function RouteUnavailableMuted({
     <Text
       style={[
         {
-          color: '#64748B',
+          color: 'rgba(186,201,222,0.82)',
           fontSize: fs,
           fontWeight: '500',
           letterSpacing: 0.1,
@@ -1322,50 +1324,30 @@ function trafficLevelFromDelayRatio(ratio: number | null | undefined): NavTraffi
   return 'heavy';
 }
 
-/** Buluşma aşaması: yeşil ton + trafik yoğunluğuna göre parlak hat */
+/** Buluşma aşaması — premium cyan rota katmanları (dim / parlak / sıcak vurgu). */
 function pickupNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
   switch (level) {
     case 'free':
-      return {
-        dim: 'rgba(4, 120, 87, 0.42)',
-        bright: '#22C55E',
-        hot: 'rgba(220, 252, 231, 0.95)',
-      };
     case 'slow':
-      return {
-        dim: 'rgba(4, 120, 87, 0.42)',
-        bright: '#22C55E',
-        hot: 'rgba(220, 252, 231, 0.95)',
-      };
     case 'heavy':
       return {
-        dim: 'rgba(4, 120, 87, 0.42)',
-        bright: '#22C55E',
-        hot: 'rgba(220, 252, 231, 0.95)',
+        dim: 'rgba(34, 211, 238, 0.28)',
+        bright: '#22D3EE',
+        hot: 'rgba(243, 248, 255, 0.92)',
       };
   }
 }
 
-/** Hedef aşaması: turuncu ton + trafik */
+/** Hedef aşaması — pickup ile aynı premium cyan dil. */
 function destinationNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
   switch (level) {
     case 'free':
-      return {
-        dim: 'rgba(194, 65, 12, 0.42)',
-        bright: '#F97316',
-        hot: '#FFEDD5',
-      };
     case 'slow':
-      return {
-        dim: 'rgba(194, 65, 12, 0.42)',
-        bright: '#F97316',
-        hot: '#FFEDD5',
-      };
     case 'heavy':
       return {
-        dim: 'rgba(194, 65, 12, 0.42)',
-        bright: '#F97316',
-        hot: '#FFEDD5',
+        dim: 'rgba(34, 211, 238, 0.28)',
+        bright: '#22D3EE',
+        hot: 'rgba(243, 248, 255, 0.92)',
       };
   }
 }
@@ -1738,33 +1720,33 @@ function sliceMeetingRouteForNavFit(user: MapLatLng, route: MapLatLng[], aheadM:
 }
 
 function NavManeuverArrowIcon({ kind, size = 56 }: { kind: ManeuverArrowKind; size?: number }) {
-  const green = '#4ADE80';
-  const white = '#FFFFFF';
+  const primary = '#22D3EE';
+  const soft = 'rgba(243,248,255,0.94)';
   switch (kind) {
     case 'straight':
-      return <MaterialCommunityIcons name="arrow-up-bold" size={size} color={green} />;
+      return <MaterialCommunityIcons name="arrow-up-bold" size={size} color={primary} />;
     case 'right':
-      return <MaterialCommunityIcons name="arrow-right-bold" size={size} color={green} />;
+      return <MaterialCommunityIcons name="arrow-right-bold" size={size} color={primary} />;
     case 'left':
-      return <MaterialCommunityIcons name="arrow-left-bold" size={size} color={green} />;
+      return <MaterialCommunityIcons name="arrow-left-bold" size={size} color={primary} />;
     case 'sharp_right':
-      return <MaterialCommunityIcons name="arrow-right-bold" size={size + 6} color={white} />;
+      return <MaterialCommunityIcons name="arrow-right-bold" size={size + 6} color={soft} />;
     case 'sharp_left':
-      return <MaterialCommunityIcons name="arrow-left-bold" size={size + 6} color={white} />;
+      return <MaterialCommunityIcons name="arrow-left-bold" size={size + 6} color={soft} />;
     case 'slight_right':
-      return <MaterialCommunityIcons name="arrow-top-right" size={size} color={green} />;
+      return <MaterialCommunityIcons name="arrow-top-right" size={size} color={primary} />;
     case 'slight_left':
-      return <MaterialCommunityIcons name="arrow-top-left" size={size} color={green} />;
+      return <MaterialCommunityIcons name="arrow-top-left" size={size} color={primary} />;
     case 'uturn':
-      return <MaterialCommunityIcons name={'u-turn-left' as any} size={size} color={green} />;
+      return <MaterialCommunityIcons name={'u-turn-left' as any} size={size} color={primary} />;
     case 'roundabout':
-      return <MaterialCommunityIcons name={'rotate-right' as any} size={size} color={green} />;
+      return <MaterialCommunityIcons name={'rotate-right' as any} size={size} color={primary} />;
     case 'merge':
-      return <MaterialCommunityIcons name="call-merge" size={size} color={green} />;
+      return <MaterialCommunityIcons name="call-merge" size={size} color={primary} />;
     case 'fork':
-      return <MaterialCommunityIcons name="call-split" size={size} color={green} />;
+      return <MaterialCommunityIcons name="call-split" size={size} color={primary} />;
     default:
-      return <MaterialCommunityIcons name="navigation-variant" size={size} color={green} />;
+      return <MaterialCommunityIcons name="navigation-variant" size={size} color={primary} />;
   }
 }
 
@@ -1852,8 +1834,8 @@ const NavigationIcon = ({ onPress }: { onPress: () => void }) => {
     <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
       <Animated.View style={[styles.navIconContainer, { opacity: glow }]}>
         <View style={styles.navIconOuter}>
-          <LinearGradient colors={['#F97316', '#EA580C']} style={styles.navIconInner}>
-            <Ionicons name="navigate" size={28} color="#FFF" />
+          <LinearGradient colors={['#0C4A6E', '#0891B2', '#22D3EE']} style={styles.navIconInner}>
+            <Ionicons name="navigate" size={28} color="#F3F8FF" />
           </LinearGradient>
         </View>
       </Animated.View>
@@ -5233,10 +5215,8 @@ export default function LiveMapView({
     meetingDistance <= 1.2;
   /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
   const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
-  const driverMatrixNavChipGradientColors = boardingConfirmed
-    ? (['#C2410C', '#EA580C', '#F97316', '#FB923C'] as const)
-    : (['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA'] as const);
-  const driverMatrixNavChipIconColor = boardingConfirmed ? '#FFEDD5' : '#EFF6FF';
+  const driverMatrixNavChipGradientColors = ['#08111F', '#0B1220', '#101A2B', '#22D3EE'] as const;
+  const driverMatrixNavChipIconColor = 'rgba(243,248,255,0.94)';
   const meetingHasUiMetrics =
     meetingDistance != null &&
     meetingDuration != null &&
@@ -5309,7 +5289,7 @@ export default function LiveMapView({
             pointerEvents="none"
             style={[
               styles.cloudTintOverlay,
-              { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
+              { backgroundColor: 'rgba(8, 17, 31, 0.42)' },
             ]}
           />
         </>
@@ -5475,7 +5455,7 @@ export default function LiveMapView({
             meetingRouteCoordinates.length > 1 && (
               <Polyline
                 coordinates={meetingRouteCoordinates}
-                strokeColor="#047857"
+                strokeColor="#22D3EE"
                 strokeWidth={8}
                 lineJoin="round"
                 lineCap="round"
@@ -5489,14 +5469,14 @@ export default function LiveMapView({
               <Polyline
                 coordinates={meetingRouteCoordinates}
                 strokeWidth={7}
-                strokeColor="rgba(37, 99, 235, 0.88)"
+                strokeColor="rgba(34, 211, 238, 0.88)"
                 lineCap="round"
                 lineJoin="round"
                 zIndex={10}
               />
             )}
           
-          {/* TURUNCU ROTA: Yolcu → Hedef - KALIN */}
+          {/* Hedef önizleme rotası (kesik çizgi) */}
           {isDriver &&
             navigationMode &&
             navigationStage === 'destination' &&
@@ -5540,7 +5520,7 @@ export default function LiveMapView({
             !(isDriver && navigationMode && navigationStage === 'destination' && driverNavRouteLayers?.palette === 'dest') && (
               <Polyline
                 coordinates={destinationRoute}
-                strokeColor="#EA580C"
+                strokeColor="#22D3EE"
                 strokeWidth={8}
                 lineDashPattern={[12, 6]}
                 lineJoin="round"
@@ -5628,7 +5608,7 @@ export default function LiveMapView({
               <View style={styles.proFlagMarker} collapsable={false}>
                 <View style={styles.proFlagPole} />
                 <View style={styles.proFlagBody}>
-                  <Ionicons name="flag" size={14} color="#FFF" />
+                  <Ionicons name="flag" size={14} color="rgba(243,248,255,0.94)" />
                 </View>
                 <View style={styles.proFlagBase} />
               </View>
@@ -5639,7 +5619,7 @@ export default function LiveMapView({
       ) : (
         // Web fallback - harita yok
         <View style={styles.webFallback}>
-          <Ionicons name="map-outline" size={64} color="#3FA9F5" />
+          <Ionicons name="map-outline" size={64} color="#22D3EE" />
           <Text style={styles.webFallbackText}>Harita mobil cihazda görüntülenir</Text>
         </View>
       )}
@@ -5682,7 +5662,7 @@ export default function LiveMapView({
 
             <View style={styles.driverRideLocRow}>
               <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconPickup]}>
-                <Ionicons name="navigate-circle" size={20} color="#15803D" />
+                <Ionicons name="navigate-circle" size={20} color="#22D3EE" />
               </View>
               <View style={styles.driverRideLocTextCol}>
                 <Text style={styles.driverRideSectionLabel}>Buluşma noktası</Text>
@@ -5699,7 +5679,7 @@ export default function LiveMapView({
 
             <View style={[styles.driverRideLocRow, { marginTop: 12 }]}>
               <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconDest]}>
-                <Ionicons name="flag" size={18} color="#C2410C" />
+                <Ionicons name="flag" size={18} color="rgba(34,211,238,0.92)" />
               </View>
               <View style={styles.driverRideLocTextCol}>
                 <Text style={styles.driverRideSectionLabel}>Hedef</Text>
@@ -5777,8 +5757,8 @@ export default function LiveMapView({
           ]}
         >
           <LinearGradient
-            colors={['#FFFFFF', '#FAFBFC', '#F4F7FA', '#FAFBFC']}
-            locations={[0, 0.3, 0.65, 1]}
+            colors={['rgba(16,26,43,0.92)', 'rgba(11,18,32,0.96)', 'rgba(8,17,31,0.94)', 'rgba(16,26,43,0.9)']}
+            locations={[0, 0.35, 0.72, 1]}
             style={styles.infoGradient}
           >
             <View style={styles.topCardPatternRoot} pointerEvents="none">
@@ -5803,7 +5783,7 @@ export default function LiveMapView({
                     : null,
                 ]}
               >
-                <View style={[styles.routeDot, { backgroundColor: '#22C55E' }]} />
+                <View style={[styles.routeDot, { backgroundColor: '#22D3EE' }]} />
                 <View style={styles.routeTextStack}>
                   <Text
                     style={[
@@ -5817,7 +5797,7 @@ export default function LiveMapView({
                     {showMeetingRouteCalculating ? (
                       <RouteCalculatingPremium compact={driverNavImmersive} />
                     ) : showMeetingRouteUnavailable ? (
-                      <RouteUnavailableMuted compact={driverNavImmersive} />
+                      <RouteUnavailableMuted compact={driverNavImmersive} valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }} />
                     ) : (
                       <View>
                         <Text style={routeValueStyle}>
@@ -5849,7 +5829,7 @@ export default function LiveMapView({
                       : null,
                   ]}
                 >
-                  <View style={[styles.routeDot, { backgroundColor: '#F97316' }]} />
+                  <View style={[styles.routeDot, { backgroundColor: 'rgba(34, 211, 238, 0.88)' }]} />
                   <View style={styles.routeTextStack}>
                     <Text
                       style={[
@@ -5863,7 +5843,7 @@ export default function LiveMapView({
                       {showDestinationRouteCalculating ? (
                         <RouteCalculatingPremium compact={driverNavImmersive} />
                       ) : showDestinationRouteUnavailable ? (
-                        <RouteUnavailableMuted compact={driverNavImmersive} />
+                        <RouteUnavailableMuted compact={driverNavImmersive} valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }} />
                       ) : (
                         <View>
                           <Text style={routeValueStyle}>
@@ -5962,7 +5942,7 @@ export default function LiveMapView({
                   <Ionicons
                     name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
                     size={driverNavImmersive ? 13 : 15}
-                    color="#334155"
+                    color="rgba(186,201,222,0.82)"
                   />
                   <Text
                     style={[
@@ -5994,15 +5974,15 @@ export default function LiveMapView({
                   accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
-                    colors={['#16A34A', '#22C55E', '#4ADE80']}
+                    colors={['#08111F', '#0B1220', '#22D3EE']}
                     style={styles.navImmersiveAraGrad}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
                     {voiceCallPending ? (
-                      <ActivityIndicator size="small" color="#FFF" />
+                      <ActivityIndicator size="small" color="#F3F8FF" />
                     ) : (
-                      <Ionicons name="call" size={18} color="#FFF" />
+                      <Ionicons name="call" size={18} color="rgba(243,248,255,0.94)" />
                     )}
                     <Text style={styles.navImmersiveAraText}>
                       {voiceCallPending ? 'Bağlanıyor…' : 'Ara'}
@@ -6053,17 +6033,17 @@ export default function LiveMapView({
                     accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                   >
                     <LinearGradient
-                      colors={['#0E7490', '#059669', '#10B981', '#22C55E']}
-                      locations={[0, 0.3, 0.65, 1]}
+                      colors={['rgba(16,26,43,0.98)', '#0B1220', '#22D3EE']}
+                      locations={[0, 0.5, 1]}
                       style={styles.navImmersiveGuvenGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
                       {trustRequestPending ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <ActivityIndicator size="small" color="#F3F8FF" />
                       ) : (
                         <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                          <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                          <Ionicons name="shield-checkmark" size={18} color="rgba(243,248,255,0.94)" />
                         </Animated.View>
                       )}
                       <Text style={styles.navImmersiveGuvenText}>
@@ -6168,7 +6148,7 @@ export default function LiveMapView({
               accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
             >
               <Animated.View style={{ transform: [{ rotate: navGitCompassRotate }] }}>
-                <Ionicons name="compass" size={18} color="#DBEAFE" />
+                <Ionicons name="compass" size={18} color="rgba(34,211,238,0.95)" />
               </Animated.View>
               <Text style={styles.driverNavRecenterFabText}>Yeniden ortala</Text>
             </TouchableOpacity>
@@ -6184,7 +6164,7 @@ export default function LiveMapView({
             accessibilityRole="button"
             accessibilityLabel="Navigasyonu kapat"
           >
-            <Ionicons name="close-circle" size={22} color="#FFF" />
+            <Ionicons name="close-circle" size={22} color="rgba(243,248,255,0.88)" />
             <Text style={styles.driverNavCloseFabText}>Navigasyonu kapat</Text>
           </TouchableOpacity>
         </View>
@@ -6218,15 +6198,15 @@ export default function LiveMapView({
                   accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
-                    colors={['#16A34A', '#22C55E']}
+                    colors={['#0B1220', '#0EA5E9', '#22D3EE']}
                     style={styles.driverRidePrimaryBtnGrad}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
                     {voiceCallPending ? (
-                      <ActivityIndicator size="small" color="#FFF" />
+                      <ActivityIndicator size="small" color="#F3F8FF" />
                     ) : (
-                      <Ionicons name="call" size={22} color="#FFF" />
+                      <Ionicons name="call" size={22} color="#F3F8FF" />
                     )}
                     <Text
                       style={styles.driverRidePrimaryBtnText}
@@ -6249,7 +6229,7 @@ export default function LiveMapView({
                 accessibilityRole="button"
                 accessibilityLabel={driverMatrixNavChipLabel}
               >
-                <Ionicons name="navigate" size={20} color="#334155" />
+                <Ionicons name="navigate" size={20} color="rgba(34,211,238,0.95)" />
                 <Text
                   style={styles.driverRideSecondaryBtnText}
                   numberOfLines={1}
@@ -6273,7 +6253,7 @@ export default function LiveMapView({
                     accessibilityLabel="Yol paylaşımını bitir — yol sonu QR"
                   >
                     <LinearGradient
-                      colors={['#8B5CF6', '#7C3AED']}
+                      colors={['#3730A3', '#4F46B8', '#63669A']}
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
@@ -6331,7 +6311,7 @@ export default function LiveMapView({
                       accessibilityRole="button"
                       accessibilityLabel="Zorla bitir"
                     >
-                      <Ionicons name="warning" size={18} color="#FFF" />
+                      <Ionicons name="warning" size={18} color="#FECACA" />
                       <Text
                         style={styles.driverRideForceBtnText}
                         numberOfLines={1}
@@ -6361,8 +6341,8 @@ export default function LiveMapView({
                     <LinearGradient
                       colors={
                         driverNearPickupForQr
-                          ? ['#F59E0B', '#D97706']
-                          : ['#FBBF24', '#F59E0B']
+                          ? ['#92400E', '#B45309', '#CA8A04']
+                          : ['#713F12', '#92400E', '#B45309']
                       }
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
@@ -6421,7 +6401,7 @@ export default function LiveMapView({
                       accessibilityRole="button"
                       accessibilityLabel="Zorla bitir"
                     >
-                      <Ionicons name="warning" size={18} color="#FFF" />
+                      <Ionicons name="warning" size={18} color="#FECACA" />
                       <Text
                         style={styles.driverRideForceBtnText}
                         numberOfLines={1}
@@ -6472,9 +6452,9 @@ export default function LiveMapView({
                         accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
                       >
                         {voiceCallPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <ActivityIndicator size="small" color="#08111F" />
                         ) : (
-                          <Ionicons name="call" size={22} color="#FFF" />
+                          <Ionicons name="call" size={22} color="#08111F" />
                         )}
                       </TouchableOpacity>
                     </Animated.View>
@@ -6502,12 +6482,12 @@ export default function LiveMapView({
                         accessibilityLabel={isDriver ? 'Yolcuya yaz' : 'Sürücüye yaz'}
                       >
                         <LinearGradient
-                          colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']}
+                          colors={['#0C4A6E', '#0E7490', '#22D3EE']}
                           style={styles.tripInlineChatBtnGrad}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
-                          <Ionicons name="chatbubble-ellipses" size={18} color="#FFF" />
+                          <Ionicons name="chatbubble-ellipses" size={18} color="#F3F8FF" />
                           <Text style={styles.tripInlineChatBtnText} numberOfLines={1}>
                             {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
                           </Text>
@@ -6544,17 +6524,17 @@ export default function LiveMapView({
                         accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                       >
                         <LinearGradient
-                          colors={['#0D9488', '#059669', '#10B981', '#34D399']}
-                          locations={[0, 0.35, 0.7, 1]}
+                          colors={['rgba(15,118,110,0.88)', '#0F766E', '#134E6B', '#22D3EE']}
+                          locations={[0, 0.42, 0.78, 1]}
                           style={styles.tripGuvenFabCompactInner}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
                           {trustRequestPending ? (
-                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            <ActivityIndicator size="small" color="#F3F8FF" />
                           ) : (
                             <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                              <Ionicons name="shield-checkmark" size={20} color="#FFF" />
+                              <Ionicons name="shield-checkmark" size={20} color="#F3F8FF" />
                             </Animated.View>
                           )}
                           <Text style={styles.tripGuvenFabLabel}>
@@ -6585,13 +6565,13 @@ export default function LiveMapView({
                 accessibilityLabel="AI — Leylek Zeka"
               >
                 <LinearGradient
-                  colors={['#22D3EE', '#3FA9F5', '#6366F1', '#8B5CF6']}
-                  locations={[0, 0.35, 0.65, 1]}
+                  colors={['#172554', '#1E3A5F', '#0E7490', '#22D3EE']}
+                  locations={[0, 0.38, 0.72, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.tripAiFabGrad}
                 >
-                  <Ionicons name="sparkles" size={26} color="#FFF" />
+                  <Ionicons name="sparkles" size={26} color="rgba(243,248,255,0.95)" />
                 </LinearGradient>
                 <Text style={styles.tripAiFabLabel} numberOfLines={1}>
                   AI
@@ -6656,14 +6636,14 @@ export default function LiveMapView({
                 <LinearGradient
                   colors={
                     boardingConfirmed
-                      ? ['#8B5CF6', '#7C3AED']
-                      : ['#FBBF24', '#F59E0B']
+                      ? ['#3730A3', '#4F46B8', '#5753A8']
+                      : ['#713F12', '#B45309', '#CA8A04']
                   }
                   style={styles.qrEndButtonGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Ionicons name="qr-code" size={18} color="#FFF" />
+                  <Ionicons name="qr-code" size={18} color="#F3F8FF" />
                   <Text style={styles.qrEndButtonText}>
                     {boardingConfirmed
                       ? 'Yol Paylaşımını Bitir'
@@ -6715,7 +6695,7 @@ export default function LiveMapView({
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="close-circle" size={18} color="#FFF" />
+              <Ionicons name="close-circle" size={18} color="#FECACA" />
               <Text style={styles.endButtonText}>Zorla Bitir</Text>
             </TouchableOpacity>
           </View>
@@ -6738,7 +6718,7 @@ export default function LiveMapView({
             accessibilityRole="button"
             accessibilityLabel="Konumuma göre haritayı ortala"
           >
-            <Ionicons name="locate" size={22} color="#0f172a" />
+            <Ionicons name="locate" size={22} color="#22D3EE" />
           </TouchableOpacity>
         </View>
       ) : null}
@@ -6957,11 +6937,36 @@ const getColorCode = (colorName: string): string => {
   return colorMap[colorName] || '#6B7280';
 };
 
-// Harita stili - Temiz görünüm
+// Premium dark cockpit — Apple/Uber Black zemin; cyan rota kontrastı korunur; traffic layer açık kalır
 const mapStyle = [
-  { "featureType": "poi", "stylers": [{ "visibility": "off" }] },
-  { "featureType": "transit", "stylers": [{ "visibility": "off" }] },
-  { "featureType": "poi.business", "stylers": [{ "visibility": "off" }] }
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#101A2B' }] },
+  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#0F1728' }] },
+  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#121C2E' }] },
+  { featureType: 'landscape.natural.landcover', elementType: 'geometry', stylers: [{ color: '#0E1624' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#081A2A' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#7A93B0' }, { visibility: 'simplified' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1E2A3D' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#0B1220' }, { weight: 0.6 }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#283549' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#101A2B' }, { weight: 0.55 }] },
+  { featureType: 'road.highway.controlled_access', elementType: 'geometry', stylers: [{ color: '#2C3A4E' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#232F41' }] },
+  { featureType: 'road.local', elementType: 'geometry', stylers: [{ color: '#1A2636' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#BAC9DE' }] },
+  { featureType: 'road', elementType: 'labels.text.stroke', stylers: [{ color: '#08111F' }, { weight: 2.5 }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#101A2B' }, { visibility: 'simplified' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#1E3A5F' }, { weight: 0.35 }] },
+  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#1E3A5F' }, { weight: 0.55 }] },
+  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#162949' }, { weight: 0.35 }] },
+  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#BAC9DE' }] },
+  { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#9AAFC9' }] },
+  { featureType: 'all', elementType: 'labels.text.fill', stylers: [{ color: '#BAC9DE' }] },
+  { featureType: 'all', elementType: 'labels.text.stroke', stylers: [{ color: '#08111F' }, { weight: 3 }] },
+  { featureType: 'all', elementType: 'labels.icon', stylers: [{ saturation: -35 }, { lightness: 8 }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#0F1829' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
 ];
 
 const styles = StyleSheet.create({
@@ -6981,7 +6986,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 200,
     zIndex: 0,
-    opacity: 0.14, // bulutlar daha silik
+    opacity: 0.09,
   },
   cloudTintOverlay: {
     position: 'absolute',
@@ -7004,15 +7009,17 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     zIndex: 100,
-    backgroundColor: '#0F172A',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
     paddingBottom: 14,
     paddingHorizontal: 16,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(30, 58, 95, 0.9)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
     elevation: 12,
   },
   navManeuverBannerCompact: {
@@ -7022,7 +7029,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 14,
   },
   navManeuverBannerStage: {
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(186, 201, 222, 0.82)',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.4,
@@ -7046,9 +7053,9 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
     borderWidth: 2,
-    borderColor: '#22C55E',
+    borderColor: 'rgba(34, 211, 238, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
@@ -7065,7 +7072,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   navManeuverBannerManeuver: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 17,
     fontWeight: '800',
     lineHeight: 23,
@@ -7077,7 +7084,7 @@ const styles = StyleSheet.create({
   },
   navManeuverStreet: {
     marginTop: 4,
-    color: 'rgba(255,255,255,0.82)',
+    color: 'rgba(186, 201, 222, 0.82)',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -7129,7 +7136,7 @@ const styles = StyleSheet.create({
   navImmersiveTrustHint: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.78)',
     textAlign: 'right',
     marginBottom: 4,
     paddingRight: 2,
@@ -7166,12 +7173,12 @@ const styles = StyleSheet.create({
     width: 152,
     height: 54,
     borderRadius: 27,
-    backgroundColor: 'rgba(37, 99, 235, 0.38)',
-    shadowColor: '#60A5FA',
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    shadowColor: 'rgba(8, 17, 31, 0.72)',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
+    shadowOpacity: 0.45,
     shadowRadius: 16,
-    elevation: 12,
+    elevation: 8,
   },
   driverMatchYgitTouch: {
     zIndex: 2,
@@ -7180,10 +7187,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     elevation: 6,
-    shadowColor: '#064e3b',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.28,
-    shadowRadius: 6,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
   },
   navImmersiveGuvenGrad: {
     flexDirection: 'row',
@@ -7195,7 +7202,7 @@ const styles = StyleSheet.create({
     minWidth: 122,
   },
   navImmersiveGuvenText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.15,
@@ -7204,10 +7211,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     elevation: 6,
-    shadowColor: '#14532d',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.26,
-    shadowRadius: 6,
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
   },
   navImmersiveAraGrad: {
     flexDirection: 'row',
@@ -7219,7 +7226,7 @@ const styles = StyleSheet.create({
     minWidth: 122,
   },
   navImmersiveAraText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -7234,21 +7241,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'rgba(29, 78, 216, 0.9)',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(191, 219, 254, 0.75)',
-    shadowColor: '#1e3a8a',
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+    shadowColor: 'rgba(8, 17, 31, 0.72)',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOpacity: 0.42,
+    shadowRadius: 10,
     elevation: 8,
     minHeight: 44,
   },
   driverNavRecenterFabText: {
-    color: '#DBEAFE',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -7258,19 +7265,19 @@ const styles = StyleSheet.create({
     right: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.35)',
+    borderColor: '#1E3A5F',
     zIndex: 40,
     elevation: 8,
     minHeight: 44,
   },
   driverNavCloseFabText: {
     marginLeft: 8,
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -7313,10 +7320,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    shadowColor: '#0f172a',
+    borderColor: 'rgba(34,211,238,0.38)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.22,
     shadowRadius: 8,
     elevation: 6,
   },
@@ -7329,7 +7336,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   tripInlineChatBtnText: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.15,
@@ -7360,7 +7367,7 @@ const styles = StyleSheet.create({
     width: 92,
   },
   driverTripCallTitle: {
-    color: '#4ADE80',
+    color: 'rgba(34,211,238,0.95)',
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -7417,10 +7424,10 @@ const styles = StyleSheet.create({
   tripGuvenFabCompact: {
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#14B8A6',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.42,
-    shadowRadius: 12,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 10,
   },
   tripGuvenFabCompactInner: {
@@ -7431,10 +7438,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.38)',
+    borderColor: 'rgba(186,230,253,0.28)',
   },
   tripGuvenFabLabel: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,
@@ -7498,13 +7505,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   callPromptLabelSingle: {
-    color: '#4ADE80',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 15,
     fontWeight: '900',
     letterSpacing: 0.25,
     maxWidth: SCREEN_WIDTH * 0.88,
     marginBottom: 8,
-    textShadowColor: 'rgba(74, 222, 128, 0.55)',
+    textShadowColor: 'rgba(34,211,238,0.35)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 8,
   },
@@ -7512,24 +7519,24 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#25D366',
+    backgroundColor: '#22D3EE',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.45)',
-    shadowColor: '#0D4F3C',
+    borderColor: 'rgba(186, 230, 253, 0.65)',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 8,
+    shadowOpacity: 0.38,
+    shadowRadius: 8,
+    elevation: 10,
   },
   mapCallFabCircleDisabled: {
     opacity: 0.55,
   },
-  webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8' },
-  webFallbackText: { fontSize: 16, color: '#666', marginTop: 16, textAlign: 'center' },
-  distanceText: { fontSize: 18, fontWeight: 'bold', color: '#22C55E', marginTop: 12 },
-  destinationDistanceText: { fontSize: 16, color: '#F97316', marginTop: 8 },
+  webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(8,17,31,0.96)' },
+  webFallbackText: { fontSize: 16, color: 'rgba(186,201,222,0.88)', marginTop: 16, textAlign: 'center' },
+  distanceText: { fontSize: 18, fontWeight: 'bold', color: 'rgba(34,211,238,0.92)', marginTop: 12 },
+  destinationDistanceText: { fontSize: 16, color: 'rgba(186,201,222,0.82)', marginTop: 8 },
   
   // Marker Styles
   markerContainer: { alignItems: 'center' },
@@ -7580,7 +7587,7 @@ const styles = StyleSheet.create({
   proFlagPole: {
     width: 4,
     height: 50,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#101A2B',
     borderRadius: 2,
   },
   proFlagBody: {
@@ -7589,21 +7596,23 @@ const styles = StyleSheet.create({
     left: 4,
     width: 38,
     height: 26,
-    backgroundColor: '#DC2626',
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
     borderTopRightRadius: 4,
     borderBottomRightRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#DC2626',
+    shadowColor: 'rgba(8, 17, 31, 0.72)',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 5,
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
     elevation: 7,
   },
   proFlagBase: {
     width: 14,
     height: 7,
-    backgroundColor: '#374151',
+    backgroundColor: 'rgba(16, 26, 43, 0.95)',
     borderRadius: 4,
     marginLeft: -5,
     marginTop: 2,
@@ -7611,9 +7620,9 @@ const styles = StyleSheet.create({
   
   // Destination Marker
   destinationMarker: { alignItems: 'center' },
-  destinationCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#F97316', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8 },
+  destinationCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(184,71,27,0.92)', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: 'rgba(243,248,255,0.9)', shadowColor: '#431407', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 8 },
   destinationIcon: { fontSize: 26 },
-  destinationLabel: { marginTop: 4, fontSize: 11, fontWeight: 'bold', color: '#F97316', backgroundColor: '#FFF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
+  destinationLabel: { marginTop: 4, fontSize: 11, fontWeight: 'bold', color: 'rgba(34,211,238,0.88)', backgroundColor: 'rgba(16,26,43,0.82)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
   
   // 🆕 Floating Navigation Icon (Sürücü için)
   floatingNavIcon: {
@@ -7629,9 +7638,9 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#FF6B00',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.26,
     shadowRadius: 8,
     elevation: 10,
   },
@@ -7639,8 +7648,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     fontWeight: '800',
-    color: '#FF6B00',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    color: '#22D3EE',
+    backgroundColor: 'rgba(16,26,43,0.78)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
@@ -7660,12 +7669,12 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(249, 115, 22, 0.2)',
+    backgroundColor: 'rgba(14,165,233,0.14)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#F97316',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.28,
     shadowRadius: 12,
     elevation: 8,
   },
@@ -7682,18 +7691,19 @@ const styles = StyleSheet.create({
   topInfoBorder: {
     alignSelf: 'center',
     width: SCREEN_WIDTH * 0.885,
-    borderWidth: 1,
-    borderColor: 'rgba(14, 165, 233, 0.38)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.28)',
     borderRadius: 20,
     marginTop: 40,
     marginBottom: 6,
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 6,
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
   },
   topInfoBorderNav: {
     marginTop: 4,
@@ -7709,7 +7719,7 @@ const styles = StyleSheet.create({
     top: -80,
     width: 1,
     height: 320,
-    backgroundColor: 'rgba(14, 165, 233, 0.05)',
+    backgroundColor: 'rgba(34, 211, 238, 0.07)',
     transform: [{ rotate: '32deg' }],
   },
   topCardContent: {
@@ -7763,17 +7773,18 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 14,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.42)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.32)',
     minWidth: 168,
-    shadowColor: '#1e3a8a',
+    shadowColor: 'rgba(8, 17, 31, 0.72)',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.32,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.38,
+    shadowRadius: 12,
+    elevation: 10,
   },
   driverYolcuyaGitChipLabel: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -7786,7 +7797,7 @@ const styles = StyleSheet.create({
   routeValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   routeLabelModern: {
     fontSize: 10,
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.82)',
     fontWeight: '700',
     letterSpacing: 1.6,
     marginBottom: 1,
@@ -7800,7 +7811,7 @@ const styles = StyleSheet.create({
   routeValueModern: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#0F172A',
+    color: 'rgba(243, 248, 255, 0.94)',
     letterSpacing: 0.15,
     marginTop: 0,
   },
@@ -7810,7 +7821,7 @@ const styles = StyleSheet.create({
   },
   routePolylineHint: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: 'rgba(186, 201, 222, 0.75)',
     marginTop: 2,
     fontWeight: '500',
   },
@@ -7819,30 +7830,34 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   nearBadge: {
-    backgroundColor: '#EA580C',
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
   },
   nearBadgeNav: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  nearBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
+  nearBadgeText: { color: 'rgba(243, 248, 255, 0.94)', fontSize: 10, fontWeight: '800' },
   nearBadgeTextNav: { fontSize: 9 },
   offeredPriceBadge: {
-    backgroundColor: '#0284C7',
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     minWidth: 52,
     alignItems: 'center',
     borderRadius: 10,
-    shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+    shadowColor: 'rgba(8, 17, 31, 0.72)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 4,
   },
   offeredPriceBadgeNav: {
     paddingHorizontal: 8,
@@ -7851,7 +7866,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   offeredPriceText: {
-    color: '#FFF',
+    color: '#22D3EE',
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -7867,15 +7882,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(148, 163, 184, 0.45)',
+    borderTopColor: 'rgba(30, 58, 95, 0.75)',
   },
   priceRowNav: {
     marginTop: 0,
     paddingTop: 5,
   },
-  priceLabel: { fontSize: 12, fontWeight: '700', color: '#64748B', letterSpacing: 0.6 },
+  priceLabel: { fontSize: 12, fontWeight: '700', color: 'rgba(186, 201, 222, 0.82)', letterSpacing: 0.6 },
   priceLabelNav: { fontSize: 11 },
-  priceValue: { fontSize: 18, fontWeight: '800', color: '#0284C7' },
+  priceValue: { fontSize: 18, fontWeight: '800', color: '#22D3EE' },
   priceValueNav: { fontSize: 15 },
   paymentMethodPill: {
     flexDirection: 'row',
@@ -7886,9 +7901,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(241, 245, 249, 0.95)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30, 58, 95, 0.92)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.22)',
   },
   paymentMethodPillNav: {
     marginTop: 4,
@@ -7900,7 +7916,7 @@ const styles = StyleSheet.create({
   paymentMethodPillText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#334155',
+    color: 'rgba(243, 248, 255, 0.9)',
   },
   paymentMethodPillTextNav: {
     fontSize: 12,
@@ -7916,14 +7932,14 @@ const styles = StyleSheet.create({
     maxWidth: SCREEN_WIDTH * 0.62,
   },
   passengerLiveLabel: {
-    color: '#DC2626',
+    color: '#22D3EE',
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 4,
   },
   passengerLiveHint: {
     marginTop: 6,
-    color: '#B91C1C',
+    color: 'rgba(251,191,181,0.92)',
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'right',
@@ -7943,7 +7959,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 18,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(8, 17, 31, 0.38)',
   },
   
   // 🆕 Ortalı Navigasyon Butonu (Alt Panelde)
@@ -7959,9 +7975,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 28,
     borderRadius: 16,
-    shadowColor: '#FF6B00',
+    shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.22,
     shadowRadius: 8,
     elevation: 8,
   },
@@ -7974,9 +7990,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderRadius: 10,
     overflow: 'hidden',
-    shadowColor: '#10B981',
+    shadowColor: '#0891B2',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.22,
     shadowRadius: 10,
     elevation: 10,
   },
@@ -8005,7 +8021,7 @@ const styles = StyleSheet.create({
   animatedBorderOuter: {
     borderRadius: 20,
     borderWidth: 3,
-    borderColor: '#8B5CF6',
+    borderColor: 'rgba(34,211,238,0.42)',
     padding: 3,
   },
   animatedGlow: {
@@ -8017,8 +8033,8 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderWidth: 2,
     borderColor: 'transparent',
-    borderTopColor: 'rgba(139, 92, 246, 0.5)',
-    borderRightColor: 'rgba(139, 92, 246, 0.3)',
+    borderTopColor: 'rgba(34, 211, 238, 0.35)',
+    borderRightColor: 'rgba(34, 211, 238, 0.22)',
   },
   
   // 🆕 Call Section
@@ -8159,16 +8175,18 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6366F1',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.28)',
+    shadowColor: '#1E293B',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.38,
+    shadowOpacity: 0.22,
     shadowRadius: 10,
     elevation: 10,
   },
   tripAiFabLabel: {
     fontSize: 10,
     fontWeight: '900',
-    color: '#334155',
+    color: 'rgba(186,201,222,0.92)',
     marginTop: 4,
     letterSpacing: 0.6,
   },
@@ -8186,24 +8204,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(15, 23, 42, 0.2)',
+    borderColor: 'rgba(30,58,95,0.55)',
   },
   supportSplitLeft: {
     flex: 1,
-    backgroundColor: '#22C55E',
+    backgroundColor: 'rgba(15,118,110,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   supportSplitRight: {
     flex: 1,
-    backgroundColor: '#FACC15',
+    backgroundColor: 'rgba(180,83,9,0.82)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   supportDestekLabel: {
     fontSize: 8,
     fontWeight: '800',
-    color: '#334155',
+    color: 'rgba(186,201,222,0.88)',
     marginTop: 3,
     letterSpacing: 0.15,
   },
@@ -8230,14 +8248,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center', 
     paddingVertical: 12, 
     paddingHorizontal: 12,
-    backgroundColor: '#DC2626', // Kırmızı - Bitir butonu
+    backgroundColor: 'rgba(127,29,29,0.48)',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.42)',
+    shadowColor: '#7F1D1D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 5,
   },
   endButtonText: { 
     fontSize: 12, 
     fontWeight: '600', 
     marginLeft: 4, 
-    color: '#FFF',
+    color: '#FEE2E2',
   },
   
   // 🆕 QR ile Bitir Butonu
@@ -8245,6 +8270,8 @@ const styles = StyleSheet.create({
     flex: 2,
     borderRadius: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.55)',
   },
   qrEndButtonGradient: {
     flexDirection: 'row',
@@ -8257,7 +8284,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 6,
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
   },
 
   // 🆕 Kullanıcı Bilgi Kartı Stilleri
@@ -8411,18 +8438,25 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     marginTop: 6,
     zIndex: 1000,
-    backgroundColor: 'rgba(0, 20, 0, 0.9)',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    borderLeftWidth: 4,
-    borderLeftColor: '#00FF00',
+    paddingVertical: 9,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    borderLeftWidth: 3,
+    borderLeftColor: 'rgba(34, 211, 238, 0.55)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
   },
   matrixTextDriver: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#00FF00',
-    letterSpacing: 1.5,
+    color: 'rgba(243, 248, 255, 0.94)',
+    letterSpacing: 1.2,
   },
   // 🆕 Matrix Durum Yazısı Stilleri - YOLCU (KIRMIZI) - Üst çerçevenin altında
   matrixContainerPassenger: {
@@ -8430,42 +8464,50 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     marginTop: 6,
     zIndex: 1000,
-    backgroundColor: 'rgba(30, 0, 0, 0.9)',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF3B30',
+    paddingVertical: 9,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(185, 94, 106, 0.45)',
+    borderLeftWidth: 3,
+    borderLeftColor: 'rgba(239, 91, 112, 0.55)',
+    shadowColor: '#7f1d1d',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 6,
   },
   matrixTextPassenger: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#FF3B30',
-    letterSpacing: 1.5,
+    color: 'rgba(254, 202, 202, 0.95)',
+    letterSpacing: 1.2,
   },
   driverPassengerCueAboveNav: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(16, 26, 43, 0.9)',
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
     marginBottom: 10,
-    borderWidth: 1.5,
-    borderColor: 'rgba(124, 58, 237, 0.45)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.92)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.35)',
   },
   driverPassengerCueAccent: {
     width: 4,
     alignSelf: 'stretch',
     minHeight: 24,
     borderRadius: 2,
-    backgroundColor: '#7C3AED',
+    backgroundColor: 'rgba(34, 211, 238, 0.75)',
     marginRight: 10,
   },
   driverPassengerCueTextAboveNav: {
     flex: 1,
-    color: '#4C1D95',
+    color: 'rgba(243, 248, 255, 0.92)',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -8485,13 +8527,16 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignSelf: 'stretch',
     borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     paddingHorizontal: 18,
     paddingVertical: 16,
-    shadowColor: '#0f172a',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.28)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.07,
-    shadowRadius: 22,
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
     elevation: 9,
   },
   driverRideUiDebugBadge: {
@@ -8502,12 +8547,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
-    backgroundColor: 'rgba(107, 33, 168, 0.92)',
+    backgroundColor: 'rgba(67,56,156,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(129,140,248,0.38)',
   },
   driverRideUiDebugBadgeText: {
     fontSize: 9,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: 'rgba(237,242,254,0.94)',
     letterSpacing: 0.4,
   },
   driverRideLocRow: {
@@ -8524,10 +8571,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   driverRideLocIconPickup: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.35)',
   },
   driverRideLocIconDest: {
-    backgroundColor: '#FFEDD5',
+    backgroundColor: 'rgba(34,211,238,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.32)',
   },
   driverRideLocTextCol: {
     flex: 1,
@@ -8546,28 +8597,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: 'rgba(8,17,31,0.55)',
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: 'rgba(34,211,238,0.38)',
   },
   driverRideStatusPillStarted: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderColor: 'rgba(34,211,238,0.48)',
   },
   driverRideStatusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22C55E',
+    backgroundColor: 'rgba(34,211,238,0.85)',
   },
   driverRideStatusPillText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#065F46',
+    color: 'rgba(243,248,255,0.92)',
     letterSpacing: 0.2,
   },
   driverRideStatusPillTextStarted: {
-    color: '#1D4ED8',
+    color: 'rgba(243,248,255,0.94)',
   },
   driverRideTopHeaderRight: {
     flexDirection: 'row',
@@ -8578,25 +8629,25 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.2,
-    color: '#DC2626',
+    color: 'rgba(248,171,173,0.88)',
   },
   driverRideVehicleChip: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(30,58,95,0.35)',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'rgba(30,58,95,0.55)',
   },
   driverRideVehicleChipText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#475569',
+    color: 'rgba(186,201,222,0.9)',
   },
   driverRideSectionLabel: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: 'rgba(186,201,222,0.82)',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     marginBottom: 4,
@@ -8604,7 +8655,7 @@ const styles = StyleSheet.create({
   driverRideAddr: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0f172a',
+    color: 'rgba(243,248,255,0.94)',
     lineHeight: 21,
     flexShrink: 1,
   },
@@ -8612,12 +8663,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: 'rgba(30,58,95,0.55)',
   },
   driverRideMetricsText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#475569',
+    color: 'rgba(186,201,222,0.88)',
     lineHeight: 19,
     flexShrink: 1,
   },
@@ -8638,18 +8689,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: '#111827',
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(165,243,252,0.45)',
     marginLeft: 'auto',
   },
   driverRidePriceBadgeText: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: 'rgba(34,211,238,0.96)',
   },
   driverRidePayHint: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.82)',
     flexShrink: 1,
     flex: 1,
     minWidth: 0,
@@ -8662,7 +8715,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: 'rgba(30,58,95,0.55)',
     gap: 12,
   },
   driverRidePassengerAvatarWrap: {
@@ -8670,9 +8723,11 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     overflow: 'hidden',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(30,58,95,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.5)',
   },
   driverRidePassengerTextCol: {
     flex: 1,
@@ -8681,7 +8736,7 @@ const styles = StyleSheet.create({
   driverRidePassengerLabel: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: 'rgba(186,201,222,0.82)',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginBottom: 2,
@@ -8689,7 +8744,7 @@ const styles = StyleSheet.create({
   driverRidePassengerName: {
     fontSize: 17,
     fontWeight: '900',
-    color: '#0f172a',
+    color: 'rgba(243,248,255,0.94)',
   },
   driverRideMiniCall: {
     flexDirection: 'row',
@@ -8698,12 +8753,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#16A34A',
+    backgroundColor: 'rgba(14,165,233,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(165,243,252,0.35)',
   },
   driverRideMiniCallText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#08111F',
   },
   driverRideMatrixBanner: {
     marginTop: 8,
@@ -8714,18 +8771,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.88)',
   },
   driverRideMatrixBannerText: {
-    color: '#86EFAC',
+    color: 'rgba(34,211,238,0.85)',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
     textAlign: 'center',
   },
   driverRideBottomSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(16,26,43,0.96)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 16,
     paddingTop: 16,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(30,58,95,0.65)',
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
@@ -8748,7 +8809,7 @@ const styles = StyleSheet.create({
   driverRidePrimaryBtnText: {
     fontSize: 17,
     fontWeight: '900',
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.96)',
     flexShrink: 1,
   },
   driverRideSecondaryBtn: {
@@ -8760,15 +8821,15 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     paddingHorizontal: 12,
     borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
     marginBottom: 11,
   },
   driverRideSecondaryBtnText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#334155',
+    color: 'rgba(243, 248, 255, 0.94)',
     flexShrink: 1,
   },
   driverRideSheetRow2: {
@@ -8786,19 +8847,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     minHeight: 56,
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.5)',
   },
   driverRideQrBtnProminent: {
-    shadowColor: '#6D28D9',
+    shadowColor: '#3730A3',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 10,
     transform: [{ scale: 1.02 }],
   },
   driverRideQrBtnProminentBoarding: {
-    shadowColor: '#B45309',
+    shadowColor: '#92400E',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.38,
+    shadowOpacity: 0.22,
     shadowRadius: 10,
     elevation: 10,
     transform: [{ scale: 1.02 }],
@@ -8815,7 +8878,7 @@ const styles = StyleSheet.create({
   driverRideQrBtnText: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     flexShrink: 1,
   },
   driverRideForceBtn: {
@@ -8825,14 +8888,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderRadius: 12,
-    backgroundColor: '#DC2626',
+    backgroundColor: 'rgba(127,29,29,0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.4)',
     paddingHorizontal: 8,
     minHeight: 56,
   },
   driverRideForceBtnText: {
     fontSize: 13,
     fontWeight: '900',
-    color: '#FFF',
+    color: '#FEE2E2',
     flexShrink: 1,
   },
   driverRideAuxRow: {
@@ -8869,16 +8934,16 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0f172a',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E3A5F',
   },
 
   navModeExitRow: {

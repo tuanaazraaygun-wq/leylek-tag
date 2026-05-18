@@ -19,6 +19,7 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Audio } from 'expo-av';
@@ -422,7 +423,7 @@ export default function ChatBubble({
           onPress={toggleMinimize}
           activeOpacity={0.8}
         >
-          <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
+          <Ionicons name="chatbubble-ellipses" size={24} color="#08111F" />
           {unreadCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -444,16 +445,29 @@ export default function ChatBubble({
             { transform: [{ translateY: slideAnim }] },
           ]}
         >
-      <View style={styles.keyboardView}>
+          <LinearGradient
+            colors={['#101A2B', '#0B1220', '#08111F']}
+            locations={[0, 0.52, 1]}
+            pointerEvents="none"
+            style={styles.sheetGlassFill}
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(34,211,238,0.06)', 'transparent']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            pointerEvents="none"
+            style={styles.sheetEdgeLight}
+          />
+          <View style={styles.keyboardView}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Ionicons name="person-circle" size={32} color="#4CAF50" />
+            <Ionicons name="person-circle" size={32} color="#22D3EE" />
             <View style={styles.headerInfo}>
               <Text style={styles.headerName}>{otherFirst}</Text>
               <View style={styles.onlineStatus}>
-                <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#4CAF50' : '#999' }]} />
-                <Text style={[styles.onlineText, { color: isConnected ? '#4CAF50' : '#999' }]}>
+                <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#22D3EE' : 'rgba(186,201,222,0.45)' }]} />
+                <Text style={[styles.onlineText, { color: isConnected ? '#22D3EE' : 'rgba(186,201,222,0.75)' }]}>
                   {isConnected ? 'Bağlı' : 'Bağlanıyor...'}
                 </Text>
               </View>
@@ -461,10 +475,10 @@ export default function ChatBubble({
           </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity onPress={toggleMinimize} style={styles.headerBtn}>
-              <Ionicons name="remove" size={24} color="#666" />
+              <Ionicons name="remove" size={24} color="rgba(186,201,222,0.82)" />
             </TouchableOpacity>
             <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
-              <Ionicons name="close" size={24} color="#666" />
+              <Ionicons name="close" size={24} color="rgba(186,201,222,0.82)" />
             </TouchableOpacity>
           </View>
         </View>
@@ -507,7 +521,7 @@ export default function ChatBubble({
           )}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubbles-outline" size={48} color="#ccc" />
+              <Ionicons name="chatbubbles-outline" size={48} color="rgba(34,211,238,0.42)" />
               <Text style={styles.emptyText}>Henüz mesaj yok</Text>
               <Text style={styles.emptySubtext}>Bir mesaj göndererek sohbeti başlatın</Text>
             </View>
@@ -555,7 +569,7 @@ export default function ChatBubble({
           <TextInput
             style={styles.input}
             placeholder="Mesajınızı yazın..."
-            placeholderTextColor="#999"
+            placeholderTextColor="rgba(186,201,222,0.55)"
             value={inputText}
             onChangeText={setInputText}
             multiline
@@ -570,10 +584,14 @@ export default function ChatBubble({
             onPress={() => sendMessage(inputText)}
             disabled={!inputText.trim() || tripCommsLocked}
           >
-            <Ionicons name="send" size={20} color="#fff" />
+            <Ionicons
+              name="send"
+              size={20}
+              color={(!inputText.trim() || tripCommsLocked) ? 'rgba(186,201,222,0.42)' : '#08111F'}
+            />
           </TouchableOpacity>
         </View>
-      </View>
+          </View>
         </Animated.View>
       </View>
     </Modal>
@@ -587,20 +605,34 @@ const styles = StyleSheet.create({
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(8,17,31,0.68)',
+  },
+  sheetGlassFill: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  sheetEdgeLight: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   container: {
     width: '100%',
     maxHeight: SCREEN_HEIGHT * 0.6,
     height: SCREEN_HEIGHT * 0.6,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 10,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 0,
+    borderColor: '#1E3A5F',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
   },
   keyboardView: {
     flex: 1,
@@ -611,8 +643,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomWidth: StyleSheet.hairlineWidth + 1,
+    borderBottomColor: 'rgba(30,58,95,0.65)',
+    backgroundColor: 'rgba(8,17,31,0.42)',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -623,8 +656,9 @@ const styles = StyleSheet.create({
   },
   headerName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '700',
+    color: 'rgba(243,248,255,0.94)',
+    letterSpacing: 0.2,
   },
   onlineStatus: {
     flexDirection: 'row',
@@ -639,6 +673,7 @@ const styles = StyleSheet.create({
   },
   onlineText: {
     fontSize: 12,
+    fontWeight: '600',
   },
   headerButtons: {
     flexDirection: 'row',
@@ -661,10 +696,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   mySenderLabel: {
-    color: 'rgba(255,255,255,0.92)',
+    color: 'rgba(241,249,255,0.88)',
   },
   otherSenderLabel: {
-    color: '#0369A1',
+    color: 'rgba(34,211,238,0.88)',
   },
   messageBubble: {
     maxWidth: '80%',
@@ -672,37 +707,52 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 18,
     marginBottom: 8,
+    borderWidth: StyleSheet.hairlineWidth + 1,
   },
   myMessage: {
     alignSelf: 'flex-end',
-    backgroundColor: '#007AFF',
+    backgroundColor: 'rgba(14,165,233,0.92)',
     borderBottomRightRadius: 4,
+    borderColor: 'rgba(34,211,238,0.45)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
   },
   otherMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: '#E9E9EB',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderBottomLeftRadius: 4,
+    borderColor: 'rgba(30,58,95,0.92)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
   },
   messageText: {
     fontSize: 15,
     lineHeight: 20,
   },
   myMessageText: {
-    color: '#fff',
+    color: 'rgba(243,248,255,0.96)',
+    fontWeight: '500',
   },
   otherMessageText: {
-    color: '#333',
+    color: 'rgba(243,248,255,0.92)',
+    fontWeight: '500',
   },
   messageTime: {
     fontSize: 10,
     marginTop: 4,
   },
   myMessageTime: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(241,249,255,0.72)',
     textAlign: 'right',
   },
   otherMessageTime: {
-    color: '#999',
+    color: 'rgba(186,201,222,0.82)',
   },
   emptyContainer: {
     flex: 1,
@@ -712,80 +762,111 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#999',
+    fontWeight: '600',
+    color: 'rgba(243,248,255,0.88)',
     marginTop: 12,
+    letterSpacing: 0.2,
   },
   emptySubtext: {
     fontSize: 13,
-    color: '#ccc',
+    color: 'rgba(186,201,222,0.78)',
     marginTop: 4,
+    textAlign: 'center',
+    paddingHorizontal: 28,
+    lineHeight: 18,
   },
   suggestionsContainer: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(30,58,95,0.55)',
+    backgroundColor: 'rgba(8,17,31,0.28)',
   },
   suggestionChip: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(16,26,43,0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30,58,95,0.75)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,
     marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   suggestionText: {
     fontSize: 13,
-    color: '#333',
+    color: 'rgba(243,248,255,0.9)',
+    fontWeight: '500',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
     paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    backgroundColor: '#fff',
+    borderTopWidth: StyleSheet.hairlineWidth + 1,
+    borderTopColor: 'rgba(30,58,95,0.55)',
+    backgroundColor: 'rgba(8,17,31,0.52)',
   },
   input: {
     flex: 1,
     minHeight: 40,
     maxHeight: 100,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'rgba(16,26,43,0.68)',
     borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30,58,95,0.65)',
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 15,
-    color: '#333',
+    color: 'rgba(243,248,255,0.94)',
     marginRight: 8,
   },
   sendButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#22D3EE',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(125,211,252,0.55)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.36,
+    shadowRadius: 8,
+    elevation: 8,
   },
   sendButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: 'rgba(26,38,61,0.85)',
+    borderColor: '#1E3A5F',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   // 🆕 Spam/Küfür Uyarı Stili
   warningContainer: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: 'rgba(127,29,29,0.22)',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginHorizontal: 12,
     marginBottom: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FECACA',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(248,113,113,0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   warningText: {
-    color: '#DC2626',
+    color: 'rgba(254,226,226,0.94)',
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
     textAlign: 'center',
+    lineHeight: 18,
   },
   minimizedBubble: {
     position: 'absolute',
@@ -794,14 +875,16 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#007AFF',
+    backgroundColor: 'rgba(34,211,238,0.98)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(125,211,252,0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 12,
   },
   minimizedContent: {
     width: '100%',

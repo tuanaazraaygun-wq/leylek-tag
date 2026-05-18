@@ -7,7 +7,7 @@ import { Image, StyleSheet, View } from 'react-native';
 export default function MuhabbetWatermark() {
   return (
     <View style={styles.wrap} pointerEvents="none">
-      <Image source={require('../assets/images/logo.png')} style={styles.img} resizeMode="contain" />
+      <Image source={require('../assets/images/leylek-logo-premium.png')} style={styles.img} resizeMode="contain" />
     </View>
   );
 }

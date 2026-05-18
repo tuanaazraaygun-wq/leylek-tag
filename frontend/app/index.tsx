@@ -6,6 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
@@ -40,6 +41,7 @@ import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Te
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
+import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
 import useSocket from '../hooks/useSocket';
@@ -53,9 +55,27 @@ import { callCheck } from '../lib/callCheck';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
 import SplashScreen from '../components/SplashScreen';
-import AnimatedClouds from '../components/auth/AnimatedClouds';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
+import { OtpVerificationScreen } from '../components/auth/OtpVerificationScreen';
+import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_GLASS_FILL,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_CARD_BG,
+  PREMIUM_ROLE_CARD_BORDER,
+  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+  PREMIUM_ROLE_COCKPIT_FILL,
+  PREMIUM_ROLE_FOREGROUND_AMBIENT,
+  PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE,
+  PREMIUM_ROLE_OVERLAY,
+  PREMIUM_ROLE_PANEL_GLASS,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_TEXT_SOFT,
+  premiumAuthStyles as pap,
+} from '../components/auth/premiumAuthStyles';
 import LeylekMuhabbetiFaz1Screen from '../components/LeylekMuhabbetiFaz1Screen';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -784,16 +804,6 @@ type AppScreen =
   | 'community'
   | 'driver-kyc';
 
-/** Giriş/OTP: döndürme ve farklı genişliklerde simetrik padding + sütun genişliği */
-function useLoginAuthLayout() {
-  const { width, height } = useWindowDimensions();
-  const padH = Math.min(28, Math.max(14, Math.round(width * 0.052)));
-  const colMax = Math.max(260, Math.min(368, Math.round(width - padH * 2)));
-  const isShort = height < 720;
-  const isCompact = height < 620;
-  return { padH, colMax, isShort, isCompact };
-}
-
 interface Offer {
   id: string;
   driver_id: string;
@@ -849,7 +859,15 @@ export default function App() {
     }),
     [roleSelectUsableHeight, windowWidth],
   );
-  const loginLayout = useLoginAuthLayout();
+  const premiumAuthDims = useMemo(() => {
+    const padH = Math.min(22, Math.max(14, Math.round(windowWidth * 0.045)));
+    const columnW = Math.min(400, windowWidth - padH * 2);
+    return {
+      columnW,
+      isShort: windowHeight < 560,
+      isCompact: windowHeight < 660,
+    };
+  }, [windowWidth, windowHeight]);
   const leylekChrome = useLeylekZekaChrome();
   const [user, setUser] = useState<User | null>(null);
   const [muhabbetDeeplinkGroupId, setMuhabbetDeeplinkGroupId] = useState<string | null>(null);
@@ -2655,261 +2673,97 @@ export default function App() {
   }
 
   if (screen === 'test-password') {
-    const tpW = Dimensions.get('window').width;
-    const tpH = Dimensions.get('window').height;
-    const tpColumnW = Math.min(loginLayout.colMax, tpW - loginLayout.padH * 2);
+    const { columnW: tpCol, isShort: tpShort, isCompact: tpCompact } = premiumAuthDims;
+
     return (
-      <View style={{ flex: 1, width: '100%', height: '100%' }}>
-        {Platform.OS !== 'web' && (
-          <Image
-            source={require('../assets/images/login-background.png')}
-            style={{ position: 'absolute', top: 0, left: 0, width: tpW, height: tpH }}
-            resizeMode="cover"
-          />
-        )}
-        {Platform.OS !== 'web' && (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(255,255,255,0.03)',
-            }}
-          />
-        )}
-        <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
-          <AnimatedClouds />
-          <View style={styles.loginLayerAboveClouds}>
-            <KeyboardAvoidingView
-              style={styles.loginKavFlex}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              enabled
-              keyboardVerticalOffset={
-                Platform.OS === 'ios'
-                  ? insets.top + 4
-                  : (StatusBar.currentHeight ?? 0) + insets.top
-              }
-            >
-              <View
-                style={[
-                  styles.loginPageShell,
-                  {
-                    paddingTop: loginLayout.isCompact ? 6 : 12,
-                    paddingBottom: Math.max(insets.bottom, 8),
-                  },
-                ]}
-              >
-                <View style={[styles.loginPageColumn, { width: tpColumnW }]}>
-                  <LoginBrandHeader
-                    usableWidth={tpColumnW}
-                    isCompact={loginLayout.isCompact}
-                    isShort={loginLayout.isShort}
-                    subtitle={`${phone} — test hesabı (SMS yok)`}
-                  />
-                  <View
-                    style={[
-                      styles.loginV2Card,
-                      styles.loginV2CardTight,
-                      {
-                        paddingTop: loginLayout.isShort ? 6 : 8,
-                        paddingBottom: loginLayout.isShort ? 6 : 8,
-                        paddingHorizontal: loginLayout.isShort ? 10 : 12,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.modernLabel, styles.loginV2Label]}>
-                      {testLoginUserExists ? 'Şifre gir' : 'Şifre oluştur'}
-                    </Text>
-                    <Text style={[styles.heroSubtitle, { marginBottom: 10, fontSize: 13 }]}>
-                      {testLoginUserExists
-                        ? 'Bu numara kayıtlı. Test şifrenizi girin.'
-                        : 'İlk kez giriş: en az 6 karakterlik bir şifre belirleyin.'}
-                    </Text>
-                    <View style={[styles.modernInputContainer, styles.loginV2InputWrap]}>
-                      <Ionicons name="lock-closed-outline" size={18} color="#2196F3" style={styles.inputIcon} />
-                      <TextInput
-                        style={[styles.modernInput, styles.loginV2Input]}
-                        placeholder="••••••"
-                        placeholderTextColor="#A0A0A0"
-                        secureTextEntry
-                        value={testLoginPassword}
-                        onChangeText={setTestLoginPassword}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.modernPrimaryButton, styles.loginPrimaryTight]}
-                      onPress={() => {
-                        void tapButtonHaptic();
-                        void handleTestPasswordSubmit();
-                      }}
-                      activeOpacity={0.88}
-                    >
-                      <Text style={styles.modernPrimaryButtonText}>Devam et</Text>
-                      <Ionicons name="arrow-forward-circle" size={20} color="#FFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.modernSecondaryButton, styles.loginBackRowTight]}
-                      onPress={() => {
-                        void tapButtonHaptic();
-                        setTestLoginPassword('');
-                        setScreen('login');
-                      }}
-                    >
-                      <Ionicons name="arrow-back" size={18} color="#2196F3" />
-                      <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            </KeyboardAvoidingView>
+      <PremiumAuthScreenShell parentStyles={styles}>
+        <LoginBrandHeader
+          usableWidth={tpCol}
+          isCompact={tpCompact}
+          isShort={tpShort}
+          theme="premium"
+          subtitleVariant="body"
+          subtitle={`${phone} — test hesabı (SMS yok)`}
+        />
+        <PremiumGlassShell compactPadding={tpShort}>
+          <Text style={pap.phoneLabel}>{testLoginUserExists ? 'Şifre gir' : 'Şifre oluştur'}</Text>
+          <Text style={pap.otpHint}>
+            {testLoginUserExists
+              ? 'Bu numara kayıtlı. Test şifrenizi girin.'
+              : 'İlk kez giriş: en az 6 karakterlik bir şifre belirleyin.'}
+          </Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="lock-closed-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <TextInput
+              style={pap.inputField}
+              placeholder="••••••"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              secureTextEntry
+              value={testLoginPassword}
+              onChangeText={setTestLoginPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              selectionColor={PREMIUM_AUTH_CYAN}
+            />
           </View>
-        </SafeAreaView>
-      </View>
+          <PremiumGradientCtaButton
+            label="Devam et"
+            onPress={() => {
+              void tapButtonHaptic();
+              void handleTestPasswordSubmit();
+            }}
+            accessibilityLabel="Devam et"
+            trailing={<Ionicons name="arrow-forward-circle" size={20} color="#FFF" />}
+          />
+          <TouchableOpacity
+            style={pap.otpBackMinimal}
+            onPress={() => {
+              void tapButtonHaptic();
+              setTestLoginPassword('');
+              setScreen('login');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Geri dön"
+          >
+            <Text style={pap.otpBackText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </PremiumGlassShell>
+      </PremiumAuthScreenShell>
     );
   }
 
   if (screen === 'otp') {
-    const otpW = Dimensions.get('window').width;
-    const otpH = Dimensions.get('window').height;
-    const otpColumnW = Math.min(loginLayout.colMax, otpW - loginLayout.padH * 2);
+    const otpResendSms = async () => {
+      try {
+        const response = await fetch(`${API_URL}/auth/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone }),
+        });
+        const data = await response.json();
+        if (data.success) {
+          appAlert('Başarılı', 'Yeni kod gönderildi');
+        } else {
+          appAlert('Hata', apiErrMsg(data, 'Kod gönderilemedi'));
+        }
+      } catch (error) {
+        appAlert('Hata', 'Kod gönderilemedi');
+      }
+    };
 
     return (
-      <View style={{ flex: 1, width: '100%', height: '100%' }}>
-        {Platform.OS !== 'web' && (
-          <Image
-            source={require('../assets/images/login-background.png')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: otpW,
-              height: otpH,
-            }}
-            resizeMode="cover"
-          />
-        )}
-        {Platform.OS !== 'web' && (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(255,255,255,0.03)',
-            }}
-          />
-        )}
-        <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
-          <AnimatedClouds />
-          <View style={styles.loginLayerAboveClouds}>
-          <KeyboardAvoidingView
-            style={styles.loginKavFlex}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            enabled
-            keyboardVerticalOffset={
-              Platform.OS === 'ios'
-                ? insets.top + 4
-                : (StatusBar.currentHeight ?? 0) + insets.top
-            }
-          >
-            <View
-              style={[
-                styles.loginPageShell,
-                {
-                  paddingTop: loginLayout.isCompact ? 6 : 12,
-                  paddingBottom: Math.max(insets.bottom, 8),
-                },
-              ]}
-            >
-            <View style={[styles.loginPageColumn, { width: otpColumnW }]}>
-            <LoginBrandHeader
-              usableWidth={otpColumnW}
-              isCompact={loginLayout.isCompact}
-              isShort={loginLayout.isShort}
-              subtitle={`${phone} numarasına SMS ile gönderilen 6 haneli kodu girin`}
-            />
-
-            <View
-              style={[
-                styles.loginV2Card,
-                styles.loginV2CardTight,
-                {
-                  paddingTop: loginLayout.isShort ? 6 : 8,
-                  paddingBottom: loginLayout.isShort ? 6 : 8,
-                  paddingHorizontal: loginLayout.isShort ? 10 : 12,
-                },
-              ]}
-            >
-            <Text style={[styles.modernLabel, styles.loginV2Label]}>Doğrulama kodu</Text>
-            <View style={[styles.modernInputContainer, styles.loginV2InputWrap]}>
-              <Ionicons name="keypad-outline" size={18} color="#2196F3" style={styles.inputIcon} />
-              <TextInput
-                style={[styles.modernInput, styles.loginV2Input]}
-                placeholder="• • • • • •"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="number-pad"
-                value={otp}
-                blurOnSubmit={false}
-                onChangeText={(t) => {
-                  if (t.length > otp.length) void keyCharHaptic();
-                  setOtp(t);
-                }}
-                maxLength={6}
-              />
-            </View>
-            
-            {/* 30 Saniye Geri Sayım */}
-            <OTPCountdown compact phone={phone} onResend={async () => {
-              try {
-                const response = await fetch(`${API_URL}/auth/send-otp`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ phone })
-                });
-                const data = await response.json();
-                if (data.success) {
-                  appAlert('Başarılı', 'Yeni kod gönderildi');
-                } else {
-                  appAlert('Hata', apiErrMsg(data, 'Kod gönderilemedi'));
-                }
-              } catch (error) {
-                appAlert('Hata', 'Kod gönderilemedi');
-              }
-            }} />
-
-            <TouchableOpacity
-              style={[styles.modernPrimaryButton, styles.loginPrimaryTight]}
-              onPress={() => {
-                void tapButtonHaptic();
-                handleVerifyOTP();
-              }}
-            >
-              <Text style={styles.modernPrimaryButtonText}>DOĞRULA</Text>
-              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.modernSecondaryButton, styles.loginBackRowTight]}
-              onPress={() => {
-                void tapButtonHaptic();
-                setScreen('login');
-              }}
-            >
-              <Ionicons name="arrow-back" size={18} color="#2196F3" />
-              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
-            </TouchableOpacity>
-          </View>
-            </View>
-            </View>
-          </KeyboardAvoidingView>
-          </View>
-        </SafeAreaView>
-      </View>
+      <OtpVerificationScreen
+        otp={otp}
+        setOtp={setOtp}
+        phone={phone}
+        styles={styles}
+        onVerify={() => void handleVerifyOTP()}
+        onBack={() => setScreen('login')}
+        countdownSlot={<OTPCountdown appearance="premium" phone={phone} onResend={otpResendSms} />}
+        onOtpTypingHaptic={(growing) => {
+          if (growing) void keyCharHaptic();
+        }}
+      />
     );
   }
 
@@ -2919,28 +2773,31 @@ export default function App() {
       loadCities();
     }
 
-    return (
-      <SafeAreaView style={styles.container}>
-        <AnimatedClouds />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <View style={styles.registerIconContainer}>
-              <Ionicons name="person-add" size={45} color="#3FA9F5" />
-            </View>
-            <Text style={styles.registerTitle}>Kayıt Ol</Text>
-            <Text style={styles.heroSubtitle}>Hesabınızı oluşturun</Text>
-          </View>
+    const { columnW: regCol, isShort: regShort, isCompact: regCompact } = premiumAuthDims;
+    const canRegisterSubmit = !!(firstName && lastName && registerGender && selectedCity && phone.length >= 10);
 
-          <View style={styles.modernFormContainer}>
-            {/* Ad */}
-            <Text style={styles.modernLabel}>Adınız</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="person-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+    return (
+      <>
+        <PremiumAuthScreenShell parentStyles={styles}>
+          <LoginBrandHeader
+            usableWidth={regCol}
+            isCompact={regCompact}
+            isShort={regShort}
+            theme="premium"
+            premiumHeadline="Kayıt Ol"
+            subtitleVariant="body"
+            subtitle="Hesabınızı oluşturun"
+          />
+          <PremiumGlassShell compactPadding={regShort}>
+            <Text style={pap.phoneLabel}>Adınız</Text>
+            <View style={pap.inputShell}>
+              <Ionicons name="person-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
               <TextInput
-                style={styles.modernInput}
+                style={pap.inputField}
                 placeholder="Adınızı girin"
-                placeholderTextColor="#A0A0A0"
+                placeholderTextColor="rgba(148,163,184,0.78)"
                 value={firstName}
+                selectionColor={PREMIUM_AUTH_CYAN}
                 onChangeText={(t) => {
                   if (t.length > firstName.length) void keyCharHaptic();
                   setFirstName(t);
@@ -2948,15 +2805,15 @@ export default function App() {
               />
             </View>
 
-            {/* Soyad */}
-            <Text style={styles.modernLabel}>Soyadınız</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="person-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+            <Text style={pap.phoneLabel}>Soyadınız</Text>
+            <View style={pap.inputShell}>
+              <Ionicons name="person-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
               <TextInput
-                style={styles.modernInput}
+                style={pap.inputField}
                 placeholder="Soyadınızı girin"
-                placeholderTextColor="#A0A0A0"
+                placeholderTextColor="rgba(148,163,184,0.78)"
                 value={lastName}
+                selectionColor={PREMIUM_AUTH_CYAN}
                 onChangeText={(t) => {
                   if (t.length > lastName.length) void keyCharHaptic();
                   setLastName(t);
@@ -2964,84 +2821,92 @@ export default function App() {
               />
             </View>
 
-            {/* Cinsiyet */}
-            <Text style={styles.modernLabel}>Cinsiyet</Text>
-            <View style={styles.genderRow}>
+            <Text style={pap.phoneLabel}>Cinsiyet</Text>
+            <View style={pap.genderRowPremium}>
               <TouchableOpacity
-                style={[styles.genderCard, registerGender === 'female' && styles.genderCardActive]}
+                style={[pap.genderChipPremium, registerGender === 'female' && pap.genderChipPremiumActive]}
                 onPress={() => {
                   void tapButtonHaptic();
                   setRegisterGender('female');
                 }}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityState={{ selected: registerGender === 'female' }}
               >
                 <Ionicons
                   name="woman-outline"
-                  size={26}
-                  color={registerGender === 'female' ? '#FFF' : '#3FA9F5'}
+                  size={22}
+                  color={registerGender === 'female' ? '#F8FAFC' : PREMIUM_AUTH_CYAN}
                 />
-                <Text style={[styles.genderCardLabel, registerGender === 'female' && styles.genderCardLabelActive]}>
+                <Text
+                  style={[
+                    pap.genderChipLabelPremium,
+                    registerGender === 'female' && pap.genderChipLabelPremiumActive,
+                  ]}
+                >
                   Kadın
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.genderCard, registerGender === 'male' && styles.genderCardActive]}
+                style={[pap.genderChipPremium, registerGender === 'male' && pap.genderChipPremiumActive]}
                 onPress={() => {
                   void tapButtonHaptic();
                   setRegisterGender('male');
                 }}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityState={{ selected: registerGender === 'male' }}
               >
-                <Ionicons
-                  name="man-outline"
-                  size={26}
-                  color={registerGender === 'male' ? '#FFF' : '#3FA9F5'}
-                />
-                <Text style={[styles.genderCardLabel, registerGender === 'male' && styles.genderCardLabelActive]}>
+                <Ionicons name="man-outline" size={22} color={registerGender === 'male' ? '#F8FAFC' : PREMIUM_AUTH_CYAN} />
+                <Text
+                  style={[
+                    pap.genderChipLabelPremium,
+                    registerGender === 'male' && pap.genderChipLabelPremiumActive,
+                  ]}
+                >
                   Erkek
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Şehir */}
-            <Text style={styles.modernLabel}>Yaşadığınız şehir</Text>
+            <Text style={pap.phoneLabel}>Yaşadığınız şehir</Text>
             <TouchableOpacity
-              style={styles.cityFieldPro}
+              style={pap.cityPickRowPremium}
               onPress={() => {
                 void tapButtonHaptic();
                 setShowCityPicker(true);
               }}
               activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Şehir seç"
             >
-              <View style={styles.cityFieldProIconWrap}>
-                <Ionicons name="business-outline" size={22} color="#3FA9F5" />
+              <View style={pap.cityPickIconWrap}>
+                <Ionicons name="business-outline" size={22} color={PREMIUM_AUTH_CYAN} />
               </View>
-              <View style={styles.cityFieldProTextCol}>
-                <Text style={styles.cityFieldProHint}>Hizmet bölgeniz</Text>
-                <Text style={selectedCity ? styles.cityFieldProValue : styles.cityFieldProPlaceholder}>
+              <View style={pap.cityPickTextCol}>
+                <Text style={pap.cityPickHint}>Hizmet bölgeniz</Text>
+                <Text style={selectedCity ? pap.cityPickValue : pap.cityPickPlaceholder} numberOfLines={2}>
                   {selectedCity || 'Şehir seçmek için dokunun'}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(148,163,184,0.85)" />
             </TouchableOpacity>
 
-            {/* Telefon Numarası - Elle Yazılabilir */}
-            <Text style={styles.modernLabel}>Telefon Numarası</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <Text style={styles.phonePrefix}>+90</Text>
+            <Text style={pap.phoneLabel}>Telefon Numarası</Text>
+            <View style={pap.inputShell}>
+              <Ionicons name="call-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+              <Text style={pap.authPhonePlusPremium}>+90</Text>
               <TextInput
-                style={[styles.modernInput, { flex: 1 }]}
+                style={[pap.inputField, { flex: 1 }]}
                 placeholder="5XX XXX XX XX"
-                placeholderTextColor="#A0A0A0"
+                placeholderTextColor="rgba(148,163,184,0.78)"
                 value={phone}
+                selectionColor={PREMIUM_AUTH_CYAN}
                 onChangeText={(text) => {
-                  // Sadece rakam kabul et ve başındaki 0'ı kaldır
                   let cleaned = text.replace(/[^0-9]/g, '');
                   if (cleaned.startsWith('0')) {
                     cleaned = cleaned.substring(1);
                   }
-                  // Maksimum 10 karakter
                   if (cleaned.length <= 10) {
                     if (cleaned.length > phone.length) void keyCharHaptic();
                     setPhone(cleaned);
@@ -3051,10 +2916,12 @@ export default function App() {
                 maxLength={10}
               />
             </View>
-            <Text style={styles.phoneHint}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
+            <Text style={pap.hintBelowInput}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
 
-            <TouchableOpacity 
-              style={[styles.modernPrimaryButton, (!firstName || !lastName || !registerGender || !selectedCity || phone.length < 10) && styles.buttonDisabled]} 
+            <PremiumGradientCtaButton
+              label="DEVAM ET"
+              disabled={!canRegisterSubmit || loading}
+              busy={loading}
               onPress={async () => {
                 void tapButtonHaptic();
                 if (firstName && lastName && registerGender && selectedCity && phone.length >= 10) {
@@ -3064,7 +2931,7 @@ export default function App() {
                     const response = await fetch(`${API_URL}/auth/send-otp`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ phone: phone })
+                      body: JSON.stringify({ phone: phone }),
                     });
                     const data = await response.json();
                     if (data.success) {
@@ -3088,140 +2955,133 @@ export default function App() {
                   }
                 }
               }}
-              disabled={!firstName || !lastName || !registerGender || !selectedCity || phone.length < 10 || loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFF" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#FFF" />
-                </>
-              )}
-            </TouchableOpacity>
+              accessibilityLabel="Devam et"
+              trailing={<Ionicons name="arrow-forward" size={20} color="#FFF" />}
+            />
 
             <TouchableOpacity
-              style={styles.modernSecondaryButton}
+              style={pap.otpBackMinimal}
               onPress={() => {
                 void tapButtonHaptic();
                 setScreen('login');
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Geri dön"
             >
-              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
-              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+              <Text style={pap.otpBackText}>Geri Dön</Text>
             </TouchableOpacity>
-          </View>
+          </PremiumGlassShell>
+        </PremiumAuthScreenShell>
 
-          {/* Şehir Seçici Modal */}
-          <Modal
-            visible={showCityPicker}
-            transparent={true}
-            animationType="slide"
-            onRequestClose={() => setShowCityPicker(false)}
-          >
-            <View style={styles.modalContainer}>
-              <TouchableOpacity style={styles.modalBackdropTap} activeOpacity={1} onPress={() => setShowCityPicker(false)} />
-              <View style={styles.modalSheetPro}>
-                <View style={styles.modalSheetHandle} />
-                <Text style={styles.modalTitlePro}>Şehir seçin</Text>
-                <Text style={styles.modalSubtitlePro}>Listeden seçin veya arayın</Text>
-                <View style={styles.citySearchBar}>
-                  <Ionicons name="search" size={20} color="#94A3B8" style={{ marginRight: 10 }} />
-                  <TextInput
-                    style={styles.citySearchInput}
-                    placeholder="İl adı yazın…"
-                    placeholderTextColor="#94A3B8"
-                    value={citySearchQuery}
-                    onChangeText={setCitySearchQuery}
-                    autoCorrect={false}
-                    autoCapitalize="words"
-                  />
-                  {citySearchQuery.length > 0 ? (
-                    <TouchableOpacity onPress={() => setCitySearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={22} color="#CBD5E1" />
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-                <FlatList
-                  data={filteredCities}
-                  keyExtractor={(item) => item}
-                  keyboardShouldPersistTaps="handled"
-                  ListEmptyComponent={
-                    <Text style={styles.cityEmptyHint}>
-                      {cities.length === 0 ? 'Şehirler yükleniyor…' : 'Eşleşen şehir yok'}
-                    </Text>
-                  }
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={[styles.cityItemPro, selectedCity === item && styles.cityItemProSelected]}
-                      onPress={() => {
-                        void tapButtonHaptic();
-                        setSelectedCity(item);
-                        setShowCityPicker(false);
-                      }}
-                    >
-                      <Ionicons name="location-outline" size={20} color={selectedCity === item ? '#3FA9F5' : '#64748B'} />
-                      <Text style={[styles.cityItemTextPro, selectedCity === item && styles.cityItemTextProSelected]}>{item}</Text>
-                      {selectedCity === item ? <Ionicons name="checkmark-circle" size={22} color="#3FA9F5" /> : null}
-                    </TouchableOpacity>
-                  )}
+        {/* Şehir Seçici Modal */}
+        <Modal visible={showCityPicker} transparent={true} animationType="slide" onRequestClose={() => setShowCityPicker(false)}>
+          <View style={pap.authBottomSheetBackdrop}>
+            <TouchableOpacity style={pap.flexOne} activeOpacity={1} onPress={() => setShowCityPicker(false)} />
+            <View style={pap.authCitySheet}>
+              <View style={pap.authSheetGrab} />
+              <Text style={pap.authSheetTitle}>Şehir seçin</Text>
+              <Text style={pap.authSheetSubtitle}>Listeden seçin veya arayın</Text>
+              <View style={pap.authCitySearchRow}>
+                <Ionicons name="search" size={20} color={PREMIUM_AUTH_CYAN} />
+                <TextInput
+                  style={pap.authCitySearchInput}
+                  placeholder="İl adı yazın…"
+                  placeholderTextColor="rgba(148,163,184,0.72)"
+                  value={citySearchQuery}
+                  onChangeText={setCitySearchQuery}
+                  autoCorrect={false}
+                  autoCapitalize="words"
                 />
-                <TouchableOpacity style={styles.modalCloseButtonPro} onPress={() => setShowCityPicker(false)}>
-                  <Text style={styles.modalCloseButtonText}>Kapat</Text>
+                {citySearchQuery.length > 0 ? (
+                  <TouchableOpacity onPress={() => setCitySearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="close-circle" size={22} color="rgba(148,163,184,0.85)" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <FlatList
+                data={filteredCities}
+                keyExtractor={(item) => item}
+                keyboardShouldPersistTaps="handled"
+                style={pap.authCityFlat}
+                ListEmptyComponent={
+                  <Text style={pap.cityEmptyHintPremium}>
+                    {cities.length === 0 ? 'Şehirler yükleniyor…' : 'Eşleşen şehir yok'}
+                  </Text>
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[pap.authCityItem, selectedCity === item && pap.authCityItemSelected]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      setSelectedCity(item);
+                      setShowCityPicker(false);
+                    }}
+                  >
+                    <Ionicons
+                      name="location-outline"
+                      size={20}
+                      color={selectedCity === item ? PREMIUM_AUTH_CYAN : 'rgba(148,163,184,0.78)'}
+                    />
+                    <Text style={[pap.authCityItemText, selectedCity === item && pap.authCityItemTextSelected]}>{item}</Text>
+                    {selectedCity === item ? <Ionicons name="checkmark-circle" size={22} color={PREMIUM_AUTH_CYAN} /> : null}
+                  </TouchableOpacity>
+                )}
+              />
+              <TouchableOpacity style={pap.authSheetCloseSoft} onPress={() => setShowCityPicker(false)}>
+                <Text style={pap.authSheetCloseSoftText}>Kapat</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Hedef Seçme Modal - ÜSTTEN AÇILAN */}
+        {showDestinationPicker && (
+          <View style={styles.topSheetFullOverlay}>
+            {/* Arka plan - tıklayınca kapat */}
+            <TouchableOpacity
+              style={styles.topSheetBackdropFull}
+              activeOpacity={1}
+              onPress={() => setShowDestinationPicker(false)}
+            />
+
+            {/* Üstten açılan panel */}
+            <View style={styles.topSheetPanelFromTop}>
+              {/* Üst Bar - Kapat */}
+              <View style={styles.topSheetHeader}>
+                <Text style={styles.topSheetTitle}>Nereye Gidiyorsunuz?</Text>
+                <TouchableOpacity onPress={() => setShowDestinationPicker(false)} style={styles.topSheetCloseBtn}>
+                  <Ionicons name="close" size={24} color="#666" />
                 </TouchableOpacity>
               </View>
-            </View>
-          </Modal>
 
-          {/* Hedef Seçme Modal - ÜSTTEN AÇILAN */}
-          {showDestinationPicker && (
-            <View style={styles.topSheetFullOverlay}>
-              {/* Arka plan - tıklayınca kapat */}
-              <TouchableOpacity 
-                style={styles.topSheetBackdropFull}
-                activeOpacity={1}
-                onPress={() => setShowDestinationPicker(false)}
+              <PlacesAutocomplete
+                placeholder="Adres, sokak veya mekan ara..."
+                city={user?.city || ''}
+                strictCityBounds={!!(user?.city || '').trim()}
+                onPlaceSelected={(place) => {
+                  setDestination({
+                    address: place.address,
+                    latitude: place.latitude,
+                    longitude: place.longitude,
+                  });
+                  setShowDestinationPicker(false);
+                }}
               />
-              
-              {/* Üstten açılan panel */}
-              <View style={styles.topSheetPanelFromTop}>
-                {/* Üst Bar - Kapat */}
-                <View style={styles.topSheetHeader}>
-                  <Text style={styles.topSheetTitle}>Nereye Gidiyorsunuz?</Text>
-                  <TouchableOpacity 
-                    onPress={() => setShowDestinationPicker(false)}
-                    style={styles.topSheetCloseBtn}
-                  >
-                    <Ionicons name="close" size={24} color="#666" />
-                  </TouchableOpacity>
-                </View>
-                
-                <PlacesAutocomplete
-                  placeholder="Adres, sokak veya mekan ara..."
-                  city={user?.city || ''}
-                  strictCityBounds={!!(user?.city || '').trim()}
-                  onPlaceSelected={(place) => {
-                    setDestination({
-                      address: place.address,
-                      latitude: place.latitude,
-                      longitude: place.longitude
-                    });
-                    setShowDestinationPicker(false);
-                  }}
-                />
-                
-                <Text style={styles.topSheetPopularTitle}>
-                  {user?.city ? `${user.city} Popüler` : 'Popüler Konumlar'}
-                </Text>
-                <ScrollView style={styles.topSheetPopularScroll} showsVerticalScrollIndicator={false}>
-                  {[
-                    { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
-                    { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.0230 },
-                    { name: 'Kızılay, Ankara', lat: 39.9208, lng: 32.8541 },
-                    { name: 'Ulus, Ankara', lat: 39.9420, lng: 32.8647 },
-                    { name: 'Konak, İzmir', lat: 38.4189, lng: 27.1287 },
-                    { name: 'Alsancak, İzmir', lat: 38.4361, lng: 27.1428 },
-                  ].filter(place => !user?.city || place.name.includes(user.city)).map((place, index) => (
+
+              <Text style={styles.topSheetPopularTitle}>
+                {user?.city ? `${user.city} Popüler` : 'Popüler Konumlar'}
+              </Text>
+              <ScrollView style={styles.topSheetPopularScroll} showsVerticalScrollIndicator={false}>
+                {[
+                  { name: 'Taksim Meydanı, İstanbul', lat: 41.037, lng: 28.985 },
+                  { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.023 },
+                  { name: 'Kızılay, Ankara', lat: 39.9208, lng: 32.8541 },
+                  { name: 'Ulus, Ankara', lat: 39.942, lng: 32.8647 },
+                  { name: 'Konak, İzmir', lat: 38.4189, lng: 27.1287 },
+                  { name: 'Alsancak, İzmir', lat: 38.4361, lng: 27.1428 },
+                ]
+                  .filter((place) => !user?.city || place.name.includes(user.city))
+                  .map((place, index) => (
                     <TouchableOpacity
                       key={index}
                       style={styles.topSheetPopularItem}
@@ -3229,7 +3089,7 @@ export default function App() {
                         setDestination({
                           address: place.name,
                           latitude: place.lat,
-                          longitude: place.lng
+                          longitude: place.lng,
                         });
                         setShowDestinationPicker(false);
                       }}
@@ -3238,15 +3098,14 @@ export default function App() {
                       <Text style={styles.topSheetPopularText}>{place.name}</Text>
                     </TouchableOpacity>
                   ))}
-                </ScrollView>
-                
-                {/* Alt Çizgi */}
-                <View style={styles.topSheetHandle} />
-              </View>
+              </ScrollView>
+
+              {/* Alt Çizgi */}
+              <View style={styles.topSheetHandle} />
             </View>
-          )}
-        </ScrollView>
-      </SafeAreaView>
+          </View>
+        )}
+      </>
     );
   }
 
@@ -3336,98 +3195,97 @@ export default function App() {
       }
     };
 
+    const { columnW: pinCol, isShort: pinShort, isCompact: pinCompact } = premiumAuthDims;
+
     return (
-      <SafeAreaView style={styles.container}>
-        <AnimatedClouds />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <View style={styles.pinIconContainer}>
-              <Ionicons name="lock-closed" size={45} color="#3FA9F5" />
-            </View>
-            <Text style={styles.pinTitle}>Şifre Belirle</Text>
-            <Text style={styles.heroSubtitle}>6 haneli güvenlik şifrenizi oluşturun</Text>
-          </View>
-
-          <View style={styles.modernFormContainer}>
-            {/* PIN Girişi */}
-            <Text style={styles.modernLabel}>Şifreniz (6 Hane)</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                placeholder="• • • • • •"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="number-pad"
-                secureTextEntry={!showPin}
-                value={pin}
-                onChangeText={(t) => {
-                  if (t.length > pin.length) void keyCharHaptic();
-                  setPin(t);
-                }}
-                maxLength={6}
-              />
-              <TouchableOpacity
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setShowPin(!showPin);
-                }}
-              >
-                <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
-              </TouchableOpacity>
-            </View>
-
-            {/* PIN Onay */}
-            <Text style={styles.modernLabel}>Şifre Tekrar</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                placeholder="• • • • • •"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="number-pad"
-                secureTextEntry={!showPin}
-                value={confirmPin}
-                onChangeText={(t) => {
-                  if (t.length > confirmPin.length) void keyCharHaptic();
-                  setConfirmPin(t);
-                }}
-                maxLength={6}
-              />
-            </View>
-
-            {/* Uyarı */}
-            <View style={styles.pinWarningContainer}>
-              <Ionicons name="warning" size={20} color="#F59E0B" />
-              <Text style={styles.pinWarningText}>
-                Şifrenizi kimseyle paylaşmayın, göstermeyin, söylemeyin!
-              </Text>
-            </View>
-
-            <TouchableOpacity 
-              style={[styles.modernPrimaryButton, (pin.length !== 6 || confirmPin.length !== 6) && styles.buttonDisabled]} 
-              onPress={() => {
-                void tapButtonHaptic();
-                handleSetPin();
+      <PremiumAuthScreenShell parentStyles={styles}>
+        <LoginBrandHeader
+          usableWidth={pinCol}
+          isCompact={pinCompact}
+          isShort={pinShort}
+          theme="premium"
+          premiumHeadline="Şifre Belirle"
+          subtitleVariant="body"
+          subtitle="6 haneli güvenlik şifrenizi oluşturun"
+        />
+        <PremiumGlassShell compactPadding={pinShort}>
+          <Text style={pap.phoneLabel}>Şifreniz (6 Hane)</Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <TextInput
+              style={pap.inputField}
+              placeholder="• • • • • •"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              keyboardType="number-pad"
+              secureTextEntry={!showPin}
+              value={pin}
+              selectionColor={PREMIUM_AUTH_CYAN}
+              onChangeText={(t) => {
+                if (t.length > pin.length) void keyCharHaptic();
+                setPin(t);
               }}
-              disabled={pin.length !== 6 || confirmPin.length !== 6}
-            >
-              <Text style={styles.modernPrimaryButtonText}>KAYDI TAMAMLA</Text>
-              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
-            </TouchableOpacity>
-
+              maxLength={6}
+            />
             <TouchableOpacity
-              style={styles.modernSecondaryButton}
               onPress={() => {
                 void tapButtonHaptic();
-                setScreen('register');
+                setShowPin(!showPin);
               }}
+              accessibilityRole="button"
+              accessibilityLabel={showPin ? 'Şifreyi gizle' : 'Şifreyi göster'}
             >
-              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
-              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+              <Ionicons name={showPin ? 'eye-off' : 'eye'} size={22} color="rgba(148,163,184,0.85)" />
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </SafeAreaView>
+
+          <Text style={pap.phoneLabel}>Şifre Tekrar</Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <TextInput
+              style={pap.inputField}
+              placeholder="• • • • • •"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              keyboardType="number-pad"
+              secureTextEntry={!showPin}
+              value={confirmPin}
+              selectionColor={PREMIUM_AUTH_CYAN}
+              onChangeText={(t) => {
+                if (t.length > confirmPin.length) void keyCharHaptic();
+                setConfirmPin(t);
+              }}
+              maxLength={6}
+            />
+          </View>
+
+          <View style={pap.pinWarningPremium}>
+            <Ionicons name="warning" size={18} color="#FBBF24" />
+            <Text style={pap.pinWarningTextPremium}>Şifrenizi kimseyle paylaşmayın, göstermeyin, söylemeyin!</Text>
+          </View>
+
+          <PremiumGradientCtaButton
+            label="KAYDI TAMAMLA"
+            disabled={pin.length !== 6 || confirmPin.length !== 6}
+            onPress={() => {
+              void tapButtonHaptic();
+              handleSetPin();
+            }}
+            trailing={<Ionicons name="checkmark-circle" size={20} color="#FFF" />}
+            accessibilityLabel="Kaydı tamamla"
+          />
+
+          <TouchableOpacity
+            style={pap.otpBackMinimal}
+            onPress={() => {
+              void tapButtonHaptic();
+              setScreen('register');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Geri dön"
+          >
+            <Text style={pap.otpBackText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </PremiumGlassShell>
+      </PremiumAuthScreenShell>
     );
   }
 
@@ -3515,310 +3373,310 @@ export default function App() {
       }
     };
 
+    const { columnW: entCol, isShort: entShort, isCompact: entCompact } = premiumAuthDims;
+
     return (
-      <SafeAreaView style={styles.container}>
-        <AnimatedClouds />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <View style={styles.pinIconContainer}>
-              <Ionicons name="lock-closed" size={45} color="#3FA9F5" />
-            </View>
-            <Text style={styles.pinTitle}>Güvenlik Kodu</Text>
-            <Text style={styles.heroSubtitle}>6 haneli PIN kodunuzu girin</Text>
-          </View>
-
-          <View style={styles.modernFormContainer}>
-            <Text style={styles.modernLabel}>Şifreniz</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                placeholder="• • • • • •"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="number-pad"
-                secureTextEntry={!showPin}
-                value={pin}
-                onChangeText={(t) => {
-                  if (t.length > pin.length) void keyCharHaptic();
-                  setPin(t);
-                }}
-                maxLength={6}
-              />
-              <TouchableOpacity
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setShowPin(!showPin);
-                }}
-              >
-                <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity 
-              style={[styles.modernPrimaryButton, pin.length !== 6 && styles.buttonDisabled]} 
+      <PremiumAuthScreenShell parentStyles={styles}>
+        <LoginBrandHeader
+          usableWidth={entCol}
+          isCompact={entCompact}
+          isShort={entShort}
+          theme="premium"
+          premiumHeadline="Güvenlik Kodu"
+          subtitleVariant="body"
+          subtitle="6 haneli PIN kodunuzu girin"
+        />
+        <PremiumGlassShell compactPadding={entShort}>
+          <Text style={pap.phoneLabel}>Şifreniz</Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <TextInput
+              style={pap.inputField}
+              placeholder="• • • • • •"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              keyboardType="number-pad"
+              secureTextEntry={!showPin}
+              value={pin}
+              selectionColor={PREMIUM_AUTH_CYAN}
+              onChangeText={(t) => {
+                if (t.length > pin.length) void keyCharHaptic();
+                setPin(t);
+              }}
+              maxLength={6}
+            />
+            <TouchableOpacity
               onPress={() => {
                 void tapButtonHaptic();
-                handleEnterPin();
+                setShowPin(!showPin);
               }}
-              disabled={pin.length !== 6}
+              accessibilityRole="button"
+              accessibilityLabel={showPin ? 'Şifreyi gizle' : 'Şifreyi göster'}
             >
-              <Text style={styles.modernPrimaryButtonText}>GİRİŞ YAP</Text>
-              <Ionicons name="log-in" size={20} color="#FFF" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.modernSecondaryButton}
-              onPress={async () => {
-                void tapButtonHaptic();
-                setPin('');
-                try {
-                  await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
-                } catch {
-                  /* ignore */
-                }
-                setScreen('login');
-              }}
-            >
-              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
-              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+              <Ionicons name={showPin ? 'eye-off' : 'eye'} size={22} color="rgba(148,163,184,0.85)" />
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </SafeAreaView>
+
+          <PremiumGradientCtaButton
+            label="GİRİŞ YAP"
+            disabled={pin.length !== 6}
+            onPress={() => {
+              void tapButtonHaptic();
+              handleEnterPin();
+            }}
+            trailing={<Ionicons name="log-in" size={20} color="#FFF" />}
+            accessibilityLabel="Giriş yap"
+          />
+
+          <TouchableOpacity
+            style={pap.otpBackMinimal}
+            onPress={async () => {
+              void tapButtonHaptic();
+              setPin('');
+              try {
+                await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
+              } catch {
+                /* ignore */
+              }
+              setScreen('login');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Geri dön"
+          >
+            <Text style={pap.otpBackText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </PremiumGlassShell>
+      </PremiumAuthScreenShell>
     );
   }
 
   // ==================== ŞİFREMİ UNUTTUM EKRANI ====================
   if (screen === 'forgot-password') {
+    const { columnW: fpCol, isShort: fpShort, isCompact: fpCompact } = premiumAuthDims;
+
     return (
-      <SafeAreaView style={styles.container}>
-        <AnimatedClouds />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <View style={styles.verifyIconContainer}>
-              <Ionicons name="key-outline" size={50} color="#F59E0B" />
-            </View>
-            <Text style={styles.verifyTitle}>Şifremi Unuttum</Text>
-            <Text style={styles.heroSubtitle}>Telefon numaranızı girin, size doğrulama kodu göndereceğiz</Text>
+      <PremiumAuthScreenShell parentStyles={styles}>
+        <LoginBrandHeader
+          usableWidth={fpCol}
+          isCompact={fpCompact}
+          isShort={fpShort}
+          theme="premium"
+          premiumHeadline="Şifremi Unuttum"
+          subtitleVariant="body"
+          subtitle="Telefon numaranızı girin, size doğrulama kodu göndereceğiz."
+        />
+        <PremiumGlassShell compactPadding={fpShort}>
+          <Text style={pap.phoneLabel}>Telefon Numarası</Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="call-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <Text style={pap.authPhonePlusPremium}>+90</Text>
+            <TextInput
+              style={pap.inputField}
+              value={phone}
+              selectionColor={PREMIUM_AUTH_CYAN}
+              onChangeText={(text) => {
+                const cleaned = text.replace(/\D/g, '');
+                if (cleaned.length > phone.length) void keyCharHaptic();
+                setPhone(cleaned);
+              }}
+              placeholder="5XX XXX XX XX"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
           </View>
 
-          <View style={styles.modernFormContainer}>
-            <Text style={styles.modernLabel}>Telefon Numarası</Text>
-            <View style={styles.modernInputContainer}>
-              <Text style={styles.phonePrefix}>+90</Text>
-              <TextInput
-                style={styles.modernPhoneInput}
-                value={phone}
-                onChangeText={(text) => {
-                  const cleaned = text.replace(/\D/g, '');
-                  if (cleaned.length > phone.length) void keyCharHaptic();
-                  setPhone(cleaned);
-                }}
-                placeholder="5XX XXX XX XX"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="phone-pad"
-                maxLength={10}
-              />
-            </View>
+          <PremiumGradientCtaButton
+            label="Doğrulama Kodu Gönder"
+            disabled={loading}
+            busy={loading}
+            onPress={async () => {
+              void tapButtonHaptic();
+              if (!phone || phone.length < 10) {
+                appAlert('Hata', 'Geçerli bir telefon numarası girin');
+                return;
+              }
 
-            <TouchableOpacity 
-              style={[styles.modernPrimaryButton, loading && styles.disabledButton]}
-              onPress={async () => {
-                void tapButtonHaptic();
-                if (!phone || phone.length < 10) {
-                  appAlert('Hata', 'Geçerli bir telefon numarası girin');
+              setLoading(true);
+              try {
+                const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone }),
+                });
+                const checkData = await checkResponse.json();
+
+                if (!checkData.user_exists) {
+                  appAlert('Hata', 'Bu numara ile kayıtlı kullanıcı bulunamadı');
+                  setLoading(false);
                   return;
                 }
-                
-                setLoading(true);
-                try {
-                  // Önce kullanıcı var mı kontrol et
-                  const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone })
-                  });
-                  const checkData = await checkResponse.json();
-                  
-                  if (!checkData.user_exists) {
-                    appAlert('Hata', 'Bu numara ile kayıtlı kullanıcı bulunamadı');
-                    setLoading(false);
-                    return;
-                  }
-                  
-                  // OTP gönder
-                  const response = await fetch(`${API_URL}/auth/send-otp`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone })
-                  });
-                  const data = await response.json();
-                  
-                  if (data.success) {
-                    setScreen('reset-pin');
-                  } else {
-                    appAlert('Hata', apiErrMsg(data, 'OTP gönderilemedi'));
-                  }
-                } catch (error) {
-                  appAlert('Hata', 'Bir hata oluştu');
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.modernPrimaryButtonText}>DOĞRULAMA KODU GÖNDER</Text>
-              )}
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.modernSecondaryButton}
-              onPress={() => {
-                void tapButtonHaptic();
-                setPhone('');
-                setScreen('login');
-              }}
-            >
-              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
-              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+                const response = await fetch(`${API_URL}/auth/send-otp`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone }),
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                  setScreen('reset-pin');
+                } else {
+                  appAlert('Hata', apiErrMsg(data, 'OTP gönderilemedi'));
+                }
+              } catch (error) {
+                appAlert('Hata', 'Bir hata oluştu');
+              } finally {
+                setLoading(false);
+              }
+            }}
+            accessibilityLabel="Doğrulama kodu gönder"
+          />
+
+          <TouchableOpacity
+            style={pap.otpBackMinimal}
+            onPress={() => {
+              void tapButtonHaptic();
+              setPhone('');
+              setScreen('login');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Geri dön"
+          >
+            <Text style={pap.otpBackText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </PremiumGlassShell>
+      </PremiumAuthScreenShell>
     );
   }
 
   // ==================== YENİ ŞİFRE BELİRLEME EKRANI ====================
   if (screen === 'reset-pin') {
+    const { columnW: rpCol, isShort: rpShort, isCompact: rpCompact } = premiumAuthDims;
+
     return (
-      <SafeAreaView style={styles.container}>
-        <AnimatedClouds />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <View style={styles.verifyIconContainer}>
-              <Ionicons name="lock-open-outline" size={50} color="#10B981" />
-            </View>
-            <Text style={styles.verifyTitle}>Yeni Şifre Belirle</Text>
-            <Text style={styles.heroSubtitle}>{phone} numarasına gönderilen kodu girin ve yeni şifrenizi belirleyin</Text>
+      <PremiumAuthScreenShell parentStyles={styles}>
+        <LoginBrandHeader
+          usableWidth={rpCol}
+          isCompact={rpCompact}
+          isShort={rpShort}
+          theme="premium"
+          premiumHeadline="Yeni Şifre Belirle"
+          subtitleVariant="body"
+          subtitle={`${phone} numarasına gönderilen kodu girin ve yeni şifrenizi belirleyin`}
+        />
+        <PremiumGlassShell compactPadding={rpShort}>
+          <Text style={pap.phoneLabel}>Doğrulama Kodu</Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <TextInput
+              style={pap.inputField}
+              value={otp}
+              selectionColor={PREMIUM_AUTH_CYAN}
+              onChangeText={(t) => {
+                if (t.length > otp.length) void keyCharHaptic();
+                setOtp(t);
+              }}
+              placeholder="6 haneli kod"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              keyboardType="number-pad"
+              maxLength={6}
+            />
           </View>
 
-          <View style={styles.modernFormContainer}>
-            <Text style={styles.modernLabel}>Doğrulama Kodu</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                value={otp}
-                onChangeText={(t) => {
-                  if (t.length > otp.length) void keyCharHaptic();
-                  setOtp(t);
-                }}
-                placeholder="6 haneli kod"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            </View>
+          <Text style={[pap.phoneLabel, { marginTop: 14 }]}>Yeni Şifre (6 Haneli PIN)</Text>
+          <View style={pap.inputShell}>
+            <Ionicons name="lock-closed-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <TextInput
+              style={pap.inputField}
+              value={pin}
+              selectionColor={PREMIUM_AUTH_CYAN}
+              onChangeText={(t) => {
+                if (t.length > pin.length) void keyCharHaptic();
+                setPin(t);
+              }}
+              placeholder="6 haneli yeni şifre"
+              placeholderTextColor="rgba(148,163,184,0.78)"
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={6}
+            />
+          </View>
 
-            <Text style={[styles.modernLabel, { marginTop: 16 }]}>Yeni Şifre (6 Haneli PIN)</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="lock-closed-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                value={pin}
-                onChangeText={(t) => {
-                  if (t.length > pin.length) void keyCharHaptic();
-                  setPin(t);
-                }}
-                placeholder="6 haneli yeni şifre"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="number-pad"
-                secureTextEntry
-                maxLength={6}
-              />
-            </View>
+          <PremiumGradientCtaButton
+            label="ŞİFREYİ GÜNCELLE"
+            disabled={loading}
+            busy={loading}
+            onPress={async () => {
+              void tapButtonHaptic();
+              if (!otp || otp.length !== 6) {
+                appAlert('Hata', 'Geçerli bir doğrulama kodu girin');
+                return;
+              }
+              if (!pin || pin.length !== 6) {
+                appAlert('Hata', 'Şifre 6 haneli olmalıdır');
+                return;
+              }
 
-            <TouchableOpacity 
-              style={[styles.modernPrimaryButton, loading && styles.disabledButton]}
-              onPress={async () => {
-                void tapButtonHaptic();
-                if (!otp || otp.length !== 6) {
-                  appAlert('Hata', 'Geçerli bir doğrulama kodu girin');
+              setLoading(true);
+              try {
+                const verifyResponse = await fetch(`${API_URL}/auth/verify-otp`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone, otp }),
+                });
+                const verifyData = await verifyResponse.json();
+
+                if (!verifyData.success) {
+                  appAlert('Hata', verifyData.detail || 'Doğrulama kodu yanlış');
+                  setLoading(false);
                   return;
                 }
-                if (!pin || pin.length !== 6) {
-                  appAlert('Hata', 'Şifre 6 haneli olmalıdır');
-                  return;
-                }
-                
-                setLoading(true);
-                try {
-                  // Önce OTP doğrula
-                  const verifyResponse = await fetch(`${API_URL}/auth/verify-otp`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone, otp })
-                  });
-                  const verifyData = await verifyResponse.json();
-                  
-                  if (!verifyData.success) {
-                    appAlert('Hata', verifyData.detail || 'Doğrulama kodu yanlış');
-                    setLoading(false);
-                    return;
-                  }
-                  
-                  // Şifreyi güncelle
-                  const resetResponse = await fetch(`${API_URL}/auth/reset-pin`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone, new_pin: pin })
-                  });
-                  const resetData = await resetResponse.json();
-                  
-                  if (resetData.success) {
-                    appAlert('Başarılı', 'Şifreniz güncellendi. Giriş yapabilirsiniz.', [
-                      { text: 'Tamam', onPress: () => {
+
+                const resetResponse = await fetch(`${API_URL}/auth/reset-pin`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone, new_pin: pin }),
+                });
+                const resetData = await resetResponse.json();
+
+                if (resetData.success) {
+                  appAlert('Başarılı', 'Şifreniz güncellendi. Giriş yapabilirsiniz.', [
+                    {
+                      text: 'Tamam',
+                      onPress: () => {
                         setOtp('');
                         setPin('');
                         setScreen('login');
-                      }}
-                    ]);
-                  } else {
-                    appAlert('Hata', resetData.detail || 'Şifre güncellenemedi');
-                  }
-                } catch (error) {
-                  appAlert('Hata', 'Bir hata oluştu');
-                } finally {
-                  setLoading(false);
+                      },
+                    },
+                  ]);
+                } else {
+                  appAlert('Hata', resetData.detail || 'Şifre güncellenemedi');
                 }
-              }}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.modernPrimaryButtonText}>ŞİFREYİ GÜNCELLE</Text>
-              )}
-            </TouchableOpacity>
+              } catch (error) {
+                appAlert('Hata', 'Bir hata oluştu');
+              } finally {
+                setLoading(false);
+              }
+            }}
+            accessibilityLabel="Şifreyi güncelle"
+          />
 
-            <TouchableOpacity
-              style={styles.modernSecondaryButton}
-              onPress={async () => {
-                void tapButtonHaptic();
-                setOtp('');
-                setPin('');
-                setScreen('forgot-password');
-              }}
-            >
-              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
-              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+          <TouchableOpacity
+            style={pap.otpBackMinimal}
+            onPress={async () => {
+              void tapButtonHaptic();
+              setOtp('');
+              setPin('');
+              setScreen('forgot-password');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Geri dön"
+          >
+            <Text style={pap.otpBackText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </PremiumGlassShell>
+      </PremiumAuthScreenShell>
     );
   }
 
@@ -3985,9 +3843,9 @@ export default function App() {
     const roleCardSubtitleOneLineHeight = Math.round(
       Math.max(12, Math.min(16, roleCardSubtitleOneLineFont * 1.22)),
     );
-    const roleContinueMinHeight = Math.round(Math.max(48, Math.min(64, rs.usableHeight * 0.078)));
-    const roleContinuePadV = Math.round(Math.max(11, Math.min(20, roleContinueMinHeight * 0.31)));
-    const roleContinueTextSize = Math.round(Math.max(18, Math.min(23, 23 * roleScale)));
+    const roleContinueMinHeight = Math.round(Math.max(52, Math.min(72, rs.usableHeight * 0.086)));
+    const roleContinuePadV = Math.round(Math.max(13, Math.min(23, roleContinueMinHeight * 0.32)));
+    const roleContinueTextSize = Math.round(Math.max(18, Math.min(24, 23.8 * roleScale)));
     const roleFooterGap = Math.round(Math.max(2, Math.min(8, rs.usableHeight * 0.006)));
     const roleFooterBottomPad = Math.round(Math.max(10, Math.min(22, Math.max(insets.bottom, 8) + 8)));
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
@@ -3996,10 +3854,10 @@ export default function App() {
     const roleStepPulseStyle = { transform: [{ scale: roleStepPulse }] };
     const isCommunityComingSoon = true;
     const communityCardColors = isCommunityComingSoon
-      ? (['#334155', '#475569', '#64748B'] as const)
+      ? (['#08111F', '#0B1220', '#101A2B'] as const)
       : (['#1e1b4b', '#312e81', '#1e3a8a', '#172554'] as const);
     const communityArrowColors = isCommunityComingSoon
-      ? (['#64748B', '#475569', '#334155'] as const)
+      ? (['rgba(16,26,43,0.98)', PREMIUM_ROLE_CARD_BORDER] as const)
       : (['#6366F1', '#4F46E5', '#2563EB'] as const);
     const passengerIconSize = rs.isVeryCompact ? 30 : rs.isCompact ? 34 : 40;
     const driverCarIconSize = rs.isVeryCompact ? 28 : rs.isCompact ? 31 : 34;
@@ -4048,9 +3906,10 @@ export default function App() {
       rs.isVeryCompact ? 17 : rs.isCompact && !rs.isVeryCompact ? 20 : 23,
       Math.round(vchLabelFontSize * 1.1),
     );
-    const continueArrowIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
+    const continueArrowIconSize = rs.isVeryCompact ? 27 : rs.isCompact ? 30 : 32;
     const communityRoutesIconSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
     const communityChevronSize = rs.isVeryCompact ? 13 : rs.isCompact ? 14 : 16;
+    const cockpitTitleInnerRadius = Math.round(Math.max(17, Math.min(21, 21 * roleScale)));
 
     return (
       <ImageBackground 
@@ -4058,6 +3917,34 @@ export default function App() {
         style={styles.roleSelectionContainer}
         imageStyle={styles.roleBackgroundImage}
       >
+        <BlurView
+          intensity={Platform.OS === 'web' ? 24 : Platform.OS === 'ios' ? 34 : 38}
+          tint="dark"
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <LinearGradient
+          colors={[...PREMIUM_ROLE_OVERLAY]}
+          locations={[0, 0.5, 1]}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <LinearGradient
+          colors={[...PREMIUM_ROLE_FOREGROUND_AMBIENT]}
+          locations={[0, 0.45, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <LinearGradient
+          colors={[...PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE]}
+          locations={[0, 0.5, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
         <SafeAreaView style={styles.roleSelectionSafe}>
           {roleSelectTripExitBanner ? (
             <Animated.View
@@ -4099,28 +3986,45 @@ export default function App() {
             <View style={styles.roleTopTitleWrap}>
               <View
                 style={[
-                  styles.roleTopTitlePill,
-                  rs.isCompact && !rs.isVeryCompact && styles.roleTopTitlePillCompact,
-                  rs.isVeryCompact && styles.roleTopTitlePillVery,
-                  {
-                    paddingVertical: roleTitlePadV,
-                    paddingHorizontal: roleTitlePadH,
-                    borderRadius: Math.round(Math.max(18, Math.min(22, 22 * roleScale))),
-                  },
+                  styles.roleCockpitFrame,
+                  { borderRadius: cockpitTitleInnerRadius + 4 },
                 ]}
               >
-                <Text
+                <View
                   style={[
-                    styles.roleTopTitle,
-                    rs.isCompact && !rs.isVeryCompact && styles.roleTopTitleCompact,
-                    rs.isVeryCompact && styles.roleTopTitleVery,
-                    { fontSize: roleTitleFontSize, lineHeight: roleTitleLineHeight },
+                    styles.roleCockpitInner,
+                    {
+                      paddingVertical: roleTitlePadV,
+                      paddingHorizontal: roleTitlePadH,
+                      borderRadius: cockpitTitleInnerRadius,
+                    },
                   ]}
-                  numberOfLines={2}
-                  ellipsizeMode="tail"
                 >
-                  Bugün nasıl ilerlemek istersiniz?
-                </Text>
+                  <LinearGradient
+                    colors={[
+                      'rgba(34,211,238,0.12)',
+                      'rgba(8,17,31,0)',
+                      'rgba(34,211,238,0.07)',
+                    ]}
+                    locations={[0, 0.52, 1]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    pointerEvents="none"
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <Text
+                    style={[
+                      styles.roleTopTitle,
+                      rs.isCompact && !rs.isVeryCompact && styles.roleTopTitleCompact,
+                      rs.isVeryCompact && styles.roleTopTitleVery,
+                      { fontSize: roleTitleFontSize, lineHeight: roleTitleLineHeight },
+                    ]}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    Bugün nasıl ilerlemek istersiniz?
+                  </Text>
+                </View>
               </View>
             </View>
             
@@ -4132,7 +4036,7 @@ export default function App() {
                 ]}
                 onPress={async () => { roleScreenHaptic(); setShowAdminPanel(true); }}
               >
-                <Ionicons name="settings-outline" size={22} color="#3FA9F5" />
+                <Ionicons name="settings-outline" size={22} color={PREMIUM_AUTH_CYAN} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -4145,7 +4049,7 @@ export default function App() {
                   router.push('/settings-hub' as never);
                 }}
               >
-                <Ionicons name="person-circle-outline" size={22} color="#3FA9F5" />
+                <Ionicons name="person-circle-outline" size={22} color={PREMIUM_AUTH_CYAN} />
               </TouchableOpacity>
             )}
           </View>
@@ -4178,12 +4082,26 @@ export default function App() {
                 },
               ]}
             >
+            <View style={[styles.roleUnifiedCockpitShell, rs.isVeryCompact && styles.roleUnifiedCockpitShellVery]}>
+              <LinearGradient
+                colors={[
+                  'rgba(255,255,255,0.055)',
+                  'rgba(255,255,255,0)',
+                  'rgba(34,211,238,0.02)',
+                ]}
+                locations={[0, 0.22, 1]}
+                start={{ x: 0.08, y: 0 }}
+                end={{ x: 0.55, y: 0.95 }}
+                pointerEvents="none"
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={[styles.roleStepIndicatorGlass, { marginBottom: roleStepMarginBottom }]}>
               <View
                 style={[
                   styles.roleStepIndicatorWrap,
                   rs.isVeryCompact && styles.roleStepIndicatorWrapVery,
                   rs.isCompact && !rs.isVeryCompact && styles.roleStepIndicatorWrapCompact,
-                  { marginBottom: roleStepMarginBottom },
+                  { marginBottom: 0 },
                 ]}
               >
                 <View style={styles.roleStepIndicatorRow}>
@@ -4204,7 +4122,7 @@ export default function App() {
                       ]}
                     >
                       {roleStep1Done ? (
-                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color="#FFF" />
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={PREMIUM_TEXT_SOFT} />
                       ) : (
                         <Text style={[styles.roleStepCircleText, roleActiveStep === 1 && styles.roleStepCircleTextActive]}>1</Text>
                       )}
@@ -4241,7 +4159,7 @@ export default function App() {
                       ]}
                     >
                       {roleStep2Done ? (
-                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color="#FFF" />
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={PREMIUM_TEXT_SOFT} />
                       ) : (
                         <Text
                           style={[
@@ -4321,6 +4239,8 @@ export default function App() {
                   Önce rolünü, sonra araç tipini seç.
                 </Text>
               </View>
+              </View>
+
               <View style={styles.roleDeckSlot}>
                 {!selectedRole ? (
                   <View
@@ -4375,7 +4295,7 @@ export default function App() {
                           <MaterialCommunityIcons
                             name="account-supervisor-circle"
                             size={passengerIconSize}
-                            color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'}
+                            color={selectedRole === 'passenger' ? 'rgba(243,248,255,0.96)' : 'rgba(94,210,230,0.88)'}
                           />
                         </View>
                         <Text
@@ -4396,9 +4316,9 @@ export default function App() {
                               textAlign: 'center',
                               fontSize: roleCardSubtitleOneLineFont,
                               lineHeight: roleCardSubtitleOneLineHeight,
-                              color: '#1E3A8A',
+                              color: 'rgba(120,205,228,0.95)',
                               fontWeight: '800',
-                              textShadowColor: 'rgba(30, 64, 175, 0.42)',
+                              textShadowColor: 'rgba(34, 211, 238, 0.14)',
                               textShadowOffset: { width: 0, height: 0 },
                               textShadowRadius: 8,
                               opacity: roleSelectCardSubtitlePulse,
@@ -4413,7 +4333,7 @@ export default function App() {
                         </Animated.Text>
                         {selectedRole === 'passenger' && (
                           <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
+                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
                           </View>
                         )}
                       </TouchableOpacity>
@@ -4463,12 +4383,12 @@ export default function App() {
                             <MaterialCommunityIcons
                               name="car-side"
                               size={driverCarIconSize}
-                              color={selectedRole === 'driver' ? '#FFF' : '#2563EB'}
+                              color={selectedRole === 'driver' ? 'rgba(243,248,255,0.96)' : 'rgba(112,155,226,0.9)'}
                             />
                             <MaterialCommunityIcons
                               name="motorbike"
                               size={driverBikeIconSize}
-                              color={selectedRole === 'driver' ? '#E9D5FF' : '#7C3AED'}
+                              color={selectedRole === 'driver' ? 'rgba(210,215,238,0.95)' : 'rgba(148,164,226,0.85)'}
                             />
                           </View>
                         </View>
@@ -4490,9 +4410,9 @@ export default function App() {
                               textAlign: 'center',
                               fontSize: roleCardSubtitleOneLineFont,
                               lineHeight: roleCardSubtitleOneLineHeight,
-                              color: '#22C55E',
+                              color: 'rgba(150,218,206,0.92)',
                               fontWeight: '800',
-                              textShadowColor: 'rgba(34, 197, 94, 0.48)',
+                              textShadowColor: 'rgba(45, 180, 160, 0.16)',
                               textShadowOffset: { width: 0, height: 0 },
                               textShadowRadius: 8,
                               opacity: roleSelectCardSubtitlePulse,
@@ -4507,7 +4427,7 @@ export default function App() {
                         </Animated.Text>
                         {selectedRole === 'driver' && (
                           <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color="#FFF" />
+                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
                           </View>
                         )}
                       </TouchableOpacity>
@@ -4517,38 +4437,111 @@ export default function App() {
                   <View style={styles.roleDeckVehicleStack}>
                     <View
                       style={[
-                        styles.roleDeckVehicleHeader,
-                        rs.isVeryCompact && styles.roleDeckVehicleHeaderVery,
+                        styles.roleStatusStrip,
+                        rs.isVeryCompact && styles.roleStatusStripVery,
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.roleDeckVehicleTitle,
-                          rs.isVeryCompact && styles.roleDeckVehicleTitleVery,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {selectedRole === 'passenger' ? 'Yolcu' : 'Sürücü'} seçildi
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          roleScreenHaptic();
-                          setSelectedRole(null);
-                          setRideVehicleKind(null);
-                        }}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={styles.roleDeckChangeRole}>Rolü değiştir</Text>
-                      </TouchableOpacity>
+                      {rs.isVeryCompact ? (
+                        <>
+                          <View style={styles.roleStatusCompactTop}>
+                            <View style={[styles.roleStatusBadgeOrb, styles.roleStatusBadgeOrbVery]}>
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={22}
+                                color={PREMIUM_AUTH_CYAN}
+                              />
+                            </View>
+                            <View style={styles.roleStatusTextCol}>
+                              <Text style={[styles.roleStatusEyebrow, styles.roleStatusEyebrowVery]} numberOfLines={1}>
+                                Aktif rol
+                              </Text>
+                              <Text
+                                style={[styles.roleStatusTitle, styles.roleStatusTitleVery]}
+                                numberOfLines={2}
+                                ellipsizeMode="tail"
+                              >
+                                {selectedRole === 'passenger' ? 'Yolcu' : 'Sürücü'} seçildi
+                              </Text>
+                            </View>
+                          </View>
+                          <TouchableOpacity
+                            style={[
+                              styles.roleChangeRolePillSecondary,
+                              styles.roleChangeRolePillSecondaryVery,
+                            ]}
+                            onPress={() => {
+                              roleScreenHaptic();
+                              setSelectedRole(null);
+                              setRideVehicleKind(null);
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            activeOpacity={0.75}
+                          >
+                            <Text style={styles.roleChangeRoleLabelSecondary}>Rolü değiştir</Text>
+                            <Ionicons name="chevron-forward" size={14} color="rgba(148,189,218,0.85)" />
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <>
+                          <View style={[styles.roleStatusBadgeOrb, rs.isCompact && styles.roleStatusBadgeOrbCompact]}>
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={rs.isCompact && !rs.isVeryCompact ? 24 : 28}
+                              color={PREMIUM_AUTH_CYAN}
+                            />
+                          </View>
+                          <View style={styles.roleStatusTextCol}>
+                            <Text style={styles.roleStatusEyebrow} numberOfLines={1}>
+                              Aktif rol
+                            </Text>
+                            <Text
+                              style={[styles.roleStatusTitle, rs.isCompact && !rs.isVeryCompact && styles.roleStatusTitleCompact]}
+                              numberOfLines={2}
+                              ellipsizeMode="tail"
+                            >
+                              {selectedRole === 'passenger' ? 'Yolcu' : 'Sürücü'} seçildi
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.roleChangeRolePillSecondary, rs.isCompact && styles.roleChangeRolePillSecondaryCompact]}
+                            onPress={() => {
+                              roleScreenHaptic();
+                              setSelectedRole(null);
+                              setRideVehicleKind(null);
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            activeOpacity={0.75}
+                          >
+                            <Text style={styles.roleChangeRoleLabelSecondary}>Rolü değiştir</Text>
+                            <Ionicons name="chevron-forward" size={rs.isCompact ? 14 : 15} color="rgba(148,189,218,0.85)" />
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
+                    <View
+                      style={[
+                        styles.roleVehicleSegmentRail,
+                        rs.isVeryCompact && styles.roleVehicleSegmentRailVery,
+                        {
+                          marginBottom: Math.max(0, Math.round(roleCardsMarginBottom * 0.45)),
+                        },
+                      ]}
+                    >
+                      <LinearGradient
+                        colors={['rgba(34,211,238,0.11)', 'rgba(34,211,238,0)']}
+                        start={{ x: 0.5, y: 0 }}
+                        end={{ x: 0.5, y: 1 }}
+                        pointerEvents="none"
+                        style={styles.roleVehicleRailSpecular}
+                      />
+                      <View style={[styles.roleVehicleRailWell, rs.isVeryCompact && styles.roleVehicleRailWellVery]}>
                     <View
                       style={[
                         styles.roleCardsRow,
                         rs.isVeryCompact && styles.roleCardsRowVery,
                         rs.isCompact && !rs.isVeryCompact && styles.roleCardsRowCompact,
                         roleSelectContentWide && styles.roleCardsRowWide,
-                        { gap: roleCardsGap, marginBottom: Math.max(0, Math.round(roleCardsMarginBottom * 0.45)) },
+                        { gap: roleCardsGap, marginBottom: 0, flex: 1 },
                       ]}
                     >
                       <Animated.View
@@ -4598,7 +4591,7 @@ export default function App() {
                             <MaterialCommunityIcons
                               name="car-side"
                               size={vchIconSize}
-                              color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
+                              color={rideVehicleKind === 'car' ? 'rgba(243,248,255,0.96)' : 'rgba(118,164,226,0.88)'}
                             />
                             <Text
                               style={[
@@ -4617,16 +4610,16 @@ export default function App() {
                             style={{
                               opacity: roleSelectUiPulse,
                               fontSize: vchCallFontSize,
-                              fontWeight: '900',
+                              fontWeight: '800',
                               textAlign: 'center',
-                              letterSpacing: -0.15,
+                              letterSpacing: 0.08,
                               color:
                                 rideVehicleKind === 'car'
-                                  ? 'rgba(255,254,237,0.98)'
-                                  : '#CA8A04',
-                              textShadowColor: 'rgba(250, 204, 21, 0.45)',
+                                  ? 'rgba(243,248,255,0.92)'
+                                  : 'rgba(172,188,212,0.78)',
+                              textShadowColor: 'rgba(34,211,238,0.12)',
                               textShadowOffset: { width: 0, height: 0 },
-                              textShadowRadius: 6,
+                              textShadowRadius: 5,
                             }}
                           >
                             Eşleşmesi
@@ -4681,7 +4674,7 @@ export default function App() {
                             <MaterialCommunityIcons
                               name="motorbike"
                               size={vchIconSize}
-                              color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                              color={rideVehicleKind === 'motorcycle' ? 'rgba(243,248,255,0.96)' : 'rgba(130,172,216,0.86)'}
                             />
                             <Text
                               style={[
@@ -4700,16 +4693,16 @@ export default function App() {
                             style={{
                               opacity: roleSelectUiPulse,
                               fontSize: vchCallFontSize,
-                              fontWeight: '900',
+                              fontWeight: '800',
                               textAlign: 'center',
-                              letterSpacing: -0.15,
+                              letterSpacing: 0.08,
                               color:
                                 rideVehicleKind === 'motorcycle'
-                                  ? 'rgba(255,254,237,0.98)'
-                                  : '#CA8A04',
-                              textShadowColor: 'rgba(250, 204, 21, 0.45)',
+                                  ? 'rgba(243,248,255,0.92)'
+                                  : 'rgba(172,188,212,0.78)',
+                              textShadowColor: 'rgba(34,211,238,0.12)',
                               textShadowOffset: { width: 0, height: 0 },
-                              textShadowRadius: 6,
+                              textShadowRadius: 5,
                             }}
                           >
                             Eşleşmesi
@@ -4718,8 +4711,11 @@ export default function App() {
                         </TouchableOpacity>
                       </Animated.View>
                     </View>
+                      </View>
+                    </View>
                   </View>
                 )}
+              </View>
               </View>
             </View>
           </ScrollView>
@@ -4739,56 +4735,39 @@ export default function App() {
             ]}
           >
             <RoleSelectLeylekAIFloating />
-            <TouchableOpacity
-              style={[
-                styles.roleContinueBtnOuter,
-                rs.isVeryCompact && styles.roleContinueBtnOuterVery,
-                rs.isCompact && !rs.isVeryCompact && styles.roleContinueBtnOuterCompact,
-                (!selectedRole || !rideVehicleKind) && styles.roleContinueBtnDisabled,
-                {
-                  minHeight: roleContinueMinHeight,
-                  borderRadius: Math.round(Math.max(20, Math.min(26, roleContinueMinHeight * 0.4))),
-                },
-              ]}
-              onPress={handleContinue}
+            <PremiumGradientCtaButton
+              label="Devam Et"
               disabled={!selectedRole || !rideVehicleKind}
-              activeOpacity={0.9}
-            >
-              {selectedRole && rideVehicleKind ? (
-                <LinearGradient
-                  colors={['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.roleContinueBtnGradientFill}
-                />
-              ) : (
-                <View style={[StyleSheet.absoluteFillObject, styles.roleContinueBtnDisabledFill]} />
-              )}
-              <View
-                style={[
-                  styles.roleContinueBtnContent,
-                  rs.isVeryCompact && styles.roleContinueBtnContentVery,
-                  rs.isCompact && !rs.isVeryCompact && styles.roleContinueBtnContentCompact,
-                  {
-                    paddingVertical: roleContinuePadV,
-                    paddingHorizontal: roleHorizontalPad + 4,
-                    gap: Math.round(Math.max(8, Math.min(14, 14 * roleScale))),
-                  },
-                ]}
-                pointerEvents="box-none"
-              >
-                <Text
-                  style={[
-                    styles.roleContinueTextLarge,
-                    rs.isVeryCompact && styles.roleContinueTextLargeVery,
-                    { fontSize: roleContinueTextSize },
-                  ]}
-                >
-                  Devam Et
-                </Text>
-                <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color="#FFF" />
-              </View>
-            </TouchableOpacity>
+              onPress={() => {
+                void handleContinue();
+              }}
+              accessibilityLabel="Devam et"
+              touchableStyleOverrides={
+                !selectedRole || !rideVehicleKind
+                  ? (pap.roleFloatAmbientLow as Record<string, unknown>)
+                  : (pap.roleCtaCyanHalo as Record<string, unknown>)
+              }
+              labelStyle={{
+                fontSize: roleContinueTextSize,
+                letterSpacing: 0.42,
+                fontWeight: '900',
+                textShadowColor: 'rgba(2,10,26,0.55)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+              }}
+              gradientStyleOverrides={{
+                minHeight: roleContinueMinHeight,
+                paddingVertical: roleContinuePadV,
+                paddingHorizontal: roleHorizontalPad + 6,
+                borderRadius: Math.round(Math.max(21, Math.min(27, roleContinueMinHeight * 0.42))),
+                gap: Math.round(Math.max(8, Math.min(14, 14 * roleScale))),
+                borderWidth: StyleSheet.hairlineWidth + 1,
+                borderColor: 'rgba(34,211,238,0.28)',
+              }}
+              trailing={
+                <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color={PREMIUM_TEXT_SOFT} />
+              }
+            />
 
             <View
               style={[
@@ -4844,7 +4823,7 @@ export default function App() {
                       rs.isCompact && !rs.isVeryCompact && styles.communityIconRouteBoxCompact,
                     ]}
                   >
-                    <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="#CBD5E1" />
+                    <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="rgba(148,196,218,0.75)" />
                   </View>
                   <View style={styles.communityTextBox}>
                     <Text
@@ -4880,7 +4859,7 @@ export default function App() {
                       rs.isCompact && !rs.isVeryCompact && styles.communityArrowPremiumCompact,
                     ]}
                   >
-                    <Ionicons name="lock-closed" size={communityChevronSize} color="#E2E8F0" />
+                    <Ionicons name="lock-closed" size={communityChevronSize} color="rgba(186,201,222,0.82)" />
                   </LinearGradient>
                 </View>
               </LinearGradient>
@@ -6210,7 +6189,7 @@ function PassengerOfferCard({
       {/* ÖNERİLEN Etiketi */}
       {isBest && (
         <View style={passengerCardStyles.bestBadge}>
-          <Ionicons name="trophy" size={14} color="#F59E0B" />
+          <Ionicons name="trophy" size={14} color="#22D3EE" />
           <Text style={passengerCardStyles.bestText}>ÖNERİLEN</Text>
         </View>
       )}
@@ -6252,11 +6231,11 @@ function PassengerOfferCard({
       <View style={passengerCardStyles.bottomRow}>
         <View style={passengerCardStyles.statsRow}>
           <View style={passengerCardStyles.statItem}>
-            <Ionicons name="navigate-circle-outline" size={16} color="#64748B" />
+            <Ionicons name="navigate-circle-outline" size={16} color="rgba(186,201,222,0.82)" />
             <Text style={passengerCardStyles.statText}>{distanceToPassengerKm} km</Text>
           </View>
           <View style={passengerCardStyles.statItem}>
-            <Ionicons name="time-outline" size={16} color="#64748B" />
+            <Ionicons name="time-outline" size={16} color="rgba(186,201,222,0.82)" />
             <Text style={passengerCardStyles.statText}>{arrivalTime} dk</Text>
           </View>
         </View>
@@ -6264,19 +6243,23 @@ function PassengerOfferCard({
         <View style={passengerCardStyles.actionRow}>
           {onDismiss && (
             <TouchableOpacity style={passengerCardStyles.dismissBtn} onPress={onDismiss}>
-              <Ionicons name="close" size={18} color="#64748B" />
+              <Ionicons name="close" size={18} color="rgba(186,201,222,0.88)" />
             </TouchableOpacity>
           )}
           <TouchableOpacity 
-            style={[passengerCardStyles.acceptBtn, isBest && passengerCardStyles.acceptBtnBest]}
+            style={[
+              passengerCardStyles.acceptBtn,
+              isBest && passengerCardStyles.acceptBtnBest,
+              accepting && passengerCardStyles.acceptBtnBusy,
+            ]}
             onPress={handleAccept}
             disabled={accepting}
           >
             {accepting ? (
-              <ActivityIndicator size="small" color="#FFF" />
+              <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" />
             ) : (
               <>
-                <Ionicons name="checkmark" size={18} color="#FFF" />
+                <Ionicons name="checkmark" size={18} color="#08111F" />
                 <Text style={passengerCardStyles.acceptText}>Kabul Et</Text>
               </>
             )}
@@ -6290,38 +6273,44 @@ function PassengerOfferCard({
 // 🎨 YOLCU TEKLİF KARTI STİLLERİ
 const passengerCardStyles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(16, 26, 43, 0.9)',
     borderRadius: 16,
     padding: 14,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
+    elevation: 6,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.22)',
   },
   cardBest: {
-    borderColor: '#F59E0B',
+    borderColor: 'rgba(34, 211, 238, 0.65)',
     borderWidth: 2,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: 'rgba(11, 18, 32, 0.95)',
+    shadowColor: '#22D3EE',
+    shadowOpacity: 0.2,
   },
   bestBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 10,
     marginBottom: 10,
-    gap: 4,
+    gap: 6,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
   },
   bestText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#B45309',
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.94)',
+    letterSpacing: 0.4,
   },
   topRow: {
     flexDirection: 'row',
@@ -6335,20 +6324,22 @@ const passengerCardStyles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     borderWidth: 2,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E3A5F',
   },
   avatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#3FA9F5',
+    backgroundColor: 'rgba(34, 211, 238, 0.35)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34, 211, 238, 0.5)',
   },
   avatarLetter: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.96)',
   },
   onlineDot: {
     position: 'absolute',
@@ -6357,9 +6348,9 @@ const passengerCardStyles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#22D3EE',
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderColor: '#0B1220',
   },
   driverInfo: {
     flex: 1,
@@ -6367,8 +6358,8 @@ const passengerCardStyles = StyleSheet.create({
   },
   driverName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
+    fontWeight: '700',
+    color: 'rgba(243, 248, 255, 0.94)',
   },
   ratingRow: {
     flexDirection: 'row',
@@ -6378,29 +6369,31 @@ const passengerCardStyles = StyleSheet.create({
   ratingText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1E293B',
+    color: 'rgba(243, 248, 255, 0.9)',
     marginLeft: 3,
   },
   tripCount: {
     fontSize: 11,
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.82)',
     marginLeft: 4,
   },
   vehicleText: {
     fontSize: 11,
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.78)',
     marginTop: 2,
   },
   priceBox: {
-    backgroundColor: '#3FA9F5',
-    paddingHorizontal: 14,
+    backgroundColor: 'rgba(34, 211, 238, 0.22)',
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34, 211, 238, 0.5)',
   },
   priceAmount: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#22D3EE',
   },
   bottomRow: {
     flexDirection: 'row',
@@ -6408,8 +6401,8 @@ const passengerCardStyles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 12,
     paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopWidth: StyleSheet.hairlineWidth + 1,
+    borderTopColor: 'rgba(30, 58, 95, 0.85)',
   },
   statsRow: {
     flexDirection: 'row',
@@ -6422,7 +6415,7 @@ const passengerCardStyles = StyleSheet.create({
   },
   statText: {
     fontSize: 12,
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.82)',
     fontWeight: '500',
   },
   actionRow: {
@@ -6434,26 +6427,39 @@ const passengerCardStyles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.95)',
   },
   acceptBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#3FA9F5',
+    backgroundColor: '#22D3EE',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
     gap: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(186, 230, 253, 0.55)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    elevation: 8,
   },
   acceptBtnBest: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#0EA5E9',
+    borderColor: 'rgba(125, 211, 252, 0.75)',
+  },
+  acceptBtnBusy: {
+    opacity: 0.88,
   },
   acceptText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#08111F',
   },
 });
 
@@ -6461,7 +6467,7 @@ const passengerCardStyles = StyleSheet.create({
 const searchingStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#08111F',
   },
   topBar: {
     flexDirection: 'row',
@@ -6469,17 +6475,24 @@ const searchingStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    backgroundColor: 'rgba(8, 17, 31, 0.92)',
+    borderBottomWidth: StyleSheet.hairlineWidth + 1,
+    borderBottomColor: '#1E3A5F',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#1E3A5F',
   },
   statusCenter: {
     flexDirection: 'row',
@@ -6487,16 +6500,19 @@ const searchingStyles = StyleSheet.create({
   },
   statusText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#1E293B',
+    fontWeight: '700',
+    color: 'rgba(243, 248, 255, 0.94)',
+    letterSpacing: 0.2,
   },
   cancelBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(248, 113, 113, 0.38)',
   },
   mapContainer: {
     marginHorizontal: 16,
@@ -6505,16 +6521,19 @@ const searchingStyles = StyleSheet.create({
     overflow: 'hidden',
   },
   routeCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     marginHorizontal: 16,
     marginTop: 12,
     padding: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.2)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 8,
   },
   routeRow: {
     flexDirection: 'row',
@@ -6529,25 +6548,27 @@ const searchingStyles = StyleSheet.create({
   routeText: {
     flex: 1,
     fontSize: 13,
-    color: '#374151',
-    fontWeight: '500',
+    color: 'rgba(243, 248, 255, 0.9)',
+    fontWeight: '600',
   },
   // 📤 PAYLAŞ BUTONU
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#3FA9F5',
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
     marginTop: 12,
     alignSelf: 'center',
-    gap: 6,
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
   },
   shareButtonText: {
-    color: '#FFF',
+    color: '#22D3EE',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   offersContainer: {
     flex: 1,
@@ -6562,8 +6583,9 @@ const searchingStyles = StyleSheet.create({
   },
   offersTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.94)',
+    letterSpacing: 0.2,
   },
   liveIndicator: {
     flexDirection: 'row',
@@ -6574,12 +6596,12 @@ const searchingStyles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#22D3EE',
   },
   liveText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#22C55E',
+    fontWeight: '700',
+    color: 'rgba(186, 230, 253, 0.95)',
   },
   emptyOffersContainer: {
     flex: 1,
@@ -6590,13 +6612,13 @@ const searchingStyles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1E293B',
+    color: 'rgba(243, 248, 255, 0.92)',
     marginTop: 16,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 13,
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.82)',
     marginTop: 8,
     textAlign: 'center',
   },
@@ -7542,7 +7564,11 @@ function AnimatedPulseButton({
     >
       <Animated.View style={[{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}>
         <LinearGradient
-          colors={[COLORS.primary, COLORS.secondary]}
+          colors={
+            loading || disabled
+              ? ['#64748B', '#475569']
+              : ['#22D3EE', '#0EA5E9', '#2563EB', '#4338CA']
+          }
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.gradientButton}
@@ -8122,12 +8148,13 @@ function PassengerDashboard({
     if (postLoginTagResumePending) return;
     if (activeTag || destination) return;
     if (passengerDestinationAutoOpenedRef.current) return;
-    const t = setTimeout(() => {
+    /** İlk çizim sonrası: ara hedef yüzü flaş etmeden hedef picker açılsın */
+    const id = requestAnimationFrame(() => {
       setShowDestinationPicker(true);
       setDestinationPickerPhase('search');
       passengerDestinationAutoOpenedRef.current = true;
-    }, 450);
-    return () => clearTimeout(t);
+    });
+    return () => cancelAnimationFrame(id);
   }, [activeTag, destination, postLoginTagResumePending, setShowDestinationPicker]);
 
   /** Aktif TAG varken hedef/fiyat modalı açık kalmasın (resume sonrası activeTag geç dolunca auto-open yarışı) */
@@ -11194,16 +11221,16 @@ function PassengerDashboard({
         {/* Üst Bar - Geri + Durum + İptal */}
         <View style={searchingStyles.topBar}>
           <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={searchingStyles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
+            <Ionicons name="chevron-back" size={24} color="#22D3EE" />
           </TouchableOpacity>
           <View style={searchingStyles.statusCenter}>
             <Text style={searchingStyles.statusText}>
               {offers.length > 0 ? `${offers.length} teklif geldi` : 'Teklifler bekleniyor...'}
             </Text>
-            {offers.length === 0 && <ActivityIndicator size="small" color="#3FA9F5" style={{ marginLeft: 8 }} />}
+            {offers.length === 0 && <ActivityIndicator size="small" color="#22D3EE" style={{ marginLeft: 8 }} />}
           </View>
           <TouchableOpacity onPress={handleCancelTag} style={searchingStyles.cancelBtn}>
-            <Ionicons name="close" size={22} color="#EF4444" />
+            <Ionicons name="close" size={22} color="#F87171" />
           </TouchableOpacity>
         </View>
 
@@ -11225,12 +11252,12 @@ function PassengerDashboard({
         {/* Rota Bilgisi - Küçük Kart */}
         <View style={searchingStyles.routeCard}>
           <View style={searchingStyles.routeRow}>
-            <View style={[searchingStyles.routeDot, { backgroundColor: '#3FA9F5' }]} />
+            <View style={[searchingStyles.routeDot, { backgroundColor: '#22D3EE' }]} />
             <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.pickup_location}</Text>
           </View>
-          <Ionicons name="arrow-down" size={14} color="#94A3B8" style={{ marginLeft: 5 }} />
+          <Ionicons name="arrow-down" size={14} color="rgba(186,201,222,0.55)" style={{ marginLeft: 5 }} />
           <View style={searchingStyles.routeRow}>
-            <View style={[searchingStyles.routeDot, { backgroundColor: '#EF4444' }]} />
+            <View style={[searchingStyles.routeDot, { backgroundColor: 'rgba(248,140,148,0.78)' }]} />
             <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.dropoff_location}</Text>
           </View>
           
@@ -11239,7 +11266,7 @@ function PassengerDashboard({
             style={searchingStyles.shareButton}
             onPress={handleShareRideRequest}
           >
-            <Ionicons name="share-social" size={18} color="#FFF" />
+            <Ionicons name="share-social" size={18} color="#22D3EE" />
             <Text style={searchingStyles.shareButtonText}>Paylaş</Text>
           </TouchableOpacity>
         </View>
@@ -11294,12 +11321,12 @@ function PassengerDashboard({
       {showToast && (
         <Animated.View style={styles.toastContainer}>
           <LinearGradient
-            colors={['#3FA9F5', '#2196F3']}
+            colors={['rgba(16,26,43,0.96)', '#0B1220', 'rgba(8,145,178,0.42)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.toastGradient}
           >
-            <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+            <Ionicons name="checkmark-circle" size={24} color="#22D3EE" />
             <Text style={styles.toastText}>{toastMessage}</Text>
           </LinearGradient>
         </Animated.View>
@@ -11327,7 +11354,7 @@ function PassengerDashboard({
                       setFirstChatTapBanner(null);
                     }}
                     style={{
-                      backgroundColor: '#B91C1C',
+                      backgroundColor: 'rgba(42, 24, 28, 0.82)',
                       marginHorizontal: 12,
                       marginTop: 8,
                       marginBottom: 6,
@@ -11335,16 +11362,16 @@ function PassengerDashboard({
                       paddingHorizontal: 14,
                       borderRadius: 10,
                       borderWidth: 1,
-                      borderColor: '#FCA5A5',
+                      borderColor: 'rgba(248,113,113,0.38)',
                     }}
                   >
-                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
                       {firstChatTapBanner.title}
                     </Text>
-                    <Text style={{ color: '#FEE2E2', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
+                    <Text style={{ color: 'rgba(186,201,222,0.88)', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
                       {firstChatTapBanner.subtitle}
                     </Text>
-                    <Text style={{ color: '#FECACA', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+                    <Text style={{ color: 'rgba(186,201,222,0.72)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
                       Mesajı görmek için tıklayın
                     </Text>
                   </TouchableOpacity>
@@ -11365,15 +11392,15 @@ function PassengerDashboard({
                       paddingVertical: 12,
                       paddingHorizontal: 14,
                       borderRadius: 12,
-                      backgroundColor: 'rgba(14,165,233,0.95)',
+                      backgroundColor: 'rgba(16,26,43,0.88)',
                       borderWidth: 1,
-                      borderColor: 'rgba(125,211,252,0.6)',
+                      borderColor: 'rgba(34,211,238,0.32)',
                     }}
                   >
-                    <Text style={{ color: '#0f172a', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
                       Sürücü yakın — araca bindiğinizde sürücünün karekodunu okutun
                     </Text>
-                    <Text style={{ color: '#0c4a6e', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: '600' }}>
+                    <Text style={{ color: 'rgba(186,201,222,0.82)', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: '600' }}>
                       Yolculuk, biniş doğrulandıktan sonra başlar
                     </Text>
                   </TouchableOpacity>
@@ -11383,7 +11410,7 @@ function PassengerDashboard({
                 !activeTag?.boarding_confirmed_at ? (
                   <View
                     style={{
-                      backgroundColor: '#0f172a',
+                      backgroundColor: 'rgba(16,26,43,0.88)',
                       marginHorizontal: 12,
                       marginTop: 8,
                       marginBottom: 6,
@@ -11391,20 +11418,20 @@ function PassengerDashboard({
                       paddingHorizontal: 14,
                       borderRadius: 10,
                       borderWidth: 1,
-                      borderColor: 'rgba(148,163,184,0.45)',
+                      borderColor: '#1E3A5F',
                     }}
                   >
-                    <Text style={{ color: '#e2e8f0', fontWeight: '700', fontSize: 14, textAlign: 'center' }}>
+                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '700', fontSize: 14, textAlign: 'center' }}>
                       Araca binmeye hazırsanız biniş kodunu tarayın
                     </Text>
-                    <Text style={{ color: '#94a3b8', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+                    <Text style={{ color: 'rgba(186,201,222,0.78)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
                       İstemiyorsanız bu bildirimi kapatabilirsiniz; araçtan uzaklaşınca tekrar hatırlatılır.
                     </Text>
                     <View style={{ flexDirection: 'row', marginTop: 12 }}>
                       <TouchableOpacity
                         style={{
                           flex: 1,
-                          backgroundColor: '#334155',
+                          backgroundColor: 'rgba(8,17,31,0.72)',
                           paddingVertical: 10,
                           borderRadius: 8,
                           alignItems: 'center',
@@ -11415,12 +11442,12 @@ function PassengerDashboard({
                           setPassengerBoardingReminderBannerVisible(false);
                         }}
                       >
-                        <Text style={{ color: '#f1f5f9', fontWeight: '700' }}>Kapat</Text>
+                        <Text style={{ color: 'rgba(186,201,222,0.94)', fontWeight: '700' }}>Kapat</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={{
                           flex: 1,
-                          backgroundColor: '#2563eb',
+                          backgroundColor: 'rgba(34,211,238,0.16)',
                           paddingVertical: 10,
                           borderRadius: 8,
                           alignItems: 'center',
@@ -11431,7 +11458,7 @@ function PassengerDashboard({
                           setPassengerBoardingScanVisible(true);
                         }}
                       >
-                        <Text style={{ color: '#fff', fontWeight: '800' }}>Kodu tara</Text>
+                        <Text style={{ color: 'rgba(243,248,255,0.96)', fontWeight: '800' }}>Kodu tara</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -12057,6 +12084,13 @@ function PassengerDashboard({
             ) : null}
         </View>
       ) : (
+      <View
+        style={[
+          styles.passengerHomeLayer,
+          showDestinationPicker ? styles.passengerHomeLayerBehindPickerOpen : undefined,
+        ]}
+        pointerEvents={showDestinationPicker ? 'none' : 'auto'}
+      >
       <ScrollView 
         style={styles.contentFullScreen}
         contentContainerStyle={styles.passengerHomeScrollContent}
@@ -12067,15 +12101,19 @@ function PassengerDashboard({
             {/* Geri ve Çıkış Butonları */}
             <View style={styles.fullScreenTopBar}>
               <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={styles.fullScreenBackBtn}>
-                <Ionicons name="chevron-back" size={26} color="#3FA9F5" />
+                <Ionicons name="chevron-back" size={26} color="#22D3EE" />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => { playTapSound(); logout(); }} style={styles.fullScreenLogoutBtn}>
-                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+                <Ionicons name="log-out-outline" size={24} color="#F87171" />
               </TouchableOpacity>
             </View>
             
-            {/* Nereye Gitmek İstiyorsunuz - EN ÜSTTE, leyleklerin üstünde */}
-            <Text style={styles.welcomeQuestionVeryTop}>Nereye Gitmek İstiyorsunuz?</Text>
+            <View style={styles.passengerDestHeroCard}>
+              <Text style={styles.welcomeQuestionVeryTop}>Nereye gitmek istiyorsunuz?</Text>
+              <Text style={styles.passengerDestGuideCaption}>
+                Gitmek istediğiniz hedefi seçin.
+              </Text>
+            </View>
             
             {/* Kişi Adı - Leyleklerin arasında */}
             <Text style={styles.welcomeNameBetweenStorks}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
@@ -12091,7 +12129,7 @@ function PassengerDashboard({
               activeOpacity={0.7}
             >
               <View style={styles.destinationIconBig}>
-                <Ionicons name="navigate" size={32} color="#FFF" />
+                <Ionicons name="navigate" size={30} color="#22D3EE" />
               </View>
               <Text
                 style={styles.destinationTextBig}
@@ -12101,7 +12139,7 @@ function PassengerDashboard({
                 {destination ? destination.address : 'Hedef Seçin'}
               </Text>
               <View style={styles.destinationArrowBig}>
-                <Ionicons name="arrow-forward" size={24} color="#FFF" />
+                <Ionicons name="arrow-forward" size={22} color="#22D3EE" />
               </View>
             </TouchableOpacity>
 
@@ -12163,7 +12201,11 @@ function PassengerDashboard({
                             <MaterialCommunityIcons
                               name="car-side"
                               size={22}
-                              color={rideVehiclePreference === 'car' ? '#FFF' : '#1D4ED8'}
+                              color={
+                                rideVehiclePreference === 'car'
+                                  ? '#F8FAFF'
+                                  : 'rgba(186,201,222,0.78)'
+                              }
                             />
                             <Text
                               style={[
@@ -12190,7 +12232,11 @@ function PassengerDashboard({
                             <MaterialCommunityIcons
                               name="motorbike"
                               size={22}
-                              color={rideVehiclePreference === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                              color={
+                                rideVehiclePreference === 'motorcycle'
+                                  ? '#F8FAFF'
+                                  : 'rgba(186,201,222,0.78)'
+                              }
                             />
                             <Text
                               style={[
@@ -12281,14 +12327,14 @@ function PassengerDashboard({
                         </View>
 
                         <View style={styles.priceModalPayScrollHint}>
-                          <Ionicons name="chevron-down" size={16} color="#64748B" />
+                          <Ionicons name="chevron-down" size={16} color="rgba(186,201,222,0.72)" />
                           <Text style={styles.priceModalPayScrollHintText}>
                             Ödeme yöntemini görmek için aşağı kaydırın
                           </Text>
                         </View>
 
                         <View style={styles.priceModalPayLockHeader}>
-                          <Ionicons name="lock-closed-outline" size={18} color="#334155" />
+                          <Ionicons name="lock-closed-outline" size={18} color="rgba(34,211,238,0.85)" />
                           <Text style={styles.priceModalPayLockTitle}>Ödeme yöntemi</Text>
                         </View>
                         <Text style={styles.priceModalPaySubtitle}>
@@ -12304,7 +12350,7 @@ function PassengerDashboard({
                           activeOpacity={0.88}
                         >
                           <View style={styles.priceModalPayOptionLeft}>
-                            <Ionicons name="wallet-outline" size={22} color="#2563EB" />
+                            <Ionicons name="wallet-outline" size={22} color={PREMIUM_AUTH_CYAN} />
                           </View>
                           <View style={styles.priceModalPayOptionBody}>
                             <View style={styles.priceModalPayOptionTitleRow}>
@@ -12327,7 +12373,7 @@ function PassengerDashboard({
                           accessibilityState={{ disabled: true }}
                         >
                           <View style={styles.priceModalPayOptionLeft}>
-                            <Ionicons name="card-outline" size={22} color="#94A3B8" />
+                            <Ionicons name="card-outline" size={22} color="rgba(186,201,222,0.55)" />
                           </View>
                           <View style={styles.priceModalPayOptionBody}>
                             <View style={styles.priceModalPayOptionTitleRow}>
@@ -12346,7 +12392,7 @@ function PassengerDashboard({
                         </View>
 
                         <View style={styles.priceModalPayDefaultNote}>
-                          <Ionicons name="information-circle-outline" size={17} color="#64748B" />
+                          <Ionicons name="information-circle-outline" size={17} color="rgba(186,201,222,0.72)" />
                           <Text style={styles.priceModalPayDefaultNoteText}>
                             Herhangi bir seçim yapmazsanız varsayılan olarak Nakit seçeneği kullanılacaktır.
                           </Text>
@@ -12381,8 +12427,8 @@ function PassengerDashboard({
                               <LinearGradient
                                 colors={
                                   offerSendSubmitting
-                                    ? ['#94A3B8', '#64748B']
-                                    : ['#22D3EE', '#0EA5E9', '#2563EB', '#7C3AED']
+                                    ? ['rgba(22,36,54,0.96)', 'rgba(13,21,38,0.98)', PREMIUM_NAVY_DEEP]
+                                    : ['#22D3EE', '#0EA5E9', '#2563EB', '#4338CA']
                                 }
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
@@ -12430,7 +12476,7 @@ function PassengerDashboard({
                   <Ionicons
                     name="warning"
                     size={40}
-                    color="#CA8A04"
+                    color="rgba(251, 191, 36, 0.92)"
                     style={{ alignSelf: 'center', marginBottom: 10 }}
                   />
                   <Text style={styles.priceOfferPaymentWarnTitle}>Ödeme yöntemi seçilmedi</Text>
@@ -12448,7 +12494,14 @@ function PassengerDashboard({
                       void submitPassengerPriceOfferCore();
                     }}
                   >
-                    <Text style={styles.priceOfferPaymentWarnPrimaryText}>Tamam, devam et</Text>
+                    <LinearGradient
+                      colors={['#22D3EE', '#0EA5E9', '#2563EB']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.priceOfferPaymentWarnPrimaryGradient}
+                    >
+                      <Text style={styles.priceOfferPaymentWarnPrimaryText}>Tamam, devam et</Text>
+                    </LinearGradient>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.priceOfferPaymentWarnSecondary}
@@ -12467,6 +12520,7 @@ function PassengerDashboard({
           </View>
         ) : null}
       </ScrollView>
+      </View>
       )}
 
       {/* Hedef Seçme — Google haritası + üstte arama paneli (akış: handleDestinationSelect aynı) */}
@@ -12544,7 +12598,7 @@ function PassengerDashboard({
           ) : null}
           {(!DestinationPickerMapView || !isNativeGoogleMapsSupported()) ? (
             <LinearGradient
-              colors={['#0c4a6e', '#075985', '#0369a1', '#0284c7']}
+              colors={['#08111F', '#0B1220', '#101A2B', '#0F172A']}
               start={{ x: 0.2, y: 0 }}
               end={{ x: 0.9, y: 1 }}
               style={StyleSheet.absoluteFillObject}
@@ -12554,15 +12608,15 @@ function PassengerDashboard({
           {destinationPickerPhase === 'search' ? (
             <LinearGradient
               pointerEvents="none"
-              colors={['rgba(6, 32, 58, 0.82)', 'rgba(6, 32, 58, 0.38)', 'transparent']}
-              locations={[0, 0.38, 1]}
+              colors={['rgba(8, 17, 31, 0.38)', 'rgba(8, 17, 31, 0.12)', 'transparent']}
+              locations={[0, 0.32, 1]}
               style={styles.destinationModalTopFade}
             />
           ) : (
             <LinearGradient
               pointerEvents="none"
-              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.12)', 'transparent']}
-              locations={[0, 0.25, 1]}
+              colors={['rgba(8, 17, 31, 0.22)', 'rgba(8, 17, 31, 0.06)', 'transparent']}
+              locations={[0, 0.22, 1]}
               style={styles.destinationModalTopFadeLight}
             />
           )}
@@ -12580,7 +12634,7 @@ function PassengerDashboard({
                   onPress={closeDestinationPickerModal}
                   style={styles.destinationModalBackBtn}
                 >
-                  <Ionicons name="arrow-back" size={24} color="#FFF" />
+                  <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
                 </TouchableOpacity>
                 <View style={styles.destinationModalHeaderCenter}>
                   {destinationPickerPhase === 'map' ? (
@@ -12627,7 +12681,7 @@ function PassengerDashboard({
                     <View style={styles.destinationSearchShellModern}>
                       <PlacesAutocomplete
                         key={destinationPickerAutocompleteMountKey}
-                        placeholder="Mahalle, sokak, mekan ara…"
+                        placeholder="Mahalle, sokak veya mekan ara"
                         city={passengerAddressSearchCityScope}
                         hidePopularChips
                         visualVariant="tech"
@@ -12643,6 +12697,11 @@ function PassengerDashboard({
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
                       />
                     </View>
+                    {isNativeGoogleMapsSupported() ? (
+                      <Text style={styles.destinationSearchFlowHint}>
+                        Hedefinizi yazın, ardından haritada konumu doğrulayın.
+                      </Text>
+                    ) : null}
                   </View>
                 </KeyboardAvoidingView>
               ) : null}
@@ -12656,13 +12715,22 @@ function PassengerDashboard({
               style={[styles.destinationMapConfirmWrap, { paddingBottom: Math.max(insets.bottom, 14) + 8 }]}
               pointerEvents="box-none"
             >
-              <Text style={styles.destinationMapHintMinimal}>Haritayı sürükleyerek konumu ayarlayın</Text>
+              <Text style={styles.destinationMapHintMinimal}>
+                Haritayı hedefin üzerine getirin ve konumu onaylayın.
+              </Text>
               <TouchableOpacity
-                style={styles.destinationMapConfirmBtn}
+                style={styles.destinationMapConfirmBtnWrap}
                 activeOpacity={0.88}
                 onPress={() => void confirmDestinationPickerCenter()}
               >
-                <Text style={styles.destinationMapConfirmBtnText}>Tam burası</Text>
+                <LinearGradient
+                  colors={['#22D3EE', '#0EA5E9', '#2563EB']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.destinationMapConfirmBtnGrad}
+                >
+                  <Text style={styles.destinationMapConfirmBtnText}>Tam burası</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -16222,68 +16290,36 @@ function DriverDashboard({
   if (!driverInActiveTrip) {
     return (
       <>
-        <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-          <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
-            <View style={{ paddingHorizontal: 12, paddingTop: 2, paddingBottom: 4 }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 6,
-                  paddingHorizontal: 8,
-                  borderRadius: 14,
-                  backgroundColor: 'rgba(15, 23, 42, 0.88)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(56, 189, 248, 0.28)',
-                }}
-              >
+        <View style={dws.waitingRoot}>
+          <SafeAreaView edges={['top']} style={dws.cockpitSafe}>
+            <View style={dws.cockpitHeaderPad}>
+              <View style={dws.cockpitHeaderBar}>
                 <TouchableOpacity
-                  style={{
-                    minWidth: 44,
-                    minHeight: 40,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
+                  style={dws.cockpitHeaderBtn}
                   onPress={() => onDriverOfferGoToRoleSelect?.()}
                   activeOpacity={0.88}
                   accessibilityRole="button"
                   accessibilityLabel="Rol seçimine dön"
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
-                  <Ionicons name="chevron-back" size={24} color="#BAE6FD" />
+                  <Ionicons name="chevron-back" size={24} color={PREMIUM_AUTH_CYAN} />
                 </TouchableOpacity>
-                <Text
-                  style={{
-                    flex: 1,
-                    flexShrink: 1,
-                    textAlign: 'center',
-                    fontSize: 13,
-                    fontWeight: '700',
-                    color: '#E0F2FE',
-                    letterSpacing: 0.2,
-                  }}
-                  numberOfLines={1}
-                >
+                <Text style={dws.cockpitHeaderTitle} numberOfLines={1}>
                   Sürücü paneli
                 </Text>
                 <TouchableOpacity
-                  style={{
-                    minWidth: 44,
-                    minHeight: 40,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
+                  style={dws.cockpitHeaderBtn}
                   onPress={() => onDriverOfferOpenProfile?.()}
                   activeOpacity={0.88}
                   accessibilityRole="button"
                   accessibilityLabel="Profil"
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
-                  <Ionicons name="person-circle-outline" size={26} color="#BAE6FD" />
+                  <Ionicons name="person-circle-outline" size={26} color={PREMIUM_AUTH_CYAN} />
                 </TouchableOpacity>
               </View>
             </View>
-            <View style={{ paddingHorizontal: 4, paddingTop: 4, paddingBottom: 6 }}>
+            <View style={dws.cockpitPanelPad}>
               <DriverDashboardPanel
                 userId={user.id}
                 onPackagePress={() => setShowDriverPackagesModal(true)}
@@ -16490,7 +16526,7 @@ function DriverDashboard({
                 setDriverFirstChatTapBanner(null);
               }}
               style={{
-                backgroundColor: '#B91C1C',
+                backgroundColor: 'rgba(42, 24, 28, 0.82)',
                 marginHorizontal: 12,
                 marginTop: 8,
                 marginBottom: 6,
@@ -16498,16 +16534,16 @@ function DriverDashboard({
                 paddingHorizontal: 14,
                 borderRadius: 10,
                 borderWidth: 1,
-                borderColor: '#FCA5A5',
+                borderColor: 'rgba(248,113,113,0.38)',
               }}
             >
-              <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+              <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
                 {driverFirstChatTapBanner.title}
               </Text>
-              <Text style={{ color: '#FEE2E2', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
+              <Text style={{ color: 'rgba(186,201,222,0.88)', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
                 {driverFirstChatTapBanner.subtitle}
               </Text>
-              <Text style={{ color: '#FECACA', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+              <Text style={{ color: 'rgba(186,201,222,0.72)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
                 Mesajı görmek için tıklayın
               </Text>
             </TouchableOpacity>
@@ -17677,7 +17713,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
-  /** Giriş/OTP: kısa ekranda içerik taşarsa dikey kaydırma; padding runtime’da loginLayout ile */
+  /** Premium auth shell (Login / OTP): kısa ekranda dikey kaydırma; iç padding runtime’dadır */
   loginAuthScroll: {
     flex: 1,
     width: '100%',
@@ -17977,79 +18013,110 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 16,
   },
-  // Yeni Yolcu Sayfa Stilleri
+  // Yeni Yolcu Sayfa Stilleri — premium cockpit (arka plan görseli korunur)
+  passengerDestHeroCard: {
+    alignSelf: 'stretch',
+    marginHorizontal: 12,
+    marginTop: 2,
+    marginBottom: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(16, 26, 43, 0.52)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#020617',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.28,
+        shadowRadius: 20,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
+  },
   welcomeQuestionVeryTop: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
+    fontSize: 22,
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.96)',
     textAlign: 'center',
-    marginTop: 5,
-    marginBottom: 80,
-    textShadowColor: 'rgba(255, 255, 255, 0.9)',
+    letterSpacing: 0.2,
+    textShadowColor: 'rgba(2, 6, 23, 0.55)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 6,
+  },
+  passengerDestGuideCaption: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(186, 201, 222, 0.92)',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 4,
   },
   welcomeNameBetweenStorks: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1B1B1E',
+    fontSize: 28,
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.98)',
     textAlign: 'center',
-    marginBottom: 30,
-    textShadowColor: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 12,
+    marginTop: 4,
+    textShadowColor: 'rgba(2, 6, 23, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 8,
   },
   destinationBoxBig: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.98)',
-    borderRadius: 30,
-    padding: 18,
-    marginVertical: 20,
-    marginHorizontal: 10,
-    borderWidth: 3,
-    borderColor: '#3FA9F5',
-    shadowColor: '#3FA9F5',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
+    backgroundColor: 'rgba(16, 26, 43, 0.78)',
+    borderRadius: 22,
+    padding: 14,
+    marginVertical: 12,
+    marginHorizontal: 8,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    shadowColor: 'rgba(34, 211, 238, 0.22)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
     shadowRadius: 16,
-    elevation: 12,
-    gap: 15,
+    elevation: 10,
+    gap: 12,
     maxWidth: '100%',
     overflow: 'hidden',
   },
   destinationIconBig: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#3FA9F5',
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: 'rgba(34, 211, 238, 0.18)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   destinationTextBig: {
     flex: 1,
     minWidth: 0,
-    fontSize: 18,
-    color: '#1B1B1E',
+    fontSize: 16,
+    color: 'rgba(243, 248, 255, 0.95)',
     fontWeight: '700',
+    letterSpacing: 0.15,
   },
   destinationArrowBig: {
-    width: 45,
-    height: 45,
-    borderRadius: 22,
-    backgroundColor: '#3FA9F5',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(34, 211, 238, 0.22)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.4)',
+    shadowColor: 'rgba(34, 211, 238, 0.25)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 6,
   },
   welcomeQuestionTop: {
     fontSize: 28,
@@ -18107,19 +18174,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // 🆕 MARTI TAG - Fiyat Modal Stilleri
+  // 🆕 MARTI TAG — Fiyat / ödeme sheet (premium glass; logic değişmez)
   priceModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(2, 6, 23, 0.55)',
     justifyContent: 'flex-end',
   },
   priceModalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: 'rgba(16, 26, 43, 0.94)',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_BORDER_SLATE,
+    borderBottomWidth: 0,
+    borderTopColor: 'rgba(34, 211, 238, 0.18)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#010818',
+        shadowOffset: { width: 0, height: -10 },
+        shadowOpacity: 0.45,
+        shadowRadius: 24,
+      },
+      android: { elevation: 16 },
+      default: {},
+    }),
   },
   priceModalScrollInner: {
     paddingBottom: 8,
@@ -18127,20 +18208,20 @@ const styles = StyleSheet.create({
   priceModalFooter: {
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: 'rgba(30, 58, 95, 0.55)',
   },
   priceModalTitle: {
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: 12,
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.94)',
     letterSpacing: -0.3,
   },
   priceModalVehicleSectionTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.92)',
     marginBottom: 4,
   },
   priceModalVehicleChipsRow: {
@@ -18157,36 +18238,48 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 12,
     borderRadius: 14,
-    backgroundColor: '#E2E8F0',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    backgroundColor: 'rgba(8,17,31,0.72)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_BORDER_SLATE,
   },
   priceModalVehicleChipCarActive: {
-    backgroundColor: '#3FA9F5',
-    borderColor: '#0EA5E9',
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderColor: PREMIUM_AUTH_CYAN,
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
   },
   priceModalVehicleChipMotorActive: {
-    backgroundColor: '#16A34A',
-    borderColor: '#15803D',
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderColor: PREMIUM_AUTH_CYAN,
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
   },
   priceModalVehicleChipText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#475569',
+    color: 'rgba(186,201,222,0.82)',
   },
   priceModalVehicleChipTextActive: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.96)',
   },
   priceModalVehicleHint: {
     fontSize: 13,
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.82)',
     marginBottom: 10,
     lineHeight: 18,
   },
   priceModalTripCompact: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#334155',
+    color: 'rgba(186,201,222,0.88)',
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -18202,7 +18295,7 @@ const styles = StyleSheet.create({
   priceModalPayScrollHintText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.78)',
     flexShrink: 1,
     textAlign: 'center',
   },
@@ -18215,12 +18308,12 @@ const styles = StyleSheet.create({
   priceModalPayLockTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.94)',
   },
   priceModalPaySubtitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.82)',
     marginBottom: 12,
     marginLeft: 26,
     lineHeight: 17,
@@ -18231,17 +18324,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 14,
-    borderWidth: 2,
+    borderWidth: StyleSheet.hairlineWidth + 1,
     marginBottom: 10,
+    backgroundColor: 'rgba(8,17,31,0.45)',
   },
   priceModalPayOptionCardCash: {
-    borderColor: '#2563EB',
-    backgroundColor: 'rgba(37, 99, 235, 0.07)',
+    borderColor: 'rgba(34,211,238,0.42)',
+    backgroundColor: 'rgba(16,26,43,0.88)',
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
   },
   priceModalPayOptionCardDisabled: {
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    opacity: 0.92,
+    borderColor: 'rgba(30,58,95,0.75)',
+    backgroundColor: 'rgba(8,14,26,0.88)',
+    opacity: 1,
   },
   priceModalPayOptionLeft: {
     marginRight: 10,
@@ -18261,39 +18356,45 @@ const styles = StyleSheet.create({
   priceModalPayOptionTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.94)',
   },
   priceModalPayOptionTitleMuted: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.78)',
   },
   priceModalPayBadgeRecommended: {
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.28)',
   },
   priceModalPayBadgeRecommendedText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#1D4ED8',
+    color: PREMIUM_AUTH_CYAN,
+    letterSpacing: 0.2,
   },
   priceModalPayBadgeSoon: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(22,36,56,0.75)',
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.22)',
   },
   priceModalPayBadgeSoonText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(186,201,222,0.88)',
+    letterSpacing: 0.25,
   },
   priceModalPayOptionDesc: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.82)',
     lineHeight: 17,
   },
   priceModalPayRadioOuterActive: {
@@ -18301,30 +18402,30 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: '#2563EB',
+    borderColor: PREMIUM_AUTH_CYAN,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
     marginLeft: 6,
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(8,17,31,0.9)',
   },
   priceModalPayRadioInnerActive: {
     width: 11,
     height: 11,
     borderRadius: 6,
-    backgroundColor: '#2563EB',
+    backgroundColor: PREMIUM_AUTH_CYAN,
   },
   priceModalPayRadioOuterMuted: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
     marginLeft: 6,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(16,26,43,0.55)',
   },
   priceModalPayRadioInnerMuted: {
     width: 11,
@@ -18344,12 +18445,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.78)',
     lineHeight: 17,
   },
   priceOfferPaymentWarnOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 22,
@@ -18357,56 +18458,71 @@ const styles = StyleSheet.create({
   priceOfferPaymentWarnCard: {
     width: '100%',
     maxWidth: 340,
-    backgroundColor: '#FFF',
-    borderRadius: 18,
+    backgroundColor: 'rgba(16, 26, 43, 0.96)',
+    borderRadius: 20,
     paddingVertical: 22,
     paddingHorizontal: 20,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 12,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_BORDER_SLATE,
+    borderTopColor: 'rgba(34,211,238,0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.38,
+    shadowRadius: 24,
+    elevation: 14,
     zIndex: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#030712',
+      },
+      default: {},
+    }),
   },
   priceOfferPaymentWarnTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.96)',
     textAlign: 'center',
     marginBottom: 10,
   },
   priceOfferPaymentWarnBody: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(186,201,222,0.88)',
     textAlign: 'center',
     lineHeight: 21,
     marginBottom: 18,
   },
   priceOfferPaymentWarnPrimary: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
+    borderRadius: 14,
+    overflow: 'hidden',
     marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.35)',
+  },
+  priceOfferPaymentWarnPrimaryGradient: {
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   priceOfferPaymentWarnPrimaryText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#08111F',
   },
   priceOfferPaymentWarnSecondary: {
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 14,
+    paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#F8FAFC',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_BORDER_SLATE,
+    backgroundColor: 'rgba(8,17,31,0.55)',
   },
   priceOfferPaymentWarnSecondaryText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#475569',
+    color: 'rgba(243,248,255,0.88)',
   },
   priceModalSendWrapDisabled: {
     opacity: 0.72,
@@ -18428,30 +18544,36 @@ const styles = StyleSheet.create({
     color: '#1B1B1E',
   },
   peakHourBadge: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: 'rgba(127, 29, 29, 0.35)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
     alignSelf: 'center',
     marginVertical: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(251, 146, 60, 0.42)',
   },
   peakHourText: {
-    color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 14,
+    color: 'rgba(254, 243, 199, 0.96)',
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 0.15,
   },
   priceRangeContainer: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
     marginVertical: 10,
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30,58,95,0.75)',
+    borderTopColor: 'rgba(34,211,238,0.12)',
   },
   priceRangeSingle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#334155',
+    color: 'rgba(243,248,255,0.9)',
     textAlign: 'center',
   },
   selectedPriceContainer: {
@@ -18460,12 +18582,16 @@ const styles = StyleSheet.create({
   },
   selectedPriceLabel: {
     fontSize: 14,
-    color: '#666',
+    fontWeight: '600',
+    color: 'rgba(186,201,222,0.82)',
   },
   selectedPriceValue: {
     fontWeight: '800',
-    color: '#0EA5E9',
+    color: PREMIUM_AUTH_CYAN,
     letterSpacing: -1,
+    textShadowColor: 'rgba(34,211,238,0.25)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
   sliderContainer: {
     flexDirection: 'row',
@@ -18473,30 +18599,40 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   sliderButton: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#0EA5E9',
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.45)',
+    borderTopColor: 'rgba(56,189,248,0.55)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 8,
   },
   sliderButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '800',
+    color: 'rgba(243,248,255,0.96)',
   },
   sliderTrack: {
     flex: 1,
-    height: 8,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 4,
-    marginHorizontal: 16,
+    height: 9,
+    backgroundColor: 'rgba(30,58,95,0.55)',
+    borderRadius: 5,
+    marginHorizontal: 14,
     overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(8,17,31,0.6)',
   },
   sliderFill: {
     height: '100%',
-    backgroundColor: '#0EA5E9',
-    borderRadius: 4,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    borderRadius: 5,
   },
   priceModalButtons: {
     flexDirection: 'row',
@@ -18506,15 +18642,17 @@ const styles = StyleSheet.create({
   },
   priceModalCancelButton: {
     flex: 1,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: 'rgba(8,17,31,0.35)',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_BORDER_SLATE,
   },
   priceModalCancelText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
+    fontWeight: '700',
+    color: 'rgba(243,248,255,0.82)',
   },
   priceModalSendWrap: {
     flex: 2,
@@ -18527,11 +18665,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 16,
     gap: 10,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 14,
-    elevation: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.48,
+    shadowRadius: 20,
+    elevation: 14,
   },
   priceModalSendTextLarge: {
     fontSize: 18,
@@ -18745,14 +18885,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 16,
-    shadowColor: '#3FA9F5',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
   },
   toastText: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 10,
@@ -19872,7 +20012,7 @@ const styles = StyleSheet.create({
   callButtonContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 60,
+    marginVertical: Platform.OS === 'android' ? 36 : 44,
   },
   gradientButton: {
     width: 200,
@@ -19880,18 +20020,20 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 95, 0.65)',
+    shadowColor: 'rgba(34, 211, 238, 0.35)',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 14,
   },
   callButtonText: {
-    color: '#FFF',
-    fontSize: 22,
-    fontWeight: 'bold',
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '800',
     marginTop: 10,
-    letterSpacing: 2,
+    letterSpacing: 1.5,
     textAlign: 'center',
   },
   pulseRing: {
@@ -19899,9 +20041,9 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    borderWidth: 3,
-    borderColor: COLORS.primary,
-    opacity: 0.3,
+    borderWidth: 2,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+    opacity: 0.35,
   },
   emptyStateContainer: {
     flex: 1,
@@ -19917,13 +20059,21 @@ const styles = StyleSheet.create({
   },
   passengerHomeScrollContent: {
     flexGrow: 1,
-    paddingBottom: 28,
+    paddingBottom: 32,
+    paddingHorizontal: 10,
   },
   emptyStateContainerFull: {
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 10,
     minHeight: 0,
+  },
+  /** Yolcu ana (ara) içerik — hedef modal açıkken görünmez; kapatınca etkileşimli */
+  passengerHomeLayer: {
+    flex: 1,
+  },
+  passengerHomeLayerBehindPickerOpen: {
+    opacity: 0,
   },
   fullScreenTopBar: {
     flexDirection: 'row',
@@ -19935,17 +20085,21 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(63, 169, 245, 0.1)',
+    backgroundColor: 'rgba(16, 26, 43, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
   },
   fullScreenLogoutBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'rgba(16, 26, 43, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.28)',
   },
   welcomeNameBig: {
     fontSize: 28,
@@ -21106,17 +21260,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   arrowHintSky: {
-    backgroundColor: '#87CEEB',
+    backgroundColor: 'rgba(16, 26, 43, 0.82)',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 16,
+    marginTop: 8,
     alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   arrowTextSky: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
+    color: 'rgba(224, 242, 254, 0.95)',
+    fontSize: 13,
+    fontWeight: '700',
   },
   webMapPlaceholder: {
     width: '100%',
@@ -21257,6 +21413,7 @@ const styles = StyleSheet.create({
     resizeMode: 'stretch',
     width: '100%',
     height: '100%',
+    opacity: 0.805,
   },
   roleSelectionSafe: {
     flex: 1,
@@ -21295,36 +21452,302 @@ const styles = StyleSheet.create({
   roleDeckSlot: {
     width: '100%',
   },
+  /** Tek kokpit camı — adım + kartlar / araç aynı yüzeyde */
+  roleUnifiedCockpitShell: {
+    width: '100%',
+    borderRadius: 26,
+    paddingTop: 11,
+    paddingBottom: 13,
+    paddingHorizontal: 11,
+    backgroundColor: 'rgba(5,11,24,0.44)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(26,48,78,0.55)',
+    borderTopColor: 'rgba(34,211,238,0.12)',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: 0.42,
+        shadowRadius: 26,
+      },
+      android: { elevation: 11 },
+      default: {},
+    }),
+  },
+  roleUnifiedCockpitShellVery: {
+    borderRadius: 22,
+    paddingTop: 9,
+    paddingBottom: 11,
+    paddingHorizontal: 9,
+  },
   roleDeckVehicleStack: {
     width: '100%',
   },
-  roleDeckVehicleHeader: {
+  /** Araç / Motor — segmented rail */
+  roleVehicleSegmentRail: {
+    width: '100%',
+    position: 'relative',
+    flexDirection: 'column',
+    padding: 6,
+    borderRadius: 22,
+    backgroundColor: 'rgba(3,8,18,0.92)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(24,44,70,0.65)',
+    borderTopColor: 'rgba(34,211,238,0.12)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.4,
+        shadowRadius: 16,
+      },
+      android: { elevation: 7 },
+      default: {},
+    }),
+  },
+  roleVehicleRailSpecular: {
+    position: 'absolute',
+    top: 12,
+    left: '13%',
+    right: '13%',
+    height: StyleSheet.hairlineWidth + 1.85,
+    borderRadius: 2,
+    opacity: 0.92,
+    zIndex: 1,
+  },
+  roleVehicleRailWell: {
+    flexDirection: 'row',
+    flex: 1,
+    marginTop: 4,
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(20,38,56,0.55)',
+    borderTopColor: 'rgba(34,211,238,0.09)',
+    zIndex: 0,
+    gap: 8,
+    alignItems: 'stretch',
+  },
+  roleVehicleRailWellVery: {
+    padding: 5,
+    borderRadius: 14,
+    marginTop: 3,
+    gap: 6,
+  },
+  roleVehicleSegmentRailVery: {
+    padding: 5,
+    borderRadius: 19,
+  },
+  roleStatusStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    paddingHorizontal: 2,
-    gap: 8,
+    gap: 12,
+    width: '100%',
+    marginBottom: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: 'rgba(6,12,24,0.52)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(32,54,82,0.48)',
+    borderTopColor: 'rgba(34,211,238,0.15)',
+    borderLeftColor: 'rgba(34,211,238,0.08)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.32,
+        shadowRadius: 18,
+      },
+      android: { elevation: 7 },
+      default: {},
+    }),
   },
-  roleDeckVehicleHeaderVery: {
-    marginBottom: 6,
+  roleStatusStripVery: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    marginBottom: 11,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    gap: 10,
   },
-  roleDeckVehicleTitle: {
+  roleStatusCompactTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    width: '100%',
+    minHeight: 0,
+  },
+  roleStatusBadgeOrb: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(5,13,26,0.9)',
+    borderWidth: StyleSheet.hairlineWidth + 1.5,
+    borderColor: 'rgba(34,211,238,0.3)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.32,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+  roleStatusBadgeOrbVery: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+  },
+  roleStatusBadgeOrbCompact: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+  },
+  roleStatusTextCol: {
     flex: 1,
     minWidth: 0,
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#334155',
-    letterSpacing: -0.2,
+    justifyContent: 'center',
   },
-  roleDeckVehicleTitleVery: {
+  roleStatusEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(94,174,206,0.68)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.52,
+    marginBottom: 2,
+  },
+  roleStatusEyebrowVery: {
+    fontSize: 9,
+    letterSpacing: 0.45,
+    marginBottom: 1,
+  },
+  roleStatusPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    minWidth: 0,
+    paddingVertical: Platform.OS === 'android' ? 6 : 7,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10,18,34,0.88)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.88)',
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    borderTopWidth: StyleSheet.hairlineWidth + 0.85,
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.28,
+        shadowRadius: 8,
+      },
+      default: {},
+    }),
+  },
+  roleStatusPillVery: {
+    flex: undefined,
+    width: '100%',
+    gap: 7,
+    paddingVertical: Platform.OS === 'android' ? 5 : 6,
+    paddingHorizontal: 10,
+  },
+  roleStatusTitle: {
+    alignSelf: 'stretch',
+    fontSize: 18,
+    fontWeight: '900',
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: -0.34,
+    lineHeight: 23,
+  },
+  roleStatusTitleVery: {
+    fontSize: 15,
+    letterSpacing: -0.26,
+    lineHeight: 20,
+  },
+  roleStatusTitleCompact: {
+    fontSize: 16,
+    lineHeight: 21,
+    letterSpacing: -0.3,
+  },
+  roleChangeRolePillSecondary: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: Platform.OS === 'android' ? 6 : 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(4,11,22,0.78)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(36,62,94,0.52)',
+    borderTopColor: 'rgba(148,206,226,0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.28,
+        shadowRadius: 6,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  roleChangeRolePillSecondaryVery: {
+    alignSelf: 'flex-end',
+    paddingVertical: Platform.OS === 'android' ? 5 : 6,
+    paddingHorizontal: 9,
+  },
+  roleChangeRolePillSecondaryCompact: {
+    paddingVertical: Platform.OS === 'android' ? 6 : 6,
+    paddingHorizontal: 10,
+  },
+  roleChangeRoleLabelSecondary: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(138,176,206,0.86)',
+    letterSpacing: -0.06,
+  },
+  roleChangeRolePill: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingVertical: Platform.OS === 'android' ? 7 : 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,16,28,0.72)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.88)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.32,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  roleChangeRolePillVery: {
+    alignSelf: 'flex-end',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  roleChangeRoleLabel: {
     fontSize: 12,
-  },
-  roleDeckChangeRole: {
-    fontSize: 13,
     fontWeight: '800',
-    color: '#0284C7',
-    letterSpacing: -0.15,
+    color: 'rgba(148,206,226,0.92)',
+    letterSpacing: -0.1,
+    textTransform: 'none',
   },
   roleVehicleChipDeck: {
     alignSelf: 'stretch',
@@ -21338,6 +21761,29 @@ const styles = StyleSheet.create({
     maxWidth: 440,
     width: '100%',
     alignSelf: 'center',
+  },
+  roleStepIndicatorGlass: {
+    width: '100%',
+    alignSelf: 'stretch',
+    borderRadius: 18,
+    paddingTop: 11,
+    paddingBottom: 12,
+    paddingHorizontal: 11,
+    backgroundColor: 'rgba(5,11,22,0.38)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(24,46,74,0.5)',
+    borderTopColor: 'rgba(34,211,238,0.14)',
+    borderBottomColor: 'rgba(0,0,0,0.2)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
   },
   roleStepIndicatorWrap: {
     width: '100%',
@@ -21365,59 +21811,82 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderWidth: 2,
-    borderColor: 'rgba(148, 163, 184, 0.85)',
+    backgroundColor: 'rgba(16, 26, 43, 0.75)',
+    borderWidth: StyleSheet.hairlineWidth + 1.25,
+    borderColor: 'rgba(30, 58, 95, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
   roleStepCircleActive: {
-    borderColor: '#0284C7',
-    backgroundColor: '#E0F2FE',
-    shadowColor: '#0369a1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
-    elevation: 8,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.22,
+        shadowRadius: 10,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
   },
   roleStepCircleActiveRole: {
-    borderColor: '#38BDF8',
-    backgroundColor: '#E0F2FE',
-    shadowColor: '#0EA5E9',
+    borderColor: 'rgba(34, 211, 238, 0.5)',
+    backgroundColor: 'rgba(34, 211, 238, 0.11)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.24,
+        shadowRadius: 12,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
   },
   roleStepCircleActiveVehicle: {
-    borderColor: '#F59E0B',
-    backgroundColor: '#FEF3C7',
-    shadowColor: '#F59E0B',
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    backgroundColor: 'rgba(34, 211, 238, 0.09)',
+    shadowColor: PREMIUM_AUTH_CYAN,
+    shadowOpacity: 0.16,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
   },
   roleStepCircleActiveContinue: {
-    borderColor: '#10B981',
-    backgroundColor: '#D1FAE5',
-    shadowColor: '#10B981',
+    borderColor: 'rgba(34, 211, 238, 0.36)',
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+    shadowColor: PREMIUM_AUTH_CYAN,
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 2,
   },
   roleStepCircleDone: {
-    borderColor: '#14B8A6',
-    backgroundColor: '#0F766E',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    backgroundColor: 'rgba(26,48,72,0.72)',
+    shadowOpacity: 0,
   },
   roleStepCircleMuted: {
-    opacity: 0.45,
+    opacity: 0.42,
   },
   roleStepCircleText: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#475569',
+    color: 'rgba(172, 188, 212, 0.88)',
   },
   roleStepCircleTextActive: {
-    color: '#0369A1',
+    color: 'rgba(243,248,255,0.94)',
   },
   roleStepCircleTextMuted: {
-    color: '#94A3B8',
+    color: 'rgba(120, 135, 160, 0.65)',
   },
   roleStepLabel: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#334155',
+    color: 'rgba(186, 201, 222, 0.88)',
     textAlign: 'center',
     lineHeight: 15,
     letterSpacing: -0.2,
@@ -21428,38 +21897,32 @@ const styles = StyleSheet.create({
     letterSpacing: -0.15,
   },
   roleStepLabelActive: {
-    color: '#075985',
+    color: 'rgba(243,248,255,0.94)',
     fontWeight: '900',
   },
   roleStepLabelActiveRole: {
-    color: '#0369A1',
-    textShadowColor: 'rgba(14, 165, 233, 0.22)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
+    color: PREMIUM_TEXT_SOFT,
+    textShadowRadius: 0,
   },
   roleStepLabelActiveVehicle: {
-    color: '#B45309',
-    textShadowColor: 'rgba(245, 158, 11, 0.24)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
+    color: PREMIUM_TEXT_SOFT,
+    textShadowRadius: 0,
   },
   roleStepLabelActiveContinue: {
-    color: '#047857',
-    textShadowColor: 'rgba(16, 185, 129, 0.22)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
+    color: PREMIUM_TEXT_SOFT,
+    textShadowRadius: 0,
   },
   roleStepLabelDone: {
-    color: '#0F766E',
+    color: 'rgba(148,201,226,0.82)',
   },
   roleStepLabelMuted: {
-    color: '#94A3B8',
+    color: 'rgba(130, 145, 170, 0.55)',
   },
   roleStepDash: {
-    width: 12,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: 'rgba(148, 163, 184, 0.45)',
+    width: 20,
+    height: 1,
+    borderRadius: 0.5,
+    backgroundColor: 'rgba(38,66,98,0.2)',
     alignSelf: 'center',
     marginTop: 15,
   },
@@ -21471,7 +21934,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(15, 23, 42, 0.72)',
+    color: 'rgba(172, 188, 212, 0.82)',
     textAlign: 'center',
     lineHeight: 18,
     letterSpacing: -0.1,
@@ -21660,15 +22123,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   roleSelectBannerInner: {
-    backgroundColor: '#B91C1C',
+    backgroundColor: 'rgba(42, 24, 28, 0.82)',
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: 'rgba(248,113,113,0.36)',
   },
   roleSelectBannerText: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     textAlign: 'center',
     fontWeight: '800',
     fontSize: 14,
@@ -21686,25 +22149,51 @@ const styles = StyleSheet.create({
   },
   roleTopTitleWrap: {
     flex: 1,
-    marginHorizontal: 8,
+    marginHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 0,
   },
-  roleTopTitlePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.82)',
-    borderRadius: 22,
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.95)',
+  roleCockpitFrame: {
+    width: '100%',
     maxWidth: '100%',
     alignSelf: 'center',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 22,
-    elevation: 8,
+    overflow: 'hidden',
+    padding: StyleSheet.hairlineWidth + 2,
+    backgroundColor: 'rgba(4,10,22,0.78)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(26,52,82,0.72)',
+    borderTopColor: 'rgba(34,211,238,0.11)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 16 },
+        shadowOpacity: 0.52,
+        shadowRadius: 30,
+      },
+      android: { elevation: 18 },
+      default: {},
+    }),
+  },
+  roleCockpitInner: {
+    overflow: 'hidden',
+    justifyContent: 'center',
+    backgroundColor: PREMIUM_ROLE_COCKPIT_FILL,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30,58,95,0.78)',
+    borderTopWidth: StyleSheet.hairlineWidth + 1.25,
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    borderBottomWidth: StyleSheet.hairlineWidth + 1,
+    borderBottomColor: 'rgba(0,0,0,0.32)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.38,
+        shadowRadius: 10,
+      },
+      default: {},
+    }),
   },
   roleExitBtn: {
     width: 46,
@@ -21712,19 +22201,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.9)',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.38,
+        shadowRadius: 12,
+      },
+      android: { elevation: 7 },
+      default: {},
+    }),
   },
   roleTopTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#0F172A',
+    color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
     lineHeight: 24,
     letterSpacing: -0.35,
@@ -21739,30 +22233,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     letterSpacing: -0.28,
   },
-  roleTopTitlePillCompact: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-  },
-  roleTopTitlePillVery: {
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: 18,
-  },
   roleAdminBtn: {
     width: 46,
     height: 46,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.9)',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.38,
+        shadowRadius: 12,
+      },
+      android: { elevation: 7 },
+      default: {},
+    }),
   },
   roleMainContent: {
     flex: 1,
@@ -21774,58 +22263,71 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumn: {
     paddingHorizontal: 20,
-    paddingTop: 0,
+    paddingTop: 2,
     paddingBottom: Platform.OS === 'ios' ? 22 : 18,
-    gap: 4,
+    gap: 6,
     alignItems: 'stretch',
   },
   roleCardsRow: {
     flexDirection: 'row',
     gap: 14,
-    marginBottom: 24,
+    marginBottom: 26,
+    marginTop: 2,
   },
   roleCardCompact: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.99)',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
     borderRadius: 24,
     paddingVertical: 22,
     paddingHorizontal: 8,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
     position: 'relative',
     overflow: 'visible',
-    shadowColor: '#0EA5E9',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    elevation: 9,
+    transform: [{ translateY: -2 }],
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.44,
+        shadowRadius: 20,
+      },
+      android: { elevation: 10 },
+      default: {},
+    }),
   },
   roleCardSelected: {
-    borderColor: '#38BDF8',
-    borderWidth: 3,
-    backgroundColor: 'rgba(224, 242, 254, 1)',
-    shadowColor: '#0EA5E9',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.38,
-    shadowRadius: 26,
-    elevation: 16,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+    borderWidth: 2,
+    backgroundColor: 'rgba(11,21,37,0.96)',
+    transform: [{ translateY: -2 }],
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
+      android: { elevation: 11 },
+      default: {},
+    }),
   },
   roleIconCircle: {
     width: 78,
     height: 78,
     borderRadius: 39,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: PREMIUM_GLASS_FILL,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(14, 165, 233, 0.2)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.72)',
   },
   roleIconCircleActive: {
-    backgroundColor: '#0EA5E9',
-    borderColor: 'rgba(255, 255, 255, 0.7)',
-    borderWidth: 3,
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderColor: 'rgba(34, 211, 238, 0.34)',
+    borderWidth: 2,
   },
   roleDriverIconsRow: {
     flexDirection: 'row',
@@ -21841,30 +22343,57 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 10,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.98)',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: 'rgba(13,23,39,0.88)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.72)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.36,
+        shadowRadius: 12,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
   },
   roleVehicleChipActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#1D4ED8',
+    backgroundColor: 'rgba(10,22,38,0.96)',
+    borderWidth: StyleSheet.hairlineWidth + 2,
+    borderColor: 'rgba(34,211,238,0.46)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.13,
+        shadowRadius: 16,
+      },
+      android: { elevation: 9 },
+      default: {},
+    }),
   },
   roleVehicleChipActiveMotor: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#6D28D9',
+    backgroundColor: 'rgba(10,22,38,0.96)',
+    borderWidth: StyleSheet.hairlineWidth + 2,
+    borderColor: 'rgba(34,211,238,0.42)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.11,
+        shadowRadius: 15,
+      },
+      android: { elevation: 9 },
+      default: {},
+    }),
   },
   roleVehicleChipText: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#334155',
+    color: 'rgba(160,178,206,0.82)',
   },
   roleVehicleChipTextActive: {
-    color: '#FFF',
+    color: PREMIUM_TEXT_SOFT,
   },
   /** Leylek Zeka — yüzen yuvarlak AI (ImageBackground üzerinde) */
   roleLzFab: {
@@ -21893,17 +22422,20 @@ const styles = StyleSheet.create({
   roleCardLabel: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#1e293b',
+    color: PREMIUM_TEXT_SOFT,
     marginBottom: 6,
     letterSpacing: -0.3,
   },
   roleCardLabelActive: {
-    color: '#0369a1',
+    color: PREMIUM_TEXT_SOFT,
+    textShadowColor: 'rgba(34,211,238,0.35)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
   roleCardDesc: {
     fontSize: 12,
     lineHeight: 17,
-    color: '#64748B',
+    color: 'rgba(172, 188, 212, 0.85)',
     textAlign: 'center',
     paddingHorizontal: 4,
     fontWeight: '500',
@@ -21919,16 +22451,21 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#0284C7',
+    backgroundColor: 'rgba(26, 42, 64, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#FFF',
-    shadowColor: '#0c4a6e',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 12,
+    borderWidth: 2,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
   },
   /** Rol ekranı — gradient dolgu + dış çerçeve (disabled aynı ifade) */
   roleContinueBtnOuter: {
@@ -21936,13 +22473,13 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     minHeight: 64,
     alignSelf: 'stretch',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 28,
-    elevation: 14,
-    borderWidth: 2,
-    borderColor: 'rgba(191, 219, 254, 0.8)',
+    shadowColor: PREMIUM_AUTH_CYAN,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.55)',
   },
   roleContinueBtnGradientFill: {
     ...StyleSheet.absoluteFillObject,
@@ -21957,12 +22494,12 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   roleContinueBtnDisabledFill: {
-    backgroundColor: '#94A3B8',
+    backgroundColor: 'rgba(30, 58, 95, 0.4)',
   },
   roleContinueTextLarge: {
     fontSize: 23,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: PREMIUM_TEXT_SOFT,
     letterSpacing: 0.4,
   },
   roleSeparatorCompact: {
@@ -21972,12 +22509,12 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   roleContinueBtnDisabled: {
-    borderColor: '#CBD5E1',
+    borderColor: 'rgba(30, 58, 95, 0.45)',
     shadowOpacity: 0,
     shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
     elevation: 0,
-    opacity: 0.92,
+    opacity: 0.88,
   },
   roleSeparator: {
     flexDirection: 'row',
@@ -21987,12 +22524,12 @@ const styles = StyleSheet.create({
   roleSeparatorLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(148, 163, 184, 0.35)',
+    backgroundColor: 'rgba(30, 58, 95, 0.55)',
   },
   roleSeparatorText: {
     paddingHorizontal: 16,
     fontSize: 12,
-    color: '#94A3B8',
+    color: 'rgba(172, 188, 212, 0.75)',
     fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
@@ -22001,20 +22538,26 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     overflow: 'hidden',
     alignSelf: 'stretch',
-    shadowColor: '#1e1b4b',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(129, 140, 248, 0.45)',
+    transform: [{ translateY: -1 }],
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 7 },
+        shadowOpacity: 0.38,
+        shadowRadius: 16,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.22)',
   },
   communityBtnOuterDisabled: {
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 4,
-    borderColor: 'rgba(148, 163, 184, 0.55)',
-    opacity: 0.88,
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+    opacity: 0.9,
   },
   communityBtnGradient: {
     paddingVertical: 10,
@@ -22025,24 +22568,29 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     right: 8,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.95)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    shadowColor: '#92400E',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.48,
-    shadowRadius: 8,
-    elevation: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(11,21,37,0.96)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.35)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
     zIndex: 2,
   },
   communityBadgeYeniText: {
     fontSize: 8,
     fontWeight: '900',
-    color: '#FFF',
-    letterSpacing: 0.45,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   communityBtnRow: {
     flexDirection: 'row',
@@ -22053,33 +22601,33 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(16,26,43,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(199, 210, 254, 0.35)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.6)',
   },
   communityBtnCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(30, 58, 95, 0.88)',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
     borderRadius: 16,
     paddingVertical: 13,
     paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(91, 192, 248, 0.55)',
-    shadowColor: '#0f172a',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.08,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 2,
     alignSelf: 'stretch',
   },
   communityLogoBox: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#1E3A5F',
+    backgroundColor: 'rgba(30, 58, 95, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -22098,30 +22646,26 @@ const styles = StyleSheet.create({
   communityBtnTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: PREMIUM_TEXT_SOFT,
   },
   communityBtnTitleProminent: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.18,
+    textShadowRadius: 0,
   },
   communityBtnSub: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(186, 201, 222, 0.88)',
     marginTop: 2,
   },
   communityBtnSubProminent: {
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.95)',
+    color: PREMIUM_TEXT_MUTED,
     marginTop: 1,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 0,
   },
   communityArrow: {
     width: 36,
@@ -22137,13 +22681,13 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    shadowColor: '#312e81',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   // Eski stiller (uyumluluk için)
   roleTopBar: {
@@ -23438,21 +23982,21 @@ const styles = StyleSheet.create({
   },
   destinationModalRoot: {
     flex: 1,
-    backgroundColor: '#041e33',
+    backgroundColor: 'rgba(8, 17, 31, 0.28)',
   },
   destinationModalTopFade: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 280,
+    height: 200,
   },
   destinationModalTopFadeLight: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 130,
+    height: 110,
   },
   destinationModalTouchLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -23465,8 +24009,8 @@ const styles = StyleSheet.create({
   },
   destinationHeroTitleAnimated: {
     fontSize: 22,
-    lineHeight: 28,
-    letterSpacing: -0.35,
+    lineHeight: 27,
+    letterSpacing: -0.28,
     marginTop: 0,
   },
   destinationCrosshairOverlay: {
@@ -23490,41 +24034,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   destinationMapHintMinimal: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(226, 232, 240, 0.92)',
+    color: 'rgba(241, 245, 249, 0.94)',
     textAlign: 'center',
-    marginBottom: 10,
-    textShadowColor: 'rgba(0,0,0,0.45)',
+    marginBottom: 12,
+    lineHeight: 18,
+    paddingHorizontal: 16,
+    textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 4,
   },
-  destinationMapConfirmBtn: {
+  destinationMapConfirmBtnWrap: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: '#16A34A',
-    paddingVertical: 16,
     borderRadius: 16,
-    alignItems: 'center',
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    borderColor: 'rgba(30, 58, 95, 0.75)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(34, 211, 238, 0.25)',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.55,
+        shadowRadius: 14,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
+  },
+  destinationMapConfirmBtnGrad: {
+    width: '100%',
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   destinationMapConfirmBtnText: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: 0.3,
+    color: '#F8FAFC',
+    letterSpacing: 0.35,
   },
   destinationSearchShellModern: {
-    marginTop: 2,
+    marginTop: 4,
+  },
+  destinationSearchFlowHint: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(186, 201, 222, 0.9)',
+    textAlign: 'center',
+    lineHeight: 17,
+    paddingHorizontal: 6,
+    letterSpacing: 0.15,
   },
   destinationModalHeaderBlueDim: {
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: 'rgba(8, 17, 31, 0.22)',
   },
   destinationModalHeaderCenter: {
     flex: 1,
@@ -23533,34 +24098,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   destinationChangeAreaBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: 'rgba(16, 26, 43, 0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
   },
   destinationChangeAreaBtnText: {
     fontSize: 13,
     fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.94)',
+    color: 'rgba(243, 248, 255, 0.95)',
   },
   destinationFloatingPanel: {
-    marginHorizontal: 14,
-    marginTop: 2,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 16,
-    borderRadius: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.32)',
-    maxHeight: '58%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
+    marginHorizontal: 12,
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderRadius: 22,
+    backgroundColor: 'rgba(16, 26, 43, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: '#1E3A5F',
+    maxHeight: '52%',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.32,
+    shadowRadius: 20,
+    elevation: 14,
   },
   destinationMapHintRow: {
     flexDirection: 'row',
@@ -23589,26 +24154,26 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    borderWidth: 2.5,
-    borderColor: 'rgba(34, 197, 94, 0.92)',
+    borderWidth: 2,
+    borderColor: 'rgba(34, 211, 238, 0.55)',
     backgroundColor: 'transparent',
   },
   destinationPinRingOuter: {
-    borderColor: 'rgba(74, 222, 128, 0.45)',
+    borderColor: 'rgba(56, 189, 248, 0.32)',
     borderWidth: 2,
   },
   destinationPinCore: {
-    backgroundColor: '#16A34A',
+    backgroundColor: '#0EA5E9',
     width: 58,
     height: 58,
     borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 4,
-    borderColor: '#FFF',
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.6,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
     shadowRadius: 10,
     elevation: 10,
   },
@@ -23623,7 +24188,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.28)',
+    backgroundColor: 'rgba(8, 17, 31, 0.35)',
   },
   destinationGeocodeText: {
     marginTop: 12,
@@ -23659,8 +24224,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(16, 26, 43, 0.35)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(30, 58, 95, 0.5)',
   },
   destinationModalBackBtn: {
     padding: 8,
@@ -23676,16 +24244,16 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   destinationHeroTitle: {
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: '800',
-    color: '#FFF',
+    color: 'rgba(248, 250, 252, 0.97)',
     textAlign: 'center',
-    lineHeight: 40,
+    lineHeight: 32,
     marginTop: 0,
-    letterSpacing: -0.6,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
+    letterSpacing: -0.35,
+    textShadowColor: 'rgba(0,0,0,0.25)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   destinationHeroSub: {
     fontSize: 15,

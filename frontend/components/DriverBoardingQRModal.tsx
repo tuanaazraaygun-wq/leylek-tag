@@ -9,7 +9,6 @@ import {
   ScrollView,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 
@@ -77,19 +76,19 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <LinearGradient colors={['#0c1a2e', '#0f3d5c']} style={styles.header}>
+          <View style={styles.header}>
             <Text style={styles.title}>Biniş karekodu</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
               <Text style={styles.closeText}>✕</Text>
             </TouchableOpacity>
-          </LinearGradient>
+          </View>
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             <Text style={styles.instruction}>
               Yolcu yakındayken bu kodu gösterin. Yolculuk, yolcu kodu tarayıp onayladıktan sonra başlar.
             </Text>
             {loading ? (
               <View style={styles.center}>
-                <ActivityIndicator size="large" color="#38bdf8" />
+                <ActivityIndicator size="large" color="#22D3EE" />
                 <Text style={styles.muted}>Karekod hazırlanıyor…</Text>
               </View>
             ) : error ? (
@@ -114,40 +113,68 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.88)',
+    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#f8fafc',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    backgroundColor: 'rgba(16, 26, 43, 0.97)',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderBottomWidth: 0,
+    borderTopColor: 'rgba(34, 211, 238, 0.28)',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(30, 58, 95, 0.65)',
   },
-  title: { color: '#f8fafc', fontSize: 18, fontWeight: '800', flex: 1 },
+  title: {
+    color: 'rgba(243, 248, 255, 0.94)',
+    fontSize: 18,
+    fontWeight: '800',
+    flex: 1,
+  },
   closeBtn: { padding: 8 },
-  closeText: { color: '#e2e8f0', fontSize: 20 },
+  closeText: { color: 'rgba(186, 201, 222, 0.88)', fontSize: 20 },
   body: { padding: 20, paddingBottom: 32 },
-  instruction: { color: '#334155', fontSize: 14, lineHeight: 21, marginBottom: 16 },
+  instruction: {
+    color: 'rgba(186, 201, 222, 0.82)',
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 16,
+  },
   center: { alignItems: 'center', paddingVertical: 24 },
-  muted: { color: '#64748b', marginTop: 12 },
-  err: { color: '#b91c1c', textAlign: 'center', fontWeight: '600' },
-  retry: { marginTop: 16, backgroundColor: '#0ea5e9', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  retryText: { color: '#fff', fontWeight: '700' },
+  muted: { color: 'rgba(186, 201, 222, 0.82)', marginTop: 12, fontWeight: '600' },
+  err: {
+    color: 'rgba(252, 212, 213, 0.95)',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  retry: {
+    marginTop: 16,
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+  },
+  retryText: { color: 'rgba(243, 248, 255, 0.94)', fontWeight: '700', fontSize: 15 },
   qrBox: {
     alignSelf: 'center',
     backgroundColor: '#fff',
     padding: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#1E3A5F',
   },
 });

@@ -9,14 +9,23 @@ import {
   Alert,
   Image,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { Colors, Spacing, BorderRadius, FontSize } from '../constants/Colors';
+import { Spacing, BorderRadius, FontSize } from '../constants/Colors';
 import { API_BASE_URL } from '../lib/backendConfig';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_GLASS_FILL,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_TEXT_SOFT,
+} from '../components/auth/premiumAuthStyles';
 
 interface User {
   id: string;
@@ -126,7 +135,10 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <Text>Yükleniyor...</Text>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <Text style={styles.loadingText}>Yükleniyor...</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -135,7 +147,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={28} color={Colors.text} />
+          <Ionicons name="arrow-back" size={28} color={PREMIUM_AUTH_CYAN} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profil</Text>
         <View style={{ width: 28 }} />
@@ -148,11 +160,11 @@ export default function ProfileScreen() {
               <Image source={{ uri: user.profile_photo }} style={styles.photo} />
             ) : (
               <View style={styles.photoPlaceholder}>
-                <Ionicons name="person" size={60} color={Colors.gray400} />
+                <Ionicons name="person" size={60} color={PREMIUM_TEXT_MUTED} />
               </View>
             )}
             <View style={styles.cameraButton}>
-              <Ionicons name="camera" size={20} color="#FFF" />
+              <Ionicons name="camera" size={20} color="#08111F" />
             </View>
           </TouchableOpacity>
 
@@ -170,7 +182,7 @@ export default function ProfileScreen() {
             value={name}
             onChangeText={setName}
             placeholder="Adınızı girin"
-            placeholderTextColor={Colors.gray400}
+            placeholderTextColor={PREMIUM_TEXT_MUTED}
           />
 
           <Text style={styles.label}>Telefon</Text>
@@ -217,7 +229,7 @@ export default function ProfileScreen() {
             style={styles.verifyCard}
             onPress={() => router.push('/driver-verify' as any)}
           >
-            <Ionicons name="shield-checkmark" size={40} color={Colors.primary} />
+            <Ionicons name="shield-checkmark" size={40} color={PREMIUM_AUTH_CYAN} />
             <View style={styles.verifyInfo}>
               <Text style={styles.verifyTitle}>Sürücü Doğrulama</Text>
               <Text style={styles.verifySubtitle}>
@@ -226,7 +238,7 @@ export default function ProfileScreen() {
                   : '⏳ Doğrulama bekliyor'}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={24} color={Colors.gray400} />
+            <Ionicons name="chevron-forward" size={24} color={PREMIUM_TEXT_MUTED} />
           </TouchableOpacity>
         )}
 
@@ -238,27 +250,27 @@ export default function ProfileScreen() {
             style={styles.linkItem}
             onPress={() => router.push('/privacy' as any)}
           >
-            <Ionicons name="lock-closed-outline" size={24} color={Colors.primary} />
+            <Ionicons name="lock-closed-outline" size={24} color={PREMIUM_AUTH_CYAN} />
             <Text style={styles.linkText}>Gizlilik Politikası</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkItem}
             onPress={() => router.push('/terms' as any)}
           >
-            <Ionicons name="document-text-outline" size={24} color={Colors.primary} />
+            <Ionicons name="document-text-outline" size={24} color={PREMIUM_AUTH_CYAN} />
             <Text style={styles.linkText}>Hizmet Şartları</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkItem}
             onPress={() => router.push('/kvkk' as any)}
           >
-            <Ionicons name="information-circle-outline" size={24} color={Colors.primary} />
+            <Ionicons name="information-circle-outline" size={24} color={PREMIUM_AUTH_CYAN} />
             <Text style={styles.linkText}>KVKK Aydınlatma Metni</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
           </TouchableOpacity>
         </View>
 
@@ -271,9 +283,9 @@ export default function ProfileScreen() {
               void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
             }}
           >
-            <Ionicons name="mail-outline" size={24} color={Colors.primary} />
+            <Ionicons name="mail-outline" size={24} color={PREMIUM_AUTH_CYAN} />
             <Text style={styles.linkText}>info@karekodteknoloji.com</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.linkItem, styles.supportPhoneItem]}
@@ -281,9 +293,9 @@ export default function ProfileScreen() {
               void openExternalLink('tel:08503078029', 'Telefon açılamadı');
             }}
           >
-            <Ionicons name="call-outline" size={24} color={Colors.primary} />
+            <Ionicons name="call-outline" size={24} color={PREMIUM_AUTH_CYAN} />
             <Text style={styles.linkText}>0850 307 80 29</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
           </TouchableOpacity>
         </View>
 
@@ -310,189 +322,216 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background
+    backgroundColor: PREMIUM_NAVY_DEEP,
+  },
+  loadingWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.xl,
+    gap: 14,
+  },
+  loadingText: {
+    fontSize: FontSize.md,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: PREMIUM_BORDER_SLATE,
+    backgroundColor: 'rgba(8, 17, 31, 0.5)',
   },
   headerTitle: {
     fontSize: FontSize.xl,
     fontWeight: 'bold',
-    color: Colors.text
+    color: PREMIUM_TEXT_SOFT,
   },
   content: {
     flex: 1,
-    padding: Spacing.md
+    padding: Spacing.md,
   },
   card: {
-    backgroundColor: Colors.background,
+    backgroundColor: PREMIUM_GLASS_FILL,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    alignItems: 'center'
+    borderWidth: 1,
+    borderColor: PREMIUM_BORDER_SLATE,
+    borderTopColor: 'rgba(34, 211, 238, 0.12)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 6,
+    alignItems: 'center',
   },
   photoContainer: {
     position: 'relative',
-    marginBottom: Spacing.md
+    marginBottom: Spacing.md,
   },
   photo: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: Colors.surface
+    backgroundColor: 'rgba(16, 26, 43, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 95, 0.65)',
   },
   photoPlaceholder: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(16, 26, 43, 0.75)',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: PREMIUM_BORDER_SLATE,
   },
   cameraButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: Colors.primary,
+    backgroundColor: PREMIUM_AUTH_CYAN,
     width: 36,
     height: 36,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: Colors.background
+    borderColor: PREMIUM_NAVY_DEEP,
   },
   roleText: {
     fontSize: FontSize.lg,
     fontWeight: '600',
-    color: Colors.text
+    color: PREMIUM_TEXT_SOFT,
   },
   cardTitle: {
     fontSize: FontSize.lg,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: PREMIUM_TEXT_SOFT,
     marginBottom: Spacing.md,
-    alignSelf: 'flex-start'
+    alignSelf: 'flex-start',
   },
   label: {
     fontSize: FontSize.sm,
     fontWeight: '600',
-    color: Colors.text,
+    color: PREMIUM_TEXT_MUTED,
     marginBottom: Spacing.sm,
     alignSelf: 'flex-start',
-    width: '100%'
+    width: '100%',
   },
   input: {
-    backgroundColor: Colors.background,
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     fontSize: FontSize.md,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: PREMIUM_BORDER_SLATE,
     marginBottom: Spacing.md,
     width: '100%',
-    color: Colors.text
+    color: PREMIUM_TEXT_SOFT,
   },
   inputDisabled: {
-    backgroundColor: Colors.surface,
-    color: Colors.gray500
+    backgroundColor: 'rgba(16, 26, 43, 0.65)',
+    color: PREMIUM_TEXT_MUTED,
   },
   primaryButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: PREMIUM_AUTH_CYAN,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     alignItems: 'center',
-    width: '100%'
+    width: '100%',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 5,
   },
   primaryButtonText: {
-    color: '#FFF',
+    color: '#08111F',
     fontSize: FontSize.md,
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
   statRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    width: '100%'
+    width: '100%',
   },
   statItem: {
     alignItems: 'center',
-    flex: 1
+    flex: 1,
   },
   statValue: {
     fontSize: FontSize.xxl,
     fontWeight: 'bold',
-    color: Colors.primary
+    color: PREMIUM_AUTH_CYAN,
   },
   statLabel: {
     fontSize: FontSize.sm,
-    color: Colors.gray500,
-    marginTop: Spacing.xs
+    color: PREMIUM_TEXT_MUTED,
+    marginTop: Spacing.xs,
   },
   statDivider: {
-    width: 1,
-    backgroundColor: Colors.border
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: PREMIUM_BORDER_SLATE,
   },
   verifyCard: {
-    backgroundColor: Colors.background,
+    backgroundColor: PREMIUM_GLASS_FILL,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: PREMIUM_BORDER_SLATE,
     flexDirection: 'row',
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 5,
   },
   verifyInfo: {
     flex: 1,
-    marginLeft: Spacing.md
+    marginLeft: Spacing.md,
   },
   verifyTitle: {
     fontSize: FontSize.md,
     fontWeight: '600',
-    color: Colors.text
+    color: PREMIUM_TEXT_SOFT,
   },
   verifySubtitle: {
     fontSize: FontSize.sm,
-    color: Colors.gray500,
-    marginTop: Spacing.xs
+    color: PREMIUM_TEXT_MUTED,
+    marginTop: Spacing.xs,
   },
   linkItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(30, 58, 95, 0.55)',
     width: '100%',
   },
   linkText: {
     flex: 1,
     fontSize: FontSize.md,
-    color: Colors.text,
+    color: PREMIUM_TEXT_SOFT,
     marginLeft: Spacing.md,
   },
   dangerItem: {
     borderBottomWidth: 0,
   },
   dangerText: {
-    color: '#E74C3C',
+    color: 'rgba(248, 113, 113, 0.98)',
   },
   supportCompany: {
     width: '100%',
     fontSize: FontSize.sm,
-    color: Colors.gray500,
+    color: PREMIUM_TEXT_MUTED,
     marginBottom: Spacing.sm,
   },
   supportPhoneItem: {

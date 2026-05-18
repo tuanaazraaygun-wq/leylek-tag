@@ -80,12 +80,12 @@ const TrustRequestModal = memo(function TrustRequestModal({
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             <LinearGradient
-              colors={['#1E3A5F', '#0F172A']}
+              colors={['rgba(16,26,43,0.95)', '#0F3D4F', '#1E3A5F']}
               style={styles.iconGrad}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Ionicons name="shield-checkmark" size={36} color="#5EEAD4" />
+              <Ionicons name="shield-checkmark" size={36} color="#22D3EE" />
             </LinearGradient>
           </View>
           <Text style={styles.title}>{title}</Text>
@@ -106,16 +106,17 @@ const TrustRequestModal = memo(function TrustRequestModal({
                 style={({ pressed }) => [pressed && { opacity: 0.92 }]}
               >
                 <LinearGradient
-                  colors={['#047857', '#059669', '#10B981']}
+                  colors={['rgba(8,17,31,0.96)', '#0E4F5E', '#0E7490', '#22D3EE']}
+                  locations={[0, 0.45, 0.78, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.btnPrimary}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#FFF" />
+                    <ActivityIndicator color="rgba(243,248,255,0.94)" />
                   ) : (
                     <>
-                      <Ionicons name="checkmark-circle" size={22} color="#FFF" style={{ marginRight: 8 }} />
+                      <Ionicons name="checkmark-circle" size={22} color="rgba(243,248,255,0.94)" style={{ marginRight: 8 }} />
                       <Text style={styles.btnPrimaryText}>Güven Ver</Text>
                     </>
                   )}
@@ -131,12 +132,16 @@ const TrustRequestModal = memo(function TrustRequestModal({
               style={({ pressed }) => [styles.btnDangerWrap, pressed && { opacity: 0.9 }]}
             >
               <LinearGradient
-                colors={['#991B1B', '#B91C1C', '#DC2626']}
+                colors={[
+                  'rgba(45, 24, 28, 0.92)',
+                  'rgba(80, 32, 36, 0.85)',
+                  'rgba(112, 40, 44, 0.78)',
+                ]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.btnDanger}
               >
-                <Ionicons name="close-circle" size={22} color="#FFF" style={{ marginRight: 8 }} />
+                <Ionicons name="close-circle" size={22} color="#FECACA" style={{ marginRight: 8 }} />
                 <Text style={styles.btnDangerText}>Müsait Değilim</Text>
               </LinearGradient>
             </Pressable>
@@ -150,7 +155,7 @@ const TrustRequestModal = memo(function TrustRequestModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
     justifyContent: 'center',
     paddingHorizontal: 22,
   },
@@ -158,13 +163,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingVertical: 26,
     paddingHorizontal: 22,
-    backgroundColor: '#0F172A',
+    backgroundColor: 'rgba(16, 26, 43, 0.94)',
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.25)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.32)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
     elevation: 14,
   },
   iconWrap: {
@@ -177,9 +183,11 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   title: {
-    color: '#F8FAFC',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 19,
     fontWeight: '700',
     textAlign: 'center',
@@ -188,14 +196,14 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 12,
-    color: '#94A3B8',
+    color: 'rgba(186, 201, 222, 0.82)',
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
   },
   hint: {
     marginTop: 10,
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.72)',
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 17,
@@ -210,9 +218,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 15,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
   },
   btnPrimaryText: {
-    color: '#FFF',
+    color: 'rgba(243, 248, 255, 0.94)',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -225,9 +235,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.38)',
   },
   btnDangerText: {
-    color: '#FFF',
+    color: '#FECACA',
     fontSize: 15,
     fontWeight: '700',
   },

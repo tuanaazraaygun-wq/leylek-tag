@@ -568,6 +568,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       running?.stop?.();
       if (attentionTimer) clearTimeout(attentionTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- idleHintOpacity yalnızca erken sıfırlamada kullanılıyor
   }, [floatY, pillOpacity, pillTranslateY, reduceMotion, showFab]);
 
   useEffect(() => {
@@ -735,7 +736,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 ]}
               >
                 <Image
-                  source={require('../assets/images/logo.png')}
+                  source={require('../assets/images/leylek-logo-premium.png')}
                   style={styles.logoImage}
                   resizeMode="contain"
                   accessibilityIgnoresInvertColors
@@ -871,7 +872,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoImage: {
-    width: LOGO_SIZE,
-    height: LOGO_SIZE,
+    width: LOGO_SIZE - 6,
+    height: LOGO_SIZE - 6,
   },
 });

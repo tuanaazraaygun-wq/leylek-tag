@@ -6,16 +6,28 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { Colors, Spacing, BorderRadius, FontSize } from '../constants/Colors';
+import { Spacing, BorderRadius, FontSize } from '../constants/Colors';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { appAlert } from '../contexts/AppAlertContext';
+
+/** Yerel premium verify ekranı (global palet dokunulmadan). */
+const DV_P = {
+  bg: '#08111F',
+  bgElev: '#0B1220',
+  card: 'rgba(16, 26, 43, 0.88)',
+  border: '#1E3A5F',
+  cyan: '#22D3EE',
+  textHi: 'rgba(243, 248, 255, 0.94)',
+  textMd: 'rgba(186, 201, 222, 0.82)',
+} as const;
 
 interface User {
   id: string;
@@ -45,8 +57,7 @@ export default function DriverVerificationScreen() {
       if (userData) {
         const parsed = JSON.parse(userData);
         if (parsed.role !== 'driver') {
-          Alert.alert('Hata', 'Bu sayfa sadece sürücüler için');
-          router.back();
+          appAlert('Hata', 'Bu sayfa sadece sürücüler için', [{ text: 'Tamam', onPress: () => router.back() }]);
           return;
         }
         setUser(parsed);
@@ -73,7 +84,7 @@ export default function DriverVerificationScreen() {
   const pickImage = async (type: 'license' | 'vehicle') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Hata', 'Galeri erişim izni gerekli');
+      appAlert('Hata', 'Galeri erişim izni gerekli');
       return;
     }
 
@@ -97,7 +108,7 @@ export default function DriverVerificationScreen() {
 
   const handleSave = async () => {
     if (!licenseNumber || !vehiclePlate || !vehicleModel) {
-      Alert.alert('Hata', 'Lütfen tüm zorunlu alanları doldurun');
+      appAlert('Hata', 'Lütfen tüm zorunlu alanları doldurun');
       return;
     }
 
@@ -121,11 +132,12 @@ export default function DriverVerificationScreen() {
 
       const data = await response.json();
       if (data.success) {
-        Alert.alert('Başarılı', 'Sürücü bilgileri güncellendi. Doğrulama süreci başlatıldı.');
-        router.back();
+        appAlert('Başarılı', 'Sürücü bilgileri güncellendi. Doğrulama süreci başlatıldı.', [
+          { text: 'Tamam', onPress: () => router.back() },
+        ]);
       }
     } catch (error) {
-      Alert.alert('Hata', 'Bilgiler kaydedilemedi');
+      appAlert('Hata', 'Bilgiler kaydedilemedi');
     } finally {
       setLoading(false);
     }
@@ -142,7 +154,7 @@ export default function DriverVerificationScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={28} color={Colors.text} />
+          <Ionicons name="arrow-back" size={28} color={DV_P.cyan} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Sürücü Doğrulama</Text>
         <View style={{ width: 28 }} />
@@ -150,7 +162,7 @@ export default function DriverVerificationScreen() {
 
       <ScrollView style={styles.content}>
         <View style={styles.infoCard}>
-          <Ionicons name="information-circle" size={24} color={Colors.info} />
+          <Ionicons name="information-circle" size={24} color={DV_P.cyan} />
           <Text style={styles.infoText}>
             Güvenli yolculuk için sürücü bilgilerinizi doğrulayın
           </Text>
@@ -166,7 +178,7 @@ export default function DriverVerificationScreen() {
             value={licenseNumber}
             onChangeText={setLicenseNumber}
             placeholder="Ehliyet numaranızı girin"
-            placeholderTextColor={Colors.gray400}
+            placeholderTextColor="rgba(186,201,222,0.42)"
           />
 
           <Text style={styles.label}>Ehliyet Fotoğrafı</Text>
@@ -178,7 +190,7 @@ export default function DriverVerificationScreen() {
               <Image source={{ uri: licensePhoto }} style={styles.photoPreview} />
             ) : (
               <View style={styles.photoPlaceholder}>
-                <Ionicons name="camera" size={40} color={Colors.gray400} />
+                <Ionicons name="camera" size={40} color={DV_P.cyan} />
                 <Text style={styles.photoPlaceholderText}>Fotoğraf Ekle</Text>
               </View>
             )}
@@ -203,7 +215,7 @@ export default function DriverVerificationScreen() {
                 <Ionicons
                   name={type.icon as any}
                   size={24}
-                  color={vehicleType === type.value ? '#FFF' : Colors.primary}
+                  color={vehicleType === type.value ? DV_P.textHi : DV_P.cyan}
                 />
                 <Text
                   style={[
@@ -223,7 +235,7 @@ export default function DriverVerificationScreen() {
             value={vehiclePlate}
             onChangeText={(text) => setVehiclePlate(text.toUpperCase())}
             placeholder="34 ABC 1234"
-            placeholderTextColor={Colors.gray400}
+            placeholderTextColor="rgba(186,201,222,0.42)"
             autoCapitalize="characters"
           />
 
@@ -233,7 +245,7 @@ export default function DriverVerificationScreen() {
             value={vehicleModel}
             onChangeText={setVehicleModel}
             placeholder="Toyota Corolla 2020"
-            placeholderTextColor={Colors.gray400}
+            placeholderTextColor="rgba(186,201,222,0.42)"
           />
 
           <Text style={styles.label}>Renk</Text>
@@ -242,7 +254,7 @@ export default function DriverVerificationScreen() {
             value={vehicleColor}
             onChangeText={setVehicleColor}
             placeholder="Beyaz"
-            placeholderTextColor={Colors.gray400}
+            placeholderTextColor="rgba(186,201,222,0.42)"
           />
 
           <Text style={styles.label}>Araç Fotoğrafı</Text>
@@ -254,7 +266,7 @@ export default function DriverVerificationScreen() {
               <Image source={{ uri: vehiclePhoto }} style={styles.photoPreview} />
             ) : (
               <View style={styles.photoPlaceholder}>
-                <Ionicons name="camera" size={40} color={Colors.gray400} />
+                <Ionicons name="camera" size={40} color={DV_P.cyan} />
                 <Text style={styles.photoPlaceholderText}>Fotoğraf Ekle</Text>
               </View>
             )}
@@ -262,13 +274,18 @@ export default function DriverVerificationScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.primaryButton, loading && { opacity: 0.5 }]}
+          style={[styles.primaryButton, loading && { opacity: 0.62 }]}
           onPress={handleSave}
           disabled={loading}
         >
-          <Text style={styles.primaryButtonText}>
-            {loading ? 'Kaydediliyor...' : 'Kaydet ve Doğrula'}
-          </Text>
+          {loading ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <ActivityIndicator color={DV_P.cyan} size="small" />
+              <Text style={styles.primaryButtonText}>Kaydediliyor...</Text>
+            </View>
+          ) : (
+            <Text style={styles.primaryButtonText}>Kaydet ve Doğrula</Text>
+          )}
         </TouchableOpacity>
 
         <View style={{ height: Spacing.xxl }} />
@@ -280,7 +297,7 @@ export default function DriverVerificationScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background
+    backgroundColor: DV_P.bg,
   },
   header: {
     flexDirection: 'row',
@@ -288,127 +305,152 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: Spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border
+    borderBottomColor: DV_P.border,
+    backgroundColor: 'rgba(11,18,32,0.96)',
   },
   headerTitle: {
     fontSize: FontSize.xl,
     fontWeight: 'bold',
-    color: Colors.text
+    color: DV_P.textHi,
   },
   content: {
     flex: 1,
-    padding: Spacing.md
+    padding: Spacing.md,
+    backgroundColor: DV_P.bg,
   },
   infoCard: {
-    backgroundColor: Colors.info + '20',
+    backgroundColor: 'rgba(34,211,238,0.08)',
     borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.18)',
     padding: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.md
+    marginBottom: Spacing.md,
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 3,
   },
   infoText: {
     fontSize: FontSize.sm,
-    color: Colors.info,
+    color: DV_P.textMd,
     marginLeft: Spacing.sm,
-    flex: 1
+    flex: 1,
   },
   card: {
-    backgroundColor: Colors.background,
+    backgroundColor: DV_P.card,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: DV_P.border,
   },
   cardTitle: {
     fontSize: FontSize.lg,
     fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: Spacing.md
+    color: DV_P.textHi,
+    marginBottom: Spacing.md,
   },
   label: {
     fontSize: FontSize.sm,
     fontWeight: '600',
-    color: Colors.text,
-    marginBottom: Spacing.sm
+    color: DV_P.textHi,
+    marginBottom: Spacing.sm,
   },
   input: {
-    backgroundColor: Colors.background,
+    backgroundColor: 'rgba(8,17,31,0.55)',
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     fontSize: FontSize.md,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: DV_P.border,
     marginBottom: Spacing.md,
-    color: Colors.text
+    color: DV_P.textHi,
   },
   photoButton: {
-    marginBottom: Spacing.md
+    marginBottom: Spacing.md,
   },
   photoPreview: {
     width: '100%',
     height: 200,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface
+    backgroundColor: DV_P.bgElev,
+    borderWidth: 1,
+    borderColor: DV_P.border,
   },
   photoPlaceholder: {
     width: '100%',
     height: 200,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(16,26,43,0.65)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: Colors.border,
-    borderStyle: 'dashed'
+    borderColor: DV_P.border,
+    borderStyle: 'dashed',
   },
   photoPlaceholderText: {
     fontSize: FontSize.sm,
-    color: Colors.gray400,
-    marginTop: Spacing.sm
+    color: DV_P.textMd,
+    marginTop: Spacing.sm,
   },
   vehicleTypeContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: Spacing.md
+    marginBottom: Spacing.md,
   },
   vehicleTypeButton: {
     width: '48%',
-    backgroundColor: Colors.background,
+    backgroundColor: 'rgba(16,26,43,0.55)',
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     alignItems: 'center',
     marginRight: '2%',
     marginBottom: Spacing.sm,
-    borderWidth: 2,
-    borderColor: Colors.border
+    borderWidth: 1,
+    borderColor: DV_P.border,
   },
   vehicleTypeButtonActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary
+    backgroundColor: 'rgba(34,211,238,0.16)',
+    borderColor: 'rgba(34,211,238,0.45)',
+    shadowColor: DV_P.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 2,
   },
   vehicleTypeText: {
     marginTop: Spacing.xs,
     fontSize: FontSize.sm,
     fontWeight: '600',
-    color: Colors.primary
+    color: DV_P.textMd,
   },
   vehicleTypeTextActive: {
-    color: '#FFF'
+    color: DV_P.textHi,
   },
   primaryButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(6,148,173,0.42)',
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
-    alignItems: 'center'
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.42)',
+    shadowColor: DV_P.cyan,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
   },
   primaryButtonText: {
-    color: '#FFF',
+    color: DV_P.textHi,
     fontSize: FontSize.md,
-    fontWeight: 'bold'
-  }
+    fontWeight: 'bold',
+  },
 });

@@ -42,7 +42,7 @@ import {
 import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
-const LOGO = require('../assets/images/logo.png');
+const LOGO = require('../assets/images/leylek-logo-premium.png');
 
 /** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
 const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;

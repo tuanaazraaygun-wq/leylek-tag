@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import InCallManager from 'react-native-incall-manager';
 import type { RtcConnection } from 'react-native-agora';
 import { agoraVoiceService } from '../services/agoraVoiceService';
@@ -23,6 +24,25 @@ type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'e
 
 /** Ortak görüşme süresi (saniye) — iki taraf için aynı tavan */
 const CALL_MAX_SECONDS = 600;
+
+/** Premium call shell — style tokens only (replaces legacy WA_* palette). */
+const P = {
+  bgDeep: '#08111F',
+  bgMid: '#0B1220',
+  bgElev: '#101A2B',
+  border: '#1E3A5F',
+  accent: '#22D3EE',
+  text: 'rgba(243,248,255,0.94)',
+  muted: 'rgba(186,201,222,0.82)',
+  emeraldMuted: 'rgba(110,231,183,0.88)',
+  glassDark: 'rgba(8,17,31,0.72)',
+  glassDarkActive: 'rgba(16,28,48,0.88)',
+  dangerGlass: 'rgba(185,28,28,0.38)',
+  dangerGlassBorder: 'rgba(248,113,113,0.42)',
+  emeraldGlass: 'rgba(16,185,129,0.22)',
+  emeraldGlassBorder: 'rgba(52,211,153,0.4)',
+  cyanEdge: 'rgba(34,211,238,0.45)',
+};
 
 export interface CallScreenV2Props {
   visible: boolean;
@@ -625,7 +645,11 @@ export default function CallScreenV2({
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
-      <View style={styles.root}>
+      <LinearGradient
+        colors={[P.bgDeep, P.bgMid, P.bgElev]}
+        locations={[0, 0.45, 1]}
+        style={styles.root}
+      >
         <View style={styles.top}>
           <Text style={styles.headerType}>{headerLabel}</Text>
           <Text style={styles.encryptionHint}>Görüşmeler uçtan uca şifrelidir</Text>
@@ -640,24 +664,30 @@ export default function CallScreenV2({
             </View>
           </Animated.View>
           <Text style={styles.name}>{remoteName}</Text>
-          <Text style={subLine.style}>{subLine.text}</Text>
+          {showActive ? (
+            <View style={styles.timerPill}>
+              <Text style={subLine.style}>{subLine.text}</Text>
+            </View>
+          ) : (
+            <Text style={subLine.style}>{subLine.text}</Text>
+          )}
         </View>
 
         <View style={styles.bottom}>
           {showIncoming ? (
             <View style={styles.row}>
               <TouchableOpacity style={styles.btnDecline} onPress={rejectIncoming}>
-                <Ionicons name="call" size={32} color="#fff" style={styles.iconHangup} />
+                <Ionicons name="call" size={32} color={P.text} style={styles.iconHangup} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnAccept} onPress={() => void acceptIncoming()}>
-                <Ionicons name="call" size={32} color="#fff" />
+                <Ionicons name="call" size={32} color={P.text} />
               </TouchableOpacity>
             </View>
           ) : null}
 
           {showOutgoingBar && !showIncoming ? (
             <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp('user')}>
-              <Ionicons name="call" size={30} color="#fff" style={styles.iconHangup} />
+              <Ionicons name="call" size={30} color={P.text} style={styles.iconHangup} />
             </TouchableOpacity>
           ) : null}
 
@@ -668,17 +698,17 @@ export default function CallScreenV2({
                 onPress={toggleMute}
                 accessibilityLabel="Sesi kapat"
               >
-                <Ionicons name={muted ? 'mic-off' : 'mic'} size={24} color="#fff" />
+                <Ionicons name={muted ? 'mic-off' : 'mic'} size={24} color={P.text} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp('user')}>
-                <Ionicons name="call" size={30} color="#fff" style={styles.iconHangup} />
+                <Ionicons name="call" size={30} color={P.text} style={styles.iconHangup} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.fabSmall, speakerOn && styles.fabSmallOn]}
                 onPress={toggleSpeaker}
                 accessibilityLabel="Hoparlör"
               >
-                <Ionicons name={speakerOn ? 'volume-high' : 'volume-low'} size={24} color="#fff" />
+                <Ionicons name={speakerOn ? 'volume-high' : 'volume-low'} size={24} color={P.text} />
               </TouchableOpacity>
             </View>
           ) : null}
@@ -689,19 +719,14 @@ export default function CallScreenV2({
             {phase} · ch {channelName.slice(-8)} · uid {myUid}
           </Text>
         ) : null}
-      </View>
+      </LinearGradient>
     </Modal>
   );
 }
 
-const WA_BG = '#0B141A';
-const WA_GREEN = '#25D366';
-const WA_RED = '#EA4335';
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: WA_BG,
     paddingTop: Platform.OS === 'android' ? 48 : 56,
     paddingBottom: 40,
   },
@@ -709,16 +734,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   headerType: {
-    color: 'rgba(255,255,255,0.55)',
+    color: P.muted,
     fontSize: 13,
-    letterSpacing: 0.3,
+    letterSpacing: 0.35,
+    fontWeight: '600',
   },
   encryptionHint: {
-    marginTop: 8,
-    color: '#4ADE80',
-    fontSize: 13,
+    marginTop: 10,
+    color: P.emeraldMuted,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    letterSpacing: 0.35,
   },
   center: {
     flex: 1,
@@ -730,55 +756,79 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#1F2C34',
+    backgroundColor: P.bgElev,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: P.border,
+    shadowColor: P.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 22,
+    elevation: 14,
   },
   avatarLetter: {
     fontSize: 48,
     fontWeight: '600',
-    color: '#E9EDEF',
+    color: P.text,
   },
   name: {
     fontSize: 26,
     fontWeight: '600',
-    color: '#E9EDEF',
+    color: P.text,
     textAlign: 'center',
     marginBottom: 8,
   },
   sub: {
     fontSize: 16,
-    color: '#8696A0',
+    color: P.muted,
     textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  timerPill: {
+    marginTop: 4,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: 1,
+    borderColor: P.cyanEdge,
+    shadowColor: P.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
   },
   subTimer: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#E9EDEF',
+    color: P.text,
     textAlign: 'center',
+    letterSpacing: 2,
+    fontVariant: ['tabular-nums'],
   },
   subSuccess: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#22C55E',
+    color: P.emeraldMuted,
     textAlign: 'center',
   },
   subDanger: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#F87171',
+    color: 'rgba(252,165,165,0.92)',
     textAlign: 'center',
   },
   subRinging: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FCD34D',
+    color: P.accent,
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
   subMuted: {
     fontSize: 16,
-    color: '#94A3B8',
+    color: P.muted,
     textAlign: 'center',
   },
   bottom: {
@@ -797,43 +847,72 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: WA_RED,
+    backgroundColor: P.dangerGlass,
+    borderWidth: 1,
+    borderColor: P.dangerGlassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: 'rgba(220,38,38,0.45)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 10,
   },
   btnAccept: {
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: WA_GREEN,
+    backgroundColor: P.emeraldGlass,
+    borderWidth: 1,
+    borderColor: P.emeraldGlassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: 'rgba(16,185,129,0.35)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 10,
   },
   fabHangup: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: WA_RED,
+    backgroundColor: P.dangerGlass,
+    borderWidth: 1,
+    borderColor: P.dangerGlassBorder,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: 'rgba(220,38,38,0.4)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
   },
   fabSmall: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#202C33',
+    backgroundColor: P.glassDark,
+    borderWidth: 1,
+    borderColor: P.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   fabSmallOn: {
-    backgroundColor: '#2A3942',
+    backgroundColor: P.glassDarkActive,
+    borderColor: P.cyanEdge,
+    shadowColor: P.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
   iconHangup: { transform: [{ rotate: '135deg' }] },
   devLine: {
     position: 'absolute',
     bottom: 12,
     alignSelf: 'center',
-    color: '#5F6368',
+    color: 'rgba(148,163,184,0.55)',
     fontSize: 10,
   },
 });

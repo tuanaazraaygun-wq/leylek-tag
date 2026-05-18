@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
-import { Colors, FontSize, Spacing } from '../constants/Colors';
+import { Colors, Spacing } from '../constants/Colors';
 
 interface LogoProps {
   size?: 'small' | 'medium' | 'large';
@@ -10,36 +10,30 @@ interface LogoProps {
 
 export default function Logo({ size = 'medium', showText = true, showSlogan = false }: LogoProps) {
   const sizes = {
-    small: { icon: 50, text: 18, slogan: 12 },
-    medium: { icon: 100, text: 36, slogan: 16 },
-    large: { icon: 150, text: 48, slogan: 20 },
+    small: { box: 50, slogan: 12 },
+    medium: { box: 100, slogan: 16 },
+    large: { box: 150, slogan: 20 },
   };
 
   const currentSize = sizes[size];
 
   return (
     <View style={styles.container}>
-      <View style={[styles.logoContainer, { width: currentSize.icon, height: currentSize.icon }]}>
+      <View
+        style={[styles.logoPad, { width: currentSize.box, height: currentSize.box }]}
+      >
         <Image
-          source={require('../assets/images/logo.png')}
-          style={{
-            width: currentSize.icon,
-            height: currentSize.icon,
-          }}
+          source={require('../assets/images/leylek-logo-premium.png')}
+          style={styles.logoImage}
           resizeMode="contain"
         />
       </View>
-      
-      {showText && (
+
+      {showText && showSlogan && (
         <View style={styles.textContainer}>
-          <Text style={[styles.logoText, { fontSize: currentSize.text }]}>
-            Leylek TAG
+          <Text style={[styles.sloganText, { fontSize: currentSize.slogan }]}>
+            Yolculuk Eşleştirme
           </Text>
-          {showSlogan && (
-            <Text style={[styles.sloganText, { fontSize: currentSize.slogan }]}>
-              Yolculuk Eşleştirme
-            </Text>
-          )}
         </View>
       )}
     </View>
@@ -51,19 +45,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoContainer: {
+  logoPad: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 8,
     overflow: 'hidden',
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   textContainer: {
     alignItems: 'center',
     marginTop: Spacing.md,
-  },
-  logoText: {
-    fontWeight: 'bold',
-    color: Colors.primary,
-    letterSpacing: 1,
   },
   sloganText: {
     fontWeight: '400',

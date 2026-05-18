@@ -28,6 +28,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
 import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_DRIVER_OFFER_LIST_AMBIENT,
+  PREMIUM_GLASS_FILL,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_TEXT_SOFT,
+} from './auth/premiumAuthStyles';
+import {
   ROUTE_LOADING_MIN_VISIBLE_MS,
   ROUTE_LOADING_UI,
   ROUTE_UNAVAILABLE_REVEAL_DELAY_MS,
@@ -105,11 +115,14 @@ function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
   const fs = compact ? U.fontSizeOfferCompact : U.fontSizeOffer;
   const dotSz = compact ? U.dotSizeOfferCompact : U.dotSizeOffer;
   const dotGap = U.dotGapOffer;
+  /** LiveMap ile sabit paylaşılan zamanlama; renkler bu ekranda premium palete çekilir */
+  const routeUiText = PREMIUM_TEXT_SOFT;
+  const routeUiDot = PREMIUM_AUTH_CYAN;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
       <Text
         style={{
-          color: U.textColor,
+          color: routeUiText,
           fontSize: fs,
           fontWeight: U.fontWeight,
           letterSpacing: U.letterSpacing,
@@ -133,7 +146,7 @@ function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
               height: dotSz,
               marginLeft: i === 0 ? 0 : dotGap,
               borderRadius: 1,
-              backgroundColor: U.dotColor,
+              backgroundColor: routeUiDot,
               opacity: v,
             }}
           />
@@ -215,16 +228,16 @@ if (Platform.OS !== 'web') {
   }
 }
 
-// Renkler
+// Renkler — kokpit yüzünde premium token kullanımı
 const COLORS = {
-  primary: '#3FA9F5',
+  primary: PREMIUM_AUTH_CYAN,
   secondary: '#FF6B35',
-  background: '#F8FAFC',
-  card: '#FFFFFF',
-  text: '#1B1B1E',
-  textSecondary: '#64748B',
+  background: PREMIUM_NAVY_DEEP,
+  card: 'rgba(16,26,43,0.92)',
+  text: PREMIUM_TEXT_SOFT,
+  textSecondary: PREMIUM_TEXT_MUTED,
   success: '#22C55E',
-  border: '#E2E8F0',
+  border: PREMIUM_BORDER_SLATE,
 };
 
 export interface PassengerRequest {
@@ -969,7 +982,7 @@ export default function DriverOfferScreen({
     if (Platform.OS === 'web' || !MapView) {
       return (
         <View style={styles.mapFallback}>
-          <Ionicons name="map" size={40} color="#38BDF8" />
+          <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
           <Text style={styles.mapFallbackText}>
             Talep {mapHud.seeking} · {mapHud.radius} km
           </Text>
@@ -1006,15 +1019,15 @@ export default function DriverOfferScreen({
             <Circle
               center={driverLocation}
               radius={(mapHud.radius || 20) * 1000}
-              strokeColor="rgba(63, 169, 245, 0.5)"
-              fillColor="rgba(63, 169, 245, 0.07)"
+              strokeColor="rgba(34,211,238,0.45)"
+              fillColor="rgba(34,211,238,0.06)"
               strokeWidth={2}
             />
             <Circle
               center={driverLocation}
               radius={(mapHud.radius || 20) * 500}
-              strokeColor="rgba(63, 169, 245, 0.35)"
-              fillColor="rgba(63, 169, 245, 0.05)"
+              strokeColor="rgba(34,211,238,0.22)"
+              fillColor="rgba(34,211,238,0.04)"
               strokeWidth={1}
             />
           </>
@@ -1116,7 +1129,7 @@ export default function DriverOfferScreen({
           <Ionicons
             name={mapExpanded ? 'chevron-up' : 'chevron-down'}
             size={18}
-            color="#BAE6FD"
+            color="rgba(34,211,238,0.88)"
           />
           <Text style={styles.mapExpandToggleText}>
             {mapExpanded ? 'Haritayı gizle' : 'Haritayı göster'}
@@ -1162,19 +1175,33 @@ export default function DriverOfferScreen({
         style={styles.listContainer}
         imageStyle={styles.listBackgroundImage}
       >
+        <LinearGradient
+          colors={[...PREMIUM_DRIVER_OFFER_LIST_AMBIENT]}
+          locations={[0, 0.45, 1]}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
         {isMotor ? (
           <LinearGradient
-            colors={['rgba(22, 101, 52, 0.35)', 'rgba(15, 23, 42, 0.55)']}
+            colors={['rgba(22, 101, 52, 0.28)', 'rgba(8,17,31,0.52)']}
             style={StyleSheet.absoluteFillObject}
             pointerEvents="none"
           />
         ) : null}
         <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
           <View style={styles.listHeaderTopRow}>
-            <View style={styles.listHeaderAccentDot} />
-            <Text style={[styles.listTitle, mapExpanded && styles.listTitleMapExpanded]}>
-              Yakındaki İstekler
-            </Text>
+            <View style={styles.listHeaderLiveDotWrap} pointerEvents="none">
+              <View style={styles.listHeaderAccentDotOuter} />
+              <View style={styles.listHeaderAccentDot} />
+            </View>
+            <View style={styles.listHeaderTitleCol}>
+              <Text style={[styles.listTitle, mapExpanded && styles.listTitleMapExpanded]}>
+                Yakındaki İstekler
+              </Text>
+              <Text style={styles.listSectionSubtitle} numberOfLines={2}>
+                Sana yakın aktif yolculuk talepleri
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -1192,18 +1219,29 @@ export default function DriverOfferScreen({
                   <MaterialCommunityIcons
                     name="motorbike"
                     size={mapExpanded ? 48 : 56}
-                    color="#86EFAC"
+                    color="rgba(134,239,172,0.92)"
                   />
                 ) : (
-                  <Ionicons name="car-outline" size={mapExpanded ? 44 : 52} color="#38BDF8" />
+                  <Ionicons name="car-outline" size={mapExpanded ? 44 : 52} color="rgba(34,211,238,0.9)" />
                 )}
               </View>
               <Text style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}>
                 Teklif bekleniyor
               </Text>
               <Text style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}>
-                Çevrimiçi kaldığınızda talepler burada belirir. Haritada {mapHud.radius} km içindeki yolcu talepleri ve yakındaki kullanıcılar gösterilir.
+                Çevrimiçi kaldığınızda yakındaki yolculuk talepleri burada görünür.
               </Text>
+              <View style={styles.emptyChipRow}>
+                <View style={styles.emptyChip}>
+                  <Text style={styles.emptyChipText}>{mapHud.radius} km</Text>
+                </View>
+                <View style={styles.emptyChip}>
+                  <Text style={styles.emptyChipText}>Canlı tarama</Text>
+                </View>
+                <View style={styles.emptyChip}>
+                  <Text style={styles.emptyChipText}>Leylek AI</Text>
+                </View>
+              </View>
             </View>
           </View>
         ) : (
@@ -1252,6 +1290,7 @@ const styles = StyleSheet.create({
   },
   containerEmbedded: {
     minHeight: 0,
+    backgroundColor: PREMIUM_NAVY_DEEP,
   },
   /** Sütun: üstte harita alanı, altta yalnızca liste (ImageBackground haritayı örtmez) */
   driverOfferBody: {
@@ -1259,6 +1298,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 0,
     flexDirection: 'column',
+    backgroundColor: 'transparent',
   },
   mapCardShellExpandedLayer: {
     zIndex: 10,
@@ -1277,29 +1317,49 @@ const styles = StyleSheet.create({
     zIndex: 10,
     position: 'relative',
     backgroundColor: typeof __DEV__ !== 'undefined' && __DEV__ ? '#FF0000' : 'transparent',
-    elevation: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01060e',
+        shadowOffset: { width: 0, height: 16 },
+        shadowOpacity: 0.38,
+        shadowRadius: 22,
+      },
+      android: { elevation: 12 },
+      default: {},
+    }),
   },
   mapViewportFixed: {
     flex: 1,
     width: '100%',
     minHeight: 0,
     overflow: 'hidden',
-    borderRadius: 20,
-    backgroundColor: '#0b1220',
+    borderRadius: 22,
+    backgroundColor: '#0B1220',
     position: 'relative',
-    borderWidth: 1.5,
-    borderColor: 'rgba(51, 65, 85, 0.65)',
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.38,
-    shadowRadius: 18,
-    elevation: 12,
+    borderWidth: StyleSheet.hairlineWidth + 1.25,
+    borderColor: PREMIUM_BORDER_SLATE,
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.4,
+        shadowRadius: 20,
+      },
+      android: { elevation: 14 },
+      default: {},
+    }),
   },
   mapContainerSolidExpanded: {
-    borderColor: 'rgba(56, 189, 248, 0.4)',
-    shadowOpacity: 0.48,
-    shadowRadius: 22,
-    elevation: 16,
+    borderColor: 'rgba(34,211,238,0.26)',
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.48,
+        shadowRadius: 24,
+      },
+      android: { elevation: 16 },
+      default: {},
+    }),
   },
   mapExpandToggle: {
     marginTop: 8,
@@ -1307,27 +1367,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 10,
     alignSelf: 'stretch',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.28)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,17,31,0.78)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.75)',
+    borderTopColor: 'rgba(34,211,238,0.14)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.28,
+        shadowRadius: 14,
+      },
+      android: { elevation: 7 },
+      default: {},
+    }),
   },
   mapExpandToggleText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#E0F2FE',
-    letterSpacing: 0.2,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.05,
   },
   mapExpandToggleWithMapBelow: {
     marginBottom: 8,
   },
   mapDimOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.12)',
+    backgroundColor: 'rgba(8,17,31,0.1)',
     zIndex: 2,
   },
 
@@ -1346,16 +1417,21 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    backgroundColor: 'rgba(8,17,31,0.82)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 250, 252, 0.14)',
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.18)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
   },
   mapTopSpacer: {
     width: 44,
@@ -1370,21 +1446,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 9,
     paddingHorizontal: 18,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.28)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.65)',
+    borderTopColor: 'rgba(34,211,238,0.12)',
     maxWidth: SCREEN_WIDTH * 0.58,
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.28,
+        shadowRadius: 14,
+      },
+      android: { elevation: 10 },
+      default: {},
+    }),
   },
   mapNameText: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: PREMIUM_TEXT_SOFT,
     letterSpacing: -0.2,
   },
   mapRatingRow: {
@@ -1396,7 +1478,7 @@ const styles = StyleSheet.create({
   mapRatingText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#E2E8F0',
+    color: 'rgba(251,211,141,0.95)',
     fontVariant: ['tabular-nums'],
   },
 
@@ -1435,18 +1517,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    backgroundColor: 'rgba(8,17,31,0.88)',
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 14,
     maxWidth: '92%',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.25)',
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.65)',
+    borderTopColor: 'rgba(34,211,238,0.12)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
     zIndex: 6,
   },
   mapHudRadioIcon: {
@@ -1455,23 +1543,23 @@ const styles = StyleSheet.create({
   mapHudText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#E2E8F0',
+    color: PREMIUM_TEXT_SOFT,
     flexShrink: 1,
-    letterSpacing: 0.2,
+    letterSpacing: 0.08,
     fontVariant: ['tabular-nums'],
   },
   mapFallback: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: PREMIUM_NAVY_DEEP,
   },
   mapFallbackText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: PREMIUM_TEXT_MUTED,
     marginTop: 10,
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   mapOverlay: {
     position: 'absolute',
@@ -1488,22 +1576,25 @@ const styles = StyleSheet.create({
   requestCountBadgeBig: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 30,
     marginBottom: 16,
-    shadowColor: '#000',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.75)',
+    borderTopColor: 'rgba(34, 211, 238, 0.2)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
     gap: 12,
   },
   requestCountTextBig: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1B1B1E',
+    color: PREMIUM_TEXT_SOFT,
   },
   radiusInfoBox: {
     flexDirection: 'row',
@@ -1522,21 +1613,23 @@ const styles = StyleSheet.create({
   requestCountBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(16, 26, 43, 0.9)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     alignSelf: 'flex-start',
-    shadowColor: '#000',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30, 58, 95, 0.65)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 5,
   },
   requestCountText: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.text,
+    color: PREMIUM_TEXT_SOFT,
     marginLeft: 6,
   },
   driverMarkerPulseWrap: {
@@ -1551,24 +1644,29 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 23,
     borderWidth: 2,
-    borderColor: 'rgba(56, 189, 248, 0.85)',
+    borderColor: 'rgba(34,211,238,0.55)',
     backgroundColor: 'transparent',
   },
   driverPulseRingOuter: {
-    borderColor: 'rgba(14, 165, 233, 0.5)',
+    borderColor: 'rgba(34,211,238,0.28)',
     borderWidth: 1.5,
   },
   driverMarker: {
-    backgroundColor: '#0284C7',
+    backgroundColor: '#0369a1',
     padding: 8,
     borderRadius: 22,
     borderWidth: 3,
-    borderColor: '#F8FAFC',
-    shadowColor: '#0369a1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 6,
-    elevation: 6,
+    borderColor: 'rgba(243,248,255,0.92)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.38,
+        shadowRadius: 6,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
   },
   cityHeatWrap: {
     width: 72,
@@ -1607,7 +1705,7 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderColor: 'rgba(243, 248, 255, 0.85)',
   },
   passengerMarkerSeeking: {
     width: 32,
@@ -1617,7 +1715,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2.5,
-    borderColor: '#F8FAFC',
+    borderColor: 'rgba(16, 26, 43, 0.95)',
     shadowColor: '#7c2d12',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -1626,18 +1724,18 @@ const styles = StyleSheet.create({
   },
   passengerMarkerSeekingListed: {
     backgroundColor: '#059669',
-    borderColor: '#ECFDF5',
+    borderColor: 'rgba(16, 26, 43, 0.92)',
     shadowColor: '#064e3b',
   },
   passengerMarkerLight: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: 'rgba(248, 250, 252, 0.96)',
+    backgroundColor: 'rgba(16, 26, 43, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(100, 116, 139, 0.55)',
+    borderColor: 'rgba(34, 211, 238, 0.25)',
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.22,
@@ -1648,7 +1746,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#475569',
+    backgroundColor: PREMIUM_AUTH_CYAN,
   },
 
   // List
@@ -1656,48 +1754,90 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     zIndex: 1,
-    elevation: 1,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    elevation: 2,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 0,
+    borderColor: 'rgba(30,58,95,0.45)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.22,
+        shadowRadius: 16,
+      },
+      default: {},
+    }),
   },
   listBackgroundImage: {
     resizeMode: 'cover',
   },
   listHeader: {
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(15, 23, 42, 0.94)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.18)',
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    paddingTop: 16,
+    paddingBottom: 14,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+    borderBottomWidth: StyleSheet.hairlineWidth + 1,
+    borderBottomColor: 'rgba(30,58,95,0.55)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+      },
+      default: {},
+    }),
+    elevation: 4,
   },
   listHeaderTopRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  listHeaderLiveDotWrap: {
+    width: 16,
+    height: 16,
+    marginTop: 4,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+  },
+  listHeaderAccentDotOuter: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.22)',
   },
   listHeaderAccentDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
-    backgroundColor: '#38BDF8',
-    shadowColor: '#38BDF8',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-    elevation: 4,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    opacity: 0.95,
+  },
+  listHeaderTitleCol: {
+    flex: 1,
+    minWidth: 0,
   },
   listTitle: {
-    fontSize: 19,
+    fontSize: 20,
     fontWeight: '900',
-    color: '#F8FAFC',
-    letterSpacing: -0.35,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: -0.38,
+  },
+  listSectionSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    marginTop: 4,
+    letterSpacing: -0.05,
+    lineHeight: 16,
+    opacity: 0.92,
   },
   listHeaderMapExpanded: {
     paddingTop: 10,
@@ -1707,11 +1847,6 @@ const styles = StyleSheet.create({
   listTitleMapExpanded: {
     fontSize: 17,
     letterSpacing: -0.25,
-  },
-  listSubtitle: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 2,
   },
   listContent: {
     paddingHorizontal: 16,
@@ -1741,17 +1876,23 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
     alignItems: 'center',
-    paddingVertical: 28,
+    paddingVertical: 30,
     paddingHorizontal: 22,
-    borderRadius: 22,
-    backgroundColor: 'rgba(15, 23, 42, 0.78)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(148, 163, 184, 0.22)',
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
+    borderRadius: 24,
+    backgroundColor: 'rgba(16,26,43,0.62)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.65)',
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01040a',
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: 0.38,
+        shadowRadius: 24,
+      },
+      android: { elevation: 12 },
+      default: {},
+    }),
   },
   emptyStateCardMapExpanded: {
     paddingVertical: 18,
@@ -1763,16 +1904,16 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-    borderWidth: 2,
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    backgroundColor: 'rgba(34,211,238,0.07)',
+    borderWidth: StyleSheet.hairlineWidth + 1.25,
+    borderColor: 'rgba(34,211,238,0.22)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
   },
   emptyIconRingMotor: {
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-    borderColor: 'rgba(134, 239, 172, 0.4)',
+    backgroundColor: 'rgba(34,211,238,0.05)',
+    borderColor: 'rgba(134,239,172,0.22)',
   },
   emptyIconRingMapExpanded: {
     width: 84,
@@ -1781,21 +1922,46 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   emptyTitle: {
-    fontSize: 23,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#F8FAFC',
+    color: PREMIUM_TEXT_SOFT,
     marginTop: 18,
     textAlign: 'center',
-    letterSpacing: -0.4,
+    letterSpacing: -0.45,
   },
   emptySubtitle: {
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 14,
+    lineHeight: 21,
     fontWeight: '600',
-    color: '#CBD5E1',
+    color: PREMIUM_TEXT_MUTED,
     textAlign: 'center',
     marginTop: 12,
-    letterSpacing: 0.1,
+    letterSpacing: -0.05,
+    opacity: 0.95,
+    paddingHorizontal: 4,
+  },
+  emptyChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+    paddingHorizontal: 4,
+  },
+  emptyChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.14)',
+  },
+  emptyChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(186,218,226,0.88)',
+    letterSpacing: 0.2,
   },
   emptyTitleMapExpanded: {
     fontSize: 19,
@@ -1809,19 +1975,25 @@ const styles = StyleSheet.create({
 
   // Normal TAG — gelen talep kartı (kompakt premium)
   reqCard: {
-    backgroundColor: '#071426',
-    borderRadius: 20,
+    backgroundColor: PREMIUM_GLASS_FILL,
+    borderRadius: 22,
     paddingHorizontal: 12,
     paddingVertical: 10,
     minHeight: 152,
     marginTop: 8,
-    borderWidth: Platform.OS === 'android' ? 1 : StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#020617',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.26,
-    shadowRadius: 12,
-    elevation: 6,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.65)',
+    borderTopColor: 'rgba(34,211,238,0.09)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#01050c',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.26,
+        shadowRadius: 16,
+      },
+      android: { elevation: 7 },
+      default: {},
+    }),
   },
   reqMainRow: {
     flexDirection: 'row',
@@ -1841,12 +2013,13 @@ const styles = StyleSheet.create({
     fontSize: 26,
     lineHeight: 30,
     fontWeight: '800',
-    color: '#4ADE80',
+    color: 'rgba(94,229,209,0.95)',
+    letterSpacing: -0.3,
   },
   reqMetaText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: PREMIUM_TEXT_MUTED,
   },
   reqSecondLine: {
     flexDirection: 'row',
@@ -1864,16 +2037,18 @@ const styles = StyleSheet.create({
   reqPassengerName: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#E2E8F0',
+    color: PREMIUM_TEXT_SOFT,
   },
   reqRatingChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: 'rgba(250, 204, 21, 0.12)',
+    backgroundColor: 'rgba(251,211,141,0.1)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(251,211,141,0.18)',
   },
   reqRatingText: {
     fontSize: 11,
@@ -1935,28 +2110,42 @@ const styles = StyleSheet.create({
   reqDismissBtn: {
     flex: 1,
     minHeight: 40,
-    backgroundColor: '#1F2937',
-    borderRadius: 10,
+    backgroundColor: 'rgba(8,17,31,0.65)',
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.28)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30,58,95,0.55)',
+    borderTopColor: 'rgba(148,206,226,0.08)',
   },
   reqDismissText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#CBD5E1',
+    color: 'rgba(186,206,226,0.88)',
   },
   reqAcceptBtn: {
     flex: 1,
     minHeight: 40,
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
+    backgroundColor: 'rgba(37,99,235,0.92)',
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.18)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#010818',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.28,
+        shadowRadius: 8,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
   },
   acceptButtonDisabled: {
-    backgroundColor: '#CBD5E1',
+    backgroundColor: 'rgba(30, 50, 72, 0.85)',
+    borderColor: 'rgba(30, 58, 95, 0.5)',
   },
   reqAcceptBtnText: {
     fontSize: 12,
@@ -1977,7 +2166,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 10,
     fontWeight: '500',
-    color: '#94A3B8',
+    color: PREMIUM_TEXT_MUTED,
   },
   // Offer Section (Eski - artık kullanılmıyor)
   offerSection: {
@@ -1989,9 +2178,11 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(16, 26, 43, 0.75)',
     borderRadius: 12,
     paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 95, 0.65)',
   },
   priceBtn: {
     padding: 10,
@@ -2024,7 +2215,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   sendBtnDisabled: {
-    backgroundColor: '#CBD5E1',
+    backgroundColor: 'rgba(30, 50, 72, 0.85)',
   },
   sendBtnText: {
     fontSize: 14,
@@ -2036,9 +2227,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0FDF4',
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
     paddingVertical: 12,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.28)',
   },
   sentText: {
     fontSize: 14,

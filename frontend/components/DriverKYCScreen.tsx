@@ -12,7 +12,6 @@ import {
   Pressable,
   TextInput,
   Image,
-  Alert,
   ActivityIndicator,
   ScrollView,
   Platform,
@@ -23,6 +22,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { appAlert } from '../contexts/AppAlertContext';
 import * as ImagePicker from 'expo-image-picker';
 import { EncodingType, readAsStringAsync } from 'expo-file-system/legacy';
 import type { AiMockResult, AiTier } from '../lib/driverKycAiMock';
@@ -75,6 +75,18 @@ const CAR_COLORS = [
   { name: 'Mor', code: '#7C3AED', border: '#7C3AED' },
   { name: 'Pembe', code: '#EC4899', border: '#EC4899' },
 ];
+
+/** Yerel premium KYC yüzeyleri — global Colors dosyası değiştirilmeden. */
+const KYC_P = {
+  bg: '#08111F',
+  bgElev: '#0B1220',
+  bgPanel: '#101A2B',
+  card: 'rgba(16, 26, 43, 0.88)',
+  border: '#1E3A5F',
+  cyan: '#22D3EE',
+  textHi: 'rgba(243, 248, 255, 0.94)',
+  textMd: 'rgba(186, 201, 222, 0.82)',
+} as const;
 
 interface DriverKYCScreenProps {
   userId: string;
@@ -197,7 +209,7 @@ function PhotoCropHintAndPreview({ uri, onReplacePhoto }: { uri: string; onRepla
         accessibilityLabel="Fotoğrafı değiştir"
       >
         <LinearGradient
-          colors={['#0C4A6E', '#0369A1', '#0284C7']}
+          colors={['rgba(8, 36, 52, 0.95)', '#0E7490', KYC_P.cyan]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={photoHeroStyles.cropBarGradient}
@@ -228,11 +240,11 @@ function PhotoHeroActions({
     <View style={photoHeroStyles.wrap}>
       <View style={photoHeroStyles.row2}>
         <TouchableOpacity style={photoHeroStyles.pill} onPress={onRetake} activeOpacity={0.88}>
-          <Ionicons name="camera-outline" size={18} color="#0369A1" />
+          <Ionicons name="camera-outline" size={18} color={KYC_P.cyan} />
           <Text style={photoHeroStyles.pillText}>Yeniden çek</Text>
         </TouchableOpacity>
         <TouchableOpacity style={photoHeroStyles.pill} onPress={onReplace} activeOpacity={0.88}>
-          <Ionicons name="images-outline" size={18} color="#0369A1" />
+          <Ionicons name="images-outline" size={18} color={KYC_P.cyan} />
           <Text style={photoHeroStyles.pillText}>Değiştir</Text>
         </TouchableOpacity>
         <TouchableOpacity style={photoHeroStyles.pillGhost} onPress={onClear} activeOpacity={0.88}>
@@ -251,7 +263,7 @@ const photoHeroStyles = StyleSheet.create({
   cropGuide: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#0369A1',
+    color: 'rgba(34, 211, 238, 0.88)',
     marginBottom: 8,
     lineHeight: 17,
     letterSpacing: 0.1,
@@ -259,20 +271,20 @@ const photoHeroStyles = StyleSheet.create({
   previewFrame: {
     borderRadius: 22,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#38BDF8',
-    backgroundColor: '#0C4A6E',
-    shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.22,
-    shadowRadius: 24,
-    elevation: 10,
+    borderWidth: 1.5,
+    borderColor: KYC_P.border,
+    backgroundColor: KYC_P.bgElev,
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
   },
   previewImage: {
     width: '100%',
     aspectRatio: 4 / 3,
     minHeight: 232,
-    backgroundColor: '#1E293B',
+    backgroundColor: KYC_P.bgPanel,
     opacity: 1,
   },
   cropBarOuter: {
@@ -280,10 +292,10 @@ const photoHeroStyles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     alignSelf: 'stretch',
-    shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
     elevation: 6,
   },
   cropBarGradient: {
@@ -294,7 +306,7 @@ const photoHeroStyles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 18,
     borderWidth: 1,
-    borderColor: 'rgba(125, 211, 252, 0.5)',
+    borderColor: 'rgba(34, 211, 238, 0.35)',
   },
   cropBarTitle: {
     flex: 1,
@@ -307,7 +319,7 @@ const photoHeroStyles = StyleSheet.create({
     marginTop: 8,
     fontSize: 11,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186, 201, 222, 0.78)',
     lineHeight: 15,
     textAlign: 'center',
   },
@@ -319,45 +331,45 @@ const photoHeroStyles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 999,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: 'rgba(16,26,43,0.72)',
     borderWidth: 1,
-    borderColor: '#7DD3FC',
+    borderColor: KYC_P.border,
   },
-  pillText: { color: '#0C4A6E', fontSize: 13, fontWeight: '700' },
+  pillText: { color: KYC_P.textHi, fontSize: 13, fontWeight: '700' },
   pillGhost: {
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#94A3B8',
-    backgroundColor: '#F8FAFC',
+    borderColor: 'rgba(30, 58, 95, 0.65)',
+    backgroundColor: 'rgba(16,26,43,0.45)',
   },
-  pillGhostText: { color: '#475569', fontSize: 13, fontWeight: '700' },
+  pillGhostText: { color: KYC_P.textMd, fontSize: 13, fontWeight: '700' },
 });
 
 const emptyPhotoStyles = StyleSheet.create({
   cardOuter: {
     borderRadius: 24,
     marginBottom: 2,
-    shadowColor: '#0369A1',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.22,
     shadowRadius: 20,
-    elevation: 6,
+    elevation: 8,
   },
   wrapCol: { marginBottom: 6 },
   pressWrap: {
     borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: '#60A5FA',
+    borderColor: KYC_P.border,
     borderStyle: 'dashed',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(16,26,43,0.55)',
   },
   pressWrapActive: {
     opacity: 0.94,
     transform: [{ scale: 0.987 }],
-    borderColor: '#0EA5E9',
+    borderColor: 'rgba(34,211,238,0.42)',
   },
   cardFace: {
     paddingVertical: 34,
@@ -368,9 +380,9 @@ const emptyPhotoStyles = StyleSheet.create({
     width: 92,
     height: 92,
     borderRadius: 46,
-    backgroundColor: 'rgba(14, 165, 233, 0.14)',
+    backgroundColor: 'rgba(34,211,238,0.08)',
     borderWidth: 1.5,
-    borderColor: 'rgba(56, 189, 248, 0.55)',
+    borderColor: 'rgba(34,211,238,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
@@ -378,14 +390,14 @@ const emptyPhotoStyles = StyleSheet.create({
   headline: {
     fontSize: 21,
     fontWeight: '800',
-    color: '#0C4A6E',
+    color: KYC_P.textHi,
     letterSpacing: -0.5,
     marginBottom: 8,
     textAlign: 'center',
   },
   hint: {
     fontSize: 14,
-    color: '#475569',
+    color: KYC_P.textMd,
     lineHeight: 21,
     textAlign: 'center',
     maxWidth: 320,
@@ -400,15 +412,15 @@ const emptyPhotoStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(3, 105, 161, 0.08)',
+    backgroundColor: 'rgba(16,26,43,0.65)',
     borderWidth: 1,
-    borderColor: 'rgba(125, 211, 252, 0.5)',
+    borderColor: 'rgba(34,211,238,0.16)',
   },
   aiRowText: {
     flex: 1,
     fontSize: 12,
     fontWeight: '700',
-    color: '#075985',
+    color: KYC_P.textMd,
     lineHeight: 17,
   },
   primaryLabelRow: {
@@ -419,14 +431,14 @@ const emptyPhotoStyles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: 22,
     borderRadius: 14,
-    backgroundColor: 'rgba(12, 74, 110, 0.08)',
+    backgroundColor: 'rgba(34,211,238,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(3, 105, 161, 0.22)',
+    borderColor: 'rgba(34,211,238,0.22)',
   },
   primaryLabel: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0C4A6E',
+    color: KYC_P.textHi,
     letterSpacing: 0.2,
   },
   secondaryRow: {
@@ -443,19 +455,19 @@ const emptyPhotoStyles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: 'rgba(16,26,43,0.72)',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: KYC_P.border,
   },
   secondaryBtnText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#0369A1',
+    color: 'rgba(34,211,238,0.92)',
   },
   secondarySep: {
     width: 1,
     height: 18,
-    backgroundColor: '#CBD5E1',
+    backgroundColor: KYC_P.border,
     marginHorizontal: 4,
   },
   webHintBelow: {
@@ -463,7 +475,7 @@ const emptyPhotoStyles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.68)',
   },
   uploadedBar: {
     flexDirection: 'row',
@@ -475,16 +487,25 @@ const emptyPhotoStyles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 14,
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1.5,
-    borderColor: '#7DD3FC',
+    backgroundColor: 'rgba(16,52,46,0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.28)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   uploadedBarTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0C4A6E',
+    color: 'rgba(167,243,208,0.95)',
   },
-  uploadedBarSep: { fontSize: 14, color: '#38BDF8', fontWeight: '700' },
+  uploadedBarSep: {
+    fontSize: 14,
+    color: 'rgba(167,243,208,0.55)',
+    fontWeight: '700',
+  },
   uploadedAiChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -492,14 +513,14 @@ const emptyPhotoStyles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: 'rgba(3, 105, 161, 0.1)',
+    backgroundColor: 'rgba(34,211,238,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(14, 165, 233, 0.45)',
+    borderColor: 'rgba(34,211,238,0.22)',
   },
   uploadedAiChipText: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#0369A1',
+    color: 'rgba(34,211,238,0.88)',
     letterSpacing: 0.3,
   },
 });
@@ -520,12 +541,12 @@ function EmptyPhotoAddCard({
   const body = (
     <>
       <View style={emptyPhotoStyles.iconRing}>
-        <Ionicons name="camera" size={46} color="#0369A1" />
+        <Ionicons name="camera" size={46} color={KYC_P.cyan} />
       </View>
       <Text style={emptyPhotoStyles.headline}>Fotoğraf ekle</Text>
       <Text style={emptyPhotoStyles.hint}>{hint}</Text>
       <View style={emptyPhotoStyles.aiRow}>
-        <Ionicons name="sparkles" size={16} color="#0EA5E9" />
+        <Ionicons name="sparkles" size={16} color={KYC_P.cyan} />
         <Text style={emptyPhotoStyles.aiRowText}>
           {webMode
             ? 'Dosya seçildiğinde güvenli yükleme ve otomatik ön kontrol başlar.'
@@ -534,7 +555,7 @@ function EmptyPhotoAddCard({
       </View>
       <View style={emptyPhotoStyles.primaryLabelRow}>
         <Text style={emptyPhotoStyles.primaryLabel}>Fotoğraf ekle</Text>
-        <Ionicons name={webMode ? 'cloud-upload-outline' : 'images'} size={22} color="#0369A1" />
+        <Ionicons name={webMode ? 'cloud-upload-outline' : 'images'} size={22} color={KYC_P.cyan} />
       </View>
     </>
   );
@@ -552,7 +573,12 @@ function EmptyPhotoAddCard({
               (pressed || Boolean(hovered)) && emptyPhotoStyles.pressWrapActive,
             ]}
           >
-            <LinearGradient colors={['#F8FAFC', '#EFF6FF', '#E0F2FE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={emptyPhotoStyles.cardFace}>
+            <LinearGradient
+              colors={['rgba(16,26,43,0.96)', 'rgba(11,18,32,0.98)', '#08111F']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={emptyPhotoStyles.cardFace}
+            >
               {body}
             </LinearGradient>
           </Pressable>
@@ -574,19 +600,24 @@ function EmptyPhotoAddCard({
             (pressed || Boolean(hovered)) && emptyPhotoStyles.pressWrapActive,
           ]}
         >
-          <LinearGradient colors={['#F8FAFC', '#EFF6FF', '#E0F2FE']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={emptyPhotoStyles.cardFace}>
+          <LinearGradient
+            colors={['rgba(16,26,43,0.96)', 'rgba(11,18,32,0.98)', '#08111F']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={emptyPhotoStyles.cardFace}
+          >
             {body}
           </LinearGradient>
         </Pressable>
       </View>
       <View style={emptyPhotoStyles.secondaryRow}>
         <TouchableOpacity style={emptyPhotoStyles.secondaryBtn} onPress={() => void onPickCamera()} activeOpacity={0.82}>
-          <Ionicons name="camera-outline" size={18} color="#0369A1" />
+          <Ionicons name="camera-outline" size={18} color={KYC_P.cyan} />
           <Text style={emptyPhotoStyles.secondaryBtnText}>Kamera</Text>
         </TouchableOpacity>
         <View style={emptyPhotoStyles.secondarySep} />
         <TouchableOpacity style={emptyPhotoStyles.secondaryBtn} onPress={() => void onPickGallery()} activeOpacity={0.82}>
-          <Ionicons name="images-outline" size={18} color="#0369A1" />
+          <Ionicons name="images-outline" size={18} color={KYC_P.cyan} />
           <Text style={emptyPhotoStyles.secondaryBtnText}>Galeri</Text>
         </TouchableOpacity>
       </View>
@@ -597,11 +628,11 @@ function EmptyPhotoAddCard({
 function PhotoUploadedStatusBar() {
   return (
     <View style={emptyPhotoStyles.uploadedBar}>
-      <Ionicons name="checkmark-circle" size={20} color="#0284C7" />
+      <Ionicons name="checkmark-circle" size={20} color="rgba(110,231,183,0.92)" />
       <Text style={emptyPhotoStyles.uploadedBarTitle}>Yüklendi</Text>
       <Text style={emptyPhotoStyles.uploadedBarSep}>·</Text>
       <View style={emptyPhotoStyles.uploadedAiChip}>
-        <Ionicons name="sparkles" size={13} color="#0369A1" />
+        <Ionicons name="sparkles" size={13} color={KYC_P.cyan} />
         <Text style={emptyPhotoStyles.uploadedAiChipText}>Ön kontrol</Text>
       </View>
     </View>
@@ -611,11 +642,43 @@ function PhotoUploadedStatusBar() {
 function AiResultCard({ result, subtitle }: { result: AiMockResult; subtitle?: string }) {
   const palette: Record<
     AiTier,
-    { bg: string; border: string; accent: string; chipBg: string; icon: keyof typeof Ionicons.glyphMap }
+    {
+      bg: string;
+      border: string;
+      accent: string;
+      chipBg: string;
+      titleColor: string;
+      bodyColor: string;
+      icon: keyof typeof Ionicons.glyphMap;
+    }
   > = {
-    green: { bg: '#F0FDF4', border: '#86EFAC', accent: '#166534', chipBg: '#DCFCE7', icon: 'checkmark-circle' },
-    yellow: { bg: '#FFFBEB', border: '#FDE047', accent: '#A16207', chipBg: '#FEF9C3', icon: 'alert-circle' },
-    red: { bg: '#FEF2F2', border: '#FCA5A5', accent: '#991B1B', chipBg: '#FEE2E2', icon: 'close-circle' },
+    green: {
+      bg: 'rgba(16, 26, 43, 0.92)',
+      border: 'rgba(52, 211, 153, 0.35)',
+      accent: 'rgba(110, 231, 183, 0.92)',
+      chipBg: 'rgba(34, 211, 238, 0.1)',
+      titleColor: 'rgba(243, 248, 255, 0.94)',
+      bodyColor: 'rgba(186, 201, 222, 0.88)',
+      icon: 'checkmark-circle',
+    },
+    yellow: {
+      bg: 'rgba(16, 26, 43, 0.92)',
+      border: 'rgba(251, 191, 36, 0.32)',
+      accent: 'rgba(253, 224, 71, 0.88)',
+      chipBg: 'rgba(251, 191, 36, 0.1)',
+      titleColor: 'rgba(243, 248, 255, 0.94)',
+      bodyColor: 'rgba(186, 201, 222, 0.85)',
+      icon: 'alert-circle',
+    },
+    red: {
+      bg: 'rgba(42, 24, 28, 0.88)',
+      border: 'rgba(248, 113, 113, 0.38)',
+      accent: '#FECACA',
+      chipBg: 'rgba(248, 113, 113, 0.12)',
+      titleColor: 'rgba(243, 248, 255, 0.94)',
+      bodyColor: 'rgba(253, 213, 213, 0.88)',
+      icon: 'close-circle',
+    },
   };
   const c = palette[result.status];
   const chipLabel =
@@ -630,11 +693,11 @@ function AiResultCard({ result, subtitle }: { result: AiMockResult; subtitle?: s
         <Text style={aiCardStyles.panelEyebrow}>AI kalite kontrolü</Text>
       </View>
       {subtitle ? <Text style={[aiCardStyles.sub, { color: c.accent }]}>{subtitle}</Text> : null}
-      <Text style={aiCardStyles.title}>{result.title}</Text>
+      <Text style={[aiCardStyles.title, { color: c.titleColor }]}>{result.title}</Text>
       {result.messages.map((m, idx) => (
         <View key={idx} style={aiCardStyles.lineRow}>
           <Ionicons name="ellipse" size={6} color={c.accent} style={aiCardStyles.lineBullet} />
-          <Text style={aiCardStyles.line}>{m}</Text>
+          <Text style={[aiCardStyles.line, { color: c.bodyColor }]}>{m}</Text>
         </View>
       ))}
       <Text style={aiCardStyles.footnote}>Ön kontrol şu an demo modunda; son karar her zaman insandan.</Text>
@@ -645,13 +708,13 @@ function AiResultCard({ result, subtitle }: { result: AiMockResult; subtitle?: s
 const aiCardStyles = StyleSheet.create({
   wrap: {
     borderRadius: 18,
-    borderWidth: 1.5,
+    borderWidth: 1,
     padding: 16,
     marginTop: 14,
-    shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
     elevation: 4,
   },
   panelHeader: {
@@ -667,15 +730,29 @@ const aiCardStyles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.18)',
   },
   chipText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
-  panelEyebrow: { fontSize: 11, fontWeight: '800', color: '#0369A1', letterSpacing: 0.7, textTransform: 'uppercase' },
+  panelEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(34, 211, 238, 0.75)',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
   sub: { fontSize: 12, fontWeight: '700', marginBottom: 6 },
-  title: { fontSize: 16, fontWeight: '800', color: '#0F172A', marginBottom: 10, lineHeight: 22 },
+  title: { fontSize: 16, fontWeight: '800', marginBottom: 10, lineHeight: 22 },
   lineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
   lineBullet: { marginTop: 6 },
-  line: { flex: 1, fontSize: 13, color: '#334155', lineHeight: 19 },
-  footnote: { marginTop: 12, fontSize: 11, color: '#94A3B8', lineHeight: 16, fontStyle: 'italic' },
+  line: { flex: 1, fontSize: 13, lineHeight: 19 },
+  footnote: {
+    marginTop: 12,
+    fontSize: 11,
+    color: 'rgba(186, 201, 222, 0.68)',
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
 });
 
 export default function DriverKYCScreen({
@@ -765,7 +842,7 @@ export default function DriverKYCScreen({
       if (source === 'camera') {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
-          Alert.alert('İzin Gerekli', 'Kamera izni gereklidir');
+          appAlert('İzin Gerekli', 'Kamera izni gereklidir');
           return;
         }
         result = await ImagePicker.launchCameraAsync({
@@ -777,7 +854,7 @@ export default function DriverKYCScreen({
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-          Alert.alert('İzin Gerekli', 'Galeri izni gereklidir');
+          appAlert('İzin Gerekli', 'Galeri izni gereklidir');
           return;
         }
         result = await ImagePicker.launchImageLibraryAsync({
@@ -794,7 +871,7 @@ export default function DriverKYCScreen({
 
       const asset = result.assets?.[0];
       if (!asset) {
-        Alert.alert('Fotoğraf', 'Fotoğraf seçilemedi. Lütfen tekrar deneyin.');
+        appAlert('Fotoğraf', 'Fotoğraf seçilemedi. Lütfen tekrar deneyin.');
         return;
       }
 
@@ -840,7 +917,7 @@ export default function DriverKYCScreen({
           hasUri: !!asset.uri,
           assetKeys: Object.keys(asset),
         });
-        Alert.alert('Fotoğraf', 'Fotoğraf okunamadı. Lütfen tekrar deneyin.');
+        appAlert('Fotoğraf', 'Fotoğraf okunamadı. Lütfen tekrar deneyin.');
         return;
       }
 
@@ -850,7 +927,7 @@ export default function DriverKYCScreen({
       else if (type === 'selfie') setSelfiePhoto(dataUrl);
     } catch (error) {
       console.warn('KYC_IMAGE_PICK_ERROR', error);
-      Alert.alert('Hata', 'Fotoğraf seçilemedi');
+      appAlert('Hata', 'Fotoğraf seçilemedi');
     }
   };
 
@@ -988,23 +1065,23 @@ export default function DriverKYCScreen({
 
     if (isMotorKyc) {
       if (!vehicleBrand.trim()) {
-        Platform.OS === 'web' ? alert('Motor markası girin') : Alert.alert('Hata', 'Motor markası girin');
+        Platform.OS === 'web' ? alert('Motor markası girin') : appAlert('Hata', 'Motor markası girin');
         return;
       }
       if (!vehicleModel.trim()) {
-        Platform.OS === 'web' ? alert('Motor modeli girin') : Alert.alert('Hata', 'Motor modeli girin');
+        Platform.OS === 'web' ? alert('Motor modeli girin') : appAlert('Hata', 'Motor modeli girin');
         return;
       }
       if (!licensePhoto) {
-        Platform.OS === 'web' ? alert('Ehliyet fotoğrafı gerekli') : Alert.alert('Hata', 'Ehliyet fotoğrafı gerekli');
+        Platform.OS === 'web' ? alert('Ehliyet fotoğrafı gerekli') : appAlert('Hata', 'Ehliyet fotoğrafı gerekli');
         return;
       }
       if (!motorcyclePhoto) {
-        Platform.OS === 'web' ? alert('Motor fotoğrafı gerekli') : Alert.alert('Hata', 'Motor fotoğrafı gerekli');
+        Platform.OS === 'web' ? alert('Motor fotoğrafı gerekli') : appAlert('Hata', 'Motor fotoğrafı gerekli');
         return;
       }
       if (!selfiePhoto) {
-        Platform.OS === 'web' ? alert('Selfie (yüz) gerekli') : Alert.alert('Hata', 'Selfie (yüz) gerekli');
+        Platform.OS === 'web' ? alert('Selfie (yüz) gerekli') : appAlert('Hata', 'Selfie (yüz) gerekli');
         return;
       }
     } else {
@@ -1012,7 +1089,7 @@ export default function DriverKYCScreen({
         if (Platform.OS === 'web') {
           alert('Lütfen plaka numarası girin');
         } else {
-          Alert.alert('Hata', 'Lütfen plaka numarası girin');
+          appAlert('Hata', 'Lütfen plaka numarası girin');
         }
         return;
       }
@@ -1020,7 +1097,7 @@ export default function DriverKYCScreen({
         if (Platform.OS === 'web') {
           alert('Lütfen araç markası seçin');
         } else {
-          Alert.alert('Hata', 'Lütfen araç markası seçin');
+          appAlert('Hata', 'Lütfen araç markası seçin');
         }
         return;
       }
@@ -1028,7 +1105,7 @@ export default function DriverKYCScreen({
         if (Platform.OS === 'web') {
           alert('Lütfen araç modeli seçin');
         } else {
-          Alert.alert('Hata', 'Lütfen araç modeli seçin');
+          appAlert('Hata', 'Lütfen araç modeli seçin');
         }
         return;
       }
@@ -1036,7 +1113,7 @@ export default function DriverKYCScreen({
         if (Platform.OS === 'web') {
           alert('Lütfen araç fotoğrafı yükleyin');
         } else {
-          Alert.alert('Hata', 'Lütfen araç fotoğrafı yükleyin');
+          appAlert('Hata', 'Lütfen araç fotoğrafı yükleyin');
         }
         return;
       }
@@ -1044,7 +1121,7 @@ export default function DriverKYCScreen({
         if (Platform.OS === 'web') {
           alert('Lütfen ehliyet fotoğrafı yükleyin');
         } else {
-          Alert.alert('Hata', 'Lütfen ehliyet fotoğrafı yükleyin');
+          appAlert('Hata', 'Lütfen ehliyet fotoğrafı yükleyin');
         }
         return;
       }
@@ -1052,12 +1129,12 @@ export default function DriverKYCScreen({
 
     if (!vehicleAi || !licenseAi) {
       const msg = 'Ön kontrol tamamlanmadı. Lütfen sihirbaz adımlarını tamamlayın.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('Hata', msg);
+      Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
     if (vehicleAi.status === 'red' || licenseAi.status === 'red') {
       const msg = 'Kırmızı ön kontrol sonucu varken başvuru gönderilemez. Fotoğrafları güncelleyin.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('Hata', msg);
+      Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
 
@@ -1134,7 +1211,7 @@ export default function DriverKYCScreen({
           alert('✅ Başvurunuz Alındı!\n\nSürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.\n\nTahmini onay süresi: 30 dakika');
           onSuccess();
         } else {
-          Alert.alert(
+          appAlert(
             '✅ Başvurunuz Alındı',
             'Sürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.\n\nTahmini onay süresi: 30 dakika',
             [{ text: 'Tamam', onPress: onSuccess }]
@@ -1152,7 +1229,7 @@ export default function DriverKYCScreen({
       if (Platform.OS === 'web') {
         alert('Hata: ' + errorMsg);
       } else {
-        Alert.alert('Hata', errorMsg);
+        appAlert('Hata', errorMsg);
       }
     } finally {
       setLoading(false);
@@ -1162,10 +1239,10 @@ export default function DriverKYCScreen({
   return (
     <SafeAreaView style={styles.container}>
       {/* Header — premium onboarding */}
-      <LinearGradient colors={['#0B1220', '#111827', '#1E293B']} style={styles.headerGradient}>
+      <LinearGradient colors={['#08111F', '#0B1220', '#101A2B']} style={styles.headerGradient}>
         <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={onBack} style={styles.backButtonPremium} accessibilityLabel="Geri">
-            <Ionicons name="chevron-back" size={26} color="#F8FAFC" />
+            <Ionicons name="chevron-back" size={26} color={KYC_P.cyan} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerKicker}>Sürücü doğrulama</Text>
@@ -1197,7 +1274,7 @@ export default function DriverKYCScreen({
         >
           <View style={styles.infoCardPremium}>
             <View style={styles.infoIconWrap}>
-              <Ionicons name="sparkles" size={22} color="#38BDF8" />
+              <Ionicons name="sparkles" size={22} color={KYC_P.cyan} />
             </View>
             <View style={styles.infoTextCol}>
               <Text style={styles.infoTitlePremium}>AI destekli ön kontrol</Text>
@@ -1221,18 +1298,18 @@ export default function DriverKYCScreen({
                   <TextInput
                     style={styles.input}
                     placeholder="Örn: 34 ABC 123"
-                    placeholderTextColor="#999"
+                    placeholderTextColor="rgba(186,201,222,0.42)"
                     value={plateNumber}
                     onChangeText={setPlateNumber}
                     autoCapitalize="characters"
                   />
                   <Text style={styles.label}>Araç Markası *</Text>
                   <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
-                    <Ionicons name="car" size={20} color={vehicleBrand ? '#3FA9F5' : '#999'} />
+                    <Ionicons name="car" size={20} color={vehicleBrand ? KYC_P.cyan : 'rgba(186,201,222,0.45)'} />
                     <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
                       {vehicleBrand || 'Marka seçin...'}
                     </Text>
-                    <Ionicons name="chevron-down" size={20} color="#999" />
+                    <Ionicons name="chevron-down" size={20} color="rgba(186,201,222,0.55)" />
                   </TouchableOpacity>
                   <Text style={styles.label}>Araç Modeli *</Text>
                   <TouchableOpacity
@@ -1240,17 +1317,17 @@ export default function DriverKYCScreen({
                     onPress={() => vehicleBrand && setShowModelModal(true)}
                     disabled={!vehicleBrand}
                   >
-                    <Ionicons name="construct" size={20} color={vehicleModel ? '#3FA9F5' : '#999'} />
+                    <Ionicons name="construct" size={20} color={vehicleModel ? KYC_P.cyan : 'rgba(186,201,222,0.45)'} />
                     <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
                       {vehicleModel || 'Model seçin...'}
                     </Text>
-                    <Ionicons name="chevron-down" size={20} color="#999" />
+                    <Ionicons name="chevron-down" size={20} color="rgba(186,201,222,0.55)" />
                   </TouchableOpacity>
                   <Text style={styles.label}>Araç Yılı</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Örn: 2020"
-                    placeholderTextColor="#999"
+                    placeholderTextColor="rgba(186,201,222,0.42)"
                     value={vehicleYear}
                     onChangeText={setVehicleYear}
                     keyboardType="numeric"
@@ -1312,13 +1389,13 @@ export default function DriverKYCScreen({
                   )}
                   {analyzingVehicle ? (
                     <View style={styles.analyzeRow}>
-                      <ActivityIndicator color="#3FA9F5" />
+                      <ActivityIndicator color={KYC_P.cyan} />
                       <Text style={styles.analyzeText}>Fotoğraf analiz ediliyor…</Text>
                     </View>
                   ) : null}
                   {vehicleAi?.status === 'red' ? (
                     <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
                       <Text style={styles.blockBannerText}>
                         Bu fotoğrafla ilerlenemez. Lütfen daha net bir görüntü yükleyin.
                       </Text>
@@ -1326,7 +1403,7 @@ export default function DriverKYCScreen({
                   ) : null}
                   {vehicleAi?.status === 'yellow' ? (
                     <View style={styles.warnBanner}>
-                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
                       <Text style={styles.warnBannerText}>
                         Ön kontrol uyarısı: yine de devam edebilirsiniz; mümkünse daha iyi bir fotoğraf tercih edin.
                       </Text>
@@ -1374,13 +1451,13 @@ export default function DriverKYCScreen({
                   )}
                   {analyzingLicense ? (
                     <View style={styles.analyzeRow}>
-                      <ActivityIndicator color="#3FA9F5" />
+                      <ActivityIndicator color={KYC_P.cyan} />
                       <Text style={styles.analyzeText}>Ehliyet analiz ediliyor…</Text>
                     </View>
                   ) : null}
                   {licenseAi?.status === 'red' ? (
                     <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
                       <Text style={styles.blockBannerText}>
                         Ehliyet fotoğrafı yetersiz. Lütfen net ve kadrajı tam bir görüntü yükleyin.
                       </Text>
@@ -1388,7 +1465,7 @@ export default function DriverKYCScreen({
                   ) : null}
                   {licenseAi?.status === 'yellow' ? (
                     <View style={styles.warnBanner}>
-                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
                       <Text style={styles.warnBannerText}>
                         Ön kontrol uyarısı: devam edebilirsiniz; mümkünse belgeyi daha net çekin.
                       </Text>
@@ -1428,7 +1505,7 @@ export default function DriverKYCScreen({
                   <TextInput
                     style={styles.input}
                     placeholder="Örn: Honda"
-                    placeholderTextColor="#999"
+                    placeholderTextColor="rgba(186,201,222,0.42)"
                     value={vehicleBrand}
                     onChangeText={setVehicleBrand}
                   />
@@ -1436,7 +1513,7 @@ export default function DriverKYCScreen({
                   <TextInput
                     style={styles.input}
                     placeholder="Örn: PCX 125"
-                    placeholderTextColor="#999"
+                    placeholderTextColor="rgba(186,201,222,0.42)"
                     value={vehicleModel}
                     onChangeText={setVehicleModel}
                   />
@@ -1444,7 +1521,7 @@ export default function DriverKYCScreen({
                   <TextInput
                     style={styles.input}
                     placeholder="Varsa yazın"
-                    placeholderTextColor="#999"
+                    placeholderTextColor="rgba(186,201,222,0.42)"
                     value={plateNumber}
                     onChangeText={setPlateNumber}
                     autoCapitalize="characters"
@@ -1488,19 +1565,19 @@ export default function DriverKYCScreen({
                   )}
                   {analyzingVehicle ? (
                     <View style={styles.analyzeRow}>
-                      <ActivityIndicator color="#3FA9F5" />
+                      <ActivityIndicator color={KYC_P.cyan} />
                       <Text style={styles.analyzeText}>Motor fotoğrafı analiz ediliyor…</Text>
                     </View>
                   ) : null}
                   {vehicleAi?.status === 'red' ? (
                     <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
                       <Text style={styles.blockBannerText}>Bu fotoğrafla ilerlenemez. Lütfen daha net bir görüntü yükleyin.</Text>
                     </View>
                   ) : null}
                   {vehicleAi?.status === 'yellow' ? (
                     <View style={styles.warnBanner}>
-                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
                       <Text style={styles.warnBannerText}>Ön kontrol uyarısı: devam edebilirsiniz.</Text>
                     </View>
                   ) : null}
@@ -1544,19 +1621,19 @@ export default function DriverKYCScreen({
                   )}
                   {analyzingLicense ? (
                     <View style={styles.analyzeRow}>
-                      <ActivityIndicator color="#3FA9F5" />
+                      <ActivityIndicator color={KYC_P.cyan} />
                       <Text style={styles.analyzeText}>Ehliyet analiz ediliyor…</Text>
                     </View>
                   ) : null}
                   {licenseAi?.status === 'red' ? (
                     <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
                       <Text style={styles.blockBannerText}>Ehliyet fotoğrafı yetersiz. Lütfen net bir görüntü yükleyin.</Text>
                     </View>
                   ) : null}
                   {licenseAi?.status === 'yellow' ? (
                     <View style={styles.warnBanner}>
-                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
                       <Text style={styles.warnBannerText}>Ön kontrol uyarısı: devam edebilirsiniz.</Text>
                     </View>
                   ) : null}
@@ -1620,7 +1697,7 @@ export default function DriverKYCScreen({
           {/* Submit Status */}
           {submitStatus ? (
             <View style={styles.statusContainer}>
-              <ActivityIndicator size="small" color="#3FA9F5" />
+              <ActivityIndicator size="small" color={KYC_P.cyan} />
               <Text style={styles.statusText}>{submitStatus}</Text>
             </View>
           ) : null}
@@ -1648,7 +1725,7 @@ export default function DriverKYCScreen({
                 disabled={!canSubmitFinal() || loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="#FFF" size="small" />
+                  <ActivityIndicator color={KYC_P.cyan} size="small" />
                 ) : (
                   <>
                     <Ionicons name="send" size={20} color="#FFF" />
@@ -1667,15 +1744,15 @@ export default function DriverKYCScreen({
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Marka Seçin</Text>
             <TouchableOpacity onPress={() => setShowBrandModal(false)}>
-              <Ionicons name="close" size={28} color="#333" />
+              <Ionicons name="close" size={28} color={KYC_P.textHi} />
             </TouchableOpacity>
           </View>
           <View style={styles.searchBox}>
-            <Ionicons name="search" size={20} color="#999" />
+            <Ionicons name="search" size={20} color="rgba(186,201,222,0.55)" />
             <TextInput
               style={styles.searchInput}
               placeholder="Marka ara..."
-              placeholderTextColor="#999"
+              placeholderTextColor="rgba(186,201,222,0.42)"
               value={brandSearch}
               onChangeText={setBrandSearch}
             />
@@ -1696,7 +1773,7 @@ export default function DriverKYCScreen({
                 <Text style={[styles.listItemText, vehicleBrand === item && styles.listItemTextActive]}>
                   {item}
                 </Text>
-                {vehicleBrand === item && <Ionicons name="checkmark" size={22} color="#3FA9F5" />}
+                {vehicleBrand === item && <Ionicons name="checkmark" size={22} color={KYC_P.cyan} />}
               </TouchableOpacity>
             )}
           />
@@ -1709,7 +1786,7 @@ export default function DriverKYCScreen({
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{vehicleBrand} Modelleri</Text>
             <TouchableOpacity onPress={() => setShowModelModal(false)}>
-              <Ionicons name="close" size={28} color="#333" />
+              <Ionicons name="close" size={28} color={KYC_P.textHi} />
             </TouchableOpacity>
           </View>
           <FlatList
@@ -1726,7 +1803,7 @@ export default function DriverKYCScreen({
                 <Text style={[styles.listItemText, vehicleModel === item && styles.listItemTextActive]}>
                   {item}
                 </Text>
-                {vehicleModel === item && <Ionicons name="checkmark" size={22} color="#3FA9F5" />}
+                {vehicleModel === item && <Ionicons name="checkmark" size={22} color={KYC_P.cyan} />}
               </TouchableOpacity>
             )}
           />
@@ -1739,7 +1816,7 @@ export default function DriverKYCScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: KYC_P.bg,
   },
   headerGradient: {
     paddingTop: 6,
@@ -1757,11 +1834,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(248, 250, 252, 0.1)',
+    backgroundColor: 'rgba(34,211,238,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(248, 250, 252, 0.14)',
+    borderColor: 'rgba(34,211,238,0.22)',
   },
   headerCenter: {
     flex: 1,
@@ -1771,7 +1848,7 @@ const styles = StyleSheet.create({
   headerKicker: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: KYC_P.textMd,
     letterSpacing: 1.4,
     textTransform: 'uppercase',
     marginBottom: 4,
@@ -1779,7 +1856,7 @@ const styles = StyleSheet.create({
   headerTitleLight: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: KYC_P.textHi,
     letterSpacing: -0.4,
     textAlign: 'center',
   },
@@ -1787,7 +1864,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
     fontWeight: '600',
-    color: '#CBD5E1',
+    color: KYC_P.textMd,
     textAlign: 'center',
     lineHeight: 18,
   },
@@ -1812,49 +1889,49 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   stepDotOn: {
-    backgroundColor: '#38BDF8',
-    shadowColor: '#38BDF8',
+    backgroundColor: KYC_P.cyan,
+    shadowColor: KYC_P.cyan,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.85,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 3,
   },
   stepDotOff: {
-    backgroundColor: 'rgba(148, 163, 184, 0.35)',
+    backgroundColor: 'rgba(148, 163, 184, 0.22)',
   },
   stepDotLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.45)',
   },
   stepDotLabelOn: {
-    color: '#E0F2FE',
+    color: KYC_P.cyan,
   },
   infoCardPremium: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 14,
-    backgroundColor: '#FFF',
+    backgroundColor: KYC_P.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    elevation: 3,
+    borderColor: KYC_P.border,
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 6,
   },
   infoIconWrap: {
     width: 46,
     height: 46,
     borderRadius: 14,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: 'rgba(34,211,238,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: 'rgba(34,211,238,0.22)',
   },
   infoTextCol: {
     flex: 1,
@@ -1862,107 +1939,112 @@ const styles = StyleSheet.create({
   infoTitlePremium: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: KYC_P.textHi,
     marginBottom: 6,
     letterSpacing: -0.2,
   },
   infoBodyPremium: {
     fontSize: 13,
-    color: '#475569',
+    color: KYC_P.textMd,
     lineHeight: 20,
   },
   progressTrack: {
     height: 8,
     borderRadius: 999,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: 'rgba(30,58,95,0.45)',
     overflow: 'hidden',
     marginBottom: 20,
   },
   progressGlow: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: '#0EA5E9',
+    backgroundColor: 'rgba(34,211,238,0.55)',
+    shadowColor: KYC_P.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#0F172A',
+    color: KYC_P.textHi,
     letterSpacing: 0.9,
     textTransform: 'uppercase',
     marginBottom: 6,
   },
   sectionHint: {
     fontSize: 13,
-    color: '#64748B',
+    color: KYC_P.textMd,
     lineHeight: 19,
     marginBottom: 12,
   },
   stepHelp: {
     fontSize: 13,
-    color: '#475569',
+    color: KYC_P.textMd,
     lineHeight: 20,
     marginBottom: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(16,26,43,0.72)',
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: KYC_P.border,
   },
   analyzeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginTop: 10,
+    paddingHorizontal: 4,
   },
   analyzeText: {
     fontSize: 14,
-    color: '#3FA9F5',
+    color: KYC_P.cyan,
     fontWeight: '500',
   },
   blockBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: 'rgba(127,29,37,0.35)',
     borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 10,
+    borderColor: 'rgba(248,113,113,0.35)',
+    borderRadius: 12,
     padding: 12,
     marginTop: 10,
   },
   blockBannerText: {
     flex: 1,
     fontSize: 13,
-    color: '#991B1B',
+    color: 'rgba(253,213,213,0.94)',
     lineHeight: 18,
   },
   warnBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: 'rgba(120,94,26,0.22)',
     borderWidth: 1,
-    borderColor: '#FDE68A',
-    borderRadius: 10,
+    borderColor: 'rgba(251,191,36,0.28)',
+    borderRadius: 12,
     padding: 12,
     marginTop: 10,
   },
   warnBannerText: {
     flex: 1,
     fontSize: 13,
-    color: '#92400E',
+    color: 'rgba(253,230,174,0.94)',
     lineHeight: 18,
   },
   summaryTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#1B1B1E',
+    color: KYC_P.textHi,
     marginBottom: 10,
   },
   summaryLine: {
     fontSize: 15,
-    color: '#334155',
+    color: KYC_P.textMd,
     marginBottom: 6,
     lineHeight: 22,
   },
@@ -1973,69 +2055,75 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: KYC_P.border,
   },
   navBtnSecondary: {
     flex: 1,
     paddingVertical: 16,
     borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: KYC_P.border,
+    backgroundColor: 'rgba(16,26,43,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   navBtnSecondaryText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#334155',
+    color: KYC_P.textHi,
     letterSpacing: 0.2,
   },
   navBtnPrimary: {
     flex: 1,
     paddingVertical: 16,
     borderRadius: 14,
-    backgroundColor: '#0284C7',
+    backgroundColor: 'rgba(34,211,238,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0EA5E9',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.42)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 4,
   },
   navBtnPrimaryText: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#FFF',
+    color: KYC_P.textHi,
     letterSpacing: 0.35,
   },
   navBtnDisabled: {
-    opacity: 0.4,
+    opacity: 0.38,
     shadowOpacity: 0,
     elevation: 0,
-    backgroundColor: '#94A3B8',
+    backgroundColor: 'rgba(16,26,43,0.5)',
+    borderColor: KYC_P.border,
   },
   submitBtnFooter: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#059669',
+    backgroundColor: 'rgba(6,148,173,0.38)',
     paddingVertical: 16,
     borderRadius: 14,
     gap: 10,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.45)',
+    shadowColor: KYC_P.cyan,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
     elevation: 5,
   },
   submitBtnDisabled: {
-    backgroundColor: '#94A3AF',
+    backgroundColor: 'rgba(52,71,93,0.45)',
+    borderColor: KYC_P.border,
     shadowOpacity: 0,
     elevation: 0,
-    opacity: 0.72,
+    opacity: 0.55,
   },
   content: {
     flex: 1,
@@ -2044,27 +2132,27 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: KYC_P.textHi,
     marginBottom: 8,
     marginTop: 12,
   },
   input: {
-    backgroundColor: '#FFF',
+    backgroundColor: KYC_P.card,
     borderRadius: 10,
     padding: 14,
     fontSize: 16,
-    color: '#111827',
+    color: KYC_P.textHi,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: KYC_P.border,
   },
   selectButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: KYC_P.card,
     borderRadius: 10,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: KYC_P.border,
     gap: 10,
   },
   selectDisabled: {
@@ -2073,10 +2161,10 @@ const styles = StyleSheet.create({
   selectText: {
     flex: 1,
     fontSize: 16,
-    color: '#999',
+    color: 'rgba(186,201,222,0.55)',
   },
   selectTextActive: {
-    color: '#1B1B1E',
+    color: KYC_P.textHi,
     fontWeight: '500',
   },
   // Renk Grid
@@ -2090,15 +2178,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#FFF',
+    backgroundColor: KYC_P.card,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: KYC_P.border,
     width: '18%',
     minWidth: 58,
   },
   colorItemActive: {
-    borderColor: '#3FA9F5',
-    backgroundColor: '#EBF5FF',
+    borderColor: KYC_P.cyan,
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    shadowColor: KYC_P.cyan,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 2,
   },
   colorCircle: {
     width: 26,
@@ -2109,11 +2202,11 @@ const styles = StyleSheet.create({
   },
   colorName: {
     fontSize: 9,
-    color: '#666',
+    color: KYC_P.textMd,
     textAlign: 'center',
   },
   colorNameActive: {
-    color: '#3FA9F5',
+    color: KYC_P.cyan,
     fontWeight: '600',
   },
   // Fotoğraf
@@ -2126,26 +2219,36 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 10,
     resizeMode: 'cover',
+    borderWidth: 1,
+    borderColor: KYC_P.border,
   },
   removePhotoBtn: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: '#FFF',
+    backgroundColor: KYC_P.card,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: KYC_P.border,
   },
   // Status
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     gap: 10,
     marginTop: 16,
+    backgroundColor: 'rgba(16,26,43,0.72)',
+    borderRadius: 12,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: KYC_P.border,
   },
   statusText: {
     fontSize: 14,
-    color: '#3FA9F5',
+    color: KYC_P.textMd,
     fontWeight: '500',
   },
   submitBtnText: {
@@ -2157,59 +2260,63 @@ const styles = StyleSheet.create({
   // Modal
   modalContainer: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: KYC_P.bg,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(16,26,43,0.92)',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: KYC_P.border,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1B1B1E',
+    color: KYC_P.textHi,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    margin: 16,
+    backgroundColor: KYC_P.card,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
     paddingHorizontal: 14,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: KYC_P.border,
   },
   searchInput: {
     flex: 1,
     padding: 12,
     fontSize: 16,
-    color: '#111827',
+    color: KYC_P.textHi,
   },
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFF',
+    backgroundColor: KYC_P.card,
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KYC_P.border,
   },
   listItemActive: {
-    backgroundColor: '#EBF5FF',
+    backgroundColor: 'rgba(34,211,238,0.1)',
     borderWidth: 1,
-    borderColor: '#3FA9F5',
+    borderColor: 'rgba(34,211,238,0.38)',
   },
   listItemText: {
     fontSize: 16,
-    color: '#1B1B1E',
+    color: KYC_P.textHi,
   },
   listItemTextActive: {
     fontWeight: '600',
-    color: '#3FA9F5',
+    color: KYC_P.cyan,
   },
 });

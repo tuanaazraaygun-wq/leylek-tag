@@ -67,7 +67,7 @@ export default function KVKKScreen() {
         <Text style={styles.paragraph}>
           • IP adresi{"\n"}
           • Cihaz bilgisi{"\n"}
-          • Push bildirim token'ı{"\n"}
+          • Push bildirim token{'\''}ı{"\n"}
           • Sistem log ve güvenlik kayıtları
         </Text>
 
