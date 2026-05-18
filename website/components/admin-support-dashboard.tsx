@@ -89,6 +89,47 @@ function rowStatusValue(raw: string): RowStatus {
   return STATUSES.includes(t) ? t : "new";
 }
 
+function listStatusBadgeClass(st: RowStatus): string {
+  switch (st) {
+    case "new":
+      return "border-violet-400/38 bg-violet-500/[0.12] text-violet-50/95 shadow-[0_0_18px_-8px_rgba(139,92,246,0.4)] ring-1 ring-violet-400/10";
+    case "reviewing":
+      return "border-amber-400/35 bg-amber-500/[0.12] text-amber-50/95 shadow-[0_0_18px_-8px_rgba(245,158,11,0.28)] ring-1 ring-amber-400/12";
+    case "resolved":
+      return "border-emerald-400/28 bg-emerald-500/[0.10] text-emerald-50/92 ring-1 ring-emerald-400/10";
+    default:
+      return "border-white/[0.08] bg-white/[0.05] text-slate-200";
+  }
+}
+
+function AdminSupportHeadsetGlyph({ className = "h-[1.05rem] w-[1.05rem]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 14.5v2.2a2.8 2.8 0 0 0 2.8 2.8h.9V9.5H6.8A2.8 2.8 0 0 0 4 12.3v2.2Zm16 0v2.2a2.8 2.8 0 0 1-2.8 2.8h-.9V9.5h.9A2.8 2.8 0 0 1 20 12.3v2.2ZM7.7 19.5v.2a4.3 4.3 0 0 0 8.6 0v-.3"
+      />
+      <path strokeWidth="1.5" strokeLinecap="round" d="M9.2 10.2a3.7 3.7 0 0 1 5.6-.1" opacity="0.5" />
+    </svg>
+  );
+}
+
+function AdminSupportCheckGlyph({ className = "h-[1.05rem] w-[1.05rem]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M20 6 9 17l-5-5"
+        className="text-emerald-200"
+      />
+    </svg>
+  );
+}
+
 const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "Tümü" },
   { value: "new", label: statusLabel("new") },
@@ -118,47 +159,64 @@ function SupportAdminMessageDetail({
     viewerState === "reviewing_missing_assignment";
 
   return (
-    <article className="rounded-[1.25rem] border border-white/[0.09] bg-slate-950/[0.9] p-5 shadow-[0_24px_72px_-42px_rgba(0,114,255,0.38)] ring-1 ring-cyan-400/[0.08] backdrop-blur-xl md:p-6">
-      <div className="flex flex-col gap-4 border-b border-white/[0.06] pb-4 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 space-y-1">
+    <article className="admin-support-detail-shell rounded-[1.35rem] border border-white/[0.1] bg-slate-950/[0.78] p-6 shadow-[0_28px_80px_-40px_rgba(0,114,255,0.45)] ring-1 ring-cyan-400/[0.1] backdrop-blur-2xl md:p-8">
+      <div className="relative z-[1] flex flex-col gap-5 border-b border-white/[0.07] pb-6 md:flex-row md:items-start md:justify-between md:gap-8">
+        <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
-            <time dateTime={row.created_at} className="text-slate-400">
+            <time
+              dateTime={row.created_at}
+              className="text-slate-400 [font-variant-numeric:tabular-nums]"
+            >
               {new Date(row.created_at).toLocaleString("tr-TR", {
                 dateStyle: "medium",
                 timeStyle: "short",
               })}
             </time>
-            <span className="rounded-full border border-white/[0.08] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-100/92">
+            <span
+              className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] ${listStatusBadgeClass(st)}`}
+            >
               {statusLabel(st)}
             </span>
             {row.page_path ? (
-              <span className="rounded-md bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] normal-case tracking-normal text-cyan-200/85">
+              <span className="rounded-lg border border-white/[0.08] bg-black/35 px-2 py-1 font-mono text-[10px] font-medium normal-case tracking-normal text-cyan-200/88">
                 {row.page_path}
               </span>
             ) : null}
             {row.source?.trim() ? (
-              <span className="rounded-md border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Kaynak · {row.source}
+              <span className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/22 bg-gradient-to-r from-cyan-500/[0.14] via-cyan-400/[0.08] to-emerald-500/[0.08] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-cyan-50/96 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12),0_8px_28px_-14px_rgba(34,211,238,0.35)] backdrop-blur-sm">
+                <span className="text-cyan-200/75">Kaynak</span>
+                <span className="text-cyan-300/40" aria-hidden>
+                  ·
+                </span>
+                <span className="font-mono text-[10px] font-bold normal-case tracking-normal text-white/90">
+                  {row.source.trim()}
+                </span>
               </span>
             ) : null}
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-slate-300">
-            <span>
-              <span className="text-slate-500">Ad: </span>
-              {row.name?.trim() ? row.name : "—"}
-            </span>
-            <span className="min-w-0 break-all">
-              <span className="text-slate-500">E‑posta: </span>
-              {row.email?.trim() ? row.email : "—"}
-            </span>
-          </div>
+
+          <dl className="grid gap-3 sm:grid-cols-2 sm:gap-x-6">
+            <div className="rounded-xl border border-white/[0.06] bg-black/30 px-3.5 py-2.5 backdrop-blur-md">
+              <dt className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Ad</dt>
+              <dd className="mt-1 truncate text-[14px] font-semibold leading-snug text-slate-100/94">
+                {row.name?.trim() ? row.name : "—"}
+              </dd>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-black/30 px-3.5 py-2.5 backdrop-blur-md">
+              <dt className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">E‑posta</dt>
+              <dd className="mt-1 break-all text-[13px] font-medium leading-snug text-slate-200/92">
+                {row.email?.trim() ? row.email : "—"}
+              </dd>
+            </div>
+          </dl>
+
           {viewerState === "self_reviewing" ? (
-            <p className="rounded-xl border border-cyan-400/22 bg-cyan-400/[0.08] px-3 py-2 text-[12px] font-semibold leading-snug text-cyan-50/96">
+            <p className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.1] px-3.5 py-2.5 text-[12px] font-semibold leading-snug text-cyan-50/96 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-sm">
               Bu görüşme sana atanmış.
             </p>
           ) : null}
           {viewerState === "other_reviewing" || viewerState === "other_resolved" ? (
-            <p className="rounded-xl border border-amber-500/22 bg-amber-500/[0.08] px-3 py-2 text-[12px] font-semibold leading-snug text-amber-50/95">
+            <p className="rounded-xl border border-amber-500/25 bg-amber-500/[0.09] px-3.5 py-2.5 text-[12px] font-semibold leading-snug text-amber-50/95 backdrop-blur-sm">
               Bu görüşme başka bir yönetici tarafından{" "}
               {viewerState === "other_resolved" ? "yönetilip çözüldü" : "alındı"}.
               {row.assigned_admin_email?.trim() ? (
@@ -169,47 +227,73 @@ function SupportAdminMessageDetail({
             </p>
           ) : null}
           {viewerState === "reviewing_missing_assignment" ? (
-            <p className="rounded-xl border border-white/[0.1] bg-white/[0.05] px-3 py-2 text-[12px] font-medium leading-snug text-slate-300">
+            <p className="rounded-xl border border-white/[0.1] bg-white/[0.05] px-3.5 py-2.5 text-[12px] font-medium leading-snug text-slate-300 backdrop-blur-sm">
               Kayıtta atama eksik (status inceleniyor). Veritabanını güncelledikten sonra bu kaydı yeniden açmayı deneyin
               — <span className="font-mono text-[11px] text-slate-400">website/supabase/support_assignments.sql</span>.
             </p>
           ) : null}
         </div>
-        <div className="flex w-full shrink-0 flex-col gap-2 md:w-auto md:items-end md:justify-end md:self-start">
+
+        <div className="relative z-[1] flex w-full shrink-0 flex-col gap-2.5 md:w-auto md:items-end md:self-start">
           {viewerState === "claimable_new" ? (
             <button
               type="button"
               disabled={updating}
+              aria-busy={updating}
               onClick={onAccept}
-              className="min-h-[44px] w-full rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black text-white shadow-[0_14px_36px_-18px_rgba(0,198,255,0.45)] ring-1 ring-cyan-300/18 transition hover:brightness-[1.04] disabled:cursor-not-allowed disabled:opacity-55 md:w-56"
+              className="admin-support-cta-accept inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-5 py-3 text-[13px] font-black text-white shadow-[0_14px_40px_-12px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/25 disabled:cursor-not-allowed disabled:opacity-50 md:min-w-[15.5rem]"
             >
-              {updating ? "İşleniyor…" : "Görüşmeyi kabul et"}
+              {updating ? (
+                <span
+                  aria-hidden
+                  className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/35 border-t-white"
+                />
+              ) : (
+                <AdminSupportHeadsetGlyph className="shrink-0 opacity-95" />
+              )}
+              <span>{updating ? "Kabul ediliyor…" : "Görüşmeyi kabul et"}</span>
             </button>
           ) : null}
           {viewerState === "self_reviewing" ? (
             <button
               type="button"
               disabled={updating}
+              aria-busy={updating}
               onClick={onMarkResolved}
-              className="min-h-[44px] w-full rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 py-2.5 text-[13px] font-bold text-white transition hover:border-cyan-400/35 disabled:cursor-not-allowed disabled:opacity-55 md:w-56"
+              className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/28 bg-gradient-to-b from-emerald-500/[0.14] to-black/25 px-5 py-3 text-[13px] font-bold text-emerald-50/95 shadow-[0_10px_36px_-14px_rgba(16,185,129,0.35)] ring-1 ring-white/[0.06] backdrop-blur-md transition hover:border-emerald-400/45 hover:shadow-[0_14px_40px_-14px_rgba(16,185,129,0.28)] disabled:cursor-not-allowed disabled:opacity-50 md:min-w-[15.5rem]"
             >
-              {updating ? "Kaydediliyor…" : "Çözüldü olarak işaretle"}
+              {updating ? (
+                <span
+                  aria-hidden
+                  className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-emerald-200/35 border-t-emerald-100"
+                />
+              ) : (
+                <AdminSupportCheckGlyph className="shrink-0 text-emerald-200" />
+              )}
+              <span>{updating ? "Kaydediliyor…" : "Çözüldü olarak işaretle"}</span>
             </button>
           ) : null}
         </div>
       </div>
-      <div className="pt-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Mesaj</p>
+
+      <div className="relative z-[1] pt-7">
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Mesaj</p>
         {canReadBody ? (
           <>
-            <p className="mt-2 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-100/95">{row.message}</p>
+            <div className="mt-3 rounded-xl border border-white/[0.07] bg-black/40 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md md:p-5">
+              <p className="whitespace-pre-wrap text-[15px] font-normal leading-[1.65] text-slate-100/[0.94]">
+                {row.message}
+              </p>
+            </div>
             {row.user_agent?.trim() ? (
-              <p className="mt-4 break-all font-mono text-[10px] leading-relaxed text-slate-500">{row.user_agent}</p>
+              <p className="mt-4 break-all font-mono text-[10px] leading-relaxed text-slate-500/95">
+                {row.user_agent}
+              </p>
             ) : null}
             {viewerState === "self_resolved" && row.closed_at ? (
-              <p className="mt-4 text-[12px] text-slate-500">
+              <p className="mt-5 text-[12px] font-medium text-slate-500">
                 Kapatıldı:{" "}
-                <time dateTime={row.closed_at}>
+                <time dateTime={row.closed_at} className="text-slate-400">
                   {new Date(row.closed_at).toLocaleString("tr-TR", {
                     dateStyle: "medium",
                     timeStyle: "short",
@@ -219,7 +303,7 @@ function SupportAdminMessageDetail({
             ) : null}
           </>
         ) : (
-          <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
+          <p className="mt-3 text-[13px] leading-relaxed text-slate-500">
             Mesaj içeriği yalnızca görüşmeyi kabul eden yönetici tarafından görüntülenebilir.
           </p>
         )}
@@ -756,34 +840,33 @@ export function AdminSupportDashboard() {
   const viewerEmail = session.user.email ?? "";
 
   return (
-    <section className="mx-auto min-h-[70vh] max-w-[min(90rem,calc(100vw-2rem))] px-4 pb-32 pt-10 md:pb-24 md:pt-14">
-      <header className="flex flex-col gap-5 border-b border-white/[0.07] pb-6 lg:flex-row lg:items-start lg:justify-between">
+    <section className="mx-auto min-h-[70vh] max-w-[min(92rem,calc(100vw-1.25rem))] px-3 pb-32 pt-8 sm:px-4 md:pb-24 md:pt-12">
+      <header className="flex flex-col gap-6 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-200/75">Admin</p>
-          <h1 className="mt-2 flex flex-wrap items-center gap-2 text-[1.65rem] font-black tracking-tight text-white md:gap-3 md:text-3xl">
-            <span>Destek gelen kutusu</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/28 bg-slate-950/55 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.14),0_0_20px_-6px_rgba(34,211,238,0.35)] backdrop-blur-md md:gap-2">
-              <span
-                className="livePulse h-2 w-2 shrink-0 rounded-full bg-emerald-400"
-                aria-hidden
-              />
+          <p className="text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/78">Admin</p>
+          <h1 className="mt-2 flex flex-wrap items-center gap-2.5 text-[1.5rem] font-black tracking-[-0.02em] text-white sm:gap-3 md:text-[1.85rem] xl:text-[2rem]">
+            <span className="leading-tight">Destek gelen kutusu</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/32 bg-slate-950/70 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.24em] text-emerald-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.16),0_0_32px_-10px_rgba(34,211,238,0.45)] backdrop-blur-xl">
+              <span className="livePulse h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden />
               CANLI
             </span>
           </h1>
-          <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
+          <p className="mt-3 max-w-xl text-[13px] leading-relaxed text-slate-400 md:text-[13.5px]">
             Gönderilen mesajları incele; kullanıcı adı/e‑posta yalnızca formdan geldiği gibidir — hesap ile
             eşlenmez.
           </p>
-          <p className="mt-2 text-sm text-slate-500">
-            <span>Oturum: </span>
-            <span className="font-medium text-slate-300">{session.user.email}</span>
+          <p className="mt-2.5 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+            <span className="font-medium text-slate-500">Oturum</span>
+            <span className="truncate rounded-md border border-white/[0.06] bg-black/35 px-2 py-0.5 font-mono text-[11px] text-slate-300/95">
+              {session.user.email}
+            </span>
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:shrink-0 lg:justify-end">
           <div
             role="toolbar"
             aria-label="Durum filtresi"
-            className="flex flex-wrap gap-2 rounded-[1rem] border border-white/[0.06] bg-black/30 p-1.5"
+            className="admin-support-segment flex flex-wrap gap-1 rounded-[0.85rem] border border-white/[0.09] bg-black/45 p-1 backdrop-blur-xl"
           >
             {STATUS_FILTER_OPTIONS.map((opt) => (
               <button
@@ -791,10 +874,10 @@ export function AdminSupportDashboard() {
                 type="button"
                 aria-pressed={statusFilter === opt.value}
                 onClick={() => setStatusFilter(opt.value)}
-                className={`touch-manipulation rounded-[0.7rem] px-3.5 py-2 text-[12px] font-bold transition-[background-color,color,box-shadow] ${
+                className={`touch-manipulation rounded-[0.62rem] px-3.5 py-2 text-[11.5px] font-bold tracking-tight md:px-4 md:text-[12px] ${
                   statusFilter === opt.value
-                    ? "bg-cyan-400/14 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.18)]"
-                    : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+                    ? "admin-support-segment__btn--active bg-gradient-to-b from-cyan-400/[0.2] to-cyan-600/[0.08] text-cyan-50"
+                    : "text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"
                 }`}
               >
                 {opt.label}
@@ -804,14 +887,25 @@ export function AdminSupportDashboard() {
           <button
             type="button"
             onClick={() => void loadMessages()}
-            className="min-h-[44px] shrink-0 touch-manipulation rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-2.5 text-[12px] font-bold text-cyan-100 transition hover:border-cyan-400/35"
+            disabled={listLoading}
+            className="admin-support-toolbar-outline inline-flex min-h-[44px] shrink-0 touch-manipulation items-center justify-center gap-2 rounded-xl border border-white/[0.12] bg-transparent px-4 py-2.5 text-[12px] font-bold text-cyan-100/95 disabled:pointer-events-none disabled:opacity-55"
           >
-            Yenile
+            {listLoading ? (
+              <>
+                <span
+                  aria-hidden
+                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-cyan-400/35 border-t-cyan-100"
+                />
+                Yükleniyor
+              </>
+            ) : (
+              "Yenile"
+            )}
           </button>
           <button
             type="button"
             onClick={() => void signOut()}
-            className="min-h-[44px] shrink-0 touch-manipulation rounded-xl border border-rose-500/28 bg-rose-500/[0.08] px-4 py-2.5 text-[12px] font-bold text-rose-100 transition hover:border-rose-400/45"
+            className="admin-support-toolbar-outline min-h-[44px] shrink-0 touch-manipulation rounded-xl border border-rose-500/35 bg-rose-500/[0.04] px-4 py-2.5 text-[12px] font-bold text-rose-100/95 hover:border-rose-400/52"
           >
             Çıkış
           </button>
@@ -825,14 +919,20 @@ export function AdminSupportDashboard() {
       ) : null}
 
       {listLoading ? (
-        <p className="mt-10 text-[13px] text-slate-500">Liste yükleniyor…</p>
+        <p className="mt-10 flex items-center gap-2 text-[13px] text-slate-500">
+          <span
+            aria-hidden
+            className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-500/40 border-t-cyan-300/80"
+          />
+          Liste yükleniyor…
+        </p>
       ) : rows.length === 0 ? (
-        <div className="mt-12 rounded-[1.125rem] border border-white/[0.07] bg-black/38 px-6 py-10 text-center backdrop-blur-sm">
+        <div className="mt-12 rounded-xl border border-white/[0.08] bg-black/42 px-6 py-12 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md">
           <p className="text-sm font-medium text-slate-400">Bu filtrede görünecek ileti yok.</p>
         </div>
       ) : (
         <>
-          <div className="mt-8 space-y-3 md:hidden">
+          <div className="mt-8 space-y-2 md:hidden">
             {rows.map((row) => {
               const active = row.id === resolvedListSelectionId;
               const st = rowStatusValue(row.status);
@@ -841,35 +941,38 @@ export function AdminSupportDashboard() {
                   key={`m-${row.id}`}
                   type="button"
                   onClick={() => setPickedId(row.id)}
-                  className={`w-full rounded-[1.05rem] border p-4 text-left transition-[border-color,background-color] ${
+                  className={`admin-support-list-card w-full rounded-xl border border-white/[0.08] bg-black/52 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-md ${
                     active
-                      ? "border-cyan-400/35 bg-white/[0.08]"
-                      : "border-white/[0.07] bg-black/42 hover:bg-white/[0.04]"
+                      ? "admin-support-list-card--active border-cyan-400/45 bg-white/[0.07]"
+                      : "border-white/[0.06]"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      <time dateTime={row.created_at}>
-                        {new Date(row.created_at).toLocaleString("tr-TR", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
-                      </time>
-                    </p>
-                    <span className="shrink-0 rounded-full border border-white/[0.08] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100/92">
+                    <time
+                      dateTime={row.created_at}
+                      className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 [font-variant-numeric:tabular-nums]"
+                    >
+                      {new Date(row.created_at).toLocaleString("tr-TR", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </time>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] ${listStatusBadgeClass(st)}`}
+                    >
                       {statusLabel(st)}
                     </span>
                   </div>
-                  <div className="mt-2 text-[13px] text-slate-400">
+                  <div className="mt-1.5 truncate text-[12px] font-semibold text-slate-200/94">
                     {row.name?.trim() || row.email?.trim() || "Kimlik bilgisi yok"}
                   </div>
-                  <p className="mt-2 line-clamp-2 text-[13px] leading-snug text-slate-300/95">
+                  <p className="mt-1 line-clamp-2 text-[12px] leading-snug text-slate-500">
                     {listMessagePreview(row, viewerId)}
                   </p>
                 </button>
               );
             })}
-            <div className="pt-3">
+            <div className="pt-2">
               {selectedRow ? (
                 <SupportAdminMessageDetail
                   row={selectedRow}
@@ -882,9 +985,9 @@ export function AdminSupportDashboard() {
             </div>
           </div>
 
-          <div className="mt-8 hidden md:grid md:grid-cols-[minmax(280px,360px)_1fr] md:items-start md:gap-6">
+          <div className="mt-8 hidden md:grid md:grid-cols-[minmax(260px,min(32vw,340px))_1fr] md:items-start md:gap-6 lg:gap-8 xl:grid-cols-[minmax(280px,360px)_1fr]">
             <aside
-              className="max-h-[calc(100vh-11rem)] space-y-2 overflow-y-auto overscroll-contain pr-1"
+              className="admin-support-inbox-scroll max-h-[calc(100vh-10rem)] space-y-1.5 overflow-y-auto overscroll-contain pr-1.5 lg:max-h-[calc(100vh-9rem)]"
               aria-label="Mesaj listesi"
             >
               {rows.map((row) => {
@@ -896,37 +999,39 @@ export function AdminSupportDashboard() {
                     type="button"
                     aria-current={active ? "true" : undefined}
                     onClick={() => setPickedId(row.id)}
-                    className={`w-full rounded-[1.05rem] border p-3.5 text-left transition-[border-color,background-color] ${
+                    className={`admin-support-list-card w-full rounded-xl border border-white/[0.07] bg-black/52 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur-md ${
                       active
-                        ? "border-cyan-400/38 bg-white/[0.08] shadow-[0_14px_40px_-26px_rgba(0,198,255,0.35)]"
-                        : "border-white/[0.06] bg-black/40 hover:bg-white/[0.05]"
+                        ? "admin-support-list-card--active border-cyan-400/48 bg-white/[0.08]"
+                        : "border-white/[0.055]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <time
                         dateTime={row.created_at}
-                        className="font-mono text-[10px] font-semibold text-slate-500"
+                        className="font-mono text-[9px] font-semibold uppercase tracking-wide text-slate-500 [font-variant-numeric:tabular-nums]"
                       >
                         {new Date(row.created_at).toLocaleDateString("tr-TR", {
                           day: "numeric",
                           month: "short",
                         })}
                       </time>
-                      <span className="rounded-full bg-cyan-400/10 px-2 py-px text-[9px] font-black uppercase tracking-wider text-cyan-100/90">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] ${listStatusBadgeClass(st)}`}
+                      >
                         {statusLabel(st)}
                       </span>
                     </div>
-                    <p className="mt-1.5 truncate text-[12px] font-semibold text-slate-300">
+                    <p className="mt-1.5 truncate text-[11.5px] font-semibold text-slate-200/93">
                       {row.name?.trim() || row.email?.trim() || "Kimlik bilgisi yok"}
                     </p>
-                    <p className="mt-1 line-clamp-2 text-[12px] leading-snug text-slate-500">
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-500">
                       {listMessagePreview(row, viewerId)}
                     </p>
                   </button>
                 );
               })}
             </aside>
-            <div className="min-h-[calc(22rem-env(safe-area-inset-bottom,0px))] md:sticky md:top-6">
+            <div className="min-h-[calc(22rem-env(safe-area-inset-bottom,0px))] md:sticky md:top-5 lg:top-7">
               {selectedRow ? (
                 <SupportAdminMessageDetail
                   row={selectedRow}
