@@ -760,8 +760,15 @@ export function AdminSupportDashboard() {
       <header className="flex flex-col gap-5 border-b border-white/[0.07] pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-200/75">Admin</p>
-          <h1 className="mt-2 text-[1.65rem] font-black tracking-tight text-white md:text-3xl">
-            Destek gelen kutusu
+          <h1 className="mt-2 flex flex-wrap items-center gap-2 text-[1.65rem] font-black tracking-tight text-white md:gap-3 md:text-3xl">
+            <span>Destek gelen kutusu</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/28 bg-slate-950/55 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.14),0_0_20px_-6px_rgba(34,211,238,0.35)] backdrop-blur-md md:gap-2">
+              <span
+                className="livePulse h-2 w-2 shrink-0 rounded-full bg-emerald-400"
+                aria-hidden
+              />
+              CANLI
+            </span>
           </h1>
           <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
             Gönderilen mesajları incele; kullanıcı adı/e‑posta yalnızca formdan geldiği gibidir — hesap ile

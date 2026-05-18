@@ -55,9 +55,53 @@ function mapSupportMessageInsertFeedback(error: {
   return "Bir şeyler ters gitti. Lütfen tekrar dene.";
 }
 
+function SupportLiveBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/32 bg-emerald-400/[0.08] px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-emerald-100/94 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)]">
+      <span className="livePulse h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden />
+      Canlı destek
+    </span>
+  );
+}
+
+function SupportHeadsetGlyph({ className = "h-[1.125rem] w-[1.125rem]" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        d="M5 13.5v3a2 2 0 0 0 2 2h1v-8H7a2 2 0 0 0-2 2v1Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+        className="text-cyan-300/92"
+      />
+      <path
+        d="M19 13.5v3a2 2 0 0 1-2 2h-1v-8h1a2 2 0 0 1 2 2v1Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+        className="text-cyan-300/92"
+      />
+      <path
+        d="M7 17.5V18a5 5 0 1 0 10 0v-.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        className="text-cyan-200/82"
+      />
+      <path
+        d="M9 11.75a3.25 3.25 0 0 1 6 0"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+    </svg>
+  );
+}
+
 type FormStatus = "idle" | "loading" | "success" | "error";
 
-/** Premium vitrin yüzen destek · geri bildirim paneli → Supabase `support_messages`. */
+/** Yüzen vitrin desteği → Supabase `support_messages` (canlı destek giriş noktası). */
 export function SiteSupportPanel() {
   const pathname = usePathname();
   const configured = useMemo(() => isSupabaseConfigured(), []);
@@ -242,14 +286,17 @@ export function SiteSupportPanel() {
 
             {!configured ? (
               <div className="relative p-5 sm:p-6">
-                <p
-                  id={titleId}
-                  className="text-lg font-black leading-snug tracking-tight text-white"
-                >
-                  Leylek TAG destek
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p
+                    id={titleId}
+                    className="text-lg font-black leading-snug tracking-tight text-white"
+                  >
+                    Leylek TAG destek
+                  </p>
+                  <SupportLiveBadge />
+                </div>
                 <p id={descId} className="mt-3 text-[13px] leading-relaxed text-slate-400">
-                  Leylek Zeka katmanı için Supabase bağlantısı gerekiyor. Şimdilik ekibimize e‑posta ile
+                  Canlı ileti için Supabase bağlantısı gerekli. Şimdilik ekibimize güvenli biçimde e‑posta ile
                   ulaşabilirsin.
                 </p>
                 <Link
@@ -278,9 +325,10 @@ export function SiteSupportPanel() {
                         Leylek TAG destek
                       </p>
                       <p id={descId} className="mt-1 text-[13px] leading-relaxed text-slate-400">
-                        Leylek Zeka mesajını ekibe iletmek için hazır.
+                        Mesajın ekibe iletilir.
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <SupportLiveBadge />
                         <span className="inline-flex items-center rounded-full border border-cyan-400/28 bg-cyan-400/[0.1] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-100">
                           Leylek Zeka
                         </span>
@@ -352,9 +400,10 @@ export function SiteSupportPanel() {
                         Leylek TAG destek
                       </p>
                       <p id={descId} className="mt-1.5 text-[13px] leading-relaxed text-slate-400">
-                        Leylek Zeka mesajını ekibe iletmek için hazır.
+                        Mesajın ekibe iletilir.
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <SupportLiveBadge />
                         <span className="inline-flex items-center rounded-full border border-cyan-400/28 bg-cyan-400/[0.1] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-100">
                           Leylek Zeka
                         </span>
@@ -514,9 +563,23 @@ export function SiteSupportPanel() {
         onClick={togglePanel}
         aria-expanded={open}
         aria-controls={dialogId}
-        className="group ml-auto inline-flex w-full touch-manipulation items-center justify-center gap-2 rounded-full border border-cyan-400/32 bg-slate-950/92 px-4 py-3 text-sm font-black text-white shadow-[0_14px_48px_rgba(0,114,255,0.28)] backdrop-blur-md transition-[border-color,box-shadow,opacity] hover:border-cyan-300/60 hover:shadow-[0_16px_52px_rgba(0,198,255,0.26)] md:inline-flex md:w-auto md:px-6"
+        aria-label="Destek paneli · canlı yazışma"
+        className="tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full border border-cyan-400/32 bg-slate-950/92 px-3 py-3 pr-[1.375rem] text-[13px] font-black shadow-[0_14px_48px_rgba(0,114,255,0.28)] backdrop-blur-md transition-[border-color,box-shadow] hover:border-cyan-300/55 hover:shadow-[0_16px_52px_rgba(0,198,255,0.22)] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none"
       >
-        Destek · geri bildirim
+        <span
+          className="livePulse pointer-events-none absolute right-4 top-[0.625rem] h-2 w-2 shrink-0 rounded-full bg-emerald-400 md:right-[1.125rem]"
+          aria-hidden
+        />
+        <SupportHeadsetGlyph className="relative z-[1] h-[1.05rem] w-[1.05rem] shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" />
+        <span className="relative z-[1] flex min-w-0 shrink items-baseline whitespace-nowrap text-white/94">
+          <span className="truncate text-[13px] font-bold tracking-tight sm:text-sm">Destek</span>
+          <span className="mx-[0.2em] shrink-0 text-slate-500/95" aria-hidden>
+            -
+          </span>
+          <span className="liveBlink shrink-0 text-[1rem] font-black tracking-tight text-emerald-300 drop-shadow-[0_0_14px_rgba(52,211,153,0.52),0_0_22px_rgba(34,211,238,0.16)] sm:text-[1.125rem] md:text-xl">
+            Canlı
+          </span>
+        </span>
       </button>
     </div>
   );
