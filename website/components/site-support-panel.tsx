@@ -168,14 +168,69 @@ function formatChatTimeTr(iso: string | null | undefined): string {
     : new Date(t).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function mergeSiteChatRowSorted(prev: SupportChatRow[], incoming: SupportChatRow): SupportChatRow[] {
+  if (prev.some((r) => r.id === incoming.id)) return prev;
+  return [...prev, incoming].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+}
+
 type FormStatus = "idle" | "loading" | "error";
 
 type ThreadSnap = { ok: true; meta: SupportTicketMetaRow } | { ok: false };
 
+function SiteSupportGateGoogleGlyph({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+      />
+    </svg>
+  );
+}
+
+function SupportLockBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border border-amber-400/35 bg-amber-500/[0.1] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-amber-100/92 ${className}`}
+    >
+      <svg className="h-3 w-3 text-amber-200/95" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path
+          d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v10H6V11Z"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinejoin="round"
+        />
+      </svg>
+      Giriş gerekli
+    </span>
+  );
+}
+
 export function SiteSupportPanel() {
   const pathname = usePathname();
   const configured = useMemo(() => isSupabaseConfigured(), []);
-  const { authReady, session, profile } = useSiteAuth();
+  const { authReady, session, profile, oauthBusy, signInWithGoogle } = useSiteAuth();
+
+  const sessionContactEmail = useMemo(
+    () => session?.user?.email?.trim().toLowerCase() ?? "",
+    [session?.user?.email],
+  );
+
+  const supportUnlocked = Boolean(configured && authReady && session?.user?.id && sessionContactEmail);
   const honeyId = useId();
   const dialogId = useId();
   const titleId = `${dialogId}-title`;
@@ -189,7 +244,6 @@ export function SiteSupportPanel() {
   const [supportClientToken, setSupportClientToken] = useState<string | null>(null);
 
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [honey, setHoney] = useState("");
   const [status, setStatus] = useState<FormStatus>("idle");
@@ -282,13 +336,11 @@ export function SiteSupportPanel() {
     setMessage("");
     if (configured && authReady) {
       const nameHint = profile?.full_name?.trim() ?? "";
-      const emailHint = session?.user?.email?.trim() ?? "";
       queueMicrotask(() => {
         setName((p) => (p.trim() === "" ? nameHint : p));
-        setEmail((p) => (p.trim() === "" ? emailHint : p));
       });
     }
-  }, [authReady, configured, profile?.full_name, session?.user?.email]);
+  }, [authReady, configured, profile?.full_name]);
 
   const leaveThreadClearStorage = useCallback(() => {
     clearStoredSupportTicket();
@@ -303,20 +355,35 @@ export function SiteSupportPanel() {
     resetComposerOnly();
   }, [resetComposerOnly]);
 
+  /** Girişsiz dönemden kalan bilet anahtarını diskten sil (state döngüsü yok). */
+  useEffect(() => {
+    if (!configured || !authReady) return;
+    if (session?.user?.id) return;
+    clearStoredSupportTicket();
+  }, [configured, authReady, session?.user?.id]);
+
+  const prevSessionUidRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const uid = session?.user?.id;
+    const prev = prevSessionUidRef.current;
+    prevSessionUidRef.current = uid;
+    if (prev && !uid) {
+      leaveThreadClearStorage();
+    }
+  }, [session?.user?.id, leaveThreadClearStorage]);
+
   const togglePanel = useCallback(() => {
     setOpen((prev) => {
       const nextOpen = !prev;
       if (nextOpen && configured && authReady) {
         const nameHint = profile?.full_name?.trim() ?? "";
-        const emailHint = session?.user?.email?.trim() ?? "";
         queueMicrotask(() => {
           setName((p) => (p.trim() === "" ? nameHint : p));
-          setEmail((p) => (p.trim() === "" ? emailHint : p));
         });
       }
       return nextOpen;
     });
-  }, [authReady, configured, profile?.full_name, session?.user?.email]);
+  }, [authReady, configured, profile?.full_name]);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -360,8 +427,30 @@ export function SiteSupportPanel() {
     [],
   );
 
+  const pollTicketChatMessages = useCallback(async (ticketId: string, tokenForHeader: string) => {
+    const tc = getSupabaseTicketChatClient(tokenForHeader);
+    if (!tc) return;
+
+    const { data, error } = await tc
+      .from("support_chat_messages")
+      .select("id,support_message_id,sender_type,sender_email,body,created_at")
+      .eq("support_message_id", ticketId)
+      .order("created_at", { ascending: true });
+
+    if (error || !Array.isArray(data)) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[SiteSupportPanel] poll support_chat_messages:", error?.message ?? "no data");
+      }
+      return;
+    }
+
+    const next = data as SupportChatRow[];
+    knownChatIdsRef.current = new Set(next.map((r) => r.id));
+    setChatLines(next);
+  }, []);
+
   useEffect(() => {
-    if (!open || !configured) return undefined;
+    if (!open || !configured || !supportUnlocked) return undefined;
 
     let cancelled = false;
 
@@ -382,11 +471,11 @@ export function SiteSupportPanel() {
     return () => {
       cancelled = true;
     };
-  }, [open, configured, fetchThreadSnapshot]);
+  }, [open, configured, supportUnlocked, fetchThreadSnapshot]);
 
   useEffect(() => {
     const tk = supportClientToken?.trim() ?? "";
-    if (!open || !configured || !realtimeTicketId || !tk) return undefined;
+    if (!open || !configured || !realtimeTicketId || !tk || !supportUnlocked) return undefined;
 
     const tc = getSupabaseTicketChatClient(tk);
     if (!tc) return undefined;
@@ -423,10 +512,7 @@ export function SiteSupportPanel() {
         try {
           const row = payload as unknown as SupportChatRow;
           if (!row?.id) return;
-          setChatLines((prev) => {
-            if (prev.some((r) => r.id === row.id)) return prev;
-            return [...prev, row];
-          });
+          setChatLines((prev) => mergeSiteChatRowSorted(prev, row));
         } catch {
           /* ignore */
         }
@@ -461,11 +547,29 @@ export function SiteSupportPanel() {
       realtimeRepairTimerRef.current = null;
       void tc.removeChannel(pgChannel);
     };
-  }, [configured, open, realtimeTicketId, supportClientToken, postgresRepairKey]);
+  }, [configured, open, realtimeTicketId, supportClientToken, postgresRepairKey, supportUnlocked]);
+
+  /** Realtime yetersiz kalırsa (WS / header): panel açıkken hafif yedek yükleme. */
+  useEffect(() => {
+    const tk = supportClientToken?.trim() ?? "";
+    const tid = realtimeTicketId;
+    if (!open || !configured || !tid || !tk || !supportUnlocked) return undefined;
+    const id = window.setInterval(() => {
+      void pollTicketChatMessages(tid, tk);
+    }, 4400);
+    return () => clearInterval(id);
+  }, [
+    open,
+    configured,
+    realtimeTicketId,
+    supportClientToken,
+    supportUnlocked,
+    pollTicketChatMessages,
+  ]);
 
   useEffect(() => {
     const tk = supportClientToken?.trim() ?? "";
-    if (!open || !configured || !realtimeTicketId || !tk) return undefined;
+    if (!open || !configured || !realtimeTicketId || !tk || !supportUnlocked) return undefined;
 
     const tc = getSupabaseTicketChatClient(tk);
     if (!tc) return undefined;
@@ -516,7 +620,15 @@ export function SiteSupportPanel() {
       queueMicrotask(() => setTypingBridgeSendReady(false));
       void tc.removeChannel(bridgeChannel);
     };
-  }, [configured, open, realtimeTicketId, supportClientToken, bumpAdminTyping, typingBridgeRepairKey]);
+  }, [
+    configured,
+    open,
+    realtimeTicketId,
+    supportClientToken,
+    supportUnlocked,
+    bumpAdminTyping,
+    typingBridgeRepairKey,
+  ]);
 
   useEffect(() => {
     if (!typingBridgeSendReady || !open || realtimeTicketId == null) return undefined;
@@ -565,6 +677,12 @@ export function SiteSupportPanel() {
 
       if (honey.trim() !== "") return;
 
+      if (!supportUnlocked || !sessionContactEmail) {
+        setFeedback("Canlı destek için önce giriş yapın.");
+        setStatus("error");
+        return;
+      }
+
       if (cooldownEndsAtRef.current > Date.now()) {
         setFeedback("Lütfen bir süre bekleyip tekrar dene.");
         setStatus("error");
@@ -575,7 +693,7 @@ export function SiteSupportPanel() {
       if (storedActive) {
         setThreadBootstrap(true);
         try {
-            const snap = await fetchThreadSnapshot(storedActive.ticketId, storedActive.clientToken);
+          const snap = await fetchThreadSnapshot(storedActive.ticketId, storedActive.clientToken);
           if (snap.ok) {
             setFeedback("Bu tarayıcıda açık bir görüşmen var.");
             setStatus("idle");
@@ -610,7 +728,7 @@ export function SiteSupportPanel() {
 
       const payload = {
         name: name.trim() || null,
-        email: email.trim() || null,
+        email: sessionContactEmail,
         message: message.trim(),
         page_path: pathname ?? null,
         user_agent:
@@ -642,7 +760,7 @@ export function SiteSupportPanel() {
           .insert({
             support_message_id: created.id,
             sender_type: "user",
-            sender_email: email.trim() || null,
+            sender_email: sessionContactEmail,
             body: message.trim(),
           })
           .select("id,support_message_id,sender_type,sender_email,body,created_at")
@@ -679,7 +797,6 @@ export function SiteSupportPanel() {
         setPanelView("thread");
         setStatus("idle");
         setName("");
-        setEmail("");
         setMessage("");
         setFeedback(null);
       } catch {
@@ -689,13 +806,14 @@ export function SiteSupportPanel() {
     },
     [
       configured,
-      email,
       fetchThreadSnapshot,
       honey,
       message,
       mergeChatBootstrap,
       name,
       pathname,
+      sessionContactEmail,
+      supportUnlocked,
       validateComposer,
     ],
   );
@@ -715,7 +833,8 @@ export function SiteSupportPanel() {
       const tk = supportClientToken?.trim();
 
       const stResolved = trimRowStatus(ticketMeta?.status) === "resolved";
-      if (!ticketId || !tk || stResolved || chatSending) return;
+      if (!supportUnlocked || !sessionContactEmail || !ticketId || !tk || stResolved || chatSending)
+        return;
 
       const tc = getSupabaseTicketChatClient(tk);
       if (!tc) return;
@@ -727,7 +846,7 @@ export function SiteSupportPanel() {
           .insert({
             support_message_id: ticketId,
             sender_type: "user",
-            sender_email: email.trim() || null,
+            sender_email: sessionContactEmail,
             body,
           })
           .select("id,support_message_id,sender_type,sender_email,body,created_at")
@@ -744,7 +863,7 @@ export function SiteSupportPanel() {
         setChatSending(false);
       }
     },
-    [chatInput, chatSending, email, supportClientToken, ticketMeta],
+    [chatInput, chatSending, sessionContactEmail, supportClientToken, supportUnlocked, ticketMeta],
   );
 
   const onNewConversationClick = useCallback(async () => {
@@ -847,6 +966,104 @@ export function SiteSupportPanel() {
                 >
                   Kapat
                 </button>
+              </div>
+            ) : !authReady ? (
+              <div className="relative p-8 sm:p-10">
+                <p id={titleId} className="text-lg font-bold tracking-tight text-white">
+                  Canlı Destek
+                </p>
+                <p id={descId} className="mt-3 text-[13px] leading-relaxed text-slate-500">
+                  Oturum bilgisi kontrol ediliyor…
+                </p>
+                <div
+                  aria-busy="true"
+                  className="mt-6 mx-auto flex h-9 w-9 animate-spin rounded-full border-2 border-white/18 border-t-slate-200"
+                />
+              </div>
+            ) : !session ? (
+              <div className="relative px-6 py-8 sm:px-8 sm:py-10">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p id={titleId} className="text-lg font-semibold tracking-tight text-white sm:text-xl">
+                      Canlı destek için giriş yapın
+                    </p>
+                    <SupportLockBadge className="mt-3" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closePanel}
+                    className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 transition hover:border-white/15 hover:text-slate-200"
+                  >
+                    Kapat
+                  </button>
+                </div>
+                <p id={descId} className="mt-4 text-[13px] leading-relaxed text-slate-400">
+                  Görüşmelerinizin güvenliği ve size doğru dönüş yapılabilmesi için canlı desteğe giriş
+                  yaptıktan sonra bağlanabilirsiniz.
+                </p>
+                <p className="mt-5 text-[12px] leading-relaxed text-slate-500">
+                  Şu anda <span className="font-semibold text-slate-400">Google ile giriş</span> kullanılmaktadır.
+                  Gmail / Google Workspace hesapları desteklenir.
+                </p>
+
+                <div className="mt-7 flex flex-col gap-3">
+                  <button
+                    type="button"
+                    disabled={oauthBusy}
+                    aria-busy={oauthBusy}
+                    onClick={() => void signInWithGoogle()}
+                    className="relative inline-flex min-h-[48px] w-full touch-manipulation items-center justify-center gap-2.5 overflow-hidden rounded-xl border border-white/[0.12] bg-gradient-to-br from-white/[0.09] to-white/[0.03] px-4 py-3 text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-sm transition hover:border-white/20 hover:from-white/[0.11] hover:to-white/[0.04] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    <SiteSupportGateGoogleGlyph className="h-5 w-5 shrink-0" />
+                    {oauthBusy ? "Yönlendiriliyor…" : "Google ile giriş yap"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="inline-flex min-h-[48px] w-full cursor-not-allowed touch-manipulation items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-[13px] font-medium text-slate-500 opacity-85"
+                  >
+                    Apple ile giriş yakında
+                  </button>
+                </div>
+
+                <p className="mt-6 text-center text-[11px] leading-relaxed text-slate-600">
+                  Apple ile giriş yakında etkinleşecek — App Store doğrulamalarına uygun şekilde
+                  yayınlanacaktır.
+                </p>
+
+                <Link
+                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG Canlı Destek")}`}
+                  className="mt-4 block py-2 text-center text-[11px] font-medium text-slate-500 underline-offset-4 transition hover:text-slate-400 hover:underline"
+                >
+                  Hesabın yok mu? E‑posta ile yaz
+                </Link>
+              </div>
+            ) : session && !sessionContactEmail ? (
+              <div className="relative px-6 py-8 sm:px-8 sm:py-10">
+                <p id={titleId} className="text-lg font-semibold tracking-tight text-white sm:text-xl">
+                  E‑posta gerekiyor
+                </p>
+                <p id={descId} className="mt-4 text-[13px] leading-relaxed text-slate-400">
+                  Hesabınızda görünen bir e‑posta adresi olmadığı için canlı destek kaydı oluşturulamıyor.
+                  Lütfen Google hesabınızda bir e‑posta doğrulayın veya e‑posta ile bize yazın.
+                </p>
+                <div className="mt-6 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={closePanel}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.05] px-4 text-[13px] font-semibold text-white transition hover:border-white/18"
+                  >
+                    Kapat
+                  </button>
+                  <Link
+                    href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG destek · e-posta yok")}`}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/[0.08] px-4 text-center text-[13px] font-semibold text-slate-400 transition hover:text-slate-200"
+                  >
+                    E‑posta ile yaz
+                  </Link>
+                </div>
               </div>
             ) : panelView === "thread" && ticketMeta?.id ? (
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1111,7 +1328,8 @@ export function SiteSupportPanel() {
                         Leylek TAG Canlı Destek
                       </p>
                       <p id={descId} className="mt-2 text-[12px] leading-relaxed text-slate-400 sm:text-[13px]">
-                        Ekibimize mesaj bırakabilir, yanıt geldiğinde bu pencereden takip edebilirsin.
+                        Ekibimize güvenli şekilde yazabilir; yanıtlar bu pencereden takip edilir. Kayıt için oturum açtığınız{" "}
+                        <span className="font-medium text-slate-300">Google hesabınızın e-postası</span> kullanılır.
                       </p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         <SupportLiveBadge />
@@ -1178,14 +1396,24 @@ export function SiteSupportPanel() {
                       className="min-h-[118px] w-full resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/22 bg-gradient-to-br from-white/[0.09] to-black/45 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05),0_12px_40px_-28px_rgba(34,211,238,0.25)] outline-none transition focus:border-cyan-400/48 focus:shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12),0_16px_48px_-26px_rgba(34,211,238,0.35)] disabled:opacity-55"
                     />
                     <span className="text-[11px] font-medium text-slate-500">
-                      En az {MESSAGE_MIN_LEN} karakter; gerekiyorsa aşağıdan iletişim bilgisini ekleyebilirsin.
+                      En az {MESSAGE_MIN_LEN} karakter. İsterseniz aşağıdan ad soyad ekleyebilirsiniz; e-posta alanı
+                      giriş yaptığınız Google adresinizle otomatik eşleşir.
                     </span>
                   </label>
+
+                  <div className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                      Destek kaydı e-postası
+                    </p>
+                    <p className="mt-1 break-all font-mono text-[12px] font-medium text-slate-200">
+                      {sessionContactEmail}
+                    </p>
+                  </div>
 
                   <details className="group mt-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 [&_summary::-webkit-details-marker]:hidden">
                     <summary className="flex cursor-pointer select-none items-center justify-between gap-3 text-[12px] font-bold text-slate-200 hover:text-white">
                       <span>
-                        İletişim bilgileri{" "}
+                        Ad soyad{" "}
                         <span className="font-semibold lowercase text-slate-500">opsiyonel</span>
                       </span>
                       <svg
@@ -1204,7 +1432,7 @@ export function SiteSupportPanel() {
                         />
                       </svg>
                     </summary>
-                    <div className="mt-3 grid gap-2 border-t border-white/[0.07] pt-3 sm:grid-cols-2">
+                    <div className="mt-3 grid gap-2 border-t border-white/[0.07] pt-3">
                       <label className="grid gap-1">
                         <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                           Ad soyad
@@ -1215,20 +1443,6 @@ export function SiteSupportPanel() {
                           autoComplete="name"
                           value={name}
                           onChange={(ev) => setName(ev.target.value)}
-                          disabled={status === "loading" || threadBootstrap}
-                          className="min-h-[38px] rounded-lg border border-white/[0.08] bg-black/50 px-2.5 py-1.5 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
-                        />
-                      </label>
-                      <label className="grid gap-1">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                          E‑posta
-                        </span>
-                        <input
-                          type="email"
-                          name="email"
-                          autoComplete="email"
-                          value={email}
-                          onChange={(ev) => setEmail(ev.target.value)}
                           disabled={status === "loading" || threadBootstrap}
                           className="min-h-[38px] rounded-lg border border-white/[0.08] bg-black/50 px-2.5 py-1.5 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
                         />
@@ -1290,22 +1504,57 @@ export function SiteSupportPanel() {
         onClick={togglePanel}
         aria-expanded={open}
         aria-controls={dialogId}
-        aria-label="Leylek TAG canlı destek — sohbeti aç"
-        className="tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full border border-cyan-400/35 bg-slate-950/92 px-3 py-3 pr-[1.375rem] text-[13px] font-black shadow-[0_14px_52px_rgba(0,114,255,0.38),0_0_32px_-8px_rgba(34,211,238,0.22)] backdrop-blur-md transition-[border-color,box-shadow] hover:border-cyan-300/55 hover:shadow-[0_18px_56px_rgba(0,198,255,0.32),0_0_38px_-6px_rgba(34,211,238,0.28)] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none"
+        aria-label={
+          supportUnlocked
+            ? "Leylek TAG canlı destek — sohbeti aç"
+            : "Destek — canlı destek için giriş gerekli"
+        }
+        className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full px-3 py-3 pr-[1.375rem] text-[13px] backdrop-blur-md transition-[border-color,box-shadow,background-color] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none ${
+          supportUnlocked
+            ? "border border-cyan-400/35 bg-slate-950/92 font-black shadow-[0_14px_52px_rgba(0,114,255,0.38),0_0_32px_-8px_rgba(34,211,238,0.22)] hover:border-cyan-300/55 hover:shadow-[0_18px_56px_rgba(0,198,255,0.32),0_0_38px_-6px_rgba(34,211,238,0.28)]"
+            : "border border-amber-500/28 bg-slate-950/96 font-semibold shadow-[0_12px_40px_-16px_rgba(0,0,0,0.65)] hover:border-amber-400/40 hover:bg-slate-950"
+        }`}
       >
-        <span
-          className="livePulse pointer-events-none absolute right-4 top-[0.625rem] h-2 w-2 shrink-0 rounded-full bg-emerald-400 md:right-[1.125rem]"
-          aria-hidden
-        />
+        {supportUnlocked ? (
+          <span
+            className="livePulse pointer-events-none absolute right-4 top-[0.625rem] h-2 w-2 shrink-0 rounded-full bg-emerald-400 md:right-[1.125rem]"
+            aria-hidden
+          />
+        ) : (
+          <span
+            className="pointer-events-none absolute right-3.5 top-[0.55rem] md:right-5"
+            aria-hidden
+          >
+            <svg
+              className="h-2.5 w-2.5 text-amber-300/90"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v10H6V11Z"
+              />
+            </svg>
+          </span>
+        )}
         <SupportHeadsetGlyph className="relative z-[1] h-[1.05rem] w-[1.05rem] shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" />
-        <span className="relative z-[1] flex min-w-0 shrink items-baseline whitespace-nowrap text-white/94">
-          <span className="truncate text-[13px] font-bold tracking-tight sm:text-sm">Destek</span>
-          <span className="mx-[0.2em] shrink-0 text-slate-500/95" aria-hidden>
-            -
+        <span className="relative z-[1] flex min-w-0 flex-1 flex-wrap items-baseline gap-x-[0.25em] gap-y-0 leading-tight text-white/94 sm:flex-nowrap sm:whitespace-nowrap">
+          <span className="text-[12px] font-bold tracking-tight sm:text-[13px]">Destek</span>
+          <span className="shrink-0 text-slate-500/90" aria-hidden>
+            —
           </span>
-          <span className="liveBlink shrink-0 text-[1rem] font-black tracking-tight text-emerald-300 drop-shadow-[0_0_14px_rgba(52,211,153,0.52),0_0_22px_rgba(34,211,238,0.16)] sm:text-[1.125rem] md:text-xl">
-            Canlı
-          </span>
+          {supportUnlocked ? (
+            <span className="liveBlink shrink-0 text-[13px] font-black tracking-tight text-emerald-300 drop-shadow-[0_0_14px_rgba(52,211,153,0.52),0_0_22px_rgba(34,211,238,0.16)] sm:text-[1.125rem] md:text-xl">
+              Canlı
+            </span>
+          ) : (
+            <span className="max-w-[9.5rem] shrink text-[11px] font-semibold leading-snug text-amber-100/95 sm:max-w-none sm:text-[12px]">
+              Giriş gerekli
+            </span>
+          )}
         </span>
       </button>
     </div>

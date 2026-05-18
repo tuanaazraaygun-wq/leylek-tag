@@ -342,6 +342,16 @@ function dedupeDuplicateTicketLine(
   });
 }
 
+function mergeChatMessageRowSorted(
+  prev: SupportChatMessageRow[],
+  incoming: SupportChatMessageRow,
+): SupportChatMessageRow[] {
+  if (prev.some((r) => r.id === incoming.id)) return prev;
+  return [...prev, incoming].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+}
+
 type AdminComposerMode =
   | "active"
   | "claimable_new"
@@ -466,33 +476,46 @@ function AdminSupportChatSection({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
-  const fetchChatMessages = useCallback(async (): Promise<boolean> => {
-    setLoading(true);
-    setFetchHadError(false);
-    const { data, error } = await supabase
-      .from("support_chat_messages")
-      .select("id,support_message_id,sender_type,sender_email,body,created_at")
-      .eq("support_message_id", ticketId)
-      .order("created_at", { ascending: true });
-
-    setLoading(false);
-    if (error) {
-      setFetchHadError(true);
-      setRows([]);
-      if (process.env.NODE_ENV !== "production") {
-        console.error("[AdminSupportChat] support_chat_messages select failed", {
-          code: error.code,
-          message: error.message,
-          selectedRowId: ticketId,
-          sessionUserId: viewerIdRef.current,
-          sessionEmail: viewerEmailRef.current,
-        });
+  const fetchChatMessages = useCallback(
+    async (opts?: { silent?: boolean }): Promise<boolean> => {
+      const silent = opts?.silent === true;
+      if (!silent) {
+        setLoading(true);
+        setFetchHadError(false);
       }
-      return false;
-    }
-    setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
-    return true;
-  }, [supabase, ticketId]);
+
+      const { data, error } = await supabase
+        .from("support_chat_messages")
+        .select("id,support_message_id,sender_type,sender_email,body,created_at")
+        .eq("support_message_id", ticketId)
+        .order("created_at", { ascending: true });
+
+      if (!silent) {
+        setLoading(false);
+      }
+
+      if (error) {
+        if (!silent) {
+          setFetchHadError(true);
+          setRows([]);
+        }
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[AdminSupportChat] support_chat_messages select failed", {
+            silent,
+            code: error.code,
+            message: error.message,
+            selectedRowId: ticketId,
+            sessionUserId: viewerIdRef.current,
+            sessionEmail: viewerEmailRef.current,
+          });
+        }
+        return false;
+      }
+      setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
+      return true;
+    },
+    [supabase, ticketId],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -544,10 +567,7 @@ function AdminSupportChatSection({
         try {
           const row = payload as unknown as SupportChatMessageRow;
           if (!row?.id) return;
-          setRows((prev) => {
-            if (prev.some((r) => r.id === row.id)) return prev;
-            return [...prev, row];
-          });
+          setRows((prev) => mergeChatMessageRowSorted(prev, row));
         } catch {
           /* ignore coercion */
         }
@@ -575,6 +595,15 @@ function AdminSupportChatSection({
       void supabase.removeChannel(pgChannel);
     };
   }, [supabase, ticketId, realtimeRepairKey]);
+
+  /** Realtime kaçırırsa: seçili ticket açıkken hafif yedek senkron (canlı teslimat). */
+  useEffect(() => {
+    if (!ticketId.trim()) return undefined;
+    const id = window.setInterval(() => {
+      void fetchChatMessages({ silent: true });
+    }, 4200);
+    return () => clearInterval(id);
+  }, [ticketId, fetchChatMessages]);
 
   /** Ortak yazıyor köprüsü — yalın broadcast kanalı (postgres yok), .on sonra subscribe tek seferlik. */
   useEffect(() => {
@@ -662,27 +691,50 @@ function AdminSupportChatSection({
       } = await supabase.auth.getSession();
       /** RLS: yalnızca JWT ile eşleşen lower-case e-posta — UI state kullanılmaz */
       const jwtEmail = session?.user?.email?.trim().toLowerCase() ?? "";
-      if (!jwtEmail) {
+      const jwtUid = session?.user?.id?.trim() ?? "";
+      if (!jwtEmail || !jwtUid) {
         const msg = "Oturum doğrulanamadı. Lütfen çıkış yapıp yeniden giriş yapın.";
         setSendError(msg);
         onDeskToast?.("error", msg);
         return;
       }
+      if (jwtUid !== viewerId.trim()) {
+        const msg =
+          "Oturum kimliği ile masa eşleşmiyor. Sayfayı yenileyin veya yeniden giriş yapın.";
+        setSendError(msg);
+        onDeskToast?.("error", msg);
+        return;
+      }
 
-      const { error } = await supabase.from("support_chat_messages").insert({
+      const insertPayload = {
         support_message_id: ticketId,
-        sender_type: "admin",
+        sender_type: "admin" as const,
         sender_email: jwtEmail,
         body,
-      });
+      };
+
+      const { data: inserted, error } = await supabase
+        .from("support_chat_messages")
+        .insert(insertPayload)
+        .select("id,support_message_id,sender_type,sender_email,body,created_at")
+        .maybeSingle();
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[AdminSupportChat] support_chat_messages insert result", {
+          ticketId,
+          ok: !error,
+          error: error
+            ? { message: error.message, code: error.code, details: error.details, hint: error.hint }
+            : null,
+          insertedRow: inserted ?? null,
+          payload: insertPayload,
+        });
+      }
 
       if (error) {
-        const detail =
-          error.code === "42501" || /rls/i.test(error.message ?? "")
-            ? "Yetki reddedildi. Görüşme size atanmış olmalı ve oturum e-postanız yönetici kaydıyla eşleşmeli."
-            : error.message || "Mesaj kaydedilemedi.";
-        setSendError(detail);
-        onDeskToast?.("error", detail);
+        const rawMsg = (error.message ?? "").trim() || "Mesaj kaydedilemedi.";
+        setSendError(rawMsg);
+        onDeskToast?.("error", rawMsg);
         if (process.env.NODE_ENV !== "production") {
           console.error("[AdminSupportChat] support_chat_messages insert failed", {
             code: error.code,
@@ -691,7 +743,7 @@ function AdminSupportChatSection({
             sessionUserId: viewerId,
           });
         }
-        void fetchChatMessages();
+        await fetchChatMessages({ silent: true });
         return;
       }
 
@@ -699,7 +751,7 @@ function AdminSupportChatSection({
       queueMicrotask(() => {
         scrollToBottom();
       });
-      const synced = await fetchChatMessages();
+      const synced = await fetchChatMessages({ silent: true });
       if (!synced) {
         onDeskToast?.("error", "Mesaj gönderildi ancak liste yenilenemedi.");
       }
@@ -728,7 +780,7 @@ function AdminSupportChatSection({
       case "claimable_new":
         return "Önce görüşmeyi kabul etmelisin.";
       case "other_admin":
-        return "Bu görüşme başka bir yönetici tarafından alınmış.";
+        return "Bu görüşme başka bir yöneticiye atanmış; yanıt yazılamazsınız.";
       case "missing_assignment":
         return "Kayıtta atama eksik; veritabanı / RLS kontrolü gerekebilir.";
       case "self_resolved":
@@ -1743,11 +1795,15 @@ export function AdminSupportDashboard() {
         } = await client.auth.getSession();
         const sessionEmail = authSession?.user?.email?.trim().toLowerCase() ?? "";
         if (!sessionEmail) {
-          setLoadError("Oturum doğrulanamadı. Çıkış yapıp yeniden giriş yapın.");
+          const msg = "Oturum doğrulanamadı. Çıkış yapıp yeniden giriş yapın.";
+          setLoadError(msg);
+          pushDeskToast("error", msg);
           return;
         }
         if ((authSession?.user?.id ?? "").trim() !== adminId.trim()) {
-          setLoadError("Oturum uyuşmazlığı. Yeniden giriş yapın.");
+          const msg = "Oturum uyuşmazlığı. Yeniden giriş yapın.";
+          setLoadError(msg);
+          pushDeskToast("error", msg);
           return;
         }
 
@@ -1767,13 +1823,18 @@ export function AdminSupportDashboard() {
           .select("id");
 
         if (error) {
-          setLoadError("Görüşme kabul edilemedi. Tekrar deneyin veya listeyi yenile.");
+          const msg = (error.message ?? "").trim() || "Görüşme kabul edilemedi.";
+          setLoadError(msg);
+          pushDeskToast("error", msg);
           return;
         }
 
         const rowsReturned = Array.isArray(data) ? data.length : 0;
         if (rowsReturned !== 1) {
-          setLoadError("Bu görüşme başka bir yönetici tarafından alınmış olabilir. Listeyi yenile.");
+          const msg =
+            "Bu görüşme başka bir yönetici tarafından alınmış olabilir. Listeyi yenileyip tekrar deneyin.";
+          setLoadError(msg);
+          pushDeskToast("error", msg);
           return;
         }
 
@@ -1787,9 +1848,12 @@ export function AdminSupportDashboard() {
           if (process.env.NODE_ENV !== "production") {
             console.error("[AdminSupportDashboard] Karşılama mesajı eklenemedi", greetErr);
           }
+          const detail = (greetErr.message ?? "").trim();
           pushDeskToast(
             "error",
-            "Görüşme kabul edildi ancak otomatik karşılama kaydedilemedi. İlk yanıtı manuel yazın.",
+            detail
+              ? `Görüşme kabul edildi; karşılama kaydı başarısız: ${detail}`
+              : "Görüşme kabul edildi ancak otomatik karşılama kaydedilemedi. İlk yanıtı manuel yazın.",
           );
         }
 

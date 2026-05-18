@@ -56,7 +56,7 @@ export function NavbarSiteAuthTop() {
       <div
         aria-busy="true"
         aria-label="Oturum yükleniyor"
-        className="h-11 min-w-[7rem] shrink-0 rounded-xl border border-white/[0.06] bg-white/[0.04]"
+        className="h-11 min-w-[6.5rem] shrink-0 rounded-xl border border-white/[0.07] bg-white/[0.03]"
       />
     );
   }
@@ -68,18 +68,16 @@ export function NavbarSiteAuthTop() {
         onClick={() => void signInWithGoogle()}
         disabled={oauthBusy}
         aria-busy={oauthBusy}
-        className="group relative flex h-11 min-h-[44px] shrink-0 touch-manipulation items-center gap-2 overflow-hidden rounded-xl border border-white/[0.11] bg-white/[0.045] px-2.5 shadow-[0_12px_40px_-20px_rgba(0,198,255,0.42)] ring-1 ring-white/[0.05] backdrop-blur-xl transition hover:border-cyan-400/25 hover:bg-white/[0.08] hover:ring-cyan-400/15 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:px-3.5"
+        className="group relative flex h-11 min-h-[44px] shrink-0 touch-manipulation items-center gap-2 overflow-hidden rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.07] to-white/[0.03] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition hover:border-white/[0.16] hover:from-white/[0.09] hover:to-white/[0.04] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:min-w-[7.25rem] sm:px-3.5"
       >
-        <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.08)_0%,transparent_50%,rgba(34,211,238,0.05)_100%)] opacity-80 transition-opacity group-hover:opacity-100" />
-        <GoogleNavbarGlyph className="relative z-[1] shrink-0" />
-        <span className="relative z-[1] whitespace-nowrap text-[13px] font-bold tracking-tight text-white">
-          <span className="sm:hidden">Giriş</span>
-          <span className="hidden sm:inline">Giriş yap</span>
+        <GoogleNavbarGlyph className="relative z-[1] shrink-0 opacity-95" />
+        <span className="relative z-[1] whitespace-nowrap text-[13px] font-semibold tracking-tight text-white">
+          Giriş
         </span>
         {oauthBusy ? (
           <span
             aria-hidden
-            className="relative z-[1] h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/35 border-t-cyan-300"
+            className="relative z-[1] h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/25 border-t-white/80"
           />
         ) : null}
       </button>
@@ -93,7 +91,7 @@ export function NavbarSiteAuthTop() {
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((v) => !v)}
-        className="relative flex h-11 max-w-[148px] min-h-[44px] touch-manipulation items-center gap-1.5 overflow-hidden rounded-xl border border-white/[0.11] bg-white/[0.06] pl-3 pr-2 text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-xl transition hover:border-cyan-400/25 sm:max-w-[200px]"
+        className="relative flex h-11 max-w-[148px] min-h-[44px] touch-manipulation items-center gap-1.5 overflow-hidden rounded-xl border border-white/[0.1] bg-white/[0.05] pl-3 pr-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/[0.16] sm:max-w-[200px]"
       >
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white">{navLabel}</span>
         <svg
@@ -103,7 +101,7 @@ export function NavbarSiteAuthTop() {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden
-          className={`shrink-0 text-cyan-200/85 transition-transform ${open ? "-rotate-180" : ""}`}
+          className={`shrink-0 text-slate-400 transition-transform ${open ? "-rotate-180" : ""}`}
         >
           <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
@@ -111,7 +109,7 @@ export function NavbarSiteAuthTop() {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+7px)] z-[60] w-[min(16.5rem,calc(100vw-4rem))] overflow-hidden rounded-xl border border-white/[0.12] bg-slate-950/96 p-1.5 shadow-[0_24px_72px_-32px_rgba(0,198,255,0.52)] backdrop-blur-2xl ring-1 ring-cyan-400/12"
+          className="absolute right-0 top-[calc(100%+7px)] z-[60] w-[min(16.5rem,calc(100vw-4rem))] overflow-hidden rounded-xl border border-white/[0.1] bg-slate-950/[0.97] p-1.5 shadow-[0_20px_60px_-24px_rgba(0,0,0,0.75)] backdrop-blur-xl ring-1 ring-white/[0.06]"
         >
           <button
             role="menuitem"
@@ -120,7 +118,7 @@ export function NavbarSiteAuthTop() {
               void signOut();
               setOpen(false);
             }}
-            className="flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-lg border border-transparent px-3 text-[13px] font-semibold text-slate-200 transition hover:border-white/[0.1] hover:bg-white/[0.07] hover:text-white"
+            className="flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-lg border border-transparent px-3 text-[13px] font-semibold text-slate-200 transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white"
           >
             Çıkış yap
           </button>
@@ -163,23 +161,26 @@ export function NavbarSiteAuthDrawer({ onNavigate }: { onNavigate?: () => void }
         type="button"
         onClick={() => void signInWithGoogle()}
         disabled={oauthBusy}
-        className="group relative flex min-h-[48px] w-full touch-manipulation items-center justify-center gap-2 overflow-hidden rounded-xl border border-white/[0.11] bg-white/[0.045] px-4 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.08)] backdrop-blur-md transition hover:border-cyan-400/25 hover:bg-white/[0.07] disabled:opacity-45"
+        className="group relative flex min-h-[52px] w-full touch-manipulation flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.07] to-white/[0.03] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md transition hover:border-white/[0.15] disabled:opacity-45"
       >
-        <GoogleNavbarGlyph className="h-5 w-5 shrink-0" />
-        <span className="text-sm font-bold text-white">
-          {oauthBusy ? "Yönlendiriliyor…" : "Google ile giriş yap"}
+        <span className="flex items-center gap-2">
+          <GoogleNavbarGlyph className="h-5 w-5 shrink-0" />
+          <span className="text-[15px] font-semibold text-white">Giriş</span>
+        </span>
+        <span className="text-[11px] font-medium text-slate-500">
+          {oauthBusy ? "Yönlendiriliyor…" : "Google hesabınızla devam edin"}
         </span>
       </button>
     );
   }
 
   return (
-    <div className="rounded-xl border border-white/[0.09] bg-white/[0.05] px-4 py-3 backdrop-blur-sm">
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 backdrop-blur-sm">
       <p className="truncate text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Hesabın</p>
       <p className="mt-1 truncate text-sm font-semibold text-white">{navLabel}</p>
       <button
         type="button"
-        className="mt-3 flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.05] px-3 text-[13px] font-semibold text-cyan-100 transition hover:border-cyan-400/35 hover:bg-white/[0.08]"
+        className="mt-3 flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 text-[13px] font-semibold text-slate-200 transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white"
         onClick={() => {
           void signOut();
           onNavigate?.();
