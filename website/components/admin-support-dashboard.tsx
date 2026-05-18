@@ -47,18 +47,21 @@ type ViewerConversationState =
   | "reviewing_missing_assignment";
 
 function viewerConversationState(row: SupportMessageRow, viewerId: string | undefined): ViewerConversationState {
+  const vid = viewerId?.trim() ?? "";
+  const assigned = row.assigned_admin_id?.trim() ?? "";
+
   const st = row.status.trim().toLowerCase();
   if (st === "resolved") {
-    if (viewerId && row.assigned_admin_id === viewerId) return "self_resolved";
+    if (vid && assigned === vid) return "self_resolved";
     return "other_resolved";
   }
   if (st === "new") {
     return "claimable_new";
   }
   if (st === "reviewing") {
-    if (!row.assigned_admin_id) return "reviewing_missing_assignment";
-    if (!viewerId) return "other_reviewing";
-    if (row.assigned_admin_id === viewerId) return "self_reviewing";
+    if (!assigned) return "reviewing_missing_assignment";
+    if (!vid) return "other_reviewing";
+    if (assigned === vid) return "self_reviewing";
     return "other_reviewing";
   }
   return "claimable_new";
@@ -165,31 +168,56 @@ function dedupeDuplicateTicketLine(
   });
 }
 
+type AdminComposerMode =
+  | "active"
+  | "claimable_new"
+  | "self_resolved"
+  | "other_admin"
+  | "missing_assignment";
+
+function adminComposerModeFromViewerState(v: ViewerConversationState): AdminComposerMode {
+  switch (v) {
+    case "claimable_new":
+      return "claimable_new";
+    case "self_reviewing":
+      return "active";
+    case "self_resolved":
+      return "self_resolved";
+    case "reviewing_missing_assignment":
+      return "missing_assignment";
+    case "other_reviewing":
+    case "other_resolved":
+      return "other_admin";
+    default:
+      return "other_admin";
+  }
+}
+
 function AdminSupportChatSection({
   ticketId,
   ticketMessageBody,
   supabase,
   viewerState,
   viewerEmail,
+  viewerId,
 }: {
   ticketId: string;
   ticketMessageBody: string;
   supabase: SupabaseClient;
   viewerState: ViewerConversationState;
   viewerEmail: string;
+  viewerId: string;
 }) {
   const [rows, setRows] = useState<SupportChatMessageRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchHadError, setFetchHadError] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const canUseComposer = viewerState === "self_reviewing";
-  const shouldShowAccessHint =
-    viewerState === "other_reviewing" ||
-    viewerState === "other_resolved" ||
-    viewerState === "reviewing_missing_assignment";
+  const composerMode = adminComposerModeFromViewerState(viewerState);
+  const canUseComposer = composerMode === "active";
 
   const displayRows = useMemo(
     () => dedupeDuplicateTicketLine(rows, ticketMessageBody),
@@ -209,6 +237,7 @@ function AdminSupportChatSection({
 
     async function load() {
       setLoading(true);
+      setFetchHadError(false);
       setSendError(null);
       const { data, error } = await supabase
         .from("support_chat_messages")
@@ -219,7 +248,15 @@ function AdminSupportChatSection({
       if (cancelled) return;
       setLoading(false);
       if (error) {
+        setFetchHadError(true);
         setRows([]);
+        console.error("[AdminSupportChat] support_chat_messages select failed", {
+          code: error.code,
+          message: error.message,
+          selectedRowId: ticketId,
+          sessionUserId: viewerId,
+          sessionEmail: viewerEmail,
+        });
         return;
       }
       setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
@@ -252,10 +289,10 @@ function AdminSupportChatSection({
       cancelled = true;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, ticketId]);
+  }, [supabase, ticketId, viewerEmail, viewerId]);
 
-  const sendAdminMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendAdminMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setSendError(null);
     const body = draft.trim();
     if (body.length < 1 || !canUseComposer || sending) return;
@@ -274,7 +311,14 @@ function AdminSupportChatSection({
         .maybeSingle();
 
       if (error || !data) {
-        setSendError("Mesaj gönderilemedi. Atamanı ve bağlantını kontrol et.");
+        setSendError("Mesaj gönderilemedi.");
+        console.error("[AdminSupportChat] support_chat_messages insert failed", {
+          code: error?.code ?? null,
+          message: error?.message ?? (data ? null : "insert returned no row"),
+          selectedRowId: ticketId,
+          sessionUserId: viewerId,
+          sessionEmail: viewerEmail,
+        });
         return;
       }
       setDraft("");
@@ -284,10 +328,42 @@ function AdminSupportChatSection({
     }
   };
 
+  const composerHint = (() => {
+    switch (composerMode) {
+      case "claimable_new":
+        return "Cevap yazmak için görüşmeyi kabul et.";
+      case "other_admin":
+        return "Bu görüşme başka bir yönetici tarafından alınmış.";
+      case "missing_assignment":
+        return "Kayıtta atama eksik; veritabanı / RLS kontrolü gerekebilir.";
+      case "self_resolved":
+        return "Bu görüşme çözüldü olarak işaretlenmiş.";
+      default:
+        return null;
+    }
+  })();
+
+  const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (canUseComposer && draft.trim().length > 0 && !sending) {
+        void sendAdminMessage();
+      }
+    }
+  };
+
   return (
-    <div className="mt-7 space-y-4 border-t border-white/[0.07] pt-7">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Canlı yazışma</p>
+    <section
+      aria-label="Canlı sohbet"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-white/[0.06] pt-5"
+    >
+      <div className="flex shrink-0 items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Canlı sohbet</p>
+          <p className="mt-1 text-[11px] leading-snug text-slate-500">
+            Kullanıcı mesajları solda, yanıtlarınız sağda görünür.
+          </p>
+        </div>
         {loading ? (
           <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">yükleniyor</span>
         ) : (
@@ -295,16 +371,23 @@ function AdminSupportChatSection({
         )}
       </div>
 
-      {shouldShowAccessHint ? (
-        <p className="rounded-xl border border-white/[0.08] bg-black/35 px-3.5 py-2 text-[12px] leading-relaxed text-slate-400">
-          Sohbet satırları yalnızca bu bileti yönetmeye yetkili yöneticiye açılabilir veya sıradaki biletlere bağlı olarak
-          listelenir.
+      {fetchHadError ? (
+        <p className="mt-2 shrink-0 text-[12px] leading-relaxed text-rose-300/90" role="alert">
+          Sohbet mesajları yüklenemedi (RLS veya ağ). Detaylar için tarayıcı konsoluna bakın.
         </p>
       ) : null}
 
-      <div className="max-h-[min(22rem,calc(100vh-20rem))] space-y-2.5 overflow-y-auto overscroll-contain rounded-[1rem] border border-white/[0.07] bg-black/35 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:max-h-[min(26rem,calc(100vh-18rem))]">
+      {!canUseComposer && composerHint ? (
+        <p className="mt-3 shrink-0 rounded-xl border border-white/[0.08] bg-black/40 px-3.5 py-2.5 text-[12px] font-medium leading-snug text-slate-300">
+          {composerHint}
+        </p>
+      ) : null}
+
+      <div className="relative mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[1rem] border border-white/[0.07] bg-black/35 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
         {displayRows.length === 0 && !loading ? (
-          <p className="px-1 py-4 text-center text-[12px] text-slate-500">Henüz sohbet satırı yok.</p>
+          <p className="px-1 py-6 text-center text-[12px] leading-relaxed text-slate-500">
+            Henüz sohbet satırı yok. Görüşmeyi kabul ettikten sonra yanıt yazabilirsin.
+          </p>
         ) : null}
 
         {displayRows.map((ln) => {
@@ -314,7 +397,7 @@ function AdminSupportChatSection({
 
           if (st === "system") {
             return (
-              <div key={ln.id} className="flex justify-center">
+              <div key={ln.id} className="mb-2 flex justify-center">
                 <div
                   className={`${base} max-w-[95%] border-white/[0.08] bg-white/[0.04] text-center text-slate-200/92`}
                 >
@@ -327,7 +410,7 @@ function AdminSupportChatSection({
 
           if (st === "admin") {
             return (
-              <div key={ln.id} className="flex justify-end">
+              <div key={ln.id} className="mb-2 flex justify-end">
                 <div
                   className={`${base} border-cyan-400/22 bg-gradient-to-br from-cyan-500/[0.12] to-black/45 text-slate-50/96`}
                 >
@@ -342,7 +425,7 @@ function AdminSupportChatSection({
           }
 
           return (
-            <div key={ln.id} className="flex justify-start">
+            <div key={ln.id} className="mb-2 flex justify-start">
               <div className={`${base} border-white/[0.08] bg-black/45 text-slate-100/94`}>
                 <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Kullanıcı</span>
                 <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
@@ -353,34 +436,44 @@ function AdminSupportChatSection({
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
 
-      <form onSubmit={(ev) => void sendAdminMessage(ev)} className="space-y-2">
-        <label className="grid gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Yanıt</span>
-          <textarea
-            value={draft}
-            onChange={(ev) => setDraft(ev.target.value)}
-            rows={2}
-            disabled={!canUseComposer || sending}
-            placeholder={
-              canUseComposer ? "Kullanıcıya yaz…" : "Yazmak için önce görüşmeyi kabul et ve ata."
-            }
-            className="min-h-[80px] w-full resize-none rounded-xl border border-white/[0.08] bg-black/45 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none transition focus:border-cyan-400/32 disabled:cursor-not-allowed disabled:opacity-45"
-          />
-        </label>
-        {sendError ? (
-          <p className="text-[12px] font-medium text-rose-300/95" role="alert">
-            {sendError}
-          </p>
-        ) : null}
-        <button
-          type="submit"
-          disabled={!canUseComposer || sending || draft.trim().length < 1}
-          className="inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-black text-white shadow-[0_12px_36px_-14px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/25 disabled:cursor-not-allowed disabled:opacity-45"
+      <div className="shrink-0 border-t border-white/[0.06] bg-slate-950/50 pt-4">
+        <form
+          onSubmit={(ev) => void sendAdminMessage(ev)}
+          className="space-y-2.5"
         >
-          {sending ? "Gönderiliyor…" : "Gönder"}
-        </button>
-      </form>
-    </div>
+          <label className="grid gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Yanıt yaz</span>
+            <textarea
+              value={draft}
+              onChange={(ev) => setDraft(ev.target.value)}
+              onKeyDown={onComposerKeyDown}
+              rows={3}
+              disabled={!canUseComposer || sending}
+              placeholder={
+                canUseComposer ? "Yanıtınızı yazın…" : composerHint ?? "Yanıt yazılamıyor."
+              }
+              aria-label="Admin yanıtı"
+              className="min-h-[88px] w-full resize-none rounded-xl border border-white/[0.1] bg-black/50 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none transition focus:border-cyan-400/35 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            {canUseComposer ? (
+              <span className="text-[10px] text-slate-600">Enter gönderir · Shift+Enter yeni satır</span>
+            ) : null}
+          </label>
+          {sendError ? (
+            <p className="text-[12px] font-medium text-rose-300/95" role="alert">
+              {sendError}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={!canUseComposer || sending || draft.trim().length < 1}
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-black text-white shadow-[0_12px_36px_-14px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/25 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {sending ? "Gönderiliyor…" : "Gönder"}
+          </button>
+        </form>
+      </div>
+    </section>
   );
 }
 
@@ -392,6 +485,7 @@ function SupportAdminMessageDetail({
   onMarkResolved,
   supabaseClient,
   viewerEmail,
+  viewerId,
 }: {
   row: SupportMessageRow;
   viewerState: ViewerConversationState;
@@ -400,6 +494,7 @@ function SupportAdminMessageDetail({
   onMarkResolved: () => void;
   supabaseClient: SupabaseClient;
   viewerEmail: string;
+  viewerId: string;
 }) {
   const st = rowStatusValue(row.status);
 
@@ -410,8 +505,8 @@ function SupportAdminMessageDetail({
     viewerState === "reviewing_missing_assignment";
 
   return (
-    <article className="admin-support-detail-shell rounded-[1.35rem] border border-white/[0.1] bg-slate-950/[0.78] p-6 shadow-[0_28px_80px_-40px_rgba(0,114,255,0.45)] ring-1 ring-cyan-400/[0.1] backdrop-blur-2xl md:p-8">
-      <div className="relative z-[1] flex flex-col gap-5 border-b border-white/[0.07] pb-6 md:flex-row md:items-start md:justify-between md:gap-8">
+    <article className="admin-support-detail-shell flex max-h-[min(92vh,calc(100vh-5.25rem))] min-h-0 flex-col overflow-hidden rounded-[1.35rem] border border-white/[0.1] bg-slate-950/[0.78] p-6 pb-4 shadow-[0_28px_80px_-40px_rgba(0,114,255,0.45)] ring-1 ring-cyan-400/[0.1] backdrop-blur-2xl md:max-h-[calc(100vh-4.5rem)] md:p-8 md:pb-5">
+      <div className="relative z-[1] flex shrink-0 flex-col gap-5 border-b border-white/[0.07] pb-5 md:flex-row md:items-start md:justify-between md:gap-8 md:pb-6">
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
             <time
@@ -527,8 +622,9 @@ function SupportAdminMessageDetail({
         </div>
       </div>
 
-      <div className="relative z-[1] pt-7">
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Mesaj</p>
+      <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden pt-5">
+        <div className="shrink-0 border-b border-white/[0.06] pb-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">İlk mesaj (ticket)</p>
         {canReadBody ? (
           <>
             <div className="mt-3 rounded-xl border border-white/[0.07] bg-black/40 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md md:p-5">
@@ -559,12 +655,15 @@ function SupportAdminMessageDetail({
           </p>
         )}
 
+        </div>
+
         <AdminSupportChatSection
           ticketId={row.id}
           ticketMessageBody={row.message}
           supabase={supabaseClient}
           viewerState={viewerState}
           viewerEmail={viewerEmail}
+          viewerId={viewerId}
         />
       </div>
     </article>
@@ -1241,6 +1340,7 @@ export function AdminSupportDashboard() {
                   onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
                   supabaseClient={client}
                   viewerEmail={viewerEmail}
+                  viewerId={viewerId}
                 />
               ) : null}
             </div>
@@ -1292,7 +1392,7 @@ export function AdminSupportDashboard() {
                 );
               })}
             </aside>
-            <div className="min-h-[calc(22rem-env(safe-area-inset-bottom,0px))] md:sticky md:top-5 lg:top-7">
+            <div className="flex min-h-0 flex-col md:sticky md:top-5 lg:top-7">
               {selectedRow ? (
                 <SupportAdminMessageDetail
                   row={selectedRow}
@@ -1302,6 +1402,7 @@ export function AdminSupportDashboard() {
                   onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
                   supabaseClient={client}
                   viewerEmail={viewerEmail}
+                  viewerId={viewerId}
                 />
               ) : null}
             </div>

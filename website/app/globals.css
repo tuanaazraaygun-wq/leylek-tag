@@ -515,7 +515,9 @@ a {
 
 .admin-support-detail-shell {
   position: relative;
-  overflow: hidden;
+  /* Dikey taşan sohbet içeride scroll edilir; yatay taşma kesilir */
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .admin-support-detail-shell::before {
