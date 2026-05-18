@@ -6,8 +6,12 @@ import { getAdminSupportMagicLinkRedirectTo } from "@/lib/site-origin";
 import {
   SUPPORT_ADMIN_TYPING_EVENT,
   SUPPORT_USER_TYPING_EVENT,
-  supportTypingBridgeTopic,
 } from "@/lib/support-typing-realtime";
+import {
+  createAdminChatRealtimeChannel,
+  newRealtimeInstanceId,
+  subscribeSupportTypingBroadcastBridge,
+} from "@/lib/support-chat-realtime-subscribe";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
 import type { Session, SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 
@@ -337,17 +341,19 @@ function AdminSupportChatSection({
   const [sending, setSending] = useState(false);
   const [rtConn, setRtConn] = useState<AdminRealtimeConnection>("connecting");
   const [userTypingPeek, setUserTypingPeek] = useState(false);
-  const [typingPipeReady, setTypingPipeReady] = useState(false);
+  const [typingBridgeSendReady, setTypingBridgeSendReady] = useState(false);
+  const [typingBridgeRepairKey, setTypingBridgeRepairKey] = useState(0);
   const [realtimeRepairKey, setRealtimeRepairKey] = useState(0);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const viewerEmailRef = useRef(viewerEmail);
   const viewerIdRef = useRef(viewerId);
-  const realtimeSetupSeqRef = useRef(0);
+  /** Yalnızca `channel.send`; asla `.on` çağrılmaz. */
+  const typingBridgeSendOnlyRef = useRef<RealtimeChannel | null>(null);
   const realtimeRetryAttemptsRef = useRef(0);
   const realtimeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingBurstRef = useRef(0);
-  const typingChannelRef = useRef<RealtimeChannel | null>(null);
+  const typingBridgeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userTypingHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const bumpUserTyping = useCallback(() => {
@@ -369,7 +375,8 @@ function AdminSupportChatSection({
     queueMicrotask(() => {
       setRtConn("connecting");
       setRealtimeRepairKey(0);
-      setTypingPipeReady(false);
+      setTypingBridgeSendReady(false);
+      setTypingBridgeRepairKey(0);
       setUserTypingPeek(false);
     });
   }, [ticketId]);
@@ -378,6 +385,7 @@ function AdminSupportChatSection({
     return () => {
       if (userTypingHideTimerRef.current) clearTimeout(userTypingHideTimerRef.current);
       if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+      if (typingBridgeRepairTimerRef.current) clearTimeout(typingBridgeRepairTimerRef.current);
     };
   }, []);
 
@@ -436,120 +444,134 @@ function AdminSupportChatSection({
     };
   }, [supabase, ticketId]);
 
+  /** Postgres realtime: tek effect, callbackler subscribe ÖNCESİ; topic her kuruluşta benzersiz. */
   useEffect(() => {
-    let cleaned = false;
-    const seq = ++realtimeSetupSeqRef.current;
-    const topic = `admin-support-chat:${ticketId}:${seq}`;
+    let mounted = true;
+    const instanceId = newRealtimeInstanceId();
 
     const scheduleRepair = () => {
-      if (cleaned) return;
+      if (!mounted) return;
       realtimeRetryAttemptsRef.current += 1;
       const n = realtimeRetryAttemptsRef.current;
       if (n > 8) {
-        setRtConn("offline");
+        queueMicrotask(() => setRtConn("offline"));
         return;
       }
       const delayMs = Math.min(30_000, 900 * 1.45 ** Math.min(n - 1, 12));
       if (process.env.NODE_ENV !== "production" && (n === 1 || n % 3 === 0)) {
-        console.warn("[AdminSupportChat] realtime repair scheduled", { ticketId, n, delayMs });
+        console.warn("[AdminSupportChat] postgres realtime repair scheduled", { ticketId, n, delayMs });
       }
-      setRtConn("reconnecting");
+      queueMicrotask(() => setRtConn("reconnecting"));
       if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
       realtimeRepairTimerRef.current = setTimeout(() => {
         realtimeRepairTimerRef.current = null;
-        if (!cleaned) setRealtimeRepairKey((k) => k + 1);
+        if (mounted) setRealtimeRepairKey((k) => k + 1);
       }, delayMs);
     };
 
-    queueMicrotask(() => {
-      setRtConn("connecting");
-    });
+    queueMicrotask(() => setRtConn("connecting"));
 
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "support_chat_messages",
-          filter: `support_message_id=eq.${ticketId}`,
-        },
-        (payload) => {
-          if (cleaned) return;
-          try {
-            const row = payload.new as SupportChatMessageRow;
-            if (!row?.id) return;
-            setRows((prev) => {
-              if (prev.some((r) => r.id === row.id)) return prev;
-              return [...prev, row];
-            });
-          } catch {
-            /* ignore coercion */
-          }
-        },
-      )
-      .subscribe((status, err) => {
-        if (cleaned) return;
+    const pgChannel = createAdminChatRealtimeChannel({
+      supabase,
+      ticketId,
+      instanceId,
+      onMessage(payload) {
+        if (!mounted) return;
+        try {
+          const row = payload as unknown as SupportChatMessageRow;
+          if (!row?.id) return;
+          setRows((prev) => {
+            if (prev.some((r) => r.id === row.id)) return prev;
+            return [...prev, row];
+          });
+        } catch {
+          /* ignore coercion */
+        }
+      },
+      onChannelStatus(status, err) {
+        if (!mounted) return;
         if (status === "SUBSCRIBED") {
           realtimeRetryAttemptsRef.current = 0;
-          setRtConn("live");
+          queueMicrotask(() => setRtConn("live"));
           return;
         }
         if (status === "CHANNEL_ERROR" && process.env.NODE_ENV !== "production" && err) {
-          console.warn("[AdminSupportChat] realtime channel warning", err.message);
+          console.warn("[AdminSupportChat] postgres channel warning", (err as Error)?.message ?? err);
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           scheduleRepair();
         }
-      });
+      },
+    });
 
     return () => {
-      cleaned = true;
+      mounted = false;
       if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
       realtimeRepairTimerRef.current = null;
-      void supabase.removeChannel(channel);
+      void supabase.removeChannel(pgChannel);
     };
   }, [supabase, ticketId, realtimeRepairKey]);
 
+  /** Ortak yazıyor köprüsü — yalın broadcast kanalı (postgres yok), .on sonra subscribe tek seferlik. */
   useEffect(() => {
-    let disposed = false;
-    const bridgeTopic = supportTypingBridgeTopic(ticketId);
+    let mounted = true;
+    typingBridgeSendOnlyRef.current = null;
+    queueMicrotask(() => setTypingBridgeSendReady(false));
 
-    const ch = supabase
-      .channel(bridgeTopic, { config: { broadcast: { ack: false } } })
-      .on("broadcast", { event: SUPPORT_USER_TYPING_EVENT }, () => {
-        if (!disposed) bumpUserTyping();
-      })
-      .subscribe((status) => {
-        if (disposed) return;
-        if (status === "SUBSCRIBED") {
-          typingChannelRef.current = ch;
-          setTypingPipeReady(true);
-          return;
+    const scheduleBridgeRepair = () => {
+      if (!mounted) return;
+      queueMicrotask(() => setTypingBridgeSendReady(false));
+      if (typingBridgeRepairTimerRef.current) clearTimeout(typingBridgeRepairTimerRef.current);
+      typingBridgeRepairTimerRef.current = setTimeout(() => {
+        typingBridgeRepairTimerRef.current = null;
+        if (mounted) setTypingBridgeRepairKey((x) => x + 1);
+      }, 1500);
+    };
+
+    const bridgeChannel = subscribeSupportTypingBroadcastBridge({
+      client: supabase,
+      ticketId,
+      incomingEvent: SUPPORT_USER_TYPING_EVENT,
+      onIncoming: () => {
+        if (mounted) bumpUserTyping();
+      },
+      onSubscribedReady(sendCh) {
+        if (!mounted) return;
+        typingBridgeSendOnlyRef.current = sendCh;
+        setTypingBridgeSendReady(true);
+      },
+      onChannelStatus(status, err) {
+        if (!mounted) return;
+        if (status === "SUBSCRIBED") return;
+        if (status === "CHANNEL_ERROR" && process.env.NODE_ENV !== "production" && err) {
+          console.warn("[AdminSupportChat] typing bridge warning", (err as Error)?.message ?? err);
         }
-        typingChannelRef.current = null;
-        setTypingPipeReady(false);
-      });
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          scheduleBridgeRepair();
+        }
+      },
+    });
 
     return () => {
-      disposed = true;
-      typingChannelRef.current = null;
-      setTypingPipeReady(false);
-      void supabase.removeChannel(ch);
+      mounted = false;
+      typingBridgeSendOnlyRef.current = null;
+      if (typingBridgeRepairTimerRef.current) clearTimeout(typingBridgeRepairTimerRef.current);
+      typingBridgeRepairTimerRef.current = null;
+      queueMicrotask(() => setTypingBridgeSendReady(false));
+      void supabase.removeChannel(bridgeChannel);
     };
-  }, [supabase, ticketId, bumpUserTyping]);
+  }, [supabase, ticketId, bumpUserTyping, typingBridgeRepairKey]);
 
   useEffect(() => {
-    if (!typingPipeReady || !canUseComposer || draft.trim().length < 1) return undefined;
-    const ch = typingChannelRef.current;
-    if (!ch) return undefined;
+    if (!typingBridgeSendReady || !canUseComposer || draft.trim().length < 1) return undefined;
+    const sendCh = typingBridgeSendOnlyRef.current;
+    if (!sendCh) return undefined;
 
     typingBurstRef.current += 1;
     const burst = typingBurstRef.current;
     const t = window.setTimeout(() => {
       if (burst !== typingBurstRef.current) return;
-      void ch
+      void sendCh
         .send({
           type: "broadcast",
           event: SUPPORT_ADMIN_TYPING_EVENT,
@@ -558,7 +580,7 @@ function AdminSupportChatSection({
         .catch(() => {});
     }, 520);
     return () => window.clearTimeout(t);
-  }, [draft, canUseComposer, typingPipeReady]);
+  }, [draft, canUseComposer, typingBridgeSendReady]);
 
   const sendAdminMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -670,7 +692,7 @@ function AdminSupportChatSection({
           {loading ? (
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">mesaj yükleme</span>
           ) : null}
-          {typingPipeReady ? (
+          {typingBridgeSendReady ? (
             <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-200/72">
               yazma sinyali açık
             </span>

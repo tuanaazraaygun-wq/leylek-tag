@@ -16,8 +16,12 @@ import { getSupabaseTicketChatClient } from "@/lib/support-chat-client";
 import {
   SUPPORT_ADMIN_TYPING_EVENT,
   SUPPORT_USER_TYPING_EVENT,
-  supportTypingBridgeTopic,
 } from "@/lib/support-typing-realtime";
+import {
+  newRealtimeInstanceId,
+  subscribeSiteTicketSupportPostgresRealtime,
+  subscribeSupportTypingBroadcastBridge,
+} from "@/lib/support-chat-realtime-subscribe";
 import { SUPPORT_EMAIL } from "@/lib/site-contact";
 import {
   clearStoredSupportTicket,
@@ -184,16 +188,17 @@ export function SiteSupportPanel() {
   const [chatBanner, setChatBanner] = useState<string | null>(null);
   const [adminTypingPeek, setAdminTypingPeek] = useState(false);
   const [postgresRepairKey, setPostgresRepairKey] = useState(0);
-  const [typingPipeReady, setTypingPipeReady] = useState(false);
+  const [typingBridgeRepairKey, setTypingBridgeRepairKey] = useState(0);
+  const [typingBridgeSendReady, setTypingBridgeSendReady] = useState(false);
 
   const chatScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const knownChatIdsRef = useRef<Set<string>>(new Set());
-  const siteSupportRealtimeSeqRef = useRef(0);
-  const typingChannelRef = useRef<RealtimeChannel | null>(null);
+  const typingBridgeSendOnlyRef = useRef<RealtimeChannel | null>(null);
   const typingBurstRef = useRef(0);
   const adminTypingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeRetryAttemptsRef = useRef(0);
   const realtimeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingBridgeRepairTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Gönder sonrası bekleme bitiş zamanı (ms epoch); 0 = soğuma yok */
   const cooldownEndsAtRef = useRef(0);
@@ -239,6 +244,7 @@ export function SiteSupportPanel() {
     return () => {
       if (adminTypingHideRef.current) clearTimeout(adminTypingHideRef.current);
       if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
+      if (typingBridgeRepairTimerRef.current) clearTimeout(typingBridgeRepairTimerRef.current);
     };
   }, []);
 
@@ -246,10 +252,11 @@ export function SiteSupportPanel() {
 
   useEffect(() => {
     realtimeRetryAttemptsRef.current = 0;
-    typingChannelRef.current = null;
+    typingBridgeSendOnlyRef.current = null;
     queueMicrotask(() => {
       setPostgresRepairKey(0);
-      setTypingPipeReady(false);
+      setTypingBridgeRepairKey(0);
+      setTypingBridgeSendReady(false);
       setAdminTypingPeek(false);
     });
   }, [realtimeTicketId, supportClientToken]);
@@ -371,87 +378,75 @@ export function SiteSupportPanel() {
     const tc = getSupabaseTicketChatClient(tk);
     if (!tc) return undefined;
 
-    let cleaned = false;
-    const seq = ++siteSupportRealtimeSeqRef.current;
-    const topic = `site-support-chat:${realtimeTicketId}:${seq}`;
+    let mounted = true;
+    const instanceId = newRealtimeInstanceId();
 
     const scheduleRepair = () => {
-      if (cleaned) return;
+      if (!mounted) return;
       realtimeRetryAttemptsRef.current += 1;
       const n = realtimeRetryAttemptsRef.current;
       if (n > 8) return;
       const delayMs = Math.min(30_000, 900 * 1.45 ** Math.min(n - 1, 12));
       if (process.env.NODE_ENV !== "production" && (n === 1 || n % 3 === 0)) {
-        console.warn("[SiteSupportPanel] realtime repair scheduled", { ticketId: realtimeTicketId, n, delayMs });
+        console.warn("[SiteSupportPanel] postgres realtime repair scheduled", {
+          ticketId: realtimeTicketId,
+          n,
+          delayMs,
+        });
       }
       if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
       realtimeRepairTimerRef.current = setTimeout(() => {
         realtimeRepairTimerRef.current = null;
-        if (!cleaned) setPostgresRepairKey((v) => v + 1);
+        if (mounted) setPostgresRepairKey((v) => v + 1);
       }, delayMs);
     };
 
-    const channel = tc
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "support_chat_messages",
-          filter: `support_message_id=eq.${realtimeTicketId}`,
-        },
-        (payload) => {
-          if (cleaned) return;
-          try {
-            const row = payload.new as SupportChatRow;
-            if (!row?.id) return;
-            setChatLines((prev) => {
-              if (prev.some((r) => r.id === row.id)) return prev;
-              return [...prev, row];
-            });
-          } catch {
-            /* ignore */
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "support_messages",
-          filter: `id=eq.${realtimeTicketId}`,
-        },
-        (payload) => {
-          if (cleaned) return;
-          try {
-            const nw = payload.new as SupportTicketMetaRow;
-            setTicketMeta(nw);
-          } catch {
-            /* ignore */
-          }
-        },
-      )
-      .subscribe((status, err) => {
-        if (cleaned) return;
+    const pgChannel = subscribeSiteTicketSupportPostgresRealtime({
+      client: tc,
+      ticketId: realtimeTicketId,
+      instanceId,
+      onChatInsert(payload) {
+        if (!mounted) return;
+        try {
+          const row = payload as unknown as SupportChatRow;
+          if (!row?.id) return;
+          setChatLines((prev) => {
+            if (prev.some((r) => r.id === row.id)) return prev;
+            return [...prev, row];
+          });
+        } catch {
+          /* ignore */
+        }
+      },
+      onTicketMetaUpdate(payload) {
+        if (!mounted) return;
+        try {
+          const nw = payload as unknown as SupportTicketMetaRow;
+          setTicketMeta(nw);
+        } catch {
+          /* ignore */
+        }
+      },
+      onChannelStatus(status, err) {
+        if (!mounted) return;
         if (status === "SUBSCRIBED") {
           realtimeRetryAttemptsRef.current = 0;
           return;
         }
         if (status === "CHANNEL_ERROR" && process.env.NODE_ENV !== "production" && err) {
-          console.warn("[SiteSupportPanel] realtime channel warning", err.message);
+          console.warn("[SiteSupportPanel] postgres channel warning", (err as Error)?.message ?? err);
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           scheduleRepair();
         }
-      });
+      },
+    });
 
     return () => {
-      cleaned = true;
+      mounted = false;
       if (realtimeRepairTimerRef.current) clearTimeout(realtimeRepairTimerRef.current);
       realtimeRepairTimerRef.current = null;
-      void tc.removeChannel(channel);
+      void tc.removeChannel(pgChannel);
     };
   }, [configured, open, realtimeTicketId, supportClientToken, postgresRepairKey]);
 
@@ -462,36 +457,58 @@ export function SiteSupportPanel() {
     const tc = getSupabaseTicketChatClient(tk);
     if (!tc) return undefined;
 
-    let disposed = false;
-    const bridgeTopic = supportTypingBridgeTopic(realtimeTicketId);
-    const ch = tc
-      .channel(bridgeTopic, { config: { broadcast: { ack: false } } })
-      .on("broadcast", { event: SUPPORT_ADMIN_TYPING_EVENT }, () => {
-        if (!disposed) bumpAdminTyping();
-      })
-      .subscribe((status) => {
-        if (disposed) return;
-        if (status === "SUBSCRIBED") {
-          typingChannelRef.current = ch;
-          setTypingPipeReady(true);
-          return;
+    let mounted = true;
+    typingBridgeSendOnlyRef.current = null;
+    queueMicrotask(() => setTypingBridgeSendReady(false));
+
+    const scheduleTypingBridgeRepair = () => {
+      if (!mounted) return;
+      queueMicrotask(() => setTypingBridgeSendReady(false));
+      if (typingBridgeRepairTimerRef.current) clearTimeout(typingBridgeRepairTimerRef.current);
+      typingBridgeRepairTimerRef.current = setTimeout(() => {
+        typingBridgeRepairTimerRef.current = null;
+        if (mounted) setTypingBridgeRepairKey((v) => v + 1);
+      }, 1500);
+    };
+
+    const bridgeChannel = subscribeSupportTypingBroadcastBridge({
+      client: tc,
+      ticketId: realtimeTicketId,
+      incomingEvent: SUPPORT_ADMIN_TYPING_EVENT,
+      onIncoming: () => {
+        if (mounted) bumpAdminTyping();
+      },
+      onSubscribedReady(sendCh) {
+        if (!mounted) return;
+        typingBridgeSendOnlyRef.current = sendCh;
+        setTypingBridgeSendReady(true);
+      },
+      onChannelStatus(status, err) {
+        if (!mounted) return;
+        if (status === "SUBSCRIBED") return;
+        if (status === "CHANNEL_ERROR" && process.env.NODE_ENV !== "production" && err) {
+          console.warn("[SiteSupportPanel] typing bridge warning", (err as Error)?.message ?? err);
         }
-        typingChannelRef.current = null;
-        setTypingPipeReady(false);
-      });
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          scheduleTypingBridgeRepair();
+        }
+      },
+    });
 
     return () => {
-      disposed = true;
-      typingChannelRef.current = null;
-      setTypingPipeReady(false);
-      void tc.removeChannel(ch);
+      mounted = false;
+      typingBridgeSendOnlyRef.current = null;
+      if (typingBridgeRepairTimerRef.current) clearTimeout(typingBridgeRepairTimerRef.current);
+      typingBridgeRepairTimerRef.current = null;
+      queueMicrotask(() => setTypingBridgeSendReady(false));
+      void tc.removeChannel(bridgeChannel);
     };
-  }, [configured, open, realtimeTicketId, supportClientToken, bumpAdminTyping]);
+  }, [configured, open, realtimeTicketId, supportClientToken, bumpAdminTyping, typingBridgeRepairKey]);
 
   useEffect(() => {
-    if (!typingPipeReady || !open || realtimeTicketId == null) return undefined;
-    const ch = typingChannelRef.current;
-    if (!ch) return undefined;
+    if (!typingBridgeSendReady || !open || realtimeTicketId == null) return undefined;
+    const sendCh = typingBridgeSendOnlyRef.current;
+    if (!sendCh) return undefined;
     const trimmed = chatInput.trim();
     if (trimmed.length < 1) return undefined;
 
@@ -499,7 +516,7 @@ export function SiteSupportPanel() {
     const burst = typingBurstRef.current;
     const t = window.setTimeout(() => {
       if (burst !== typingBurstRef.current) return;
-      void ch
+      void sendCh
         .send({
           type: "broadcast",
           event: SUPPORT_USER_TYPING_EVENT,
@@ -508,7 +525,7 @@ export function SiteSupportPanel() {
         .catch(() => {});
     }, 700);
     return () => window.clearTimeout(t);
-  }, [chatInput, typingPipeReady, open, realtimeTicketId]);
+  }, [chatInput, typingBridgeSendReady, open, realtimeTicketId]);
 
   const mergeChatBootstrap = useCallback((rows: SupportChatRow[]) => {
     setChatLines(rows);
