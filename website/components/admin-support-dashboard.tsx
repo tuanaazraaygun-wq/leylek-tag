@@ -215,6 +215,14 @@ function AdminSupportChatSection({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const viewerEmailRef = useRef(viewerEmail);
+  const viewerIdRef = useRef(viewerId);
+  const realtimeSetupSeqRef = useRef(0);
+
+  useEffect(() => {
+    viewerEmailRef.current = viewerEmail;
+    viewerIdRef.current = viewerId;
+  }, [viewerEmail, viewerId]);
 
   const composerMode = adminComposerModeFromViewerState(viewerState);
   const canUseComposer = composerMode === "active";
@@ -254,8 +262,8 @@ function AdminSupportChatSection({
           code: error.code,
           message: error.message,
           selectedRowId: ticketId,
-          sessionUserId: viewerId,
-          sessionEmail: viewerEmail,
+          sessionUserId: viewerIdRef.current,
+          sessionEmail: viewerEmailRef.current,
         });
         return;
       }
@@ -264,8 +272,17 @@ function AdminSupportChatSection({
 
     void load();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, ticketId]);
+
+  useEffect(() => {
+    const seq = ++realtimeSetupSeqRef.current;
+    const topic = `admin-support-chat:${ticketId}:${seq}`;
+
     const channel = supabase
-      .channel(`admin-support-chat-${ticketId}`)
+      .channel(topic)
       .on(
         "postgres_changes",
         {
@@ -281,15 +298,21 @@ function AdminSupportChatSection({
             return [...prev, row];
           });
         },
-      );
-
-    void channel.subscribe();
+      )
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" && err) {
+          console.error("[AdminSupportChat] realtime channel error", {
+            topic,
+            ticketId,
+            message: err.message,
+          });
+        }
+      });
 
     return () => {
-      cancelled = true;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, ticketId, viewerEmail, viewerId]);
+  }, [supabase, ticketId]);
 
   const sendAdminMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();

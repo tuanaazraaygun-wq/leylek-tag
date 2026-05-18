@@ -179,6 +179,7 @@ export function SiteSupportPanel() {
 
   const chatScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const knownChatIdsRef = useRef<Set<string>>(new Set());
+  const siteSupportRealtimeSeqRef = useRef(0);
 
   /** Gönder sonrası bekleme bitiş zamanı (ms epoch); 0 = soğuma yok */
   const cooldownEndsAtRef = useRef(0);
@@ -329,8 +330,11 @@ export function SiteSupportPanel() {
     const tc = getSupabaseTicketChatClient(tk);
     if (!tc) return undefined;
 
+    const seq = ++siteSupportRealtimeSeqRef.current;
+    const topic = `site-support-chat:${realtimeTicketId}:${seq}`;
+
     const channel = tc
-      .channel(`site-support-chat-${realtimeTicketId}`)
+      .channel(topic)
       .on(
         "postgres_changes",
         {
@@ -359,9 +363,16 @@ export function SiteSupportPanel() {
           const nw = payload.new as SupportTicketMetaRow;
           setTicketMeta(nw);
         },
-      );
-
-    void channel.subscribe();
+      )
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" && err) {
+          console.error("[SiteSupportPanel] realtime channel error", {
+            topic,
+            ticketId: realtimeTicketId,
+            message: err.message,
+          });
+        }
+      });
 
     return () => {
       void tc.removeChannel(channel);
