@@ -501,7 +501,7 @@ function AdminSupportChatSection({
 
   useEffect(() => {
     scrollToBottom();
-  }, [displayRows.length, scrollToBottom]);
+  }, [displayRows.length, sending, scrollToBottom]);
 
   useEffect(() => {
     let mounted = true;
@@ -652,13 +652,12 @@ function AdminSupportChatSection({
 
     try {
       const {
-        data: { session: liveSession },
+        data: { session },
       } = await supabase.auth.getSession();
-      const jwtEmail =
-        liveSession?.user?.email?.trim().toLowerCase() ?? viewerEmail.trim().toLowerCase();
+      /** RLS: yalnızca JWT ile eşleşen lower-case e-posta — UI state kullanılmaz */
+      const jwtEmail = session?.user?.email?.trim().toLowerCase() ?? "";
       if (!jwtEmail) {
-        const msg =
-          "Oturum e-postası okunamadı. Güvenlik için çıkış yapıp yeniden giriş yapın, ardından tekrar deneyin.";
+        const msg = "Oturum doğrulanamadı. Lütfen çıkış yapıp yeniden giriş yapın.";
         setSendError(msg);
         onDeskToast?.("error", msg);
         return;
@@ -873,7 +872,7 @@ function AdminSupportChatSection({
                 <div
                   className={`${base} border-cyan-400/24 bg-gradient-to-br from-cyan-500/[0.2] via-cyan-500/[0.1] to-black/55 text-slate-50/96`}
                 >
-                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/80">Destek ekibi</span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/80">Destek Ekibi</span>
                   <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
                   {ln.sender_email?.trim() ? (
                     <div className="mt-1 font-mono text-[9px] text-cyan-200/45">{ln.sender_email.trim()}</div>
@@ -920,6 +919,14 @@ function AdminSupportChatSection({
           );
         })}
 
+        {sending ? (
+          <div className="mb-3 flex justify-end px-1" role="status" aria-live="polite">
+            <div className="max-w-[min(100%,20rem)] rounded-2xl border border-cyan-400/35 bg-cyan-500/[0.1] px-3 py-2 text-[11px] font-semibold text-cyan-50/94 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-sm">
+              Gönderiliyor…
+            </div>
+          </div>
+        ) : null}
+
         {userTypingPeek ? (
           <div className="mb-2 px-1" role="status" aria-live="polite">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-black/55 px-3 py-1.5 backdrop-blur-sm">
@@ -943,11 +950,15 @@ function AdminSupportChatSection({
       >
         <form
           onSubmit={(ev) => void sendAdminMessage(ev)}
-          className="space-y-2.5 rounded-xl border border-white/[0.06] bg-slate-950/55 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl sm:p-3.5"
+          className={`space-y-2.5 rounded-xl border bg-slate-950/55 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl transition sm:p-3.5 ${
+            canUseComposer
+              ? "border-cyan-400/32 ring-2 ring-cyan-400/28 ring-offset-2 ring-offset-slate-950/80"
+              : "border-white/[0.06] opacity-[0.88]"
+          }`}
         >
           <label className="grid gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-              Composer
+              Canlı yanıt
               {sendError ? (
                 <span className="ml-2 rounded-md border border-rose-500/30 bg-rose-500/[0.1] px-1.5 py-px text-[10px] font-semibold lowercase text-rose-100/92">
                   hata
@@ -1711,18 +1722,31 @@ export function AdminSupportDashboard() {
   }, [client]);
 
   const acceptConversation = useCallback(
-    async (rowId: string, adminId: string, adminEmail: string) => {
+    async (rowId: string, adminId: string) => {
       if (!client) return;
       setLoadError(null);
       setUpdatingIds((m) => ({ ...m, [rowId]: true }));
       try {
+        const {
+          data: { session: authSession },
+        } = await client.auth.getSession();
+        const sessionEmail = authSession?.user?.email?.trim().toLowerCase() ?? "";
+        if (!sessionEmail) {
+          setLoadError("Oturum doğrulanamadı. Çıkış yapıp yeniden giriş yapın.");
+          return;
+        }
+        if ((authSession?.user?.id ?? "").trim() !== adminId.trim()) {
+          setLoadError("Oturum uyuşmazlığı. Yeniden giriş yapın.");
+          return;
+        }
+
         const acceptedAtIso = new Date().toISOString();
         const { data, error } = await client
           .from("support_messages")
           .update({
             status: "reviewing",
             assigned_admin_id: adminId,
-            assigned_admin_email: adminEmail.trim() || "",
+            assigned_admin_email: sessionEmail,
             accepted_at: acceptedAtIso,
             closed_at: null,
           })
@@ -1742,25 +1766,20 @@ export function AdminSupportDashboard() {
           return;
         }
 
-        const emailNorm = adminEmail.trim().toLowerCase();
-        if (emailNorm) {
-          const { error: greetErr } = await client.from("support_chat_messages").insert({
-            support_message_id: rowId,
-            sender_type: "admin",
-            sender_email: emailNorm,
-            body: ACCEPT_CONVERSATION_WELCOME_BODY,
-          });
-          if (greetErr) {
-            if (process.env.NODE_ENV !== "production") {
-              console.error("[AdminSupportDashboard] Karşılama mesajı eklenemedi", greetErr);
-            }
-            pushDeskToast(
-              "error",
-              "Görüşme kabul edildi ancak otomatik karşılama kaydedilemedi. İlk yanıtı manuel yazın.",
-            );
+        const { error: greetErr } = await client.from("support_chat_messages").insert({
+          support_message_id: rowId,
+          sender_type: "admin",
+          sender_email: sessionEmail,
+          body: ACCEPT_CONVERSATION_WELCOME_BODY,
+        });
+        if (greetErr) {
+          if (process.env.NODE_ENV !== "production") {
+            console.error("[AdminSupportDashboard] Karşılama mesajı eklenemedi", greetErr);
           }
-        } else {
-          pushDeskToast("error", "Oturum e-postası okunamadı; otomatik karşılama gönderilemedi.");
+          pushDeskToast(
+            "error",
+            "Görüşme kabul edildi ancak otomatik karşılama kaydedilemedi. İlk yanıtı manuel yazın.",
+          );
         }
 
         await refreshDashboard();
@@ -2262,7 +2281,7 @@ export function AdminSupportDashboard() {
                 row={selectedRow}
                 viewerState={viewerConversationState(selectedRow, viewerId)}
                 updating={Boolean(updatingIds[selectedRow.id])}
-                onAccept={() => void acceptConversation(selectedRow.id, viewerId, viewerEmail)}
+                onAccept={() => void acceptConversation(selectedRow.id, viewerId)}
                 onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
                 supabaseClient={client}
                 viewerEmail={viewerEmail}
@@ -2287,7 +2306,7 @@ export function AdminSupportDashboard() {
                 row={selectedRow}
                 viewerState={viewerConversationState(selectedRow, viewerId)}
                 updating={Boolean(updatingIds[selectedRow.id])}
-                onAccept={() => void acceptConversation(selectedRow.id, viewerId, viewerEmail)}
+                onAccept={() => void acceptConversation(selectedRow.id, viewerId)}
                 onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
                 supabaseClient={client}
                 viewerEmail={viewerEmail}

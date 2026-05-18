@@ -151,8 +151,21 @@ function SupportHeadsetGlyph({ className = "h-[1.125rem] w-[1.125rem]" }: { clas
   );
 }
 
+/** Temsilci mesajı gelene kadar gösterilen kurumsal bekleme metni */
+const LIVE_SUPPORT_QUEUE_COPY = `Canlı destek ekibimiz talebinizi aldı.
+Kısa süre içinde bir temsilci görüşmeye katılacaktır.
+Bu pencereyi kapatmadan bekleyebilir veya e-posta ile dönüş talep edebilirsiniz.`;
+
 function trimRowStatus(raw: string | null | undefined): string {
   return raw?.trim()?.toLowerCase() ?? "";
+}
+
+function formatChatTimeTr(iso: string | null | undefined): string {
+  if (!iso?.trim()) return "";
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t)
+    ? ""
+    : new Date(t).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
 type FormStatus = "idle" | "loading" | "error";
@@ -211,7 +224,7 @@ export function SiteSupportPanel() {
 
   useEffect(() => {
     scrollChatToBottom();
-  }, [chatLines, adminTypingPeek, scrollChatToBottom]);
+  }, [chatLines, adminTypingPeek, chatSending, scrollChatToBottom]);
 
   useEffect(() => {
     const endAt = cooldownEndsAtRef.current;
@@ -770,11 +783,18 @@ export function SiteSupportPanel() {
   const resolvedStatus =
     trimRowStatus(ticketMeta?.status) === "resolved";
 
+  const hasAdminReplyInThread = useMemo(
+    () => chatLines.some((ln) => (ln.sender_type ?? "").trim().toLowerCase() === "admin"),
+    [chatLines],
+  );
+
   const hasAssignedAdmin = Boolean((ticketMeta?.assigned_admin_id ?? "").trim().length > 0);
   const queueStatusPrimary =
-    hasAssignedAdmin
-      ? "Canlı destek görüşmesi başladı."
-      : "Sıradasın — ekibimiz uygun olduğunda görüşmeye katılır.";
+    resolvedStatus || hasAdminReplyInThread
+      ? "Görüşme aktif — Destek Ekibi yanıtları aşağıdaki akışta."
+      : hasAssignedAdmin
+        ? "Temsilci görüşmeye dahil oldu; ilk mesajlar yükleniyor."
+        : "Talebiniz alındı; canlı destek ekibi temsilci ataması yapıyor.";
 
   return (
     <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end md:bottom-8 md:right-8 md:w-auto md:max-w-none">
@@ -848,7 +868,9 @@ export function SiteSupportPanel() {
                             {queueStatusPrimary}
                           </p>
                           <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
-                            Ekibimize mesaj bıraktın; yanıtlar bu pencerede görünür.
+                            {hasAdminReplyInThread
+                              ? "Bu pencereden ekibimizle yazışmaya devam edebilirsiniz."
+                              : "Durumunuzu bu pencereden takip edebilir; yanıtlar kayıt altına alınır."}
                           </p>
                         </>
                       ) : (
@@ -896,17 +918,29 @@ export function SiteSupportPanel() {
                       </p>
                     </div>
 
-                    <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-white/[0.08] bg-black/40 px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                        Bilgi
-                      </p>
-                      <p className="mt-2 break-words text-[12.5px] leading-relaxed text-slate-300/95">
-                        Mesajın güvenli şekilde iletildi. Ekibimiz yanıt yazdığında konuşma akışında görünecek.
-                      </p>
-                    </div>
-
+                    {!resolvedStatus && !hasAdminReplyInThread && !hasAssignedAdmin ? (
+                      <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-cyan-400/22 bg-[linear-gradient(148deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.75)_55%)] px-3.5 py-3 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-sm">
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200/78">
+                          Beklemede
+                        </p>
+                        <p className="mt-2 whitespace-pre-line break-words text-[12.5px] font-medium leading-relaxed text-slate-200/95">
+                          {LIVE_SUPPORT_QUEUE_COPY}
+                        </p>
+                      </div>
+                    ) : null}
+                    {!resolvedStatus && !hasAdminReplyInThread && hasAssignedAdmin ? (
+                      <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-emerald-400/26 bg-emerald-500/[0.08] px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)] backdrop-blur-sm">
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-200/88">
+                          Temsilci
+                        </p>
+                        <p className="mt-2 text-[12.5px] font-medium leading-relaxed text-emerald-50/93">
+                          Görüşmeye bağlanıldı; karşılama ve yanıtlar kısa süre içinde akışta görünür.
+                        </p>
+                      </div>
+                    ) : null}
                     {chatLines.map((ln) => {
                       const sender = ln.sender_type?.trim()?.toLowerCase() ?? "";
+                      const timeLabel = formatChatTimeTr(ln.created_at);
 
                       const baseWrap =
                         "max-w-[min(100%,19rem)] break-words rounded-2xl border px-3.5 py-2.5 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm";
@@ -915,12 +949,20 @@ export function SiteSupportPanel() {
                         return (
                           <div
                             key={ln.id}
-                            className={`mx-auto ${baseWrap} max-w-[95%] self-center rounded-2xl border-white/[0.08] bg-white/[0.04] text-center text-slate-200/92`}
+                            className={`mx-auto ${baseWrap} max-w-[95%] self-center rounded-2xl border-amber-400/28 bg-amber-500/[0.08] text-center text-slate-100/94`}
                           >
-                            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-200/85">
                               Sistem
                             </span>
-                            <div className="mt-2 text-[12px]">{ln.body}</div>
+                            <div className="mt-2 text-[12px] whitespace-pre-wrap">{ln.body}</div>
+                            {timeLabel ? (
+                              <time
+                                className="mt-2 block font-mono text-[9px] text-amber-100/55"
+                                dateTime={ln.created_at}
+                              >
+                                {timeLabel}
+                              </time>
+                            ) : null}
                           </div>
                         );
                       }
@@ -932,9 +974,17 @@ export function SiteSupportPanel() {
                             className={`${baseWrap} max-w-[min(100%,19rem)] self-end rounded-tr-md border-violet-400/22 bg-black/52 text-slate-50/96`}
                           >
                             <span className="text-[10px] font-black uppercase tracking-[0.14em] text-violet-200/75">
-                              Destek ekibi
+                              Destek Ekibi
                             </span>
                             <div className="mt-2 whitespace-pre-wrap">{ln.body}</div>
+                            {timeLabel ? (
+                              <time
+                                className="mt-2 block text-right font-mono text-[9px] text-slate-500/90"
+                                dateTime={ln.created_at}
+                              >
+                                {timeLabel}
+                              </time>
+                            ) : null}
                           </div>
                         );
                       }
@@ -949,9 +999,25 @@ export function SiteSupportPanel() {
                             Sen
                           </span>
                           <div className="mt-2 whitespace-pre-wrap">{ln.body}</div>
+                          {timeLabel ? (
+                            <time className="mt-2 block font-mono text-[9px] text-slate-500/92" dateTime={ln.created_at}>
+                              {timeLabel}
+                            </time>
+                          ) : null}
                         </div>
                       );
                     })}
+                    {chatSending ? (
+                      <div className="flex justify-start px-1" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.05] px-3.5 py-2 text-[11px] font-semibold text-slate-400/95 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm">
+                          <span
+                            aria-hidden
+                            className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-cyan-300"
+                          />
+                          Gönderiliyor…
+                        </div>
+                      </div>
+                    ) : null}
                     {adminTypingPeek ? (
                       <div className="flex justify-end px-1 pb-2" role="status" aria-live="polite">
                         <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/26 bg-black/52 px-3 py-1.5 backdrop-blur-sm shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]">
