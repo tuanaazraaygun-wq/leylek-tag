@@ -2,19 +2,50 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSiteAuth } from "@/components/site-auth-provider";
+import { getSupabaseTicketChatClient } from "@/lib/support-chat-client";
 import { SUPPORT_EMAIL } from "@/lib/site-contact";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
+import {
+  clearStoredSupportTicket,
+  readStoredSupportTicket,
+  writeStoredSupportTicket,
+} from "@/lib/support-ticket-storage";
+import { isSupabaseConfigured } from "@/lib/supabase-client";
 
 const MESSAGE_MIN_LEN = 10;
+const CHAT_MESSAGE_MIN_LEN = 1;
 const SUBMIT_COOLDOWN_MS = 36_000;
 const USER_AGENT_MAX = 512;
 
 const LEYLEK_ZEKA_GREET =
   "Merhaba, ben Leylek Zeka. Sorununu veya önerini yaz; mesajını güvenli şekilde ekibe ileteyim.";
 
-// AI responses must be generated server-side only. Never expose AI keys in client.
+type SupportTicketMetaRow = {
+  id: string;
+  status: string;
+  assigned_admin_id: string | null;
+};
+
+type SupportChatRow = {
+  id: string;
+  support_message_id: string;
+  sender_type: string;
+  sender_email: string | null;
+  body: string;
+  created_at: string;
+};
+
+type PanelView = "composer" | "thread";
+
+/** AI replies must remain server-side only. */
 
 function mapSupportMessageInsertFeedback(error: {
   code?: string;
@@ -99,9 +130,14 @@ function SupportHeadsetGlyph({ className = "h-[1.125rem] w-[1.125rem]" }: { clas
   );
 }
 
-type FormStatus = "idle" | "loading" | "success" | "error";
+function trimRowStatus(raw: string | null | undefined): string {
+  return raw?.trim()?.toLowerCase() ?? "";
+}
 
-/** Yüzen vitrin desteği → Supabase `support_messages` (canlı destek giriş noktası). */
+type FormStatus = "idle" | "loading" | "error";
+
+type ThreadSnap = { ok: true; meta: SupportTicketMetaRow } | { ok: false };
+
 export function SiteSupportPanel() {
   const pathname = usePathname();
   const configured = useMemo(() => isSupabaseConfigured(), []);
@@ -112,16 +148,39 @@ export function SiteSupportPanel() {
   const descId = `${dialogId}-desc`;
 
   const [open, setOpen] = useState(false);
+  const [panelView, setPanelView] = useState<PanelView>("composer");
+  const [threadBootstrap, setThreadBootstrap] = useState(false);
+
+  const [ticketMeta, setTicketMeta] = useState<SupportTicketMetaRow | null>(null);
+  const [supportClientToken, setSupportClientToken] = useState<string | null>(null);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [honey, setHoney] = useState("");
   const [status, setStatus] = useState<FormStatus>("idle");
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  const [chatLines, setChatLines] = useState<SupportChatRow[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatBanner, setChatBanner] = useState<string | null>(null);
+
+  const chatScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const knownChatIdsRef = useRef<Set<string>>(new Set());
+
   /** Gönder sonrası bekleme bitiş zamanı (ms epoch); 0 = soğuma yok */
   const cooldownEndsAtRef = useRef(0);
   const [cooldownSession, bumpCooldownSession] = useState(0);
   const [cooldownRemainSec, setCooldownRemainSec] = useState(0);
+
+  const scrollChatToBottom = useCallback(() => {
+    chatScrollAnchorRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, []);
+
+  useEffect(() => {
+    scrollChatToBottom();
+  }, [chatLines, scrollChatToBottom]);
 
   useEffect(() => {
     const endAt = cooldownEndsAtRef.current;
@@ -142,6 +201,32 @@ export function SiteSupportPanel() {
   const cooldownActiveForUi = cooldownRemainSec > 0;
 
   const closePanel = useCallback(() => setOpen(false), []);
+
+  const resetComposerOnly = useCallback(() => {
+    setStatus("idle");
+    setFeedback(null);
+    setMessage("");
+    if (configured && authReady) {
+      const nameHint = profile?.full_name?.trim() ?? "";
+      const emailHint = session?.user?.email?.trim() ?? "";
+      queueMicrotask(() => {
+        setName((p) => (p.trim() === "" ? nameHint : p));
+        setEmail((p) => (p.trim() === "" ? emailHint : p));
+      });
+    }
+  }, [authReady, configured, profile?.full_name, session?.user?.email]);
+
+  const leaveThreadClearStorage = useCallback(() => {
+    clearStoredSupportTicket();
+    setSupportClientToken(null);
+    setTicketMeta(null);
+    setChatLines([]);
+    knownChatIdsRef.current = new Set();
+    setChatInput("");
+    setChatBanner(null);
+    setPanelView("composer");
+    resetComposerOnly();
+  }, [resetComposerOnly]);
 
   const togglePanel = useCallback(() => {
     setOpen((prev) => {
@@ -166,7 +251,120 @@ export function SiteSupportPanel() {
     return () => window.removeEventListener("keydown", onEsc);
   }, [closePanel]);
 
-  const validate = useCallback(() => {
+  const fetchThreadSnapshot = useCallback(
+    async (ticketId: string, tokenForHeader: string): Promise<ThreadSnap> => {
+      const tc = getSupabaseTicketChatClient(tokenForHeader);
+      if (!tc) return { ok: false };
+
+      const [{ data: meta, error: metaErr }, { data: lines, error: linesErr }] = await Promise.all([
+        tc
+          .from("support_messages")
+          .select("id,status,assigned_admin_id")
+          .eq("id", ticketId)
+          .maybeSingle(),
+        tc
+          .from("support_chat_messages")
+          .select("id,support_message_id,sender_type,sender_email,body,created_at")
+          .eq("support_message_id", ticketId)
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (metaErr || !meta) return { ok: false };
+
+      const nextChat = Array.isArray(lines) && !linesErr ? (lines as SupportChatRow[]) : [];
+      const metaRow = meta as SupportTicketMetaRow;
+
+      setSupportClientToken(tokenForHeader.trim().toLowerCase());
+      setTicketMeta(metaRow);
+
+      knownChatIdsRef.current = new Set(nextChat.map((r) => r.id));
+      setChatLines(nextChat);
+      setPanelView("thread");
+      return { ok: true, meta: metaRow };
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!open || !configured) return undefined;
+
+    let cancelled = false;
+
+    async function hydrateFromStorage() {
+      const stored = readStoredSupportTicket();
+      if (!stored) return;
+
+      setThreadBootstrap(true);
+      try {
+        const snap = await fetchThreadSnapshot(stored.ticketId, stored.clientToken);
+        if (!snap.ok && !cancelled) clearStoredSupportTicket();
+      } finally {
+        if (!cancelled) setThreadBootstrap(false);
+      }
+    }
+
+    void hydrateFromStorage();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, configured, fetchThreadSnapshot]);
+
+  const realtimeTicketId = ticketMeta?.id ?? null;
+
+  useEffect(() => {
+    const tk = supportClientToken?.trim() ?? "";
+    if (!open || !configured || !realtimeTicketId || !tk) return undefined;
+
+    const tc = getSupabaseTicketChatClient(tk);
+    if (!tc) return undefined;
+
+    const channel = tc
+      .channel(`site-support-chat-${realtimeTicketId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "support_chat_messages",
+          filter: `support_message_id=eq.${realtimeTicketId}`,
+        },
+        (payload) => {
+          const row = payload.new as SupportChatRow;
+          setChatLines((prev) => {
+            if (prev.some((r) => r.id === row.id)) return prev;
+            return [...prev, row];
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "support_messages",
+          filter: `id=eq.${realtimeTicketId}`,
+        },
+        (payload) => {
+          const nw = payload.new as SupportTicketMetaRow;
+          setTicketMeta(nw);
+        },
+      );
+
+    void channel.subscribe();
+
+    return () => {
+      void tc.removeChannel(channel);
+    };
+  }, [configured, open, realtimeTicketId, supportClientToken]);
+
+  const mergeChatBootstrap = useCallback((rows: SupportChatRow[]) => {
+    setChatLines(rows);
+    const s = knownChatIdsRef.current;
+    s.clear();
+    rows.forEach((r) => s.add(r.id));
+  }, []);
+
+  const validateComposer = useCallback(() => {
     const m = message.trim();
     if (m.length < MESSAGE_MIN_LEN) {
       setFeedback(`Mesaj en az ${MESSAGE_MIN_LEN} karakter olmalı.`);
@@ -176,15 +374,13 @@ export function SiteSupportPanel() {
     return true;
   }, [message]);
 
-  const handleSubmit = useCallback(
+  const handleComposerSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setFeedback(null);
+      setChatBanner(null);
 
-      if (honey.trim() !== "") {
-        setStatus("success");
-        return;
-      }
+      if (honey.trim() !== "") return;
 
       if (cooldownEndsAtRef.current > Date.now()) {
         setFeedback("Lütfen bir süre bekleyip tekrar dene.");
@@ -192,21 +388,38 @@ export function SiteSupportPanel() {
         return;
       }
 
-      if (!validate()) {
+      const storedActive = readStoredSupportTicket();
+      if (storedActive) {
+        setThreadBootstrap(true);
+        try {
+            const snap = await fetchThreadSnapshot(storedActive.ticketId, storedActive.clientToken);
+          if (snap.ok) {
+            setFeedback("Bu tarayıcıda açık bir görüşmen var.");
+            setStatus("idle");
+            return;
+          }
+          clearStoredSupportTicket();
+        } finally {
+          setThreadBootstrap(false);
+        }
+      }
+
+      if (!validateComposer()) {
         setStatus("error");
         return;
       }
 
       if (!configured) {
-        setStatus("error");
         setFeedback("Destek sistemi henüz yapılandırılmamış.");
+        setStatus("error");
         return;
       }
 
-      const client = getSupabaseBrowserClient();
-      if (!client) {
-        setStatus("error");
+      const clientTokenHeader = crypto.randomUUID();
+      const ticketClient = getSupabaseTicketChatClient(clientTokenHeader);
+      if (!ticketClient) {
         setFeedback("Destek sistemi henüz yapılandırılmamış.");
+        setStatus("error");
         return;
       }
 
@@ -221,44 +434,175 @@ export function SiteSupportPanel() {
           typeof navigator !== "undefined" ? navigator.userAgent.slice(0, USER_AGENT_MAX) : null,
         source: "website",
         status: "new",
+        client_token: clientTokenHeader.toLowerCase(),
       };
 
       try {
-        const { error } = await client.from("support_messages").insert(payload);
+        const { data: created, error: createErr } = await ticketClient
+          .from("support_messages")
+          .insert(payload)
+          .select("id, client_token")
+          .single();
 
-        if (error) {
+        if (createErr || !created?.id || !created.client_token?.trim()) {
           setStatus("error");
-          setFeedback(mapSupportMessageInsertFeedback(error));
+          setFeedback(mapSupportMessageInsertFeedback(createErr ?? { message: "" }));
           return;
         }
 
+        const tokenNormalized = created.client_token.trim().toLowerCase();
+        /** Token insert sonrası aynı header ile yükle — cache anahtarı eşlesin */
+        const ticketClientReturning = getSupabaseTicketChatClient(tokenNormalized);
+
+        const { error: chatErr } = await ticketClientReturning!
+          .from("support_chat_messages")
+          .insert({
+            support_message_id: created.id,
+            sender_type: "user",
+            sender_email: email.trim() || null,
+            body: message.trim(),
+          })
+          .select("id,support_message_id,sender_type,sender_email,body,created_at")
+          .maybeSingle();
+
+        if (chatErr) {
+          setStatus("error");
+          setFeedback("Ticket oluştu ancak sohbet satırı kaydedilemedi. Yeniden dene.");
+          return;
+        }
+
+        writeStoredSupportTicket(created.id, tokenNormalized);
+        setSupportClientToken(tokenNormalized);
+
         cooldownEndsAtRef.current = Date.now() + SUBMIT_COOLDOWN_MS;
         bumpCooldownSession((n) => n + 1);
-        setStatus("success");
+
+        const { data: lines } = await ticketClientReturning!
+          .from("support_chat_messages")
+          .select("id,support_message_id,sender_type,sender_email,body,created_at")
+          .eq("support_message_id", created.id)
+          .order("created_at", { ascending: true });
+
+        mergeChatBootstrap(Array.isArray(lines) ? (lines as SupportChatRow[]) : []);
+
+        const { data: meta } = await ticketClientReturning!
+          .from("support_messages")
+          .select("id,status,assigned_admin_id")
+          .eq("id", created.id)
+          .maybeSingle();
+
+        if (meta) setTicketMeta(meta as SupportTicketMetaRow);
+
+        setPanelView("thread");
+        setStatus("idle");
         setName("");
         setEmail("");
         setMessage("");
+        setFeedback(null);
       } catch {
         setStatus("error");
         setFeedback("Bir şeyler ters gitti. Lütfen tekrar dene.");
       }
     },
-    [configured, honey, message, name, email, pathname, validate],
+    [
+      configured,
+      email,
+      fetchThreadSnapshot,
+      honey,
+      message,
+      mergeChatBootstrap,
+      name,
+      pathname,
+      validateComposer,
+    ],
   );
 
-  const resetSuccess = useCallback(() => {
-    setStatus("idle");
+  const handleSendChat = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setFeedback(null);
+
+      const body = chatInput.trim();
+      if (body.length < CHAT_MESSAGE_MIN_LEN) {
+        setChatBanner("Mesaj yaz.");
+        return;
+      }
+
+      const ticketId = ticketMeta?.id;
+      const tk = supportClientToken?.trim();
+
+      const stResolved = trimRowStatus(ticketMeta?.status) === "resolved";
+      if (!ticketId || !tk || stResolved || chatSending) return;
+
+      const tc = getSupabaseTicketChatClient(tk);
+      if (!tc) return;
+
+      setChatSending(true);
+      try {
+        const { data, error } = await tc
+          .from("support_chat_messages")
+          .insert({
+            support_message_id: ticketId,
+            sender_type: "user",
+            sender_email: email.trim() || null,
+            body,
+          })
+          .select("id,support_message_id,sender_type,sender_email,body,created_at")
+          .maybeSingle();
+
+        if (error || !data) {
+          setChatBanner("Mesaj gönderilemedi. Bağlantıyı kontrol et.");
+          return;
+        }
+
+        setChatLines((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatRow]));
+        setChatInput("");
+      } finally {
+        setChatSending(false);
+      }
+    },
+    [chatInput, chatSending, email, supportClientToken, ticketMeta],
+  );
+
+  const onNewConversationClick = useCallback(async () => {
     setFeedback(null);
-    setMessage("");
-    if (configured && authReady) {
-      const nameHint = profile?.full_name?.trim() ?? "";
-      const emailHint = session?.user?.email?.trim() ?? "";
-      queueMicrotask(() => {
-        setName((p) => (p.trim() === "" ? nameHint : p));
-        setEmail((p) => (p.trim() === "" ? emailHint : p));
-      });
+    setChatBanner(null);
+
+    const stored = readStoredSupportTicket();
+
+    /** Thread yoksa sadece yeni bileti formdan doldurmak için */
+    if (!stored?.ticketId) {
+      resetComposerOnly();
+      setPanelView("composer");
+      return;
     }
-  }, [authReady, configured, profile?.full_name, session?.user?.email]);
+
+    setThreadBootstrap(true);
+    try {
+      const snap = await fetchThreadSnapshot(stored.ticketId, stored.clientToken);
+      if (!snap.ok) {
+        clearStoredSupportTicket();
+        leaveThreadClearStorage();
+        return;
+      }
+
+      if (trimRowStatus(snap.meta.status) === "resolved") {
+        leaveThreadClearStorage();
+        setFeedback(null);
+      } else {
+        setFeedback("Bu görüşme hâlâ açık. Mesajların aşağıda.");
+      }
+    } finally {
+      setThreadBootstrap(false);
+    }
+  }, [fetchThreadSnapshot, leaveThreadClearStorage, resetComposerOnly]);
+
+  const resolvedStatus =
+    trimRowStatus(ticketMeta?.status) === "resolved";
+
+  const hasAssignedAdmin = Boolean((ticketMeta?.assigned_admin_id ?? "").trim().length > 0);
+  const assistantStatusLine =
+    hasAssignedAdmin ? "Destek görüşmesi başladı." : "Ekibimiz uygun olduğunda görüşmeye katılır.";
 
   return (
     <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end md:bottom-8 md:right-8 md:w-auto md:max-w-none">
@@ -313,7 +657,7 @@ export function SiteSupportPanel() {
                   Kapat
                 </button>
               </div>
-            ) : status === "success" ? (
+            ) : panelView === "thread" && ticketMeta?.id ? (
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="shrink-0 border-b border-white/[0.07] px-5 pb-3 pt-4 sm:px-6 sm:pt-5">
                   <div className="flex items-start justify-between gap-3">
@@ -325,7 +669,7 @@ export function SiteSupportPanel() {
                         Leylek TAG destek
                       </p>
                       <p id={descId} className="mt-1 text-[13px] leading-relaxed text-slate-400">
-                        Mesajın ekibe iletilir.
+                        Canlı yazışma
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <SupportLiveBadge />
@@ -339,6 +683,12 @@ export function SiteSupportPanel() {
                           Beta
                         </span>
                       </div>
+                      {resolvedStatus ? (
+                        <p className="mt-2 text-[12px] font-semibold leading-snug text-amber-200/90">
+                          Bu görüşme çözüldü olarak kapandı. Yeni sorun için aşağıdan yeni görüşme
+                          başlatabilirsin.
+                        </p>
+                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -349,8 +699,13 @@ export function SiteSupportPanel() {
                     </button>
                   </div>
                 </div>
+
                 <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
                   <div className="flex min-w-0 flex-col gap-3 pb-2">
+                    {threadBootstrap ? (
+                      <p className="text-[12px] text-slate-500">Senkronize ediliyor…</p>
+                    ) : null}
+
                     <div className="max-w-[min(100%,19rem)] self-start rounded-2xl rounded-tl-md border border-white/[0.09] bg-black/42 px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.07)] backdrop-blur-sm">
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200/75">
                         Leylek Zeka
@@ -359,33 +714,133 @@ export function SiteSupportPanel() {
                         {LEYLEK_ZEKA_GREET}
                       </p>
                     </div>
-                    <div className="max-w-[min(100%,19rem)] self-start rounded-2xl rounded-tl-md border border-cyan-400/22 bg-[linear-gradient(135deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.65)_52%)] px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-sm">
+
+                    <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-cyan-400/22 bg-[linear-gradient(135deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.65)_52%)] px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-sm">
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/82">
                         Leylek Zeka
                       </p>
                       <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-50/96">
-                        Mesajın alındı. Leylek TAG ekibi geri bildirimleri düzenli olarak inceler.
+                        Mesajın ekibe iletildi. Yanıt geldiğinde burada görünecek.
+                      </p>
+                      <p className="mt-3 break-words text-[11.5px] leading-snug text-cyan-100/76">
+                        {assistantStatusLine}
                       </p>
                     </div>
+
+                    {chatLines.map((ln) => {
+                      const sender = ln.sender_type?.trim()?.toLowerCase() ?? "";
+
+                      const baseWrap =
+                        "max-w-[min(100%,19rem)] break-words rounded-2xl border px-3.5 py-2.5 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm";
+
+                      if (sender === "system") {
+                        return (
+                          <div
+                            key={ln.id}
+                            className={`mx-auto ${baseWrap} max-w-[95%] self-center rounded-2xl border-white/[0.08] bg-white/[0.04] text-center text-slate-200/92`}
+                          >
+                            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                              Sistem
+                            </span>
+                            <div className="mt-2 text-[12px]">{ln.body}</div>
+                          </div>
+                        );
+                      }
+
+                      if (sender === "admin") {
+                        return (
+                          <div
+                            key={ln.id}
+                            className={`${baseWrap} max-w-[min(100%,19rem)] self-end rounded-tr-md border-violet-400/22 bg-black/52 text-slate-50/96`}
+                          >
+                            <span className="text-[10px] font-black uppercase tracking-[0.14em] text-violet-200/75">
+                              Destek ekibi
+                            </span>
+                            <div className="mt-2 whitespace-pre-wrap">{ln.body}</div>
+                          </div>
+                        );
+                      }
+
+                      /** user */
+                      return (
+                        <div
+                          key={ln.id}
+                          className={`${baseWrap} self-start rounded-tl-md border-white/[0.08] bg-black/52 text-slate-100/94`}
+                        >
+                          <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                            Sen
+                          </span>
+                          <div className="mt-2 whitespace-pre-wrap">{ln.body}</div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatScrollAnchorRef} aria-hidden className="h-px w-full shrink-0" />
                   </div>
                 </div>
-                <div className="shrink-0 border-t border-white/[0.07] px-5 py-4 sm:px-6">
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={resetSuccess}
-                      className="min-h-[44px] rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-center text-sm font-semibold text-cyan-100 transition hover:border-cyan-400/40"
-                    >
-                      Yeni mesaj
-                    </button>
-                    <button
-                      type="button"
-                      onClick={closePanel}
-                      className="min-h-[40px] rounded-xl px-4 py-2 text-center text-[11px] font-semibold text-slate-500 transition hover:text-slate-300"
-                    >
-                      Kapat
-                    </button>
+
+                {feedback ? (
+                  <div className="shrink-0 px-5 pt-2 text-[13px] font-medium leading-snug text-rose-300/95" role="alert">
+                    {feedback}
                   </div>
+                ) : null}
+                {chatBanner ? (
+                  <div className="shrink-0 px-5 pt-2 text-[12px] text-amber-200/92" role="status">
+                    {chatBanner}
+                  </div>
+                ) : null}
+
+                <div className="relative shrink-0 border-t border-white/[0.07] bg-black/35 px-4 py-3 sm:px-5">
+                  <form onSubmit={handleSendChat}>
+                    <textarea
+                      value={chatInput}
+                      aria-label="Sohbet mesajı"
+                      rows={resolvedStatus ? 3 : 2}
+                      placeholder={
+                        resolvedStatus ? "Çözülü görüşmede yazı gönderilemez." : "Yanıt yaz…"
+                      }
+                      disabled={resolvedStatus || chatSending}
+                      onChange={(ev) => setChatInput(ev.target.value)}
+                      className="min-h-[76px] w-full resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/18 bg-gradient-to-br from-white/[0.07] to-black/40 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] outline-none transition focus:border-cyan-400/40 disabled:cursor-not-allowed disabled:opacity-45"
+                    />
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="submit"
+                        disabled={resolvedStatus || chatSending}
+                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black text-white shadow-[0_14px_36px_-18px_rgba(0,198,255,0.45)] ring-1 ring-cyan-300/18 transition hover:brightness-[1.04] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {resolvedStatus ? "Kapalı" : chatSending ? "Gönderiliyor…" : "Gönder"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl border px-4 py-2.5 text-[13px] font-semibold transition ${
+                          resolvedStatus
+                            ? "border-emerald-400/45 bg-emerald-500/[0.1] text-emerald-50/95 hover:border-emerald-400/62"
+                            : "border-white/[0.1] bg-white/[0.04] text-slate-200 hover:border-white/[0.15]"
+                        }`}
+                        disabled={chatSending || threadBootstrap}
+                        onClick={() => void onNewConversationClick()}
+                      >
+                        {resolvedStatus ? "Yeni görüşme" : "Yeni mesaj"}
+                      </button>
+                    </div>
+
+                    {!resolvedStatus ? (
+                      <button
+                        type="button"
+                        onClick={() => window.open(`mailto:${SUPPORT_EMAIL}?subject=Leylek%20TAG`)}
+                        className="mx-auto mt-2 block py-2 text-[11px] font-semibold text-slate-500 underline-offset-4 transition hover:text-cyan-200/85 hover:underline"
+                      >
+                        E‑posta ile de ulaş
+                      </button>
+                    ) : null}
+                  </form>
+                  <button
+                    type="button"
+                    onClick={() => leaveThreadClearStorage()}
+                    className="mt-2 w-full rounded-lg px-4 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 transition hover:text-slate-400"
+                  >
+                    Bu görüşmeyi cihazda kapat
+                  </button>
                 </div>
               </div>
             ) : (
@@ -400,7 +855,7 @@ export function SiteSupportPanel() {
                         Leylek TAG destek
                       </p>
                       <p id={descId} className="mt-1.5 text-[13px] leading-relaxed text-slate-400">
-                        Mesajın ekibe iletilir.
+                        Mesajın ekibe iletilir; uygun anda canlı olarak yanıtlanır.
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <SupportLiveBadge />
@@ -414,6 +869,9 @@ export function SiteSupportPanel() {
                           Beta
                         </span>
                       </div>
+                      {threadBootstrap ? (
+                        <p className="mt-3 text-[12px] text-slate-500">Önceki görüşme kontrol ediliyor…</p>
+                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -443,7 +901,7 @@ export function SiteSupportPanel() {
 
                 <form
                   className="relative shrink-0 border-t border-white/[0.07] bg-black/35 px-4 py-4 sm:px-5"
-                  onSubmit={handleSubmit}
+                  onSubmit={handleComposerSubmit}
                   noValidate
                 >
                   <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">
@@ -460,7 +918,7 @@ export function SiteSupportPanel() {
                         autoComplete="name"
                         value={name}
                         onChange={(ev) => setName(ev.target.value)}
-                        disabled={status === "loading"}
+                        disabled={status === "loading" || threadBootstrap}
                         className="min-h-[42px] rounded-xl border border-white/[0.08] bg-black/55 px-3 py-2 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
                       />
                     </label>
@@ -477,7 +935,7 @@ export function SiteSupportPanel() {
                         autoComplete="email"
                         value={email}
                         onChange={(ev) => setEmail(ev.target.value)}
-                        disabled={status === "loading"}
+                        disabled={status === "loading" || threadBootstrap}
                         className="min-h-[42px] rounded-xl border border-white/[0.08] bg-black/55 px-3 py-2 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
                       />
                     </label>
@@ -503,7 +961,7 @@ export function SiteSupportPanel() {
                       rows={3}
                       value={message}
                       onChange={(ev) => setMessage(ev.target.value)}
-                      disabled={status === "loading"}
+                      disabled={status === "loading" || threadBootstrap}
                       placeholder="Özetle yaz…"
                       className="min-h-[92px] resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/18 bg-gradient-to-br from-white/[0.07] to-black/40 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] outline-none transition focus:border-cyan-400/40 disabled:opacity-55"
                     />
@@ -531,10 +989,12 @@ export function SiteSupportPanel() {
                   <div className="mt-3 flex flex-col gap-2">
                     <button
                       type="submit"
-                      disabled={status === "loading" || cooldownActiveForUi}
+                      disabled={
+                        status === "loading" || cooldownActiveForUi || threadBootstrap
+                      }
                       className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black text-white shadow-[0_14px_36px_-18px_rgba(0,198,255,0.45)] ring-1 ring-cyan-300/18 transition hover:brightness-[1.04] disabled:cursor-not-allowed disabled:opacity-55"
                     >
-                      {status === "loading" ? "Gönderiliyor…" : "Gönder"}
+                      {status === "loading" ? "Gönderiliyor…" : "Gönder ve sohbeti aç"}
                     </button>
 
                     {cooldownActiveForUi ? (

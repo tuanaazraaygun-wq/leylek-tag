@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAdminSupportMagicLinkRedirectTo } from "@/lib/site-origin";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
-import type { Session } from "@supabase/supabase-js";
+import type { Session, SupabaseClient } from "@supabase/supabase-js";
 
 const STATUSES = ["new", "reviewing", "resolved"] as const;
 type RowStatus = (typeof STATUSES)[number];
@@ -137,18 +137,269 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "resolved", label: statusLabel("resolved") },
 ];
 
+type SupportChatMessageRow = {
+  id: string;
+  support_message_id: string;
+  sender_type: string;
+  sender_email: string | null;
+  body: string;
+  created_at: string;
+};
+
+function dedupeDuplicateTicketLine(
+  msgs: SupportChatMessageRow[],
+  ticketBody: string,
+): SupportChatMessageRow[] {
+  const trimmed = ticketBody.trim();
+  if (!trimmed) return msgs;
+
+  let dropFirstDup = true;
+  return msgs.filter((m) => {
+    const st = m.sender_type.trim().toLowerCase();
+    const body = m.body.trim();
+    if (dropFirstDup && st === "user" && body === trimmed) {
+      dropFirstDup = false;
+      return false;
+    }
+    return true;
+  });
+}
+
+function AdminSupportChatSection({
+  ticketId,
+  ticketMessageBody,
+  supabase,
+  viewerState,
+  viewerEmail,
+}: {
+  ticketId: string;
+  ticketMessageBody: string;
+  supabase: SupabaseClient;
+  viewerState: ViewerConversationState;
+  viewerEmail: string;
+}) {
+  const [rows, setRows] = useState<SupportChatMessageRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const canUseComposer = viewerState === "self_reviewing";
+  const shouldShowAccessHint =
+    viewerState === "other_reviewing" ||
+    viewerState === "other_resolved" ||
+    viewerState === "reviewing_missing_assignment";
+
+  const displayRows = useMemo(
+    () => dedupeDuplicateTicketLine(rows, ticketMessageBody),
+    [rows, ticketMessageBody],
+  );
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [displayRows.length, scrollToBottom]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setSendError(null);
+      const { data, error } = await supabase
+        .from("support_chat_messages")
+        .select("id,support_message_id,sender_type,sender_email,body,created_at")
+        .eq("support_message_id", ticketId)
+        .order("created_at", { ascending: true });
+
+      if (cancelled) return;
+      setLoading(false);
+      if (error) {
+        setRows([]);
+        return;
+      }
+      setRows(Array.isArray(data) ? (data as SupportChatMessageRow[]) : []);
+    }
+
+    void load();
+
+    const channel = supabase
+      .channel(`admin-support-chat-${ticketId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "support_chat_messages",
+          filter: `support_message_id=eq.${ticketId}`,
+        },
+        (payload) => {
+          const row = payload.new as SupportChatMessageRow;
+          setRows((prev) => {
+            if (prev.some((r) => r.id === row.id)) return prev;
+            return [...prev, row];
+          });
+        },
+      );
+
+    void channel.subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, ticketId]);
+
+  const sendAdminMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSendError(null);
+    const body = draft.trim();
+    if (body.length < 1 || !canUseComposer || sending) return;
+
+    setSending(true);
+    try {
+      const { data, error } = await supabase
+        .from("support_chat_messages")
+        .insert({
+          support_message_id: ticketId,
+          sender_type: "admin",
+          sender_email: viewerEmail.trim() || null,
+          body,
+        })
+        .select("id,support_message_id,sender_type,sender_email,body,created_at")
+        .maybeSingle();
+
+      if (error || !data) {
+        setSendError("Mesaj gönderilemedi. Atamanı ve bağlantını kontrol et.");
+        return;
+      }
+      setDraft("");
+      setRows((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatMessageRow]));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="mt-7 space-y-4 border-t border-white/[0.07] pt-7">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Canlı yazışma</p>
+        {loading ? (
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">yükleniyor</span>
+        ) : (
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200/82">● canlı akış</span>
+        )}
+      </div>
+
+      {shouldShowAccessHint ? (
+        <p className="rounded-xl border border-white/[0.08] bg-black/35 px-3.5 py-2 text-[12px] leading-relaxed text-slate-400">
+          Sohbet satırları yalnızca bu bileti yönetmeye yetkili yöneticiye açılabilir veya sıradaki biletlere bağlı olarak
+          listelenir.
+        </p>
+      ) : null}
+
+      <div className="max-h-[min(22rem,calc(100vh-20rem))] space-y-2.5 overflow-y-auto overscroll-contain rounded-[1rem] border border-white/[0.07] bg-black/35 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:max-h-[min(26rem,calc(100vh-18rem))]">
+        {displayRows.length === 0 && !loading ? (
+          <p className="px-1 py-4 text-center text-[12px] text-slate-500">Henüz sohbet satırı yok.</p>
+        ) : null}
+
+        {displayRows.map((ln) => {
+          const st = ln.sender_type.trim().toLowerCase();
+          const base =
+            "max-w-[min(100%,19rem)] rounded-2xl border px-3 py-2.5 text-[13px] leading-relaxed shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]";
+
+          if (st === "system") {
+            return (
+              <div key={ln.id} className="flex justify-center">
+                <div
+                  className={`${base} max-w-[95%] border-white/[0.08] bg-white/[0.04] text-center text-slate-200/92`}
+                >
+                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Sistem</span>
+                  <div className="mt-1.5 whitespace-pre-wrap text-[12px]">{ln.body}</div>
+                </div>
+              </div>
+            );
+          }
+
+          if (st === "admin") {
+            return (
+              <div key={ln.id} className="flex justify-end">
+                <div
+                  className={`${base} border-cyan-400/22 bg-gradient-to-br from-cyan-500/[0.12] to-black/45 text-slate-50/96`}
+                >
+                  <span className="text-[9px] font-black uppercase tracking-[0.14em] text-cyan-100/75">Yönetici</span>
+                  <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
+                  {ln.sender_email?.trim() ? (
+                    <div className="mt-1.5 font-mono text-[9px] text-cyan-200/55">{ln.sender_email.trim()}</div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div key={ln.id} className="flex justify-start">
+              <div className={`${base} border-white/[0.08] bg-black/45 text-slate-100/94`}>
+                <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">Kullanıcı</span>
+                <div className="mt-1.5 whitespace-pre-wrap">{ln.body}</div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
+      </div>
+
+      <form onSubmit={(ev) => void sendAdminMessage(ev)} className="space-y-2">
+        <label className="grid gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Yanıt</span>
+          <textarea
+            value={draft}
+            onChange={(ev) => setDraft(ev.target.value)}
+            rows={2}
+            disabled={!canUseComposer || sending}
+            placeholder={
+              canUseComposer ? "Kullanıcıya yaz…" : "Yazmak için önce görüşmeyi kabul et ve ata."
+            }
+            className="min-h-[80px] w-full resize-none rounded-xl border border-white/[0.08] bg-black/45 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none transition focus:border-cyan-400/32 disabled:cursor-not-allowed disabled:opacity-45"
+          />
+        </label>
+        {sendError ? (
+          <p className="text-[12px] font-medium text-rose-300/95" role="alert">
+            {sendError}
+          </p>
+        ) : null}
+        <button
+          type="submit"
+          disabled={!canUseComposer || sending || draft.trim().length < 1}
+          className="inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-black text-white shadow-[0_12px_36px_-14px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/25 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {sending ? "Gönderiliyor…" : "Gönder"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function SupportAdminMessageDetail({
   row,
   viewerState,
   updating,
   onAccept,
   onMarkResolved,
+  supabaseClient,
+  viewerEmail,
 }: {
   row: SupportMessageRow;
   viewerState: ViewerConversationState;
   updating: boolean;
   onAccept: () => void;
   onMarkResolved: () => void;
+  supabaseClient: SupabaseClient;
+  viewerEmail: string;
 }) {
   const st = rowStatusValue(row.status);
 
@@ -307,6 +558,14 @@ function SupportAdminMessageDetail({
             Mesaj içeriği yalnızca görüşmeyi kabul eden yönetici tarafından görüntülenebilir.
           </p>
         )}
+
+        <AdminSupportChatSection
+          ticketId={row.id}
+          ticketMessageBody={row.message}
+          supabase={supabaseClient}
+          viewerState={viewerState}
+          viewerEmail={viewerEmail}
+        />
       </div>
     </article>
   );
@@ -980,6 +1239,8 @@ export function AdminSupportDashboard() {
                   updating={Boolean(updatingIds[selectedRow.id])}
                   onAccept={() => void acceptConversation(selectedRow.id, viewerId, viewerEmail)}
                   onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
+                  supabaseClient={client}
+                  viewerEmail={viewerEmail}
                 />
               ) : null}
             </div>
@@ -1039,6 +1300,8 @@ export function AdminSupportDashboard() {
                   updating={Boolean(updatingIds[selectedRow.id])}
                   onAccept={() => void acceptConversation(selectedRow.id, viewerId, viewerEmail)}
                   onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
+                  supabaseClient={client}
+                  viewerEmail={viewerEmail}
                 />
               ) : null}
             </div>

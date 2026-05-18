@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS public.support_messages (
   assigned_admin_email text,
   accepted_at timestamptz,
   closed_at timestamptz,
+  client_token text,
+  last_message_at timestamptz DEFAULT now(),
   CONSTRAINT support_messages_message_trimmed CHECK (
     length(trim(message)) >= 10
   )
