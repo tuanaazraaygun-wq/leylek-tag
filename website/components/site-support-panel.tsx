@@ -25,8 +25,9 @@ const CHAT_MESSAGE_MIN_LEN = 1;
 const SUBMIT_COOLDOWN_MS = 36_000;
 const USER_AGENT_MAX = 512;
 
-const LEYLEK_ZEKA_GREET =
-  "Merhaba, ben Leylek Zeka. Sorununu veya önerini yaz; mesajını güvenli şekilde ekibe ileteyim.";
+/** Karşılama balonunda sabit sistem metni (AI iddiası yok). */
+const LIVE_SUPPORT_WELCOME =
+  "Merhaba, Leylek TAG destek hattına hoş geldin. Konunu kısaca yaz; ekibimiz uygun olduğunda bu görüşmeye katılır.";
 
 type SupportTicketMetaRow = {
   id: string;
@@ -84,6 +85,16 @@ function mapSupportMessageInsertFeedback(error: {
   }
 
   return "Bir şeyler ters gitti. Lütfen tekrar dene.";
+}
+
+function SupportLeylekBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border border-cyan-400/35 bg-gradient-to-br from-cyan-500/[0.16] via-cyan-400/[0.08] to-slate-900/60 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-50/96 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.22),0_6px_20px_-8px_rgba(34,211,238,0.35)] ${className}`}
+    >
+      Leylek Zeka
+    </span>
+  );
 }
 
 function SupportLiveBadge() {
@@ -601,8 +612,10 @@ export function SiteSupportPanel() {
     trimRowStatus(ticketMeta?.status) === "resolved";
 
   const hasAssignedAdmin = Boolean((ticketMeta?.assigned_admin_id ?? "").trim().length > 0);
-  const assistantStatusLine =
-    hasAssignedAdmin ? "Destek görüşmesi başladı." : "Ekibimiz uygun olduğunda görüşmeye katılır.";
+  const queueStatusPrimary =
+    hasAssignedAdmin
+      ? "Canlı destek görüşmesi başladı."
+      : "Sıradasın — ekibimiz uygun olduğunda görüşmeye katılır.";
 
   return (
     <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end md:bottom-8 md:right-8 md:w-auto md:max-w-none">
@@ -621,7 +634,7 @@ export function SiteSupportPanel() {
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descId}
-            className="relative z-[73] mb-3 flex max-h-[min(38rem,calc(100vh-6rem))] w-full max-w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.25rem] border border-white/[0.1] bg-slate-950/[0.93] shadow-[0_28px_88px_-32px_rgba(0,114,255,0.45)] ring-1 ring-cyan-400/[0.08] backdrop-blur-2xl"
+            className="relative z-[73] mb-3 flex max-h-[min(42rem,calc(100vh-5rem))] w-full max-w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.25rem] border border-white/[0.11] bg-slate-950/[0.94] shadow-[0_28px_90px_-28px_rgba(0,114,255,0.52),0_0_56px_-12px_rgba(34,211,238,0.24),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-cyan-400/[0.12] backdrop-blur-2xl"
           >
             <div
               className="pointer-events-none absolute inset-px rounded-[1.1875rem] bg-[linear-gradient(155deg,rgba(34,211,238,0.07)_0%,transparent_42%,rgba(108,99,255,0.06)_100%)] opacity-95"
@@ -635,13 +648,12 @@ export function SiteSupportPanel() {
                     id={titleId}
                     className="text-lg font-black leading-snug tracking-tight text-white"
                   >
-                    Leylek TAG destek
+                    Leylek TAG Canlı Destek
                   </p>
                   <SupportLiveBadge />
                 </div>
                 <p id={descId} className="mt-3 text-[13px] leading-relaxed text-slate-400">
-                  Canlı ileti için Supabase bağlantısı gerekli. Şimdilik ekibimize güvenli biçimde e‑posta ile
-                  ulaşabilirsin.
+                  Canlı bağlantı yapılandırılmadığında ekibimize güvenli biçimde e‑posta ile ulaşabilirsin.
                 </p>
                 <Link
                   href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG destek · geri bildirim")}`}
@@ -666,16 +678,32 @@ export function SiteSupportPanel() {
                         id={titleId}
                         className="text-[0.95rem] font-black leading-tight tracking-tight text-white sm:text-lg"
                       >
-                        Leylek TAG destek
+                        Leylek TAG Canlı Destek
                       </p>
-                      <p id={descId} className="mt-1 text-[13px] leading-relaxed text-slate-400">
-                        Canlı yazışma
-                      </p>
+                      {!resolvedStatus ? (
+                        <>
+                          <p
+                            id={descId}
+                            className="mt-2 text-[12px] font-semibold leading-snug text-cyan-100/88"
+                          >
+                            {queueStatusPrimary}
+                          </p>
+                          <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+                            Ekibimize mesaj bıraktın; yanıtlar bu pencerede görünür.
+                          </p>
+                        </>
+                      ) : (
+                        <p
+                          id={descId}
+                          className="mt-2 text-[12px] font-semibold leading-snug text-amber-200/90"
+                        >
+                          Bu görüşme çözüldü olarak kapandı. Yeni sorun için aşağıdan yeni görüşme
+                          başlatabilirsin.
+                        </p>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <SupportLiveBadge />
-                        <span className="inline-flex items-center rounded-full border border-cyan-400/28 bg-cyan-400/[0.1] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-100">
-                          Leylek Zeka
-                        </span>
+                        <SupportLeylekBadge />
                         <span
                           className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400"
                           title="Deneysel"
@@ -683,12 +711,6 @@ export function SiteSupportPanel() {
                           Beta
                         </span>
                       </div>
-                      {resolvedStatus ? (
-                        <p className="mt-2 text-[12px] font-semibold leading-snug text-amber-200/90">
-                          Bu görüşme çözüldü olarak kapandı. Yeni sorun için aşağıdan yeni görüşme
-                          başlatabilirsin.
-                        </p>
-                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -706,24 +728,21 @@ export function SiteSupportPanel() {
                       <p className="text-[12px] text-slate-500">Senkronize ediliyor…</p>
                     ) : null}
 
-                    <div className="max-w-[min(100%,19rem)] self-start rounded-2xl rounded-tl-md border border-white/[0.09] bg-black/42 px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.07)] backdrop-blur-sm">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200/75">
-                        Leylek Zeka
+                    <div className="rounded-2xl rounded-tl-md border border-cyan-400/26 bg-[linear-gradient(148deg,rgba(34,211,238,0.12)_0%,rgba(15,23,42,0.88)_48%,rgba(8,47,73,0.55)_100%)] px-3.5 py-3 shadow-[0_0_32px_-12px_rgba(34,211,238,0.35),inset_0_0_0_1px_rgba(103,232,249,0.14)] backdrop-blur-md">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/78">
+                        Destek karşılaması
                       </p>
-                      <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-100/96">
-                        {LEYLEK_ZEKA_GREET}
+                      <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-50/96">
+                        {LIVE_SUPPORT_WELCOME}
                       </p>
                     </div>
 
-                    <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-cyan-400/22 bg-[linear-gradient(135deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.65)_52%)] px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-sm">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/82">
-                        Leylek Zeka
+                    <div className="max-w-[min(100%,21rem)] self-start rounded-2xl rounded-tl-md border border-white/[0.08] bg-black/40 px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                        Bilgi
                       </p>
-                      <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-50/96">
-                        Mesajın ekibe iletildi. Yanıt geldiğinde burada görünecek.
-                      </p>
-                      <p className="mt-3 break-words text-[11.5px] leading-snug text-cyan-100/76">
-                        {assistantStatusLine}
+                      <p className="mt-2 break-words text-[12.5px] leading-relaxed text-slate-300/95">
+                        Mesajın güvenli şekilde iletildi. Ekibimiz yanıt yazdığında konuşma akışında görünecek.
                       </p>
                     </div>
 
@@ -850,18 +869,16 @@ export function SiteSupportPanel() {
                     <div className="min-w-0">
                       <p
                         id={titleId}
-                        className="text-[0.95rem] font-black leading-tight tracking-tight text-white sm:text-lg"
+                        className="text-[0.98rem] font-black leading-tight tracking-tight text-white sm:text-lg"
                       >
-                        Leylek TAG destek
+                        Leylek TAG Canlı Destek
                       </p>
-                      <p id={descId} className="mt-1.5 text-[13px] leading-relaxed text-slate-400">
-                        Mesajın ekibe iletilir; uygun anda canlı olarak yanıtlanır.
+                      <p id={descId} className="mt-2 text-[12px] leading-relaxed text-slate-400 sm:text-[13px]">
+                        Ekibimize mesaj bırakabilir, yanıt geldiğinde bu pencereden takip edebilirsin.
                       </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         <SupportLiveBadge />
-                        <span className="inline-flex items-center rounded-full border border-cyan-400/28 bg-cyan-400/[0.1] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-100">
-                          Leylek Zeka
-                        </span>
+                        <SupportLeylekBadge />
                         <span
                           className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400"
                           title="Deneysel"
@@ -883,89 +900,104 @@ export function SiteSupportPanel() {
                   </div>
                 </div>
 
-                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-4 sm:px-5">
                   <div className="flex min-w-0 flex-col gap-3">
-                    <div className="max-w-[min(100%,19rem)] self-start rounded-2xl rounded-tl-md border border-white/[0.08] bg-black/42 px-3.5 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.06)] backdrop-blur-sm">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200/75">
-                        Leylek Zeka
+                    <div className="relative overflow-hidden rounded-[1.15rem] border border-cyan-400/24 bg-[linear-gradient(150deg,rgba(34,211,238,0.14)_0%,rgba(15,23,42,0.82)_52%,rgba(8,47,73,0.45)_100%)] px-3.5 py-3 shadow-[0_0_40px_-14px_rgba(34,211,238,0.42),inset_0_0_0_1px_rgba(103,232,249,0.16)] backdrop-blur-md">
+                      <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-cyan-400/15 blur-2xl" aria-hidden />
+                      <div className="relative flex flex-wrap items-center gap-2">
+                        <SupportLiveBadge />
+                        <SupportLeylekBadge />
+                      </div>
+                      <p className="relative mt-2.5 text-[11px] font-black uppercase tracking-[0.13em] text-cyan-100/85">
+                        Sistem mesajı
                       </p>
-                      <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-100/96">
-                        {LEYLEK_ZEKA_GREET}
-                      </p>
-                      <p className="mt-3 break-words text-[11.5px] leading-relaxed text-slate-500">
-                        İsim ve e‑posta yeniden iletişim için yardımcı olabilir — zorunlu değiller.
+                      <p className="relative mt-2 break-words text-[13px] leading-relaxed text-slate-50/[0.96]">
+                        {LIVE_SUPPORT_WELCOME}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <form
-                  className="relative shrink-0 border-t border-white/[0.07] bg-black/35 px-4 py-4 sm:px-5"
+                  className="relative shrink-0 border-t border-white/[0.07] bg-black/38 px-4 py-4 sm:px-5"
                   onSubmit={handleComposerSubmit}
                   noValidate
                 >
-                  <div className="grid min-w-0 gap-2.5 sm:grid-cols-2">
-                    <label className="grid gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200/72">
-                        Ad soyad{" "}
-                        <span className="font-semibold lowercase tracking-normal text-slate-500">
-                          opsiyonel
-                        </span>
-                      </span>
-                      <input
-                        type="text"
-                        name="name"
-                        autoComplete="name"
-                        value={name}
-                        onChange={(ev) => setName(ev.target.value)}
-                        disabled={status === "loading" || threadBootstrap}
-                        className="min-h-[42px] rounded-xl border border-white/[0.08] bg-black/55 px-3 py-2 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
-                      />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200/72">
-                        E‑posta{" "}
-                        <span className="font-semibold lowercase tracking-normal text-slate-500">
-                          opsiyonel
-                        </span>
-                      </span>
-                      <input
-                        type="email"
-                        name="email"
-                        autoComplete="email"
-                        value={email}
-                        onChange={(ev) => setEmail(ev.target.value)}
-                        disabled={status === "loading" || threadBootstrap}
-                        className="min-h-[42px] rounded-xl border border-white/[0.08] bg-black/55 px-3 py-2 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="relative mt-3 grid gap-1.5">
-                    <span className="sr-only">Mesaj</span>
-                    <span
-                      aria-hidden
-                      className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200/75"
-                    >
-                      Mesajın{" "}
-                      <span className="font-semibold lowercase tracking-normal text-slate-500">
-                        ({MESSAGE_MIN_LEN}+ karakter)
-                      </span>
+                  <label className="relative grid gap-2">
+                    <span className="sr-only">
+                      Mesajınız, en az {MESSAGE_MIN_LEN} karakter
                     </span>
                     <textarea
                       name="message"
-                      title="Mesaj"
-                      aria-label={`Mesaj, en az ${MESSAGE_MIN_LEN} karakter`}
+                      title="Görüşmeyi başlatmak için mesaj"
+                      aria-label={`Mesajını yaz, en az ${MESSAGE_MIN_LEN} karakter`}
                       required
                       minLength={MESSAGE_MIN_LEN}
-                      rows={3}
+                      rows={4}
                       value={message}
                       onChange={(ev) => setMessage(ev.target.value)}
                       disabled={status === "loading" || threadBootstrap}
-                      placeholder="Özetle yaz…"
-                      className="min-h-[92px] resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/18 bg-gradient-to-br from-white/[0.07] to-black/40 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] outline-none transition focus:border-cyan-400/40 disabled:opacity-55"
+                      placeholder="Mesajını yaz…"
+                      className="min-h-[118px] w-full resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/22 bg-gradient-to-br from-white/[0.09] to-black/45 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05),0_12px_40px_-28px_rgba(34,211,238,0.25)] outline-none transition focus:border-cyan-400/48 focus:shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12),0_16px_48px_-26px_rgba(34,211,238,0.35)] disabled:opacity-55"
                     />
+                    <span className="text-[11px] font-medium text-slate-500">
+                      En az {MESSAGE_MIN_LEN} karakter; gerekiyorsa aşağıdan iletişim bilgisini ekleyebilirsin.
+                    </span>
                   </label>
+
+                  <details className="group mt-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 [&_summary::-webkit-details-marker]:hidden">
+                    <summary className="flex cursor-pointer select-none items-center justify-between gap-3 text-[12px] font-bold text-slate-200 hover:text-white">
+                      <span>
+                        İletişim bilgileri{" "}
+                        <span className="font-semibold lowercase text-slate-500">opsiyonel</span>
+                      </span>
+                      <svg
+                        className="h-4 w-4 shrink-0 text-slate-500 transition group-open:rotate-180"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden
+                      >
+                        <path
+                          d="m6 9 6 6 6-6"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </summary>
+                    <div className="mt-3 grid gap-2 border-t border-white/[0.07] pt-3 sm:grid-cols-2">
+                      <label className="grid gap-1">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          Ad soyad
+                        </span>
+                        <input
+                          type="text"
+                          name="name"
+                          autoComplete="name"
+                          value={name}
+                          onChange={(ev) => setName(ev.target.value)}
+                          disabled={status === "loading" || threadBootstrap}
+                          className="min-h-[38px] rounded-lg border border-white/[0.08] bg-black/50 px-2.5 py-1.5 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
+                        />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          E‑posta
+                        </span>
+                        <input
+                          type="email"
+                          name="email"
+                          autoComplete="email"
+                          value={email}
+                          onChange={(ev) => setEmail(ev.target.value)}
+                          disabled={status === "loading" || threadBootstrap}
+                          className="min-h-[38px] rounded-lg border border-white/[0.08] bg-black/50 px-2.5 py-1.5 text-[13px] text-white outline-none transition focus:border-cyan-400/35 disabled:opacity-55"
+                        />
+                      </label>
+                    </div>
+                  </details>
 
                   <div className="absolute left-[-10000px] top-0 h-px w-px overflow-hidden" aria-hidden>
                     <label htmlFor={honeyId}>Şirket web sitesi</label>
@@ -981,34 +1013,32 @@ export function SiteSupportPanel() {
                   </div>
 
                   {feedback ? (
-                    <p className="mt-2 text-[13px] font-medium leading-snug text-rose-300/95" role="alert">
+                    <p className="mt-3 text-[13px] font-medium leading-snug text-rose-300/95" role="alert">
                       {feedback}
                     </p>
                   ) : null}
 
-                  <div className="mt-3 flex flex-col gap-2">
+                  <div className="mt-4 flex flex-col gap-2">
                     <button
                       type="submit"
-                      disabled={
-                        status === "loading" || cooldownActiveForUi || threadBootstrap
-                      }
-                      className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black text-white shadow-[0_14px_36px_-18px_rgba(0,198,255,0.45)] ring-1 ring-cyan-300/18 transition hover:brightness-[1.04] disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={status === "loading" || cooldownActiveForUi || threadBootstrap}
+                      className="inline-flex min-h-[46px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black text-white shadow-[0_14px_40px_-16px_rgba(0,198,255,0.5)] ring-1 ring-cyan-300/22 transition hover:brightness-[1.05] disabled:cursor-not-allowed disabled:opacity-55"
                     >
-                      {status === "loading" ? "Gönderiliyor…" : "Gönder ve sohbeti aç"}
+                      {status === "loading" ? "Başlatılıyor…" : "Görüşmeyi başlat"}
                     </button>
 
                     {cooldownActiveForUi ? (
                       <p className="text-center text-[11px] leading-snug text-slate-500">
-                        Gönderiler arasında kısa bir bekleme uygulanır.
+                        Kısa bekleme uygulanıyor.
                         <span aria-live="polite"> ({cooldownRemainSec}s)</span>
                       </p>
                     ) : null}
 
                     <Link
-                      href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG destek · geri bildirim")}`}
+                      href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG Canlı Destek")}`}
                       className="py-1 text-center text-[11px] font-semibold text-slate-500 underline-offset-4 transition hover:text-cyan-200/85 hover:underline"
                     >
-                      E‑posta ile de ulaşabilirsin
+                      E‑posta ile ulaş
                     </Link>
                   </div>
                 </form>
@@ -1024,7 +1054,7 @@ export function SiteSupportPanel() {
         aria-expanded={open}
         aria-controls={dialogId}
         aria-label="Destek paneli · canlı yazışma"
-        className="tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full border border-cyan-400/32 bg-slate-950/92 px-3 py-3 pr-[1.375rem] text-[13px] font-black shadow-[0_14px_48px_rgba(0,114,255,0.28)] backdrop-blur-md transition-[border-color,box-shadow] hover:border-cyan-300/55 hover:shadow-[0_16px_52px_rgba(0,198,255,0.22)] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none"
+        className="tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full border border-cyan-400/35 bg-slate-950/92 px-3 py-3 pr-[1.375rem] text-[13px] font-black shadow-[0_14px_52px_rgba(0,114,255,0.38),0_0_32px_-8px_rgba(34,211,238,0.22)] backdrop-blur-md transition-[border-color,box-shadow] hover:border-cyan-300/55 hover:shadow-[0_18px_56px_rgba(0,198,255,0.32),0_0_38px_-6px_rgba(34,211,238,0.28)] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none"
       >
         <span
           className="livePulse pointer-events-none absolute right-4 top-[0.625rem] h-2 w-2 shrink-0 rounded-full bg-emerald-400 md:right-[1.125rem]"
