@@ -552,6 +552,31 @@ a {
   }
 }
 
+/* Sohbet sütunu / masa gövdesi — ince scrollbar */
+.admin-support-desk-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(147, 197, 253, 0.28) transparent;
+}
+
+.admin-support-desk-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-support-desk-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-support-desk-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(147, 197, 253, 0.28);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-support-desk-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 197, 253, 0.4);
+}
+
 .leaflet-container {
   background: #020817;
   font-family: inherit;
