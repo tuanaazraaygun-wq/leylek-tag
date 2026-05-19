@@ -76,8 +76,13 @@ export default function PassengerDriverForceEndReviewModal({
           ]}
         >
           <View style={styles.iconContainer}>
-            <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.iconGradient}>
-              <Ionicons name="alert-circle" size={40} color="#FFF" />
+            <LinearGradient
+              colors={['rgba(8,17,31,0.96)', 'rgba(16,26,43,0.92)', '#1E3A5F']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.iconGradient}
+            >
+              <Ionicons name="alert-circle" size={40} color="#22D3EE" />
             </LinearGradient>
           </View>
           <Text style={styles.title}>
@@ -115,22 +120,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backdrop: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(8,17,31,0.78)',
   },
   modalContainer: {
     width: SCREEN_WIDTH * 0.88,
     maxWidth: 380,
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderRadius: 22,
     padding: 22,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 16,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 22,
+    elevation: 20,
   },
   iconContainer: {
     marginBottom: 14,
@@ -141,17 +147,19 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
   },
   title: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.94)',
     marginBottom: 10,
     textAlign: 'center',
   },
   description: {
     fontSize: 15,
-    color: '#475569',
+    color: 'rgba(186,201,222,0.82)',
     textAlign: 'center',
     marginBottom: 22,
     lineHeight: 22,
@@ -164,25 +172,36 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: '#0EA5E9',
+    backgroundColor: 'rgba(8, 36, 52, 0.82)',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.4)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.28)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 6,
   },
   primaryBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
   },
   secondaryBtn: {
     width: '100%',
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
   },
   secondaryBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#334155',
+    color: 'rgba(186,201,222,0.88)',
   },
   btnDisabled: {
     opacity: 0.55,

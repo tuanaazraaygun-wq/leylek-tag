@@ -3685,10 +3685,10 @@ export default function LiveMapView({
     boardingConfirmed,
   ]);
   
-  // Renk teması - Yolcu: Mor, Sürücü: Mavi
-  const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
-  const themeLightColor = isDriver ? '#DBEAFE' : '#EDE9FE';
-  const themeGradient = isDriver ? ['#3B82F6', '#2563EB'] : ['#8B5CF6', '#7C3AED'];
+  // Web harita fallback ikonu — rol ayrımı yok; premium navy/cyan
+  const themeColor = '#22D3EE';
+  const themeLightColor = 'rgba(186,230,253,0.42)';
+  const themeGradient = ['#08111F', '#101A2B', '#22D3EE'];
   
   // Arama fonksiyonu - hızlı ve direkt
   const handleCall = async (type: 'audio' | 'video') => {
@@ -6198,15 +6198,15 @@ export default function LiveMapView({
                   accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
-                    colors={['#0B1220', '#0EA5E9', '#22D3EE']}
+                    colors={['#08111F', '#0B1220', '#101A2B', '#22D3EE']}
                     style={styles.driverRidePrimaryBtnGrad}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
                     {voiceCallPending ? (
-                      <ActivityIndicator size="small" color="#F3F8FF" />
+                      <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" />
                     ) : (
-                      <Ionicons name="call" size={22} color="#F3F8FF" />
+                      <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
                     )}
                     <Text
                       style={styles.driverRidePrimaryBtnText}
@@ -6253,12 +6253,12 @@ export default function LiveMapView({
                     accessibilityLabel="Yol paylaşımını bitir — yol sonu QR"
                   >
                     <LinearGradient
-                      colors={['#3730A3', '#4F46B8', '#63669A']}
+                      colors={['#08111F', '#101A2B', 'rgba(30,58,95,0.92)', 'rgba(34,211,238,0.5)']}
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      <Ionicons name="qr-code" size={20} color="#FFF" />
+                      <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
                       <Text
                         style={styles.driverRideQrBtnText}
                         numberOfLines={1}
@@ -6311,7 +6311,7 @@ export default function LiveMapView({
                       accessibilityRole="button"
                       accessibilityLabel="Zorla bitir"
                     >
-                      <Ionicons name="warning" size={18} color="#FECACA" />
+                      <Ionicons name="warning" size={18} color="rgba(252,165,165,0.92)" />
                       <Text
                         style={styles.driverRideForceBtnText}
                         numberOfLines={1}
@@ -6341,14 +6341,24 @@ export default function LiveMapView({
                     <LinearGradient
                       colors={
                         driverNearPickupForQr
-                          ? ['#92400E', '#B45309', '#CA8A04']
-                          : ['#713F12', '#92400E', '#B45309']
+                          ? [
+                              'rgba(217,119,6,0.26)',
+                              '#0B1220',
+                              '#101A2B',
+                              'rgba(34,211,238,0.48)',
+                            ]
+                          : [
+                              'rgba(217,119,6,0.14)',
+                              '#08111F',
+                              '#101A2B',
+                              'rgba(34,211,238,0.4)',
+                            ]
                       }
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      <Ionicons name="qr-code" size={20} color="#FFF" />
+                      <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
                       <Text
                         style={styles.driverRideQrBtnText}
                         numberOfLines={1}
@@ -6401,7 +6411,7 @@ export default function LiveMapView({
                       accessibilityRole="button"
                       accessibilityLabel="Zorla bitir"
                     >
-                      <Ionicons name="warning" size={18} color="#FECACA" />
+                      <Ionicons name="warning" size={18} color="rgba(252,165,165,0.92)" />
                       <Text
                         style={styles.driverRideForceBtnText}
                         numberOfLines={1}
@@ -6452,9 +6462,9 @@ export default function LiveMapView({
                         accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
                       >
                         {voiceCallPending ? (
-                          <ActivityIndicator size="small" color="#08111F" />
+                          <ActivityIndicator size="small" color="#22D3EE" />
                         ) : (
-                          <Ionicons name="call" size={22} color="#08111F" />
+                          <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
                         )}
                       </TouchableOpacity>
                     </Animated.View>
@@ -6482,12 +6492,16 @@ export default function LiveMapView({
                         accessibilityLabel={isDriver ? 'Yolcuya yaz' : 'Sürücüye yaz'}
                       >
                         <LinearGradient
-                          colors={['#0C4A6E', '#0E7490', '#22D3EE']}
+                          colors={['#08111F', '#0B1220', 'rgba(30,58,95,0.88)', '#22D3EE']}
                           style={styles.tripInlineChatBtnGrad}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
-                          <Ionicons name="chatbubble-ellipses" size={18} color="#F3F8FF" />
+                          <Ionicons
+                            name="chatbubble-ellipses"
+                            size={18}
+                            color="rgba(243,248,255,0.94)"
+                          />
                           <Text style={styles.tripInlineChatBtnText} numberOfLines={1}>
                             {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
                           </Text>
@@ -6524,17 +6538,26 @@ export default function LiveMapView({
                         accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                       >
                         <LinearGradient
-                          colors={['rgba(15,118,110,0.88)', '#0F766E', '#134E6B', '#22D3EE']}
+                          colors={[
+                            'rgba(16,26,43,0.95)',
+                            '#0B1220',
+                            '#101A2B',
+                            'rgba(34,211,238,0.38)',
+                          ]}
                           locations={[0, 0.42, 0.78, 1]}
                           style={styles.tripGuvenFabCompactInner}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
                           {trustRequestPending ? (
-                            <ActivityIndicator size="small" color="#F3F8FF" />
+                            <ActivityIndicator size="small" color="#22D3EE" />
                           ) : (
                             <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                              <Ionicons name="shield-checkmark" size={20} color="#F3F8FF" />
+                              <Ionicons
+                                name="shield-checkmark"
+                                size={20}
+                                color="rgba(243,248,255,0.94)"
+                              />
                             </Animated.View>
                           )}
                           <Text style={styles.tripGuvenFabLabel}>
@@ -6565,13 +6588,13 @@ export default function LiveMapView({
                 accessibilityLabel="AI — Leylek Zeka"
               >
                 <LinearGradient
-                  colors={['#172554', '#1E3A5F', '#0E7490', '#22D3EE']}
+                  colors={['#08111F', '#101A2B', '#1E3A5F', '#22D3EE']}
                   locations={[0, 0.38, 0.72, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.tripAiFabGrad}
                 >
-                  <Ionicons name="sparkles" size={26} color="rgba(243,248,255,0.95)" />
+                  <Ionicons name="sparkles" size={26} color="rgba(243,248,255,0.94)" />
                 </LinearGradient>
                 <Text style={styles.tripAiFabLabel} numberOfLines={1}>
                   AI
@@ -6609,10 +6632,10 @@ export default function LiveMapView({
               >
                 <View style={styles.supportSplitIcon} pointerEvents="none">
                   <View style={styles.supportSplitLeft}>
-                    <Ionicons name="chatbubbles" size={13} color="#FFF" />
+                    <Ionicons name="chatbubbles" size={13} color="rgba(243,248,255,0.94)" />
                   </View>
                   <View style={styles.supportSplitRight}>
-                    <Ionicons name="alert" size={15} color="#713F12" />
+                    <Ionicons name="alert" size={15} color="rgba(186,201,222,0.82)" />
                   </View>
                 </View>
                 <Text style={styles.supportDestekLabel} numberOfLines={1}>
@@ -6636,14 +6659,19 @@ export default function LiveMapView({
                 <LinearGradient
                   colors={
                     boardingConfirmed
-                      ? ['#3730A3', '#4F46B8', '#5753A8']
-                      : ['#713F12', '#B45309', '#CA8A04']
+                      ? ['#08111F', '#101A2B', 'rgba(30,58,95,0.9)', 'rgba(34,211,238,0.48)']
+                      : [
+                          'rgba(217,119,6,0.16)',
+                          '#08111F',
+                          '#101A2B',
+                          'rgba(34,211,238,0.4)',
+                        ]
                   }
                   style={styles.qrEndButtonGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Ionicons name="qr-code" size={18} color="#F3F8FF" />
+                  <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
                   <Text style={styles.qrEndButtonText}>
                     {boardingConfirmed
                       ? 'Yol Paylaşımını Bitir'
@@ -6695,7 +6723,7 @@ export default function LiveMapView({
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="close-circle" size={18} color="#FECACA" />
+              <Ionicons name="close-circle" size={18} color="rgba(252,165,165,0.92)" />
               <Text style={styles.endButtonText}>Zorla Bitir</Text>
             </TouchableOpacity>
           </View>
@@ -6742,12 +6770,12 @@ export default function LiveMapView({
                 style={styles.infoCardCloseButton} 
                 onPress={() => setShowInfoCard(false)}
               >
-                <Ionicons name="close-circle" size={28} color="#9CA3AF" />
+                <Ionicons name="close-circle" size={28} color="rgba(186,201,222,0.82)" />
               </TouchableOpacity>
 
               {/* Başlık */}
               <View style={styles.infoCardHeader}>
-                <View style={[styles.infoCardIconCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
+                <View style={styles.infoCardIconCircle}>
                   <Text style={styles.infoCardIcon}>{isDriver ? '👤' : '🚗'}</Text>
                 </View>
                 <Text style={styles.infoCardTitle}>
@@ -6759,7 +6787,7 @@ export default function LiveMapView({
               <View style={styles.infoCardContent}>
                 {/* İsim */}
                 <View style={styles.infoCardRow}>
-                  <Ionicons name="person" size={20} color="#6B7280" />
+                  <Ionicons name="person" size={20} color="rgba(186,201,222,0.82)" />
                   <Text style={styles.infoCardLabel}>İsim</Text>
                   <Text style={styles.infoCardValue}>{displayFirstName(otherUserName, 'Bilinmiyor')}</Text>
                 </View>
@@ -6781,7 +6809,7 @@ export default function LiveMapView({
                     {/* Marka & Model */}
                     {(otherUserDetails.vehicleBrand || otherUserDetails.vehicleModel) && (
                       <View style={styles.infoCardRow}>
-                        <Ionicons name="car-sport" size={20} color="#6B7280" />
+                        <Ionicons name="car-sport" size={20} color="rgba(186,201,222,0.82)" />
                         <Text style={styles.infoCardLabel}>Araç:</Text>
                         <Text style={styles.infoCardValue}>
                           {otherUserDetails.vehicleBrand || ''} {otherUserDetails.vehicleModel || ''}
@@ -6793,7 +6821,7 @@ export default function LiveMapView({
                     {/* Renk */}
                     {otherUserDetails.vehicleColor && (
                       <View style={styles.infoCardRow}>
-                        <Ionicons name="color-palette" size={20} color="#6B7280" />
+                        <Ionicons name="color-palette" size={20} color="rgba(186,201,222,0.82)" />
                         <Text style={styles.infoCardLabel}>Renk:</Text>
                         <View style={styles.infoCardColorContainer}>
                           <View style={[styles.infoCardColorDot, { backgroundColor: getColorCode(otherUserDetails.vehicleColor) }]} />
@@ -6805,7 +6833,7 @@ export default function LiveMapView({
                     {/* Plaka */}
                     {otherUserDetails.plateNumber && (
                       <View style={styles.infoCardRow}>
-                        <Ionicons name="document-text" size={20} color="#6B7280" />
+                        <Ionicons name="document-text" size={20} color="rgba(186,201,222,0.82)" />
                         <Text style={styles.infoCardLabel}>Plaka:</Text>
                         <View style={styles.infoCardPlateContainer}>
                           <Text style={styles.infoCardPlateText}>{otherUserDetails.plateNumber}</Text>
@@ -6817,7 +6845,7 @@ export default function LiveMapView({
 
                 {/* Başarılı Eşleşme Sayısı */}
                 <View style={styles.infoCardRow}>
-                  <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
+                  <Ionicons name="checkmark-circle" size={20} color="rgba(110,231,183,0.9)" />
                   <Text style={styles.infoCardLabel}>Başarılı Eşleşme:</Text>
                   <View style={styles.infoCardBadge}>
                     <Text style={styles.infoCardBadgeText}>
@@ -6828,7 +6856,7 @@ export default function LiveMapView({
 
                 {/* Puan */}
                 <View style={styles.infoCardRow}>
-                  <Ionicons name="star" size={20} color="#F59E0B" />
+                  <Ionicons name="star" size={20} color="#22D3EE" />
                   <Text style={styles.infoCardLabel}>Puan</Text>
                   <View style={styles.infoCardRatingContainer}>
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -6836,7 +6864,11 @@ export default function LiveMapView({
                         key={star}
                         name={star <= Math.round(otherUserDetails?.rating ?? 4) ? "star" : "star-outline"} 
                         size={18} 
-                        color="#F59E0B" 
+                        color={
+                          star <= Math.round(otherUserDetails?.rating ?? 4)
+                            ? '#22D3EE'
+                            : 'rgba(186,201,222,0.38)'
+                        } 
                       />
                     ))}
                     <Text style={styles.infoCardRatingText}>
@@ -7320,7 +7352,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(34,211,238,0.38)',
+    borderColor: 'rgba(30,58,95,0.75)',
     shadowColor: '#010818',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.22,
@@ -7424,9 +7456,9 @@ const styles = StyleSheet.create({
   tripGuvenFabCompact: {
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#22D3EE',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.22,
     shadowRadius: 10,
     elevation: 10,
   },
@@ -7438,7 +7470,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(186,230,253,0.28)',
+    borderColor: 'rgba(34,211,238,0.32)',
   },
   tripGuvenFabLabel: {
     color: 'rgba(243,248,255,0.94)',
@@ -7519,14 +7551,14 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#22D3EE',
+    backgroundColor: 'rgba(16,26,43,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(186, 230, 253, 0.65)',
-    shadowColor: '#22D3EE',
+    borderColor: 'rgba(34,211,238,0.42)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.38,
+    shadowOpacity: 0.28,
     shadowRadius: 8,
     elevation: 10,
   },
@@ -8176,17 +8208,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(34,211,238,0.28)',
-    shadowColor: '#1E293B',
+    borderColor: 'rgba(30,58,95,0.65)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.24,
     shadowRadius: 10,
     elevation: 10,
   },
   tripAiFabLabel: {
     fontSize: 10,
     fontWeight: '900',
-    color: 'rgba(186,201,222,0.92)',
+    color: 'rgba(186,201,222,0.82)',
     marginTop: 4,
     letterSpacing: 0.6,
   },
@@ -8208,20 +8240,20 @@ const styles = StyleSheet.create({
   },
   supportSplitLeft: {
     flex: 1,
-    backgroundColor: 'rgba(15,118,110,0.85)',
+    backgroundColor: 'rgba(16,26,43,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   supportSplitRight: {
     flex: 1,
-    backgroundColor: 'rgba(180,83,9,0.82)',
+    backgroundColor: 'rgba(8,17,31,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   supportDestekLabel: {
     fontSize: 8,
     fontWeight: '800',
-    color: 'rgba(186,201,222,0.88)',
+    color: 'rgba(186,201,222,0.82)',
     marginTop: 3,
     letterSpacing: 0.15,
   },
@@ -8248,13 +8280,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center', 
     paddingVertical: 12, 
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(127,29,29,0.48)',
+    backgroundColor: 'rgba(127,29,29,0.22)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.42)',
-    shadowColor: '#7F1D1D',
+    borderColor: 'rgba(248,113,113,0.35)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 5,
   },
@@ -8262,7 +8294,7 @@ const styles = StyleSheet.create({
     fontSize: 12, 
     fontWeight: '600', 
     marginLeft: 4, 
-    color: '#FEE2E2',
+    color: 'rgba(252,165,165,0.92)',
   },
   
   // 🆕 QR ile Bitir Butonu
@@ -8271,7 +8303,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(30,58,95,0.55)',
+    borderColor: 'rgba(30,58,95,0.72)',
   },
   qrEndButtonGradient: {
     flexDirection: 'row',
@@ -8290,20 +8322,23 @@ const styles = StyleSheet.create({
   // 🆕 Kullanıcı Bilgi Kartı Stilleri
   infoCardOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(8,17,31,0.78)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   infoCardContainer: {
     width: SCREEN_WIDTH - 40,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderRadius: 24,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 15,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 18,
   },
   infoCardCloseButton: {
     position: 'absolute',
@@ -8324,11 +8359,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.38)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.22)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
   },
   infoCardIcon: {
     fontSize: 28,
@@ -8336,7 +8376,8 @@ const styles = StyleSheet.create({
   infoCardTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1F2937',
+    color: 'rgba(243,248,255,0.94)',
+    flex: 1,
   },
   infoCardContent: {
     marginBottom: 16,
@@ -8345,12 +8386,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(30, 58, 95, 0.85)',
   },
   infoCardLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: 'rgba(186,201,222,0.82)',
     marginLeft: 10,
     width: 100,
   },
@@ -8358,19 +8399,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '600',
-    color: '#1F2937',
+    color: 'rgba(243,248,255,0.94)',
   },
   infoCardImageContainer: {
     marginVertical: 12,
     borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.2)',
   },
   infoCardVehicleImage: {
     width: '100%',
     height: 160,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#0B1220',
   },
   infoCardColorContainer: {
     flex: 1,
@@ -8382,33 +8424,37 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     marginRight: 8,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 95, 0.92)',
   },
   infoCardPlateContainer: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#F59E0B',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.35)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.22)',
   },
   infoCardPlateText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#92400E',
+    color: 'rgba(243,248,255,0.94)',
     letterSpacing: 1,
   },
   infoCardBadge: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: 'rgba(16,185,129,0.16)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(110,231,183,0.32)',
   },
   infoCardBadgeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#059669',
+    color: 'rgba(167,243,208,0.95)',
   },
   infoCardRatingContainer: {
     flex: 1,
@@ -8418,19 +8464,21 @@ const styles = StyleSheet.create({
   infoCardRatingText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#F59E0B',
+    color: '#22D3EE',
     marginLeft: 8,
   },
   infoCardFooter: {
     marginTop: 8,
     paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(30, 58, 95, 0.85)',
     alignItems: 'center',
   },
   infoCardFooterText: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: 'rgba(186,201,222,0.78)',
+    textAlign: 'center',
+    lineHeight: 17,
   },
   // 🆕 Matrix Durum Yazısı Stilleri - SÜRÜCÜ (YEŞİL) - Üst çerçevenin altında
   matrixContainerDriver: {
@@ -8753,14 +8801,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: 'rgba(14,165,233,0.88)',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(165,243,252,0.35)',
+    borderColor: 'rgba(34,211,238,0.35)',
   },
   driverRideMiniCallText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#08111F',
+    color: 'rgba(243,248,255,0.94)',
   },
   driverRideMatrixBanner: {
     marginTop: 8,
@@ -8851,15 +8899,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(30,58,95,0.5)',
   },
   driverRideQrBtnProminent: {
-    shadowColor: '#3730A3',
+    shadowColor: 'rgba(34,211,238,0.45)',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.16,
     shadowRadius: 10,
     elevation: 10,
     transform: [{ scale: 1.02 }],
   },
   driverRideQrBtnProminentBoarding: {
-    shadowColor: '#92400E',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.22,
     shadowRadius: 10,
@@ -8888,16 +8936,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(127,29,29,0.42)',
+    backgroundColor: 'rgba(127,29,29,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.4)',
+    borderColor: 'rgba(248,113,113,0.35)',
     paddingHorizontal: 8,
     minHeight: 56,
   },
   driverRideForceBtnText: {
     fontSize: 13,
     fontWeight: '900',
-    color: '#FEE2E2',
+    color: 'rgba(252,165,165,0.92)',
     flexShrink: 1,
   },
   driverRideAuxRow: {

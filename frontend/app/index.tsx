@@ -3835,10 +3835,10 @@ export default function App() {
     const roleIconCircleSize = Math.round(Math.max(52, Math.min(78, 78 * roleScale)));
     const roleIconMarginBottom = Math.round(Math.max(6, Math.min(12, 12 * roleScale)));
     const roleCardLabelFontSize = Math.round(Math.max(15, Math.min(19, 19 * roleScale)));
-    const roleCardDescFontSize = Math.round(Math.max(10, Math.min(12, 12 * roleScale)));
+    const roleCardDescFontSize = Math.round(Math.max(11, Math.min(13, 12 * roleScale)));
     /** Kart altı tek satır; uzun yolcu metni için simetrik taban + sığdırma */
     const roleCardSubtitleOneLineFont = Math.round(
-      Math.max(9, Math.min(12, roleCardDescFontSize * 0.94)),
+      Math.max(10, Math.min(12, roleCardDescFontSize * 0.94)),
     );
     const roleCardSubtitleOneLineHeight = Math.round(
       Math.max(12, Math.min(16, roleCardSubtitleOneLineFont * 1.22)),
@@ -3918,7 +3918,7 @@ export default function App() {
         imageStyle={styles.roleBackgroundImage}
       >
         <BlurView
-          intensity={Platform.OS === 'web' ? 24 : Platform.OS === 'ios' ? 34 : 38}
+          intensity={Platform.OS === 'web' ? 22 : Platform.OS === 'ios' ? 28 : 32}
           tint="dark"
           pointerEvents="none"
           style={StyleSheet.absoluteFillObject}
@@ -21462,7 +21462,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(5,11,24,0.44)',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: 'rgba(26,48,78,0.55)',
-    borderTopColor: 'rgba(34,211,238,0.12)',
+    borderTopColor: 'rgba(34,211,238,0.22)',
+    borderLeftColor: 'rgba(34,211,238,0.08)',
     overflow: 'hidden',
     ...Platform.select({
       ios: {
@@ -22283,6 +22284,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: PREMIUM_ROLE_CARD_BORDER,
+    borderTopColor: 'rgba(34,211,238,0.2)',
+    borderLeftColor: 'rgba(34,211,238,0.08)',
     position: 'relative',
     overflow: 'visible',
     transform: [{ translateY: -2 }],

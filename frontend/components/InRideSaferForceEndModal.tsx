@@ -71,7 +71,7 @@ export default function InRideSaferForceEndModal({
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <View style={styles.card}>
           <TouchableOpacity style={styles.closeFab} onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color="#64748B" />
+            <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
           </TouchableOpacity>
 
           {step === 'choice' ? (
@@ -82,11 +82,11 @@ export default function InRideSaferForceEndModal({
                 değerlendirin.
               </Text>
               <TouchableOpacity style={styles.primaryBtn} onPress={onChooseQr} activeOpacity={0.88}>
-                <Ionicons name="qr-code" size={20} color="#FFF" />
+                <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
                 <Text style={styles.primaryBtnText}>Sürücü yanınızdaysa karekodu okutun</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.secondaryBtn} onPress={onChooseIssue} activeOpacity={0.88}>
-                <Ionicons name="alert-circle-outline" size={20} color="#B91C1C" />
+                <Ionicons name="alert-circle-outline" size={20} color="rgba(248,113,113,0.92)" />
                 <Text style={styles.secondaryBtnText}>Sorun var</Text>
               </TouchableOpacity>
             </>
@@ -112,7 +112,7 @@ export default function InRideSaferForceEndModal({
               <TextInput
                 style={styles.input}
                 placeholder="İsteğe bağlı açıklama"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="rgba(186,201,222,0.45)"
                 value={details}
                 onChangeText={setDetails}
                 multiline
@@ -125,7 +125,7 @@ export default function InRideSaferForceEndModal({
                 onPress={() => onSubmitComplaintAndEnd(reasonKey, details.trim())}
                 activeOpacity={0.88}
               >
-                <Ionicons name="send" size={18} color="#FFF" />
+                <Ionicons name="send" size={18} color="rgba(243,248,255,0.94)" />
                 <Text style={styles.primaryBtnText}>Şikayet et ve bitir</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -149,18 +149,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.55)',
+    backgroundColor: 'rgba(8,17,31,0.78)',
     padding: 20,
   },
   card: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: '#FFF',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderRadius: 20,
     padding: 20,
     paddingTop: 22,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 18,
   },
   closeFab: {
     position: 'absolute',
@@ -171,13 +177,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.94)',
     marginBottom: 8,
     paddingRight: 28,
   },
   sub: {
     fontSize: 13,
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.82)',
     marginBottom: 16,
     lineHeight: 19,
   },
@@ -186,13 +192,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#7C3AED',
+    backgroundColor: 'rgba(8, 36, 52, 0.82)',
     paddingVertical: 14,
     borderRadius: 14,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.4)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.28)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 6,
   },
   primaryBtnText: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     fontWeight: '700',
     fontSize: 15,
   },
@@ -201,14 +216,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: 'rgba(127, 29, 29, 0.22)',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: 'rgba(248, 113, 113, 0.35)',
     paddingVertical: 14,
     borderRadius: 14,
   },
   secondaryBtnText: {
-    color: '#B91C1C',
+    color: 'rgba(252, 165, 165, 0.98)',
     fontWeight: '700',
     fontSize: 15,
   },
@@ -222,37 +237,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'rgba(30, 58, 95, 0.85)',
   },
   chipSel: {
-    backgroundColor: '#EDE9FE',
-    borderColor: '#A78BFA',
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    borderColor: 'rgba(34, 211, 238, 0.48)',
+    borderTopColor: 'rgba(34, 211, 238, 0.38)',
   },
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: 'rgba(186,201,222,0.82)',
   },
   chipTextSel: {
-    color: '#5B21B6',
+    color: 'rgba(243,248,255,0.94)',
   },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#64748B',
+    color: 'rgba(186,201,222,0.82)',
     marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#1E3A5F',
     borderRadius: 12,
     padding: 12,
     minHeight: 88,
     textAlignVertical: 'top',
     fontSize: 14,
-    color: '#0F172A',
+    color: 'rgba(243,248,255,0.94)',
+    backgroundColor: 'rgba(8, 17, 31, 0.65)',
     marginBottom: 14,
   },
   linkBtn: {
@@ -263,7 +280,7 @@ const styles = StyleSheet.create({
   linkBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#DC2626',
+    color: '#22D3EE',
     textDecorationLine: 'underline',
   },
 });

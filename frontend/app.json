@@ -38,7 +38,7 @@
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/leylek-logo-premium.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#08111F"
       },
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
@@ -127,7 +127,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/leylek-logo-premium.png",
-          "color": "#3FA9F5",
+          "color": "#22D3EE",
           "sounds": [],
           "defaultChannelId": "default"
         }
@@ -141,7 +141,7 @@
     "splash": {
       "image": "./assets/images/leylek-logo-premium.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#08111F"
     },
 
     "extra": {

@@ -364,12 +364,12 @@ export default function PassengerWaitingScreen({
             accessibilityLabel="Leylek Zeka — yapay zeka desteği"
           >
             <LinearGradient
-              colors={['#22D3EE', '#3FA9F5', '#6366F1']}
+              colors={['#0B1220', '#101A2B', '#0E4F5E', '#22D3EE']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.headerAiPillGradient}
             >
-              <Ionicons name="sparkles" size={18} color="#FFF" />
+              <Ionicons name="sparkles" size={18} color="rgba(243,248,255,0.94)" />
               <Text style={styles.headerAiPillText} numberOfLines={1}>
                 Leylek Zeka
               </Text>
@@ -379,7 +379,7 @@ export default function PassengerWaitingScreen({
             </View>
           </TouchableOpacity>
           <TouchableOpacity onPress={onCancel} style={styles.cancelButton} accessibilityRole="button" accessibilityLabel="Teklifi iptal et">
-            <Ionicons name="close" size={28} color="#DC2626" />
+            <Ionicons name="close" size={28} color="rgba(248,113,113,0.92)" />
           </TouchableOpacity>
         </View>
       </View>
@@ -451,7 +451,7 @@ export default function PassengerWaitingScreen({
               >
                 <MarkerPinWrap>
                   <View style={styles.destinationMarker}>
-                    <Ionicons name="flag" size={13} color="#fff" />
+                    <Ionicons name="flag" size={13} color="rgba(243,248,255,0.94)" />
                   </View>
                 </MarkerPinWrap>
               </Marker>
@@ -523,7 +523,16 @@ export default function PassengerWaitingScreen({
         
         <View style={styles.locationRow}>
           <View style={styles.locationDot}>
-            <View style={[styles.dot, { backgroundColor: '#ef4444' }]} />
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: 'rgba(127, 29, 29, 0.55)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(248, 113, 113, 0.4)',
+                },
+              ]}
+            />
           </View>
           <Text style={styles.locationText} numberOfLines={1}>
             {dropoffAddress || 'Varış noktası'}
@@ -564,7 +573,7 @@ export default function PassengerWaitingScreen({
         {dispatchStatus.current_driver_index > 0 && (
           <View style={styles.dispatchInfo}>
             <View style={styles.dispatchBadge}>
-              <Ionicons name="people" size={14} color="rgba(254, 215, 170, 0.95)" />
+              <Ionicons name="people" size={14} color="#22D3EE" />
               <Text style={styles.dispatchBadgeText}>
                 {dispatchStatus.current_driver_index} / {dispatchStatus.total_drivers} sürücüye gösterildi
               </Text>
@@ -597,19 +606,19 @@ export default function PassengerWaitingScreen({
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Sürücü Profili</Text>
               <TouchableOpacity onPress={() => setShowDriverProfile(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color="rgba(186,201,222,0.82)" />
               </TouchableOpacity>
             </View>
             
             {selectedDriver && (
               <View style={styles.driverProfileContent}>
                 <View style={styles.driverAvatar}>
-                  <Ionicons name="person" size={40} color="#fff" />
+                  <Ionicons name="person" size={40} color="rgba(243,248,255,0.94)" />
                 </View>
                 <Text style={styles.driverName}>{displayFirstName(selectedDriver.name, 'Sürücü')}</Text>
                 
                 <View style={styles.driverRating}>
-                  <Ionicons name="star" size={18} color="#fbbf24" />
+                  <Ionicons name="star" size={18} color="#22D3EE" />
                   <Text style={styles.driverRatingText}>
                     {(selectedDriver.rating != null && selectedDriver.rating > 0
                       ? selectedDriver.rating
@@ -685,7 +694,7 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(172, 188, 212, 0.9)',
+    color: 'rgba(186,201,222,0.82)',
     marginTop: 2,
   },
   priceTag: {
@@ -735,14 +744,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 22,
     gap: 8,
-    shadowColor: '#312e81',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.32)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
     elevation: 8,
   },
   headerAiPillText: {
-    color: '#FFF',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.15,
@@ -756,16 +768,17 @@ const styles = StyleSheet.create({
     height: 18,
     paddingHorizontal: 4,
     borderRadius: 8,
-    backgroundColor: '#F0ABFC',
-    borderWidth: 1.5,
-    borderColor: '#FFF',
+    backgroundColor: 'rgba(16, 26, 43, 0.94)',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerAiBadgeText: {
     fontSize: 9,
     fontWeight: '900',
-    color: '#4C1D95',
+    color: '#22D3EE',
   },
   
   // Harita
@@ -800,7 +813,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   mapPlaceholderSub: {
-    color: 'rgba(172, 188, 212, 0.88)',
+    color: 'rgba(186,201,222,0.82)',
     marginTop: 6,
     fontSize: 13,
     fontWeight: '600',
@@ -826,9 +839,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(96, 165, 250, 0.3)',
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.25)',
   },
   userMarkerInner: {
     width: 32,
@@ -844,24 +859,24 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#ef4444',
+    backgroundColor: 'rgba(127, 29, 29, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(243, 248, 255, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.45)',
   },
   driverMarker: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: 'rgba(110, 231, 183, 0.35)',
+    shadowColor: '#010818',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
   },
@@ -896,7 +911,7 @@ const styles = StyleSheet.create({
   driverCountLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(172, 188, 212, 0.95)',
+    color: 'rgba(186,201,222,0.82)',
     opacity: 0.95,
   },
   
@@ -944,7 +959,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     width: 2,
     height: 20,
-    backgroundColor: 'rgba(148, 163, 184, 0.45)',
+    backgroundColor: 'rgba(30, 58, 95, 0.75)',
     marginLeft: 5,
   },
   shareButton: {
@@ -994,7 +1009,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     fontWeight: '600',
-    color: 'rgba(172, 188, 212, 0.92)',
+    color: 'rgba(186,201,222,0.82)',
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -1026,7 +1041,7 @@ const styles = StyleSheet.create({
   statusSubtitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: 'rgba(172, 188, 212, 0.9)',
+    color: 'rgba(186,201,222,0.82)',
     marginTop: 6,
     textAlign: 'center',
   },
@@ -1036,18 +1051,20 @@ const styles = StyleSheet.create({
   dispatchBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.9)',
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
     borderWidth: 1,
-    borderColor: 'rgba(251, 146, 60, 0.35)',
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.3)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.18)',
   },
   dispatchBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: 'rgba(254, 215, 170, 0.95)',
+    color: 'rgba(243,248,255,0.94)',
   },
   
   // İptal Butonu
@@ -1068,11 +1085,11 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(8,17,31,0.78)',
     justifyContent: 'flex-end',
   },
   driverProfileModal: {
-    backgroundColor: '#101A2B',
+    backgroundColor: 'rgba(16,26,43,0.88)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
@@ -1080,6 +1097,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1E3A5F',
     borderBottomWidth: 0,
+    borderTopColor: 'rgba(34, 211, 238, 0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 20,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1090,7 +1113,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
+    color: 'rgba(243,248,255,0.94)',
   },
   driverProfileContent: {
     alignItems: 'center',
@@ -1099,17 +1122,18 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(34, 211, 238, 0.2)',
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34, 211, 238, 0.35)',
   },
   driverName: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
+    color: 'rgba(243,248,255,0.94)',
   },
   driverRating: {
     flexDirection: 'row',
@@ -1120,11 +1144,11 @@ const styles = StyleSheet.create({
   driverRatingText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fbbf24',
+    color: '#22D3EE',
   },
   driverVehicle: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: 'rgba(186,201,222,0.82)',
     marginTop: 8,
   },
   driverDistance: {

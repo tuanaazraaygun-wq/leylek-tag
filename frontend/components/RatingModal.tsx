@@ -170,7 +170,7 @@ export default function RatingModal({
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color="#08111F" />
+                  <ActivityIndicator color="#22D3EE" />
                 ) : (
                   <Text style={styles.submitBtnText}>Puanla</Text>
                 )}
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   container: {
-    backgroundColor: 'rgba(16, 26, 43, 0.95)',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
     borderRadius: 24,
     padding: 28,
     width: '100%',
@@ -219,13 +219,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
+    color: 'rgba(243,248,255,0.94)',
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
-    color: 'rgba(172, 188, 212, 0.92)',
+    color: 'rgba(186,201,222,0.82)',
     marginBottom: 22,
     textAlign: 'center',
   },
@@ -238,17 +238,17 @@ const styles = StyleSheet.create({
   },
   star: {
     fontSize: 40,
-    color: 'rgba(100, 116, 139, 0.55)',
+    color: 'rgba(186,201,222,0.35)',
   },
   starActive: {
-    color: '#FCD34D',
-    textShadowColor: 'rgba(252, 211, 77, 0.35)',
+    color: '#22D3EE',
+    textShadowColor: 'rgba(34, 211, 238, 0.32)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    textShadowRadius: 10,
   },
   ratingText: {
     fontSize: 17,
-    color: 'rgba(243, 248, 255, 0.94)',
+    color: 'rgba(243,248,255,0.94)',
     marginBottom: 22,
     fontWeight: '700',
   },
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   skipBtnText: {
-    color: 'rgba(172, 188, 212, 0.9)',
+    color: 'rgba(186,201,222,0.82)',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -290,24 +290,27 @@ const styles = StyleSheet.create({
   },
   successIcon: {
     fontSize: 56,
-    color: 'rgba(52, 211, 153, 0.95)',
+    color: 'rgba(110,231,183,0.92)',
     marginBottom: 14,
+    textShadowColor: 'rgba(34, 211, 238, 0.12)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
   successTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
+    color: 'rgba(243,248,255,0.94)',
     marginBottom: 8,
   },
   successText: {
     fontSize: 15,
-    color: 'rgba(172, 188, 212, 0.92)',
+    color: 'rgba(186,201,222,0.82)',
     marginBottom: 8,
     textAlign: 'center',
   },
   pointsText: {
     fontSize: 17,
-    color: 'rgba(52, 211, 153, 0.95)',
+    color: 'rgba(110,231,183,0.95)',
     fontWeight: '700',
   },
 });

@@ -7,10 +7,10 @@ export const PREMIUM_AUTH_CYAN = '#22D3EE';
 export const PREMIUM_NAVY_DEEP = '#08111F';
 export const PREMIUM_NAVY_MID = '#0B1220';
 export const PREMIUM_NAVY_CARD = '#101A2B';
-export const PREMIUM_GLASS_FILL = 'rgba(16,26,43,0.72)';
+export const PREMIUM_GLASS_FILL = 'rgba(16,26,43,0.76)';
 export const PREMIUM_BORDER_SLATE = '#1E3A5F';
 export const PREMIUM_TEXT_SOFT = 'rgba(243,248,255,0.94)';
-export const PREMIUM_TEXT_MUTED = 'rgba(172,188,212,0.9)';
+export const PREMIUM_TEXT_MUTED = 'rgba(186,201,222,0.9)';
 
 /** Login / auth shell — illüstrasyon üstü */
 export const PREMIUM_SHELL_OVERLAY = [
@@ -22,14 +22,14 @@ export const PREMIUM_SHELL_VIGNETTE_TOP = ['rgba(8,17,31,0.52)', 'transparent'] 
 
 /** Rol seçim — sinematik overlay (illustration görünür kalır); locations [0,0.5,1] ile üst/orta/alt */
 export const PREMIUM_ROLE_OVERLAY = [
-  'rgba(8,17,31,0.91)',
-  'rgba(11,18,32,0.77)',
-  'rgba(8,17,31,0.96)',
+  'rgba(8,17,31,0.84)',
+  'rgba(11,18,32,0.68)',
+  'rgba(8,17,31,0.88)',
 ] as const;
 
 /** Rol ekranı kart / yüzey — spec glass + okunabilirlik */
-export const PREMIUM_ROLE_CARD_BG = 'rgba(16,26,43,0.82)';
-export const PREMIUM_ROLE_CARD_BORDER = 'rgba(30,58,95,0.92)';
+export const PREMIUM_ROLE_CARD_BG = 'rgba(16,26,43,0.87)';
+export const PREMIUM_ROLE_CARD_BORDER = 'rgba(30,58,95,0.97)';
 /** Adım strip — daha koyu kokpit camı */
 export const PREMIUM_ROLE_PANEL_GLASS = 'rgba(8,14,26,0.94)';
 /** Üst kokpit başlık içi */
@@ -51,16 +51,16 @@ export const PREMIUM_ROLE_COCKPIT_CYAN_EDGE = 'rgba(34,211,238,0.22)';
 
 /** Rol ekranı — foreground ambient (üstte hafif cyan sis, altta sinematik navy; illüstrasyon üstü) */
 export const PREMIUM_ROLE_FOREGROUND_AMBIENT = [
-  'rgba(34,211,238,0.045)',
-  'rgba(8,17,31,0.12)',
-  'rgba(8,17,31,0.38)',
+  'rgba(34,211,238,0.065)',
+  'rgba(8,17,31,0.08)',
+  'rgba(8,17,31,0.32)',
 ] as const;
 
 /** Yatay köşe vignette — merkezi önde tutar */
 export const PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE = [
-  'rgba(3,10,22,0.36)',
+  'rgba(3,10,22,0.28)',
   'transparent',
-  'rgba(3,10,22,0.32)',
+  'rgba(3,10,22,0.26)',
 ] as const;
 
 /** Sürücü teklif / bekleyiş — liste alanı foreground (illüstrasyon üstünde sis) */

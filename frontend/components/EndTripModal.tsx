@@ -117,7 +117,7 @@ export default function EndTripModal({
           <View style={styles.header}>
             <View style={styles.headerIcon}>
               <LinearGradient
-                colors={['#22D3EE', '#0ea5e9']}
+                colors={['rgba(8,36,52,0.95)', '#0E7490', '#22D3EE']}
                 style={styles.iconGradient}
               >
                 <Ionicons name="flag-outline" size={28} color="#08111F" />
@@ -136,7 +136,7 @@ export default function EndTripModal({
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={['#22D3EE', '#2563EB']}
+                colors={['#22D3EE', '#0891B2', '#0E7490']}
                 style={styles.optionIconBg}
               >
                 <Ionicons name="checkmark-circle" size={24} color="#08111F" />
@@ -145,7 +145,7 @@ export default function EndTripModal({
                 <Text style={styles.optionTitle}>Hemen Tamamla</Text>
                 <Text style={styles.optionDescription}>Yolculuğu şimdi bitir (0 puan)</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="rgba(148, 163, 184, 0.75)" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.55)" />
             </TouchableOpacity>
 
             {/* Option 2: Karşılıklı Onay */}
@@ -155,10 +155,10 @@ export default function EndTripModal({
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={['#38BDF8', '#2563EB']}
+                colors={['#22D3EE', '#0E7490', '#0B1220']}
                 style={styles.optionIconBg}
               >
-                <Ionicons name="hand-left" size={24} color="#08111F" />
+                <Ionicons name="hand-left" size={24} color="rgba(243,248,255,0.94)" />
               </LinearGradient>
               <View style={styles.optionTextContainer}>
                 <Text style={styles.optionTitle}>Karşılıklı Onay</Text>
@@ -166,7 +166,7 @@ export default function EndTripModal({
                   {`${otherUserName}'dan onay bekle (+1 puan)`}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="rgba(148, 163, 184, 0.75)" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.55)" />
             </TouchableOpacity>
 
             <View style={styles.divider} />
@@ -178,10 +178,10 @@ export default function EndTripModal({
               activeOpacity={0.7}
             >
               <LinearGradient
-                colors={['#EF4444', '#DC2626']}
+                colors={['rgba(248,113,113,0.4)', 'rgba(185,28,28,0.78)']}
                 style={styles.optionIconBg}
               >
-                <Ionicons name="warning" size={24} color="#FFF" />
+                <Ionicons name="warning" size={24} color="rgba(243,248,255,0.95)" />
               </LinearGradient>
               <View style={styles.optionTextContainer}>
                 <Text style={[styles.optionTitle, styles.dangerText]}>Zorla Bitir</Text>
@@ -189,7 +189,7 @@ export default function EndTripModal({
                   ⚠️ Puanınız 5 düşer
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#FCA5A5" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(252, 165, 165, 0.85)" />
             </TouchableOpacity>
           </View>
 
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: SCREEN_WIDTH * 0.9,
     maxWidth: 400,
-    backgroundColor: 'rgba(16, 26, 43, 0.97)',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
@@ -256,12 +256,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
+    color: 'rgba(243,248,255,0.94)',
     marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: 'rgba(172, 188, 212, 0.9)',
+    color: 'rgba(186,201,222,0.82)',
     textAlign: 'center',
   },
   optionsContainer: {
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   },
   optionDescription: {
     fontSize: 13,
-    color: 'rgba(172, 188, 212, 0.88)',
+    color: 'rgba(186,201,222,0.82)',
   },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -324,6 +324,6 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 16,
     fontWeight: '700',
-    color: 'rgba(172, 188, 212, 0.95)',
+    color: 'rgba(186,201,222,0.88)',
   },
 });
