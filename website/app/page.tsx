@@ -127,9 +127,9 @@ export default function Home() {
           <Container>
             <div className="mb-8 md:mb-10">
               <SectionHeading
-                eyebrow="neden leylek tag?"
-                title="Yolculuk paylaşımında güven, kontrol ve topluluk aynı yerde."
-                description="Leylek TAG yalnızca bir rota ekranı değil; aynı yöne gidenlerin detayları netleştirerek, doğrulayarak ve şeffaf bilgiyle anlaşabildiği modern bir topluluk deneyimidir."
+                eyebrow="güven mimarisi"
+                title="Güvenli ve kontrollü yolculuk deneyimi"
+                description="Sürücü ve yolcu, eşleşme sonrası rota, teklif ve doğrulama adımlarını şeffaf şekilde görür. Leylek TAG, yolculuk başlamadan önce güven katmanlarını netleştirir."
               />
             </div>
             <ValueProps />

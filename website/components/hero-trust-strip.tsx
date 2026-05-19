@@ -62,33 +62,33 @@ function IconMinimalShare() {
 /** Bento: featured + 2 compact + 2 medium — gövde metinleri kısaltılmış. */
 const FEATURED = {
   icon: IconMutual,
-  title: "Karşılıklı onay",
-  body: "Her iki taraf onaylamadan süreç ilerlemez — temel güvence katmanı.",
+  title: "Kontrollü çift onaylı eşleşme",
+  body: "Doğrulama akışı ilerlemeden süreç kilitlenir; güvenli başlangıç için iki tarafın net onayı şart.",
 } as const;
 
 const COMPACT_GOALS = [
   {
     icon: IconRoadmap,
-    title: "Net rota görünümü",
-    body: "Rota, zaman ve teklif çerçevesi görünür tutulur.",
+    title: "Rota ve teklif şeffaflığı",
+    body: "Güzergâh ile teklif çerçevesi iki tarafta aynı şekilde görülebilir — rota şeffaflığı ve kontrollü eşleşme birlikte ilerler.",
   },
   {
     icon: IconQrFrame,
-    title: "QR ile teyit",
-    body: "Başlangıç ve bitişte kontrollü doğrulama adımları.",
+    title: "QR ile yolculuk doğrulama",
+    body: "Biniş ve yol sonunda doğrulama adımları; doğrulanmış yolculuk için güven katmanına bağlanır.",
   },
 ] as const;
 
 const MEDIUM_GOALS = [
   {
     icon: IconShieldFlow,
-    title: "Güven akışı",
-    body: "Geri bildirim ve bildirim kanalları desteklenir.",
+    title: "Güven katmanı bildirimi",
+    body: "Durum güncellemeleri ile doğrulama adımları izlenir — kontrollü iletişim ve şeffaf akış için.",
   },
   {
     icon: IconMinimalShare,
-    title: "Minimum veri",
-    body: "Teklif için gereksiz kişisel paylaşıma gerek olmaması hedeflenir.",
+    title: "Minimum veri paylaşımı",
+    body: "Eşleşme ve doğrulanmış yolculuk için gereksiz kişisel detay yayılımını sınırlamayı hedefleriz.",
   },
 ] as const;
 
@@ -129,9 +129,9 @@ export function HeroTrustStrip() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/14 via-transparent to-violet-500/12 opacity-95" aria-hidden />
         <div className="relative rounded-[calc(1.65rem-1px)] border border-white/[0.056] bg-gradient-to-br from-[#071018]/94 via-[#050a14]/92 to-black/[0.96] px-6 py-9 shadow-[inset_0_1px_0_rgba(255,255,255,0.042)] backdrop-blur-md sm:px-8 sm:py-10 md:rounded-[calc(2rem-1px)] md:px-11 md:py-12">
           <header className="mx-auto max-w-3xl text-center md:text-left md:mx-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.34em] text-cyan-200/68 sm:text-[11px]">hedef ilkeler</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.34em] text-cyan-200/68 sm:text-[11px]">güven mimarisi</p>
             <h2 className="mt-3.5 text-xl font-black leading-[1.1] tracking-tight text-white sm:text-[1.725rem] md:text-[2.05rem]">
-              Leylek TAG neyi hedefliyor?
+              Kontrollü eşleşme ve doğrulanmış güven katmanları
             </h2>
           </header>
 
@@ -139,7 +139,7 @@ export function HeroTrustStrip() {
             <article className="vitrin-card group relative flex min-h-[12.5rem] flex-col gap-5 rounded-[1.35rem] p-[1px] lg:col-span-7 lg:row-span-2 lg:min-h-0">
               <div className="relative flex min-h-[11.5rem] flex-1 flex-col gap-6 rounded-[1.295rem] border border-white/[0.058] bg-slate-950/[0.32] px-6 py-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-lg transition-[transform] duration-[480ms] ease-[cubic-bezier(0.25,0.8,0.25,1)] will-change-transform group-hover:border-white/[0.095] group-hover:shadow-[0_26px_64px_-42px_rgba(0,198,255,0.42)] motion-reduce:transition-none sm:flex-row sm:items-start sm:px-8 sm:py-9 lg:h-full lg:min-h-[19.5rem] lg:flex-col xl:gap-8">
                 <BentoInner Icon={FEATURED.icon} title={FEATURED.title} body={FEATURED.body} iconBoxClass="h-14 w-14 [&_svg]:h-8 [&_svg]:w-8" />
-                <p className="mt-auto pt-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 sm:pt-0 lg:max-w-[20rem]">Öncelik: kontrol şeffaflığı</p>
+                <p className="mt-auto pt-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 sm:pt-0 lg:max-w-[20rem]">premium mobility · güvenli başlangıç</p>
               </div>
             </article>
 
