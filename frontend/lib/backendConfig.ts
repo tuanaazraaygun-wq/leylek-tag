@@ -7,6 +7,7 @@
  * ile test sunucusuna bağlanabilir; ana API domain'de kalır.
  */
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 /** Push register debug paneli — yalnızca geliştirme derlemesinde; prod’da kapalı */
 export function isPushRegisterDebugOverlayEnabled(): boolean {
@@ -62,8 +63,29 @@ export function isLeylekTagMarketingHostname(hostname: string): boolean {
 }
 
 /**
+ * Release Places API kökü. iOS ATS cleartext HTTP fallback kullanmaz (Android davranışı korunur).
+ */
+function resolveReleasePlacesApiRoot(defaultRoot: string): string {
+  if (Platform.OS === 'ios') {
+    return defaultRoot;
+  }
+  if (!hasExplicitBackendUrlConfig()) {
+    return RELEASE_PLACES_API_FALLBACK_ROOT.replace(/\/+$/, '');
+  }
+  try {
+    const u = new URL(defaultRoot.includes('://') ? defaultRoot : `https://${defaultRoot}`);
+    if (isLeylekTagMarketingHostname(u.hostname)) {
+      return RELEASE_PLACES_API_FALLBACK_ROOT.replace(/\/+$/, '');
+    }
+  } catch {
+    return RELEASE_PLACES_API_FALLBACK_ROOT.replace(/\/+$/, '');
+  }
+  return defaultRoot;
+}
+
+/**
  * GET /places/search için API kökü (`.../api`, sondaki / yok).
- * Prod: özellikle yapılandırma yoksa veya pazarlama ana bilgisayarı → RELEASE_PLACES_API_FALLBACK_ROOT.
+ * Prod: özellikle yapılandırma yoksa veya pazarlama ana bilgisayarı → RELEASE_PLACES_API_FALLBACK_ROOT (Android).
  */
 export function getPlacesSearchApiRoot(): string {
   const defaultRoot = `${getBackendBaseUrl()}/api`.replace(/\/+$/, '');
@@ -73,20 +95,7 @@ export function getPlacesSearchApiRoot(): string {
     return defaultRoot;
   }
 
-  if (!hasExplicitBackendUrlConfig()) {
-    return RELEASE_PLACES_API_FALLBACK_ROOT.replace(/\/+$/, '');
-  }
-
-  try {
-    const u = new URL(defaultRoot.includes('://') ? defaultRoot : `https://${defaultRoot}`);
-    if (isLeylekTagMarketingHostname(u.hostname)) {
-      return RELEASE_PLACES_API_FALLBACK_ROOT.replace(/\/+$/, '');
-    }
-  } catch {
-    return RELEASE_PLACES_API_FALLBACK_ROOT.replace(/\/+$/, '');
-  }
-
-  return defaultRoot;
+  return resolveReleasePlacesApiRoot(defaultRoot);
 }
 
 type ExtraShape = {

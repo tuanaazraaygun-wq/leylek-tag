@@ -308,12 +308,25 @@ async function fetchBackendRouteMetrics(
   try {
     const res = await fetch(`${API_BASE_URL}/route-metrics?${q}`);
     const data = (await res.json()) as Record<string, unknown>;
-    if (!res.ok || data.success !== true) return { success: false };
+    if (!res.ok || data.success !== true) {
+      logRouteFetchDiag('backend_route_metrics_fail', {
+        httpOk: res.ok,
+        successFlag: data.success === true,
+        hasPolyline: typeof data.overview_polyline === 'string',
+      });
+      return { success: false };
+    }
     const dk = Number(data.distance_km);
     const dm = Number(data.duration_min);
     const op =
       typeof data.overview_polyline === 'string' ? data.overview_polyline : undefined;
     const src = typeof data.source === 'string' ? data.source : undefined;
+    logRouteFetchDiag('backend_route_metrics_ok', {
+      hasPolyline: !!op,
+      polylineCharCount: op ? op.length : 0,
+      hasDistanceKm: Number.isFinite(dk),
+      hasDurationMin: Number.isFinite(dm),
+    });
     return {
       success: true,
       distance_km: Number.isFinite(dk) ? dk : undefined,
@@ -322,6 +335,7 @@ async function fetchBackendRouteMetrics(
       source: src,
     };
   } catch {
+    logRouteFetchDiag('backend_route_metrics_fail', { httpOk: false, networkError: true });
     return { success: false };
   }
 }
@@ -344,6 +358,26 @@ function logNavDiag(tag: string, payload: Record<string, unknown>) {
     console.log(tag, JSON.stringify({ ...payload, t: Date.now() }));
   } catch {
     console.log(tag, '[payload_serialize_failed]');
+  }
+}
+
+/** Production-safe route fetch diagnostics (no coordinates or PII). */
+function logRouteFetchDiag(
+  event: string,
+  details: Record<string, boolean | number | string | null | undefined> = {},
+): void {
+  try {
+    console.log(
+      '[route_fetch_diag]',
+      JSON.stringify({
+        event,
+        platform: Platform.OS,
+        ...details,
+        t: Date.now(),
+      }),
+    );
+  } catch {
+    console.log('[route_fetch_diag]', event);
   }
 }
 
@@ -733,23 +767,29 @@ async function fetchOsrmDrivingRoute(
     const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
     const data = await res.json();
     if (!data?.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
-      console.warn('[OSRM] No route found', { code: data?.code });
+      logRouteFetchDiag('osrm_fail', { hasRoutes: false, code: String(data?.code ?? '') });
+      if (__DEV__) console.warn('[OSRM] No route found', { code: data?.code });
       return null;
     }
     if (data.code !== 'Ok') {
-      console.warn('[OSRM] Route response not Ok', data?.code);
+      logRouteFetchDiag('osrm_fail', { hasRoutes: true, code: String(data.code ?? '') });
+      if (__DEV__) console.warn('[OSRM] Route response not Ok', data?.code);
       return null;
     }
     const r = data.routes[0];
     const coords = osrmRouteGeometryToCoords(r.geometry);
-    if (!coords) return null;
+    if (!coords) {
+      logRouteFetchDiag('osrm_fail', { hasRoutes: true, decodeOk: false });
+      return null;
+    }
+    logRouteFetchDiag('osrm_ok', { pointCount: coords.length });
     return {
       distanceM: Number(r.distance) || 0,
       durationS: Number(r.duration) || 0,
       coordinates: coords,
     };
-  } catch (e) {
-    console.warn('[OSRM] fetchOsrmDrivingRoute failed', e);
+  } catch {
+    logRouteFetchDiag('osrm_fail', { networkError: true });
     return null;
   }
 }
@@ -811,26 +851,32 @@ async function fetchOsrmDrivingRouteWithSteps(
     const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
     const data = await res.json();
     if (!data?.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
-      console.warn('[OSRM] No route found (steps)', { code: data?.code });
+      logRouteFetchDiag('osrm_steps_fail', { hasRoutes: false, code: String(data?.code ?? '') });
+      if (__DEV__) console.warn('[OSRM] No route found (steps)', { code: data?.code });
       return null;
     }
     if (data.code !== 'Ok') {
-      console.warn('[OSRM] Route response not Ok (steps)', data?.code);
+      logRouteFetchDiag('osrm_steps_fail', { hasRoutes: true, code: String(data.code ?? '') });
+      if (__DEV__) console.warn('[OSRM] Route response not Ok (steps)', data?.code);
       return null;
     }
     const r = data.routes[0];
     const coords = osrmRouteGeometryToCoords(r.geometry);
-    if (!coords) return null;
+    if (!coords) {
+      logRouteFetchDiag('osrm_steps_fail', { hasRoutes: true, decodeOk: false });
+      return null;
+    }
     const leg = r.legs?.[0];
     const steps = buildOsrmStepsFromLeg(leg);
+    logRouteFetchDiag('osrm_steps_ok', { pointCount: coords.length, stepCount: steps.length });
     return {
       distanceM: Number(r.distance) || 0,
       durationS: Number(r.duration) || 0,
       coordinates: coords,
       steps,
     };
-  } catch (e) {
-    console.warn('[OSRM] fetchOsrmDrivingRouteWithSteps failed', e);
+  } catch {
+    logRouteFetchDiag('osrm_steps_fail', { networkError: true });
     return null;
   }
 }
@@ -4454,7 +4500,12 @@ export default function LiveMapView({
 
       const valid = isValidMapCoord(ul) && isValidMapCoord(ol);
       if (!valid) {
-        console.log('Route skipped - invalid coords', { userLocation, otherLocation, resolved: { ul, ol } });
+        logRouteFetchDiag('meeting_route_invalid_coords', {
+          hasUserLocation: isValidRouteEndpoint(userLocation),
+          hasOtherLocation: isValidRouteEndpoint(otherLocation),
+          hasResolvedStart: isValidMapCoord(ul),
+          hasResolvedEnd: isValidMapCoord(ol),
+        });
         clearMeetingRouteRef.current('invalid_coords');
         return;
       }
@@ -4543,6 +4594,7 @@ export default function LiveMapView({
         if (cancelled || meetingRouteFetchIdRef.current !== fetchId) return false;
         if (!Array.isArray(coords) || coords.length < 2) return false;
         setMeetingRouteCoordsLogged(coords);
+        logRouteFetchDiag('meeting_polyline_committed', { pointCount: coords.length });
         return true;
       };
 

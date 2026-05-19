@@ -16,7 +16,7 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { API_BASE_URL, BACKEND_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
@@ -49,6 +49,30 @@ const maskIdForLog = (v: unknown): string | null => {
   if (s.length <= 8) return `***${s.slice(-2)}`;
   return `${s.slice(0, 4)}***${s.slice(-4)}`;
 };
+
+/** Production-safe socket diagnostics (no token, user id, or URL). */
+function logSocketProdDiag(
+  event: string,
+  details: Record<string, boolean | number | string | null | undefined> = {},
+): void {
+  try {
+    console.log(
+      '[socket_diag]',
+      JSON.stringify({
+        event,
+        platform: Platform.OS,
+        ...details,
+        t: Date.now(),
+      }),
+    );
+  } catch {
+    console.log('[socket_diag]', event);
+  }
+}
+
+function getSocketIoTransports(): ('polling' | 'websocket')[] {
+  return Platform.OS === 'ios' ? ['polling', 'websocket'] : ['websocket', 'polling'];
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // EMIT WITH LOG - Debug için tüm emit'lerde kullanılabilir
@@ -93,9 +117,16 @@ export function getOrCreateSocket(): Socket {
     });
   }
 
+  const transports = getSocketIoTransports();
+  logSocketProdDiag('socket_init', {
+    transportOrder: transports.join(','),
+    hasSocketUrl: !!SOCKET_URL,
+    hasApiUrl: !!API_BASE_URL,
+  });
+
   singletonSocket = io(SOCKET_URL, {
     path: '/socket.io',
-    transports: ['websocket', 'polling'],
+    transports,
     forceNew: false,
     autoConnect: true,
     reconnection: true,
@@ -107,6 +138,7 @@ export function getOrCreateSocket(): Socket {
 
   singletonSocket.on('connect', () => {
     const id = singletonSocket?.id;
+    logSocketProdDiag('connect', { connected: true, hasSocketId: !!id });
     console.log('[socket] connected', id);
     console.log(`[socket] connect sid=${id || 'null'}`);
     if (pingInterval) clearInterval(pingInterval);
@@ -119,10 +151,16 @@ export function getOrCreateSocket(): Socket {
   });
 
   singletonSocket.on('connect_error', (err) => {
-    console.warn('❌ [SocketContext] connect_error:', err.message, '| SOCKET_URL=', SOCKET_URL, '| path=/socket.io');
-    console.warn(
-      '[SocketContext] nginx: /socket.io/ → socket_app (uvicorn socket_app, örn. 8001). /api/ ayrı porta gidiyorsa bile socket kök hostta /socket.io olmalı (BACKEND_BASE_URL’e /api eklemeyin). Örnek: deploy/nginx-api-socket-split.example.conf',
-    );
+    logSocketProdDiag('connect_error', {
+      connected: false,
+      hasErrorMessage: !!(err && String(err.message || '').trim()),
+    });
+    if (__DEV__) {
+      console.warn('❌ [SocketContext] connect_error:', err.message, '| SOCKET_URL=', SOCKET_URL, '| path=/socket.io');
+      console.warn(
+        '[SocketContext] nginx: /socket.io/ → socket_app (uvicorn socket_app, örn. 8001). /api/ ayrı porta gidiyorsa bile socket kök hostta /socket.io olmalı (BACKEND_BASE_URL’e /api eklemeyin). Örnek: deploy/nginx-api-socket-split.example.conf',
+      );
+    }
   });
 
   singletonSocket.on('disconnect', (reason) => {
@@ -146,7 +184,13 @@ export function getOrCreateSocket(): Socket {
       console.log(`[socket] reconnect_attempt n=${attempt}`);
     });
     mgr.on('reconnect_error', (err: Error) => {
-      console.warn('[socket] reconnect_error', err?.message || err);
+      logSocketProdDiag('reconnect_error', {
+        connected: !!singletonSocket?.connected,
+        hasErrorMessage: !!(err && String(err?.message || '').trim()),
+      });
+      if (__DEV__) {
+        console.warn('[socket] reconnect_error', err?.message || err);
+      }
     });
     mgr.on('reconnect_failed', () => {
       console.warn('[socket] reconnect_failed');
@@ -340,6 +384,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
         }
         const sock = socketRef.current;
         if (!sock?.connected) {
+          if (attempt === 0) {
+            logSocketProdDiag('register_skip', {
+              reason: 'socket_not_connected',
+              connected: false,
+              hasUserId: !!userIdRef.current,
+              hasRole: !!userRoleRef.current,
+            });
+          }
           if (attempt < maxAttempts) {
             console.log(
               'SOCKET_REGISTER_SKIP_REASON',
@@ -373,6 +425,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
         const uid = userIdRef.current;
         const role = userRoleRef.current;
         if (!uid || !role) {
+          logSocketProdDiag('register_skip', {
+            reason: 'missing_user_or_role',
+            connected: !!sock?.connected,
+            hasUserId: !!uid,
+            hasRole: !!role,
+            hasToken: false,
+          });
           console.log(
             'SOCKET_REGISTER_SKIP_REASON',
             JSON.stringify({
@@ -405,6 +464,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
           waitedForPersistedToken: true,
         });
         if (!token) {
+          logSocketProdDiag('register_skip', {
+            reason: 'missing_token',
+            connected: !!sock?.connected,
+            hasUserId: !!uid,
+            hasRole: !!role,
+            hasToken: false,
+          });
           console.log(
             'SOCKET_REGISTER_SKIP_REASON',
             JSON.stringify({
@@ -503,6 +569,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
           });
         }
         sock.emit('register', registerPayload);
+        logSocketProdDiag('register_emit', {
+          connected: !!sock.connected,
+          hasUserId: !!uid,
+          hasRole: !!role,
+          hasToken: true,
+          forceEmit,
+        });
         registerTimerRef.current = setTimeout(() => {
           if (myGen !== registerGenRef.current) return;
           if (!registerAckOkRef.current && socketRef.current?.connected && userIdRef.current && userRoleRef.current) {
@@ -680,6 +753,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
 
     const handleRegistered = (data: any) => {
+      logSocketProdDiag('register_ack', {
+        connected: !!socket.connected,
+        success: data?.success === true,
+        hasRoom: !!(data?.room != null && String(data.room).trim()),
+      });
       if (__DEV__) console.log('FRONTEND_SOCKET_REGISTER_ACK', data);
       console.log(
         'SOCKET_REGISTER_ACK',
