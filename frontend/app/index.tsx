@@ -11809,6 +11809,7 @@ function PassengerDashboard({
                     onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
                     void loadActiveTag();
                   }}
+                  onShowQRModal={() => setShowQRModal(true)}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
 
