@@ -1134,8 +1134,8 @@ const NAV_ROUTE_BEARING_LOOKAHEAD_MAX_M = 48;
 const NAV_ROUTE_BEARING_MIN_SEP_M = 5.5;
 /** Bearing yumuşatma (0–1), küçük bearing zıplamasını keser */
 const NAV_MARKER_BEARING_LERP = 0.22;
-/** Harita heading (animateCamera): ekstra yumuşatma — titreşimi keser */
-const NAV_CAMERA_HEADING_LERP = 0.22;
+/** Harita heading (animateCamera): ekstra yumuşatma — titreşimi keser; cockpit hissi için hafif hızlı takip */
+const NAV_CAMERA_HEADING_LERP = 0.25;
 /** Bu kadar dereceden az ham değişimde smoothing girdiği değiştirme */
 const NAV_MARKER_BEARING_RAW_DEADBAND_DEG = 2.4;
 
@@ -1372,9 +1372,9 @@ function navPitchForSpeedMps(_speedMps: number | null | undefined): number {
   return NAV_CAMERA_PITCH_DEG;
 }
 
-/** Kamera merkezi polyline üzerinde İleri bakış (m): ~50 düşük hız — ~100 otoyol */
-const NAV_CAMERA_LOOKAHEAD_MIN_M = 50;
-const NAV_CAMERA_LOOKAHEAD_MAX_M = 100;
+/** Kamera merkezi polyline üzerinde İleri bakış (m); biraz kısaltıldı → araç ekranda daha “arkada takip” hissi */
+const NAV_CAMERA_LOOKAHEAD_MIN_M = 44;
+const NAV_CAMERA_LOOKAHEAD_MAX_M = 88;
 
 function navCameraLookAheadMeters(speedMps: number | null | undefined): number {
   const s = typeof speedMps === 'number' && speedMps >= 0 && Number.isFinite(speedMps) ? speedMps : 0;
@@ -1643,8 +1643,8 @@ function lerpLatLng(a: MapLatLng, b: MapLatLng, t: number): MapLatLng {
   };
 }
 
-/** Git 3fff2416 / d58ad083 çizgisi — daha sakin kamera (71067417 sonrası ince ayar) */
-const NAV_CAMERA_THROTTLE_MS = 102;
+/** Git 3fff2416 / d58ad083 çizgisi — marker ile senkron için hafif gevşetildi */
+const NAV_CAMERA_THROTTLE_MS = 88;
 const NAV_CAMERA_MIN_MOVE_M = 8;
 const NAV_CAMERA_MIN_HEADING_DEG = 5;
 /** GPS gürültüsünde <5 m adımda kamera animasyonu yok (yalnız marker) */
@@ -1657,16 +1657,16 @@ const NAV_CAMERA_STATIONARY_SPEED_MPS = 1.25;
 const NAV_CAMERA_STATIONARY_HEADING_DEG = 8;
 const NAV_CAMERA_HEADING_ONLY_MS = 300;
 const NAV_CENTER_LERP_HEADING_ONLY = 0.58;
-const NAV_CENTER_LERP_FULL = 0.76;
+const NAV_CENTER_LERP_FULL = 0.79;
 /** Harita takibi yeniden açıldıktan sonra ~1 sn: daha yumuşak lerp (iki aşamalı his) */
 const NAV_RESUME_SOFT_MS = 960;
 const NAV_CENTER_LERP_RESUME_MOVE = 0.44;
 const NAV_CENTER_LERP_RESUME_STILL = 0.36;
-/** Mikro GPS / heading gürültüsü — kamera anim için üst adım eşiği (m); MERGE center/heading ile AND */
-const NAV_CAMERA_JITTER_SKIP_STEP_M = 2.8;
+/** Mikro GPS / heading gürültüsü — kamera anim için üst adım eşiği (m); MERGE center/heading ile AND (biraz sıkı → daha az “takipten düşme”) */
+const NAV_CAMERA_JITTER_SKIP_STEP_M = 2.2;
 const NAV_JITTER_MAX_HEADING_DEG = 1.45;
-const NAV_JITTER_MIN_CENTER_MOVE_M = 0.55;
-const NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG = 1.12;
+const NAV_JITTER_MIN_CENTER_MOVE_M = 0.42;
+const NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG = 0.95;
 const NAV_HEADING_PULSE_MIN_MS = 120;
 const NAV_ZOOM_SMOOTH = 0.15;
 /** Manevra mesafe anonsları arası minimum süre (ms) — daha sakin ses */
@@ -1674,7 +1674,7 @@ const NAV_SPEECH_MIN_GAP_MS = 4100;
 /** Sürücü–yolcu bu kadar yakın + varış var → trip (turuncu) navigasyon aşaması */
 const NAV_HANDOFF_TO_DESTINATION_M = 45;
 /** Harita sürükleme / dokunma sonrası otomatik takip bu kadar ms durur; sonra yumuşakça devam */
-const NAV_MAP_GESTURE_MS = 9_000;
+const NAV_MAP_GESTURE_MS = 6_000;
 
 /** Aynı buluşma leg’i: sürücü/yolcu pin’i az oynadıysa OSRM tekrar çağırma */
 const OSRM_REFETCH_DRIVER_MIN_M = 35;
@@ -3699,7 +3699,8 @@ export default function LiveMapView({
     if (boardingConfirmed) {
       void tapButtonHaptic();
       appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-        variant: 'info',
+        variant: 'warning',
+        tone: 'warning',
         autoDismissMs: 3200,
         cancelable: true,
       });
@@ -3709,10 +3710,11 @@ export default function LiveMapView({
     if (userLocation && otherLocation) {
       const dM = haversineMeters(userLocation, otherLocation);
       if (dM < PROXIMITY_CALL_BLOCK_M) {
-        Alert.alert(
+        appAlert(
           isDriver ? 'Yolcu yanınızda' : 'Sürücü yanınızda',
           'Karşı taraf çok yakın görünüyor; yan yanayken aramaya gerek yok.',
-          [{ text: 'Tamam' }]
+          [{ text: 'Tamam' }],
+          { tone: 'info', cancelable: true },
         );
         return;
       }
@@ -6018,7 +6020,8 @@ export default function LiveMapView({
                       void tapButtonHaptic();
                       if (boardingConfirmed) {
                         appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                          variant: 'info',
+                          variant: 'warning',
+                          tone: 'warning',
                           autoDismissMs: 3200,
                           cancelable: true,
                         });
@@ -6241,7 +6244,8 @@ export default function LiveMapView({
               </Pressable>
 
               {boardingConfirmed ? (
-                <View style={styles.driverRideSheetRow2}>
+                <>
+                  <View style={styles.driverRideSheetRow2}>
                   <TouchableOpacity
                     activeOpacity={0.82}
                     style={styles.driverRideQrBtn}
@@ -6280,22 +6284,26 @@ export default function LiveMapView({
                             return;
                           }
                           if (!tagId || String(tagId).trim() === '') {
-                            Alert.alert(
+                            appAlert(
                               'İşlem yapılamıyor',
                               'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                              [{ text: 'Tamam' }],
+                              { tone: 'error' },
                             );
                             return;
                           }
                           const stOpen = String(tagStatus || '').toLowerCase();
                           if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                            Alert.alert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.');
+                            appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                              tone: 'error',
+                            });
                             return;
                           }
                           setInRideSaferFeStep('choice');
                           setInRideSaferFeVisible(true);
                           return;
                         }
-                        Alert.alert(
+                        appAlert(
                           '⚠️ Zorla Bitir',
                           'Bu işlem puanınızı düşürebilir. Mümkünse QR ile tamamlayın.',
                           [
@@ -6306,6 +6314,7 @@ export default function LiveMapView({
                               onPress: () => onForceEnd?.(),
                             },
                           ],
+                          { tone: 'warning' },
                         );
                       }}
                       accessibilityRole="button"
@@ -6323,6 +6332,10 @@ export default function LiveMapView({
                     </TouchableOpacity>
                   ) : null}
                 </View>
+                  <Text style={styles.driverRideTripEndQrHint} numberOfLines={2}>
+                    Hedefe yaklaştığınızda yol paylaşımını QR ile güvenli şekilde tamamlayabilirsiniz.
+                  </Text>
+                </>
               ) : (
                 <View style={styles.driverRideSheetRow2}>
                   <TouchableOpacity
@@ -6380,22 +6393,26 @@ export default function LiveMapView({
                             return;
                           }
                           if (!tagId || String(tagId).trim() === '') {
-                            Alert.alert(
+                            appAlert(
                               'İşlem yapılamıyor',
                               'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                              [{ text: 'Tamam' }],
+                              { tone: 'error' },
                             );
                             return;
                           }
                           const stOpen = String(tagStatus || '').toLowerCase();
                           if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                            Alert.alert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.');
+                            appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                              tone: 'error',
+                            });
                             return;
                           }
                           setInRideSaferFeStep('choice');
                           setInRideSaferFeVisible(true);
                           return;
                         }
-                        Alert.alert(
+                        appAlert(
                           '⚠️ Zorla Bitir',
                           'Bu işlem puanınızı düşürebilir. Mümkünse QR ile tamamlayın.',
                           [
@@ -6406,6 +6423,7 @@ export default function LiveMapView({
                               onPress: () => onForceEnd?.(),
                             },
                           ],
+                          { tone: 'warning' },
                         );
                       }}
                       accessibilityRole="button"
@@ -6478,7 +6496,8 @@ export default function LiveMapView({
                           void tapButtonHaptic();
                           if (boardingConfirmed) {
                             appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                              variant: 'info',
+                              variant: 'warning',
+                              tone: 'warning',
                               autoDismissMs: 3200,
                               cancelable: true,
                             });
@@ -6522,7 +6541,8 @@ export default function LiveMapView({
                           void tapButtonHaptic();
                           if (boardingConfirmed) {
                             appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                              variant: 'info',
+                              variant: 'warning',
+                              tone: 'warning',
                               autoDismissMs: 3200,
                               cancelable: true,
                             });
@@ -6693,32 +6713,37 @@ export default function LiveMapView({
                     return;
                   }
                   if (!tagId || String(tagId).trim() === '') {
-                    Alert.alert(
+                    appAlert(
                       'İşlem yapılamıyor',
                       'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                      [{ text: 'Tamam' }],
+                      { tone: 'error' },
                     );
                     return;
                   }
                   const stOpen = String(tagStatus || '').toLowerCase();
                   if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                    Alert.alert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.');
+                    appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                      tone: 'error',
+                    });
                     return;
                   }
                   setInRideSaferFeStep('choice');
                   setInRideSaferFeVisible(true);
                   return;
                 }
-                Alert.alert(
+                appAlert(
                   '⚠️ Zorla Bitir',
                   'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
                   [
                     { text: 'Vazgeç', style: 'cancel' },
-                    { 
-                      text: 'Zorla Bitir (-5 Puan)', 
-                      style: 'destructive', 
-                      onPress: () => onForceEnd?.() 
-                    }
-                  ]
+                    {
+                      text: 'Zorla Bitir (-5 Puan)',
+                      style: 'destructive',
+                      onPress: () => onForceEnd?.(),
+                    },
+                  ],
+                  { tone: 'warning' },
                 );
               }}
               activeOpacity={0.7}
@@ -6914,10 +6939,12 @@ export default function LiveMapView({
                 setInRideSaferFeVisible(false);
                 setInRideSaferFeStep('choice');
               } else {
-                Alert.alert(
+                appAlert(
                   'Şikayet gönderilemedi',
                   result.message ||
                     'Bağlantı veya sunucu hatası. Tekrar deneyebilir veya “Yine de zorla bitir” seçebilirsiniz.',
+                  [{ text: 'Tamam' }],
+                  { tone: 'error' },
                 );
               }
             } finally {
@@ -6929,7 +6956,7 @@ export default function LiveMapView({
             if (inRideComplaintInFlightRef.current) return;
             setInRideSaferFeVisible(false);
             setInRideSaferFeStep('choice');
-            Alert.alert(
+            appAlert(
               '⚠️ Zorla Bitir',
               'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
               [
@@ -6940,6 +6967,7 @@ export default function LiveMapView({
                   onPress: () => onForceEnd?.(),
                 },
               ],
+              { tone: 'warning' },
             );
           }}
         />
@@ -8303,7 +8331,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(30,58,95,0.72)',
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34,211,238,0.32)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 10,
   },
   qrEndButtonGradient: {
     flexDirection: 'row',
@@ -8896,7 +8930,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     minHeight: 56,
     borderWidth: 1,
-    borderColor: 'rgba(30,58,95,0.5)',
+    borderColor: '#1E3A5F',
+    borderTopColor: 'rgba(34,211,238,0.28)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
   },
   driverRideQrBtnProminent: {
     shadowColor: 'rgba(34,211,238,0.45)',
@@ -8928,6 +8968,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: 'rgba(243,248,255,0.94)',
     flexShrink: 1,
+  },
+  driverRideTripEndQrHint: {
+    marginTop: 8,
+    marginBottom: 2,
+    paddingHorizontal: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+    color: 'rgba(186,201,222,0.82)',
+    textAlign: 'center',
   },
   driverRideForceBtn: {
     flex: 1,

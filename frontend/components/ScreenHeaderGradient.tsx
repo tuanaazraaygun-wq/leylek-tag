@@ -4,7 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-const GRAD = ['#007AFF', '#5AC8FA'] as const;
+/** Premium cockpit — deep navy → cam kart; cyan edge hissi (logik / layout aynı) */
+const GRAD = ['#08111F', '#0B1220', '#101A2B'] as const;
 
 type Props = {
   title: string;
@@ -12,8 +13,8 @@ type Props = {
   onBack?: () => void;
   backIcon?: keyof typeof Ionicons.glyphMap;
   right?: React.ReactNode;
-  /** Varsayılan: Leylek mavi gradient */
-  gradientColors?: readonly [string, string];
+  /** Varsayılan: premium dark HUD gradient (>2 renk için locations otomatik) */
+  gradientColors?: readonly string[];
 };
 
 export function ScreenHeaderGradient({
@@ -25,17 +26,19 @@ export function ScreenHeaderGradient({
   gradientColors = GRAD,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const colorsArr = gradientColors.length ? [...gradientColors] : [...GRAD];
   return (
     <LinearGradient
-      colors={[gradientColors[0], gradientColors[1]]}
+      colors={colorsArr as [string, string, ...string[]]}
+      locations={colorsArr.length === 3 ? [0, 0.55, 1] : undefined}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
+      end={{ x: 1, y: 1 }}
       style={[styles.grad, { paddingTop: insets.top }]}
     >
       <View style={styles.row}>
         {onBack ? (
           <TouchableOpacity onPress={onBack} style={styles.iconHit} hitSlop={10} accessibilityRole="button">
-            <Ionicons name={backIcon} size={26} color="#FFFFFF" />
+            <Ionicons name={backIcon} size={26} color="rgba(243,248,255,0.94)" />
           </TouchableOpacity>
         ) : (
           <View style={styles.iconHit} />
@@ -59,14 +62,16 @@ export function ScreenHeaderGradient({
 const styles = StyleSheet.create({
   grad: {
     paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth + 1,
+    borderBottomColor: 'rgba(34,211,238,0.14)',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
+        shadowColor: 'rgba(34,211,238,0.22)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 1,
+        shadowRadius: 14,
       },
-      android: { elevation: 3 },
+      android: { elevation: 4 },
       default: {},
     }),
   },
@@ -86,7 +91,7 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    color: '#FFFFFF',
+    color: 'rgba(243,248,255,0.94)',
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.3,
@@ -94,7 +99,7 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: 2,
     textAlign: 'center',
-    color: 'rgba(255,255,255,0.88)',
+    color: 'rgba(186,201,222,0.82)',
     fontSize: 12,
     fontWeight: '500',
   },

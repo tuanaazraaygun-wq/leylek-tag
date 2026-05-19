@@ -11389,19 +11389,26 @@ function PassengerDashboard({
                       marginHorizontal: 12,
                       marginTop: 8,
                       marginBottom: 6,
-                      paddingVertical: 12,
-                      paddingHorizontal: 14,
-                      borderRadius: 12,
+                      paddingVertical: 14,
+                      paddingHorizontal: 16,
+                      borderRadius: 16,
                       backgroundColor: 'rgba(16,26,43,0.88)',
                       borderWidth: 1,
-                      borderColor: 'rgba(34,211,238,0.32)',
+                      borderColor: '#1E3A5F',
+                      borderTopColor: 'rgba(34,211,238,0.38)',
+                      shadowColor: '#010818',
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.35,
+                      shadowRadius: 16,
+                      elevation: 14,
                     }}
                   >
-                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
-                      Sürücü yakın — araca bindiğinizde sürücünün karekodunu okutun
+                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center', lineHeight: 22 }}>
+                      Sürücü yakın — araca bindikten sonra biniş QR kodunu okutun
                     </Text>
-                    <Text style={{ color: 'rgba(186,201,222,0.82)', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: '600' }}>
-                      Yolculuk, biniş doğrulandıktan sonra başlar
+                    <Text style={{ color: 'rgba(186,201,222,0.82)', fontSize: 12, textAlign: 'center', marginTop: 8, fontWeight: '600', lineHeight: 17 }}>
+                      Yolculuk, biniş doğrulandıktan sonra başlar.{' '}
+                      <Text style={{ color: 'rgba(34,211,238,0.88)' }}>Dokunarak onaylayın.</Text>
                     </Text>
                   </TouchableOpacity>
                 ) : null}
@@ -11414,44 +11421,54 @@ function PassengerDashboard({
                       marginHorizontal: 12,
                       marginTop: 8,
                       marginBottom: 6,
-                      paddingVertical: 12,
-                      paddingHorizontal: 14,
-                      borderRadius: 10,
+                      paddingVertical: 14,
+                      paddingHorizontal: 16,
+                      borderRadius: 16,
                       borderWidth: 1,
                       borderColor: '#1E3A5F',
+                      borderTopColor: 'rgba(34,211,238,0.28)',
+                      shadowColor: '#010818',
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.32,
+                      shadowRadius: 14,
+                      elevation: 12,
                     }}
                   >
-                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '700', fontSize: 14, textAlign: 'center' }}>
-                      Araca binmeye hazırsanız biniş kodunu tarayın
+                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+                      Biniş QR kodunu, araca bindikten sonra okutun
                     </Text>
-                    <Text style={{ color: 'rgba(186,201,222,0.78)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
-                      İstemiyorsanız bu bildirimi kapatabilirsiniz; araçtan uzaklaşınca tekrar hatırlatılır.
+                    <Text style={{ color: 'rgba(186,201,222,0.82)', fontSize: 12, textAlign: 'center', marginTop: 8, lineHeight: 17, fontWeight: '600' }}>
+                      Sürücüden uzaksanız önce buluşma noktasına ilerleyin. Kapatırsanız uyarı, uygun mesafede yeniden gösterilir.
                     </Text>
-                    <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                    <View style={{ flexDirection: 'row', marginTop: 14 }}>
                       <TouchableOpacity
                         style={{
                           flex: 1,
-                          backgroundColor: 'rgba(8,17,31,0.72)',
-                          paddingVertical: 10,
-                          borderRadius: 8,
+                          backgroundColor: 'rgba(8,17,31,0.78)',
+                          paddingVertical: 12,
+                          borderRadius: 12,
                           alignItems: 'center',
                           marginRight: 6,
+                          borderWidth: 1,
+                          borderColor: '#1E3A5F',
                         }}
                         onPress={() => {
                           passengerBoardingBannerDismissedRef.current = true;
                           setPassengerBoardingReminderBannerVisible(false);
                         }}
                       >
-                        <Text style={{ color: 'rgba(186,201,222,0.94)', fontWeight: '700' }}>Kapat</Text>
+                        <Text style={{ color: 'rgba(186,201,222,0.94)', fontWeight: '800' }}>Kapat</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={{
                           flex: 1,
-                          backgroundColor: 'rgba(34,211,238,0.16)',
-                          paddingVertical: 10,
-                          borderRadius: 8,
+                          backgroundColor: 'rgba(34,211,238,0.14)',
+                          paddingVertical: 12,
+                          borderRadius: 12,
                           alignItems: 'center',
                           marginLeft: 6,
+                          borderWidth: 1,
+                          borderColor: 'rgba(34,211,238,0.42)',
                         }}
                         onPress={() => {
                           setPassengerBoardingReminderBannerVisible(false);

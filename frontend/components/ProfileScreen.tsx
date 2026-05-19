@@ -9,14 +9,21 @@ import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 
-const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
-const VEHICLE_PH = ['#DBEAFE', '#E0E7FF'] as const;
-const TEXT_PRIMARY = '#111111';
-const TEXT_SECONDARY = '#6E6E73';
-const CARD_BG = '#FFFFFF';
+const VEHICLE_PH = ['#0B1220', '#101A2B', 'rgba(8,17,31,0.95)'] as const;
+const TEXT_PRIMARY = 'rgba(243,248,255,0.94)';
+const TEXT_SECONDARY = 'rgba(186,201,222,0.82)';
+const CARD_BG = 'rgba(16,26,43,0.88)';
+const NAVY_DEEP = '#08111F';
+const CYAN_ACCENT = '#22D3EE';
+const BORDER_SLATE = '#1E3A5F';
 const CARD_SHADOW = Platform.select({
-  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
-  android: { elevation: 2 },
+  ios: {
+    shadowColor: 'rgba(34,211,238,0.18)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
+  },
+  android: { elevation: 8 },
   default: {},
 });
 
@@ -377,10 +384,10 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
-      <ScreenHeaderGradient title="Profil" onBack={onBack ?? (() => router.back())} gradientColors={PRIMARY_GRAD} />
+      <ScreenHeaderGradient title="Profil" onBack={onBack ?? (() => router.back())} />
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
+          <ActivityIndicator size="large" color={CYAN_ACCENT} />
         </View>
       ) : !p ? (
         <View style={styles.center}>
@@ -393,12 +400,12 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
               {photo ? (
                 <Image source={{ uri: photo }} style={styles.avatar} />
               ) : (
-                <LinearGradient colors={PRIMARY_GRAD} style={styles.avatarFallback}>
+                <LinearGradient colors={[...VEHICLE_PH]} style={styles.avatarFallback} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                   <Text style={styles.avatarInitials}>{initialsFromName(displayName)}</Text>
                 </LinearGradient>
               )}
               {isSelf ? (
-                <View style={styles.avatarEditBadge}>{uploading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="camera" size={14} color="#fff" />}</View>
+                <View style={styles.avatarEditBadge}>{uploading ? <ActivityIndicator color={TEXT_PRIMARY} size="small" /> : <Ionicons name="camera" size={14} color={TEXT_PRIMARY} />}</View>
               ) : null}
             </Pressable>
             <Text style={styles.name}>{displayName}</Text>
@@ -426,8 +433,14 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
               {vehiclePhoto ? (
                 <Image source={{ uri: vehiclePhoto }} style={styles.vehicleImg} />
               ) : (
-                <LinearGradient colors={VEHICLE_PH} style={styles.vehiclePh}>
-                  <Ionicons name="car-sport" size={34} color="#3B82F6" />
+                <LinearGradient
+                  colors={[...VEHICLE_PH]}
+                  locations={[0, 0.5, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.vehiclePh}
+                >
+                  <Ionicons name="car-sport" size={34} color={CYAN_ACCENT} />
                   <Text style={styles.vehiclePhTxt}>Araç fotoğrafı eklenmemiş</Text>
                 </LinearGradient>
               )}
@@ -437,7 +450,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
               </View>
               {isSelf ? (
                 <Pressable onPress={() => void pickVehiclePhoto()} style={styles.inlineLinkBtn}>
-                  {uploadingVehicle ? <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} /> : <Text style={styles.inlineLinkTxt}>Araç fotoğrafı değiştir</Text>}
+                  {uploadingVehicle ? <ActivityIndicator size="small" color={CYAN_ACCENT} /> : <Text style={styles.inlineLinkTxt}>Araç fotoğrafı değiştir</Text>}
                 </Pressable>
               ) : null}
             </View>
@@ -457,7 +470,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   maxLength={500}
                 />
                 <Pressable onPress={() => void saveBio()} style={styles.saveBtn}>
-                  {savingBio ? <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} /> : <Text style={styles.inlineLinkTxt}>Hakkımda düzenle</Text>}
+                  {savingBio ? <ActivityIndicator size="small" color={CYAN_ACCENT} /> : <Text style={styles.inlineLinkTxt}>Hakkımda düzenle</Text>}
                 </Pressable>
               </>
             ) : (
@@ -471,37 +484,160 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F3F4F6' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  muted: { color: TEXT_SECONDARY, fontSize: 15 },
+  root: { flex: 1, backgroundColor: NAVY_DEEP },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: NAVY_DEEP,
+  },
+  muted: { color: TEXT_SECONDARY, fontSize: 15, fontWeight: '600' },
   scroll: { padding: 16, paddingBottom: 36 },
-  heroCard: { backgroundColor: CARD_BG, borderRadius: 22, padding: 18, alignItems: 'center', marginBottom: 12, ...CARD_SHADOW },
+  heroCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 22,
+    padding: 18,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: BORDER_SLATE,
+    borderTopColor: 'rgba(34,211,238,0.28)',
+    borderLeftColor: 'rgba(34,211,238,0.1)',
+    ...CARD_SHADOW,
+  },
   avatarWrap: { position: 'relative' },
-  avatar: { width: 118, height: 118, borderRadius: 59, backgroundColor: '#E5E7EB' },
-  avatarFallback: { width: 118, height: 118, borderRadius: 59, justifyContent: 'center', alignItems: 'center' },
-  avatarInitials: { color: '#fff', fontSize: 34, fontWeight: '800' },
-  avatarEditBadge: { position: 'absolute', right: 1, bottom: 1, backgroundColor: '#2563EB', borderRadius: 16, width: 32, height: 32, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
-  name: { marginTop: 12, fontSize: 25, fontWeight: '800', color: TEXT_PRIMARY, textAlign: 'center' },
-  badgesRow: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' },
-  badgePill: { paddingVertical: 6, paddingHorizontal: 11, borderRadius: 999, fontSize: 12, fontWeight: '800' },
-  badgeDriver: { backgroundColor: 'rgba(37,99,235,0.14)', color: '#1D4ED8' },
-  badgePassenger: { backgroundColor: 'rgba(249,115,22,0.16)', color: '#C2410C' },
-  badgeKyc: { backgroundColor: 'rgba(22,163,74,0.14)', color: '#15803D' },
+  avatar: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    backgroundColor: 'rgba(8,17,31,0.75)',
+    borderWidth: 2,
+    borderColor: 'rgba(34,211,238,0.42)',
+  },
+  avatarFallback: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(34,211,238,0.38)',
+  },
+  avatarInitials: { color: TEXT_PRIMARY, fontSize: 34, fontWeight: '800' },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 1,
+    bottom: 1,
+    backgroundColor: 'rgba(34,211,238,0.28)',
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.5)',
+  },
+  name: {
+    marginTop: 12,
+    fontSize: 25,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  badgePill: {
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: '800',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+  },
+  badgeDriver: {
+    backgroundColor: 'rgba(16,26,43,0.92)',
+    color: CYAN_ACCENT,
+    borderColor: 'rgba(34,211,238,0.35)',
+  },
+  badgePassenger: {
+    backgroundColor: 'rgba(16,26,43,0.92)',
+    color: TEXT_PRIMARY,
+    borderColor: 'rgba(186,201,222,0.35)',
+  },
+  badgeKyc: {
+    backgroundColor: 'rgba(16,185,129,0.16)',
+    color: 'rgba(243,248,255,0.94)',
+    borderColor: 'rgba(110,231,183,0.32)',
+  },
   inlineLinkBtn: { marginTop: 11, paddingVertical: 6, paddingHorizontal: 10 },
-  inlineLinkTxt: { color: '#2563EB', fontSize: 14, fontWeight: '700' },
+  inlineLinkTxt: { color: CYAN_ACCENT, fontSize: 14, fontWeight: '700' },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
-  statCard: { width: '48%', backgroundColor: CARD_BG, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 10, alignItems: 'center', ...CARD_SHADOW },
+  statCard: {
+    width: '48%',
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: BORDER_SLATE,
+    borderTopColor: 'rgba(34,211,238,0.2)',
+    ...CARD_SHADOW,
+  },
   statNum: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
-  statLab: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, textAlign: 'center' },
-  card: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
-  section: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8 },
-  vehicleImg: { width: '100%', height: 180, borderRadius: 14, backgroundColor: '#E5E7EB' },
-  vehiclePh: { width: '100%', height: 160, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  vehiclePhTxt: { fontSize: 13, color: '#475569', fontWeight: '600' },
+  statLab: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, textAlign: 'center', fontWeight: '600' },
+  card: {
+    backgroundColor: CARD_BG,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: BORDER_SLATE,
+    borderTopColor: 'rgba(34,211,238,0.22)',
+    borderLeftColor: 'rgba(34,211,238,0.08)',
+    ...CARD_SHADOW,
+  },
+  section: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8, letterSpacing: 0.15 },
+  vehicleImg: {
+    width: '100%',
+    height: 180,
+    borderRadius: 14,
+    backgroundColor: 'rgba(8,17,31,0.65)',
+    borderWidth: 1,
+    borderColor: BORDER_SLATE,
+  },
+  vehiclePh: {
+    width: '100%',
+    height: 160,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: BORDER_SLATE,
+  },
+  vehiclePhTxt: { fontSize: 13, color: TEXT_SECONDARY, fontWeight: '600' },
   vehicleMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   vehicleMetaKey: { color: TEXT_SECONDARY, fontSize: 13, fontWeight: '700' },
   vehicleMetaVal: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '800' },
-  bioInput: { minHeight: 84, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(15,23,42,0.2)', borderRadius: 12, padding: 12, fontSize: 15, color: TEXT_PRIMARY, textAlignVertical: 'top' },
+  bioInput: {
+    minHeight: 84,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: BORDER_SLATE,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    color: TEXT_PRIMARY,
+    textAlignVertical: 'top',
+    backgroundColor: 'rgba(8,17,31,0.55)',
+  },
   saveBtn: { marginTop: 8, alignSelf: 'flex-end' },
   aboutText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
 });
