@@ -1,9 +1,16 @@
 import Link from "next/link";
 import { Container } from "@/components/container";
-import type { LegalDocument } from "@/lib/legal-content";
+import type { LegalSection } from "@/lib/legal-content";
+
+export type LegalPageDocument = {
+  title: string;
+  updatedAt: string;
+  intro: string;
+  sections: LegalSection[];
+};
 
 type Props = {
-  document: LegalDocument;
+  document: LegalPageDocument;
 };
 
 export function LegalPage({ document }: Props) {
