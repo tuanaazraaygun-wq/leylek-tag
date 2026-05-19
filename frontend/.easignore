@@ -59,9 +59,10 @@ android/captures/
 android/**/*.hprof
 android/**/intermediates/
 android/**/.cxx/
-ios/build/
-ios/Pods/
-ios/DerivedData/
+
+# iOS (CNG): exclude stale committed native tree; EAS prebuild generates ios/ from app.json
+ios/
+
 **/*.apk
 **/*.aab
 **/*.keystore
