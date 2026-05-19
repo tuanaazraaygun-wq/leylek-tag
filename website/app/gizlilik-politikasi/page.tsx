@@ -1,13 +1,28 @@
 import type { Metadata } from "next";
-import { LegalPage } from "@/components/legal-page";
-import { legalDocuments } from "@/lib/legal-content";
+import { PrivacyPolicyView } from "@/components/privacy-policy-view";
+import { getPrivacyPolicy } from "@/lib/privacy-policy-locales";
+
+const content = getPrivacyPolicy("tr");
 
 export const metadata: Metadata = {
-  title: "Gizlilik Politikası",
-  description:
-    "Leylek TAG gizlilik politikası: veri işleme, konum kullanımı, hesap silme ve KVKK başvuru hakları.",
+  title: content.meta.title,
+  description: content.meta.description,
+  alternates: {
+    canonical: content.meta.canonical,
+    languages: {
+      en: "/privacy",
+      tr: "/gizlilik-politikasi",
+    },
+  },
+  openGraph: {
+    title: content.meta.openGraphTitle,
+    description: content.meta.openGraphDescription,
+    url: "/gizlilik-politikasi",
+    locale: "tr_TR",
+    alternateLocale: ["en_US"],
+  },
 };
 
-export default function PrivacyPolicyPage() {
-  return <LegalPage document={legalDocuments["gizlilik-politikasi"]} />;
+export default function GizlilikPolitikasiPage() {
+  return <PrivacyPolicyView locale="tr" />;
 }

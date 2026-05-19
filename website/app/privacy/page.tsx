@@ -1,22 +1,28 @@
 import type { Metadata } from "next";
-import { LegalPage } from "@/components/legal-page";
-import { privacyPolicyDocument } from "@/lib/privacy-policy-content";
+import { PrivacyPolicyView } from "@/components/privacy-policy-view";
+import { getPrivacyPolicy } from "@/lib/privacy-policy-locales";
+
+const content = getPrivacyPolicy("en");
 
 export const metadata: Metadata = {
-  title: "Privacy Policy",
-  description:
-    "Leylek TAG Privacy Policy: user data, location, ride matching, chat security, analytics, crash logs, and support contact.",
+  title: content.meta.title,
+  description: content.meta.description,
   alternates: {
-    canonical: "/privacy",
+    canonical: content.meta.canonical,
+    languages: {
+      en: "/privacy",
+      tr: "/gizlilik-politikasi",
+    },
   },
   openGraph: {
-    title: "Leylek TAG | Privacy Policy",
-    description:
-      "How Leylek TAG collects and uses location, matching, chat, analytics, and support data.",
+    title: content.meta.openGraphTitle,
+    description: content.meta.openGraphDescription,
     url: "/privacy",
+    locale: "en_US",
+    alternateLocale: ["tr_TR"],
   },
 };
 
 export default function PrivacyPage() {
-  return <LegalPage document={privacyPolicyDocument} />;
+  return <PrivacyPolicyView locale="en" />;
 }
