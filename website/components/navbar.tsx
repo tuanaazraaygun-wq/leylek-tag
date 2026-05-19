@@ -41,7 +41,7 @@ export function Navbar() {
         <div
           className={`relative rounded-[1.125rem] border border-white/[0.085] px-4 py-2.5 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-[background-color,box-shadow] duration-300 sm:rounded-[1.25rem] sm:px-5 sm:py-3 ${
             scrolled
-              ? "bg-black/58 shadow-[0_24px_64px_-24px_rgba(0,114,255,0.22)] ring-1 ring-white/[0.05]"
+              ? "bg-black/58 shadow-[0_24px_64px_-24px_rgba(0,114,255,0.22)] ring-1 ring-cyan-400/[0.07]"
               : "bg-black/38 ring-1 ring-white/[0.04]"
           }`}
         >

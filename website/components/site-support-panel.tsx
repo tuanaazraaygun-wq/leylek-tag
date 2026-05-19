@@ -35,9 +35,9 @@ const CHAT_MESSAGE_MIN_LEN = 1;
 const SUBMIT_COOLDOWN_MS = 36_000;
 const USER_AGENT_MAX = 512;
 
-/** Karşılama balonunda sabit sistem metni (AI iddiası yok). */
+/** Karşılama balonunda sabit sistem metni — anında insan operatör vaadi yok. */
 const LIVE_SUPPORT_WELCOME =
-  "Merhaba, Leylek TAG kurumsal canlı destek hattına hoş geldin. Konunu kısaca yazabilirsin; bir temsilci bağlandığında yanıtlar bu akışta görünür.";
+  "Merhaba. Bu akış Leylek Zeka ile yönlendirilebilecek bilgilendirme ve mesajların destek ekibine iletilmesi içindir. Yanıtlar müsaitlik durumunda buradan gelir; anında müşteri temsilcisi veya sürekli çevrimiçi bağlantı taahhüdü sunulmaz.";
 
 type SupportTicketMetaRow = {
   id: string;
@@ -102,16 +102,16 @@ function SupportLeylekBadge({ className = "" }: { className?: string }) {
     <span
       className={`inline-flex items-center rounded-full border border-cyan-400/35 bg-gradient-to-br from-cyan-500/[0.16] via-cyan-400/[0.08] to-slate-900/60 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-50/96 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.22),0_6px_20px_-8px_rgba(34,211,238,0.35)] ${className}`}
     >
-      Leylek Zeka
+      Leylek Zeka + Destek
     </span>
   );
 }
 
-function SupportLiveBadge() {
+function SupportResponseCenterBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/32 bg-emerald-400/[0.08] px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-emerald-100/94 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)]">
-      <span className="livePulse h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden />
-      Canlı destek
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-500/[0.09] px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.11em] text-cyan-100/92 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.14)]">
+      <span className="h-1 w-1 shrink-0 rounded-full bg-cyan-300/90" aria-hidden />
+      Yanıt merkezi
     </span>
   );
 }
@@ -151,10 +151,10 @@ function SupportHeadsetGlyph({ className = "h-[1.125rem] w-[1.125rem]" }: { clas
   );
 }
 
-/** Temsilci mesajı gelene kadar gösterilen kurumsal bekleme metni */
-const LIVE_SUPPORT_QUEUE_COPY = `Canlı destek ekibimiz talebinizi aldı.
-Kısa süre içinde bir temsilci görüşmeye katılacaktır.
-Bu pencereyi kapatmadan bekleyebilir veya e-posta ile dönüş talep edebilirsiniz.`;
+/** Kuyruk / bekleme metni — yanıtlar zamanı garanti etmez; sürekli çevrimiçi çağrı merkezi iddiası yok. */
+const LIVE_SUPPORT_QUEUE_COPY = `Talebin alındı ve destek ekibine iletildi.
+Müsait olduklarında yanıtlar bu akışta görünür; süre net olarak garanti edilmez.
+İstersen bu pencereyi kapatabilir veya e‑posta ile de ulaşabilirsin.`;
 
 function trimRowStatus(raw: string | null | undefined): string {
   return raw?.trim()?.toLowerCase() ?? "";
@@ -678,7 +678,7 @@ export function SiteSupportPanel() {
       if (honey.trim() !== "") return;
 
       if (!supportUnlocked || !sessionContactEmail) {
-        setFeedback("Canlı destek için önce giriş yapın.");
+        setFeedback("Destek talebi için önce oturum açın.");
         setStatus("error");
         return;
       }
@@ -799,6 +799,9 @@ export function SiteSupportPanel() {
         setName("");
         setMessage("");
         setFeedback(null);
+        setChatBanner(
+          "Talebin kaydedildi ve destek ekibine iletildi. Müsaitlik durumunda yanıtlar bu akışta görünecek.",
+        );
       } catch {
         setStatus("error");
         setFeedback("Bir şeyler ters gitti. Lütfen tekrar dene.");
@@ -822,10 +825,11 @@ export function SiteSupportPanel() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       setFeedback(null);
+      setChatBanner(null);
 
       const body = chatInput.trim();
       if (body.length < CHAT_MESSAGE_MIN_LEN) {
-        setChatBanner("Mesaj yaz.");
+        setFeedback("Mesaj yaz.");
         return;
       }
 
@@ -853,12 +857,13 @@ export function SiteSupportPanel() {
           .maybeSingle();
 
         if (error || !data) {
-          setChatBanner("Mesaj gönderilemedi. Bağlantıyı kontrol et.");
+          setFeedback("Mesaj gönderilemedi. Bağlantıyı kontrol et.");
           return;
         }
 
         setChatLines((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatRow]));
         setChatInput("");
+        setChatBanner("Mesajın gönderildi ve destek akışına eklendi. Ekibimiz müsait olduğunda buradan yanıtlayacaktır.");
       } finally {
         setChatSending(false);
       }
@@ -910,10 +915,10 @@ export function SiteSupportPanel() {
   const hasAssignedAdmin = Boolean((ticketMeta?.assigned_admin_id ?? "").trim().length > 0);
   const queueStatusPrimary =
     resolvedStatus || hasAdminReplyInThread
-      ? "Görüşme aktif — Destek Ekibi yanıtları aşağıdaki akışta."
+      ? "Görüşme açık — destek ekibinin yanıtları aşağıdaki akışta."
       : hasAssignedAdmin
-        ? "Temsilci görüşmeye dahil oldu; ilk mesajlar yükleniyor."
-        : "Talebiniz alındı; canlı destek ekibi temsilci ataması yapıyor.";
+        ? "Destek ekibi görüşmeye dahil oldu; ilk mesajlar yükleniyor."
+        : "Talebin alındı — destek ekibi uygun olduğunda yanıtlar burada görünecek.";
 
   return (
     <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end md:bottom-8 md:right-8 md:w-auto md:max-w-none">
@@ -946,12 +951,12 @@ export function SiteSupportPanel() {
                     id={titleId}
                     className="text-lg font-black leading-snug tracking-tight text-white"
                   >
-                    Leylek TAG Canlı Destek
+                    Leylek TAG — Yanıt merkezi
                   </p>
-                  <SupportLiveBadge />
+                  <SupportResponseCenterBadge />
                 </div>
                 <p id={descId} className="mt-3 text-[13px] leading-relaxed text-slate-400">
-                  Canlı bağlantı yapılandırılmadığında ekibimize güvenli biçimde e‑posta ile ulaşabilirsin.
+                  Destek yapılandırılmadığında ekibimize güvenli biçimde e‑posta ile ulaşabilirsin.
                 </p>
                 <Link
                   href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG destek · geri bildirim")}`}
@@ -970,7 +975,7 @@ export function SiteSupportPanel() {
             ) : !authReady ? (
               <div className="relative p-8 sm:p-10">
                 <p id={titleId} className="text-lg font-bold tracking-tight text-white">
-                  Canlı Destek
+                  Yanıt merkezi
                 </p>
                 <p id={descId} className="mt-3 text-[13px] leading-relaxed text-slate-500">
                   Oturum bilgisi kontrol ediliyor…
@@ -985,7 +990,7 @@ export function SiteSupportPanel() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p id={titleId} className="text-lg font-semibold tracking-tight text-white sm:text-xl">
-                      Canlı destek için giriş yapın
+                      Destek için oturum açın
                     </p>
                     <SupportLockBadge className="mt-3" />
                   </div>
@@ -998,8 +1003,7 @@ export function SiteSupportPanel() {
                   </button>
                 </div>
                 <p id={descId} className="mt-4 text-[13px] leading-relaxed text-slate-400">
-                  Görüşmelerinizin güvenliği ve size doğru dönüş yapılabilmesi için canlı desteğe giriş
-                  yaptıktan sonra bağlanabilirsiniz.
+                  Görüşmelerin doğrulanması ve doğru iletişim için oturum açtıktan sonra yazabilirsin.
                 </p>
                 <p className="mt-5 text-[12px] leading-relaxed text-slate-500">
                   Şu anda <span className="font-semibold text-slate-400">Google ile giriş</span> kullanılmaktadır.
@@ -1034,7 +1038,7 @@ export function SiteSupportPanel() {
                 </p>
 
                 <Link
-                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG Canlı Destek")}`}
+                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG · Destek talebi")}`}
                   className="mt-4 block py-2 text-center text-[11px] font-medium text-slate-500 underline-offset-4 transition hover:text-slate-400 hover:underline"
                 >
                   Hesabın yok mu? E‑posta ile yaz
@@ -1046,7 +1050,7 @@ export function SiteSupportPanel() {
                   E‑posta gerekiyor
                 </p>
                 <p id={descId} className="mt-4 text-[13px] leading-relaxed text-slate-400">
-                  Hesabınızda görünen bir e‑posta adresi olmadığı için canlı destek kaydı oluşturulamıyor.
+                  Hesabınızda görünen bir e‑posta adresi olmadığı için destek bileti oluşturulamıyor.
                   Lütfen Google hesabınızda bir e‑posta doğrulayın veya e‑posta ile bize yazın.
                 </p>
                 <div className="mt-6 flex flex-col gap-2">
@@ -1074,7 +1078,7 @@ export function SiteSupportPanel() {
                         id={titleId}
                         className="text-[0.95rem] font-black leading-tight tracking-tight text-white sm:text-lg"
                       >
-                        Leylek TAG Canlı Destek
+                        Leylek TAG — Yanıt merkezi
                       </p>
                       {!resolvedStatus ? (
                         <>
@@ -1100,7 +1104,7 @@ export function SiteSupportPanel() {
                         </p>
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <SupportLiveBadge />
+                        <SupportResponseCenterBadge />
                         <SupportLeylekBadge />
                         <span
                           className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400"
@@ -1128,7 +1132,7 @@ export function SiteSupportPanel() {
 
                     <div className="rounded-xl rounded-tl-sm border border-cyan-400/26 bg-[linear-gradient(148deg,rgba(34,211,238,0.12)_0%,rgba(15,23,42,0.88)_48%,rgba(8,47,73,0.55)_100%)] px-3 py-2.5 shadow-[0_0_24px_-10px_rgba(34,211,238,0.3),inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-md sm:rounded-2xl sm:px-3.5 sm:py-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/78">
-                        Destek karşılaması
+                        Bilgilendirme
                       </p>
                       <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-50/96">
                         {LIVE_SUPPORT_WELCOME}
@@ -1138,7 +1142,7 @@ export function SiteSupportPanel() {
                     {!resolvedStatus && !hasAdminReplyInThread && !hasAssignedAdmin ? (
                       <div className="max-w-[min(100%,21rem)] self-start rounded-xl rounded-tl-sm border border-cyan-400/22 bg-[linear-gradient(148deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.75)_55%)] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-sm sm:rounded-2xl sm:px-3.5 sm:py-3">
                         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-200/78">
-                          Beklemede
+                          İşlem sırasında
                         </p>
                         <p className="mt-2 whitespace-pre-line break-words text-[12.5px] font-medium leading-relaxed text-slate-200/95">
                           {LIVE_SUPPORT_QUEUE_COPY}
@@ -1146,12 +1150,12 @@ export function SiteSupportPanel() {
                       </div>
                     ) : null}
                     {!resolvedStatus && !hasAdminReplyInThread && hasAssignedAdmin ? (
-                      <div className="max-w-[min(100%,21rem)] self-start rounded-xl rounded-tl-sm border border-emerald-400/26 bg-emerald-500/[0.08] px-3 py-2 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.12)] backdrop-blur-sm sm:rounded-2xl sm:px-3.5 sm:py-2.5">
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-200/88">
-                          Temsilci
+                      <div className="max-w-[min(100%,21rem)] self-start rounded-xl rounded-tl-sm border border-sky-400/28 bg-sky-500/[0.1] px-3 py-2 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.14)] backdrop-blur-sm sm:rounded-2xl sm:px-3.5 sm:py-2.5">
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-200/90">
+                          Destek ekibi
                         </p>
-                        <p className="mt-2 text-[12.5px] font-medium leading-relaxed text-emerald-50/93">
-                          Görüşmeye bağlanıldı; karşılama ve yanıtlar kısa süre içinde akışta görünür.
+                        <p className="mt-2 text-[12.5px] font-medium leading-relaxed text-slate-50/94">
+                          Görüşmeye dahil olundu; karşılama ve yanıtlar hazırlandığında akışta görünür (anında garanti verilmez).
                         </p>
                       </div>
                     ) : null}
@@ -1257,7 +1261,7 @@ export function SiteSupportPanel() {
                   </div>
                 ) : null}
                 {chatBanner ? (
-                  <div className="shrink-0 px-5 pt-2 text-[12px] text-amber-200/92" role="status">
+                  <div className="shrink-0 px-5 pt-2 text-[12px] font-medium leading-snug text-cyan-100/93" role="status" aria-live="polite">
                     {chatBanner}
                   </div>
                 ) : null}
@@ -1325,14 +1329,14 @@ export function SiteSupportPanel() {
                         id={titleId}
                         className="text-[0.98rem] font-black leading-tight tracking-tight text-white sm:text-lg"
                       >
-                        Leylek TAG Canlı Destek
+                        Leylek TAG — Yanıt merkezi
                       </p>
                       <p id={descId} className="mt-2 text-[12px] leading-relaxed text-slate-400 sm:text-[13px]">
-                        Ekibimize güvenli şekilde yazabilir; yanıtlar bu pencereden takip edilir. Kayıt için oturum açtığınız{" "}
-                        <span className="font-medium text-slate-300">Google hesabınızın e-postası</span> kullanılır.
+                        Mesajların destek ekibine güvenli biçimde iletilmesi için bu pencereden yazabilirsin; yanıtlar müsaitlikle burada görünür. Oturum açtığın{" "}
+                        <span className="font-medium text-slate-300">Google e-postanın</span> kayda geçer.
                       </p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                        <SupportLiveBadge />
+                        <SupportResponseCenterBadge />
                         <SupportLeylekBadge />
                         <span
                           className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400"
@@ -1360,7 +1364,7 @@ export function SiteSupportPanel() {
                     <div className="relative overflow-hidden rounded-[1.15rem] border border-cyan-400/24 bg-[linear-gradient(150deg,rgba(34,211,238,0.14)_0%,rgba(15,23,42,0.82)_52%,rgba(8,47,73,0.45)_100%)] px-3.5 py-3 shadow-[0_0_40px_-14px_rgba(34,211,238,0.42),inset_0_0_0_1px_rgba(103,232,249,0.16)] backdrop-blur-md">
                       <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-cyan-400/15 blur-2xl" aria-hidden />
                       <div className="relative flex flex-wrap items-center gap-2">
-                        <SupportLiveBadge />
+                        <SupportResponseCenterBadge />
                         <SupportLeylekBadge />
                       </div>
                       <p className="relative mt-2.5 text-[11px] font-black uppercase tracking-[0.13em] text-cyan-100/85">
@@ -1486,7 +1490,7 @@ export function SiteSupportPanel() {
                     ) : null}
 
                     <Link
-                      href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG Canlı Destek")}`}
+                      href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG · Destek talebi")}`}
                       className="py-1 text-center text-[11px] font-semibold text-slate-500 underline-offset-4 transition hover:text-cyan-200/85 hover:underline"
                     >
                       E‑posta ile ulaş
@@ -1506,18 +1510,18 @@ export function SiteSupportPanel() {
         aria-controls={dialogId}
         aria-label={
           supportUnlocked
-            ? "Leylek TAG canlı destek — sohbeti aç"
-            : "Destek — canlı destek için giriş gerekli"
+            ? "Leylek TAG yanıt merkezi — destek kutusunu aç"
+            : "Destek — oturum açınca yanıt merkezine yazabilirsin"
         }
-        className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full px-3 py-3 pr-[1.375rem] text-[13px] backdrop-blur-md transition-[border-color,box-shadow,background-color] sm:gap-2 sm:px-5 sm:pr-6 md:w-auto md:max-w-none ${
+        className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1.5 overflow-visible rounded-full px-3 py-3 pr-[1.2rem] text-[13px] backdrop-blur-md transition-[border-color,box-shadow,background-color] sm:gap-2 sm:px-5 sm:pr-[1.35rem] md:w-auto md:max-w-none ${
           supportUnlocked
-            ? "border border-cyan-400/35 bg-slate-950/92 font-black shadow-[0_14px_52px_rgba(0,114,255,0.38),0_0_32px_-8px_rgba(34,211,238,0.22)] hover:border-cyan-300/55 hover:shadow-[0_18px_56px_rgba(0,198,255,0.32),0_0_38px_-6px_rgba(34,211,238,0.28)]"
+            ? "border border-cyan-400/32 bg-slate-950/92 font-bold text-white shadow-[0_14px_48px_-18px_rgba(0,114,255,0.35)] ring-1 ring-cyan-400/15 hover:border-cyan-300/48 hover:bg-slate-950/95 hover:shadow-[0_18px_52px_-20px_rgba(34,211,238,0.26)]"
             : "border border-amber-500/28 bg-slate-950/96 font-semibold shadow-[0_12px_40px_-16px_rgba(0,0,0,0.65)] hover:border-amber-400/40 hover:bg-slate-950"
         }`}
       >
         {supportUnlocked ? (
           <span
-            className="livePulse pointer-events-none absolute right-4 top-[0.625rem] h-2 w-2 shrink-0 rounded-full bg-emerald-400 md:right-[1.125rem]"
+            className="pointer-events-none absolute right-3.5 top-[0.6rem] h-2 w-2 shrink-0 rounded-full bg-cyan-400/85 shadow-[0_0_14px_rgba(34,211,238,0.45)] md:right-5"
             aria-hidden
           />
         ) : (
@@ -1541,18 +1545,18 @@ export function SiteSupportPanel() {
           </span>
         )}
         <SupportHeadsetGlyph className="relative z-[1] h-[1.05rem] w-[1.05rem] shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" />
-        <span className="relative z-[1] flex min-w-0 flex-1 flex-wrap items-baseline gap-x-[0.25em] gap-y-0 leading-tight text-white/94 sm:flex-nowrap sm:whitespace-nowrap">
-          <span className="text-[12px] font-bold tracking-tight sm:text-[13px]">Destek</span>
-          <span className="shrink-0 text-slate-500/90" aria-hidden>
-            —
-          </span>
+        <span className="relative z-[1] flex min-w-0 flex-1 flex-col items-start gap-0.5 leading-tight text-white/[0.94] sm:flex-row sm:flex-nowrap sm:items-baseline sm:gap-x-2">
           {supportUnlocked ? (
-            <span className="liveBlink shrink-0 text-[13px] font-black tracking-tight text-emerald-300 drop-shadow-[0_0_14px_rgba(52,211,153,0.52),0_0_22px_rgba(34,211,238,0.16)] sm:text-[1.125rem] md:text-xl">
-              Canlı
-            </span>
+            <>
+              <span className="text-[11.5px] font-semibold tracking-tight text-slate-200/95 sm:text-[12px]">Leylek Zeka</span>
+              <span className="hidden font-light text-slate-500 sm:inline" aria-hidden>
+                ·
+              </span>
+              <span className="text-[12.5px] font-bold tracking-tight text-cyan-100 sm:text-[0.975rem]">+ Destek</span>
+            </>
           ) : (
-            <span className="max-w-[9.5rem] shrink text-[11px] font-semibold leading-snug text-amber-100/95 sm:max-w-none sm:text-[12px]">
-              Giriş gerekli
+            <span className="max-w-[11rem] text-[11.5px] font-semibold leading-snug text-amber-100/95 sm:max-w-none sm:text-[12px]">
+              Yanıt merkezi · giriş gerekli
             </span>
           )}
         </span>

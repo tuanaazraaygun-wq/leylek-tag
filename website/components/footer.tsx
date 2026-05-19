@@ -8,7 +8,7 @@ const mailHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek T
 const feedbackMailHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG destek · geri bildirim")}`;
 
 const productLinks = [
-  { href: "/sehir-ici", label: "Şehir içi" },
+  { href: "/sehir-ici", label: "Şehir İçi" },
   { href: "/sehirler-arasi", label: "Şehirler arası" },
   { href: "/muhabbet", label: "Leylek Teklifi" },
   { href: "/indir", label: "Mobil vitrin" },
@@ -111,16 +111,18 @@ export function Footer() {
                 className="pointer-events-none absolute inset-px rounded-[1.285rem] bg-gradient-to-br from-cyan-400/[0.07] via-transparent to-violet-500/[0.05] lg:rounded-[calc(1.375rem-1px)]"
                 aria-hidden
               />
-              <h2 className="relative text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200/76">Destek</h2>
+              <h2 className="relative text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200/78">
+                Yanıt merkezi
+              </h2>
               <p className="relative mt-4 text-[14px] font-semibold leading-snug tracking-tight text-white">
-                Leylek TAG ekibine yazabilirsin.
-                <span className="mt-3 block font-normal leading-[1.7] tracking-normal text-slate-400">
-                  Geri bildirimin bizim için önemli.
+                Ekibimize bu adresten yazabilirsin.
+                <span className="mt-3 block font-normal leading-[1.72] tracking-normal text-slate-400/95">
+                  Geri bildirimler ürün yolunu şekillendirir — yanıtlar müsaitlikle gelir.
                 </span>
               </p>
               <Link
                 href={feedbackMailHref}
-                className="relative mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-cyan-400/28 bg-white/[0.04] px-4 py-2.5 text-center text-[12.5px] font-semibold tracking-wide text-white transition hover:border-cyan-300/52 hover:bg-white/[0.07]"
+                className="relative mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-cyan-400/[0.32] bg-white/[0.045] px-4 py-2.5 text-center text-[12.5px] font-semibold tracking-wide text-white shadow-[inset_0_0_0_1px_rgba(103,232,249,0.08)] transition hover:border-cyan-300/52 hover:bg-white/[0.08]"
               >
                 Destek · geri bildirim
               </Link>
