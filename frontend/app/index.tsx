@@ -11038,6 +11038,20 @@ function PassengerDashboard({
     void submitPassengerPriceOfferCore();
   };
 
+  /** Ödeme uyarısı «Tamam, devam et» — explicit onay + ride/create (reset explicit ref yapılmaz). */
+  const continuePassengerPriceOfferAfterPaymentWarn = () => {
+    if (passengerSendOfferInFlightRef.current || offerSendSubmitting) return;
+    void tapButtonHaptic();
+    patchRideCreateDiag({ rideCreateButtonPressed: true });
+    priceOfferPaymentExplicitRef.current = true;
+    setPriceOfferPaymentWarnVisible(false);
+    patchRideCreateDiag({
+      rideCreateLastError: null,
+      rideCreatePassengerUiState: 'payment_confirmed_continue',
+    });
+    void submitPassengerPriceOfferCore();
+  };
+
   // 📤 TEKLİF PAYLAŞMA - Cross-platform (Web, Android, iOS)
   const handleShareRideRequest = async () => {
     playTapSound();
@@ -13025,14 +13039,10 @@ function PassengerDashboard({
                     style={styles.priceOfferPaymentWarnPrimary}
                     activeOpacity={0.88}
                     disabled={offerSendSubmitting}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      patchRideCreateDiag({ rideCreateButtonPressed: true });
-                      resetPriceOfferPaymentUi();
-                      void submitPassengerPriceOfferCore();
-                    }}
+                    onPress={continuePassengerPriceOfferAfterPaymentWarn}
                   >
                     <LinearGradient
+                      pointerEvents="none"
                       colors={['#22D3EE', '#0EA5E9', '#2563EB']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
