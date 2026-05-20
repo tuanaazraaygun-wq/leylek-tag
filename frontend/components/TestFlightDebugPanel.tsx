@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSocketContext } from '../contexts/SocketContext';
 import { getSupabase } from '../lib/supabase';
 import { isTestFlightDebugPanelEnabled } from '../lib/testFlightDebug';
+import { getRideCreateDiagNotify, getTestFlightDiagSnapshot } from '../lib/testFlightDiagSnapshot';
 
 export type TestFlightDebugTagSnapshot = {
   id?: string | null;
@@ -92,6 +93,7 @@ export default function TestFlightDebugPanel({
   const [locPerm, setLocPerm] = useState<string>('…');
   const [hasLastKnown, setHasLastKnown] = useState(false);
   const [tick, setTick] = useState(0);
+  const [rideCreateDiagNotify, setRideCreateDiagNotify] = useState(0);
 
   const enabled = isTestFlightDebugPanelEnabled();
 
@@ -108,6 +110,7 @@ export default function TestFlightDebugPanel({
     } catch {
       setHasLastKnown(false);
     }
+    setRideCreateDiagNotify(getRideCreateDiagNotify());
     setTick((t) => t + 1);
   }, []);
 
@@ -127,7 +130,16 @@ export default function TestFlightDebugPanel({
       Number.isFinite(userLocation.longitude)
     );
     const supabaseOk = !!getSupabase();
-    return [
+    const rc = getTestFlightDiagSnapshot();
+    const rideCreateLine =
+      rc.rideCreateAttempted || rc.rideCreateButtonPressed
+        ? rc.rideCreateHttpOk === 'yes' && rc.rideCreateHasTag
+          ? 'ok'
+          : rc.rideCreateAttempted
+            ? 'fail'
+            : 'pending'
+        : '—';
+    const linesOut = [
       `role: ${role}`,
       `platform: ${Platform.OS}`,
       `refresh: ${tick}`,
@@ -149,6 +161,20 @@ export default function TestFlightDebugPanel({
       boolLine('supabaseEnv', supabaseOk),
       boolLine('chatSheetOpen', chatVisible),
     ];
+    if (role === 'passenger') {
+      linesOut.push(
+        '— RIDE CREATE —',
+        `rideCreate: ${rideCreateLine}`,
+        boolLine('hasTag', rc.rideCreateHasTag),
+        `eligibleDrivers: ${
+          rc.rideCreateEligibleDrivers === null ? 'null' : String(rc.rideCreateEligibleDrivers)
+        }`,
+        `dispatchMode: ${rc.rideCreateDispatchMode ?? 'null'}`,
+        `lastError: ${rc.rideCreateLastError ?? 'none'}`,
+        `uiState: ${rc.rideCreatePassengerUiState ?? 'null'}`,
+      );
+    }
+    return linesOut;
   }, [
     role,
     tick,
@@ -159,6 +185,7 @@ export default function TestFlightDebugPanel({
     isConnected,
     isRegistered,
     chatVisible,
+    rideCreateDiagNotify,
   ]);
 
   if (!enabled) return null;

@@ -188,6 +188,57 @@ export async function testCurrentPosition(): Promise<SystemTestResult> {
   }
 }
 
+export function testRideCreateDispatch(): SystemTestResult {
+  const id = 'ride_create_dispatch';
+  const label = 'Ride create / offer dispatch';
+  const s = getTestFlightDiagSnapshot();
+  const ageSec = s.rideCreateUpdatedAt
+    ? Math.round((Date.now() - s.rideCreateUpdatedAt) / 1000)
+    : -1;
+  if (s.role === 'driver') {
+    return result(id, label, 'skip', 'passenger_dashboard_required');
+  }
+  if (!s.rideCreateButtonPressed && !s.rideCreateAttempted) {
+    return result(
+      id,
+      label,
+      'skip',
+      'attempted=no — tap Teklif Gönder on passenger first',
+    );
+  }
+  if (ageSec < 0 || ageSec > 300) {
+    return result(id, label, 'skip', 'ride_create_stale — submit offer again');
+  }
+  const httpOk =
+    s.rideCreateHttpOk === 'yes'
+      ? 'yes'
+      : s.rideCreateHttpOk === 'no'
+        ? 'no'
+        : 'unknown';
+  const eligible =
+    s.rideCreateEligibleDrivers === null || s.rideCreateEligibleDrivers === undefined
+      ? 'null'
+      : String(s.rideCreateEligibleDrivers);
+  const parts = [
+    `attempted=${s.rideCreateAttempted ? 'yes' : 'no'}`,
+    `httpOk=${httpOk}`,
+    `httpStatus=${s.rideCreateHttpStatus ?? 'null'}`,
+    `hasTag=${s.rideCreateHasTag ? 'yes' : 'no'}`,
+    `eligibleDrivers=${eligible}`,
+    `dispatchMode=${s.rideCreateDispatchMode ?? 'null'}`,
+    `uiState=${s.rideCreatePassengerUiState ?? 'null'}`,
+    `lastError=${s.rideCreateLastError ?? 'none'}`,
+  ];
+  if (!s.rideCreateAttempted) {
+    return result(id, label, 'fail', parts.join(' '));
+  }
+  const ok =
+    s.rideCreateAttempted &&
+    s.rideCreateHttpOk === 'yes' &&
+    s.rideCreateHasTag;
+  return result(id, label, ok ? 'pass' : 'fail', parts.join(' '));
+}
+
 export function testOfferStateMatrix(): SystemTestResult {
   const id = 'offer_state_matrix';
   const label = 'Offer submit conditions (read-only)';
@@ -307,6 +358,7 @@ export async function runAllSystemTests(input: {
     testSocketRegistered(input.isRegistered),
     testSupabaseEnv(),
     testOfferStateMatrix(),
+    testRideCreateDispatch(),
     testRouteStateMatrix(),
     testChatStateMatrix(input.isConnected),
     testTouchBlockState(),
@@ -334,6 +386,7 @@ export async function runAllSystemTests(input: {
     sync[4],
     sync[5],
     sync[6],
+    sync[7],
     asyncTests[6],
   ];
 }

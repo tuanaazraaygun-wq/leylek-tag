@@ -16,7 +16,13 @@ import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import LiveMapView from '../components/LiveMapView';
 import TestFlightDebugPanel from '../components/TestFlightDebugPanel';
 import { isTestFlightDiagnosticsEnabled } from '../lib/testFlightDebug';
-import { routeFlagsFromTag, setTestFlightDiagSnapshot } from '../lib/testFlightDiagSnapshot';
+import {
+  patchRideCreateDiag,
+  routeFlagsFromTag,
+  sanitizeRideCreateError,
+  setTestFlightDiagSnapshot,
+  tagIdPrefixFromRideTag,
+} from '../lib/testFlightDiagSnapshot';
 import TagMatchTransitionOverlay, {
   TAG_MATCH_TRANSITION_HOLD_MS,
 } from '../components/TagMatchTransitionOverlay';
@@ -10708,6 +10714,10 @@ function PassengerDashboard({
   // MARTI TAG: Fiyat teklifi gönder — önce backend tag oluşturur, rolling dispatch tetiklenir; sonra bekleme UI
   const submitPassengerPriceOfferCore = async () => {
     if (!destination || !priceInfo || !selectedPrice || !user?.id) {
+      patchRideCreateDiag({
+        rideCreateLastError: 'preconditions_missing',
+        rideCreatePassengerUiState: 'blocked_preconditions',
+      });
       if (!destination) {
         appAlert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
       }
@@ -10726,6 +10736,11 @@ function PassengerDashboard({
           seeded: !!coords,
         });
         if (!coords) {
+          patchRideCreateDiag({
+            rideCreateLastError:
+              permissionStatus === 'gps_error' ? 'pickup_gps_error' : 'pickup_permission_denied',
+            rideCreatePassengerUiState: 'blocked_pickup_location',
+          });
           appAlert(
             'Hata',
             permissionStatus === 'gps_error'
@@ -10737,6 +10752,10 @@ function PassengerDashboard({
         pickupCoords = coords;
         setUserLocation(coords);
       } else {
+        patchRideCreateDiag({
+          rideCreateLastError: 'pickup_location_missing',
+          rideCreatePassengerUiState: 'blocked_pickup_location',
+        });
         appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
         return;
       }
@@ -10781,6 +10800,10 @@ function PassengerDashboard({
       const dLat = Number(destination.latitude);
       const dLng = Number(destination.longitude);
       if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
+        patchRideCreateDiag({
+          rideCreateLastError: 'invalid_coords',
+          rideCreatePassengerUiState: 'blocked_invalid_coords',
+        });
         appAlert('Hata', 'Alış veya bırakış koordinatları geçersiz. Haritadan konumu tekrar onaylayın.');
         return;
       }
@@ -10794,9 +10817,25 @@ function PassengerDashboard({
         offerAmt = Math.round(Math.min(bMax, Math.max(bMin, offerAmt)));
       }
       if (!Number.isFinite(offerAmt) || offerAmt < 1) {
+        patchRideCreateDiag({
+          rideCreateLastError: 'invalid_price',
+          rideCreatePassengerUiState: 'blocked_invalid_price',
+        });
         appAlert('Hata', 'Geçerli bir fiyat seçin.');
         return;
       }
+
+      patchRideCreateDiag({
+        rideCreateAttempted: true,
+        rideCreateHttpStatus: null,
+        rideCreateHttpOk: 'unknown',
+        rideCreateHasTag: false,
+        rideCreateTagIdPrefix: null,
+        rideCreateEligibleDrivers: null,
+        rideCreateDispatchMode: null,
+        rideCreateLastError: null,
+        rideCreatePassengerUiState: 'ride_create_inflight',
+      });
 
       try {
         console.log('CREATE RIDE REQUEST SENT');
@@ -10845,6 +10884,24 @@ function PassengerDashboard({
           /* noop */
         }
 
+        const eligibleRaw = data.eligible_driver_count;
+        const eligibleN =
+          typeof eligibleRaw === 'number' && Number.isFinite(eligibleRaw)
+            ? Math.round(eligibleRaw)
+            : eligibleRaw != null && !Number.isNaN(Number(eligibleRaw))
+              ? Math.round(Number(eligibleRaw))
+              : null;
+        const dispatchMode =
+          typeof data.dispatch_mode === 'string' ? data.dispatch_mode : null;
+        patchRideCreateDiag({
+          rideCreateHttpStatus: res.status,
+          rideCreateHttpOk: res.ok ? 'yes' : 'no',
+          rideCreateHasTag: !!(data.tag && typeof data.tag === 'object'),
+          rideCreateTagIdPrefix: tagIdPrefixFromRideTag(data.tag),
+          rideCreateEligibleDrivers: eligibleN,
+          rideCreateDispatchMode: dispatchMode,
+        });
+
         const detailRaw = data.detail;
         const detailStr = Array.isArray(detailRaw)
           ? (detailRaw as { msg?: string }[])
@@ -10860,6 +10917,10 @@ function PassengerDashboard({
             (typeof data.error === 'string' && data.error) ||
             detailStr ||
             `Sunucu yanıtı ${res.status}`;
+          patchRideCreateDiag({
+            rideCreateLastError: sanitizeRideCreateError(apiErr),
+            rideCreatePassengerUiState: 'error_alert',
+          });
           throw new Error(apiErr);
         }
         if (!data.tag) {
@@ -10867,6 +10928,10 @@ function PassengerDashboard({
             (typeof data.error === 'string' && data.error) ||
             detailStr ||
             'Teklif kaydı oluşturulamadı';
+          patchRideCreateDiag({
+            rideCreateLastError: sanitizeRideCreateError(apiErr),
+            rideCreatePassengerUiState: 'error_alert',
+          });
           throw new Error(apiErr);
         }
 
@@ -10892,6 +10957,11 @@ function PassengerDashboard({
         console.log('[normal-passenger-flow] waiting_screen=true');
         setScreen('dashboard');
         setCurrentRequestId(requestId);
+
+        patchRideCreateDiag({
+          rideCreateLastError: null,
+          rideCreatePassengerUiState: 'waiting_dashboard',
+        });
 
         if (emitCreateTagRequest) {
           emitCreateTagRequest({
@@ -10930,6 +11000,10 @@ function PassengerDashboard({
             : raw.length > 0
               ? raw
               : 'Teklif oluşturulamadı';
+        patchRideCreateDiag({
+          rideCreateLastError: sanitizeRideCreateError(message),
+          rideCreatePassengerUiState: 'error_alert',
+        });
         appAlert('Hata', message);
       }
     } finally {
@@ -10941,7 +11015,12 @@ function PassengerDashboard({
 
   const handlePriceOfferSendPress = () => {
     playTapSound();
+    patchRideCreateDiag({ rideCreateButtonPressed: true });
     if (!destination || !priceInfo || !selectedPrice || !user?.id) {
+      patchRideCreateDiag({
+        rideCreateLastError: 'preconditions_missing',
+        rideCreatePassengerUiState: 'blocked_preconditions',
+      });
       if (!destination) {
         appAlert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
       }
@@ -10949,6 +11028,10 @@ function PassengerDashboard({
     }
     if (passengerSendOfferInFlightRef.current || offerSendSubmitting) return;
     if (!priceOfferPaymentExplicitRef.current) {
+      patchRideCreateDiag({
+        rideCreateLastError: 'payment_confirm_required',
+        rideCreatePassengerUiState: 'blocked_payment_warn',
+      });
       setPriceOfferPaymentWarnVisible(true);
       return;
     }
@@ -12944,6 +13027,7 @@ function PassengerDashboard({
                     disabled={offerSendSubmitting}
                     onPress={() => {
                       void tapButtonHaptic();
+                      patchRideCreateDiag({ rideCreateButtonPressed: true });
                       resetPriceOfferPaymentUi();
                       void submitPassengerPriceOfferCore();
                     }}
