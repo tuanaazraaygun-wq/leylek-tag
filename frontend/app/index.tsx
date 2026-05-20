@@ -1353,6 +1353,29 @@ export default function App() {
     };
   }, [user?.id, registerPushToken]);
 
+  /** iOS yolcu: Ayarlar’dan izin verildikten sonra restart gerekmeden konum seed */
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!user?.id || screen !== 'dashboard' || user.role === 'driver') return;
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      void (async () => {
+        const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
+          requestIfUndetermined: false,
+        });
+        logIosLocationBootstrap('appstate_active', {
+          permissionStatus,
+          seeded: !!coords,
+          note: coords ? 'seed_ok' : 'no_seed',
+        });
+        if (coords) setUserLocation(coords);
+      })();
+    });
+
+    return () => subscription.remove();
+  }, [user?.id, user?.role, screen]);
+
   useEffect(() => {
     if (notification) {
       console.log('📬 Yeni bildirim:', notification.request.content.title);
@@ -1512,22 +1535,17 @@ export default function App() {
       if (Platform.OS === 'ios') {
         void (async () => {
           try {
-            const cur = await Location.getForegroundPermissionsAsync();
-            if (cancelled) return;
-            let status = cur.status;
-            if (status !== 'granted') {
-              const req = await Location.requestForegroundPermissionsAsync();
-              status = req.status;
-            }
-            if (status !== 'granted' || cancelled) return;
-            const pos = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
+            const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
+              requestIfUndetermined: true,
             });
             if (cancelled) return;
-            setUserLocation({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
+            logIosLocationBootstrap('app_dashboard_mount', {
+              permissionStatus,
+              seeded: !!coords,
+              note: coords ? 'seed_ok' : 'no_seed',
             });
+            if (!coords || cancelled) return;
+            setUserLocation(coords);
             interval = setInterval(updateUserLocation, 5000);
           } catch {
             /* graceful fail — offer flow may retry permission */
@@ -7729,6 +7747,80 @@ function passengerCityScopeFromNominatimAddress(addr: unknown): string {
   return '';
 }
 
+type IosLocationBootstrapReason =
+  | 'app_dashboard_mount'
+  | 'appstate_active'
+  | 'pax_dashboard_mount'
+  | 'pax_appstate_active'
+  | 'price_flow'
+  | 'offer_submit';
+
+function logIosLocationBootstrap(
+  reason: IosLocationBootstrapReason | string,
+  detail: { permissionStatus: string; seeded: boolean; note?: string },
+): void {
+  if (Platform.OS !== 'ios') return;
+  try {
+    console.log(
+      '[ios_loc_bootstrap]',
+      JSON.stringify({
+        reason,
+        permissionStatus: detail.permissionStatus,
+        seeded: detail.seeded,
+        ...(detail.note ? { note: detail.note } : {}),
+      }),
+    );
+  } catch {
+    /* noop */
+  }
+}
+
+async function seedIosUserLocationIfGranted(opts: {
+  requestIfUndetermined?: boolean;
+}): Promise<{
+  coords: { latitude: number; longitude: number } | null;
+  permissionStatus: string;
+}> {
+  if (Platform.OS !== 'ios') {
+    return { coords: null, permissionStatus: 'skipped_non_ios' };
+  }
+  try {
+    const cur = await Location.getForegroundPermissionsAsync();
+    let permissionStatus = cur.status;
+    if (permissionStatus !== 'granted' && opts.requestIfUndetermined) {
+      if (permissionStatus === 'undetermined') {
+        const req = await Location.requestForegroundPermissionsAsync();
+        permissionStatus = req.status;
+      }
+    }
+    if (permissionStatus !== 'granted') {
+      return { coords: null, permissionStatus };
+    }
+    const pos = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    return {
+      coords: {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      },
+      permissionStatus: 'granted',
+    };
+  } catch {
+    return { coords: null, permissionStatus: 'gps_error' };
+  }
+}
+
+function hasValidPassengerPickupCoords(
+  loc: { latitude?: unknown; longitude?: unknown } | null | undefined,
+): loc is { latitude: number; longitude: number } {
+  return (
+    !!loc &&
+    Number.isFinite(loc.latitude) &&
+    Number.isFinite(loc.longitude)
+  );
+}
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ 
   user, 
@@ -7988,42 +8080,34 @@ function PassengerDashboard({
     }
   }, [showPriceModal, passengerVehicleFromRole, resetPriceOfferPaymentUi]);
 
+  const bootstrapIosPassengerLocation = useCallback(
+    async (reason: IosLocationBootstrapReason, requestIfUndetermined: boolean) => {
+      if (Platform.OS !== 'ios' || !user?.id) return;
+      const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
+        requestIfUndetermined,
+      });
+      logIosLocationBootstrap(reason, {
+        permissionStatus,
+        seeded: !!coords,
+        note: coords ? 'seed_ok' : 'no_seed',
+      });
+      if (coords) setUserLocation(coords);
+    },
+    [user?.id, setUserLocation],
+  );
+
+  useEffect(() => {
+    void bootstrapIosPassengerLocation('pax_dashboard_mount', true);
+  }, [bootstrapIosPassengerLocation]);
+
   useEffect(() => {
     if (Platform.OS !== 'ios' || !user?.id) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const cur = await Location.getForegroundPermissionsAsync();
-        if (cancelled) return;
-        let status = cur.status;
-        if (status !== 'granted') {
-          const req = await Location.requestForegroundPermissionsAsync();
-          status = req.status;
-        }
-        if (status !== 'granted' || cancelled) return;
-        if (
-          userLocation &&
-          Number.isFinite(userLocation.latitude) &&
-          Number.isFinite(userLocation.longitude)
-        ) {
-          return;
-        }
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (cancelled) return;
-        setUserLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-      } catch {
-        /* graceful fail */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, setUserLocation]);
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      void bootstrapIosPassengerLocation('pax_appstate_active', false);
+    });
+    return () => subscription.remove();
+  }, [user?.id, bootstrapIosPassengerLocation]);
 
   // 🆕 Karşı taraf (Sürücü) detay bilgileri - Harita Bilgi Kartı için
   const [otherUserDetails, setOtherUserDetails] = useState<{
@@ -10206,24 +10290,51 @@ function PassengerDashboard({
 
       setPriceLoading(true);
 
-      if (!userLocation) {
-        __paxFn('requestLocationPermission', requestLocationPermission);
-        const granted = await requestLocationPermission();
-        if (!granted) {
-          console.log('[PAX_LOC] requestLocationPermission → denied or false');
-          appAlert(
-            'Konum İzni Gerekli',
-            'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
-            [{ text: 'Tamam' }],
-          );
-          return;
+      let pickupCoords = hasValidPassengerPickupCoords(userLocation) ? userLocation : null;
+      if (!pickupCoords) {
+        if (Platform.OS === 'ios') {
+          const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
+            requestIfUndetermined: true,
+          });
+          logIosLocationBootstrap('price_flow', {
+            permissionStatus,
+            seeded: !!coords,
+          });
+          if (!coords) {
+            appAlert(
+              'Konum İzni Gerekli',
+              permissionStatus === 'gps_error'
+                ? 'Konum alınamadı. GPS açık olduğundan emin olup tekrar deneyin.'
+                : 'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
+              [{ text: 'Tamam' }],
+            );
+            return;
+          }
+          pickupCoords = coords;
+          setUserLocation(coords);
+        } else {
+          __paxFn('requestLocationPermission', requestLocationPermission);
+          const granted = await requestLocationPermission();
+          if (!granted) {
+            console.log('[PAX_LOC] requestLocationPermission → denied or false');
+            appAlert(
+              'Konum İzni Gerekli',
+              'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
+              [{ text: 'Tamam' }],
+            );
+            return;
+          }
+          if (hasValidPassengerPickupCoords(userLocation)) {
+            pickupCoords = userLocation;
+          } else {
+            console.log('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
+            return;
+          }
         }
-        console.log('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
-        return;
       }
 
-      const pickupLat = userLocation.latitude;
-      const pickupLng = userLocation.longitude;
+      const pickupLat = pickupCoords.latitude;
+      const pickupLng = pickupCoords.longitude;
       const prefetchKey = makePricePrefetchKey(pickupLat, pickupLng, opts.dropLat, opts.dropLng, rideVehiclePreference);
       const pf = pricePrefetchRef.current;
       if (
@@ -10437,32 +10548,27 @@ function PassengerDashboard({
     }
     if (passengerSendOfferInFlightRef.current) return;
 
-    let pickupCoords = userLocation as { latitude: number; longitude: number } | null;
+    let pickupCoords = hasValidPassengerPickupCoords(userLocation) ? userLocation : null;
     if (!pickupCoords) {
       if (Platform.OS === 'ios') {
-        try {
-          const cur = await Location.getForegroundPermissionsAsync();
-          let status = cur.status;
-          if (status !== 'granted') {
-            const req = await Location.requestForegroundPermissionsAsync();
-            status = req.status;
-          }
-          if (status !== 'granted') {
-            appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
-            return;
-          }
-          const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          pickupCoords = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          };
-          setUserLocation(pickupCoords);
-        } catch {
-          appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+        const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
+          requestIfUndetermined: true,
+        });
+        logIosLocationBootstrap('offer_submit', {
+          permissionStatus,
+          seeded: !!coords,
+        });
+        if (!coords) {
+          appAlert(
+            'Hata',
+            permissionStatus === 'gps_error'
+              ? 'Konum alınamadı. GPS açık olduğundan emin olup tekrar deneyin.'
+              : 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.',
+          );
           return;
         }
+        pickupCoords = coords;
+        setUserLocation(coords);
       } else {
         appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
         return;
