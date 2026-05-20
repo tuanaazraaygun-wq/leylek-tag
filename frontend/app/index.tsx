@@ -7821,6 +7821,147 @@ function hasValidPassengerPickupCoords(
   );
 }
 
+type IosDriverLocBootstrapReason = 'appstate_active' | 'active_tag_seed' | 'current_fix';
+
+function logIosDriverLocBootstrap(
+  reason: IosDriverLocBootstrapReason | string,
+  detail: {
+    permissionStatus: string;
+    hasLastKnownPosition: boolean;
+    seeded: boolean;
+    note?: string;
+  },
+): void {
+  if (Platform.OS !== 'ios') return;
+  try {
+    console.log(
+      '[ios_driver_loc_bootstrap]',
+      JSON.stringify({
+        reason,
+        permissionStatus: detail.permissionStatus,
+        hasLastKnownPosition: detail.hasLastKnownPosition,
+        seeded: detail.seeded,
+        ...(detail.note ? { note: detail.note } : {}),
+      }),
+    );
+  } catch {
+    /* noop */
+  }
+}
+
+/** iOS sürücü: local userLocation hydrate; current_fix sonrası mevcut update-location sync. */
+async function syncIosDriverLocationToBackend(
+  userId: string,
+  coords: { latitude: number; longitude: number },
+  emitDriverLocationUpdate?: ((data: {
+    driver_id: string;
+    lat: number;
+    lng: number;
+  }) => void) | null,
+): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    if (emitDriverLocationUpdate) {
+      emitDriverLocationUpdate({
+        driver_id: userId,
+        lat: coords.latitude,
+        lng: coords.longitude,
+      });
+    }
+    await fetch(
+      `${API_URL}/user/update-location?user_id=${userId}&latitude=${coords.latitude}&longitude=${coords.longitude}`,
+      { method: 'POST' },
+    );
+  } catch {
+    /* silent — local seed/nav yeterli */
+  }
+}
+
+async function hydrateIosDriverLocalUserLocation(opts: {
+  setUserLocation: (coords: { latitude: number; longitude: number }) => void;
+  triggerReason: 'appstate_active' | 'active_tag_seed';
+  userId?: string;
+  emitDriverLocationUpdate?: ((data: {
+    driver_id: string;
+    lat: number;
+    lng: number;
+  }) => void) | null;
+}): Promise<void> {
+  const { setUserLocation, triggerReason, userId, emitDriverLocationUpdate } = opts;
+  if (Platform.OS !== 'ios') return;
+  let permissionStatus = 'unknown';
+  let hasLastKnownPosition = false;
+  let seeded = false;
+  try {
+    const cur = await Location.getForegroundPermissionsAsync();
+    permissionStatus = cur.status;
+    if (permissionStatus !== 'granted') {
+      logIosDriverLocBootstrap(triggerReason, {
+        permissionStatus,
+        hasLastKnownPosition: false,
+        seeded: false,
+      });
+      return;
+    }
+    try {
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      hasLastKnownPosition = !!lastKnown?.coords;
+      if (lastKnown?.coords && hasValidPassengerPickupCoords(lastKnown.coords)) {
+        setUserLocation({
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+        });
+        seeded = true;
+        logIosDriverLocBootstrap(triggerReason, {
+          permissionStatus,
+          hasLastKnownPosition,
+          seeded: true,
+          note: 'lastKnown',
+        });
+      }
+    } catch {
+      hasLastKnownPosition = false;
+    }
+    try {
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      if (hasValidPassengerPickupCoords(pos.coords)) {
+        const coords = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        setUserLocation(coords);
+        seeded = true;
+        logIosDriverLocBootstrap('current_fix', {
+          permissionStatus,
+          hasLastKnownPosition,
+          seeded: true,
+          note: triggerReason,
+        });
+        if (userId) {
+          void syncIosDriverLocationToBackend(userId, coords, emitDriverLocationUpdate);
+        }
+      }
+    } catch {
+      /* graceful — lastKnown seed may still suffice */
+    }
+    if (!seeded) {
+      logIosDriverLocBootstrap(triggerReason, {
+        permissionStatus,
+        hasLastKnownPosition,
+        seeded: false,
+      });
+    }
+  } catch {
+    logIosDriverLocBootstrap(triggerReason, {
+      permissionStatus: 'error',
+      hasLastKnownPosition,
+      seeded: false,
+    });
+  }
+}
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ 
   user, 
@@ -12748,7 +12889,7 @@ function PassengerDashboard({
               transparent
               animationType="fade"
               onRequestClose={() => {
-                if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
+                if (!offerSendSubmitting) resetPriceOfferPaymentUi();
               }}
             >
               <View style={styles.priceOfferPaymentWarnOverlay}>
@@ -12756,7 +12897,7 @@ function PassengerDashboard({
                   style={StyleSheet.absoluteFill}
                   activeOpacity={1}
                   onPress={() => {
-                    if (!offerSendSubmitting) setPriceOfferPaymentWarnVisible(false);
+                    if (!offerSendSubmitting) resetPriceOfferPaymentUi();
                   }}
                 />
                 <View style={styles.priceOfferPaymentWarnCard}>
@@ -12777,7 +12918,7 @@ function PassengerDashboard({
                     disabled={offerSendSubmitting}
                     onPress={() => {
                       void tapButtonHaptic();
-                      setPriceOfferPaymentWarnVisible(false);
+                      resetPriceOfferPaymentUi();
                       void submitPassengerPriceOfferCore();
                     }}
                   >
@@ -12796,7 +12937,7 @@ function PassengerDashboard({
                     disabled={offerSendSubmitting}
                     onPress={() => {
                       void tapButtonHaptic();
-                      setPriceOfferPaymentWarnVisible(false);
+                      resetPriceOfferPaymentUi();
                     }}
                   >
                     <Text style={styles.priceOfferPaymentWarnSecondaryText}>Geri dön, seçim yap</Text>
@@ -15244,6 +15385,44 @@ function DriverDashboard({
     };
   }, [user?.id]);
 
+  /** iOS sürücü: Ayarlar’dan izin sonrası local userLocation seed (GPS loop mount kaçırdıysa). */
+  const hydrateIosDriverLocation = useCallback(
+    (reason: 'appstate_active' | 'active_tag_seed') => {
+      if (Platform.OS !== 'ios' || !user?.id) return;
+      void hydrateIosDriverLocalUserLocation({
+        setUserLocation,
+        triggerReason: reason,
+        userId: user.id,
+        emitDriverLocationUpdate,
+      });
+    },
+    [user?.id, setUserLocation, emitDriverLocationUpdate],
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !user?.id) return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      hydrateIosDriverLocation('appstate_active');
+    });
+    return () => subscription.remove();
+  }, [user?.id, hydrateIosDriverLocation]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !user?.id || !activeTag) return;
+    const st = String(activeTag.status || '').toLowerCase();
+    if (st !== 'matched' && st !== 'in_progress' && st !== 'driver_on_the_way') return;
+    if (hasValidPassengerPickupCoords(userLocation)) return;
+    hydrateIosDriverLocation('active_tag_seed');
+  }, [
+    user?.id,
+    activeTag?.id,
+    activeTag?.status,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    hydrateIosDriverLocation,
+  ]);
+
   useEffect(() => {
     if (!activeTag) {
       setDriverLiveMapNavigationMode(false);
@@ -15294,9 +15473,11 @@ function DriverDashboard({
       if (cancelled || !user?.id) return;
       const acc = location.coords.accuracy;
       const maxAcc =
-        isIosDriverGps && (opts?.fromLastKnown === true || !lastApplyRef.current)
-          ? 100
-          : MAX_LOC_ACCURACY_M;
+        isIosDriverGps && opts?.fromLastKnown === true
+          ? 200 /* only first iOS seed — lastKnown may exceed 100m indoors */
+          : isIosDriverGps && !lastApplyRef.current
+            ? 100
+            : MAX_LOC_ACCURACY_M;
       if (typeof acc === 'number' && acc > maxAcc) {
         return;
       }
