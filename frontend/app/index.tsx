@@ -1270,7 +1270,8 @@ export default function App() {
   const { registerPushToken, removePushToken, notification, reportPushRegisterDebugSurface } =
     usePushNotifications();
 
-  const { syncSocketSessionFromApp } = useSocketContext();
+  const { syncSocketSessionFromApp, ensureSocketRegistered, isConnected, isRegistered } =
+    useSocketContext();
 
   /** SocketProvider connect() yalnızca dashboard dallarında — login/role-select için kimliği kökten senkronize et */
   useEffect(() => {
@@ -1292,6 +1293,31 @@ export default function App() {
       syncSocketSessionFromApp({ userId: uid, role: null });
     }
   }, [user?.id, user?.role, selectedRole, syncSocketSessionFromApp]);
+
+  /** Dashboard: connected ama register ACK yoksa force retry (iOS öncelikli). */
+  useEffect(() => {
+    if (screen !== 'dashboard' || !user?.id) return;
+    const effectiveRole: 'passenger' | 'driver' | null =
+      selectedRole === 'passenger' || selectedRole === 'driver'
+        ? selectedRole
+        : user?.role === 'passenger' || user?.role === 'driver'
+          ? user.role
+          : null;
+    if (!effectiveRole) return;
+    if (!isConnected || isRegistered) return;
+    ensureSocketRegistered(
+      Platform.OS === 'ios' ? 'dashboard_mount_ios' : 'dashboard_mount',
+      { force: true },
+    );
+  }, [
+    screen,
+    user?.id,
+    user?.role,
+    selectedRole,
+    isConnected,
+    isRegistered,
+    ensureSocketRegistered,
+  ]);
 
   useEffect(() => {
     if (typeof __DEV__ === 'undefined' || !__DEV__) return;

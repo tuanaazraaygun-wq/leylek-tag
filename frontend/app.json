@@ -10,6 +10,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "ios": {
+      "icon": "./assets/ios.premium.logo.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.leylektag.app",
       "buildNumber": "7",
