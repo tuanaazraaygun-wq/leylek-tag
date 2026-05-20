@@ -1509,11 +1509,37 @@ export default function App() {
     let cancelled = false;
 
     if (user.role !== 'driver') {
-      requestLocationPermission().then((granted) => {
-        if (cancelled || !granted) return;
-        updateUserLocation();
-        interval = setInterval(updateUserLocation, 5000);
-      });
+      if (Platform.OS === 'ios') {
+        void (async () => {
+          try {
+            const cur = await Location.getForegroundPermissionsAsync();
+            if (cancelled) return;
+            let status = cur.status;
+            if (status !== 'granted') {
+              const req = await Location.requestForegroundPermissionsAsync();
+              status = req.status;
+            }
+            if (status !== 'granted' || cancelled) return;
+            const pos = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+            if (cancelled) return;
+            setUserLocation({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            });
+            interval = setInterval(updateUserLocation, 5000);
+          } catch {
+            /* graceful fail — offer flow may retry permission */
+          }
+        })();
+      } else {
+        requestLocationPermission().then((granted) => {
+          if (cancelled || !granted) return;
+          updateUserLocation();
+          interval = setInterval(updateUserLocation, 5000);
+        });
+      }
     }
 
     return () => {
@@ -4897,6 +4923,7 @@ export default function App() {
         destination={destination}
         setDestination={setDestination}
         userLocation={userLocation}
+        setUserLocation={setUserLocation}
         showDestinationPicker={showDestinationPicker}
         setShowDestinationPicker={setShowDestinationPicker}
         postLoginTagResumePending={postLoginTagResumePending}
@@ -7709,6 +7736,7 @@ function PassengerDashboard({
   destination,
   setDestination,
   userLocation,
+  setUserLocation,
   showDestinationPicker,
   setShowDestinationPicker,
   postLoginTagResumePending = false,
@@ -7721,6 +7749,7 @@ function PassengerDashboard({
   destination: any;
   setDestination: any;
   userLocation: any;
+  setUserLocation: (coords: { latitude: number; longitude: number }) => void;
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
   /** PIN sonrası TAG resume spinner — hedef modalı erken auto-open etmesin */
@@ -7947,13 +7976,54 @@ function PassengerDashboard({
   const priceOfferPaymentExplicitRef = useRef(false);
   const [priceOfferPaymentWarnVisible, setPriceOfferPaymentWarnVisible] = useState(false);
 
+  const resetPriceOfferPaymentUi = useCallback(() => {
+    priceOfferPaymentExplicitRef.current = false;
+    setPriceOfferPaymentWarnVisible(false);
+  }, []);
+
   useEffect(() => {
     if (showPriceModal) {
       setRideVehiclePreference(passengerVehicleFromRole);
-      priceOfferPaymentExplicitRef.current = false;
-      setPriceOfferPaymentWarnVisible(false);
+      resetPriceOfferPaymentUi();
     }
-  }, [showPriceModal, passengerVehicleFromRole]);
+  }, [showPriceModal, passengerVehicleFromRole, resetPriceOfferPaymentUi]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !user?.id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cur = await Location.getForegroundPermissionsAsync();
+        if (cancelled) return;
+        let status = cur.status;
+        if (status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          status = req.status;
+        }
+        if (status !== 'granted' || cancelled) return;
+        if (
+          userLocation &&
+          Number.isFinite(userLocation.latitude) &&
+          Number.isFinite(userLocation.longitude)
+        ) {
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        setUserLocation({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      } catch {
+        /* graceful fail */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, setUserLocation]);
 
   // 🆕 Karşı taraf (Sürücü) detay bilgileri - Harita Bilgi Kartı için
   const [otherUserDetails, setOtherUserDetails] = useState<{
@@ -8218,11 +8288,12 @@ function PassengerDashboard({
     });
     setShowDestinationPicker(false);
     setShowPriceModal(false);
+    resetPriceOfferPaymentUi();
     setDestinationAwaitingMapTap(false);
     setDestinationPickerPhase('search');
     setDestinationPickerGeocoding(false);
     passengerDestinationAutoOpenedRef.current = true;
-  }, [activeTag, setShowDestinationPicker]);
+  }, [activeTag, setShowDestinationPicker, resetPriceOfferPaymentUi]);
 
   const destinationHeroPulse = useRef(new Animated.Value(1)).current;
   const destPinPulse1 = useRef(new Animated.Value(1)).current;
@@ -9063,6 +9134,7 @@ function PassengerDashboard({
       setFirstChatTapBanner(null);
       setShowQRModal(false);
       setShowPriceModal(false);
+      resetPriceOfferPaymentUi();
       setPriceInfo(null);
       setSelectedPrice(0);
       pricePrefetchRef.current = null;
@@ -10364,18 +10436,46 @@ function PassengerDashboard({
       return;
     }
     if (passengerSendOfferInFlightRef.current) return;
+
+    let pickupCoords = userLocation as { latitude: number; longitude: number } | null;
+    if (!pickupCoords) {
+      if (Platform.OS === 'ios') {
+        try {
+          const cur = await Location.getForegroundPermissionsAsync();
+          let status = cur.status;
+          if (status !== 'granted') {
+            const req = await Location.requestForegroundPermissionsAsync();
+            status = req.status;
+          }
+          if (status !== 'granted') {
+            appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+            return;
+          }
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          pickupCoords = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
+          setUserLocation(pickupCoords);
+        } catch {
+          appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+          return;
+        }
+      } else {
+        appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+        return;
+      }
+    }
+
     passengerSendOfferInFlightRef.current = true;
     setOfferSendSubmitting(true);
     setLoading(true);
 
     try {
-      if (!userLocation) {
-        appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
-        return;
-      }
-
-      const pickupLat = userLocation.latitude;
-      const pickupLng = userLocation.longitude;
+      const pickupLat = pickupCoords.latitude;
+      const pickupLng = pickupCoords.longitude;
 
       let pickupAddress = 'Mevcut Konumunuz';
       try {
@@ -10513,6 +10613,7 @@ function PassengerDashboard({
             normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ?? 'cash',
         };
         setShowPriceModal(false);
+        resetPriceOfferPaymentUi();
         setActiveTag(mergedTag as Tag);
         console.log('[normal-passenger-flow] offer_sent tag_id=', resolvedTagId);
         console.log('[normal-passenger-flow] waiting_screen=true');
@@ -12238,7 +12339,10 @@ function PassengerDashboard({
               transparent={true}
               animationType="slide"
               onRequestClose={() => {
-                if (!offerSendSubmitting) setShowPriceModal(false);
+                if (!offerSendSubmitting) {
+                  resetPriceOfferPaymentUi();
+                  setShowPriceModal(false);
+                }
               }}
             >
               <View style={styles.priceModalOverlay}>
@@ -12483,6 +12587,7 @@ function PassengerDashboard({
                             onPress={() => {
                               if (offerSendSubmitting) return;
                               void tapButtonHaptic();
+                              resetPriceOfferPaymentUi();
                               setShowPriceModal(false);
                             }}
                           >
