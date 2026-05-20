@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import LiveMapView from '../components/LiveMapView';
+import TestFlightDebugPanel from '../components/TestFlightDebugPanel';
 import TagMatchTransitionOverlay, {
   TAG_MATCH_TRANSITION_HOLD_MS,
 } from '../components/TagMatchTransitionOverlay';
@@ -11481,6 +11482,12 @@ function PassengerDashboard({
                   </View>
                 ) : null}
                 <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <TestFlightDebugPanel
+                  role="passenger"
+                  userLocation={userLocation}
+                  activeTag={activeTag}
+                  chatVisible={passengerChatVisible}
+                />
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
@@ -16613,6 +16620,12 @@ function DriverDashboard({
           {/* Biniş yakın uyarısı — LiveMapView alt panelinde QR vurgusu ile birleştirildi */}
           {/* Sürücü haritası: otherLocationFromPickupFallback true iken buluşma metrikleri routeInfo ile OSRM çelişmez; kotasyonlu trip OSRM ile sessizce ezilmez */}
           <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+          <TestFlightDebugPanel
+            role="driver"
+            userLocation={userLocation}
+            activeTag={activeTag}
+            chatVisible={driverChatVisible}
+          />
           <LiveMapView
             userLocation={userLocation}
             otherLocation={driverPassengerCoordsForMap(passengerLocation, activeTag)}
