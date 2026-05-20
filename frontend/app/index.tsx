@@ -8237,8 +8237,10 @@ function PassengerDashboard({
   /** Fiyat hesapla + modal: çift calculate / çift modal engeli */
   const passengerPriceCalculateInFlightRef = useRef(false);
   const [offerSendSubmitting, setOfferSendSubmitting] = useState(false);
-  /** Nakit satırına dokunuldu mu (varsayılan görünüm tek başına yetmez) */
+  /** Nakit seçimi (tap) veya varsayılan Nakit ile onaylı ödeme */
   const priceOfferPaymentExplicitRef = useRef(false);
+  /** Fiyat modalında Kart disabled; varsayılan ve tek geçerli yöntem Nakit (cash). */
+  const isPriceOfferCashPaymentEffective = () => true;
   const [priceOfferPaymentWarnVisible, setPriceOfferPaymentWarnVisible] = useState(false);
 
   const resetPriceOfferPaymentUi = useCallback(() => {
@@ -8250,6 +8252,9 @@ function PassengerDashboard({
     if (showPriceModal) {
       setRideVehiclePreference(passengerVehicleFromRole);
       resetPriceOfferPaymentUi();
+      if (isPriceOfferCashPaymentEffective()) {
+        priceOfferPaymentExplicitRef.current = true;
+      }
     }
   }, [showPriceModal, passengerVehicleFromRole, resetPriceOfferPaymentUi]);
 
@@ -11027,13 +11032,16 @@ function PassengerDashboard({
       return;
     }
     if (passengerSendOfferInFlightRef.current || offerSendSubmitting) return;
-    if (!priceOfferPaymentExplicitRef.current) {
+    if (!priceOfferPaymentExplicitRef.current && !isPriceOfferCashPaymentEffective()) {
       patchRideCreateDiag({
         rideCreateLastError: 'payment_confirm_required',
         rideCreatePassengerUiState: 'blocked_payment_warn',
       });
       setPriceOfferPaymentWarnVisible(true);
       return;
+    }
+    if (!priceOfferPaymentExplicitRef.current && isPriceOfferCashPaymentEffective()) {
+      priceOfferPaymentExplicitRef.current = true;
     }
     void submitPassengerPriceOfferCore();
   };
