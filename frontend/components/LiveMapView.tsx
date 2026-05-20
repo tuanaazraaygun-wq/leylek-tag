@@ -611,13 +611,36 @@ function pickDriverPickupDestFromActiveTag(
   return null;
 }
 
+/** Sürücü origin yedeği — eşleşme/tag veya backend son bilinen konum (canlı GPS yokken). */
+function pickDriverOriginFromActiveTag(
+  activeTag: Record<string, unknown> | null | undefined,
+): MapLatLng | null {
+  if (!activeTag) return null;
+  const dl = activeTag.driver_location;
+  if (dl && typeof dl === 'object') {
+    const p = parseRouteEndpoint(dl as { latitude?: unknown; longitude?: unknown });
+    if (p) return p;
+  }
+  const dLat = pickCoordNumber(activeTag.driver_latitude ?? activeTag.driver_lat);
+  const dLng = pickCoordNumber(activeTag.driver_longitude ?? activeTag.driver_lng);
+  if (dLat != null && dLng != null) {
+    return parseRouteEndpoint({ latitude: dLat, longitude: dLng });
+  }
+  return null;
+}
+
 function resolveYolcuyaGitDriverOrigin(
-  ctx: { driverLocation?: { latitude?: unknown; longitude?: unknown } | null; currentLocation?: { latitude?: unknown; longitude?: unknown } | null } | null | undefined,
+  ctx: {
+    driverLocation?: { latitude?: unknown; longitude?: unknown } | null;
+    currentLocation?: { latitude?: unknown; longitude?: unknown } | null;
+    activeTag?: Record<string, unknown> | null;
+  } | null | undefined,
   userLocation: { latitude?: unknown; longitude?: unknown } | null | undefined,
   navMapCoord: MapLatLng | null,
   navStable: MapLatLng | null,
   extraCandidates?: readonly ({ latitude?: unknown; longitude?: unknown } | MapLatLng | null | undefined)[],
 ): MapLatLng | null {
+  const tagOrigin = pickDriverOriginFromActiveTag(ctx?.activeTag ?? null);
   const cands: (
     | { latitude?: unknown; longitude?: unknown }
     | MapLatLng
@@ -627,6 +650,7 @@ function resolveYolcuyaGitDriverOrigin(
     ctx?.driverLocation,
     userLocation,
     ctx?.currentLocation,
+    tagOrigin,
     navMapCoord,
     navStable,
     ...(extraCandidates ?? []),
@@ -3430,6 +3454,18 @@ export default function LiveMapView({
 
     const originOk = isValidMapCoord(origin);
     const destOk = isValidMapCoord(destination);
+    const tagOriginForNav = pickDriverOriginFromActiveTag(activeTag);
+    const originFallbackUsed =
+      originOk &&
+      !isValidRouteEndpoint(userLocation) &&
+      !!tagOriginForNav;
+    logRouteFetchDiag('yolcuya_git_press', {
+      originOk,
+      destOk,
+      hasUserLocation: isValidRouteEndpoint(userLocation),
+      hasTagDriverLocation: !!tagOriginForNav,
+      originFallbackUsed,
+    });
 
     if (!originOk || !destOk) {
       console.log('YOLCUYA_GIT_BLOCKED_EXACT', {
@@ -4498,6 +4534,24 @@ export default function LiveMapView({
       const navOn = navigationModeRef.current;
       const navStage = navigationStageRef.current;
 
+      const tagDriverOrigin = pickDriverOriginFromActiveTag(
+        driverYolcuyaGitCoordContext?.activeTag ?? null,
+      );
+      const originFallbackUsed =
+        isDriver &&
+        isValidMapCoord(ul) &&
+        !isValidRouteEndpoint(userLocation) &&
+        !!tagDriverOrigin;
+
+      /** Stale fetch veya boş geometri ile mevcut rotayı silme — yalnızca geçerli yeni polyline ile güncelle */
+      const commitMeetingPolyline = (coords: MapLatLng[]): boolean => {
+        if (cancelled || meetingRouteFetchIdRef.current !== fetchId) return false;
+        if (!Array.isArray(coords) || coords.length < 2) return false;
+        setMeetingRouteCoordsLogged(coords);
+        logRouteFetchDiag('meeting_polyline_committed', { pointCount: coords.length });
+        return true;
+      };
+
       const valid = isValidMapCoord(ul) && isValidMapCoord(ol);
       if (!valid) {
         logRouteFetchDiag('meeting_route_invalid_coords', {
@@ -4505,7 +4559,34 @@ export default function LiveMapView({
           hasOtherLocation: isValidRouteEndpoint(otherLocation),
           hasResolvedStart: isValidMapCoord(ul),
           hasResolvedEnd: isValidMapCoord(ol),
+          hasTagDriverLocation: !!tagDriverOrigin,
+          originFallbackUsed,
         });
+
+        if (isDriver && isValidMapCoord(ol)) {
+          const serverPolyline = decodeMeetingPolylineFromServerRouteInfo(routeInfoRef.current);
+          if (serverPolyline && serverPolyline.length >= 2) {
+            if (commitMeetingPolyline(serverPolyline)) {
+              meetingHasOsrmPolylineRef.current = serverPolyline.length >= 3;
+              pickupNavStepsRef.current = null;
+              const fromRi = readPickupKmMinFromRouteInfo(routeInfoRef.current);
+              if (fromRi) {
+                setMeetingDistance(fromRi.km);
+                setMeetingDuration(fromRi.min);
+                meetingMetricSourceRef.current = 'routeInfo';
+              }
+              endMeetingRoadLoadingUi();
+              logRouteFetchDiag('server_polyline_fallback_used', {
+                pointCount: serverPolyline.length,
+                hasResolvedStart: isValidMapCoord(ul),
+                hasResolvedEnd: true,
+                hasUserLocation: isValidRouteEndpoint(userLocation),
+              });
+              return;
+            }
+          }
+        }
+
         clearMeetingRouteRef.current('invalid_coords');
         return;
       }
@@ -4588,15 +4669,6 @@ export default function LiveMapView({
           otherLocation,
         });
       }
-
-      /** Stale fetch veya boş geometri ile mevcut rotayı silme — yalnızca geçerli yeni polyline ile güncelle */
-      const commitMeetingPolyline = (coords: MapLatLng[]): boolean => {
-        if (cancelled || meetingRouteFetchIdRef.current !== fetchId) return false;
-        if (!Array.isArray(coords) || coords.length < 2) return false;
-        setMeetingRouteCoordsLogged(coords);
-        logRouteFetchDiag('meeting_polyline_committed', { pointCount: coords.length });
-        return true;
-      };
 
       /** OSRM başarısız: kuş uçuşu çizgi/km UI yok — routeInfo pickup + backend get_route_info / önbellek. */
       const recoverMeetingMetricsNoStraight = async () => {

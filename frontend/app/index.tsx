@@ -14994,14 +14994,41 @@ function DriverDashboard({
     const lastApplyRef = {
       current: null as { latitude: number; longitude: number; t: number } | null,
     };
-    const MAX_LOC_ACCURACY_M = 30;
+    const isIosDriverGps = Platform.OS === 'ios';
+    const MAX_LOC_ACCURACY_M = isIosDriverGps ? 65 : 30;
     const MIN_MOVE_SKIP_M = 4;
     const MIN_UI_INTERVAL_MS = 750;
 
-    const applyLocation = async (location: Location.LocationObject) => {
+    const logDriverGpsDiag = (
+      event: string,
+      details: Record<string, boolean | number | string | null | undefined> = {},
+    ) => {
+      try {
+        console.log(
+          '[driver_gps_diag]',
+          JSON.stringify({
+            event,
+            platform: Platform.OS,
+            ...details,
+            t: Date.now(),
+          }),
+        );
+      } catch {
+        console.log('[driver_gps_diag]', event);
+      }
+    };
+
+    const applyLocation = async (
+      location: Location.LocationObject,
+      opts?: { fromLastKnown?: boolean },
+    ) => {
       if (cancelled || !user?.id) return;
       const acc = location.coords.accuracy;
-      if (typeof acc === 'number' && acc > MAX_LOC_ACCURACY_M) {
+      const maxAcc =
+        isIosDriverGps && (opts?.fromLastKnown === true || !lastApplyRef.current)
+          ? 100
+          : MAX_LOC_ACCURACY_M;
+      if (typeof acc === 'number' && acc > maxAcc) {
         return;
       }
       const coords = {
@@ -15041,7 +15068,7 @@ function DriverDashboard({
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted' || cancelled) return;
         const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
+          accuracy: isIosDriverGps ? Location.Accuracy.Balanced : Location.Accuracy.High,
         });
         await applyLocation(location);
       } catch (error) {
@@ -15052,6 +15079,23 @@ function DriverDashboard({
     void (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted' || cancelled) return;
+
+      if (isIosDriverGps) {
+        let hasLastKnownPosition = false;
+        let seededFromLastKnown = false;
+        try {
+          const lastKnown = await Location.getLastKnownPositionAsync();
+          hasLastKnownPosition = !!lastKnown?.coords;
+          logDriverGpsDiag('last_known_probe', { hasLastKnownPosition });
+          if (lastKnown?.coords) {
+            await applyLocation(lastKnown, { fromLastKnown: true });
+            seededFromLastKnown = !!lastApplyRef.current;
+            logDriverGpsDiag('last_known_seed', { seededFromLastKnown });
+          }
+        } catch {
+          logDriverGpsDiag('last_known_probe', { hasLastKnownPosition: false });
+        }
+      }
 
       await tick();
 
