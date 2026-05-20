@@ -15,6 +15,8 @@ import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import LiveMapView from '../components/LiveMapView';
 import TestFlightDebugPanel from '../components/TestFlightDebugPanel';
+import { isTestFlightDiagnosticsEnabled } from '../lib/testFlightDebug';
+import { routeFlagsFromTag, setTestFlightDiagSnapshot } from '../lib/testFlightDiagSnapshot';
 import TagMatchTransitionOverlay, {
   TAG_MATCH_TRANSITION_HOLD_MS,
 } from '../components/TagMatchTransitionOverlay';
@@ -7952,7 +7954,7 @@ function PassengerDashboard({
       setPriceOfferPaymentWarnVisible(false);
     }
   }, [showPriceModal, passengerVehicleFromRole]);
-  
+
   // 🆕 Karşı taraf (Sürücü) detay bilgileri - Harita Bilgi Kartı için
   const [otherUserDetails, setOtherUserDetails] = useState<{
     rating?: number;
@@ -7973,6 +7975,55 @@ function PassengerDashboard({
   const [passengerBoardingScanVisible, setPassengerBoardingScanVisible] = useState(false);
   const [passengerBoardingReminderBannerVisible, setPassengerBoardingReminderBannerVisible] =
     useState(false);
+
+  useEffect(() => {
+    if (!isTestFlightDiagnosticsEnabled()) return;
+    const routeFlags = routeFlagsFromTag(activeTag);
+    setTestFlightDiagSnapshot({
+      role: 'passenger',
+      passengerHasDestination: !!destination,
+      passengerHasPriceInfo: !!priceInfo,
+      passengerHasSelectedPrice: selectedPrice > 0,
+      passengerIsLoggedIn: !!user?.id,
+      passengerHasUserLocation: !!(
+        userLocation &&
+        Number.isFinite(userLocation.latitude) &&
+        Number.isFinite(userLocation.longitude)
+      ),
+      passengerOfferSending: offerSendSubmitting,
+      hasActiveTag: !!activeTag,
+      chatSheetOpen: passengerChatVisible,
+      chatHasActiveTag: !!(activeTag?.id),
+      blockMatchTransition: matchingInProgress,
+      blockPriceModal: showPriceModal,
+      blockOfferSending: offerSendSubmitting,
+      blockChatSheet: passengerChatVisible,
+      blockBoardingPrompt: passengerBoardingPromptVisible,
+      blockBoardingScan: passengerBoardingScanVisible,
+      blockPaymentWarn: priceOfferPaymentWarnVisible,
+      blockQRModal: showQRModal,
+      blockOfferModal: false,
+      blockDriverMatchTransition: false,
+      ...routeFlags,
+    });
+  }, [
+    activeTag,
+    destination,
+    priceInfo,
+    selectedPrice,
+    user?.id,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    offerSendSubmitting,
+    passengerChatVisible,
+    matchingInProgress,
+    showPriceModal,
+    passengerBoardingPromptVisible,
+    passengerBoardingScanVisible,
+    priceOfferPaymentWarnVisible,
+    showQRModal,
+  ]);
+
   /** Sürücü yakın — üst bilgi bandı (sürücü tarafındaki yolcu-yakın bandı ile aynı mantık, modal/scan tüketimiyle bağımsız) */
   const [passengerBoardingGuidanceNearBanner, setPassengerBoardingGuidanceNearBanner] = useState(false);
   const passengerBoardingGuidanceStableSinceRef = useRef<number | null>(null);
@@ -15926,6 +15977,57 @@ function DriverDashboard({
   const [selectedTagForOffer, setSelectedTagForOffer] = useState<string | null>(null);
   const [offerPrice, setOfferPrice] = useState('');
   const [offerSent, setOfferSent] = useState(false); // Teklif gönderildi mi?
+
+  useEffect(() => {
+    if (!isTestFlightDiagnosticsEnabled()) return;
+    const routeFlags = routeFlagsFromTag(activeTag);
+    const tagInList = selectedTagForOffer
+      ? requests.some(
+          (r) =>
+            String(r?.id ?? r?.tag_id ?? '').trim() === String(selectedTagForOffer).trim(),
+        )
+      : false;
+    setTestFlightDiagSnapshot({
+      role: 'driver',
+      driverHasOfferPrice: !!offerPrice && Number(offerPrice) > 0,
+      driverHasSelectedTag: !!selectedTagForOffer,
+      driverOfferSending: offerSending,
+      driverHasSocketSendOffer: !!socketSendOffer,
+      driverHasTagInRequests: tagInList,
+      driverHasUserLocation: !!(
+        userLocation &&
+        Number.isFinite(userLocation.latitude) &&
+        Number.isFinite(userLocation.longitude)
+      ),
+      hasActiveTag: !!activeTag,
+      chatSheetOpen: driverChatVisible,
+      chatHasActiveTag: !!(activeTag?.id),
+      blockOfferModal: offerModalVisible,
+      blockOfferSending: offerSending,
+      blockChatSheet: driverChatVisible,
+      blockDriverMatchTransition: driverMatchTransitionVisible,
+      blockMatchTransition: false,
+      blockPriceModal: false,
+      blockBoardingPrompt: false,
+      blockBoardingScan: false,
+      blockPaymentWarn: false,
+      blockQRModal: false,
+      passengerOfferSending: false,
+      ...routeFlags,
+    });
+  }, [
+    activeTag,
+    offerPrice,
+    selectedTagForOffer,
+    offerSending,
+    socketSendOffer,
+    requests,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    driverChatVisible,
+    offerModalVisible,
+    driverMatchTransitionVisible,
+  ]);
 
   const leylekChromeDriver = useLeylekZekaChrome();
   const openLeylekZekaFromMapDriver = useCallback(() => {

@@ -28,6 +28,7 @@ import { TrustProvider } from '../contexts/TrustContext';
 import LeylekZekaWidget from '../components/LeylekZekaWidget';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useMuhabbetActiveTripRecovery } from '../hooks/useMuhabbetActiveTripRecovery';
+import TestFlightDiagnosticsHost from '../components/TestFlightDiagnosticsHost';
 
 // Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
@@ -95,6 +96,7 @@ export default function RootLayout() {
                           }}
                         />
                         <LeylekZekaWidget />
+                        <TestFlightDiagnosticsHost />
                       </View>
                     </GestureHandlerRootView>
                   </LeylekZekaChromeProvider>

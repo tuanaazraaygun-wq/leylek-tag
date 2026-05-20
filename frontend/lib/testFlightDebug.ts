@@ -7,6 +7,7 @@
  * - EXPO_PUBLIC_ENABLE_TESTFLIGHT_DEBUG_PANEL=1 (EAS internal/preview build env)
  */
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 function readTestFlightDebugFlag(): string {
   const extra = Constants.expoConfig?.extra as
@@ -23,6 +24,13 @@ function readTestFlightDebugFlag(): string {
 
 export function isTestFlightDebugPanelEnabled(): boolean {
   if (typeof __DEV__ !== 'undefined' && __DEV__) return true;
+  const flag = readTestFlightDebugFlag();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
+/** iOS Sistem Testi — yalnız iOS TestFlight debug build (App Store release’te env kapalı). */
+export function isTestFlightDiagnosticsEnabled(): boolean {
+  if (Platform.OS !== 'ios') return false;
   const flag = readTestFlightDebugFlag();
   return flag === '1' || flag === 'true' || flag === 'yes';
 }
