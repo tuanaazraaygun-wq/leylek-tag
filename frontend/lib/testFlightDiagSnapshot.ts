@@ -44,6 +44,12 @@ export type TestFlightDiagSnapshot = {
   rideCreateLastError: string | null;
   rideCreatePassengerUiState: string | null;
   rideCreateUpdatedAt: number;
+  /** FCM push kayıt teşhisi — token metni yok. */
+  fcmTokenAcquired: 'yes' | 'no' | 'unknown';
+  fcmRegisterOk: 'yes' | 'no' | 'unknown';
+  fcmPlatform: string;
+  fcmEndpoint: string;
+  fcmDiagUpdatedAt: number;
   updatedAt: number;
 };
 
@@ -90,6 +96,11 @@ const EMPTY: TestFlightDiagSnapshot = {
   rideCreateLastError: null,
   rideCreatePassengerUiState: null,
   rideCreateUpdatedAt: 0,
+  fcmTokenAcquired: 'unknown',
+  fcmRegisterOk: 'unknown',
+  fcmPlatform: '—',
+  fcmEndpoint: '—',
+  fcmDiagUpdatedAt: 0,
   updatedAt: 0,
 };
 
@@ -133,6 +144,25 @@ function sanitizeRideCreateError(msg: unknown): string {
 }
 
 /** ride/create teşhis snapshot — yalnız TestFlight debug açıkken. */
+/** FCM kayıt teşhisi — yalnız TestFlight debug (token içeriği loglanmaz). */
+export function setPushFcmDiagSnapshot(patch: {
+  fcmTokenAcquired?: 'yes' | 'no' | 'unknown';
+  fcmRegisterOk?: 'yes' | 'no' | 'unknown';
+  fcmPlatform?: string;
+  fcmEndpoint?: string;
+}): void {
+  if (!isTestFlightDiagnosticsEnabled()) return;
+  snapshot = {
+    ...snapshot,
+    fcmTokenAcquired: patch.fcmTokenAcquired ?? snapshot.fcmTokenAcquired,
+    fcmRegisterOk: patch.fcmRegisterOk ?? snapshot.fcmRegisterOk,
+    fcmPlatform: patch.fcmPlatform ?? snapshot.fcmPlatform,
+    fcmEndpoint: patch.fcmEndpoint ?? snapshot.fcmEndpoint,
+    fcmDiagUpdatedAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
 export function patchRideCreateDiag(
   patch: Partial<
     Pick<

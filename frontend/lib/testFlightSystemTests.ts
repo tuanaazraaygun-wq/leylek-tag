@@ -336,6 +336,24 @@ export function testTouchBlockState(): SystemTestResult {
   return result(id, label, 'fail', `active=${blockers.join(',')}`);
 }
 
+export function testFcmPushRegistration(): SystemTestResult {
+  const id = 'fcm_push_register';
+  const label = 'FCM push register (snapshot)';
+  const s = getTestFlightDiagSnapshot();
+  const ageSec = s.fcmDiagUpdatedAt ? Math.round((Date.now() - s.fcmDiagUpdatedAt) / 1000) : -1;
+  if (ageSec < 0 || ageSec > 600) {
+    return result(id, label, 'skip', 'no_recent_diag — login and wait for push register');
+  }
+  const detail = [
+    `fcmTokenAcquired=${s.fcmTokenAcquired}`,
+    `registerOk=${s.fcmRegisterOk}`,
+    `platform=${s.fcmPlatform}`,
+    `endpoint=${s.fcmEndpoint}`,
+  ].join(' ');
+  const ok = s.fcmTokenAcquired === 'yes' && s.fcmRegisterOk === 'yes';
+  return result(id, label, ok ? 'pass' : 'fail', detail);
+}
+
 export async function testPushPermission(): Promise<SystemTestResult> {
   const id = 'push_permission';
   const label = 'Push notification permission';
@@ -362,6 +380,7 @@ export async function runAllSystemTests(input: {
     testRouteStateMatrix(),
     testChatStateMatrix(input.isConnected),
     testTouchBlockState(),
+    testFcmPushRegistration(),
   ];
   const asyncTests = await Promise.all([
     testBackendReachability(),

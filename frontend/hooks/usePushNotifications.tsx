@@ -23,8 +23,33 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { API_BASE_URL, BACKEND_BASE_URL, isPushRegisterDebugOverlayEnabled } from '../lib/backendConfig';
-import { registerFcmTokenWithBackend } from '../lib/androidFcmPush';
+import {
+  FCM_SAVE_PUSH_TOKEN_ENDPOINT,
+  fetchNativeFcmToken,
+  fcmPushPlatform,
+  registerFcmTokenWithBackend,
+} from '../lib/nativeFcmPush';
+import { isTestFlightDiagnosticsEnabled } from '../lib/testFlightDebug';
+import { setPushFcmDiagSnapshot } from '../lib/testFlightDiagSnapshot';
 import { getPersistedAccessToken } from '../lib/sessionToken';
+
+function isPushDiagTracingEnabled(): boolean {
+  return (typeof __DEV__ !== 'undefined' && __DEV__) || isTestFlightDiagnosticsEnabled();
+}
+
+function reportFcmDiag(patch: {
+  fcmTokenAcquired?: 'yes' | 'no' | 'unknown';
+  fcmRegisterOk?: 'yes' | 'no' | 'unknown';
+  fcmPlatform?: string;
+  fcmEndpoint?: string;
+}): void {
+  if (!isTestFlightDiagnosticsEnabled()) return;
+  setPushFcmDiagSnapshot({
+    fcmEndpoint: FCM_SAVE_PUSH_TOKEN_ENDPOINT,
+    fcmPlatform: fcmPushPlatform() ?? Platform.OS,
+    ...patch,
+  });
+}
 
 const API_URL = API_BASE_URL;
 
@@ -80,6 +105,10 @@ export type PushRegisterDebugSnapshot = {
   fetchSuccess: boolean | null;
   fetchFailReason: string | null;
   chainFailReason: string | null;
+  fcmTokenAcquired: 'yes' | 'no' | 'unknown';
+  fcmRegisterOk: 'yes' | 'no' | 'unknown';
+  fcmPlatform: string;
+  fcmEndpoint: string;
   lastUpdatedAt: number | null;
 };
 
@@ -122,6 +151,10 @@ function PushRegisterDebugOverlayView({ value }: { value: PushNotificationHook }
     `fetchSuccess: ${d.fetchSuccess === null ? '—' : String(d.fetchSuccess)}`,
     `fetchFailReason: ${d.fetchFailReason ?? '—'}`,
     `chainFailReason: ${d.chainFailReason ?? '—'}`,
+    `fcmTokenAcquired: ${d.fcmTokenAcquired}`,
+    `fcmRegisterOk: ${d.fcmRegisterOk}`,
+    `fcmPlatform: ${d.fcmPlatform}`,
+    `fcmEndpoint: ${d.fcmEndpoint}`,
   ];
   return (
     <View
@@ -272,6 +305,37 @@ function runRegisterForPushNotificationsChain(
       }
     })
     .then(async () => {
+      const fcmPlatform = fcmPushPlatform() ?? Platform.OS;
+      mergeDebug?.({
+        fcmPlatform,
+        fcmEndpoint: FCM_SAVE_PUSH_TOKEN_ENDPOINT,
+        fcmTokenAcquired: 'no',
+        fcmRegisterOk: 'unknown',
+      });
+      reportFcmDiag({ fcmTokenAcquired: 'no', fcmRegisterOk: 'unknown' });
+
+      try {
+        const fcmToken = await fetchNativeFcmToken();
+        if (typeof fcmToken === 'string' && fcmToken.length > 0) {
+          setPushToken(fcmToken);
+          setTokenType('fcm');
+          mergeDebug?.({
+            tokenAcquired: true,
+            fcmTokenAcquired: 'yes',
+            chainFailReason: null,
+          });
+          reportFcmDiag({ fcmTokenAcquired: 'yes' });
+          onToken(fcmToken, 'fcm');
+          return;
+        }
+      } catch (fcmErr) {
+        console.warn('[PUSH] Native FCM token alınamadı:', fcmErr);
+        mergeDebug?.({ chainFailReason: `fcm_err:${String(fcmErr)}` });
+      }
+
+      mergeDebug?.({ fcmTokenAcquired: 'no' });
+      reportFcmDiag({ fcmTokenAcquired: 'no' });
+
       const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
       const projectId = extra?.eas?.projectId ?? Constants.easConfig?.projectId;
 
@@ -295,28 +359,6 @@ function runRegisterForPushNotificationsChain(
         console.warn('[PUSH] extra.eas.projectId yok — app.json / EAS projectId gerekli');
       }
 
-      if (Platform.OS !== 'android') {
-        mergeDebug?.({ tokenAcquired: false, chainFailReason: 'no_token_non_android_fallback' });
-        onToken(null);
-        return;
-      }
-
-      try {
-        console.log('FCM_TOKEN_FETCH_START');
-        const deviceRes = await Notifications.getDevicePushTokenAsync();
-        const token = deviceRes?.data;
-        if (typeof token === 'string' && token.length > 0) {
-          console.log('FCM_TOKEN_FETCH_SUCCESS');
-          setPushToken(token);
-          setTokenType('fcm');
-          mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
-          onToken(token, 'fcm');
-          return;
-        }
-        console.log('FCM_TOKEN_FETCH_ERROR', { reason: 'empty_device_token' });
-      } catch (e) {
-        console.log('FCM_TOKEN_FETCH_ERROR', { message: String(e) });
-      }
       mergeDebug?.({ tokenAcquired: false, chainFailReason: 'no_push_token' });
       onToken(null);
     })
@@ -342,6 +384,10 @@ const initialPushRegisterDebug = (): PushRegisterDebugSnapshot => ({
   fetchSuccess: null,
   fetchFailReason: null,
   chainFailReason: null,
+  fcmTokenAcquired: 'unknown',
+  fcmRegisterOk: 'unknown',
+  fcmPlatform: Platform.OS,
+  fcmEndpoint: FCM_SAVE_PUSH_TOKEN_ENDPOINT,
   lastUpdatedAt: null,
 });
 
@@ -356,9 +402,10 @@ function usePushNotificationsState(): PushNotificationHook {
   const pushTokenSubscriptionRef = useRef<Notifications.Subscription | undefined>(undefined);
   const pendingUserIdForPushRef = useRef<string | null>(null);
   const lastRegisteredPushRef = useRef<{ userId: string; token: string } | null>(null);
+  const lastFcmRegisterSuccessRef = useRef(false);
 
   const mergePushRegisterDebug = useCallback((patch: Partial<PushRegisterDebugSnapshot>) => {
-    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+    if (!isPushDiagTracingEnabled()) return;
     setPushRegisterDebug((prev) => ({
       ...prev,
       ...patch,
@@ -370,7 +417,7 @@ function usePushNotificationsState(): PushNotificationHook {
 
   const reportPushRegisterDebugSurface = useCallback(
     (p: { screen: string; userId: string | null; showSplash: boolean }) => {
-      if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+      if (!isPushDiagTracingEnabled()) return;
       mergePushRegisterDebug({
         screen: p.screen,
         userId: p.userId,
@@ -419,7 +466,77 @@ function usePushNotificationsState(): PushNotificationHook {
           return;
         }
 
+        if (kind === 'fcm') {
+          if (lastRegisteredPushRef.current?.userId === userId && lastRegisteredPushRef.current?.token === token) {
+            mergePushRegisterDebug({
+              tokenAcquired: true,
+              fcmTokenAcquired: 'yes',
+              fetchStarted: true,
+              fetchDone: true,
+              fetchSuccess: true,
+              fcmRegisterOk: 'yes',
+              fetchFailReason: null,
+            });
+            reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'yes' });
+            lastFcmRegisterSuccessRef.current = true;
+            onComplete?.(true);
+            return;
+          }
+          mergePushRegisterDebug({
+            tokenAcquired: true,
+            fcmTokenAcquired: 'yes',
+            fetchStarted: true,
+            fetchDone: false,
+            fetchSuccess: null,
+            fcmRegisterOk: 'unknown',
+            fetchFailReason: null,
+          });
+          reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'unknown' });
+          void registerFcmTokenWithBackend(userId, token)
+            .then((success) => {
+              if (success) {
+                lastRegisteredPushRef.current = { userId, token };
+                lastFcmRegisterSuccessRef.current = true;
+              } else {
+                lastFcmRegisterSuccessRef.current = false;
+              }
+              mergePushRegisterDebug({
+                fetchDone: true,
+                fetchSuccess: success,
+                fcmRegisterOk: success ? 'yes' : 'no',
+                fetchFailReason: success ? null : 'fcm_register_failed',
+              });
+              reportFcmDiag({
+                fcmTokenAcquired: 'yes',
+                fcmRegisterOk: success ? 'yes' : 'no',
+              });
+              onComplete?.(success);
+            })
+            .catch((err) => {
+              lastFcmRegisterSuccessRef.current = false;
+              mergePushRegisterDebug({
+                fetchDone: true,
+                fetchSuccess: false,
+                fcmRegisterOk: 'no',
+                fetchFailReason: `network:${String(err)}`,
+              });
+              reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'no' });
+              console.log('PUSH_TOKEN_REGISTER_ERROR', { transport: 'fcm', message: String(err) });
+              onComplete?.(false);
+            });
+          return;
+        }
+
         if (kind === 'expo') {
+          if (lastFcmRegisterSuccessRef.current) {
+            mergePushRegisterDebug({
+              fetchDone: true,
+              fetchSuccess: true,
+              fetchFailReason: null,
+            });
+            onComplete?.(true);
+            return;
+          }
           if (lastRegisteredPushRef.current?.userId === userId && lastRegisteredPushRef.current?.token === token) {
             mergePushRegisterDebug({
               tokenAcquired: true,
@@ -462,44 +579,7 @@ function usePushNotificationsState(): PushNotificationHook {
           return;
         }
 
-        if (Platform.OS !== 'android') {
-          mergePushRegisterDebug({
-            fetchStarted: false,
-            fetchDone: true,
-            fetchSuccess: false,
-            fetchFailReason: 'fcm_registration_android_only',
-          });
-          onComplete?.(false);
-          return;
-        }
-        mergePushRegisterDebug({
-          tokenAcquired: true,
-          fetchStarted: true,
-          fetchDone: false,
-          fetchSuccess: null,
-          fetchFailReason: null,
-        });
-        void registerFcmTokenWithBackend(userId, token)
-          .then((success) => {
-            if (success) {
-              lastRegisteredPushRef.current = { userId, token };
-            }
-            mergePushRegisterDebug({
-              fetchDone: true,
-              fetchSuccess: success,
-              fetchFailReason: success ? null : 'fcm_register_failed',
-            });
-            onComplete?.(success);
-          })
-          .catch((err) => {
-            mergePushRegisterDebug({
-              fetchDone: true,
-              fetchSuccess: false,
-              fetchFailReason: `network:${String(err)}`,
-            });
-            console.log('PUSH_TOKEN_REGISTER_ERROR', { transport: 'fcm', message: String(err) });
-            onComplete?.(false);
-          });
+        onComplete?.(false);
       });
     },
     [acquireTokenNonBlocking, mergePushRegisterDebug]
@@ -519,11 +599,14 @@ function usePushNotificationsState(): PushNotificationHook {
         return;
       }
       pendingUserIdForPushRef.current = userId;
+      lastFcmRegisterSuccessRef.current = false;
       mergePushRegisterDebug({
         registerTriggered: true,
         registerTriggeredAt: Date.now(),
         lastTrigger: debugTrigger ?? '—',
         tokenAcquired: null,
+        fcmTokenAcquired: 'unknown',
+        fcmRegisterOk: 'unknown',
         fetchStarted: false,
         fetchDone: false,
         fetchSuccess: null,
@@ -540,6 +623,7 @@ function usePushNotificationsState(): PushNotificationHook {
   const removePushToken = useCallback(async (userId: string): Promise<void> => {
     pendingUserIdForPushRef.current = null;
     lastRegisteredPushRef.current = null;
+    lastFcmRegisterSuccessRef.current = false;
     try {
       const bearer = (await getPersistedAccessToken())?.trim();
       await fetch(`${API_URL}/user/remove-push-token?user_id=${encodeURIComponent(userId)}`, {
@@ -565,6 +649,7 @@ function usePushNotificationsState(): PushNotificationHook {
         const token = typeof (ev as { data?: string })?.data === 'string' ? (ev as { data: string }).data : '';
         const uid = pendingUserIdForPushRef.current;
         if (!token || !uid) return;
+        if (lastFcmRegisterSuccessRef.current) return;
         if (lastRegisteredPushRef.current?.userId === uid && lastRegisteredPushRef.current?.token === token) {
           return;
         }
@@ -578,11 +663,33 @@ function usePushNotificationsState(): PushNotificationHook {
       pushTokenSubscriptionRef.current = undefined;
     }
 
+    let fcmRefreshUnsub: (() => void) | undefined;
+    if (fcmPushPlatform()) {
+      void import('@react-native-firebase/messaging')
+        .then(({ default: messaging }) => {
+          fcmRefreshUnsub = messaging().onTokenRefresh((refreshed) => {
+            const uid = pendingUserIdForPushRef.current;
+            if (!refreshed || !uid) return;
+            void registerFcmTokenWithBackend(uid, refreshed).then((ok) => {
+              if (ok) {
+                lastRegisteredPushRef.current = { userId: uid, token: refreshed };
+                lastFcmRegisterSuccessRef.current = true;
+                setPushToken(refreshed);
+                setTokenType('fcm');
+                reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'yes' });
+              }
+            });
+          });
+        })
+        .catch(() => {});
+    }
+
     return () => {
       notificationListener.current?.remove();
       responseListener.current?.remove();
       pushTokenSubscriptionRef.current?.remove();
       pushTokenSubscriptionRef.current = undefined;
+      fcmRefreshUnsub?.();
     };
   }, []);
 

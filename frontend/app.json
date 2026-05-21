@@ -13,6 +13,7 @@
       "icon": "./assets/ios.premium.logo.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.leylektag.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "buildNumber": "7",
       "config": {
         "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
@@ -91,7 +92,9 @@
           },
           "ios": {
             "deploymentTarget": "15.1",
-            "newArchEnabled": false
+            "newArchEnabled": false,
+            "useFrameworks": "static",
+            "forceStaticLinking": ["RNFBApp", "RNFBMessaging"]
           }
         }
       ],
@@ -131,7 +134,9 @@
           "sounds": [],
           "defaultChannelId": "default"
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
     ],
     "experiments": {
       "typedRoutes": true
