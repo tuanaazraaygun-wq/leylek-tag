@@ -13,8 +13,10 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-_init_lock = threading.Lock()
+_init_lock = threading.RLock()
 _initialized = False
+_firebase_app: Any = None
+_firebase_app_project_id: Optional[str] = None
 
 try:
     from expo_push_channels import expo_android_channel_id_for_data
@@ -129,11 +131,11 @@ def _is_auth_credential_error(err_s: str) -> bool:
     return any(n in err_s for n in needles)
 
 
-def _ensure_app_unlocked() -> bool:
-    """firebase_admin init — _init_lock altında çağrılmalı."""
-    global _initialized
-    if _initialized:
-        return True
+def _ensure_app_unlocked() -> Any:
+    """firebase_admin App — _init_lock altında çağrılmalı. Başarısızsa None."""
+    global _initialized, _firebase_app, _firebase_app_project_id
+    if _initialized and _firebase_app is not None:
+        return _firebase_app
     try:
         import firebase_admin
         from firebase_admin import credentials
@@ -141,24 +143,38 @@ def _ensure_app_unlocked() -> bool:
         info, err = _load_service_account_info()
         if not info:
             logger.warning("FCM: credential okunamadı — %s", err or "unknown")
-            return False
+            return None
 
+        expected_project_id = str(info.get("project_id") or "").strip()
         cred = credentials.Certificate(info)
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
-        project_id = str(info.get("project_id") or "").strip()
-        if project_id:
-            logger.info("FCM: firebase_admin initialized project_id=%s", project_id)
+            _firebase_app = firebase_admin.initialize_app(cred)
+            _firebase_app_project_id = expected_project_id or str(_firebase_app.project_id or "").strip()
         else:
-            logger.info("FCM: firebase_admin initialized project_id=unknown")
+            _firebase_app = firebase_admin.get_app()
+            existing_project_id = str(_firebase_app.project_id or "").strip()
+            _firebase_app_project_id = existing_project_id or expected_project_id
+            if expected_project_id and existing_project_id and expected_project_id != existing_project_id:
+                logger.warning(
+                    "FCM: default app project_id=%s credential project_id=%s",
+                    existing_project_id,
+                    expected_project_id,
+                )
+        app_name = str(getattr(_firebase_app, "name", "") or "unknown")
+        logged_project_id = _firebase_app_project_id or "unknown"
+        logger.info(
+            "FCM: firebase_admin initialized project_id=%s app_name=%s",
+            logged_project_id,
+            app_name,
+        )
         _initialized = True
-        return True
+        return _firebase_app
     except Exception as e:
         logger.warning("FCM: firebase_admin init başarısız: %s", e)
-        return False
+        return None
 
 
-def _ensure_app() -> bool:
+def _ensure_app() -> Any:
     with _init_lock:
         return _ensure_app_unlocked()
 
@@ -179,7 +195,8 @@ def send_fcm_notification_sync(
     masked = _mask_token(token_clean)
 
     with _init_lock:
-        if not _ensure_app_unlocked():
+        app = _ensure_app()
+        if app is None:
             return False, "not_configured"
         try:
             from firebase_admin import messaging
@@ -198,7 +215,7 @@ def send_fcm_notification_sync(
                     ),
                 ),
             )
-            messaging.send(msg)
+            response = messaging.send(msg, app=app)
             return True, None
         except Exception as e:
             err_s = str(e).lower()
