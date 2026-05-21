@@ -94,7 +94,7 @@
             "deploymentTarget": "15.1",
             "newArchEnabled": false,
             "useFrameworks": "static",
-            "forceStaticLinking": ["RNFBApp", "RNFBMessaging"]
+            "forceStaticLinking": ["RNFBApp", "RNFBMessaging", "RNFBCrashlytics"]
           }
         }
       ],
@@ -136,7 +136,8 @@
         }
       ],
       "@react-native-firebase/app",
-      "@react-native-firebase/messaging"
+      "@react-native-firebase/messaging",
+      "@react-native-firebase/crashlytics"
     ],
     "experiments": {
       "typedRoutes": true

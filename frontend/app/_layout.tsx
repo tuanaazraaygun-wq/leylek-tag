@@ -29,6 +29,7 @@ import LeylekZekaWidget from '../components/LeylekZekaWidget';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useMuhabbetActiveTripRecovery } from '../hooks/useMuhabbetActiveTripRecovery';
 import TestFlightDiagnosticsHost from '../components/TestFlightDiagnosticsHost';
+import { initCrashlytics } from '../lib/crashlytics';
 
 // Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
@@ -43,6 +44,10 @@ Notifications.setNotificationHandler({
 
 export default function RootLayout() {
   useMuhabbetActiveTripRecovery();
+
+  useEffect(() => {
+    void initCrashlytics();
+  }, []);
 
   // Native splash’i hemen kapat — aksi halde APK’da Leylek görseli üstte kalıp JS ekranı hiç görünmeyebilir
   useEffect(() => {
