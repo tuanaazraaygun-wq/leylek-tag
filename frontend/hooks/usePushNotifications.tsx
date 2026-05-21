@@ -229,12 +229,20 @@ export function usePushNotifications(): PushNotificationHook {
 
 type MergeDbg = (patch: Partial<PushRegisterDebugSnapshot>) => void;
 
+type RegisterChainOpts = {
+  /** FCM aktif veya kayıt başarılı — Expo token alma atlanır */
+  skipExpoFallback?: () => boolean;
+  /** Native FCM token alındı (backend kaydı öncesi Expo’yu kilitle) */
+  onFcmTokenAcquired?: () => void;
+};
+
 /** Promise dönmez; token adımı async; onToken(token|null, kind?) */
 function runRegisterForPushNotificationsChain(
   setPushToken: (t: string | null) => void,
   setTokenType: (t: 'expo' | 'fcm' | null) => void,
   onToken: (token: string | null, kind?: 'expo' | 'fcm') => void,
-  mergeDebug?: MergeDbg
+  mergeDebug?: MergeDbg,
+  chainOpts?: RegisterChainOpts
 ): void {
   mergeDebug?.({ chainFailReason: null });
   if (!Device.isDevice) {
@@ -317,6 +325,7 @@ function runRegisterForPushNotificationsChain(
       try {
         const fcmToken = await fetchNativeFcmToken();
         if (typeof fcmToken === 'string' && fcmToken.length > 0) {
+          chainOpts?.onFcmTokenAcquired?.();
           setPushToken(fcmToken);
           setTokenType('fcm');
           mergeDebug?.({
@@ -335,6 +344,12 @@ function runRegisterForPushNotificationsChain(
 
       mergeDebug?.({ fcmTokenAcquired: 'no' });
       reportFcmDiag({ fcmTokenAcquired: 'no' });
+
+      if (chainOpts?.skipExpoFallback?.()) {
+        mergeDebug?.({ tokenAcquired: false, chainFailReason: 'expo_skipped_fcm_active' });
+        onToken(null);
+        return;
+      }
 
       const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
       const projectId = extra?.eas?.projectId ?? Constants.easConfig?.projectId;
@@ -403,6 +418,9 @@ function usePushNotificationsState(): PushNotificationHook {
   const pendingUserIdForPushRef = useRef<string | null>(null);
   const lastRegisteredPushRef = useRef<{ userId: string; token: string } | null>(null);
   const lastFcmRegisterSuccessRef = useRef(false);
+  /** FCM token alındı / kayıt başarılı — Expo fallback ve listener kaydı engeli */
+  const fcmSkipExpoRef = useRef(false);
+  const pushRegisterInFlightRef = useRef(false);
 
   const mergePushRegisterDebug = useCallback((patch: Partial<PushRegisterDebugSnapshot>) => {
     if (!isPushDiagTracingEnabled()) return;
@@ -429,7 +447,19 @@ function usePushNotificationsState(): PushNotificationHook {
 
   const acquireTokenNonBlocking = useCallback(
     (onToken: (token: string | null, kind?: 'expo' | 'fcm') => void) => {
-      runRegisterForPushNotificationsChain(setPushToken, setTokenType, onToken, mergePushRegisterDebug);
+      runRegisterForPushNotificationsChain(
+        setPushToken,
+        setTokenType,
+        onToken,
+        mergePushRegisterDebug,
+        {
+          skipExpoFallback: () =>
+            fcmSkipExpoRef.current || lastFcmRegisterSuccessRef.current,
+          onFcmTokenAcquired: () => {
+            fcmSkipExpoRef.current = true;
+          },
+        }
+      );
     },
     [mergePushRegisterDebug]
   );
@@ -451,6 +481,16 @@ function usePushNotificationsState(): PushNotificationHook {
         onComplete?.(false);
         return;
       }
+      if (pushRegisterInFlightRef.current) {
+        onComplete?.(lastFcmRegisterSuccessRef.current);
+        return;
+      }
+      pushRegisterInFlightRef.current = true;
+      const finish = (ok: boolean) => {
+        pushRegisterInFlightRef.current = false;
+        onComplete?.(ok);
+      };
+
       pendingUserIdForPushRef.current = userId;
       acquireTokenNonBlocking((token, kind) => {
         if (!token || !kind) {
@@ -462,11 +502,12 @@ function usePushNotificationsState(): PushNotificationHook {
             fetchFailReason: 'no_device_token',
           });
           console.warn('PUSH_TOKEN_SAVE_FAIL', { userId, reason: 'no_device_token' });
-          onComplete?.(false);
+          finish(false);
           return;
         }
 
         if (kind === 'fcm') {
+          fcmSkipExpoRef.current = true;
           if (lastRegisteredPushRef.current?.userId === userId && lastRegisteredPushRef.current?.token === token) {
             mergePushRegisterDebug({
               tokenAcquired: true,
@@ -479,7 +520,8 @@ function usePushNotificationsState(): PushNotificationHook {
             });
             reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'yes' });
             lastFcmRegisterSuccessRef.current = true;
-            onComplete?.(true);
+            fcmSkipExpoRef.current = true;
+            finish(true);
             return;
           }
           mergePushRegisterDebug({
@@ -497,8 +539,10 @@ function usePushNotificationsState(): PushNotificationHook {
               if (success) {
                 lastRegisteredPushRef.current = { userId, token };
                 lastFcmRegisterSuccessRef.current = true;
+                fcmSkipExpoRef.current = true;
               } else {
                 lastFcmRegisterSuccessRef.current = false;
+                fcmSkipExpoRef.current = false;
               }
               mergePushRegisterDebug({
                 fetchDone: true,
@@ -510,10 +554,11 @@ function usePushNotificationsState(): PushNotificationHook {
                 fcmTokenAcquired: 'yes',
                 fcmRegisterOk: success ? 'yes' : 'no',
               });
-              onComplete?.(success);
+              finish(success);
             })
             .catch((err) => {
               lastFcmRegisterSuccessRef.current = false;
+              fcmSkipExpoRef.current = false;
               mergePushRegisterDebug({
                 fetchDone: true,
                 fetchSuccess: false,
@@ -522,19 +567,19 @@ function usePushNotificationsState(): PushNotificationHook {
               });
               reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'no' });
               console.log('PUSH_TOKEN_REGISTER_ERROR', { transport: 'fcm', message: String(err) });
-              onComplete?.(false);
+              finish(false);
             });
           return;
         }
 
         if (kind === 'expo') {
-          if (lastFcmRegisterSuccessRef.current) {
+          if (fcmSkipExpoRef.current || lastFcmRegisterSuccessRef.current) {
             mergePushRegisterDebug({
               fetchDone: true,
               fetchSuccess: true,
               fetchFailReason: null,
             });
-            onComplete?.(true);
+            finish(true);
             return;
           }
           if (lastRegisteredPushRef.current?.userId === userId && lastRegisteredPushRef.current?.token === token) {
@@ -545,7 +590,7 @@ function usePushNotificationsState(): PushNotificationHook {
               fetchSuccess: true,
               fetchFailReason: null,
             });
-            onComplete?.(true);
+            finish(true);
             return;
           }
           mergePushRegisterDebug({
@@ -565,7 +610,7 @@ function usePushNotificationsState(): PushNotificationHook {
                 fetchSuccess: success,
                 fetchFailReason: success ? null : 'expo_register_failed',
               });
-              onComplete?.(success);
+              finish(success);
             })
             .catch((err) => {
               mergePushRegisterDebug({
@@ -574,12 +619,12 @@ function usePushNotificationsState(): PushNotificationHook {
                 fetchFailReason: `network:${String(err)}`,
               });
               console.log('PUSH_TOKEN_REGISTER_ERROR', { transport: 'expo', message: String(err) });
-              onComplete?.(false);
+              finish(false);
             });
           return;
         }
 
-        onComplete?.(false);
+        finish(false);
       });
     },
     [acquireTokenNonBlocking, mergePushRegisterDebug]
@@ -599,7 +644,29 @@ function usePushNotificationsState(): PushNotificationHook {
         return;
       }
       pendingUserIdForPushRef.current = userId;
-      lastFcmRegisterSuccessRef.current = false;
+
+      if (
+        lastFcmRegisterSuccessRef.current &&
+        lastRegisteredPushRef.current?.userId === userId
+      ) {
+        mergePushRegisterDebug({
+          registerTriggered: true,
+          registerTriggeredAt: Date.now(),
+          lastTrigger: debugTrigger ?? '—',
+          fetchDone: true,
+          fetchSuccess: true,
+          fcmRegisterOk: 'yes',
+        });
+        onComplete?.(true);
+        return;
+      }
+
+      const userChanged = lastRegisteredPushRef.current?.userId !== userId;
+      if (userChanged) {
+        lastFcmRegisterSuccessRef.current = false;
+        fcmSkipExpoRef.current = false;
+      }
+
       mergePushRegisterDebug({
         registerTriggered: true,
         registerTriggeredAt: Date.now(),
@@ -624,6 +691,7 @@ function usePushNotificationsState(): PushNotificationHook {
     pendingUserIdForPushRef.current = null;
     lastRegisteredPushRef.current = null;
     lastFcmRegisterSuccessRef.current = false;
+    fcmSkipExpoRef.current = false;
     try {
       const bearer = (await getPersistedAccessToken())?.trim();
       await fetch(`${API_URL}/user/remove-push-token?user_id=${encodeURIComponent(userId)}`, {
@@ -649,7 +717,7 @@ function usePushNotificationsState(): PushNotificationHook {
         const token = typeof (ev as { data?: string })?.data === 'string' ? (ev as { data: string }).data : '';
         const uid = pendingUserIdForPushRef.current;
         if (!token || !uid) return;
-        if (lastFcmRegisterSuccessRef.current) return;
+        if (fcmSkipExpoRef.current || lastFcmRegisterSuccessRef.current) return;
         if (lastRegisteredPushRef.current?.userId === uid && lastRegisteredPushRef.current?.token === token) {
           return;
         }
@@ -674,6 +742,7 @@ function usePushNotificationsState(): PushNotificationHook {
               if (ok) {
                 lastRegisteredPushRef.current = { userId: uid, token: refreshed };
                 lastFcmRegisterSuccessRef.current = true;
+                fcmSkipExpoRef.current = true;
                 setPushToken(refreshed);
                 setTokenType('fcm');
                 reportFcmDiag({ fcmTokenAcquired: 'yes', fcmRegisterOk: 'yes' });
