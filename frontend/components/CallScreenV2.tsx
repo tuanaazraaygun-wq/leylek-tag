@@ -543,6 +543,10 @@ export default function CallScreenV2({
         setPhase('incoming');
         setStatus('Gelen arama');
         try {
+          if (Platform.OS === 'ios') {
+            InCallManager.start({ media: 'audio' });
+            InCallManager.setForceSpeakerphoneOn(true);
+          }
           InCallManager.startRingtone('_DEFAULT_', [0, 600, 300, 600], 'playback', 60);
           Vibration.vibrate([0, 600, 300, 600], true);
         } catch {

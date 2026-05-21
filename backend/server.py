@@ -898,16 +898,17 @@ async def end_call(sid, data):
     ended_by = data.get('ended_by')
     
     logger.info("📴 Arama sonlandırıldı: %s (by: %s)", _short_log_id(call_id), _mask_log_id(ended_by))
-    
-    # Her iki tarafa da bildir
+
+    _ce_payload = {"call_id": call_id, "ended_by": ended_by}
+    _ended_lo = str(ended_by or "").strip().lower()
     for user_id in [caller_id, receiver_id]:
-        if user_id and user_id != ended_by:
-            user_sid = connected_users.get(user_id)
-            if user_sid:
-                await sio.emit('call_ended', {
-                    'call_id': call_id,
-                    'ended_by': ended_by
-                }, room=user_sid)
+        uid = str(user_id or "").strip()
+        if not uid or uid.lower() == _ended_lo:
+            continue
+        try:
+            await emit_socket_event_to_user(uid, "call_ended", _ce_payload)
+        except Exception as emit_err:
+            logger.warning("end_call emit_socket_event_to_user failed user=%s: %s", _mask_log_id(uid), emit_err)
 
 # ==================== PUAN SİSTEMİ ====================
 # 100 puan = 5 yıldız; 75 puan = 4 yıldız
@@ -14362,6 +14363,35 @@ async def check_call_status(user_id: str, call_id: str):
 async def end_call(user_id: str, call_id: str = None):
     """Aramayı sonlandır - Supabase'de güncelle"""
     try:
+        ended_rows = []
+
+        async def _emit_call_ended_to_peer(row: dict) -> None:
+            cid = str(row.get("call_id") or call_id or "").strip()
+            if not cid:
+                return
+            caller_raw = str(row.get("caller_id") or "").strip()
+            receiver_raw = str(row.get("receiver_id") or "").strip()
+            ended_lo = str(user_id or "").strip().lower()
+            peer_uid = None
+            if caller_raw.lower() == ended_lo:
+                peer_uid = receiver_raw
+            elif receiver_raw.lower() == ended_lo:
+                peer_uid = caller_raw
+            if not peer_uid:
+                return
+            try:
+                await emit_socket_event_to_user(
+                    peer_uid,
+                    "call_ended",
+                    {"call_id": cid, "ended_by": user_id},
+                )
+            except Exception as emit_err:
+                logger.warning(
+                    "voice/end-call call_ended emit failed peer=%s: %s",
+                    _mask_log_id(peer_uid),
+                    emit_err,
+                )
+
         if call_id:
             # Belirli aramayı sonlandır
             result = supabase.table("calls").update({
@@ -14371,16 +14401,22 @@ async def end_call(user_id: str, call_id: str = None):
             }).eq("call_id", call_id).in_("status", ["ringing", "connected"]).execute()
             
             if result.data:
+                ended_rows = result.data
                 logger.info("📴 SUPABASE: Arama sonlandırıldı: %s by %s", _short_log_id(call_id), _mask_log_id(user_id))
         else:
             # Bu kullanıcının tüm aktif aramalarını sonlandır
-            supabase.table("calls").update({
+            result = supabase.table("calls").update({
                 "status": "ended",
                 "ended_at": datetime.utcnow().isoformat(),
                 "ended_by": user_id
             }).or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ringing", "connected"]).execute()
             
+            if result.data:
+                ended_rows = result.data
             logger.info("📴 SUPABASE: Kullanıcının tüm aramaları sonlandırıldı: %s", _mask_log_id(user_id))
+
+        for row in ended_rows:
+            await _emit_call_ended_to_peer(row)
         
         return {"success": True}
     except Exception as e:

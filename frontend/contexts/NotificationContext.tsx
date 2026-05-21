@@ -45,17 +45,45 @@ const PUSH_ROUTING_DATA_KEYS = [
   'conversation_id',
   'session_id',
   'caller_id',
+  'caller_name',
   'target_user_id',
   'call_id',
+  'channel_name',
+  'agora_token',
+  'call_type',
   'event',
   'is_dispatch',
   'is_broadcast',
   'is_rolling_batch',
 ] as const;
 
-export function normalizeRemotePushRoutingData(raw: unknown): TappedNotificationData {
-  if (!raw || typeof raw !== 'object') return null;
+/** FCM/APNs ham payload — iOS tap/initial bazen nested `data` veya JSON string taşır. */
+function unwrapRemotePushDataPayload(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const src = raw as Record<string, unknown>;
+  const nested = src.data;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return { ...src, ...(nested as Record<string, unknown>) };
+  }
+  if (typeof nested === 'string') {
+    const trimmed = nested.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { ...src, ...parsed };
+        }
+      } catch {
+        /* noop */
+      }
+    }
+  }
+  return src;
+}
+
+export function normalizeRemotePushRoutingData(raw: unknown): TappedNotificationData {
+  const src = unwrapRemotePushDataPayload(raw);
+  if (!src) return null;
   const out: Record<string, unknown> = {};
   for (const key of PUSH_ROUTING_DATA_KEYS) {
     const v = src[key];
@@ -64,10 +92,20 @@ export function normalizeRemotePushRoutingData(raw: unknown): TappedNotification
     if (!s) continue;
     out[key] = v;
   }
-  if (!out.type && !out.tag_id && !out.conversation_id && !out.session_id) {
+  if (!out.type && !out.tag_id && !out.conversation_id && !out.session_id && !out.call_id) {
     return null;
   }
   return out as TappedNotificationData;
+}
+
+function routingTapDedupeKey(normalized: Record<string, unknown>): string {
+  const typeLo = String(normalized.type || '').trim().toLowerCase();
+  if (typeLo === 'incoming_call') {
+    return `${typeLo}:${String(normalized.call_id || '').trim()}`;
+  }
+  return `${typeLo}:${String(
+    normalized.tag_id || normalized.conversation_id || normalized.session_id || '',
+  ).trim()}`;
 }
 
 interface NotificationContextType {
@@ -115,9 +153,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const applyRoutingNotificationTap = React.useCallback(async (raw: unknown) => {
     const normalized = normalizeRemotePushRoutingData(raw);
     if (!normalized) return;
-    const dedupeKey = `${String(normalized.type || '').trim().toLowerCase()}:${String(
-      normalized.tag_id || normalized.conversation_id || normalized.session_id || '',
-    ).trim()}`;
+    const dedupeKey = routingTapDedupeKey(normalized);
     if (dedupeKey !== ':' && lastRoutingTapDedupeRef.current === dedupeKey) {
       return;
     }

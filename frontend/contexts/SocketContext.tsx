@@ -22,7 +22,7 @@ import { getPersistedAccessToken, waitForPersistedAccessToken } from '../lib/ses
 import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
 import { publishSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { emitConversationUpdated, emitTripSessionUpdated } from '../lib/muhabbetRealtimeEvents';
-import { useNotifications } from './NotificationContext';
+import { normalizeRemotePushRoutingData, useNotifications } from './NotificationContext';
 
 const SOCKET_URL = BACKEND_BASE_URL;
 
@@ -819,6 +819,61 @@ export function SocketProvider({ children }: SocketProviderProps) {
       applyIncomingCallPayload(data, 'push-tap');
     }
   }, [lastTappedNotificationData, applyIncomingCallPayload]);
+
+  /** iOS foreground FCM: socket room kaçsa bile incoming_call data → CallScreen */
+  const iosFcmForegroundCallDedupeRef = useRef<string>('');
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    void (async () => {
+      try {
+        const messaging = (await import('@react-native-firebase/messaging')).default;
+        if (cancelled) return;
+        unsubscribe = messaging().onMessage((remoteMessage) => {
+          const raw = remoteMessage?.data;
+          if (!raw || typeof raw !== 'object') return;
+          if (String((raw as Record<string, unknown>).type || '').trim().toLowerCase() !== 'incoming_call') {
+            return;
+          }
+
+          const normalized = normalizeRemotePushRoutingData(raw);
+          if (!normalized || String(normalized.type || '').trim().toLowerCase() !== 'incoming_call') {
+            return;
+          }
+
+          const callId = String(normalized.call_id || '').trim();
+          const callerId = String(normalized.caller_id || '').trim();
+          const channelName = String(normalized.channel_name || '').trim();
+          if (!callId || !callerId || !channelName) return;
+
+          const dedupeKey = `${callId}:${callerId}`;
+          if (iosFcmForegroundCallDedupeRef.current === dedupeKey) return;
+          const prev = incomingCallDataRef.current;
+          if (prev?.callId === callId && prev?.callerId === callerId) {
+            iosFcmForegroundCallDedupeRef.current = dedupeKey;
+            return;
+          }
+          iosFcmForegroundCallDedupeRef.current = dedupeKey;
+
+          applyIncomingCallPayload(
+            { ...normalized, type: 'incoming_call' },
+            'push-foreground-fcm',
+          );
+        });
+      } catch {
+        /* RN Firebase messaging yok (Expo Go vb.) */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [applyIncomingCallPayload]);
 
   // ══════════════════════════════════════════════════════════════════
   // SOCKET SETUP - Bir kez
