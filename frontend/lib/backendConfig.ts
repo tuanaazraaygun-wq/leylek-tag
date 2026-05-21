@@ -17,8 +17,8 @@ export function isPushRegisterDebugOverlayEnabled(): boolean {
 /** extra.backendUrl ve env yokken ana API kökü */
 export const DEFAULT_BACKEND_BASE_URL = 'https://api.leylektag.com';
 
-/** Release APK: expo env/extra yoksa veya leylektag.com (Next) tabanı seçilmişse Places istemcisi */
-export const RELEASE_PLACES_API_FALLBACK_ROOT = 'http://157.173.113.156:8001/api';
+/** Release APK: expo env/extra yoksa veya leylektag.com (Next) tabanı seçilmişse Places istemcisi (HTTPS — cleartext kapalı). */
+export const RELEASE_PLACES_API_FALLBACK_ROOT = 'https://api.leylektag.com/api';
 
 /** Leylek Zeka path: POST {base}/api/ai/leylekzeka */
 export const LEYLEK_ZEKA_CHAT_PATH = 'ai/leylekzeka';

@@ -1608,7 +1608,9 @@ export default function PlacesAutocomplete({
         }
       }
 
-      if (!usedPlacesBackendProxy && placesClientDirectFallbackEnabled) {
+      /** Backend dolu yanıt → direct provider yok; yalnız __DEV__ + PLACES_CLIENT_FALLBACK=1. */
+      const backendHasUsableRows = usedPlacesBackendProxy && filtered.length > 0;
+      if (!backendHasUsableRows && placesClientDirectFallbackEnabled) {
       let searchVariantsUncapped = buildOrderedSearchVariants(input, cityLabel, explicitOtherKey, forceCityInSearch);
       searchVariantsUncapped = prependCityQualifiedSearchVariants(
         input,
