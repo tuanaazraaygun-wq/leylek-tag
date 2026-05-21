@@ -8,10 +8,12 @@ import json
 import logging
 import os
 import re
+import threading
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+_init_lock = threading.Lock()
 _initialized = False
 
 try:
@@ -40,6 +42,57 @@ def _stringify_fcm_data(data: Optional[Mapping[str, Any]]) -> Dict[str, str]:
     return out
 
 
+def _mask_token(token: str) -> str:
+    t = token.strip()
+    if len(t) <= 12:
+        return "***"
+    return f"{t[:8]}...{t[-4:]}"
+
+
+def _required_sa_fields_present(info: Mapping[str, Any]) -> bool:
+    return bool(info.get("project_id") and info.get("private_key") and info.get("client_email"))
+
+
+def _load_service_account_info() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Service account JSON'u env veya dosyadan okur ve doğrular.
+    Dönüş: (info_dict, error_reason) — başarıda error_reason None.
+    """
+    raw_json = (os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
+    if raw_json:
+        try:
+            info = json.loads(raw_json)
+        except json.JSONDecodeError as e:
+            return None, f"FIREBASE_SERVICE_ACCOUNT_JSON invalid_json: {e}"
+        if not isinstance(info, dict):
+            return None, "FIREBASE_SERVICE_ACCOUNT_JSON not_object"
+        if not _required_sa_fields_present(info):
+            return None, "FIREBASE_SERVICE_ACCOUNT_JSON missing_required_fields"
+        return dict(info), None
+
+    path = (
+        os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
+        or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or ""
+    ).strip()
+    if not path:
+        return None, "no_credentials_env"
+    if not os.path.isfile(path):
+        return None, "service_account_file_not_found"
+    try:
+        with open(path, encoding="utf-8") as fh:
+            info = json.load(fh)
+    except OSError as e:
+        return None, f"service_account_file_unreadable: {e}"
+    except json.JSONDecodeError as e:
+        return None, f"service_account_file_invalid_json: {e}"
+    if not isinstance(info, dict):
+        return None, "service_account_file_not_object"
+    if not _required_sa_fields_present(info):
+        return None, "service_account_file_missing_required_fields"
+    return dict(info), None
+
+
 def is_probable_fcm_registration_token(token: Optional[str]) -> bool:
     """Expo token değil, makul uzunlukta native FCM registration token heuristiği."""
     if not token or not isinstance(token, str):
@@ -56,12 +109,28 @@ def is_probable_fcm_registration_token(token: Optional[str]) -> bool:
 
 
 def is_fcm_configured() -> bool:
-    path = (os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
-    raw = (os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
-    return bool(path) or bool(raw)
+    info, _err = _load_service_account_info()
+    return info is not None
 
 
-def _ensure_app() -> bool:
+def _is_auth_credential_error(err_s: str) -> bool:
+    needles = (
+        "missing required authentication credential",
+        "invalid authentication credentials",
+        "could not load the default credentials",
+        "application default credentials",
+        "unauthenticated",
+        "401 unauthorized",
+        "403 forbidden",
+        "permission denied",
+        "invalid_grant",
+        "account not found",
+    )
+    return any(n in err_s for n in needles)
+
+
+def _ensure_app_unlocked() -> bool:
+    """firebase_admin init — _init_lock altında çağrılmalı."""
     global _initialized
     if _initialized:
         return True
@@ -69,30 +138,29 @@ def _ensure_app() -> bool:
         import firebase_admin
         from firebase_admin import credentials
 
-        path = (os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
-        raw_json = (os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or "").strip()
-        cred = None
-        if raw_json:
-            try:
-                cred = credentials.Certificate(json.loads(raw_json))
-            except json.JSONDecodeError as e:
-                logger.warning("FCM: FIREBASE_SERVICE_ACCOUNT_JSON geçersiz JSON: %s", e)
-                return False
-        elif path and os.path.isfile(path):
-            cred = credentials.Certificate(path)
-        else:
-            logger.warning(
-                "FCM: credential yok — FIREBASE_SERVICE_ACCOUNT_PATH, GOOGLE_APPLICATION_CREDENTIALS "
-                "veya FIREBASE_SERVICE_ACCOUNT_JSON ayarlayın."
-            )
+        info, err = _load_service_account_info()
+        if not info:
+            logger.warning("FCM: credential okunamadı — %s", err or "unknown")
             return False
+
+        cred = credentials.Certificate(info)
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
+        project_id = str(info.get("project_id") or "").strip()
+        if project_id:
+            logger.info("FCM: firebase_admin initialized project_id=%s", project_id)
+        else:
+            logger.info("FCM: firebase_admin initialized project_id=unknown")
         _initialized = True
         return True
     except Exception as e:
         logger.warning("FCM: firebase_admin init başarısız: %s", e)
         return False
+
+
+def _ensure_app() -> bool:
+    with _init_lock:
+        return _ensure_app_unlocked()
 
 
 def send_fcm_notification_sync(
@@ -103,38 +171,61 @@ def send_fcm_notification_sync(
 ) -> Tuple[bool, Optional[str]]:
     """
     Tek cihaza FCM gönderir. Sync (async event loop içinde asyncio.to_thread ile çağrılmalı).
-    Dönüş: (ok, error_code) — error_code örn. unregistered, not_configured, send_failed
+    Dönüş: (ok, error_code) — error_code örn. unregistered, not_configured, auth_failed, send_failed
     """
     if not is_probable_fcm_registration_token(token):
         return False, "invalid_fcm_token_format"
-    if not _ensure_app():
-        return False, "not_configured"
-    try:
-        from firebase_admin import messaging
+    token_clean = token.strip()
+    masked = _mask_token(token_clean)
 
-        str_data = _stringify_fcm_data(data)
-        ch = expo_android_channel_id_for_data(str_data) or "default"
-        msg = messaging.Message(
-            token=token.strip(),
-            notification=messaging.Notification(title=title or "", body=body or ""),
-            data=str_data,
-            android=messaging.AndroidConfig(
-                priority="high",
-                notification=messaging.AndroidNotification(
-                    channel_id=ch,
-                    sound="default",
+    with _init_lock:
+        if not _ensure_app_unlocked():
+            return False, "not_configured"
+        try:
+            from firebase_admin import messaging
+
+            str_data = _stringify_fcm_data(data)
+            ch = expo_android_channel_id_for_data(str_data) or "default"
+            msg = messaging.Message(
+                token=token_clean,
+                notification=messaging.Notification(title=title or "", body=body or ""),
+                data=str_data,
+                android=messaging.AndroidConfig(
+                    priority="high",
+                    notification=messaging.AndroidNotification(
+                        channel_id=ch,
+                        sound="default",
+                    ),
                 ),
-            ),
-        )
-        messaging.send(msg)
-        return True, None
-    except Exception as e:
-        err_s = str(e).lower()
-        if "registration-token-not-registered" in err_s or "not a valid fcm registration token" in err_s:
-            logger.warning("PUSH_TOKEN_INVALIDATED transport=fcm reason=%s", e)
-            return False, "unregistered"
-        if "requested entity was not found" in err_s:
-            logger.warning("PUSH_TOKEN_INVALIDATED transport=fcm reason=%s", e)
-            return False, "unregistered"
-        logger.warning("PUSH_SEND_ERROR transport=fcm err=%s", e)
-        return False, "send_failed"
+            )
+            messaging.send(msg)
+            return True, None
+        except Exception as e:
+            err_s = str(e).lower()
+            if "registration-token-not-registered" in err_s or "not a valid fcm registration token" in err_s:
+                logger.warning(
+                    "PUSH_TOKEN_INVALIDATED transport=fcm reason=%s token=%s",
+                    e,
+                    masked,
+                )
+                return False, "unregistered"
+            if "requested entity was not found" in err_s:
+                logger.warning(
+                    "PUSH_TOKEN_INVALIDATED transport=fcm reason=%s token=%s",
+                    e,
+                    masked,
+                )
+                return False, "unregistered"
+            if _is_auth_credential_error(err_s):
+                logger.error(
+                    "PUSH_SEND_ERROR transport=fcm err_class=auth_credential err=%s token=%s",
+                    e,
+                    masked,
+                )
+                return False, "auth_failed"
+            logger.warning(
+                "PUSH_SEND_ERROR transport=fcm err_class=send_failed err=%s token=%s",
+                e,
+                masked,
+            )
+            return False, "send_failed"
