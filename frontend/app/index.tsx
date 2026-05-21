@@ -14055,13 +14055,16 @@ function DriverDashboard({
   } = useNotifications();
   const lastOfferPushNotificationIdRef = useRef<string | null>(null);
 
-  const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string) => {
+  const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string): Promise<boolean> => {
     if (forceEndLockRef.current) {
       logPollingSkippedForceEndLock('driver', 'fetchAndAppendOfferFromTagId');
-      return;
+      return false;
     }
     try {
       const res = await fetch(`${API_URL}/trip/${tagId}`);
+      if (!res.ok) {
+        return false;
+      }
       const json = await res.json();
       const st = String(json.tag?.status || '');
       if (
@@ -14069,7 +14072,7 @@ function DriverDashboard({
         !json.tag ||
         !['waiting', 'pending', 'offers_received'].includes(st)
       ) {
-        return;
+        return false;
       }
       const tag = json.tag;
       const tagPvk = tag.passenger_preferred_vehicle;
@@ -14146,8 +14149,10 @@ function DriverDashboard({
           passenger_payment_method: normalizePassengerPaymentMethod(tag.passenger_payment_method) ?? undefined,
         }];
       });
+      return true;
     } catch (e) {
       console.warn('Teklif trip yüklenemedi:', e);
+      return false;
     }
   }, [driverVehicleKind, notifyDriverNewOfferSoundIfNeeded]);
   
@@ -15253,8 +15258,10 @@ function DriverDashboard({
     const data = lastTappedNotificationData as Record<string, unknown> | null | undefined;
     if (!data) return;
     const t = String(data.type || '');
+    const tLo = t.trim().toLowerCase();
     const detailT = String(data.detail_type || '');
-    const tagId = data.tag_id != null ? String(data.tag_id) : '';
+    const detailLo = detailT.trim().toLowerCase();
+    const tagId = data.tag_id != null ? String(data.tag_id).trim() : '';
     const fromDriverHint =
       data.from_driver === true ||
       data.from_driver === false ||
@@ -15289,9 +15296,24 @@ function DriverDashboard({
       return;
     }
 
-    if ((t === 'offer' || t === 'new_offer') && tagId) {
-      clearLastTappedNotification();
-      fetchAndAppendOfferFromTagId(tagId);
+    const isDriverOfferTap =
+      !!tagId &&
+      (tLo === 'offer' ||
+        tLo === 'new_offer' ||
+        tLo === 'new_ride_request' ||
+        detailLo === 'new_offer' ||
+        detailLo === 'new_ride_request');
+
+    if (isDriverOfferTap) {
+      setScreen('dashboard');
+      void (async () => {
+        try {
+          await fetchAndAppendOfferFromTagId(tagId);
+        } finally {
+          clearLastTappedNotification();
+        }
+      })();
+      return;
     }
   }, [
     lastTappedNotificationData,

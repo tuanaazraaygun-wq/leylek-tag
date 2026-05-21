@@ -34,6 +34,42 @@ export async function persistMuhabbetMessageFromNotificationData(data: unknown):
 
 export type TappedNotificationData = { type?: string; tag_id?: string; action?: string; [key: string]: any } | null;
 
+/** FCM/APNs data — yalnızca client routing alanları (secret/token yok). */
+const PUSH_ROUTING_DATA_KEYS = [
+  'type',
+  'tag_id',
+  'detail_type',
+  'action',
+  'offer_id',
+  'from_driver',
+  'conversation_id',
+  'session_id',
+  'caller_id',
+  'target_user_id',
+  'call_id',
+  'event',
+  'is_dispatch',
+  'is_broadcast',
+  'is_rolling_batch',
+] as const;
+
+export function normalizeRemotePushRoutingData(raw: unknown): TappedNotificationData {
+  if (!raw || typeof raw !== 'object') return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of PUSH_ROUTING_DATA_KEYS) {
+    const v = src[key];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    out[key] = v;
+  }
+  if (!out.type && !out.tag_id && !out.conversation_id && !out.session_id) {
+    return null;
+  }
+  return out as TappedNotificationData;
+}
+
 interface NotificationContextType {
   expoPushToken: string | null;
   notification: Notifications.Notification | null;
@@ -68,10 +104,28 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [lastTappedNotificationData, setLastTappedNotificationData] = useState<TappedNotificationData>(null);
   const notificationListener = useRef<any>();
   const responseListener = useRef<any>();
+  const fcmOpenedUnsubRef = useRef<(() => void) | null>(null);
+  const lastRoutingTapDedupeRef = useRef<string>('');
   const navigateCancelledRef = useRef(false);
 
   const clearLastTappedNotification = React.useCallback(() => {
     setLastTappedNotificationData(null);
+  }, []);
+
+  const applyRoutingNotificationTap = React.useCallback(async (raw: unknown) => {
+    const normalized = normalizeRemotePushRoutingData(raw);
+    if (!normalized) return;
+    const dedupeKey = `${String(normalized.type || '').trim().toLowerCase()}:${String(
+      normalized.tag_id || normalized.conversation_id || normalized.session_id || '',
+    ).trim()}`;
+    if (dedupeKey !== ':' && lastRoutingTapDedupeRef.current === dedupeKey) {
+      return;
+    }
+    if (dedupeKey !== ':') {
+      lastRoutingTapDedupeRef.current = dedupeKey;
+    }
+    await persistMuhabbetMessageFromNotificationData(normalized);
+    setTappedData(normalized, setLastTappedNotificationData);
   }, []);
 
   useEffect(() => {
@@ -79,42 +133,56 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       return;
     }
 
+    let cancelled = false;
+
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
-      console.log('🔔 Bildirim alındı:', notification);
       void persistMuhabbetMessageFromNotificationData(notification?.request?.content?.data);
       setNotification(notification);
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response?.notification?.request?.content?.data;
-      console.log('👆 Bildirime tıklandı:', data);
-      void (async () => {
-        await persistMuhabbetMessageFromNotificationData(data);
-        setTappedData(
-          data && typeof data === 'object' ? (data as TappedNotificationData) : null,
-          setLastTappedNotificationData,
-        );
-      })();
+      void applyRoutingNotificationTap(data);
     });
 
     void (async () => {
       const response = await Notifications.getLastNotificationResponseAsync();
-      if (!response) return;
+      if (cancelled || !response) return;
       const data = response.notification?.request?.content?.data;
-      console.log('📬 Uygulama bildirim ile açıldı:', data);
-      await persistMuhabbetMessageFromNotificationData(data);
-      setTappedData((data && typeof data === 'object' ? data : null) as TappedNotificationData, setLastTappedNotificationData);
+      await applyRoutingNotificationTap(data);
+    })();
+
+    void (async () => {
+      if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
+      try {
+        const messaging = (await import('@react-native-firebase/messaging')).default;
+        const initial = await messaging().getInitialNotification();
+        if (!cancelled && initial?.data) {
+          await applyRoutingNotificationTap(initial.data);
+        }
+        if (cancelled) return;
+        fcmOpenedUnsubRef.current = messaging().onNotificationOpenedApp((remoteMessage) => {
+          void applyRoutingNotificationTap(remoteMessage?.data);
+        });
+      } catch {
+        /* RN Firebase messaging yok (Expo Go vb.) */
+      }
     })();
 
     return () => {
+      cancelled = true;
       if (notificationListener.current) {
         notificationListener.current.remove();
       }
       if (responseListener.current) {
         responseListener.current.remove();
       }
+      if (fcmOpenedUnsubRef.current) {
+        fcmOpenedUnsubRef.current();
+        fcmOpenedUnsubRef.current = null;
+      }
     };
-  }, []);
+  }, [applyRoutingNotificationTap]);
 
   const requestPermissions = async (): Promise<boolean> => {
     if (Platform.OS === 'web') {
