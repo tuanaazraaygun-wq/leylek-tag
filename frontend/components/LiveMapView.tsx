@@ -34,7 +34,6 @@ import type { PassengerGender } from '../lib/passengerFieldHelpers';
 import {
   getDriverMarkerImage,
   getPassengerMarkerImage,
-  getDriverNavMarkerAnchor,
   getDriverNavRotationOffsetDeg,
   MARKER_PIXEL,
 } from '../lib/mapNavMarkers';
@@ -54,8 +53,11 @@ const DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP = 112;
 /**
  * Immersive nav: Google mapPadding.bottom — araç PNG yüksekliği + alt inset ile kamera merkezi/yol hizası.
  */
+/** Yolcuya Git immersive pointer — mapPadding kalibrasyonu (yalnız görsel). */
+const NAV_IMMERSIVE_POINTER_PX = 52;
+
 function driverNavImmersiveMapPaddingBottomPx(insetsBottom: number): number {
-  const iconHalf = Math.max(MARKER_PIXEL.driverCar, MARKER_PIXEL.driverMotor) * 0.5;
+  const iconHalf = NAV_IMMERSIVE_POINTER_PX * 0.5;
   const raw =
     DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP +
     iconHalf +
@@ -89,6 +91,93 @@ function TripMapMarkerImage({
     </View>
   );
 }
+
+/** Sürücü Yolcuya Git: rota bearing ile dönen neon yön oku (asset yok, yalnız bu Marker). */
+function DriverNavDirectionPointer() {
+  return (
+    <View collapsable={false} pointerEvents="none" style={navDirectionPointerStyles.root}>
+      <View style={navDirectionPointerStyles.glowOuter} />
+      <View style={navDirectionPointerStyles.glowMid} />
+      <View style={navDirectionPointerStyles.arrowWrap}>
+        <View style={navDirectionPointerStyles.arrowHead} />
+        <View style={navDirectionPointerStyles.arrowStem} />
+      </View>
+      <View style={navDirectionPointerStyles.coreRing}>
+        <View style={navDirectionPointerStyles.coreDot} />
+      </View>
+    </View>
+  );
+}
+
+const navDirectionPointerStyles = StyleSheet.create({
+  root: {
+    width: NAV_IMMERSIVE_POINTER_PX,
+    height: NAV_IMMERSIVE_POINTER_PX,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glowOuter: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
+    ...(Platform.OS === 'android'
+      ? { elevation: 6 }
+      : {
+          shadowColor: '#22D3EE',
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.55,
+          shadowRadius: 14,
+        }),
+  },
+  glowMid: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(34, 211, 238, 0.28)',
+  },
+  arrowWrap: {
+    position: 'absolute',
+    top: 4,
+    alignItems: 'center',
+  },
+  arrowHead: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 12,
+    borderRightWidth: 12,
+    borderBottomWidth: 0,
+    borderTopWidth: 22,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#22D3EE',
+  },
+  arrowStem: {
+    width: 9,
+    height: 8,
+    marginTop: -1,
+    borderRadius: 2,
+    backgroundColor: '#5EEAD4',
+  },
+  coreRing: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
+    borderWidth: 2,
+    borderColor: 'rgba(94, 234, 212, 0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coreDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F8FAFC',
+  },
+});
 
 // Google Maps için değişkenler
 let MapView: any = null;
@@ -5654,20 +5743,17 @@ export default function LiveMapView({
               />
             )}
 
-          {/* Navigasyon: araç haritada (flat + rota bearing); çizgiler zIndex 8–10 altında */}
+          {/* Navigasyon: neon yön oku (flat + rota bearing); çizgiler zIndex 8–10 altında */}
           {driverNavImmersive && navMapVehicleCoordResolved && Marker ? (
             <Marker
               coordinate={navMapVehicleCoordResolved}
               flat
               rotation={navMapVehicleRotation}
-              anchor={getDriverNavMarkerAnchor(passMotor ? 'motorcycle' : 'car')}
+              anchor={{ x: 0.5, y: 0.5 }}
               zIndex={6000}
               tracksViewChanges={false}
             >
-              <TripMapMarkerImage
-                source={getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')}
-                size={passMotor ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar}
-              />
+              <DriverNavDirectionPointer />
             </Marker>
           ) : null}
 
