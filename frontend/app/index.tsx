@@ -11932,7 +11932,10 @@ function PassengerDashboard({
                 !passengerBoardingScanVisible ? (
                   <TouchableOpacity
                     activeOpacity={0.9}
-                    onPress={() => setPassengerBoardingPromptVisible(true)}
+                    onPress={() => {
+                      if (passengerBoardingScanVisible) return;
+                      setPassengerBoardingScanVisible(true);
+                    }}
                     style={{
                       marginHorizontal: 12,
                       marginTop: 8,
@@ -13206,6 +13209,9 @@ function PassengerDashboard({
                 <TouchableOpacity
                   onPress={closeDestinationPickerModal}
                   style={styles.destinationModalBackBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Geri dön"
                 >
                   <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
                 </TouchableOpacity>
@@ -24734,6 +24740,11 @@ const styles = StyleSheet.create({
   },
   destinationModalTouchLayer: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    ...Platform.select({
+      android: { elevation: 10 },
+      default: {},
+    }),
   },
   destinationModalSafeOverlay: {
     flex: 1,
@@ -24963,8 +24974,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 26, 43, 0.35)',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(30, 58, 95, 0.5)',
+    zIndex: 11,
+    ...Platform.select({
+      android: { elevation: 11 },
+      default: {},
+    }),
   },
   destinationModalBackBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 8,
   },
   destinationModalTitleBlue: {

@@ -44,18 +44,23 @@ export default function BoardingScanModal({
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
   const cooldownUntilRef = useRef<number>(0);
 
   useEffect(() => {
-    if (visible) {
-      setScanned(false);
-      setProcessing(false);
-      cooldownUntilRef.current = 0;
-      lastScannedValueRef.current = { data: '', ts: 0 };
-      if (!hasPermission?.granted) {
-        void requestPermission();
-      }
+    if (!visible) {
+      return;
+    }
+    setCameraSessionKey((k) => k + 1);
+    setCameraReady(false);
+    setScanned(false);
+    setProcessing(false);
+    cooldownUntilRef.current = 0;
+    lastScannedValueRef.current = { data: '', ts: 0 };
+    if (!hasPermission?.granted) {
+      void requestPermission();
     }
   }, [visible, hasPermission?.granted, requestPermission]);
 
@@ -142,7 +147,7 @@ export default function BoardingScanModal({
 
   const onBarcodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
-      if (scanned || processing) return;
+      if (!cameraReady || scanned || processing) return;
       if (Date.now() < cooldownUntilRef.current) return;
       const d = (data || '').trim();
       if (!d.startsWith('leylektag://board')) {
@@ -157,10 +162,10 @@ export default function BoardingScanModal({
       setScanned(true);
       await verifyBoarding(d);
     },
-    [scanned, processing, verifyBoarding],
+    [cameraReady, scanned, processing, verifyBoarding],
   );
 
-  const scannerActive = !scanned && !processing;
+  const scannerActive = cameraReady && !scanned && !processing;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -183,10 +188,12 @@ export default function BoardingScanModal({
           ) : (
             <View style={styles.cameraBox}>
               <CameraView
+                key={`boarding-cam-${cameraSessionKey}`}
                 style={StyleSheet.absoluteFill}
                 facing="back"
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onCameraReady={() => {
+                  setCameraReady(true);
                   if (__DEV__) {
                     console.log('[BoardingScanModal] onCameraReady');
                   }
@@ -194,6 +201,12 @@ export default function BoardingScanModal({
                 onBarcodeScanned={scannerActive ? onBarcodeScanned : undefined}
               />
               <View style={styles.frame} pointerEvents="none" />
+              {!cameraReady && !processing ? (
+                <View style={styles.processing}>
+                  <ActivityIndicator size="large" color="#22D3EE" />
+                  <Text style={styles.processingText}>Kamera hazırlanıyor…</Text>
+                </View>
+              ) : null}
               {processing ? (
                 <View style={styles.processing}>
                   <ActivityIndicator size="large" color="#22D3EE" />

@@ -1608,8 +1608,6 @@ function meetingEndpointsKey(dLat: number, dLng: number, pLat: number, pLng: num
   return `${dLat.toFixed(5)},${dLng.toFixed(5)}|${pLat.toFixed(5)},${pLng.toFixed(5)}`;
 }
 
-/** Karşı taraf çok yakınsa arama gereksiz — çağrıyı engelle (metre) */
-const PROXIMITY_CALL_BLOCK_M = 100;
 
 function haversineMeters(a: MapLatLng, b: MapLatLng): number {
   const R = 6371000;
@@ -3887,19 +3885,6 @@ export default function LiveMapView({
       return;
     }
 
-    if (userLocation && otherLocation) {
-      const dM = haversineMeters(userLocation, otherLocation);
-      if (dM < PROXIMITY_CALL_BLOCK_M) {
-        appAlert(
-          isDriver ? 'Yolcu yanınızda' : 'Sürücü yanınızda',
-          'Karşı taraf çok yakın görünüyor; yan yanayken aramaya gerek yok.',
-          [{ text: 'Tamam' }],
-          { tone: 'info', cancelable: true },
-        );
-        return;
-      }
-    }
-    
     setIsCallLoading(true);
     
     try {
