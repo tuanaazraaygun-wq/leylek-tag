@@ -47,9 +47,12 @@ const FAB_SIZE = 68;
 const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const FAB_BOTTOM_EXTRA_PX = 14;
-/** Yolcu eşleşme / teklif bekleme — harita sol alt; alt sheet CTA ile çakışmasın */
-const PASSENGER_WAIT_ORB_LEFT_PX = 18;
-const PASSENGER_WAIT_ORB_BOTTOM_EXTRA_PX = 124;
+/** PassengerWaitingScreen harita sol alt (Google watermark üstü) — sadece pre-match bekleme */
+const PASSENGER_WAIT_MAP_HEIGHT_RATIO = 0.38;
+const PASSENGER_WAIT_HEADER_APPROX_PX = 80;
+const PASSENGER_WAIT_ORB_LEFT_PX = 22;
+const PASSENGER_WAIT_ORB_TOP_ABOVE_FAB_PX = 12;
+const PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX = 96;
 /** Rol seçimi: Devam Et + footer üstünde (~20–28px CTA üstü boşluk). */
 const ROLE_SELECT_BOTTOM_EXTRA_MIN = 188;
 const ROLE_SELECT_BOTTOM_EXTRA_MID = 198;
@@ -257,12 +260,24 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     return safe + FAB_BOTTOM_EXTRA_PX;
   }, [homeFlowScreen, insets.bottom, winH]);
 
-  const isPassengerWaitMatchingOrb =
-    flowHint === 'passenger_matching' || flowHint === 'passenger_offer_waiting';
+  const isPassengerPreMatchWaitOrb =
+    flowHint === 'passenger_matching' ||
+    (!!passengerWaitInsight?.tagId && flowHint !== 'passenger_offer_waiting');
 
-  const passengerWaitOrbBottom = useMemo(() => {
-    return Math.max(insets.bottom, Spacing.sm) + PASSENGER_WAIT_ORB_BOTTOM_EXTRA_PX;
-  }, [insets.bottom]);
+  const passengerWaitOrbOnMap = useMemo(() => {
+    const topMin = insets.top + PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX;
+    const topMax = winH * 0.5;
+    const raw =
+      insets.top +
+      PASSENGER_WAIT_HEADER_APPROX_PX +
+      winH * PASSENGER_WAIT_MAP_HEIGHT_RATIO -
+      FAB_SIZE -
+      PASSENGER_WAIT_ORB_TOP_ABOVE_FAB_PX;
+    return {
+      left: PASSENGER_WAIT_ORB_LEFT_PX,
+      top: Math.min(topMax, Math.max(topMin, raw)),
+    };
+  }, [insets.top, winH]);
 
   const fabGlowStyle = useMemo(() => {
     if (glowVariant === 'idle') {
@@ -883,7 +898,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               pointerEvents="box-none"
               style={[
                 styles.fabColumn,
-                isPassengerWaitMatchingOrb ? styles.fabColumnWaitMap : null,
+                isPassengerPreMatchWaitOrb ? styles.fabColumnWaitMap : null,
                 { transform: [{ translateY: floatY }] },
               ]}
             >
@@ -893,7 +908,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                     pointerEvents="none"
                     style={[
                       styles.orbHintGlowWrap,
-                      isPassengerWaitMatchingOrb ? styles.orbHintGlowWrapWaitMap : null,
+                      isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
                     ]}
                   >
                     {bubbleInner}
@@ -903,7 +918,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                     pointerEvents="none"
                     style={[
                       styles.orbHintGlowWrap,
-                      isPassengerWaitMatchingOrb ? styles.orbHintGlowWrapWaitMap : null,
+                      isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
                       Platform.OS === 'ios' ? { shadowOpacity: bubbleShadowOpacity } : null,
                     ]}
                   >
@@ -994,9 +1009,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 9999,
   },
-  passengerWaitAnchor: {
+  passengerWaitMapAnchor: {
     position: 'absolute',
-    left: PASSENGER_WAIT_ORB_LEFT_PX,
     zIndex: 9999,
     alignItems: 'flex-start',
   },

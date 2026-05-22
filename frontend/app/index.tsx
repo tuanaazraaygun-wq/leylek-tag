@@ -8753,12 +8753,16 @@ function PassengerDashboard({
       setHint('passenger_trip');
       return;
     }
-    if (activeTag.status === 'offers_received' || (activeTag.status === 'pending' && offers.length > 0)) {
-      setHint('passenger_offer_waiting');
+    const st = String(activeTag.status ?? '').trim().toLowerCase();
+    const isPreMatchSearching =
+      (st === 'waiting' || st === 'pending' || st === 'offers_received') &&
+      offers.length === 0;
+    if (isPreMatchSearching) {
+      setHint('passenger_matching');
       return;
     }
-    if (activeTag.status === 'pending') {
-      setHint('passenger_matching');
+    if (st === 'offers_received' || offers.length > 0) {
+      setHint('passenger_offer_waiting');
       return;
     }
     setHint('passenger_home');
