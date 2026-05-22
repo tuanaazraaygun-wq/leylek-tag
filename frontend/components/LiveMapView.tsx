@@ -1264,6 +1264,204 @@ function isValidMapCoord(c: { latitude: number; longitude: number } | null | und
   return true;
 }
 
+/** Yolcu matched/trip fit — şehir içi yakınlık; ülke/dünya zoom-out yok */
+const PAX_MAP_FIT_MIN_DELTA = 0.004;
+const PAX_MAP_FIT_MAX_DELTA_IOS = 0.045;
+const PAX_MAP_FIT_MAX_DELTA_ANDROID = 0.08;
+const PAX_MAP_FIT_SINGLE_DELTA = 0.045;
+
+function paxMapFitMaxDelta(): number {
+  return Platform.OS === 'ios' ? PAX_MAP_FIT_MAX_DELTA_IOS : PAX_MAP_FIT_MAX_DELTA_ANDROID;
+}
+
+/** Bbox köşegen tahmini (km) — şehir içi / ~15 km rota tier */
+function bboxMaxSpanKm(bb: { minLat: number; maxLat: number; minLng: number; maxLng: number }): number {
+  const midLat = (bb.minLat + bb.maxLat) / 2;
+  const latKm = Math.abs(bb.maxLat - bb.minLat) * 111;
+  const lngKm = Math.abs(bb.maxLng - bb.minLng) * 111 * Math.cos((midLat * Math.PI) / 180);
+  return Math.max(latKm, lngKm, 0);
+}
+
+function filterValidMapCoords(coords: MapLatLng[]): MapLatLng[] {
+  return coords.filter(isValidMapCoord);
+}
+
+function dedupeMapCoords(coords: MapLatLng[]): MapLatLng[] {
+  const out: MapLatLng[] = [];
+  for (const p of coords) {
+    if (!isValidMapCoord(p)) continue;
+    if (out.some((q) => Math.abs(q.latitude - p.latitude) < 1e-5 && Math.abs(q.longitude - p.longitude) < 1e-5)) {
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+function mapCoordsBBox(points: MapLatLng[]): {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+} | null {
+  const valid = filterValidMapCoords(points);
+  if (valid.length === 0) return null;
+  let minLat = valid[0].latitude;
+  let maxLat = valid[0].latitude;
+  let minLng = valid[0].longitude;
+  let maxLng = valid[0].longitude;
+  for (const p of valid) {
+    minLat = Math.min(minLat, p.latitude);
+    maxLat = Math.max(maxLat, p.latitude);
+    minLng = Math.min(minLng, p.longitude);
+    maxLng = Math.max(maxLng, p.longitude);
+  }
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+function filterPolylineNearEndpoints(poly: MapLatLng[], endpoints: MapLatLng[]): MapLatLng[] {
+  const ep = filterValidMapCoords(endpoints);
+  const validPoly = filterValidMapCoords(poly);
+  if (ep.length === 0 || validPoly.length < 2) return validPoly;
+  const bb = mapCoordsBBox(ep);
+  if (!bb) return validPoly;
+  const latSpan = Math.max(bb.maxLat - bb.minLat, 0.003);
+  const lngSpan = Math.max(bb.maxLng - bb.minLng, 0.003);
+  const padLat = Math.max(latSpan * 0.22, 0.008);
+  const padLng = Math.max(lngSpan * 0.22, 0.008);
+  const minLat = bb.minLat - padLat;
+  const maxLat = bb.maxLat + padLat;
+  const minLng = bb.minLng - padLng;
+  const maxLng = bb.maxLng + padLng;
+  const clipped = validPoly.filter(
+    (p) => p.latitude >= minLat && p.latitude <= maxLat && p.longitude >= minLng && p.longitude <= maxLng,
+  );
+  return clipped.length >= 2 ? clipped : validPoly;
+}
+
+function downsampleMapCoords(coords: MapLatLng[], maxPoints: number): MapLatLng[] {
+  if (coords.length <= maxPoints) return coords;
+  const out: MapLatLng[] = [];
+  const step = (coords.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i++) {
+    out.push(coords[Math.round(i * step)]!);
+  }
+  return out;
+}
+
+/** Polyline outlier’larını kes; endpoint’ler her zaman dahil */
+function passengerRouteFitCoords(endpoints: MapLatLng[], routePoly?: MapLatLng[] | null): MapLatLng[] {
+  const ep = dedupeMapCoords(filterValidMapCoords(endpoints));
+  if (ep.length === 0) return [];
+  if (!routePoly || routePoly.length < 2) return ep;
+  const clipped = filterPolylineNearEndpoints(routePoly, ep);
+  const sampled = downsampleMapCoords(clipped, 28);
+  return dedupeMapCoords([...sampled, ...ep]);
+}
+
+function passengerMapEdgePadding(): { top: number; right: number; bottom: number; left: number } {
+  const H = Dimensions.get('window').height;
+  if (Platform.OS === 'ios') {
+    return {
+      top: Math.round(H * 0.2),
+      right: 44,
+      bottom: Math.round(H * 0.28),
+      left: 44,
+    };
+  }
+  return { top: 210, right: 48, bottom: 300, left: 48 };
+}
+
+function cappedRegionForPassengerMapFit(
+  points: MapLatLng[],
+  edgePadding: { top: number; right: number; bottom: number; left: number },
+): {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+} | null {
+  const valid = filterValidMapCoords(points);
+  if (valid.length === 0) return null;
+  if (valid.length === 1) {
+    return {
+      latitude: valid[0]!.latitude,
+      longitude: valid[0]!.longitude,
+      latitudeDelta: PAX_MAP_FIT_SINGLE_DELTA,
+      longitudeDelta: PAX_MAP_FIT_SINGLE_DELTA,
+    };
+  }
+  const bb = mapCoordsBBox(valid);
+  if (!bb) return null;
+  const H = Dimensions.get('window').height;
+  const W = Dimensions.get('window').width;
+  const visibleLatFraction = Math.max(0.44, 1 - edgePadding.top / H - edgePadding.bottom / H);
+  const visibleLngFraction = Math.max(0.52, 1 - edgePadding.left / W - edgePadding.right / W);
+  const latSpan = Math.max(bb.maxLat - bb.minLat, 0.001);
+  const lngSpan = Math.max(bb.maxLng - bb.minLng, 0.001);
+  const spanKm = bboxMaxSpanKm(bb);
+  let maxDelta = paxMapFitMaxDelta();
+  if (Platform.OS === 'ios' && spanKm <= 15) {
+    maxDelta = Math.min(maxDelta, spanKm <= 5 ? 0.038 : 0.045);
+  }
+  const fitInflate = Platform.OS === 'ios' ? 1.12 : 1.22;
+  let latDelta = Math.min(
+    maxDelta,
+    Math.max(PAX_MAP_FIT_MIN_DELTA, (latSpan / visibleLatFraction) * fitInflate),
+  );
+  let lngDelta = Math.min(
+    maxDelta,
+    Math.max(PAX_MAP_FIT_MIN_DELTA, (lngSpan / visibleLngFraction) * fitInflate),
+  );
+  latDelta = Math.max(latDelta, lngDelta * 0.82);
+  lngDelta = Math.max(lngDelta, latDelta * 0.82);
+  return {
+    latitude: (bb.minLat + bb.maxLat) / 2,
+    longitude: (bb.minLng + bb.maxLng) / 2,
+    latitudeDelta: latDelta,
+    longitudeDelta: lngDelta,
+  };
+}
+
+/** Yolcu matched/trip: geçerli noktalar + cap’li region; ülke/dünya zoom-out yok */
+function applyPassengerMapFit(
+  map: {
+    fitToCoordinates?: (coords: MapLatLng[], opts: object) => void;
+    animateToRegion?: (region: object, duration?: number) => void;
+  } | null
+  | undefined,
+  endpoints: MapLatLng[],
+  routePoly?: MapLatLng[] | null,
+): boolean {
+  if (!map) return false;
+  const fitPts = passengerRouteFitCoords(endpoints, routePoly);
+  if (fitPts.length === 0) return false;
+  const padding = passengerMapEdgePadding();
+  const capped = cappedRegionForPassengerMapFit(fitPts, padding);
+  if (!capped) return false;
+
+  if (
+    fitPts.length >= 2 &&
+    typeof map.fitToCoordinates === 'function' &&
+    Platform.OS !== 'ios'
+  ) {
+    try {
+      map.fitToCoordinates(filterValidMapCoords(fitPts), {
+        edgePadding: padding,
+        animated: true,
+      });
+    } catch {
+      /* capped region fallback */
+    }
+  }
+
+  if (typeof map.animateToRegion === 'function') {
+    map.animateToRegion(capped, Platform.OS === 'ios' ? 380 : 420);
+    return true;
+  }
+  return false;
+}
+
 /** Fit / kamera / marker: önce ref’teki stabil nokta, sonra state, sonra ham GPS */
 function resolveNavigationAnchor(
   stableRef: React.MutableRefObject<MapLatLng | null>,
@@ -4468,6 +4666,18 @@ export default function LiveMapView({
         return;
       }
 
+      if (!isDriver) {
+        if (mapFitRef.current.initialDone) return;
+        const ep: MapLatLng[] = [];
+        if (isValidMapCoord(anchor)) ep.push(anchor);
+        if (isValidMapCoord(otherLocation)) ep.push(otherLocation);
+        if (destinationLocation && isValidMapCoord(destinationLocation)) ep.push(destinationLocation);
+        if (applyPassengerMapFit(mapRef.current, ep, routeCoords)) {
+          mapFitRef.current.initialDone = true;
+        }
+        return;
+      }
+
       const navMeetingOnly = isDriver && navigationMode && navigationStage === 'pickup';
       const legKm = straightLineKm(anchor, otherLocation);
       const polyForSlice =
@@ -5119,7 +5329,21 @@ export default function LiveMapView({
               lastOsrmAtRef.current = Date.now();
               lastOsrmKeyRef.current = meetingEndpointsKeyHere();
               recordOsrmRefetchGuard();
-              fitNavigationViewportRef.current?.(polyPax);
+              if (!isDriver) {
+                if (!mapFitRef.current.initialDone) {
+                  const paxFitEp: MapLatLng[] = [];
+                  if (isValidMapCoord(start)) paxFitEp.push(start);
+                  if (isValidMapCoord(end)) paxFitEp.push(end);
+                  if (destinationLocation && isValidMapCoord(destinationLocation)) {
+                    paxFitEp.push(destinationLocation);
+                  }
+                  if (applyPassengerMapFit(mapRef.current, paxFitEp, polyPax)) {
+                    mapFitRef.current.initialDone = true;
+                  }
+                }
+              } else if (!navigationModeRef.current) {
+                fitNavigationViewportRef.current?.(polyPax);
+              }
               console.log('ROUTE FETCH OK', { points: polyPax.length });
             }
           } else {
@@ -5217,26 +5441,21 @@ export default function LiveMapView({
     }
 
     const t = setTimeout(() => {
-      const coordinates = [userLocation, otherLocation];
-      if (destinationLocation) {
-        coordinates.push(destinationLocation);
-      }
       const map = mapRef.current;
-      // `map?.fitToCoordinates(...)` still calls undefined if ref exists but native method not bound yet (Android).
-      callCheck('mapRef.current.fitToCoordinates', map?.fitToCoordinates);
-      const fit = map && typeof map.fitToCoordinates === 'function' ? map.fitToCoordinates.bind(map) : null;
-      console.log('[PAX_DEBUG] LiveMapView passenger fit', { hasMap: !!map, fitToCoordinates: typeof map?.fitToCoordinates });
-      if (fit) {
-        try {
-          fit(coordinates, {
-            edgePadding: { top: 210, right: 48, bottom: 300, left: 48 },
-            animated: true,
-          });
-        } catch (e) {
-          if (__DEV__) console.warn('[LiveMapView] fitToCoordinates', e);
-        }
+      const endpoints: MapLatLng[] = [userLocation, otherLocation];
+      if (destinationLocation && isValidMapCoord(destinationLocation)) {
+        endpoints.push(destinationLocation);
       }
-      mapFitRef.current.initialDone = true;
+      const routePoly =
+        meetingRouteCoordinatesRef.current.length >= 2 ? meetingRouteCoordinatesRef.current : null;
+      console.log('[PAX_DEBUG] LiveMapView passenger fit', {
+        hasMap: !!map,
+        endpointCount: filterValidMapCoords(endpoints).length,
+        polylinePoints: routePoly?.length ?? 0,
+      });
+      if (applyPassengerMapFit(map, endpoints, routePoly)) {
+        mapFitRef.current.initialDone = true;
+      }
     }, 650);
     return () => clearTimeout(t);
   }, [userLocation, otherLocation, destinationLocation, isDriver]);

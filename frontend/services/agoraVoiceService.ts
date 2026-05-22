@@ -34,6 +34,9 @@ export class AgoraVoiceService {
   private joinRequested = false;
   /** Güven videosu için açılmış motor — normal ses initialize öncesi temizlenir */
   private isTrustVideoEngine = false;
+  private leaveInFlight: Promise<void> | null = null;
+  private trustJoinInFlight: Promise<void> | null = null;
+  private trustJoinKey: string | null = null;
 
   /** joinChannel bir kez çağrıldıysa true (caller index’te join ettiğinde CallScreen tekrar join denemesin) */
   isJoinPending(): boolean {
@@ -101,35 +104,56 @@ export class AgoraVoiceService {
    * (SDK tek IRtcEngine — normal aramadan önce mutlaka leaveChannelAndDestroy.)
    */
   async joinTrustVideoChannel(channelName: string, token: string, uid: number): Promise<void> {
-    await this.leaveChannelAndDestroy();
-    this.joinRequested = false;
-    const engine = createAgoraRtcEngine() as IRtcEngine;
-    engine.initialize({
-      appId: AGORA_APP_ID,
-      channelProfile: ChannelProfileType.ChannelProfileCommunication,
-    });
-    this.eventHandler = this.buildHandler();
-    engine.registerEventHandler(this.eventHandler);
-    engine.enableAudio();
-    engine.setAudioProfile(0, 1);
-    engine.setDefaultAudioRouteToSpeakerphone(true);
-    engine.setEnableSpeakerphone(true);
-    engine.enableVideo();
-    try {
-      engine.startPreview();
-    } catch {
-      /* noop */
+    const key = `${String(channelName).trim()}|${uid}`;
+    if (this.trustJoinInFlight && this.trustJoinKey === key) {
+      return this.trustJoinInFlight;
     }
-    this.engine = engine;
-    this.isTrustVideoEngine = true;
-    this.joinRequested = true;
-    this.engine.joinChannel(token, channelName, uid, {
-      clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-      publishMicrophoneTrack: true,
-      publishCameraTrack: true,
-      autoSubscribeAudio: true,
-      autoSubscribeVideo: true,
-    });
+    if (this.trustJoinInFlight) {
+      await this.trustJoinInFlight.catch(() => {});
+    }
+
+    const op = (async () => {
+      await this.leaveChannelAndDestroy();
+      this.joinRequested = false;
+      const engine = createAgoraRtcEngine() as IRtcEngine;
+      engine.initialize({
+        appId: AGORA_APP_ID,
+        channelProfile: ChannelProfileType.ChannelProfileCommunication,
+      });
+      this.eventHandler = this.buildHandler();
+      engine.registerEventHandler(this.eventHandler);
+      engine.enableAudio();
+      engine.setAudioProfile(0, 1);
+      engine.setDefaultAudioRouteToSpeakerphone(true);
+      engine.setEnableSpeakerphone(true);
+      engine.enableVideo();
+      try {
+        engine.startPreview();
+      } catch {
+        /* noop */
+      }
+      this.engine = engine;
+      this.isTrustVideoEngine = true;
+      this.joinRequested = true;
+      this.engine.joinChannel(token, channelName, uid, {
+        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+        publishMicrophoneTrack: true,
+        publishCameraTrack: true,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: true,
+      });
+    })();
+
+    this.trustJoinKey = key;
+    this.trustJoinInFlight = op;
+    try {
+      await op;
+    } finally {
+      if (this.trustJoinInFlight === op) {
+        this.trustJoinInFlight = null;
+        this.trustJoinKey = null;
+      }
+    }
   }
 
   /**
@@ -161,36 +185,48 @@ export class AgoraVoiceService {
   }
 
   async leaveChannelAndDestroy(): Promise<void> {
+    if (this.leaveInFlight) {
+      return this.leaveInFlight;
+    }
     const eng = this.engine;
     const handler = this.eventHandler;
+    if (!eng) {
+      return;
+    }
     this.joinRequested = false;
     this.isTrustVideoEngine = false;
     this.engine = null;
     this.eventHandler = null;
-    if (!eng) {
-      return;
-    }
-    try {
-      eng.stopPreview();
-    } catch {
-      /* noop */
-    }
-    try {
-      eng.leaveChannel();
-    } catch {
-      /* noop */
-    }
-    try {
-      if (handler) {
-        eng.unregisterEventHandler(handler);
+
+    this.leaveInFlight = (async () => {
+      try {
+        eng.stopPreview();
+      } catch {
+        /* noop */
       }
-    } catch {
-      /* noop */
-    }
+      try {
+        eng.leaveChannel();
+      } catch {
+        /* noop */
+      }
+      try {
+        if (handler) {
+          eng.unregisterEventHandler(handler);
+        }
+      } catch {
+        /* noop */
+      }
+      try {
+        eng.release();
+      } catch {
+        /* noop */
+      }
+    })();
+
     try {
-      eng.release();
-    } catch {
-      /* noop */
+      await this.leaveInFlight;
+    } finally {
+      this.leaveInFlight = null;
     }
   }
 }

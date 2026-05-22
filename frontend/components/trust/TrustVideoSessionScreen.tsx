@@ -81,6 +81,8 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   const endedRef = useRef(false);
   const deadlineMsRef = useRef<number | null>(null);
   const joinStartedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const activeJoinSessionKeyRef = useRef<string | null>(null);
   /** Yeni güven oturumu (trustId+kanal+token) — ana effect’te setJoining ile yanlış “bağlanıyor” resetini önlemek için */
   const trustSessionUiKeyRef = useRef<string>('');
 
@@ -88,6 +90,13 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   const peerUserIdRef = useRef(peerUserId);
   userIdRef.current = userId;
   peerUserIdRef.current = peerUserId;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -119,19 +128,39 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   useEffect(() => {
     const ch = String(channelName ?? '').trim();
     const tok = String(agoraToken ?? '').trim();
-    if (!ch || !tok) return;
-    if (joinStartedRef.current) return;
+    const tid = String(trustId ?? '').trim();
+    if (!ch || !tok || !tid) return;
+
+    const sessionKey = `${tid}|${ch}|${tok}`;
+    if (joinStartedRef.current && activeJoinSessionKeyRef.current === sessionKey) {
+      return;
+    }
+
     joinStartedRef.current = true;
-    setJoining(true);
+    activeJoinSessionKeyRef.current = sessionKey;
+    let effectActive = true;
+    if (mountedRef.current) setJoining(true);
+
+    const safeSetJoining = (v: boolean) => {
+      if (mountedRef.current && effectActive) setJoining(v);
+    };
+    const safeSetError = (msg: string | null) => {
+      if (mountedRef.current && effectActive) setError(msg);
+    };
+    const safeSetRemoteUid = (uid: number) => {
+      if (mountedRef.current && effectActive) setRemoteUid(uid);
+    };
 
     const run = async () => {
       if (Platform.OS === 'android') {
         const cam = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
         const mic = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        if (!mountedRef.current || !effectActive) return;
         if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
           joinStartedRef.current = false;
-          setError('Kamera ve mikrofon izni gerekli.');
-          setJoining(false);
+          activeJoinSessionKeyRef.current = null;
+          safeSetError('Kamera ve mikrofon izni gerekli.');
+          safeSetJoining(false);
           return;
         }
       }
@@ -161,7 +190,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
                 remote_uid: uid,
               }),
             );
-            setRemoteUid(uid);
+            safeSetRemoteUid(uid);
             console.log(
               '[TRUST]',
               JSON.stringify({
@@ -185,7 +214,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
               msg,
             }),
           );
-          setError('Bağlantı hatası');
+          safeSetError('Bağlantı hatası');
         },
       });
       try {
@@ -201,8 +230,10 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
           }),
         );
         await trustVideoJoin(ch, tok, myUid);
-        setJoining(false);
+        if (!mountedRef.current || !effectActive) return;
+        safeSetJoining(false);
       } catch (e) {
+        if (!mountedRef.current || !effectActive) return;
         console.warn('Trust video join', e);
         console.log(
           '[TRUST]',
@@ -215,15 +246,20 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
           }),
         );
         joinStartedRef.current = false;
-        setError('Görüntülü bağlantı kurulamadı.');
-        setJoining(false);
+        activeJoinSessionKeyRef.current = null;
+        safeSetError('Görüntülü bağlantı kurulamadı.');
+        safeSetJoining(false);
       }
     };
 
     void run();
 
     return () => {
+      effectActive = false;
       joinStartedRef.current = false;
+      if (activeJoinSessionKeyRef.current === sessionKey) {
+        activeJoinSessionKeyRef.current = null;
+      }
       void trustVideoLeave();
       agoraVoiceService.resetCallbacks();
     };

@@ -5,15 +5,26 @@
 import { agoraVoiceService } from './agoraVoiceService';
 
 let joinPromise: Promise<void> | null = null;
+let joinChannelKey: string | null = null;
+let leavePromise: Promise<void> | null = null;
+
+function trustJoinKey(channelName: string, token: string, uid: number): string {
+  return `${String(channelName).trim()}|${String(token).trim()}|${uid}`;
+}
 
 export async function trustVideoJoin(
   channelName: string,
   token: string,
   uid: number,
 ): Promise<void> {
-  if (joinPromise) {
+  const key = trustJoinKey(channelName, token, uid);
+  if (joinPromise && joinChannelKey === key) {
     return joinPromise;
   }
+  if (joinPromise) {
+    await joinPromise.catch(() => {});
+  }
+  joinChannelKey = key;
   joinPromise = (async () => {
     try {
       await agoraVoiceService.leaveChannelAndDestroy();
@@ -36,10 +47,23 @@ export async function trustVideoJoin(
   try {
     await joinPromise;
   } finally {
-    joinPromise = null;
+    if (joinChannelKey === key) {
+      joinPromise = null;
+      joinChannelKey = null;
+    }
   }
 }
 
 export async function trustVideoLeave(): Promise<void> {
-  await agoraVoiceService.leaveChannelAndDestroy();
+  if (leavePromise) {
+    return leavePromise;
+  }
+  leavePromise = (async () => {
+    await agoraVoiceService.leaveChannelAndDestroy();
+  })();
+  try {
+    await leavePromise;
+  } finally {
+    leavePromise = null;
+  }
 }
