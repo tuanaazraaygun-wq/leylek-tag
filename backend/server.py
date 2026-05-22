@@ -35390,6 +35390,84 @@ async def get_nearby_drivers(
         logger.error(f"Nearby drivers error: {e}")
         return {"success": False, "drivers": [], "count": 0}
 
+@api_router.get("/driver/demand-snapshot")
+async def driver_demand_snapshot_endpoint(
+    radius_km: float = 20,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Read-only talep yoğunluğu özeti (Bearer; ham koordinat/id yok)."""
+    from services import operation_snapshot as op_snapshot
+
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Servis geçici olarak kullanılamıyor")
+    try:
+        uid = str(await resolve_user_id(authenticated_user_id)).strip().lower()
+        user_row = (
+            supabase.table("users")
+            .select("id, driver_details")
+            .eq("id", uid)
+            .limit(1)
+            .execute()
+        )
+        if not user_row.data or not op_snapshot.user_is_driver_for_snapshot(user_row.data[0]):
+            raise HTTPException(status_code=403, detail="Bu özet yalnızca sürücü hesapları içindir")
+        snap = await asyncio.to_thread(
+            op_snapshot.build_driver_demand_snapshot_sync, uid, radius_km
+        )
+        return {"ok": True, "snapshot": snap}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(
+            "demand-snapshot err uid=%s %s",
+            _mask_log_id(authenticated_user_id),
+            type(e).__name__,
+        )
+        raise HTTPException(status_code=500, detail="Anlık özet alınamadı") from e
+
+
+@api_router.get("/passenger/availability-snapshot")
+async def passenger_availability_snapshot_endpoint(
+    radius_km: float = 20,
+    tag_id: Optional[str] = None,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Read-only sürücü uygunluk özeti (Bearer; ham koordinat/id yok)."""
+    from services import operation_snapshot as op_snapshot
+
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Servis geçici olarak kullanılamıyor")
+    try:
+        uid = str(await resolve_user_id(authenticated_user_id)).strip().lower()
+        if tag_id and str(tag_id).strip():
+            tid = str(tag_id).strip()
+            tr = (
+                supabase.table("tags")
+                .select("passenger_id")
+                .eq("id", tid)
+                .eq("type", TAG_TYPE_NORMAL)
+                .limit(1)
+                .execute()
+            )
+            if not tr.data:
+                raise HTTPException(status_code=404, detail="İstek bulunamadı")
+            if str(tr.data[0].get("passenger_id") or "").strip().lower() != uid:
+                raise HTTPException(status_code=403, detail="Bu isteğe erişim yetkiniz yok")
+        snap = await asyncio.to_thread(
+            op_snapshot.build_passenger_availability_snapshot_sync, uid, radius_km, tag_id
+        )
+        return {"ok": True, "snapshot": snap}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(
+            "availability-snapshot err uid=%s %s",
+            _mask_log_id(authenticated_user_id),
+            type(e).__name__,
+        )
+        raise HTTPException(status_code=500, detail="Anlık özet alınamadı") from e
+
+
 @api_router.get("/driver/nearby-activity")
 async def get_nearby_activity(
     lat: float,
