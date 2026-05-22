@@ -1155,7 +1155,7 @@ export default function DriverKYCScreen({
         ? {
             user_id: userId,
             vehicle_kind: 'motorcycle',
-            plate_number: plateNumber.trim() ? plateNumber.toUpperCase().trim() : null,
+            plate_number: plateNumber.trim() ? plateNumber.toLocaleUpperCase('tr-TR').trim() : null,
             vehicle_brand: vehicleBrand.trim(),
             vehicle_model: vehicleModel.trim(),
             license_photo_base64: licensePhoto,
@@ -1167,7 +1167,7 @@ export default function DriverKYCScreen({
         : {
             user_id: userId,
             vehicle_kind: 'car',
-            plate_number: plateNumber.toUpperCase().trim(),
+            plate_number: plateNumber.toLocaleUpperCase('tr-TR').trim(),
             vehicle_brand: vehicleBrand,
             vehicle_model: vehicleModel,
             vehicle_year: vehicleYear || null,
@@ -1300,8 +1300,9 @@ export default function DriverKYCScreen({
                     placeholder="Örn: 34 ABC 123"
                     placeholderTextColor="rgba(186,201,222,0.42)"
                     value={plateNumber}
-                    onChangeText={setPlateNumber}
+                    onChangeText={(text) => setPlateNumber(text.toLocaleUpperCase('tr-TR'))}
                     autoCapitalize="characters"
+                    autoCorrect={false}
                   />
                   <Text style={styles.label}>Araç Markası *</Text>
                   <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
@@ -1523,8 +1524,9 @@ export default function DriverKYCScreen({
                     placeholder="Varsa yazın"
                     placeholderTextColor="rgba(186,201,222,0.42)"
                     value={plateNumber}
-                    onChangeText={setPlateNumber}
+                    onChangeText={(text) => setPlateNumber(text.toLocaleUpperCase('tr-TR'))}
                     autoCapitalize="characters"
+                    autoCorrect={false}
                   />
                 </>
               )}

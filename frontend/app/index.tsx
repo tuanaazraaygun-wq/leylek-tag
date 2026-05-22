@@ -2415,37 +2415,10 @@ export default function App() {
           appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
         }
       } else {
-        // 🆕 YENİ KULLANICI - Kayıt sayfasına yönlendir
-        appAlert(
-          'Kayıt Ol 📝', 
-          'Bu numara kayıtlı değil. Kayıt olmak ister misiniz?',
-          [
-            { text: 'İptal', style: 'cancel' },
-            { 
-              text: 'Kayıt Ol', 
-              onPress: async () => {
-                setUserExists(false);
-                setHasPin(false);
-                const response = await fetch(`${API_URL}/auth/send-otp`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ phone: cleanPhone })
-                });
-                const { data } = await parseApiJson(response);
-                if (!response.ok) {
-                  appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
-                  return;
-                }
-                if (data.success) {
-                  appAlert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.');
-                  setScreen('otp');
-                } else {
-                  appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
-                }
-              }
-            }
-          ]
-        );
+        // Yeni kullanıcı — OTP yalnızca kayıt formu DEVAM ET'te bir kez gönderilir
+        setUserExists(false);
+        setHasPin(false);
+        setScreen('register');
         return;
       }
     } catch (error) {
