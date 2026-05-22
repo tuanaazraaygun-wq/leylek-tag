@@ -35,6 +35,13 @@ function normTrustId(v: unknown): string {
     .toLowerCase();
 }
 
+/** GET /trust/active veya socket'te deadline boş gelirse iOS video shell açılmasın diye client fallback */
+function trustSessionDeadlineIso(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (s && Number.isFinite(Date.parse(s))) return s;
+  return new Date(Date.now() + 15 * 60 * 1000).toISOString();
+}
+
 export type TrustRequestModalState = {
   trustId: string;
   tagId: string;
@@ -514,12 +521,12 @@ export function useTrustSessionController({
       const rowTag = String(s.tag_id ?? '').trim().toLowerCase();
       if (rowTag !== requestedTag) return;
       const ch = String(s.channel_name ?? '').trim();
-      const recoveryTok = String(s.recovery_agora_token ?? '').trim();
+      const recoveryTok = String(s.recovery_agora_token ?? s.agora_token ?? '').trim();
       if (!ch || !recoveryTok) return;
       const trustId = String(s.id ?? '').trim();
-      const deadline = String(s.session_hard_deadline_at ?? '').trim();
-      const peer = String(s.recovery_peer_user_id ?? '').trim();
-      if (!trustId || !deadline || !peer) return;
+      const deadline = trustSessionDeadlineIso(s.session_hard_deadline_at);
+      const peer = String(s.recovery_peer_user_id ?? s.peer_user_id ?? '').trim();
+      if (!trustId || !peer) return;
 
       setTrustVideoSession({
         trustId,
@@ -567,12 +574,12 @@ export function useTrustSessionController({
         const rowTag = String(s.tag_id ?? '').trim().toLowerCase();
         if (rowTag !== tid) return;
         const ch = String(s.channel_name ?? '').trim();
-        const recoveryTok = String(s.recovery_agora_token ?? '').trim();
+        const recoveryTok = String(s.recovery_agora_token ?? s.agora_token ?? '').trim();
         if (!ch || !recoveryTok) return;
         const trustId = String(s.id ?? '').trim();
-        const deadline = String(s.session_hard_deadline_at ?? '').trim();
-        const peer = String(s.recovery_peer_user_id ?? '').trim();
-        if (!trustId || !deadline || !peer) return;
+        const deadline = trustSessionDeadlineIso(s.session_hard_deadline_at);
+        const peer = String(s.recovery_peer_user_id ?? s.peer_user_id ?? '').trim();
+        if (!trustId || !peer) return;
 
         outboundTrustIdRef.current = null;
         setTrustOutgoingPending(false);
@@ -1141,7 +1148,7 @@ export function useTrustSessionController({
           channelName: ch,
           agoraToken: tok,
           peerUserId: peer,
-          sessionHardDeadlineAt: String(data.session_hard_deadline_at ?? ''),
+          sessionHardDeadlineAt: trustSessionDeadlineIso(data.session_hard_deadline_at),
           peerDisplayName: peerName,
         });
         return;

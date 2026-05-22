@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar, Vibration, DeviceEventEmitter } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, Keyboard, StatusBar, Vibration, DeviceEventEmitter } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -94,6 +94,7 @@ import {
   haversineMetersLatLng,
   BOARDING_NEAR_ENTER_M,
   BOARDING_NEAR_EXIT_M,
+  BOARDING_QR_EARLY_SCAN_M,
   BOARDING_STABLE_MS,
   BOARDING_DECLINE_COOLDOWN_MS,
   BOARDING_DECLINE_COOLDOWN_LONG_MS,
@@ -8060,6 +8061,21 @@ function PassengerDashboard({
     setRideVehiclePreference(passengerVehicleFromRole);
   }, [passengerVehicleFromRole]);
 
+  const activePassengerMapVehicleKind = useMemo((): 'car' | 'motorcycle' => {
+    const raw = String(
+      activeTag?.passenger_vehicle_kind ??
+        activeTag?.passenger_preferred_vehicle ??
+        rideVehiclePreference,
+    )
+      .trim()
+      .toLowerCase();
+    return raw === 'motorcycle' || raw === 'motor' ? 'motorcycle' : 'car';
+  }, [
+    activeTag?.passenger_vehicle_kind,
+    activeTag?.passenger_preferred_vehicle,
+    rideVehiclePreference,
+  ]);
+
   // 🆕 Yolcu için yakındaki sürücü sayısını çek (SEARCHING phase)
   useEffect(() => {
     if (!activeTag || activeTag.status === 'matched' || activeTag.status === 'in_progress') {
@@ -8070,7 +8086,9 @@ function PassengerDashboard({
       if (!userLocation) return;
       
       try {
-        const vk = encodeURIComponent(rideVehiclePreference);
+        const vk = encodeURIComponent(
+          activeTag ? activePassengerMapVehicleKind : rideVehiclePreference,
+        );
         const response = await fetch(
           `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20&passenger_vehicle_kind=${vk}`
         );
@@ -8087,7 +8105,7 @@ function PassengerDashboard({
     const interval = setInterval(fetchNearbyDrivers, 10000); // Her 10 saniyede güncelle
     
     return () => clearInterval(interval);
-  }, [activeTag, userLocation, rideVehiclePreference]);
+  }, [activeTag, userLocation, rideVehiclePreference, activePassengerMapVehicleKind]);
   
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
@@ -8809,10 +8827,32 @@ function PassengerDashboard({
       return;
     }
     
-    // Her teklif için sürücü konumu oluştur
+    const tagVk = activePassengerMapVehicleKind;
+
+    // Her teklif için sürücü konumu oluştur — harita yalnız seçilen araç tipi
     const newDriverLocations: DriverLocation[] = offers
-      .filter(offer => offer.driver_id)
-      .map(offer => ({
+      .filter((offer) => offer.driver_id)
+      .filter((offer) => {
+        const raw = String(
+          offer.driver_vehicle_kind ??
+            (offer as { vehicle_kind?: unknown }).vehicle_kind ??
+            '',
+        )
+          .trim()
+          .toLowerCase();
+        const ovk = raw === 'motorcycle' || raw === 'motor' ? 'motorcycle' : 'car';
+        return ovk === tagVk;
+      })
+      .map((offer) => {
+        const rawVk = String(
+          offer.driver_vehicle_kind ??
+            (offer as { vehicle_kind?: unknown }).vehicle_kind ??
+            '',
+        )
+          .trim()
+          .toLowerCase();
+        const mappedVk = rawVk === 'motorcycle' || rawVk === 'motor' ? 'motorcycle' : 'car';
+        return {
         driver_id: offer.driver_id,
         driver_name: offer.driver_name || 'Sürücü',
         // Offer'daki konum bilgisi veya varsayılan
@@ -8820,11 +8860,12 @@ function PassengerDashboard({
         longitude: (offer as any).driver_longitude || (offer as any).longitude || userLocation?.longitude || 0,
         vehicle_model: offer.vehicle_model,
         price: offer.price,
-        vehicle_kind: offer.driver_vehicle_kind === 'motorcycle' ? 'motorcycle' : 'car',
-      }));
+        vehicle_kind: mappedVk,
+      };
+      });
     
     setOfferDriverLocations(newDriverLocations);
-  }, [offers.length, offers.map(o => o.driver_id).join(',')]);
+  }, [offers.length, offers.map(o => o.driver_id).join(','), activePassengerMapVehicleKind]);
   
   // Mesafe ve süre state'leri
   
@@ -8921,6 +8962,8 @@ function PassengerDashboard({
       } catch {
         /* noop */
       }
+      setCallRejected(true);
+      void agoraVoiceService.leaveChannelAndDestroy().catch(() => {});
       const title = source === 'timeout' ? 'Arama' : 'Reddedildi';
       const msg = source === 'timeout' ? 'Karşı taraf yanıt vermedi.' : 'Arama reddedildi';
       appAlert(title, msg, [], {
@@ -8928,7 +8971,9 @@ function PassengerDashboard({
         autoDismissMs: source === 'timeout' ? 3200 : 2600,
         cancelable: true,
       });
-      closePassengerCallUi();
+      setTimeout(() => {
+        closePassengerCallUi();
+      }, 300);
       try {
         console.log(
           'CALL_UI_CLOSE',
@@ -10040,6 +10085,44 @@ function PassengerDashboard({
     }
   }, [activeTag?.status, activeTag?.boarding_confirmed_at, activeTag?.id]);
 
+  /**
+   * Manuel biniş QR (harita “Biniş Kodunu Tara”) — yalnız BOARDING_QR_EARLY_SCAN_M.
+   * “Araca bindiniz mi?” prompt / 100m banner akışı bu fonksiyonu kullanmaz.
+   */
+  const openPassengerBoardingScanManualEntry = useCallback(() => {
+    if (!activeTag || activeTag.status !== 'matched' || activeTag.boarding_confirmed_at) {
+      return;
+    }
+    if (!userLocation || !driverLocation) {
+      appAlert(
+        'Konum',
+        'Konum bilgisi alınamadı. Biraz bekleyip tekrar deneyin.',
+        [{ text: 'Tamam' }],
+        { variant: 'info' },
+      );
+      return;
+    }
+    const d = haversineMetersLatLng(userLocation, driverLocation);
+    if (d > BOARDING_QR_EARLY_SCAN_M) {
+      appAlert(
+        'Bilgi',
+        'Biniş QR okutmak için sürücüye yaklaşın (200 m).',
+        [{ text: 'Tamam' }],
+        { variant: 'info', autoDismissMs: 3200, cancelable: true },
+      );
+      return;
+    }
+    setPassengerBoardingScanVisible(true);
+  }, [
+    activeTag,
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    userLocation,
+    driverLocation,
+  ]);
+
+  /** Guidance banner — BOARDING_NEAR_ENTER_M + BOARDING_STABLE_MS (prompt ile aynı eşik, erken QR değil) */
   useEffect(() => {
     if (passengerBoardingScanVisible) return;
     if (!activeTag || activeTag.status !== 'matched') return;
@@ -10076,6 +10159,7 @@ function PassengerDashboard({
     passengerBoardingScanVisible,
   ]);
 
+  /** “Araca bindiniz mi?” proximity prompt — BOARDING_NEAR_* / BOARDING_STABLE_MS (200m guard yok) */
   useEffect(() => {
     if (passengerBoardingScanVisible || passengerBoardingPromptVisible) return;
     if (!activeTag || activeTag.status !== 'matched') return;
@@ -11570,6 +11654,23 @@ function PassengerDashboard({
     setShowDestinationPicker(false);
   };
 
+  /** iOS destination picker geri — doğrudan rol ekranı (Android mevcut kapat akışı) */
+  const handleDestinationPickerBackPress = () => {
+    void tapButtonHaptic();
+    Keyboard.dismiss();
+    if (Platform.OS === 'ios') {
+      if (destinationAwaitingMapTap) {
+        setDestination(destinationSnapshotOnPickerOpenRef.current);
+      }
+      setDestinationAwaitingMapTap(false);
+      setDestinationPickerPhase('search');
+      setShowDestinationPicker(false);
+      setScreen('role-select');
+      return;
+    }
+    closeDestinationPickerModal();
+  };
+
   useEffect(() => {
     if (showDestinationPicker) {
       setDestinationPickerGeocoding(false);
@@ -11751,7 +11852,7 @@ function PassengerDashboard({
           dropoffAddress={passengerDestinationAddress}
           tagId={activeTag.id}
           offeredPrice={activeTag.final_price || activeTag.offered_price || 0}
-          passengerVehicleKind={rideVehiclePreference}
+          passengerVehicleKind={activePassengerMapVehicleKind}
           passengerGender={parseGender(user?.gender)}
           selfUserId={user?.id}
           onPressBack={handleCancelTag}
@@ -12371,6 +12472,7 @@ function PassengerDashboard({
                     void loadActiveTag();
                   }}
                   onShowQRModal={() => setShowQRModal(true)}
+                  onShowBoardingScanModal={openPassengerBoardingScanManualEntry}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
 
@@ -13107,7 +13209,7 @@ function PassengerDashboard({
       <Modal
         visible={showDestinationPicker}
         animationType="slide"
-        onRequestClose={closeDestinationPickerModal}
+        onRequestClose={handleDestinationPickerBackPress}
       >
         <View style={styles.destinationModalRoot}>
           {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
@@ -13211,7 +13313,7 @@ function PassengerDashboard({
                 pointerEvents="auto"
               >
                 <TouchableOpacity
-                  onPress={closeDestinationPickerModal}
+                  onPress={handleDestinationPickerBackPress}
                   style={styles.destinationModalBackBtn}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="button"
@@ -13387,6 +13489,7 @@ function PassengerDashboard({
             console.log('📞 YOLCU - Arama ekranı kapandı');
             setShowCallScreen(false);
             setCallScreenData(null);
+            setCalling(false);
             isCallActiveRef.current = false;
             setCallAccepted(false);
             setCallRejected(false);
@@ -14361,6 +14464,8 @@ function DriverDashboard({
       } catch {
         /* noop */
       }
+      setCallRejected(true);
+      void agoraVoiceService.leaveChannelAndDestroy().catch(() => {});
       const title = source === 'timeout' ? 'Arama' : 'Reddedildi';
       const msg = source === 'timeout' ? 'Karşı taraf yanıt vermedi.' : 'Arama reddedildi';
       appAlert(title, msg, [], {
@@ -14368,7 +14473,9 @@ function DriverDashboard({
         autoDismissMs: source === 'timeout' ? 3200 : 2600,
         cancelable: true,
       });
-      closeDriverCallUi();
+      setTimeout(() => {
+        closeDriverCallUi();
+      }, 300);
       try {
         console.log(
           'CALL_UI_CLOSE',
@@ -17950,6 +18057,7 @@ function DriverDashboard({
             console.log('📞 ŞOFÖR - Arama ekranı kapandı');
             setShowCallScreen(false);
             setCallScreenData(null);
+            setCalling(false);
             isCallActiveRef.current = false;
             setCallAccepted(false);
             setCallRejected(false);
@@ -24746,6 +24854,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
     ...Platform.select({
+      ios: { zIndex: 30 },
       android: { elevation: 10 },
       default: {},
     }),
@@ -24980,6 +25089,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(30, 58, 95, 0.5)',
     zIndex: 11,
     ...Platform.select({
+      ios: { zIndex: 31 },
       android: { elevation: 11 },
       default: {},
     }),

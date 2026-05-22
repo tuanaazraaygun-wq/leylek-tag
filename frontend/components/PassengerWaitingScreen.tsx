@@ -212,7 +212,14 @@ export default function PassengerWaitingScreen({
           const driversData = await driversResponse.json();
           
           if (driversData.drivers) {
-            setNearbyDrivers(driversData.drivers);
+            const wantM = passengerVehicleKind === 'motorcycle';
+            setNearbyDrivers(
+              driversData.drivers.filter((driver: NearbyDriver) => {
+                const vk = String(driver.vehicle_kind ?? 'car').trim().toLowerCase();
+                const isM = vk === 'motorcycle' || vk === 'motor';
+                return wantM ? isM : !isM;
+              }),
+            );
           }
         }
       } catch (error) {
