@@ -3661,8 +3661,18 @@ export default function LiveMapView({
     onShowBoardingScanModal?.();
   }, [onShowQRModal, onShowBoardingQRModal, onShowBoardingScanModal, boardingConfirmed, isDriver]);
   
+  /** QR satırı yalnız klasik trip action bar’da; immersive/modern sürücü UI’da görünmez. */
+  const showClassicTripQrPulse = useMemo(() => {
+    if (isDriver && navigationMode) return false;
+    if (isDriver && MapView && !navigationMode && modernLeylekOfferUi) return false;
+    return true;
+  }, [isDriver, navigationMode, modernLeylekOfferUi]);
+
   useEffect(() => {
-    // Sürekli yanıp sönen animasyon
+    if (!showClassicTripQrPulse) {
+      pulseAnim.setValue(1);
+      return;
+    }
     const pulseAnimation = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -3675,12 +3685,11 @@ export default function LiveMapView({
           duration: 800,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
     pulseAnimation.start();
-    
     return () => pulseAnimation.stop();
-  }, []);
+  }, [pulseAnim, showClassicTripQrPulse]);
 
   useEffect(() => {
     if (!isDriver) return;

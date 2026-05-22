@@ -52,11 +52,26 @@ const DASHBOARD_LEYLEK_FLOW_HINTS = new Set<LeylekZekaFlowHint>([
   'driver_kyc_pending',
 ]);
 
+/** Aktif yolculuk / harita navigasyonu — LiveMapView sparkles FAB; merkezi premium orb kapalı */
+const TRIP_FLOW_HINTS_HIDE_PREMIUM_ORB = new Set<LeylekZekaFlowHint>([
+  'passenger_trip',
+  'driver_trip',
+]);
+
+/** Aktif yolculuk — flowHint gecikse bile premium orb gizlensin (matched / in_progress). */
+export function isActiveTripTagStatus(status: string | null | undefined): boolean {
+  const st = String(status ?? '').trim().toLowerCase();
+  return st === 'matched' || st === 'in_progress';
+}
+
 type Ctx = {
   homeFlowScreen: LeylekZekaHomeFlowScreen;
   setHomeFlowScreen: (s: LeylekZekaHomeFlowScreen) => void;
   flowHint: LeylekZekaFlowHint;
   setFlowHint: (h: LeylekZekaFlowHint) => void;
+  /** matched / in_progress — LiveMapView sparkles FAB yeterli; flowHint gecikmesine karşı */
+  activeTripSuppressPremiumOrb: boolean;
+  setActiveTripSuppressPremiumOrb: (v: boolean) => void;
   /** Sohbet penceresi — giriş destek, rol ekranı satırı ve FAB ortak kullanır */
   leylekZekaChatOpen: boolean;
   setLeylekZekaChatOpen: (v: boolean) => void;
@@ -69,6 +84,7 @@ const LeylekZekaChromeContext = createContext<Ctx | null>(null);
 export function LeylekZekaChromeProvider({ children }: { children: React.ReactNode }) {
   const [homeFlowScreen, setHomeFlowScreenState] = useState<LeylekZekaHomeFlowScreen>(null);
   const [flowHint, setFlowHintState] = useState<LeylekZekaFlowHint>(null);
+  const [activeTripSuppressPremiumOrb, setActiveTripSuppressPremiumOrbState] = useState(false);
   const [leylekZekaChatOpen, setLeylekZekaChatOpen] = useState(false);
   const [passengerWaitInsight, setPassengerWaitInsightState] = useState<PassengerWaitInsight | null>(
     null,
@@ -82,12 +98,17 @@ export function LeylekZekaChromeProvider({ children }: { children: React.ReactNo
   const setFlowHint = useCallback((h: LeylekZekaFlowHint) => {
     setFlowHintState(h);
   }, []);
+  const setActiveTripSuppressPremiumOrb = useCallback((v: boolean) => {
+    setActiveTripSuppressPremiumOrbState(v);
+  }, []);
   const value = useMemo(
     () => ({
       homeFlowScreen,
       setHomeFlowScreen,
       flowHint,
       setFlowHint,
+      activeTripSuppressPremiumOrb,
+      setActiveTripSuppressPremiumOrb,
       leylekZekaChatOpen,
       setLeylekZekaChatOpen,
       passengerWaitInsight,
@@ -98,6 +119,8 @@ export function LeylekZekaChromeProvider({ children }: { children: React.ReactNo
       setHomeFlowScreen,
       flowHint,
       setFlowHint,
+      activeTripSuppressPremiumOrb,
+      setActiveTripSuppressPremiumOrb,
       leylekZekaChatOpen,
       passengerWaitInsight,
       setPassengerWaitInsight,
@@ -181,6 +204,8 @@ export function isMainIndexShell(pathname: string | null | undefined, segments: 
  * - `role-select`: açık (tek merkezi alt-orta orb).
  * - `login` / OTP / PIN vb.: kapalı.
  * - `dashboard`: `flowHint` ∈ `DASHBOARD_LEYLEK_FLOW_HINTS` iken açık (harita idle dahil).
+ * - `passenger_trip` / `driver_trip`: kapalı (LiveMapView sparkles FAB).
+ * - `activeTripSuppressPremiumOrb`: matched / in_progress (flowHint gecikmesine karşı).
  */
 export function shouldShowLeylekZekaFab(params: {
   pathname: string | null | undefined;
@@ -188,14 +213,18 @@ export function shouldShowLeylekZekaFab(params: {
   segments?: readonly string[] | null;
   homeFlowScreen: LeylekZekaHomeFlowScreen;
   flowHint: LeylekZekaFlowHint;
+  activeTripSuppressPremiumOrb?: boolean;
 }): boolean {
   if (!isMainIndexShell(params.pathname, params.segments ?? null)) return false;
   const s = params.homeFlowScreen;
   if (s == null) return false;
   if (s === 'role-select') return true;
   if (s === 'dashboard') {
+    if (params.activeTripSuppressPremiumOrb) return false;
     const h = params.flowHint;
-    return h != null && DASHBOARD_LEYLEK_FLOW_HINTS.has(h);
+    if (h == null) return false;
+    if (TRIP_FLOW_HINTS_HIDE_PREMIUM_ORB.has(h)) return false;
+    return DASHBOARD_LEYLEK_FLOW_HINTS.has(h);
   }
   return false;
 }

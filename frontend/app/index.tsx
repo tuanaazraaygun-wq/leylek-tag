@@ -122,7 +122,11 @@ import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/of
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import { playMatchChimeSound, playDriverNewOfferLuxuryTone, unloadDriverNewOfferLuxuryTone } from '../utils/sound';
-import { useLeylekZekaChrome, type LeylekZekaHomeFlowScreen } from '../contexts/LeylekZekaChromeContext';
+import {
+  isActiveTripTagStatus,
+  useLeylekZekaChrome,
+  type LeylekZekaHomeFlowScreen,
+} from '../contexts/LeylekZekaChromeContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -911,6 +915,12 @@ export default function App() {
       leylekChrome.setFlowHint(null);
     }
   }, [screen, leylekChrome.setFlowHint]);
+
+  useLayoutEffect(() => {
+    if (screen !== 'dashboard') {
+      leylekChrome.setActiveTripSuppressPremiumOrb(false);
+    }
+  }, [screen, leylekChrome.setActiveTripSuppressPremiumOrb]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
@@ -8756,6 +8766,9 @@ function PassengerDashboard({
       setOpen(true);
     }
   }, [leylekChromePassenger]);
+  useLayoutEffect(() => {
+    leylekChromePassenger.setActiveTripSuppressPremiumOrb(isActiveTripTagStatus(activeTag?.status));
+  }, [activeTag?.status, leylekChromePassenger.setActiveTripSuppressPremiumOrb]);
   useEffect(() => {
     const setHint = leylekChromePassenger?.setFlowHint;
     if (typeof setHint !== 'function') return;
@@ -9575,7 +9588,7 @@ function PassengerDashboard({
       };
       
       fetchDriverLocation();
-      const interval = setInterval(fetchDriverLocation, 1000); // 1 saniyede bir güncelle - CANLI
+      const interval = setInterval(fetchDriverLocation, 2000); // iOS UI yükü — 2s yeterince canlı
 
       return () => clearInterval(interval);
     }
@@ -10298,7 +10311,7 @@ function PassengerDashboard({
     };
 
     checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 1000);
+    const interval = setInterval(checkTripEndRequest, 2000);
     passengerCheckEndIntervalRef.current = interval;
     return () => {
       clearInterval(interval);
@@ -16316,7 +16329,7 @@ function DriverDashboard({
     };
 
     checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 1000);
+    const interval = setInterval(checkTripEndRequest, 2000);
     driverCheckEndIntervalRef.current = interval;
     return () => {
       clearInterval(interval);
@@ -16617,6 +16630,9 @@ function DriverDashboard({
     activeTag &&
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
   );
+  useLayoutEffect(() => {
+    leylekChromeDriver.setActiveTripSuppressPremiumOrb(isActiveTripTagStatus(activeTag?.status));
+  }, [activeTag?.status, leylekChromeDriver.setActiveTripSuppressPremiumOrb]);
   useEffect(() => {
     if (kycStatus?.status === 'pending') {
       leylekChromeDriver.setFlowHint('driver_kyc_pending');

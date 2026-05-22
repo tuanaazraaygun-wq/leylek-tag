@@ -186,6 +186,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const {
     homeFlowScreen,
     flowHint,
+    activeTripSuppressPremiumOrb,
     leylekZekaChatOpen,
     setLeylekZekaChatOpen,
     passengerWaitInsight,
@@ -231,7 +232,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const bubbleBreath = useRef(new Animated.Value(0)).current;
   const cursorBlink = useRef(new Animated.Value(1)).current;
 
-  const showChrome = shouldShowLeylekZekaFab({ pathname, segments, homeFlowScreen, flowHint });
+  const showChrome = shouldShowLeylekZekaFab({
+    pathname,
+    segments,
+    homeFlowScreen,
+    flowHint,
+    activeTripSuppressPremiumOrb,
+  });
   const showFab = showChrome && !leylekZekaChatOpen && !keyboardUp;
 
   const showFabRef = useRef(showFab);
