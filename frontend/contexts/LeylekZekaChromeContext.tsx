@@ -13,6 +13,14 @@ export type LeylekZekaFlowHint =
   | 'driver_kyc_pending'
   | null;
 
+/** Yolcu bekleme — proactive orb (flowHint’ten bağımsız; index.tsx senkronlar). */
+export type PassengerWaitInsight = {
+  tagId: string;
+  createdAt?: string | null;
+  offersCount: number;
+  status?: string;
+};
+
 /** Ana akıştaki `AppScreen` ile aynı stringler; index.tsx’ten senkronlanır. */
 export type LeylekZekaHomeFlowScreen =
   | 'login'
@@ -52,6 +60,8 @@ type Ctx = {
   /** Sohbet penceresi — giriş destek, rol ekranı satırı ve FAB ortak kullanır */
   leylekZekaChatOpen: boolean;
   setLeylekZekaChatOpen: (v: boolean) => void;
+  passengerWaitInsight: PassengerWaitInsight | null;
+  setPassengerWaitInsight: (v: PassengerWaitInsight | null) => void;
 };
 
 const LeylekZekaChromeContext = createContext<Ctx | null>(null);
@@ -60,6 +70,12 @@ export function LeylekZekaChromeProvider({ children }: { children: React.ReactNo
   const [homeFlowScreen, setHomeFlowScreenState] = useState<LeylekZekaHomeFlowScreen>(null);
   const [flowHint, setFlowHintState] = useState<LeylekZekaFlowHint>(null);
   const [leylekZekaChatOpen, setLeylekZekaChatOpen] = useState(false);
+  const [passengerWaitInsight, setPassengerWaitInsightState] = useState<PassengerWaitInsight | null>(
+    null,
+  );
+  const setPassengerWaitInsight = useCallback((v: PassengerWaitInsight | null) => {
+    setPassengerWaitInsightState(v);
+  }, []);
   const setHomeFlowScreen = useCallback((s: LeylekZekaHomeFlowScreen) => {
     setHomeFlowScreenState(s);
   }, []);
@@ -74,8 +90,18 @@ export function LeylekZekaChromeProvider({ children }: { children: React.ReactNo
       setFlowHint,
       leylekZekaChatOpen,
       setLeylekZekaChatOpen,
+      passengerWaitInsight,
+      setPassengerWaitInsight,
     }),
-    [homeFlowScreen, setHomeFlowScreen, flowHint, setFlowHint, leylekZekaChatOpen],
+    [
+      homeFlowScreen,
+      setHomeFlowScreen,
+      flowHint,
+      setFlowHint,
+      leylekZekaChatOpen,
+      passengerWaitInsight,
+      setPassengerWaitInsight,
+    ],
   );
   return (
     <LeylekZekaChromeContext.Provider value={value}>{children}</LeylekZekaChromeContext.Provider>

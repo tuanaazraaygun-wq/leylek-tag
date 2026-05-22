@@ -8781,6 +8781,40 @@ function PassengerDashboard({
     setHint('passenger_home');
   }, [activeTag, offers.length, leylekChromePassenger?.setFlowHint]);
 
+  useEffect(() => {
+    const setInsight = leylekChromePassenger?.setPassengerWaitInsight;
+    if (typeof setInsight !== 'function') return;
+    if (!activeTag) {
+      setInsight(null);
+      return;
+    }
+    const st = String(activeTag.status || '').trim().toLowerCase();
+    if (st === 'matched' || st === 'in_progress' || offers.length > 0) {
+      setInsight(null);
+      return;
+    }
+    if (
+      (st === 'waiting' || st === 'pending' || st === 'offers_received') &&
+      offers.length === 0
+    ) {
+      setInsight({
+        tagId: String(activeTag.id),
+        createdAt: activeTag.created_at ?? null,
+        offersCount: offers.length,
+        status: st,
+      });
+      return;
+    }
+    setInsight(null);
+  }, [
+    activeTag,
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.created_at,
+    offers.length,
+    leylekChromePassenger?.setPassengerWaitInsight,
+  ]);
+
   // 🆕 Teklif veren sürücülerin konumlarını offers'tan güncelle
   useEffect(() => {
     if (offers.length === 0) {

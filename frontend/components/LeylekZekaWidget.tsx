@@ -34,6 +34,19 @@ import {
   pickNextSequential,
   pickOrbHintLine,
 } from '../lib/leylekZekaUxCopy';
+import {
+  fetchPassengerAvailabilitySnapshot,
+  getGlobalCooldownUntilMs,
+  isProactiveOrbEnabled,
+  markProactiveShownForTag,
+  PROACTIVE_GLOBAL_COOLDOWN_MS,
+  PROACTIVE_MIN_WAIT_MS,
+  parseInsightCreatedAtMs,
+  setGlobalCooldownUntilMs,
+  shortenProactiveOrbHint,
+  shouldTriggerPassengerProactiveInsight,
+  wasProactiveShownForTag,
+} from '../lib/leylekZekaProactiveInsight';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
@@ -114,7 +127,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const segments = useSegments();
-  const { homeFlowScreen, flowHint, leylekZekaChatOpen, setLeylekZekaChatOpen } = useLeylekZekaChrome();
+  const {
+    homeFlowScreen,
+    flowHint,
+    leylekZekaChatOpen,
+    setLeylekZekaChatOpen,
+    passengerWaitInsight,
+  } = useLeylekZekaChrome();
   const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
 
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -135,6 +154,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const idleThresholdRef = useRef(nextIdleThresholdMs());
   const lastOrbHintRef = useRef<string | null>(null);
   const hintAnimRunningRef = useRef(false);
+  const proactiveAttemptedTagRef = useRef<string | null>(null);
 
   const markInteraction = useCallback(() => {
     lastInteractionRef.current = Date.now();
@@ -585,6 +605,70 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     const id = setInterval(tick, IDLE_CHECK_MS);
     return () => clearInterval(id);
   }, [playOrbHint, reduceMotion, showFab]);
+
+  useEffect(() => {
+    if (!isProactiveOrbEnabled()) return;
+    if (!showFab || leylekZekaChatOpen) return;
+    const insight = passengerWaitInsight;
+    if (!insight?.tagId) {
+      proactiveAttemptedTagRef.current = null;
+      return;
+    }
+
+    const tagId = String(insight.tagId).trim();
+    if (!tagId) return;
+    if (proactiveAttemptedTagRef.current === tagId) return;
+    proactiveAttemptedTagRef.current = tagId;
+
+    let cancelled = false;
+    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const runProactive = async () => {
+      if (cancelled || !showFabRef.current || reduceMotionRef.current) return;
+      if (!shouldTriggerPassengerProactiveInsight(insight)) return;
+      if (hintAnimRunningRef.current) return;
+      if (await wasProactiveShownForTag(tagId)) return;
+      const globalUntil = await getGlobalCooldownUntilMs();
+      if (Date.now() < globalUntil) return;
+
+      const snapshot = await fetchPassengerAvailabilitySnapshot();
+      if (cancelled || !snapshot) return;
+
+      const line = shortenProactiveOrbHint(snapshot.message_hint || '');
+      if (!line || cancelled) return;
+      if (line === lastOrbHintRef.current) return;
+
+      playOrbHint(line, 'attention');
+      await markProactiveShownForTag(tagId);
+      const until = Date.now() + PROACTIVE_GLOBAL_COOLDOWN_MS;
+      idleCooldownUntilRef.current = until;
+      await setGlobalCooldownUntilMs(until);
+    };
+
+    const createdMs = parseInsightCreatedAtMs(insight.createdAt);
+    const now = Date.now();
+    const dwellRemain =
+      createdMs != null ? Math.max(0, PROACTIVE_MIN_WAIT_MS - (now - createdMs)) : PROACTIVE_MIN_WAIT_MS;
+
+    if (dwellRemain > 0) {
+      dwellTimer = setTimeout(() => {
+        void runProactive();
+      }, dwellRemain);
+    } else {
+      void runProactive();
+    }
+
+    return () => {
+      cancelled = true;
+      if (dwellTimer) clearTimeout(dwellTimer);
+    };
+  }, [
+    passengerWaitInsight,
+    showFab,
+    leylekZekaChatOpen,
+    playOrbHint,
+    reduceMotion,
+  ]);
 
   const logoScale = breathe.interpolate({
     inputRange: [0, 1],
