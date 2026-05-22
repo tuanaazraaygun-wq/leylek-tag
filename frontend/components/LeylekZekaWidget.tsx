@@ -264,6 +264,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     flowHint === 'passenger_matching' ||
     (!!passengerWaitInsight?.tagId && flowHint !== 'passenger_offer_waiting');
 
+  const isPassengerWaitMatchingOrb = isPassengerPreMatchWaitOrb;
+
   const passengerWaitOrbOnMap = useMemo(() => {
     const topMin = insets.top + PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX;
     const topMax = winH * 0.5;
@@ -890,8 +892,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
           <View
             pointerEvents="box-none"
             style={[
-              isPassengerWaitMatchingOrb ? styles.passengerWaitAnchor : styles.centerAnchor,
-              { bottom: isPassengerWaitMatchingOrb ? passengerWaitOrbBottom : bottomInset },
+              isPassengerWaitMatchingOrb ? styles.passengerWaitMapAnchor : styles.centerAnchor,
+              isPassengerWaitMatchingOrb
+                ? { top: passengerWaitOrbOnMap.top, left: passengerWaitOrbOnMap.left }
+                : { bottom: bottomInset },
             ]}
           >
             <Animated.View
