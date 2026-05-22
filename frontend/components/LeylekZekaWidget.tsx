@@ -142,12 +142,14 @@ function OrbBubbleTypingText({
   visibleLen,
   showCursor,
   cursorOpacity,
+  cursorBlinkAnimated = true,
   accentHints,
 }: {
   full: string;
   visibleLen: number;
   showCursor: boolean;
   cursorOpacity: Animated.Value;
+  cursorBlinkAnimated?: boolean;
   accentHints?: readonly string[];
 }) {
   const spans = useMemo(() => resolveAccentSpans(full, accentHints), [full, accentHints]);
@@ -164,7 +166,11 @@ function OrbBubbleTypingText({
     <Text style={styles.orbHintText} numberOfLines={3}>
       {renderAccentSlices(full, visibleLen, spans)}
       {showCursor && visibleLen <= full.length ? (
-        <Animated.Text style={[styles.orbCursor, cursorStyle]}>|</Animated.Text>
+        cursorBlinkAnimated ? (
+          <Animated.Text style={[styles.orbCursor, cursorStyle]}>|</Animated.Text>
+        ) : (
+          <Text style={[styles.orbCursor, { color: ORB_ACCENT_CYAN, opacity: 1 }]}>|</Text>
+        )
       ) : null}
     </Text>
   );
@@ -666,7 +672,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, [flutter, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab) {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
       bubbleBreath.setValue(0);
       return;
     }
@@ -689,10 +695,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     breathLoop.start();
     return () => breathLoop.stop();
-  }, [bubbleBreath, reduceMotion, showFab]);
+  }, [bubbleBreath, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab) {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
       cursorBlink.setValue(1);
       return;
     }
@@ -719,7 +725,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     blinkLoop.start();
     return () => blinkLoop.stop();
-  }, [bubbleHoldCursor, bubbleTypingActive, cursorBlink, reduceMotion, showFab]);
+  }, [bubbleHoldCursor, bubbleTypingActive, cursorBlink, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
     if (!isProactiveOrbEnabled()) return;
@@ -810,6 +816,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const contextualForA11y = getContextualPillLine(homeFlowScreen ?? null, flowHint);
 
+  const isRoleSelectScreen = homeFlowScreen === 'role-select';
+
   const showBubbleCursor =
     !reduceMotion &&
     (bubbleTypingActive || bubbleHoldCursor) &&
@@ -820,6 +828,28 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     inputRange: [0, 1],
     outputRange: [0.18, 0.3],
   });
+
+  const bubbleInner = (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        opacity: bubbleOpacity,
+        transform: [{ translateY: bubbleTranslateY }],
+      }}
+    >
+      <View style={styles.orbHintCapsule}>
+        <OrbBubbleTypingText
+          full={speechFull}
+          visibleLen={typedVisibleLen}
+          showCursor={showBubbleCursor}
+          cursorOpacity={cursorBlink}
+          cursorBlinkAnimated={!isRoleSelectScreen}
+          accentHints={speechAccentHints}
+        />
+      </View>
+      <View style={styles.orbHintTail} />
+    </Animated.View>
+  );
 
   return (
     <>
@@ -834,29 +864,21 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[styles.fabColumn, { transform: [{ translateY: floatY }] }]}
             >
               {speechFull ? (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    styles.orbHintCapsule,
-                    {
-                      opacity: bubbleOpacity,
-                      transform: [{ translateY: bubbleTranslateY }],
-                      ...Platform.select({
-                        ios: { shadowOpacity: bubbleShadowOpacity },
-                        default: {},
-                      }),
-                    },
-                  ]}
-                >
-                  <OrbBubbleTypingText
-                    full={speechFull}
-                    visibleLen={typedVisibleLen}
-                    showCursor={showBubbleCursor}
-                    cursorOpacity={cursorBlink}
-                    accentHints={speechAccentHints}
-                  />
-                  <View style={styles.orbHintTail} />
-                </Animated.View>
+                isRoleSelectScreen || reduceMotion ? (
+                  <View pointerEvents="none" style={styles.orbHintGlowWrap}>
+                    {bubbleInner}
+                  </View>
+                ) : (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.orbHintGlowWrap,
+                      Platform.OS === 'ios' ? { shadowOpacity: bubbleShadowOpacity } : null,
+                    ]}
+                  >
+                    {bubbleInner}
+                  </Animated.View>
+                )
               ) : null}
 
               <View style={styles.fabOrbWrap} pointerEvents="box-none">
@@ -1005,16 +1027,10 @@ const styles = StyleSheet.create({
     color: ORB_ACCENT_CYAN,
     letterSpacing: 0.65,
   },
-  orbHintCapsule: {
+  orbHintGlowWrap: {
     marginBottom: 8,
     maxWidth: BUBBLE_MAX_W,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: 'rgba(8, 18, 32, 0.82)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34, 211, 238, 0.32)',
-    borderTopColor: 'rgba(34, 211, 238, 0.22)',
+    alignSelf: 'center',
     ...Platform.select({
       ios: {
         shadowColor: GLOW,
@@ -1024,6 +1040,16 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 4 },
     }),
+  },
+  orbHintCapsule: {
+    maxWidth: BUBBLE_MAX_W,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: 'rgba(8, 18, 32, 0.82)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+    borderTopColor: 'rgba(34, 211, 238, 0.22)',
   },
   orbHintTail: {
     alignSelf: 'center',
