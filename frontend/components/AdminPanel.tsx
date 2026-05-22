@@ -162,6 +162,75 @@ function formatApiDetail(d: unknown): string {
   return '';
 }
 
+const LEYLEK_ZEKA_REPORT_SOURCE = '[source=leylek_zeka]';
+
+type LeylekZekaReportRow = {
+  id?: string;
+  created_at?: string;
+  status?: string;
+  reason?: string;
+  details?: string;
+  tag_id?: string | null;
+  reporter_id?: string;
+  reporter_name?: string;
+  reported_user_id?: string | null;
+  reported_user_name?: string | null;
+  reported_user_role?: string | null;
+};
+
+type ParsedLeylekZekaReportMeta = {
+  reporterRole: string;
+  tagId: string;
+  categoryLabel: string;
+  originalText: string;
+  userMessage: string;
+};
+
+function isLeylekZekaAdminReport(row: LeylekZekaReportRow): boolean {
+  return typeof row.details === 'string' && row.details.includes(LEYLEK_ZEKA_REPORT_SOURCE);
+}
+
+function parseLeylekZekaReportBracket(details: string, key: string): string {
+  const re = new RegExp(`\\[${key}=([^\\]]*)\\]`);
+  const match = details.match(re);
+  return match ? match[1].trim() : '';
+}
+
+function parseLeylekZekaReportMeta(details: string): ParsedLeylekZekaReportMeta {
+  return {
+    reporterRole: parseLeylekZekaReportBracket(details, 'reporter_role') || 'unknown',
+    tagId: parseLeylekZekaReportBracket(details, 'tag_id'),
+    categoryLabel: parseLeylekZekaReportBracket(details, 'categoryLabel'),
+    originalText: parseLeylekZekaReportBracket(details, 'originalText'),
+    userMessage: parseLeylekZekaReportBracket(details, 'details'),
+  };
+}
+
+function adminShortId(id: string | null | undefined): string {
+  const s = String(id ?? '').trim();
+  if (!s) return '—';
+  if (s.length <= 12) return s;
+  return `${s.slice(0, 8)}…`;
+}
+
+function leylekReporterRoleLabel(role: string): string {
+  const r = role.trim().toLowerCase();
+  if (r === 'driver') return 'Sürücü';
+  if (r === 'passenger') return 'Yolcu';
+  return 'Bilinmiyor';
+}
+
+function leylekReportStatusLabel(status: string | undefined): string {
+  const s = String(status || '').trim().toLowerCase();
+  const map: Record<string, string> = {
+    pending: 'Bekliyor',
+    reviewed: 'İncelendi',
+    resolved: 'Çözüldü',
+    dismissed: 'Reddedildi',
+  };
+  return map[s] || (s ? s : '—');
+}
+
 function kycDisplayField(v: unknown): string {
   if (v == null || v === '') return '—';
   const s = String(v).trim();
@@ -316,6 +385,8 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [communityCityRequests, setCommunityCityRequests] = useState<any[]>([]);
   const [pendingMuhabbetGroups, setPendingMuhabbetGroups] = useState<any[]>([]);
   const [muhabbetGroupActionId, setMuhabbetGroupActionId] = useState<string | null>(null);
+  const [leylekZekaReports, setLeylekZekaReports] = useState<LeylekZekaReportRow[]>([]);
+  const [leylekReportActionId, setLeylekReportActionId] = useState<string | null>(null);
 
   const [kbChatLines, setKbChatLines] = useState<KbChatLine[]>([]);
   const [kbChatInput, setKbChatInput] = useState('');
@@ -507,6 +578,21 @@ function AdminContent({ adminPhone, onClose }: Props) {
       } catch {
         setPendingMuhabbetGroups([]);
       }
+
+      try {
+        const lzRepRes = await fetch(`${ADMIN_API_BASE}/admin/reports?limit=100`);
+        const lzRepData = await lzRepRes.json().catch(() => ({}));
+        if (lzRepRes.ok && lzRepData.success) {
+          const rows = (Array.isArray(lzRepData.reports) ? lzRepData.reports : []) as LeylekZekaReportRow[];
+          const filtered = rows.filter(isLeylekZekaAdminReport);
+          filtered.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+          setLeylekZekaReports(filtered);
+        } else {
+          setLeylekZekaReports([]);
+        }
+      } catch {
+        setLeylekZekaReports([]);
+      }
     } catch (e: any) {
       errs.push(e?.message || 'Yükleme hatası');
     }
@@ -518,6 +604,29 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const refresh = () => {
     setRefreshing(true);
     loadAll();
+  };
+
+  const markLeylekZekaReportReviewed = async (reportId: string) => {
+    setLeylekReportActionId(reportId);
+    try {
+      const res = await fetch(
+        `${ADMIN_API_BASE}/admin/reports/${encodeURIComponent(reportId)}/update?status=reviewed`,
+        { method: 'POST' },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setLeylekZekaReports((prev) =>
+          prev.map((r) => (String(r.id) === reportId ? { ...r, status: 'reviewed' } : r)),
+        );
+        Alert.alert('Tamam', 'Kayıt incelendi olarak işaretlendi.');
+      } else {
+        Alert.alert('Hata', formatApiDetail(data.detail) || 'Durum güncellenemedi');
+      }
+    } catch (e: unknown) {
+      const msg = e && typeof e === 'object' && 'message' in e ? String((e as { message?: unknown }).message) : '';
+      Alert.alert('Hata', msg || 'Durum güncellenemedi');
+    }
+    setLeylekReportActionId(null);
   };
 
   const loadOperationAi = useCallback(async () => {
@@ -840,6 +949,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
           onPress={() => setTab('muhabbet')}
         >
           <Text style={[styles.tabText, tab === 'muhabbet' && styles.tabTextActive]}>Teklif Sende</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'leylekzeka' && styles.tabActive]}
+          onPress={() => setTab('leylekzeka')}
+        >
+          <Text style={[styles.tabText, tab === 'leylekzeka' && styles.tabTextActive]}>LZ Şikayet</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabBtn, tab === 'notif' && styles.tabActive]}
@@ -1415,6 +1530,66 @@ function AdminContent({ adminPhone, onClose }: Props) {
                   </View>
                 </View>
               ))
+            )}
+          </View>
+        )}
+
+        {tab === 'leylekzeka' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Leylek Zeka Şikayetleri</Text>
+            <Text style={styles.subtleHelp}>
+              Kaynak: {LEYLEK_ZEKA_REPORT_SOURCE} · Son {leylekZekaReports.length} kayıt (en fazla 100 şikayet
+              içinden filtrelenir).
+            </Text>
+            {leylekZekaReports.length === 0 ? (
+              <Text style={styles.emptyListText}>Henüz Leylek Zeka şikayeti yok.</Text>
+            ) : (
+              leylekZekaReports.map((r) => {
+                const details = String(r.details || '');
+                const meta = parseLeylekZekaReportMeta(details);
+                const tagId = String(r.tag_id || meta.tagId || '').trim() || '—';
+                const statusKey = String(r.status || 'pending').toLowerCase();
+                return (
+                  <View key={String(r.id)} style={styles.muhabbetCard}>
+                    <Text style={styles.muhabbetMeta}>
+                      {r.created_at ? String(r.created_at).slice(0, 19).replace('T', ' ') : '—'} ·{' '}
+                      {leylekReportStatusLabel(r.status)}
+                    </Text>
+                    <Text style={styles.muhabbetTitle}>
+                      {r.reporter_name || 'Bildiren'} → {r.reported_user_name || 'Karşı taraf yok'}
+                    </Text>
+                    <Text style={styles.muhabbetDetails}>
+                      Rol (bildiren): {leylekReporterRoleLabel(meta.reporterRole)}
+                      {' · '}Kategori: {r.reason || meta.categoryLabel || '—'}
+                      {' · '}TAG: {tagId === '—' ? '—' : adminShortId(tagId)}
+                    </Text>
+                    <Text style={styles.muhabbetDetails}>
+                      Bildiren id: {adminShortId(r.reporter_id)}
+                      {' · '}Bildirilen id: {adminShortId(r.reported_user_id)}
+                      {r.reported_user_role ? ` (${r.reported_user_role})` : ''}
+                    </Text>
+                    {meta.originalText ? (
+                      <Text style={styles.muhabbetDetails}>İlk ifade: {meta.originalText}</Text>
+                    ) : null}
+                    <Text style={styles.muhabbetDetails}>
+                      Mesaj: {meta.userMessage || details}
+                    </Text>
+                    {statusKey === 'pending' ? (
+                      <TouchableOpacity
+                        style={[styles.kycBtn, styles.kycApproveBtn, { marginTop: 12, alignSelf: 'flex-start' }]}
+                        onPress={() => void markLeylekZekaReportReviewed(String(r.id))}
+                        disabled={leylekReportActionId === String(r.id)}
+                      >
+                        {leylekReportActionId === String(r.id) ? (
+                          <ActivityIndicator color="#FFF" size="small" />
+                        ) : (
+                          <Text style={styles.kycBtnText}>İncelendi</Text>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                );
+              })
             )}
           </View>
         )}
