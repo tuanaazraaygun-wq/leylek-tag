@@ -384,6 +384,189 @@ export function getContextualPillLine(
   return line && line.length <= 48 ? line : null;
 }
 
+/** Tek satır + opsiyonel cyan vurgu parçaları (garanti / kesin talep yok). */
+export type PremiumOrbAmbientLine = {
+  text: string;
+  accents?: readonly string[];
+};
+
+export type FlowAwareAmbientKey =
+  | 'role_select'
+  | 'driver_idle'
+  | 'driver_offer_list'
+  | 'passenger_matching'
+  | 'passenger_offer_waiting'
+  | 'default';
+
+/** FlowHint / ekran bazlı premium ambient havuzu. */
+export const FLOW_AWARE_PREMIUM_LINES: Record<FlowAwareAmbientKey, readonly PremiumOrbAmbientLine[]> = {
+  role_select: [
+    {
+      text: 'Sana uygun sürüş tipini seçmende yardımcı olabilirim.',
+      accents: ['sürüş tipini'],
+    },
+    {
+      text: 'Senin için en uygun seçeneği birlikte değerlendirebiliriz.',
+      accents: ['en uygun seçeneği'],
+    },
+    {
+      text: "Leylek'e sor. Sana en iyi seçeneği bulayım.",
+      accents: ['en iyi seçeneği'],
+    },
+    {
+      text: 'İstersen bulunduğun duruma göre birlikte ilerleyebiliriz.',
+      accents: ['birlikte ilerleyebiliriz'],
+    },
+  ],
+  driver_idle: [
+    {
+      text: 'Yakındaki hareketliliği analiz etmene yardımcı olabilirim.',
+      accents: ['hareketliliği'],
+    },
+    {
+      text: 'Yakındaki talepleri takip ederek sana rehberlik edebilirim.',
+      accents: ['talepleri'],
+    },
+    {
+      text: 'Yoğunluk değişimlerini takip etmene yardımcı olabilirim.',
+      accents: ['yoğunluk değişimlerini'],
+    },
+    {
+      text: 'Daha hızlı eşleşme için bazı önerilerim olabilir.',
+      accents: ['önerilerim'],
+    },
+  ],
+  driver_offer_list: [
+    {
+      text: 'Karar vermekte zorlanıyorsan sana yardımcı olabilirim.',
+      accents: ['yardımcı olabilirim'],
+    },
+    {
+      text: 'Şu anki duruma göre daha mantıklı bir seçim yapabiliriz.',
+      accents: ['mantıklı bir seçim'],
+    },
+    {
+      text: 'Senin için daha verimli bir seçenek olabilir.',
+      accents: ['verimli bir seçenek'],
+    },
+    {
+      text: 'Bir sonraki adımın için sana yardımcı olmaya hazırım.',
+      accents: ['yardımcı olmaya hazırım'],
+    },
+  ],
+  passenger_matching: [
+    {
+      text: 'Bekleme süreni azaltabilecek seçeneklere birlikte bakalım.',
+      accents: ['azaltabilecek', 'birlikte bakalım'],
+    },
+    {
+      text: 'Daha hızlı eşleşme için bazı önerilerim olabilir.',
+      accents: ['önerilerim'],
+    },
+    {
+      text: 'En doğru zamanı yakalamana yardımcı olmaya çalışıyorum.',
+      accents: ['doğru zamanı'],
+    },
+    {
+      text: 'Beklemek yerine daha iyi bir strateji oluşturabiliriz.',
+      accents: ['daha iyi bir strateji'],
+    },
+  ],
+  passenger_offer_waiting: [
+    {
+      text: 'Karar vermekte zorlanıyorsan sana yardımcı olabilirim.',
+      accents: ['yardımcı olabilirim'],
+    },
+    {
+      text: 'İstersen sana uygun eşleşme ihtimallerini birlikte değerlendirelim.',
+      accents: ['birlikte değerlendirelim'],
+    },
+    {
+      text: 'Şu anki duruma göre daha mantıklı bir seçim yapabiliriz.',
+      accents: ['mantıklı bir seçim'],
+    },
+    {
+      text: 'Bir sonraki adımın için sana yardımcı olmaya hazırım.',
+      accents: ['yardımcı olmaya hazırım'],
+    },
+  ],
+  default: [
+    {
+      text: 'Karar vermekte zorlanıyorsan sana yardımcı olabilirim.',
+      accents: ['yardımcı olabilirim'],
+    },
+    {
+      text: 'Senin için en uygun seçeneği birlikte değerlendirebiliriz.',
+      accents: ['en uygun seçeneği'],
+    },
+    {
+      text: 'İstersen bulunduğun duruma göre birlikte ilerleyebiliriz.',
+      accents: ['birlikte ilerleyebiliriz'],
+    },
+    {
+      text: 'Bir sonraki adımın için sana yardımcı olmaya hazırım.',
+      accents: ['yardımcı olmaya hazırım'],
+    },
+    {
+      text: 'İstersen sesli de sorabilirsin.',
+      accents: ['sesli'],
+    },
+  ],
+};
+
+/** Bubble içinde cyan vurgu yedek listesi (proactive / accent tanımsız satırlar). */
+export const ORB_BUBBLE_ACCENT_SNIPPETS = [
+  'en iyi seçeneği',
+  'en uygun seçeneği',
+  'hareketliliği',
+  'azaltabilecek',
+  'birlikte bakalım',
+  'birlikte değerlendirelim',
+  'mantıklı bir seçim',
+  'yardımcı olabilirim',
+  'yardımcı olmaya hazırım',
+  'yoğunluk değişimlerini',
+  'doğru zamanı',
+  'önerilerim',
+  'verimli bir seçenek',
+  'sürüş tipini',
+  'talepleri',
+  "Leylek'e sor",
+  'sesli',
+] as const;
+
+export function resolveFlowAwareAmbientKey(
+  home: LeylekZekaHomeFlowScreen,
+  hint: LeylekZekaFlowHint,
+): FlowAwareAmbientKey {
+  if (home === 'role-select') return 'role_select';
+  if (hint === 'driver_idle') return 'driver_idle';
+  if (hint === 'driver_offer_list' || hint === 'driver_offer_compose') return 'driver_offer_list';
+  if (hint === 'passenger_matching') return 'passenger_matching';
+  if (hint === 'passenger_offer_waiting') return 'passenger_offer_waiting';
+  return 'default';
+}
+
+export function resolveAccentSpans(
+  text: string,
+  accents?: readonly string[],
+): { start: number; end: number }[] {
+  const phrases = accents?.length ? accents : ORB_BUBBLE_ACCENT_SNIPPETS;
+  const found: { start: number; end: number; len: number }[] = [];
+  for (const phrase of phrases) {
+    const i = text.indexOf(phrase);
+    if (i < 0) continue;
+    found.push({ start: i, end: i + phrase.length, len: phrase.length });
+  }
+  found.sort((a, b) => a.start - b.start || b.len - a.len);
+  const merged: { start: number; end: number }[] = [];
+  for (const f of found) {
+    const overlaps = merged.some((m) => f.start < m.end && f.end > m.start);
+    if (!overlaps) merged.push({ start: f.start, end: f.end });
+  }
+  return merged.sort((a, b) => a.start - b.start);
+}
+
 /** Orb ipuçları — gerçek operasyon verisi olmadan iddialı yoğunluk/talep cümlesi yok. */
 export const ORB_ACTIVITY_HINTS = [
   'Akıllı eşleşme hazır',
@@ -450,4 +633,21 @@ export function pickNextSequential(pool: string[], last: string | null): string 
   if (!last) return pool[0];
   const idx = pool.findIndex((t) => t !== last);
   return idx >= 0 ? pool[idx] : pool[0];
+}
+
+export function pickFlowAwareAmbientLine(
+  home: LeylekZekaHomeFlowScreen,
+  hint: LeylekZekaFlowHint,
+  last: string | null,
+): PremiumOrbAmbientLine {
+  const key = resolveFlowAwareAmbientKey(home, hint);
+  const pool = FLOW_AWARE_PREMIUM_LINES[key];
+  const texts = pool.map((l) => l.text);
+  const nextText = pickNextSequential(texts, last);
+  return pool.find((l) => l.text === nextText) ?? pool[0];
+}
+
+/** @deprecated Akış bilgisi yok — yalnızca geriye dönük; widget pickFlowAwareAmbientLine kullanır. */
+export function pickPremiumAmbientLine(last: string | null): string {
+  return pickFlowAwareAmbientLine(null, null, last).text;
 }

@@ -33,8 +33,6 @@ import DriverBoardingQRModal from '../components/DriverBoardingQRModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
-import { RoleSelectLeylekAIFloating } from '../screens/RoleSelectScreen';
-import { DriverWaitingLeylekAIFloating } from '../screens/DriverWaitingScreen';
 import CallScreenV2 from '../components/CallScreenV2';
 import InCallManager from 'react-native-incall-manager';
 import TrustRequestModal from '../components/trust/TrustRequestModal';
@@ -4813,7 +4811,6 @@ export default function App() {
               },
             ]}
           >
-            <RoleSelectLeylekAIFloating />
             <PremiumGradientCtaButton
               label="Devam Et"
               disabled={!selectedRole || !rideVehicleKind}
@@ -17079,14 +17076,6 @@ function DriverDashboard({
             </View>
           </SafeAreaView>
           <View style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-            <DriverWaitingLeylekAIFloating
-              profileCity={user?.city}
-              addressContext={
-                (requests[0]?.pickup_location as string | undefined) ||
-                (requests[0]?.passenger_address as string | undefined) ||
-                null
-              }
-            />
             <DriverOfferScreen
               embedded
               vehicleKind={driverVehicleKind}

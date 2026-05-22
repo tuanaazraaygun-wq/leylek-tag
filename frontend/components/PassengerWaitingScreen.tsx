@@ -53,7 +53,6 @@ if (Platform.OS !== 'web') {
 import { API_BASE_URL } from '../lib/backendConfig';
 import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
-import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const API_URL = API_BASE_URL;
@@ -139,25 +138,6 @@ export default function PassengerWaitingScreen({
   selfUserId = null,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { setLeylekZekaChatOpen } = useLeylekZekaChrome();
-  const openMatchScreenAi = () => {
-    console.log('[PAX_DEBUG] PassengerWaitingScreen openMatchScreenAi');
-    callCheck('Haptics.impactAsync', Haptics?.impactAsync);
-    if (Platform.OS !== 'web') {
-      try {
-        const impact = Haptics?.impactAsync;
-        if (typeof impact === 'function') {
-          void impact(Haptics.ImpactFeedbackStyle.Light);
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    callCheck('setLeylekZekaChatOpen', setLeylekZekaChatOpen);
-    if (typeof setLeylekZekaChatOpen === 'function') {
-      setLeylekZekaChatOpen(true);
-    }
-  };
 
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
   const [nearbyDriverCount, setNearbyDriverCount] = useState(0);
@@ -356,28 +336,6 @@ export default function PassengerWaitingScreen({
         </View>
         
         <View style={styles.headerRightCluster}>
-          <TouchableOpacity
-            onPress={openMatchScreenAi}
-            style={styles.headerAiPill}
-            activeOpacity={0.88}
-            accessibilityRole="button"
-            accessibilityLabel="Leylek Zeka — yapay zeka desteği"
-          >
-            <LinearGradient
-              colors={['#0B1220', '#101A2B', '#0E4F5E', '#22D3EE']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.headerAiPillGradient}
-            >
-              <Ionicons name="sparkles" size={18} color="rgba(243,248,255,0.94)" />
-              <Text style={styles.headerAiPillText} numberOfLines={1}>
-                Leylek Zeka
-              </Text>
-            </LinearGradient>
-            <View style={styles.headerAiBadge} pointerEvents="none">
-              <Text style={styles.headerAiBadgeText}>AI</Text>
-            </View>
-          </TouchableOpacity>
           <TouchableOpacity onPress={onCancel} style={styles.cancelButton} accessibilityRole="button" accessibilityLabel="Teklifi iptal et">
             <Ionicons name="close" size={28} color="rgba(248,113,113,0.92)" />
           </TouchableOpacity>
@@ -496,7 +454,7 @@ export default function PassengerWaitingScreen({
             ) : null}
           </View>
         )}
-        {/* Tek AI girişi: üst sağdaki Leylek Zeka — harita üzerinde ek FAB yok */}
+        {/* AI: tek merkezi alt-orta LeylekZekaWidget (global) */}
         
         {/* Sürücü Sayısı Badge */}
         <View style={styles.driverCountBadge}>
@@ -731,56 +689,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  headerAiPill: {
-    maxWidth: 172,
-    borderRadius: 22,
-    overflow: 'visible',
-  },
-  headerAiPillGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 12,
-    paddingRight: 12,
-    paddingVertical: 10,
-    borderRadius: 22,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.32)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  headerAiPillText: {
-    color: 'rgba(243,248,255,0.94)',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.15,
-    flexShrink: 1,
-  },
-  headerAiBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 24,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(16, 26, 43, 0.94)',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerAiBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#22D3EE',
-  },
-  
+
   // Harita
   mapContainer: {
     height: SCREEN_HEIGHT * 0.38,

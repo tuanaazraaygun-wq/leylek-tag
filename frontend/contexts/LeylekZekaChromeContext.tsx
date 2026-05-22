@@ -178,7 +178,7 @@ export function isMainIndexShell(pathname: string | null | undefined, segments: 
 /**
  * Yüzen FAB görünürlüğü:
  * - Ana shell (`index.tsx`) dışındaki rotalarda: kapalı.
- * - `role-select`: kapalı (sabit satır `app/index.tsx` + sohbet context ile).
+ * - `role-select`: açık (tek merkezi alt-orta orb).
  * - `login` / OTP / PIN vb.: kapalı.
  * - `dashboard`: `flowHint` ∈ `DASHBOARD_LEYLEK_FLOW_HINTS` iken açık (harita idle dahil).
  */
@@ -192,8 +192,7 @@ export function shouldShowLeylekZekaFab(params: {
   if (!isMainIndexShell(params.pathname, params.segments ?? null)) return false;
   const s = params.homeFlowScreen;
   if (s == null) return false;
-  /** Rol ekranında yüzen FAB yok — sabit buton `index.tsx` içinde */
-  if (s === 'role-select') return false;
+  if (s === 'role-select') return true;
   if (s === 'dashboard') {
     const h = params.flowHint;
     return h != null && DASHBOARD_LEYLEK_FLOW_HINTS.has(h);
