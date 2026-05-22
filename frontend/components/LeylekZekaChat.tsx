@@ -1723,39 +1723,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 2,
   },
-  cloudLayer: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
-    overflow: 'hidden',
-  },
-  cloudBlob: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255, 255, 255, 0.38)',
-  },
-  cloudBlob1: {
-    width: 220,
-    height: 120,
-    borderRadius: 80,
-    top: '8%',
-    left: '-12%',
-    opacity: 0.38,
-  },
-  cloudBlob2: {
-    width: 180,
-    height: 95,
-    borderRadius: 70,
-    top: '22%',
-    right: '-8%',
-    opacity: 0.28,
-  },
-  cloudBlob3: {
-    width: 260,
-    height: 100,
-    borderRadius: 90,
-    bottom: '12%',
-    left: '5%',
-    opacity: 0.22,
-  },
   sheetInner: {
     flex: 1,
     zIndex: 10,
@@ -1946,13 +1913,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(239, 246, 255, 0.9)',
+    backgroundColor: 'rgba(12, 24, 42, 0.82)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(37, 99, 235, 0.24)',
+    borderColor: 'rgba(34, 211, 238, 0.22)',
   },
   speechMiniControlStop: {
-    backgroundColor: 'rgba(254, 242, 242, 0.92)',
-    borderColor: 'rgba(185, 28, 28, 0.24)',
+    backgroundColor: 'rgba(48, 18, 24, 0.88)',
+    borderColor: 'rgba(248, 113, 113, 0.35)',
   },
   speechMiniControlPressed: {
     opacity: 0.82,
@@ -1961,11 +1928,11 @@ const styles = StyleSheet.create({
     fontFamily: DIGITAL_MONO,
     fontSize: 9,
     lineHeight: 12,
-    color: '#1D4ED8',
+    color: COCKPIT_CYAN,
     fontWeight: '800',
   },
   speechMiniControlTextStop: {
-    color: '#B91C1C',
+    color: '#FCA5A5',
   },
   closeBtn: {
     position: 'absolute',
@@ -1973,9 +1940,9 @@ const styles = StyleSheet.create({
     top: Spacing.sm + 4,
     padding: 10,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    backgroundColor: 'rgba(12, 24, 42, 0.88)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.35)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
     zIndex: 2,
     ...Platform.select({
       ios: {
@@ -2010,14 +1977,16 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   errorBanner: {
-    backgroundColor: '#FFEBEE',
+    backgroundColor: 'rgba(48, 18, 24, 0.75)',
     padding: Spacing.sm,
     borderRadius: BorderRadius.sm,
     marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.28)',
   },
   errorText: {
     fontFamily: DIGITAL_MONO,
-    color: Colors.error,
+    color: '#FCA5A5',
     fontSize: 11,
     lineHeight: 16,
   },
@@ -2030,9 +1999,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(34, 211, 238, 0.18)',
     overflow: 'hidden',
-    backgroundColor: 'rgba(8, 16, 28, 0.42)',
+    backgroundColor: 'rgba(6, 12, 22, 0.78)',
   },
-  list: { flex: 1 },
+  list: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   listContent: {
     paddingVertical: Spacing.sm,
     paddingBottom: Spacing.lg + 12,
@@ -2178,7 +2150,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     paddingVertical: Spacing.sm + 2,
     paddingHorizontal: Spacing.sm + 4,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
   },
   bubbleUserGrad: {
@@ -2255,7 +2227,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.12)',
+    borderColor: 'rgba(34, 211, 238, 0.2)',
+    backgroundColor: 'rgba(12, 24, 42, 0.88)',
     maxWidth: '88%',
     ...Platform.select({
       ios: {
@@ -2379,8 +2352,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(29, 78, 216, 0.72)',
   },
   voiceHoldZoneError: {
-    borderColor: 'rgba(185, 28, 28, 0.36)',
-    backgroundColor: 'rgba(254, 242, 242, 0.92)',
+    borderColor: 'rgba(248, 113, 113, 0.4)',
+    backgroundColor: 'rgba(48, 18, 24, 0.72)',
   },
   voiceHoldZoneDisabled: {
     opacity: 0.42,
@@ -2412,8 +2385,8 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 29,
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.72)',
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
   },
   voiceHoldTextCol: {
     flex: 1,
@@ -2522,7 +2495,7 @@ const styles = StyleSheet.create({
     fontFamily: DIGITAL_MONO,
     fontSize: 11,
     lineHeight: 15,
-    color: '#0F172A',
+    color: 'rgba(226, 242, 255, 0.86)',
     fontWeight: '700',
   },
   voicePartialTextOnDark: {

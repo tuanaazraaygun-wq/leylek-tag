@@ -159,12 +159,24 @@ function makeMessage(role: LeylekZekaMessage['role'], text: string): LeylekZekaM
   };
 }
 
+type LeylekZekaReporterRole = 'driver' | 'passenger' | 'unknown';
+
+function resolveReporterRoleForReport(
+  ctx: Record<string, string | boolean | string[]> | undefined,
+): LeylekZekaReporterRole {
+  if (ctx?.isDriver === true) return 'driver';
+  if (ctx?.isPassenger === true) return 'passenger';
+  return 'unknown';
+}
+
 type LeylekZekaReportSubmitArgs = {
   category: string;
   categoryLabel?: string;
   details: string;
   originalText: string;
   reportedUserId?: string;
+  tagId?: string;
+  reporterRole?: LeylekZekaReporterRole;
 };
 
 async function fetchCounterpartCandidate(category: string): Promise<ComplaintCounterpartCandidate | null> {
@@ -208,6 +220,12 @@ async function submitLeylekZekaReport(
     };
     if (args.reportedUserId) {
       body.reportedUserId = args.reportedUserId;
+    }
+    if (args.tagId) {
+      body.tagId = args.tagId;
+    }
+    if (args.reporterRole) {
+      body.reporterRole = args.reporterRole;
     }
 
     const res = await fetch(`${API_BASE_URL}/user/report/leylekzeka`, {
@@ -482,6 +500,8 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
               pendingComplaintFlow.candidateConfirmed === true && pendingComplaintFlow.reportedUserId
                 ? pendingComplaintFlow.reportedUserId
                 : undefined,
+            tagId: pendingComplaintFlow.tagId,
+            reporterRole: resolveReporterRoleForReport(leylekContext),
           });
           if (result.ok) {
             setMessages((prev) => [...prev, makeMessage('assistant', 'Destek kaydınızı oluşturdum. Admin ekibi inceleyebilir.')]);
@@ -619,7 +639,7 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       setIsTyping(false);
       inFlightRef.current = false;
     }
-  }, [appendLocalComplaintExchange, leylekContext, isAdminUser, pendingComplaintFlow]);
+  }, [appendLocalComplaintExchange, isAdminUser, leylekContext, pendingComplaintFlow]);
 
   return { messages, isTyping, error, sendMessage, clearError, lastReplySource };
 }

@@ -6,7 +6,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import AliasChoices, BaseModel, Field, ValidationError, field_validator
 from typing import Annotated, Any, List, Literal, Optional, Tuple
 
 try:
@@ -8243,6 +8243,81 @@ class LeylekZekaReportRequest(BaseModel):
     details: str = Field(..., min_length=10, max_length=2000)
     originalText: Optional[str] = Field(default=None, max_length=1000)
     reportedUserId: Optional[str] = None
+    tag_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        validation_alias=AliasChoices("tag_id", "tagId"),
+    )
+    reporter_role: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        validation_alias=AliasChoices("reporter_role", "reporterRole"),
+    )
+
+
+_LEYLEK_REPORTER_ROLES = frozenset({"driver", "passenger", "unknown"})
+
+
+def _normalize_leylek_reporter_role(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    key = str(raw).strip().lower()
+    if key in _LEYLEK_REPORTER_ROLES:
+        return key
+    return None
+
+
+async def _resolve_leylek_reporter_role(reporter_id: str, body_role: Optional[str]) -> str:
+    normalized = _normalize_leylek_reporter_role(body_role)
+    if normalized:
+        return normalized
+    try:
+        row = (
+            supabase.table("users")
+            .select("driver_details")
+            .eq("id", reporter_id)
+            .limit(1)
+            .execute()
+        )
+        if row.data and row.data[0].get("driver_details"):
+            return "driver"
+        if row.data:
+            return "passenger"
+    except Exception:
+        logger.warning("Leylek Zeka reporter_role lookup failed", exc_info=True)
+    return "unknown"
+
+
+async def _validate_leylek_report_tag_id(reporter_id: str, tag_id_raw: Optional[str]) -> Optional[str]:
+    tid = (str(tag_id_raw).strip() if tag_id_raw else "") or ""
+    if not tid:
+        return None
+    try:
+        rid = await resolve_user_id(reporter_id)
+        result = (
+            supabase.table("tags")
+            .select("id, passenger_id, driver_id")
+            .eq("id", tid)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            logger.warning("Leylek Zeka report tag_id not found tag=%s", _mask_log_id(tid))
+            return None
+        row = result.data[0]
+        p = str(row.get("passenger_id") or "").strip().lower()
+        d = str(row.get("driver_id") or "").strip().lower()
+        if rid.lower() not in (p, d):
+            logger.warning(
+                "Leylek Zeka report tag_id not owned reporter=%s tag=%s",
+                _mask_log_id(rid),
+                _mask_log_id(tid),
+            )
+            return None
+        return tid
+    except Exception:
+        logger.warning("Leylek Zeka report tag_id validation failed", exc_info=True)
+        return None
 
 
 def _report_candidate_time(row: dict) -> datetime:
@@ -8412,6 +8487,9 @@ async def report_user_leylek_zeka(
         )
         reporter_info = reporter_result.data[0] if reporter_result.data else {}
 
+        reporter_role = await _resolve_leylek_reporter_role(reporter_id, body.reporter_role)
+        validated_tag_id = await _validate_leylek_report_tag_id(reporter_id, body.tag_id)
+
         reported_user_id = None
         reported_info = {}
         reported_role = None
@@ -8429,14 +8507,15 @@ async def report_user_leylek_zeka(
             reported_info = reported_result.data[0] if reported_result.data else {}
             reported_role = "driver" if reported_info.get("driver_details") else "passenger"
 
-        report_details = "\n".join(
-            [
-                "[source=leylek_zeka]",
-                f"[categoryLabel={category_label or category}]",
-                f"[originalText={original_text}]",
-                f"[details={clean_details}]",
-            ]
-        )
+        report_detail_lines = [
+            "[source=leylek_zeka]",
+            f"[reporter_role={reporter_role}]",
+            f"[tag_id={validated_tag_id or ''}]",
+            f"[categoryLabel={category_label or category}]",
+            f"[originalText={original_text}]",
+            f"[details={clean_details}]",
+        ]
+        report_details = "\n".join(report_detail_lines)
         report_data = {
             "reporter_id": reporter_id,
             "reporter_name": reporter_info.get("name", "Bilinmeyen"),
@@ -8447,14 +8526,18 @@ async def report_user_leylek_zeka(
             "reported_user_role": reported_role,
             "reason": category,
             "details": report_details,
+            "tag_id": validated_tag_id,
             "status": "pending",
             "created_at": datetime.utcnow().isoformat(),
         }
         result = supabase.table("reports").insert(report_data).execute()
         logger.info(
-            "Leylek Zeka report saved: reporter=%s category=%s",
+            "Leylek Zeka report saved: reporter=%s role=%s category=%s tag=%s reported=%s",
             _mask_log_id(reporter_id),
+            reporter_role,
             category,
+            _mask_log_id(validated_tag_id) if validated_tag_id else "none",
+            _mask_log_id(reported_user_id) if reported_user_id else "none",
         )
         return {"ok": True, "report_id": result.data[0]["id"] if result.data else None}
     except HTTPException:
