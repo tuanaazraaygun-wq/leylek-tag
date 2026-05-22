@@ -78,6 +78,59 @@ _DRIVER_OPERATION_PHRASES = (
     "hangi bölge",
     "hangi bolge",
     "nereye git",
+    "yakında yolcu",
+    "yakinda yolcu",
+    "yolcu var mı",
+    "yolcu var mi",
+    "iş var mı",
+    "is var mi",
+    "hareket var mı",
+    "hareket var mi",
+)
+
+_OPS_AUTOSHOT_FLOW_HINTS = frozenset({
+    "passenger_matching",
+    "driver_idle",
+    "driver_offer_list",
+})
+
+_GENERAL_EDUCATION_PHRASES = (
+    "kim kurdu",
+    "leylektag",
+    "hangi firma",
+    "neden kuruldu",
+    "hangi teknoloji",
+    "nasıl çalışır",
+    "nasil calisir",
+    "nasıl iptal",
+    "nasil iptal",
+    "iptal et",
+    "iptal nasıl",
+    "iptal nasil",
+    "qr",
+    "güven al",
+    "guven al",
+    "muhabbet",
+    "sohbet nasıl",
+    "sohbet nasil",
+    "şikayet",
+    "sikayet",
+    "bildir",
+    "dolandır",
+    "dolandir",
+    "leylek teklif",
+    "şehir dışı",
+    "sehir disi",
+    "yolcu nasıl başlat",
+    "yolcu nasil baslat",
+    "sürücü nasıl ol",
+    "surucu nasil ol",
+    "kyc",
+    "kayıt ol",
+    "kayit ol",
+    "kim teklif",
+    "teklifi kim",
+    "hangi taraf teklif",
 )
 
 _PASSENGER_OPERATION_PHRASES = (
@@ -196,6 +249,33 @@ def _support_operation_from_context(context: dict[str, Any] | None) -> dict[str,
     return op if isinstance(op, dict) and op else None
 
 
+def _is_general_education_question(t: str) -> bool:
+    """Şirket / prosedür / KYC vb. — Tier-A autoshot dışı."""
+    return any(p in t for p in _GENERAL_EDUCATION_PHRASES)
+
+
+def _should_use_operation_snapshot_short_circuit(
+    context: dict[str, Any] | None,
+    user_message: str,
+    operation: dict[str, Any],
+) -> bool:
+    """
+    Tier-A: operationAwareness + operasyonel flowHint → keyword yok.
+    Tier-B: mevcut _is_operation_question yedek.
+    """
+    t = _normalize_for_match(user_message)
+    if not t or _is_general_education_question(t):
+        return False
+    flow = str((context or {}).get("flowHint") or "").strip().lower()
+    if (
+        context
+        and context.get("operationAwareness") is True
+        and flow in _OPS_AUTOSHOT_FLOW_HINTS
+    ):
+        return True
+    return _is_operation_question(user_message, operation)
+
+
 def _is_operation_question(user_message: str, operation: dict[str, Any]) -> bool:
     t = _normalize_for_match(user_message)
     if not t:
@@ -219,7 +299,7 @@ def _try_operation_snapshot_reply(
     operation = _support_operation_from_context(context)
     if not operation:
         return None
-    if not _is_operation_question(user_message, operation):
+    if not _should_use_operation_snapshot_short_circuit(context, user_message, operation):
         return None
     hint = str(operation.get("message_hint") or "").strip()
     if not hint:
