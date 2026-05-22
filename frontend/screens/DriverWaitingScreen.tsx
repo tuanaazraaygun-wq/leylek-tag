@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import LeylekAIFloating from '../components/LeylekAIFloating';
 
-const FALLBACK_MESSAGE = 'Leylek\u2019e sor, yoğun bölgeleri göstereyim';
+const FALLBACK_MESSAGE = 'Sana en doğru adımı gösterebilirim';
 
 /** Son segmentte sık görülen il / ilçe adayı (adres metninden). */
 function extractCityFromAddress(raw: string): string | null {
@@ -43,7 +43,7 @@ export function DriverWaitingLeylekAIFloating({
   const message = useMemo(() => {
     const city = resolveCityLabel(profileCity, addressContext);
     if (!city) return FALLBACK_MESSAGE;
-    return `${city} içinde yoğun bölgeleri öğrenmek ister misin?`;
+    return `${city} için uygun fırsatları izliyorum`;
   }, [profileCity, addressContext]);
 
   return (

@@ -65,6 +65,8 @@ export type LeylekAIFloatingProps = {
   message: string;
   /** Rol seçim: premium kokpit / holografik orb */
   visualPreset?: LeylekAIFloatingVisualPreset;
+  /** Kenar tooltip/bubble — varsayılan kapalı (yalnızca orb). */
+  hideTooltip?: boolean;
 };
 
 function sleep(ms: number) {
@@ -99,6 +101,7 @@ export default function LeylekAIFloating({
   position,
   message,
   visualPreset = 'default',
+  hideTooltip = true,
 }: LeylekAIFloatingProps) {
   const insets = useSafeAreaInsets();
   const { setLeylekZekaChatOpen } = useLeylekZekaChrome();
@@ -164,6 +167,11 @@ export default function LeylekAIFloating({
   }, [pulseSuspended, startFabPulse, stopFabPulse]);
 
   useEffect(() => {
+    if (hideTooltip) {
+      setTypedText('');
+      tipOpacity.setValue(0);
+      return;
+    }
     let cancelled = false;
     const messagesRef = messages;
 
@@ -246,7 +254,7 @@ export default function LeylekAIFloating({
       cancelled = true;
       stopFabPulse();
     };
-  }, [messages, tipOpacity, tipBubbleScale, stopFabPulse]);
+  }, [hideTooltip, messages, tipOpacity, tipBubbleScale, stopFabPulse]);
 
   const onOpen = useCallback(() => {
     setLeylekZekaChatOpen(true);
@@ -284,53 +292,56 @@ export default function LeylekAIFloating({
 
   return (
     <View pointerEvents="box-none" style={rootStyle}>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          st.tooltipWrap,
-          (position === 'center-bottom' || position === 'driver-waiting') && { alignSelf: 'center' },
-          {
-            opacity: tipOpacity,
-            transform: [{ scale: tipBubbleScale }],
-          },
-        ]}
-      >
-        <View style={st.tooltip}>
-          {cockpit ? (
-            <>
-              <LinearGradient
-                pointerEvents="none"
-                colors={[
-                  'rgba(255,255,255,0.11)',
-                  'rgba(255,255,255,0)',
-                  'transparent',
-                ]}
-                locations={[0, 0.22, 1]}
-                start={{ x: 0.05, y: 0 }}
-                end={{ x: 0.65, y: 0.5 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <View style={{ zIndex: 1 }}>
-                {renderTypedWithCockpitAccent(
-                  typedText,
-                  visualPreset,
-                  st.tooltipText,
-                  st.tooltipAccent,
-                )}
-              </View>
-            </>
-          ) : (
-            renderTypedWithCockpitAccent(typedText, visualPreset, st.tooltipText, st.tooltipAccent)
-          )}
-        </View>
-        <View style={st.tooltipTail} />
-      </Animated.View>
+      {!hideTooltip ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            st.tooltipWrap,
+            (position === 'center-bottom' || position === 'driver-waiting') && { alignSelf: 'center' },
+            {
+              opacity: tipOpacity,
+              transform: [{ scale: tipBubbleScale }],
+            },
+          ]}
+        >
+          <View style={st.tooltip}>
+            {cockpit ? (
+              <>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[
+                    'rgba(255,255,255,0.11)',
+                    'rgba(255,255,255,0)',
+                    'transparent',
+                  ]}
+                  locations={[0, 0.22, 1]}
+                  start={{ x: 0.05, y: 0 }}
+                  end={{ x: 0.65, y: 0.5 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <View style={{ zIndex: 1 }}>
+                  {renderTypedWithCockpitAccent(
+                    typedText,
+                    visualPreset,
+                    st.tooltipText,
+                    st.tooltipAccent,
+                  )}
+                </View>
+              </>
+            ) : (
+              renderTypedWithCockpitAccent(typedText, visualPreset, st.tooltipText, st.tooltipAccent)
+            )}
+          </View>
+          <View style={st.tooltipTail} />
+        </Animated.View>
+      ) : null}
 
       <Animated.View style={{ transform: [{ scale: fabPulse }] }}>
         <Pressable
           onPress={onOpen}
           accessibilityRole="button"
-          accessibilityLabel="Leylek AI asistanı"
+          accessibilityLabel={hideTooltip ? message : 'Leylek AI asistanı'}
+          accessibilityHint={hideTooltip ? 'Leylek Zeka sohbetini açar' : undefined}
           style={({ pressed }) => [
             cockpit ? st.fabPressable : stylesDefault.fabPressable,
             cockpit && {

@@ -6,6 +6,7 @@ import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
 } from 'expo-speech-recognition';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import * as Speech from 'expo-speech';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -46,6 +47,8 @@ const LOGO = require('../assets/images/leylek-logo-premium.png');
 
 /** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
 const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
+const COCKPIT_CYAN = '#22D3EE';
+const COCKPIT_HERO_GRADIENT = ['#0A1628', '#0F2744', '#081018'] as const;
 
 /** İçerik boyutu değişince scroll — uzun metin layout sonrası yakalamak için kısa tutulur */
 const SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS = 48;
@@ -57,6 +60,32 @@ const VOICE_TRANSCRIPT_SUBMIT_DELAY_MS = 680;
 const VOICE_MIN_HOLD_MS = 800;
 /** Yanlışlıkla gelen erken onPressOut olaylarında recognizer start'a kısa pencere tanır. */
 const VOICE_RELEASE_DEBOUNCE_MS = 160;
+/** iOS/Android: Speech.speak öncesi audio mode yenileme aralığı */
+const TTS_AUDIO_PREP_TTL_MS = 4000;
+const IOS_TTS_SPEECH_RATE = 0.92;
+
+let leylekTtsAudioPreparedAt = 0;
+
+/** expo-speech öncesi playback oturumu (sessiz mod + Agora/InCall sonrası düşük ses). */
+async function prepareLeylekZekaTtsAudioMode(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const now = Date.now();
+  if (now - leylekTtsAudioPreparedAt < TTS_AUDIO_PREP_TTL_MS) return;
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+    });
+    leylekTtsAudioPreparedAt = now;
+  } catch {
+    /* TTS yine yazılı kalır */
+  }
+}
 /** Backend streaming yokken düşük maliyetli kelime grubu typewriter hissi. */
 const TYPEWRITER_INTERVAL_MS = 58;
 const TYPEWRITER_SHORT_CHUNK_WORDS = 5;
@@ -215,51 +244,11 @@ const Bubble = memo(function Bubble({
   );
 });
 
-/** Arkada hafif 0/1 deseni — pointerEvents yok */
-const BinaryPatternBackdrop = memo(function BinaryPatternBackdrop() {
-  const shift = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(shift, {
-          toValue: 1,
-          duration: 14000,
-          easing: Easing.inOut(Easing.linear),
-          useNativeDriver: true,
-        }),
-        Animated.timing(shift, {
-          toValue: 0,
-          duration: 14000,
-          easing: Easing.inOut(Easing.linear),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [shift]);
-  const tx = shift.interpolate({ inputRange: [0, 1], outputRange: [0, -56] });
-  const ty = shift.interpolate({ inputRange: [0, 1], outputRange: [0, 24] });
-  const rows = ['0 1 0 1 0 1', '1 0 1 0 1 0', '0 1 0 1 0 1', '1 0 1 0 1 0'];
-  return (
-    <Animated.View
-      style={[styles.binaryPatternWrap, { transform: [{ translateX: tx }, { translateY: ty }] }]}
-      pointerEvents="none"
-    >
-      {rows.map((line, i) => (
-        <Text key={i} style={styles.binaryPatternLine}>
-          {line}
-        </Text>
-      ))}
-    </Animated.View>
-  );
-});
-
 const EmptyWelcome = memo(function EmptyWelcome({
   title,
   body,
   operationTitle,
-  operationBody,
+  operationBody: _operationBody,
   safeChecklist,
   prompts,
   disabled,
@@ -280,20 +269,24 @@ const EmptyWelcome = memo(function EmptyWelcome({
         <Image source={LOGO} style={styles.emptyLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
       <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyBody}>{body}</Text>
+      <Text style={styles.emptyBody} numberOfLines={2}>
+        {body}
+      </Text>
       <View style={styles.operationGuideCard}>
-        <Text style={styles.operationGuideTitle}>{operationTitle}</Text>
-        <Text style={styles.operationGuideBody}>{operationBody}</Text>
+        <View style={styles.operationGuideHeader}>
+          <Ionicons name="shield-checkmark" size={14} color={COCKPIT_CYAN} />
+          <Text style={styles.operationGuideTitle}>{operationTitle}</Text>
+        </View>
         <View style={styles.operationChecklist}>
-          {safeChecklist.slice(0, 4).map((item) => (
+          {safeChecklist.slice(0, 2).map((item) => (
             <View key={item} style={styles.operationChecklistRow}>
-              <Ionicons name="checkmark-circle" size={13} color="#2563EB" />
+              <Ionicons name="checkmark-circle" size={12} color={COCKPIT_CYAN} />
               <Text style={styles.operationChecklistText}>{item}</Text>
             </View>
           ))}
         </View>
       </View>
-      <Text style={styles.emptyPromptTitle}>Sorabileceğin başlıklar</Text>
+      <Text style={styles.emptyPromptTitle}>Hızlı başlangıç</Text>
       <View style={styles.emptyPromptGrid}>
         {prompts.map((prompt) => (
           <Pressable
@@ -796,18 +789,24 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     if (!wasVisible) {
       lastAssistantSpeechIdRef.current = latestAssistantId;
       lastTypewriterAssistantIdRef.current = latestAssistantId;
+      if (speechEnabled && Platform.OS !== 'web') {
+        void prepareLeylekZekaTtsAudioMode();
+      }
     }
-  }, [abortVoiceInput, clearTypewriter, latestAssistantId, stopSpeech, visible]);
+  }, [abortVoiceInput, clearTypewriter, latestAssistantId, speechEnabled, stopSpeech, visible]);
 
-  const speakAssistantText = useCallback((rawText: string) => {
+  const speakAssistantText = useCallback(async (rawText: string) => {
     if (Platform.OS === 'web') return;
+    if (AppState.currentState !== 'active') return;
+    if (pressActiveRef.current || recognitionStartedRef.current || isListening) return;
     const text = sanitizeSpeechText(rawText);
     if (!text) return;
     try {
+      await prepareLeylekZekaTtsAudioMode();
       Speech.stop();
       Speech.speak(text, {
         language: 'tr-TR',
-        rate: 1.0,
+        rate: Platform.OS === 'ios' ? IOS_TTS_SPEECH_RATE : 1.0,
         pitch: 1.0,
         onStart: () => setIsSpeaking(true),
         onDone: () => setIsSpeaking(false),
@@ -818,7 +817,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       setIsSpeaking(false);
       /* Sesli cevap desteklenmeyen cihazlarda chat yazılı kalır. */
     }
-  }, []);
+  }, [isListening]);
 
   useEffect(() => {
     const latest = messages[messages.length - 1];
@@ -833,7 +832,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       if (lastAssistantSpeechIdRef.current === latest.id) return;
       lastAssistantSpeechIdRef.current = latest.id;
       if (!visible || !speechEnabled) return;
-      speakAssistantText(latest.text);
+      void speakAssistantText(latest.text);
     };
 
     if (!visible || reduceMotion) {
@@ -869,7 +868,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const replayLastAssistantSpeech = useCallback(() => {
     const text = lastSpeakableAssistantTextRef.current;
     if (!text) return;
-    speakAssistantText(text);
+    void speakAssistantText(text);
   }, [speakAssistantText]);
 
   const startVoiceInput = useCallback(async () => {
@@ -1156,7 +1155,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           ? 'Resmi adım adım yanıt.'
           : null;
 
-  const headerSubtitle = `${contextCopy.stageLabel} · Rehber`;
+  const headerSubtitle = contextCopy.stageLabel;
+  const headerHeroTagline = 'AI kontrol merkezi';
   const voiceStatusTitle = voiceInputError
     ? 'Bas-konuş durdu'
     : isListening
@@ -1250,57 +1250,52 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             ]}
           >
           <View style={[styles.sheet, { height: panelMaxHeight, maxHeight: panelMaxHeight }]}>
-            {/* Açık mavi → açık mor, düşük opaklık */}
             <LinearGradient
-              colors={['rgba(186, 230, 253, 0.55)', 'rgba(199, 210, 254, 0.42)', 'rgba(233, 213, 255, 0.38)', 'rgba(250, 245, 255, 0.5)']}
-              locations={[0, 0.35, 0.7, 1]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
+              colors={[...COCKPIT_HERO_GRADIENT]}
+              locations={[0, 0.55, 1]}
+              start={{ x: 0.15, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
               style={styles.sheetSkyBase}
               pointerEvents="none"
             />
-            <BinaryPatternBackdrop />
             {Platform.OS === 'ios' ? (
-              <BlurView intensity={28} tint="light" style={styles.sheetBlur} pointerEvents="none" />
-            ) : Platform.OS === 'android' ? (
+              <BlurView intensity={42} tint="dark" style={styles.sheetBlur} pointerEvents="none" />
+            ) : (
               <LinearGradient
-                colors={['rgba(186, 230, 253, 0.35)', 'rgba(221, 214, 254, 0.28)', 'rgba(250, 245, 255, 0.45)']}
-                locations={[0, 0.5, 1]}
+                colors={['rgba(8, 18, 32, 0.55)', 'rgba(6, 14, 26, 0.88)']}
+                locations={[0, 1]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.sheetAndroidSoft}
                 pointerEvents="none"
               />
-            ) : null}
+            )}
             <LinearGradient
-              colors={['rgba(255,255,255,0.1)', 'rgba(248,250,255,0.75)', 'rgba(255,255,255,0.9)']}
+              colors={['rgba(34, 211, 238, 0.08)', 'transparent', 'rgba(37, 99, 235, 0.06)']}
               locations={[0, 0.45, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.sheetVeil}
               pointerEvents="none"
             />
-            <View style={styles.cloudLayer} pointerEvents="none">
-              <View style={[styles.cloudBlob, styles.cloudBlob1]} />
-              <View style={[styles.cloudBlob, styles.cloudBlob2]} />
-              <View style={[styles.cloudBlob, styles.cloudBlob3]} />
-            </View>
 
             <View style={[styles.sheetInner, { paddingTop: Math.max(insets.top, 10) + 6 }]}>
           <LinearGradient
-            colors={['rgba(255,255,255,0.97)', 'rgba(236,248,255,0.92)', 'rgba(255,255,255,0.88)']}
-            locations={[0, 0.55, 1]}
+            colors={['rgba(10, 22, 40, 0.98)', 'rgba(8, 18, 34, 0.94)', 'rgba(6, 14, 28, 0.9)']}
+            locations={[0, 0.5, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.headerBar}
           >
             <LinearGradient
-              colors={[...BRAND_GRADIENT]}
+              colors={[COCKPIT_CYAN, '#3FA9F5', '#2563EB']}
               start={{ x: 0, y: 0.5 }}
               end={{ x: 1, y: 0.5 }}
               style={styles.headerBrandStrip}
               pointerEvents="none"
             />
             <LinearGradient
-              colors={['rgba(63,169,245,0.2)', 'rgba(255,255,255,0)', 'rgba(147,197,253,0.12)']}
+              colors={['rgba(34, 211, 238, 0.14)', 'transparent', 'rgba(37, 99, 235, 0.1)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.headerBarGlow}
@@ -1310,6 +1305,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               <View style={styles.headerLead}>
                 <HeaderLogoMark reduceMotion={reduceMotion} />
                 <View style={styles.headerTextCol}>
+                  <Text style={styles.heroEyebrow}>{headerHeroTagline}</Text>
                   <View style={styles.titleRow}>
                     <Text style={styles.title}>Leylek Zeka</Text>
                     <LinearGradient
@@ -1382,17 +1378,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               </View>
             </View>
             <Pressable onPress={closeWithHaptic} hitSlop={14} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color="#334155" />
+              <Ionicons name="close" size={22} color="rgba(226, 232, 240, 0.92)" />
             </Pressable>
           </LinearGradient>
 
           {showBetaHint ? (
             <View style={styles.betaBanner}>
               <Text style={styles.betaText}>
-                Leylek Zeka yanınızda 🚀{'\n\n'}
-                Yolculuk eşleşmeleri, Leylek Teklifi, güvenli kullanım ve uygulama adımları
-                hakkında anlık rehberlik alabilirsiniz.{'\n'}
-                Sürücüler için kullanım önerileri, yolcular için yolculuk desteği burada.
+                Akıllı rehber aktif · Güvenli akış kontrol altında · Yazı veya sesli sorabilirsiniz.
               </Text>
               <Pressable onPress={dismissBetaHint} hitSlop={8} style={styles.betaDismiss}>
                 <Ionicons name="close-circle" size={22} color={Colors.gray500} />
@@ -1468,159 +1461,178 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           </View>
 
           <LinearGradient
-            colors={['rgba(240,249,255,0.98)', 'rgba(224,242,254,0.96)', 'rgba(219,234,254,0.94)']}
-            locations={[0, 0.5, 1]}
+            colors={['rgba(8, 18, 32, 0.97)', 'rgba(6, 14, 26, 0.98)']}
+            locations={[0, 1]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={[styles.composerBar, { paddingBottom: composerBottomPad }]}
           >
-            <Text style={styles.composerLabel}>Mesaj</Text>
             <View style={styles.composerCard}>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                placeholder={contextCopy.placeholder}
-                placeholderTextColor="#475569"
-                value={input}
-                onChangeText={setInput}
-                editable={!isTyping}
-                multiline
-                maxLength={2000}
-                blurOnSubmit={false}
-                onSubmitEditing={onSubmit}
-                returnKeyType="send"
-                accessibilityLabel="Mesaj metni"
-                onFocus={() => {
-                  if (Platform.OS === 'web' || !visibleRef.current) return;
-                  try {
-                    void Haptics.selectionAsync();
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-                {...Platform.select({
-                  ios: { keyboardAppearance: 'light' as const, submitBehavior: 'newline' as const },
-                  android: { submitBehavior: 'newline' as const },
-                  default: {},
-                })}
-              />
               <Pressable
                 onTouchStart={handleVoiceTouchStart}
                 onTouchEnd={handleVoiceTouchEnd}
                 onTouchCancel={handleVoiceTouchCancel}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
-                accessibilityLabel="Bas-konuş"
-                accessibilityHint="Basılı tutarak konuşun, bırakınca Leylek Zeka'ya gönderilir."
+                accessibilityLabel="Basılı tut ve konuş"
+                accessibilityHint="Alanı basılı tutarak konuşun; bırakınca Leylek Zeka'ya gönderilir."
                 accessibilityState={{ disabled: isTyping }}
-                style={({ pressed }) => [
-                  styles.micBtn,
-                  isListening && styles.micBtnListening,
-                  isTyping && styles.micBtnDisabled,
-                  pressed && !isTyping && styles.micBtnPressed,
-                ]}
                 disabled={isTyping}
-              >
-                <View style={styles.micBtnContent}>
-                  {isListening && !reduceMotion ? (
-                    <Animated.View
-                      pointerEvents="none"
-                      style={[styles.micPulseRing, voicePulseStyle]}
-                    />
-                  ) : null}
-                  <Ionicons
-                    name={isListening ? 'mic' : 'mic-outline'}
-                    size={19}
-                    color={isListening ? '#FFFFFF' : '#2563EB'}
-                  />
-                </View>
-              </Pressable>
-              <Pressable
-                onPress={onSubmit}
-                accessibilityRole="button"
-                accessibilityLabel="Gönder"
-                accessibilityState={{ disabled: !input.trim() || isTyping }}
                 style={({ pressed }) => [
-                  styles.sendBtnOuter,
-                  (!input.trim() || isTyping) && styles.sendBtnDisabled,
-                  pressed && input.trim() && !isTyping && styles.sendBtnPressed,
+                  styles.voiceHoldZone,
+                  isListening && styles.voiceHoldZoneListening,
+                  voiceInputError ? styles.voiceHoldZoneError : null,
+                  isTyping && styles.voiceHoldZoneDisabled,
+                  pressed && !isTyping && styles.voiceHoldZonePressed,
                 ]}
-                disabled={!input.trim() || isTyping}
               >
-                <LinearGradient
-                  colors={[...BRAND_GRADIENT]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.sendBtnGrad}
-                >
-                  {isTyping ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Ionicons name="arrow-forward" size={20} color="#fff" />
-                  )}
-                </LinearGradient>
-              </Pressable>
-            </View>
-            <View
-              style={[
-                styles.voiceStatusCard,
-                isListening ? styles.voiceStatusCardListening : null,
-                voiceInputError ? styles.voiceStatusCardError : null,
-              ]}
-            >
-              <View style={styles.voiceStatusHeader}>
-                <View
-                  style={[
-                    styles.voiceStatusDot,
-                    isListening ? styles.voiceStatusDotListening : null,
-                    voiceInputError ? styles.voiceStatusDotError : null,
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.voiceStatusTitle,
-                    voiceInputError ? styles.voiceStatusTitleError : null,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {voiceStatusTitle}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.voiceStatusBody,
-                  voiceInputError ? styles.voiceStatusBodyError : null,
-                ]}
-                numberOfLines={1}
-              >
-                {voiceStatusBody}
-              </Text>
-              {isListening ? (
-                <View style={styles.voiceWaveformRow} pointerEvents="none">
-                  {voiceWaveBars.map((barStyle, index) =>
-                    reduceMotion ? (
+                {isListening ? (
+                  <LinearGradient
+                    colors={['#2563EB', '#1D4ED8', '#1E40AF']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFillObject}
+                    pointerEvents="none"
+                  />
+                ) : null}
+                <View style={styles.voiceHoldInner}>
+                  <View style={styles.voiceHoldIconWrap}>
+                    {isListening && !reduceMotion ? (
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[styles.voiceHoldPulseRing, voicePulseStyle]}
+                      />
+                    ) : null}
+                    <Ionicons
+                      name={isListening ? 'mic' : 'mic-outline'}
+                      size={28}
+                      color={isListening ? '#FFFFFF' : COCKPIT_CYAN}
+                    />
+                  </View>
+                  <View style={styles.voiceHoldTextCol}>
+                    <View style={styles.voiceStatusHeader}>
                       <View
-                        key={`voice-wave-${index}`}
                         style={[
-                          styles.voiceWaveformBar,
-                          index % 2 === 0 ? styles.voiceWaveformBarTall : null,
+                          styles.voiceStatusDot,
+                          isListening ? styles.voiceStatusDotListening : null,
+                          voiceInputError ? styles.voiceStatusDotError : null,
+                          isListening ? styles.voiceStatusDotOnDark : null,
                         ]}
                       />
-                    ) : (
-                      <Animated.View
-                        key={`voice-wave-${index}`}
-                        style={[styles.voiceWaveformBar, barStyle]}
-                      />
-                    ),
-                  )}
+                      <Text
+                        style={[
+                          styles.voiceStatusTitle,
+                          isListening ? styles.voiceStatusTitleOnDark : null,
+                          voiceInputError ? styles.voiceStatusTitleError : null,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {voiceStatusTitle}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.voiceStatusBody,
+                        isListening ? styles.voiceStatusBodyOnDark : null,
+                        voiceInputError ? styles.voiceStatusBodyError : null,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {voiceStatusBody}
+                    </Text>
+                    {isListening ? (
+                      <View style={styles.voiceWaveformRow} pointerEvents="none">
+                        {voiceWaveBars.map((barStyle, index) =>
+                          reduceMotion ? (
+                            <View
+                              key={`voice-wave-${index}`}
+                              style={[
+                                styles.voiceWaveformBar,
+                                styles.voiceWaveformBarOnDark,
+                                index % 2 === 0 ? styles.voiceWaveformBarTall : null,
+                              ]}
+                            />
+                          ) : (
+                            <Animated.View
+                              key={`voice-wave-${index}`}
+                              style={[
+                                styles.voiceWaveformBar,
+                                styles.voiceWaveformBarOnDark,
+                                barStyle,
+                              ]}
+                            />
+                          ),
+                        )}
+                      </View>
+                    ) : null}
+                    {partialTranscript && !voiceInputError ? (
+                      <Text
+                        style={[
+                          styles.voicePartialText,
+                          isListening ? styles.voicePartialTextOnDark : null,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {partialTranscript}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              ) : null}
-              {partialTranscript && !voiceInputError ? (
-                <Text style={styles.voicePartialText} numberOfLines={2}>
-                  {partialTranscript}
-                </Text>
-              ) : null}
-            </View>
+              </Pressable>
+              <Text style={styles.composerLabel}>Mesaj</Text>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder={contextCopy.placeholder}
+                  placeholderTextColor="rgba(148, 163, 184, 0.75)"
+                  value={input}
+                  onChangeText={setInput}
+                  editable={!isTyping}
+                  multiline
+                  maxLength={2000}
+                  blurOnSubmit={false}
+                  onSubmitEditing={onSubmit}
+                  returnKeyType="send"
+                  accessibilityLabel="Mesaj metni"
+                  onFocus={() => {
+                    if (Platform.OS === 'web' || !visibleRef.current) return;
+                    try {
+                      void Haptics.selectionAsync();
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  {...Platform.select({
+                    ios: { keyboardAppearance: 'light' as const, submitBehavior: 'newline' as const },
+                    android: { submitBehavior: 'newline' as const },
+                    default: {},
+                  })}
+                />
+                <Pressable
+                  onPress={onSubmit}
+                  accessibilityRole="button"
+                  accessibilityLabel="Gönder"
+                  accessibilityState={{ disabled: !input.trim() || isTyping }}
+                  style={({ pressed }) => [
+                    styles.sendBtnOuter,
+                    (!input.trim() || isTyping) && styles.sendBtnDisabled,
+                    pressed && input.trim() && !isTyping && styles.sendBtnPressed,
+                  ]}
+                  disabled={!input.trim() || isTyping}
+                >
+                  <LinearGradient
+                    colors={[...BRAND_GRADIENT]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.sendBtnGrad}
+                  >
+                    {isTyping ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Ionicons name="arrow-forward" size={20} color="#fff" />
+                    )}
+                  </LinearGradient>
+                </Pressable>
+              </View>
             </View>
           </LinearGradient>
             </View>
@@ -1640,7 +1652,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.38)',
+    backgroundColor: 'rgba(2, 6, 14, 0.72)',
   },
   kavRoot: {
     flex: 1,
@@ -1662,19 +1674,19 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexShrink: 1,
     alignSelf: 'center',
-    backgroundColor: '#EEF8FF',
-    borderRadius: 22,
+    backgroundColor: '#070D18',
+    borderRadius: 24,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(14, 165, 233, 0.72)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
     ...Platform.select({
       ios: {
-        shadowColor: '#0c4a6e',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.2,
-        shadowRadius: 28,
+        shadowColor: COCKPIT_CYAN,
+        shadowOffset: { width: 0, height: 14 },
+        shadowOpacity: 0.22,
+        shadowRadius: 32,
       },
-      android: { elevation: 20 },
+      android: { elevation: 22 },
     }),
   },
   sheetSkyBase: {
@@ -1753,12 +1765,12 @@ const styles = StyleSheet.create({
   },
   headerBar: {
     borderRadius: BorderRadius.lg,
-    paddingTop: Spacing.sm + 2,
-    paddingBottom: Spacing.sm + 2,
-    paddingHorizontal: Spacing.sm + 2,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm + 4,
+    paddingHorizontal: Spacing.sm + 4,
     marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.42)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
     position: 'relative',
     overflow: 'hidden',
     ...Platform.select({
@@ -1828,20 +1840,28 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   /** Küçük marka işareti — başlık önde */
+  heroEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: COCKPIT_CYAN,
+    marginBottom: 4,
+  },
   headerLogoWrapCompact: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 30, 52, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.sm,
     marginTop: 2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.35)',
     ...Platform.select({
       ios: {
-        shadowColor: '#3FA9F5',
+        shadowColor: COCKPIT_CYAN,
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.12,
         shadowRadius: 4,
@@ -1850,8 +1870,8 @@ const styles = StyleSheet.create({
     }),
   },
   headerLogo: {
-    width: 22,
-    height: 22,
+    width: 30,
+    height: 30,
   },
   headerTextCol: {
     flex: 1,
@@ -1859,26 +1879,24 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   title: {
-    fontFamily: DIGITAL_MONO,
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: '800',
-    color: '#0c4a6e',
-    letterSpacing: 0.15,
+    color: '#F0F9FF',
+    letterSpacing: -0.3,
     flexShrink: 1,
   },
   headerSubtitle: {
-    fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    color: '#475569',
-    marginTop: 2,
+    fontSize: 12,
+    color: 'rgba(186, 230, 253, 0.82)',
+    marginTop: 3,
     fontWeight: '600',
-    letterSpacing: 0.12,
-    lineHeight: 14,
+    letterSpacing: 0.02,
+    lineHeight: 16,
   },
   modeCaptionInline: {
     fontFamily: DIGITAL_MONO,
     fontSize: 9,
-    color: '#64748B',
+    color: 'rgba(148, 163, 184, 0.9)',
     marginTop: 5,
     fontWeight: '600',
     letterSpacing: 0.08,
@@ -1899,13 +1917,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.78)',
+    backgroundColor: 'rgba(15, 30, 52, 0.72)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(100, 116, 139, 0.28)',
+    borderColor: 'rgba(34, 211, 238, 0.22)',
   },
   speechToggleOn: {
-    backgroundColor: 'rgba(219, 234, 254, 0.92)',
-    borderColor: 'rgba(37, 99, 235, 0.32)',
+    backgroundColor: 'rgba(37, 99, 235, 0.35)',
+    borderColor: 'rgba(34, 211, 238, 0.45)',
   },
   speechTogglePressed: {
     opacity: 0.82,
@@ -1914,12 +1932,12 @@ const styles = StyleSheet.create({
     fontFamily: DIGITAL_MONO,
     fontSize: 9,
     lineHeight: 12,
-    color: '#64748B',
+    color: 'rgba(186, 230, 253, 0.72)',
     fontWeight: '700',
     letterSpacing: 0.04,
   },
   speechToggleTextOn: {
-    color: '#1D4ED8',
+    color: COCKPIT_CYAN,
   },
   speechMiniControl: {
     flexDirection: 'row',
@@ -1972,21 +1990,21 @@ const styles = StyleSheet.create({
   betaBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#EEF6FC',
+    backgroundColor: 'rgba(15, 30, 52, 0.72)',
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.28)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
   },
   betaText: {
     flex: 1,
-    fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    lineHeight: 15,
-    color: Colors.gray700,
+    fontSize: 11,
+    lineHeight: 16,
+    color: 'rgba(186, 230, 253, 0.88)',
     paddingRight: Spacing.sm,
+    fontWeight: '600',
   },
   betaDismiss: {
     paddingTop: 2,
@@ -2010,9 +2028,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.38)',
+    borderColor: 'rgba(34, 211, 238, 0.18)',
     overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    backgroundColor: 'rgba(8, 16, 28, 0.42)',
   },
   list: { flex: 1 },
   listContent: {
@@ -2033,63 +2051,68 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   emptyIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: 'rgba(12, 24, 42, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.28)',
+    borderColor: 'rgba(34, 211, 238, 0.32)',
     ...Platform.select({
       ios: {
-        shadowColor: '#3FA9F5',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
+        shadowColor: COCKPIT_CYAN,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
       },
-      android: { elevation: 2 },
+      android: { elevation: 4 },
     }),
   },
   emptyLogo: {
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 40,
   },
   emptyTitle: {
-    fontFamily: DIGITAL_MONO,
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: '800',
-    color: '#0c4a6e',
-    letterSpacing: 0.12,
+    color: '#F0F9FF',
+    letterSpacing: -0.2,
+    textAlign: 'center',
   },
   emptyBody: {
-    fontFamily: DIGITAL_MONO,
     marginTop: Spacing.sm,
     textAlign: 'center',
-    lineHeight: 17,
-    color: '#334155',
-    fontSize: 11,
+    lineHeight: 18,
+    color: 'rgba(186, 230, 253, 0.78)',
+    fontSize: 13,
     fontWeight: '500',
-    letterSpacing: 0.04,
   },
   operationGuideCard: {
     width: '100%',
     marginTop: Spacing.md,
     paddingVertical: 10,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(239, 246, 255, 0.86)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(37, 99, 235, 0.26)',
+    backgroundColor: 'rgba(12, 24, 42, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  operationGuideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 6,
   },
   operationGuideTitle: {
-    fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    lineHeight: 14,
-    color: '#1d4ed8',
+    fontSize: 11,
+    lineHeight: 15,
+    color: COCKPIT_CYAN,
     fontWeight: '800',
-    textAlign: 'center',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   operationGuideBody: {
     fontFamily: DIGITAL_MONO,
@@ -2111,10 +2134,9 @@ const styles = StyleSheet.create({
   },
   operationChecklistText: {
     flex: 1,
-    fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    lineHeight: 14,
-    color: '#0f172a',
+    fontSize: 11,
+    lineHeight: 15,
+    color: 'rgba(226, 232, 240, 0.9)',
     fontWeight: '600',
   },
   bubbleWrap: { marginBottom: Spacing.md, maxWidth: '92%' },
@@ -2129,7 +2151,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.35)',
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+    backgroundColor: 'rgba(12, 24, 42, 0.88)',
     ...Platform.select({
       ios: {
         shadowColor: '#0c4a6e',
@@ -2182,11 +2205,47 @@ const styles = StyleSheet.create({
   },
   bubbleTextUser: { color: '#fff', fontWeight: '600' },
   bubbleTextAi: {
-    color: '#0f172a',
+    color: 'rgba(240, 249, 255, 0.95)',
     fontWeight: '500',
     opacity: 1,
     flexShrink: 1,
     width: '100%',
+  },
+  emptyPromptTitle: {
+    marginTop: Spacing.md,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(148, 163, 184, 0.9)',
+    alignSelf: 'flex-start',
+    width: '100%',
+  },
+  emptyPromptGrid: {
+    width: '100%',
+    marginTop: 8,
+    gap: 8,
+  },
+  emptyPromptChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(12, 24, 42, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.2)',
+  },
+  emptyPromptChipPressed: {
+    opacity: 0.88,
+    borderColor: 'rgba(34, 211, 238, 0.45)',
+  },
+  emptyPromptChipDisabled: {
+    opacity: 0.4,
+  },
+  emptyPromptText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: 'rgba(226, 232, 240, 0.92)',
+    fontWeight: '600',
   },
   typingBubbleOuter: {
     alignSelf: 'flex-start',
@@ -2217,7 +2276,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 2,
-    backgroundColor: 'rgba(255,255,255,0.98)',
+    backgroundColor: 'rgba(12, 24, 42, 0.92)',
   },
   thinkingHeaderRow: {
     flexDirection: 'row',
@@ -2229,7 +2288,7 @@ const styles = StyleSheet.create({
     fontFamily: DIGITAL_MONO,
     fontSize: 11,
     lineHeight: 15,
-    color: '#1D4ED8',
+    color: COCKPIT_CYAN,
     fontWeight: '800',
     letterSpacing: 0.08,
   },
@@ -2237,7 +2296,7 @@ const styles = StyleSheet.create({
     fontFamily: DIGITAL_MONO,
     fontSize: 10,
     lineHeight: 13,
-    color: '#475569',
+    color: 'rgba(186, 230, 253, 0.72)',
     fontWeight: '600',
     marginBottom: 7,
   },
@@ -2275,18 +2334,19 @@ const styles = StyleSheet.create({
     fontFamily: DIGITAL_MONO,
     fontSize: 9,
     fontWeight: '700',
-    color: '#475569',
+    color: 'rgba(148, 163, 184, 0.85)',
     letterSpacing: 0.55,
     textTransform: 'uppercase',
     marginBottom: 6,
+    marginTop: 4,
     marginLeft: 2,
   },
   composerCard: {
-    backgroundColor: 'rgba(255,255,255,0.96)',
+    backgroundColor: 'rgba(10, 20, 36, 0.92)',
     borderRadius: 16,
-    padding: 8,
+    padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.4)',
+    borderColor: 'rgba(34, 211, 238, 0.28)',
     ...Platform.select({
       ios: {
         shadowColor: '#3FA9F5',
@@ -2297,6 +2357,68 @@ const styles = StyleSheet.create({
       android: { elevation: 4 },
     }),
   },
+  voiceHoldZone: {
+    minHeight: 88,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    backgroundColor: 'rgba(12, 28, 48, 0.82)',
+    marginBottom: 10,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.14,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  voiceHoldZoneListening: {
+    borderColor: 'rgba(29, 78, 216, 0.72)',
+  },
+  voiceHoldZoneError: {
+    borderColor: 'rgba(185, 28, 28, 0.36)',
+    backgroundColor: 'rgba(254, 242, 242, 0.92)',
+  },
+  voiceHoldZoneDisabled: {
+    opacity: 0.42,
+  },
+  voiceHoldZonePressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.985 }],
+  },
+  voiceHoldInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 12,
+  },
+  voiceHoldIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 18, 32, 0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+  },
+  voiceHoldPulseRing: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.72)',
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  voiceHoldTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2304,77 +2426,20 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 44,
     maxHeight: 140,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.38)',
+    borderColor: 'rgba(34, 211, 238, 0.22)',
     borderRadius: 14,
     paddingHorizontal: Spacing.sm + 4,
-    paddingVertical: Platform.OS === 'ios' ? 9 : 8,
-    fontFamily: DIGITAL_MONO,
-    fontSize: 12,
-    lineHeight: 17,
-    color: '#0f172a',
-    backgroundColor: '#FFFFFF',
+    paddingVertical: Platform.OS === 'ios' ? 10 : 9,
+    fontSize: 14,
+    lineHeight: 19,
+    color: '#F0F9FF',
+    backgroundColor: 'rgba(8, 16, 28, 0.65)',
     marginRight: Spacing.sm,
     fontWeight: '500',
     letterSpacing: 0.04,
-  },
-  micBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.42)',
-    backgroundColor: '#EFF6FF',
-  },
-  micBtnContent: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micPulseRing: {
-    position: 'absolute',
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.65)',
-    backgroundColor: 'rgba(37, 99, 235, 0.16)',
-  },
-  micBtnListening: {
-    backgroundColor: '#2563EB',
-    borderColor: '#1D4ED8',
-  },
-  micBtnPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.96 }],
-  },
-  micBtnDisabled: {
-    opacity: 0.34,
-    borderColor: 'rgba(100, 116, 139, 0.32)',
-  },
-  voiceStatusCard: {
-    marginTop: 7,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.18)',
-    backgroundColor: 'rgba(239, 246, 255, 0.72)',
-  },
-  voiceStatusCardListening: {
-    borderColor: 'rgba(37, 99, 235, 0.42)',
-    backgroundColor: 'rgba(219, 234, 254, 0.86)',
-  },
-  voiceStatusCardError: {
-    borderColor: 'rgba(185, 28, 28, 0.28)',
-    backgroundColor: 'rgba(254, 242, 242, 0.86)',
   },
   voiceStatusHeader: {
     flexDirection: 'row',
@@ -2382,10 +2447,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   voiceStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 7,
     backgroundColor: '#2563EB',
     opacity: 0.72,
   },
@@ -2393,38 +2458,49 @@ const styles = StyleSheet.create({
     backgroundColor: '#1D4ED8',
     opacity: 1,
   },
+  voiceStatusDotOnDark: {
+    backgroundColor: '#FFFFFF',
+    opacity: 0.95,
+  },
   voiceStatusDotError: {
     backgroundColor: '#B91C1C',
     opacity: 1,
   },
   voiceStatusTitle: {
     fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    lineHeight: 14,
-    color: '#1D4ED8',
+    fontSize: 14,
+    lineHeight: 19,
+    color: '#BAE6FD',
     fontWeight: '800',
-    letterSpacing: 0.08,
+    letterSpacing: 0.04,
+  },
+  voiceStatusTitleOnDark: {
+    color: '#FFFFFF',
   },
   voiceStatusTitleError: {
     color: '#B91C1C',
   },
   voiceStatusBody: {
     fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    lineHeight: 13,
-    color: '#334155',
+    fontSize: 12,
+    lineHeight: 16,
+    color: 'rgba(186, 230, 253, 0.75)',
     fontWeight: '600',
+    marginTop: 2,
+  },
+  voiceStatusBodyOnDark: {
+    color: 'rgba(255, 255, 255, 0.92)',
   },
   voiceStatusBodyError: {
     color: '#991B1B',
   },
   voiceWaveformRow: {
-    height: 18,
+    height: 20,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 6,
-    marginBottom: 1,
+    marginTop: 8,
+    marginBottom: 2,
   },
   voiceWaveformBar: {
     width: 4,
@@ -2433,17 +2509,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
     opacity: 0.72,
   },
+  voiceWaveformBarOnDark: {
+    backgroundColor: '#FFFFFF',
+    opacity: 0.88,
+  },
   voiceWaveformBarTall: {
     height: 18,
     opacity: 0.86,
   },
   voicePartialText: {
-    marginTop: 5,
+    marginTop: 6,
     fontFamily: DIGITAL_MONO,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 15,
     color: '#0F172A',
     fontWeight: '700',
+  },
+  voicePartialTextOnDark: {
+    color: 'rgba(255, 255, 255, 0.95)',
   },
   sendBtnOuter: {
     borderRadius: 22,

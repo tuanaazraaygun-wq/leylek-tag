@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -28,40 +29,35 @@ import {
 } from '../contexts/LeylekZekaChromeContext';
 import { useLeylekZeka } from '../hooks/useLeylekZeka';
 import {
-  getLeylekZekaContextCopy,
   getContextualPillLine,
+  getOrbHintPool,
   pickNextSequential,
+  pickOrbHintLine,
 } from '../lib/leylekZekaUxCopy';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
-/** Premium mascot tile: yumuşak köşe (daire değil, sert kare de değil) */
 const FAB_SIZE = 68;
 const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const EDGE_PAD = 10;
 const POS_KEY = 'leylek_zeka_fab_rb_v1';
-/** UX tuning — açıklama: frontend/docs/LEYLEK_ZEKA_UX_TUNING.md */
 const BOUNCE_GAP_MIN_MS = 16000;
 const BOUNCE_GAP_MAX_MS = 24000;
-/** Bağlamsal pill: her N bounce’ta bir (büyüt = daha seyrek). */
-const CONTEXTUAL_PILL_EVERY_N_BOUNCES = 3;
-/** Varsayılan konum: alttan biraz yukarı (CTA ile çakışmayı azaltır). */
+const CONTEXTUAL_HINT_EVERY_N_BOUNCES = 3;
 const FAB_DEFAULT_EXTRA_BOTTOM_PX = 14;
-/** Varsayılan konum: sağdan hafif içeri (köşe/CTA). */
 const FAB_DEFAULT_EXTRA_RIGHT_PX = 4;
 const BOUNCE_DIP_PX = -6;
-const PILL_FADE_IN_MS = 300;
-const PILL_HOLD_MS = 2200;
-const PILL_FADE_OUT_MS = 300;
-const PILL_ENTER_OFFSET_PX = 5;
-const PILL_EXIT_DRIFT_PX = -6;
+const HINT_FADE_IN_MS = 280;
+const HINT_HOLD_MS = 2800;
+const HINT_FADE_OUT_MS = 320;
+const HINT_ENTER_OFFSET_PX = 6;
+const HINT_EXIT_DRIFT_PX = -4;
 const IDLE_CHECK_MS = 8000;
 const IDLE_AFTER_MIN_MS = 20000;
 const IDLE_AFTER_MAX_MS = 30000;
 const IDLE_COOLDOWN_MS = 90000;
 
-/** Sürükleme sınırları — sol/üst (FAB sol üst köşesi) */
 const BOUNDS_MIN_X = 10;
 const BOUNDS_MAX_X_RIGHT_INSET = 80;
 const BOUNDS_MIN_Y = 80;
@@ -125,9 +121,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const [keyboardUp, setKeyboardUp] = useState(false);
   const { width: winW, height: winH } = useWindowDimensions();
 
-  const [pillLabel, setPillLabel] = useState("Leylek'e sor");
+  const [orbHintText, setOrbHintText] = useState('');
   const [glowVariant, setGlowVariant] = useState<GlowVariant>('normal');
-  const [idleHintText, setIdleHintText] = useState('');
 
   const bounceCycleRef = useRef(0);
   const homeRef = useRef(homeFlowScreen);
@@ -138,10 +133,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const lastInteractionRef = useRef(Date.now());
   const idleCooldownUntilRef = useRef(0);
   const idleThresholdRef = useRef(nextIdleThresholdMs());
-  const lastMiniHintRef = useRef<string | null>(null);
-  const idleAnimRunningRef = useRef(false);
-
-  const idleHintOpacity = useRef(new Animated.Value(0)).current;
+  const lastOrbHintRef = useRef<string | null>(null);
+  const hintAnimRunningRef = useRef(false);
 
   const markInteraction = useCallback(() => {
     lastInteractionRef.current = Date.now();
@@ -174,7 +167,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const springAnimRef = useRef<Animated.CompositeAnimation | null>(null);
   const fabMountedRef = useRef(true);
 
-  /** Kök _layout zaten GestureHandlerRootView — pencere boyutu: yalnızca window (onLayout ile çakışma yok). */
   const getEffectiveSize = useCallback(() => {
     const w = winW > 0 && Number.isFinite(winW) ? winW : windowSizeFallback().w;
     const h = winH > 0 && Number.isFinite(winH) ? winH : windowSizeFallback().h;
@@ -347,13 +339,12 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     };
   }, []);
 
-  /** “Breath” + tilt + ayrı kanat flutter (translateY / micro pulse) — asla 360° spin yok */
   const breathe = useRef(new Animated.Value(0)).current;
   const tilt = useRef(new Animated.Value(0)).current;
   const flutter = useRef(new Animated.Value(0)).current;
   const floatY = useRef(new Animated.Value(0)).current;
-  const pillOpacity = useRef(new Animated.Value(0)).current;
-  const pillTranslateY = useRef(new Animated.Value(PILL_ENTER_OFFSET_PX)).current;
+  const hintOpacity = useRef(new Animated.Value(0)).current;
+  const hintTranslateY = useRef(new Animated.Value(HINT_ENTER_OFFSET_PX)).current;
 
   const showChrome = shouldShowLeylekZekaFab({ pathname, segments, homeFlowScreen, flowHint });
   const showFab = showChrome && !leylekZekaChatOpen && !keyboardUp;
@@ -366,24 +357,92 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const fabGlowStyle = useMemo(() => {
     if (glowVariant === 'idle') {
       return {
-        shadowOpacity: Platform.OS === 'ios' ? 0.34 : undefined,
-        elevation: Platform.OS === 'android' ? 10 : undefined,
-        borderColor: 'rgba(63, 169, 245, 0.58)',
+        shadowOpacity: Platform.OS === 'ios' ? 0.38 : undefined,
+        elevation: Platform.OS === 'android' ? 12 : undefined,
+        borderColor: 'rgba(34, 211, 238, 0.62)',
       } as const;
     }
     if (glowVariant === 'attention') {
       return {
-        shadowOpacity: Platform.OS === 'ios' ? 0.42 : undefined,
-        elevation: Platform.OS === 'android' ? 13 : undefined,
-        borderColor: 'rgba(63, 169, 245, 0.65)',
+        shadowOpacity: Platform.OS === 'ios' ? 0.48 : undefined,
+        elevation: Platform.OS === 'android' ? 16 : undefined,
+        borderColor: 'rgba(34, 211, 238, 0.72)',
       } as const;
     }
     return {
-      shadowOpacity: Platform.OS === 'ios' ? 0.35 : undefined,
-      elevation: Platform.OS === 'android' ? 12 : undefined,
-      borderColor: 'rgba(63, 169, 245, 0.55)',
+      shadowOpacity: Platform.OS === 'ios' ? 0.4 : undefined,
+      elevation: Platform.OS === 'android' ? 14 : undefined,
+      borderColor: 'rgba(34, 211, 238, 0.58)',
     } as const;
   }, [glowVariant]);
+
+  const playOrbHint = useCallback(
+    (line: string, glow: GlowVariant = 'attention') => {
+      if (!line || reduceMotionRef.current || !showFabRef.current) return;
+      if (hintAnimRunningRef.current) return;
+      hintAnimRunningRef.current = true;
+      lastOrbHintRef.current = line;
+      setOrbHintText(line);
+      setGlowVariant(glow);
+      hintOpacity.setValue(0);
+      hintTranslateY.setValue(HINT_ENTER_OFFSET_PX);
+
+      Animated.sequence([
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(floatY, {
+              toValue: BOUNCE_DIP_PX,
+              duration: 260,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(floatY, {
+              toValue: 0,
+              duration: 400,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.parallel([
+            Animated.timing(hintOpacity, {
+              toValue: 1,
+              duration: HINT_FADE_IN_MS,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(hintTranslateY, {
+              toValue: 0,
+              duration: HINT_FADE_IN_MS,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
+        Animated.delay(HINT_HOLD_MS),
+        Animated.parallel([
+          Animated.timing(hintOpacity, {
+            toValue: 0,
+            duration: HINT_FADE_OUT_MS,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(hintTranslateY, {
+            toValue: HINT_EXIT_DRIFT_PX,
+            duration: HINT_FADE_OUT_MS,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(({ finished }) => {
+        hintAnimRunningRef.current = false;
+        if (finished) {
+          setOrbHintText('');
+          setGlowVariant('normal');
+        }
+      });
+    },
+    [floatY, hintOpacity, hintTranslateY],
+  );
 
   useEffect(() => {
     if (reduceMotion || !showFab) {
@@ -431,7 +490,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     return () => loop.stop();
   }, [breathe, flutter, reduceMotion, showFab, tilt]);
 
-  /** Daha hafif periyot: dikey mikro hareket + ince pulse (kanat çırpışı) */
   useEffect(() => {
     if (reduceMotion || !showFab) {
       flutter.setValue(0);
@@ -460,170 +518,73 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   useEffect(() => {
     if (reduceMotion || !showFab) {
-      pillOpacity.setValue(0);
-      pillTranslateY.setValue(PILL_ENTER_OFFSET_PX);
+      hintOpacity.setValue(0);
+      hintTranslateY.setValue(HINT_ENTER_OFFSET_PX);
       floatY.setValue(0);
-      idleHintOpacity.setValue(0);
+      setOrbHintText('');
       return;
     }
 
     let cancelled = false;
-    let running: Animated.CompositeAnimation | null = null;
-    let attentionTimer: ReturnType<typeof setTimeout> | null = null;
+    let gapTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const pickPillCopy = () => {
-      bounceCycleRef.current += 1;
-      const ctx = getContextualPillLine(homeRef.current ?? null, hintRef.current);
-      const useCtx =
-        ctx && bounceCycleRef.current % CONTEXTUAL_PILL_EVERY_N_BOUNCES === 0;
-      setPillLabel(useCtx ? ctx : "Leylek'e sor");
-      if (attentionTimer) clearTimeout(attentionTimer);
-      setGlowVariant('attention');
-      attentionTimer = setTimeout(() => {
-        setGlowVariant((g) => (g === 'attention' ? 'normal' : g));
-        attentionTimer = null;
-      }, 650);
-    };
-
-    const buildCycle = (gapMs: number) =>
-      Animated.sequence([
-        Animated.delay(gapMs),
-        Animated.parallel([
-          Animated.timing(pillOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-          Animated.timing(pillTranslateY, {
-            toValue: PILL_ENTER_OFFSET_PX,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.sequence([
-            Animated.timing(floatY, {
-              toValue: BOUNCE_DIP_PX,
-              duration: 280,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(floatY, {
-              toValue: 0,
-              duration: 420,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-          ]),
-          Animated.parallel([
-            Animated.timing(pillOpacity, {
-              toValue: 1,
-              duration: PILL_FADE_IN_MS,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(pillTranslateY, {
-              toValue: 0,
-              duration: PILL_FADE_IN_MS,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-          ]),
-        ]),
-        Animated.delay(PILL_HOLD_MS),
-        Animated.parallel([
-          Animated.timing(pillOpacity, {
-            toValue: 0,
-            duration: PILL_FADE_OUT_MS,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(pillTranslateY, {
-            toValue: PILL_EXIT_DRIFT_PX,
-            duration: PILL_FADE_OUT_MS,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ]),
-      ]);
-
-    const runNext = () => {
-      if (cancelled) return;
-      pickPillCopy();
-      const anim = buildCycle(nextBounceGapMs());
-      running = anim;
-      anim.start(({ finished }) => {
-        running = null;
-        if (
-          finished &&
-          !cancelled &&
-          showFabRef.current &&
-          !reduceMotionRef.current
-        ) {
-          runNext();
+    const scheduleNext = () => {
+      if (cancelled || !showFabRef.current || reduceMotionRef.current) return;
+      gapTimer = setTimeout(() => {
+        gapTimer = null;
+        if (cancelled || hintAnimRunningRef.current) {
+          scheduleNext();
+          return;
         }
-      });
+        bounceCycleRef.current += 1;
+        const line = pickOrbHintLine(
+          homeRef.current ?? null,
+          hintRef.current,
+          lastOrbHintRef.current,
+          bounceCycleRef.current,
+          CONTEXTUAL_HINT_EVERY_N_BOUNCES,
+        );
+        playOrbHint(line);
+        scheduleNext();
+      }, nextBounceGapMs());
     };
 
-    runNext();
+    scheduleNext();
 
     return () => {
       cancelled = true;
-      running?.stop?.();
-      if (attentionTimer) clearTimeout(attentionTimer);
+      if (gapTimer) clearTimeout(gapTimer);
+      setOrbHintText('');
+      hintOpacity.setValue(0);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- idleHintOpacity yalnızca erken sıfırlamada kullanılıyor
-  }, [floatY, pillOpacity, pillTranslateY, reduceMotion, showFab]);
+  }, [hintOpacity, hintTranslateY, floatY, playOrbHint, reduceMotion, showFab]);
 
   useEffect(() => {
     if (reduceMotion || !showFab) return;
 
     const tick = () => {
       if (!showFabRef.current || reduceMotionRef.current) return;
-      if (idleAnimRunningRef.current) return;
+      if (hintAnimRunningRef.current) return;
       const now = Date.now();
       if (now < idleCooldownUntilRef.current) return;
       const idleFor = now - lastInteractionRef.current;
       if (idleFor < idleThresholdRef.current) return;
 
-      const contextCopy = getLeylekZekaContextCopy(homeRef.current ?? null, hintRef.current);
-      const pool = [...contextCopy.idleHints, ...contextCopy.safeChecklist.slice(0, 2)];
+      const pool = getOrbHintPool(homeRef.current ?? null, hintRef.current);
       if (!pool.length) {
         idleThresholdRef.current = nextIdleThresholdMs();
         return;
       }
 
-      const line = pickNextSequential(pool, lastMiniHintRef.current);
-      lastMiniHintRef.current = line;
-      setIdleHintText(line);
-      idleAnimRunningRef.current = true;
+      const line = pickNextSequential(pool, lastOrbHintRef.current);
       idleCooldownUntilRef.current = now + IDLE_COOLDOWN_MS;
       idleThresholdRef.current = nextIdleThresholdMs();
-      setGlowVariant('idle');
-
-      idleHintOpacity.setValue(0);
-      Animated.sequence([
-        Animated.timing(idleHintOpacity, {
-          toValue: 1,
-          duration: 380,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.delay(2800),
-        Animated.timing(idleHintOpacity, {
-          toValue: 0,
-          duration: 340,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        idleAnimRunningRef.current = false;
-        if (finished) {
-          setGlowVariant('normal');
-          setIdleHintText('');
-        }
-      });
+      playOrbHint(line, 'idle');
     };
 
     const id = setInterval(tick, IDLE_CHECK_MS);
     return () => clearInterval(id);
-  }, [idleHintOpacity, reduceMotion, showFab]);
+  }, [playOrbHint, reduceMotion, showFab]);
 
   const logoScale = breathe.interpolate({
     inputRange: [0, 1],
@@ -633,12 +594,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     inputRange: [0, 1],
     outputRange: ['-2.4deg', '2.4deg'],
   });
-  /** Kanat çırpışı: çok hafif yukarı-aşağı (px) — sakin maskot */
   const logoLift = flutter.interpolate({
     inputRange: [0, 1],
     outputRange: [2, -2],
   });
-  /** Mikro pulse — düşük genlik, premium his */
   const flutterPulse = flutter.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 1.009],
@@ -657,15 +616,15 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     <>
       {showFab ? (
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-            <PanGestureHandler
-              enabled={true}
-              shouldCancelWhenOutside={false}
-              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              activeOffsetX={[-10, 10]}
-              activeOffsetY={[-10, 10]}
-              onGestureEvent={onFabGestureEvent}
-              onHandlerStateChange={onHandlerStateChange}
-            >
+          <PanGestureHandler
+            enabled
+            shouldCancelWhenOutside={false}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            activeOffsetX={[-10, 10]}
+            activeOffsetY={[-10, 10]}
+            onGestureEvent={onFabGestureEvent}
+            onHandlerStateChange={onHandlerStateChange}
+          >
             <Animated.View
               collapsable={false}
               pointerEvents="box-none"
@@ -681,82 +640,70 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
             >
               <Animated.View
                 pointerEvents="box-none"
-                style={[
-                  styles.pillRow,
-                  {
-                    transform: [{ translateY: floatY }],
-                  },
-                ]}
+                style={[styles.fabColumn, { transform: [{ translateY: floatY }] }]}
               >
-            <Animated.View
-              style={[
-                styles.pillWrap,
-                {
-                  opacity: pillOpacity,
-                  transform: [{ translateY: pillTranslateY }],
-                },
-              ]}
-              pointerEvents="none"
-            >
-              <View style={styles.pill}>
-                <Text style={styles.pillText} numberOfLines={2}>
-                  {pillLabel}
-                </Text>
-              </View>
-            </Animated.View>
+                <Pressable
+                  onPress={onOpen}
+                  onPressIn={markInteraction}
+                  style={({ pressed }) => [styles.fabOuter, fabGlowStyle, pressed && styles.fabPressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Leylek Zeka"
+                  accessibilityHint={
+                    contextualForA11y
+                      ? `${contextualForA11y} Sohbeti açmak için dokunun.`
+                      : 'Uygulama içi yardım için dokunun.'
+                  }
+                >
+                  <LinearGradient
+                    colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
+                    locations={[0, 0.35, 0.72, 1]}
+                    start={{ x: 0.15, y: 0.1 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={styles.fabGrad}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.logoStage,
+                        reduceMotion
+                          ? undefined
+                          : {
+                              transform: [
+                                { translateY: logoLift },
+                                { scale: logoScaleCombined },
+                                { rotate: logoTilt },
+                              ],
+                            },
+                      ]}
+                    >
+                      <Image
+                        source={require('../assets/images/leylek-logo-premium.png')}
+                        style={styles.logoImage}
+                        resizeMode="contain"
+                        accessibilityIgnoresInvertColors
+                      />
+                    </Animated.View>
+                  </LinearGradient>
+                </Pressable>
 
-            <Pressable
-              onPress={onOpen}
-              onPressIn={markInteraction}
-              style={({ pressed }) => [
-                styles.fab,
-                fabGlowStyle,
-                pressed && styles.fabPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Leylek Zeka"
-              accessibilityHint={
-                contextualForA11y
-                  ? `${contextualForA11y} Sohbeti açmak için dokunun.`
-                  : 'Uygulama içi yardım için dokunun.'
-              }
-            >
-              <Animated.View
-                style={[
-                  styles.logoStage,
-                  reduceMotion
-                    ? undefined
-                    : {
-                        transform: [
-                          { translateY: logoLift },
-                          { scale: logoScaleCombined },
-                          { rotate: logoTilt },
-                        ],
+                {orbHintText ? (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.orbHintCapsule,
+                      {
+                        opacity: hintOpacity,
+                        transform: [{ translateY: hintTranslateY }],
                       },
-                ]}
-              >
-                <Image
-                  source={require('../assets/images/leylek-logo-premium.png')}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                  accessibilityIgnoresInvertColors
-                />
-              </Animated.View>
-            </Pressable>
-
-            {idleHintText ? (
-              <Animated.View
-                style={[styles.idleHintWrap, { opacity: idleHintOpacity }]}
-                pointerEvents="none"
-              >
-                <Text style={styles.idleHintText} numberOfLines={3}>
-                  {idleHintText}
-                </Text>
-              </Animated.View>
-            ) : null}
+                    ]}
+                  >
+                    <Text style={styles.orbHintText} numberOfLines={2}>
+                      {orbHintText}
+                    </Text>
+                  </Animated.View>
+                ) : null}
               </Animated.View>
             </Animated.View>
-            </PanGestureHandler>
+          </PanGestureHandler>
         </View>
       ) : null}
 
@@ -785,85 +732,63 @@ const GLOW = Colors.primary;
 const styles = StyleSheet.create({
   anchor: {
     position: 'absolute',
-    flexDirection: 'row',
     alignItems: 'center',
     zIndex: 9999,
   },
-  pillRow: {
-    flexDirection: 'row',
+  fabColumn: {
     alignItems: 'center',
+    maxWidth: 168,
   },
-  pillWrap: {
-    marginRight: Spacing.sm,
-    maxWidth: 200,
-    alignSelf: 'center',
-  },
-  pill: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.45)',
-    ...Platform.select({
-      ios: {
-        shadowColor: GLOW,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.22,
-        shadowRadius: 6,
-      },
-      android: { elevation: 4 },
-    }),
-  },
-  pillText: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    color: Colors.gray800,
-    letterSpacing: 0.15,
-    lineHeight: 16,
-  },
-  idleHintWrap: {
-    position: 'absolute',
-    right: 0,
-    top: FAB_SIZE + 6,
-    maxWidth: 220,
-    paddingVertical: 8,
-    paddingHorizontal: 11,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(248, 250, 252, 0.96)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.28)',
-  },
-  idleHintText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.gray600,
-    lineHeight: 15,
-  },
-  fab: {
+  fabOuter: {
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_CORNER,
-    backgroundColor: '#F8FBFF',
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.42)',
     ...Platform.select({
       ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
+        shadowColor: GLOW,
+        shadowOffset: { width: 0, height: 8 },
+        shadowRadius: 18,
       },
-      android: {
-        elevation: 14,
-      },
+      android: {},
     }),
+  },
+  fabGrad: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fabPressed: {
     opacity: 0.94,
     transform: [{ scale: 0.96 }],
+  },
+  orbHintCapsule: {
+    marginTop: 6,
+    maxWidth: 156,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(8, 18, 32, 0.88)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    ...Platform.select({
+      ios: {
+        shadowColor: GLOW,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  orbHintText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(224, 246, 255, 0.94)',
+    textAlign: 'center',
+    letterSpacing: 0.12,
+    lineHeight: 13,
   },
   logoStage: {
     width: LOGO_SIZE + 4,

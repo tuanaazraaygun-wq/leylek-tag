@@ -33,10 +33,9 @@ const LEYLEK_OFFER_GUIDE_PROMPTS = [
 const DEFAULT_COPY: LeylekZekaBaseCopy = {
   stageLabel: 'Uygulama rehberi',
   intentScope: 'general_app_guide',
-  emptyTitle: 'Leylek Zeka yanınızda',
-  emptyBody:
-    'LeylekTag içinde normal TAG, Leylek Teklifi, Muhabbet, QR, Güven Al ve yolculuk adımları için kısa rehberlik alabilirsiniz. Gerçek yoğunluk veya süre iddiası paylaşmadan, ekrandaki adımları anlaşılır şekilde açıklarım.',
-  placeholder: 'Örn. QR biniş nasıl çalışır?',
+  emptyTitle: 'Akıllı eşleşme hazır',
+  emptyBody: 'Yolculuk akışını takip ediyorum. Sana en doğru adımı gösterebilirim.',
+  placeholder: 'Sorunu yaz veya basılı tutarak konuş…',
   starterPrompts: [
     'Yolcu nasıl yolculuk başlatır?',
     'Sürücü teklifleri nasıl görür?',
@@ -244,13 +243,11 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
 };
 
 const DEFAULT_OPERATION = {
-  operationAwarenessTitle: 'Kontrol listesi',
-  operationAwarenessBody:
-    'Bu rehber yalnızca ekrandaki akışa göre genel kullanım desteği verir; gerçek operasyon verisi veya yönlendirme içermez.',
+  operationAwarenessTitle: 'Güvenli akış',
+  operationAwarenessBody: 'Ekrandaki adımlara göre rehberlik; kesin süre veya bölge iddiası yok.',
   safeChecklist: [
-    'Ekrandaki güncel durumu kontrol et.',
-    'Bildirimlerin açık olduğundan emin ol.',
-    'QR, Muhabbet/chat ve destek adımlarını uygulama içinden takip et.',
+    'Güncel ekranı kontrol et.',
+    'Bildirimleri açık tut.',
   ],
   knownSignals: ['homeFlowScreen', 'flowHint'],
 } as const;
@@ -383,7 +380,54 @@ export function getContextualPillLine(
   if (home === 'role-select') return ROLE_SELECT_COPY.idleHints[0];
   if (home !== 'dashboard') return null;
   if (!hint) return null;
-  return getLeylekZekaContextCopy(home, hint).idleHints[0] ?? null;
+  const line = getLeylekZekaContextCopy(home, hint).idleHints[0] ?? null;
+  return line && line.length <= 48 ? line : null;
+}
+
+/** Orb ipuçları — gerçek operasyon verisi olmadan iddialı yoğunluk/talep cümlesi yok. */
+export const ORB_ACTIVITY_HINTS = [
+  'Akıllı eşleşme hazır',
+  'Yolculuk akışını takip ediyorum',
+  'Uygun fırsatları izliyorum',
+  'Sana en doğru adımı gösterebilirim',
+  'Güvenli akış kontrol altında',
+  'İstersen sesli de sorabilirsin',
+] as const;
+
+const ORB_HINT_MAX_LEN = 48;
+
+function shortenForOrb(line: string): string | null {
+  const t = line.trim();
+  if (!t) return null;
+  if (t.length <= ORB_HINT_MAX_LEN) return t;
+  const cut = t.slice(0, ORB_HINT_MAX_LEN - 1).trim();
+  return cut.length > 12 ? `${cut}…` : null;
+}
+
+/** Leylek Zeka orb — birleşik kısa ipucu havuzu. */
+export function getOrbHintPool(
+  home: LeylekZekaHomeFlowScreen,
+  hint: LeylekZekaFlowHint,
+): string[] {
+  const out: string[] = [];
+  const contextual = shortenForOrb(getContextualPillLine(home, hint) ?? '');
+  if (contextual) out.push(contextual);
+  for (const line of ORB_ACTIVITY_HINTS) out.push(line);
+  return out;
+}
+
+export function pickOrbHintLine(
+  home: LeylekZekaHomeFlowScreen,
+  hint: LeylekZekaFlowHint,
+  last: string | null,
+  bounceCycle: number,
+  preferContextualEvery = 3,
+): string {
+  const pool = getOrbHintPool(home, hint);
+  if (!pool.length) return ORB_ACTIVITY_HINTS[0];
+  const contextual = shortenForOrb(getContextualPillLine(home, hint) ?? '');
+  if (contextual && bounceCycle % preferContextualEvery === 0) return contextual;
+  return pickNextSequential(pool, last);
 }
 
 export function getLeylekZekaStarterPrompts(
