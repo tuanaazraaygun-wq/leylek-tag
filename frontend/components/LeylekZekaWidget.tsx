@@ -46,6 +46,8 @@ const FAB_SIZE = 68;
 const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const FAB_BOTTOM_EXTRA_PX = 14;
+/** Rol seçimi: Devam Et + VEYA footer üstünde (CTA kapanmasın). */
+const FAB_BOTTOM_EXTRA_ROLE_SELECT_PX = 132;
 const BOUNCE_DIP_PX = -6;
 const HINT_FADE_IN_MS = 280;
 const HINT_HOLD_MS = 2800;
@@ -218,7 +220,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   showFabRef.current = showFab;
   reduceMotionRef.current = reduceMotion;
 
-  const bottomInset = Math.max(insets.bottom, Spacing.sm) + FAB_BOTTOM_EXTRA_PX;
+  const bottomInset = useMemo(() => {
+    const safe = Math.max(insets.bottom, Spacing.sm);
+    if (homeFlowScreen === 'role-select') {
+      return safe + FAB_BOTTOM_EXTRA_ROLE_SELECT_PX;
+    }
+    return safe + FAB_BOTTOM_EXTRA_PX;
+  }, [homeFlowScreen, insets.bottom]);
 
   const fabGlowStyle = useMemo(() => {
     if (glowVariant === 'idle') {
