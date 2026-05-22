@@ -48,10 +48,10 @@ const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const FAB_BOTTOM_EXTRA_PX = 14;
 /** PassengerWaitingScreen harita sol alt (Google watermark üstü) — sadece pre-match bekleme */
-const PASSENGER_WAIT_MAP_HEIGHT_RATIO = 0.38;
-const PASSENGER_WAIT_HEADER_APPROX_PX = 80;
+const PASSENGER_WAIT_ORB_TOP_OFFSET_PX = 88;
+const PASSENGER_WAIT_ORB_TOP_WIN_RATIO = 0.2;
+const PASSENGER_WAIT_ORB_TOP_MAX_WIN_RATIO = 0.42;
 const PASSENGER_WAIT_ORB_LEFT_PX = 22;
-const PASSENGER_WAIT_ORB_TOP_ABOVE_FAB_PX = 12;
 const PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX = 96;
 /** Rol seçimi: Devam Et + footer üstünde (~20–28px CTA üstü boşluk). */
 const ROLE_SELECT_BOTTOM_EXTRA_MIN = 188;
@@ -268,13 +268,11 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const passengerWaitOrbOnMap = useMemo(() => {
     const topMin = insets.top + PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX;
-    const topMax = winH * 0.5;
+    const topMax = winH * PASSENGER_WAIT_ORB_TOP_MAX_WIN_RATIO;
     const raw =
       insets.top +
-      PASSENGER_WAIT_HEADER_APPROX_PX +
-      winH * PASSENGER_WAIT_MAP_HEIGHT_RATIO -
-      FAB_SIZE -
-      PASSENGER_WAIT_ORB_TOP_ABOVE_FAB_PX;
+      PASSENGER_WAIT_ORB_TOP_OFFSET_PX +
+      winH * PASSENGER_WAIT_ORB_TOP_WIN_RATIO;
     return {
       left: PASSENGER_WAIT_ORB_LEFT_PX,
       top: Math.min(topMax, Math.max(topMin, raw)),
