@@ -47,6 +47,9 @@ const FAB_SIZE = 68;
 const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const FAB_BOTTOM_EXTRA_PX = 14;
+/** Yolcu eşleşme / teklif bekleme — harita sol alt; alt sheet CTA ile çakışmasın */
+const PASSENGER_WAIT_ORB_LEFT_PX = 18;
+const PASSENGER_WAIT_ORB_BOTTOM_EXTRA_PX = 124;
 /** Rol seçimi: Devam Et + footer üstünde (~20–28px CTA üstü boşluk). */
 const ROLE_SELECT_BOTTOM_EXTRA_MIN = 188;
 const ROLE_SELECT_BOTTOM_EXTRA_MID = 198;
@@ -253,6 +256,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     }
     return safe + FAB_BOTTOM_EXTRA_PX;
   }, [homeFlowScreen, insets.bottom, winH]);
+
+  const isPassengerWaitMatchingOrb =
+    flowHint === 'passenger_matching' || flowHint === 'passenger_offer_waiting';
+
+  const passengerWaitOrbBottom = useMemo(() => {
+    return Math.max(insets.bottom, Spacing.sm) + PASSENGER_WAIT_ORB_BOTTOM_EXTRA_PX;
+  }, [insets.bottom]);
 
   const fabGlowStyle = useMemo(() => {
     if (glowVariant === 'idle') {
@@ -864,15 +874,28 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
           <View
             pointerEvents="box-none"
-            style={[styles.centerAnchor, { bottom: bottomInset }]}
+            style={[
+              isPassengerWaitMatchingOrb ? styles.passengerWaitAnchor : styles.centerAnchor,
+              { bottom: isPassengerWaitMatchingOrb ? passengerWaitOrbBottom : bottomInset },
+            ]}
           >
             <Animated.View
               pointerEvents="box-none"
-              style={[styles.fabColumn, { transform: [{ translateY: floatY }] }]}
+              style={[
+                styles.fabColumn,
+                isPassengerWaitMatchingOrb ? styles.fabColumnWaitMap : null,
+                { transform: [{ translateY: floatY }] },
+              ]}
             >
               {speechFull ? (
                 isRoleSelectScreen || reduceMotion ? (
-                  <View pointerEvents="none" style={styles.orbHintGlowWrap}>
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.orbHintGlowWrap,
+                      isPassengerWaitMatchingOrb ? styles.orbHintGlowWrapWaitMap : null,
+                    ]}
+                  >
                     {bubbleInner}
                   </View>
                 ) : (
@@ -880,6 +903,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                     pointerEvents="none"
                     style={[
                       styles.orbHintGlowWrap,
+                      isPassengerWaitMatchingOrb ? styles.orbHintGlowWrapWaitMap : null,
                       Platform.OS === 'ios' ? { shadowOpacity: bubbleShadowOpacity } : null,
                     ]}
                   >
@@ -970,9 +994,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 9999,
   },
+  passengerWaitAnchor: {
+    position: 'absolute',
+    left: PASSENGER_WAIT_ORB_LEFT_PX,
+    zIndex: 9999,
+    alignItems: 'flex-start',
+  },
   fabColumn: {
     alignItems: 'center',
     maxWidth: BUBBLE_MAX_W,
+  },
+  fabColumnWaitMap: {
+    alignItems: 'flex-start',
   },
   fabOrbWrap: {
     width: FAB_SIZE,
@@ -1047,6 +1080,9 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 4 },
     }),
+  },
+  orbHintGlowWrapWaitMap: {
+    alignSelf: 'flex-start',
   },
   orbHintCapsule: {
     maxWidth: BUBBLE_MAX_W,
