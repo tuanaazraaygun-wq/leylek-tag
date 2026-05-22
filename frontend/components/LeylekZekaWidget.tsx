@@ -10,6 +10,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { usePathname, useSegments } from 'expo-router';
@@ -46,8 +47,19 @@ const FAB_SIZE = 68;
 const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const FAB_BOTTOM_EXTRA_PX = 14;
-/** Rol seçimi: Devam Et + VEYA footer üstünde (CTA kapanmasın). */
-const FAB_BOTTOM_EXTRA_ROLE_SELECT_PX = 132;
+/** Rol seçimi: Devam Et + footer üstünde (~20–28px CTA üstü boşluk). */
+const ROLE_SELECT_BOTTOM_EXTRA_MIN = 188;
+const ROLE_SELECT_BOTTOM_EXTRA_MID = 198;
+const ROLE_SELECT_BOTTOM_EXTRA_MAX = 208;
+const ROLE_SELECT_HEIGHT_SMALL_MAX = 700;
+const ROLE_SELECT_HEIGHT_LARGE_MIN = 820;
+
+function roleSelectFabBottomExtra(winHeight: number): number {
+  if (!Number.isFinite(winHeight) || winHeight <= 0) return ROLE_SELECT_BOTTOM_EXTRA_MID;
+  if (winHeight < ROLE_SELECT_HEIGHT_SMALL_MAX) return ROLE_SELECT_BOTTOM_EXTRA_MIN;
+  if (winHeight >= ROLE_SELECT_HEIGHT_LARGE_MIN) return ROLE_SELECT_BOTTOM_EXTRA_MAX;
+  return ROLE_SELECT_BOTTOM_EXTRA_MID;
+}
 const BOUNCE_DIP_PX = -6;
 const HINT_FADE_IN_MS = 280;
 const HINT_HOLD_MS = 2800;
@@ -162,6 +174,7 @@ type GlowVariant = 'normal' | 'attention' | 'idle';
 
 const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const insets = useSafeAreaInsets();
+  const { height: winH } = useWindowDimensions();
   const pathname = usePathname();
   const segments = useSegments();
   const {
@@ -223,10 +236,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const bottomInset = useMemo(() => {
     const safe = Math.max(insets.bottom, Spacing.sm);
     if (homeFlowScreen === 'role-select') {
-      return safe + FAB_BOTTOM_EXTRA_ROLE_SELECT_PX;
+      return safe + roleSelectFabBottomExtra(winH);
     }
     return safe + FAB_BOTTOM_EXTRA_PX;
-  }, [homeFlowScreen, insets.bottom]);
+  }, [homeFlowScreen, insets.bottom, winH]);
 
   const fabGlowStyle = useMemo(() => {
     if (glowVariant === 'idle') {
@@ -846,48 +859,53 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 </Animated.View>
               ) : null}
 
-              <Pressable
-                onPress={onOpen}
-                onPressIn={markInteraction}
-                style={({ pressed }) => [styles.fabOuter, fabGlowStyle, pressed && styles.fabPressed]}
-                accessibilityRole="button"
-                accessibilityLabel="Leylek Zeka"
-                accessibilityHint={
-                  contextualForA11y
-                    ? `${contextualForA11y} Sohbeti açmak için dokunun.`
-                    : 'Uygulama içi yardım için dokunun.'
-                }
-              >
-                <LinearGradient
-                  colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
-                  locations={[0, 0.35, 0.72, 1]}
-                  start={{ x: 0.15, y: 0.1 }}
-                  end={{ x: 0.9, y: 1 }}
-                  style={styles.fabGrad}
+              <View style={styles.fabOrbWrap} pointerEvents="box-none">
+                <Pressable
+                  onPress={onOpen}
+                  onPressIn={markInteraction}
+                  style={({ pressed }) => [styles.fabOuter, fabGlowStyle, pressed && styles.fabPressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Leylek Zeka"
+                  accessibilityHint={
+                    contextualForA11y
+                      ? `${contextualForA11y} Sohbeti açmak için dokunun.`
+                      : 'Uygulama içi yardım için dokunun.'
+                  }
                 >
-                  <Animated.View
-                    style={[
-                      styles.logoStage,
-                      reduceMotion
-                        ? undefined
-                        : {
-                            transform: [
-                              { translateY: logoLift },
-                              { scale: logoScaleCombined },
-                              { rotate: logoTilt },
-                            ],
-                          },
-                    ]}
+                  <LinearGradient
+                    colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
+                    locations={[0, 0.35, 0.72, 1]}
+                    start={{ x: 0.15, y: 0.1 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={styles.fabGrad}
                   >
-                    <Image
-                      source={require('../assets/images/leylek-logo-premium.png')}
-                      style={styles.logoImage}
-                      resizeMode="contain"
-                      accessibilityIgnoresInvertColors
-                    />
-                  </Animated.View>
-                </LinearGradient>
-              </Pressable>
+                    <Animated.View
+                      style={[
+                        styles.logoStage,
+                        reduceMotion
+                          ? undefined
+                          : {
+                              transform: [
+                                { translateY: logoLift },
+                                { scale: logoScaleCombined },
+                                { rotate: logoTilt },
+                              ],
+                            },
+                      ]}
+                    >
+                      <Image
+                        source={require('../assets/images/leylek-logo-premium.png')}
+                        style={styles.logoImage}
+                        resizeMode="contain"
+                        accessibilityIgnoresInvertColors
+                      />
+                    </Animated.View>
+                  </LinearGradient>
+                </Pressable>
+                <View style={styles.orbAiBadge} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                  <Text style={styles.orbAiBadgeText}>AI</Text>
+                </View>
+              </View>
             </Animated.View>
           </View>
         </View>
@@ -927,6 +945,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     maxWidth: BUBBLE_MAX_W,
   },
+  fabOrbWrap: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    position: 'relative',
+    overflow: 'visible',
+  },
   fabOuter: {
     width: FAB_SIZE,
     height: FAB_SIZE,
@@ -950,6 +974,36 @@ const styles = StyleSheet.create({
   fabPressed: {
     opacity: 0.94,
     transform: [{ scale: 0.96 }],
+  },
+  orbAiBadge: {
+    position: 'absolute',
+    top: -7,
+    right: -5,
+    minWidth: 26,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(5, 18, 32, 0.92)',
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(34, 211, 238, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: ORB_ACCENT_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.35,
+        shadowRadius: 6,
+      },
+      android: { elevation: 5 },
+    }),
+  },
+  orbAiBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: ORB_ACCENT_CYAN,
+    letterSpacing: 0.65,
   },
   orbHintCapsule: {
     marginBottom: 8,
