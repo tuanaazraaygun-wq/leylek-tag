@@ -668,3 +668,107 @@ def build_passenger_availability_snapshot_sync(
         "no_guarantee": True,
         "data_quality": "medium",
     }
+
+
+def is_operation_snapshot_ai_enabled() -> bool:
+    """LEYLEK_OPERATION_SNAPSHOT_AI — varsayılan açık; false/0/off ile kapatılır."""
+    raw = os.getenv("LEYLEK_OPERATION_SNAPSHOT_AI", "true").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def infer_snapshot_role_from_client_context(ctx: Optional[dict]) -> Optional[str]:
+    """driver | passenger | None — istemci flowHint / rol bayrakları."""
+    if not ctx or not isinstance(ctx, dict):
+        return None
+    fh = str(ctx.get("flowHint") or "").strip().lower()
+    if fh.startswith("driver"):
+        return "driver"
+    if fh.startswith("passenger"):
+        return "passenger"
+    is_drv = ctx.get("isDriver") is True
+    is_pass = ctx.get("isPassenger") is True
+    if is_drv and not is_pass:
+        return "driver"
+    if is_pass and not is_drv:
+        return "passenger"
+    if is_drv:
+        return "driver"
+    if is_pass:
+        return "passenger"
+    return None
+
+
+_LLM_FORBIDDEN_KEYS = frozenset(
+    {
+        "lat",
+        "lng",
+        "latitude",
+        "longitude",
+        "pickup_lat",
+        "pickup_lng",
+        "tag_id",
+        "driver_id",
+        "passenger_id",
+        "id",
+        "pickup_location",
+        "final_price",
+        "price",
+        "queue",
+    }
+)
+
+
+def snapshot_to_llm_context(snapshot: dict, kind: str) -> dict:
+    """
+    LLM / system addon allowlist — koordinat, id, ham kuyruk veya adres yok.
+    kind: driver_demand | passenger_availability
+    """
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+    out: Dict[str, Any] = {
+        "schema_version": str(snapshot.get("schema_version") or SCHEMA_VERSION),
+        "kind": kind,
+        "radius_km": float(snapshot.get("radius_km") or 20),
+        "generated_at": str(snapshot.get("generated_at") or _utc_now_iso()),
+        "has_data": bool(snapshot.get("has_data")),
+        "signal": str(snapshot.get("signal") or "none"),
+        "message_hint": str(snapshot.get("message_hint") or "").strip(),
+        "no_guarantee": True,
+        "data_quality": str(snapshot.get("data_quality") or "low"),
+    }
+    if kind == "driver_demand":
+        try:
+            out["nearby_waiting_count"] = int(snapshot.get("nearby_waiting_count") or 0)
+        except (TypeError, ValueError):
+            out["nearby_waiting_count"] = 0
+        regions: List[dict] = []
+        for r in (snapshot.get("top_regions") or [])[:3]:
+            if not isinstance(r, dict):
+                continue
+            label = str(r.get("label") or "").strip()
+            if not label:
+                continue
+            try:
+                wc = int(r.get("waiting_count") or 0)
+            except (TypeError, ValueError):
+                wc = 0
+            regions.append({"label": label[:120], "waiting_count": wc})
+        out["top_regions"] = regions
+    elif kind == "passenger_availability":
+        try:
+            out["nearby_driver_count"] = int(snapshot.get("nearby_driver_count") or 0)
+        except (TypeError, ValueError):
+            out["nearby_driver_count"] = 0
+        try:
+            out["active_waiting_passenger_count"] = int(
+                snapshot.get("active_waiting_passenger_count") or 0
+            )
+        except (TypeError, ValueError):
+            out["active_waiting_passenger_count"] = 0
+        dq = snapshot.get("dispatch_queue_drivers")
+        out["dispatch_queue_drivers"] = int(dq) if dq is not None else None
+        ds = snapshot.get("dispatch_status")
+        out["dispatch_status"] = str(ds).strip() if ds is not None and str(ds).strip() else None
+    for forbidden in _LLM_FORBIDDEN_KEYS:
+        out.pop(forbidden, None)
+    return out

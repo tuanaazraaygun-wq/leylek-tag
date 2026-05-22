@@ -27,7 +27,7 @@ REQUEST_TIMEOUT_SEC = 20.0
 RATE_LIMIT_SEC = 5.0
 
 # Leylek Zeka kullanıcı sohbeti: yalnızca OpenAI (OPENAI_API_KEY). Kaynak etiketi gerçeği yansıtır.
-Source = Literal["openai", "fallback", "answer_engine", "admin_kb"]
+Source = Literal["openai", "fallback", "answer_engine", "admin_kb", "operation_snapshot"]
 
 
 def _emit_answer_engine_telemetry(
@@ -51,10 +51,53 @@ def _emit_answer_engine_telemetry(
 
 
 class AnswerEngineMeta(TypedDict):
-    """Yalnızca source=answer_engine iken HTTP yanıtına yansır; tek try_resolve sonucu."""
+    """answer_engine veya operation_snapshot deterministic yanıt meta."""
 
     intent_id: str
     deterministic: Literal[True]
+
+
+_OPERATION_GUARDRAIL = (
+    "\n[Operasyon özeti] support_context.operation içindeki sayılar ve bölge adları dışında "
+    "yeni bölge veya sayı uydurma. no_guarantee=true ise kesin süre, eşleşme veya kazanç garantisi verme. "
+    "Koordinat veya tag/kullanıcı id isteme veya yazma. message_hint varsa ona sadık kal; "
+    "kısaltabilirsin ama yeni yoğunluk iddiası ekleme."
+)
+
+_DRIVER_OPERATION_PHRASES = (
+    "nereye gitmeliyim",
+    "nerede talep",
+    "talep var",
+    "yoğun bölge",
+    "yogun bolge",
+    "yoğunluk",
+    "yogunluk",
+    "müşteri bul",
+    "musteri bul",
+    "talep yoğun",
+    "hangi bölge",
+    "hangi bolge",
+    "nereye git",
+)
+
+_PASSENGER_OPERATION_PHRASES = (
+    "sürücü gelmedi",
+    "surucu gelmedi",
+    "teklif gelmedi",
+    "teklif gelmiyor",
+    "neden bekliyorum",
+    "yakında sürücü",
+    "yakinda surucu",
+    "sürücü var mı",
+    "surucu var mi",
+    "uygun sürücü",
+    "uygun surucu",
+    "bekliyorum olmuyor",
+    "çevrede sürücü",
+    "cevremde surucu",
+    "bölgesel uygunluk",
+    "bolgesel uygunluk",
+)
 
 
 # Tek kaynak: system prompt + eşleşme/rol ile ilgili fallback’lerde aynı kanon metin (tekrarlanmaz).
@@ -106,6 +149,7 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
             continue
         parts.append(f"{k}={v}")
     sc = ctx.get("support_context")
+    operation_addon = ""
     if isinstance(sc, dict):
         trip = sc.get("trip")
         if isinstance(trip, dict):
@@ -116,12 +160,23 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
                 )
             except Exception:
                 parts.append("support_trip=(serialize_error)")
+        operation = sc.get("operation")
+        if isinstance(operation, dict) and operation:
+            try:
+                parts.append(
+                    "support_operation="
+                    + json.dumps(operation, ensure_ascii=False, separators=(",", ":"))
+                )
+            except Exception:
+                parts.append("support_operation=(serialize_error)")
+            operation_addon = _OPERATION_GUARDRAIL
     if not parts:
-        return ""
+        return operation_addon
     return (
         "\n[Kullanıcı bağlamı — kişisel veri yok] "
         + ", ".join(parts)
         + "\nBu bağlama uygun, kısa yardım ver. Markdown kullanma."
+        + operation_addon
         + (
             "\nvoiceMode=true ise konuşma diliyle yanıt ver: 2-4 kısa cümle kur, gereksiz liste yapma; "
             "kritik güvenlik, garanti yok ve acil durum bilgilerini çıkarma."
@@ -129,6 +184,48 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
             else ""
         )
     )
+
+
+def _support_operation_from_context(context: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not context or not isinstance(context, dict):
+        return None
+    sc = context.get("support_context")
+    if not isinstance(sc, dict):
+        return None
+    op = sc.get("operation")
+    return op if isinstance(op, dict) and op else None
+
+
+def _is_operation_question(user_message: str, operation: dict[str, Any]) -> bool:
+    t = _normalize_for_match(user_message)
+    if not t:
+        return False
+    kind = str(operation.get("kind") or "").strip().lower()
+    if kind == "driver_demand":
+        return any(p in t for p in _DRIVER_OPERATION_PHRASES)
+    if kind == "passenger_availability":
+        return any(p in t for p in _PASSENGER_OPERATION_PHRASES)
+    return any(p in t for p in _DRIVER_OPERATION_PHRASES + _PASSENGER_OPERATION_PHRASES)
+
+
+def _try_operation_snapshot_reply(
+    user_message: str,
+    context: dict[str, Any] | None,
+) -> tuple[str, AnswerEngineMeta] | None:
+    """
+    Bearer ile yüklenmiş operation özeti + operasyon sorusu → message_hint (deterministic).
+    has_data=false / signal=none dahil.
+    """
+    operation = _support_operation_from_context(context)
+    if not operation:
+        return None
+    if not _is_operation_question(user_message, operation):
+        return None
+    hint = str(operation.get("message_hint") or "").strip()
+    if not hint:
+        return None
+    kind = str(operation.get("kind") or "operation_snapshot")
+    return hint, {"intent_id": kind, "deterministic": True}
 
 _last_request_mono: dict[str, float] = {}
 _rate_lock = asyncio.Lock()
@@ -532,6 +629,18 @@ async def get_leylek_zeka_reply(
             user_message=text,
         )
         return flow_hit, "fallback", None
+
+    op_hit = _try_operation_snapshot_reply(text, context)
+    if op_hit is not None:
+        reply_text, op_meta = op_hit
+        _emit_answer_engine_telemetry(
+            hit=True,
+            intent_id=op_meta["intent_id"],
+            response_source="operation_snapshot",
+            context=context,
+            user_message=text,
+        )
+        return reply_text, "operation_snapshot", op_meta
 
     resolved = try_resolve(text, context)
     if resolved is not None:

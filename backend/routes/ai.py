@@ -18,9 +18,17 @@ from controllers.ai_controller import (
     get_leylek_zeka_reply,
     enforce_rate_limit,
 )
+from services.operation_snapshot import (
+    build_driver_demand_snapshot_sync,
+    build_passenger_availability_snapshot_sync,
+    infer_snapshot_role_from_client_context,
+    is_operation_snapshot_ai_enabled,
+    snapshot_to_llm_context,
+)
 from services.trip_lifecycle_support_context import (
     build_support_context_trip_payload,
     fetch_active_tag_minimal_sync,
+    resolve_user_id_for_tags_sync,
     utc_now_iso_z,
 )
 
@@ -114,6 +122,39 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
             else:
                 ctx_dict = dict(ctx_dict)
             ctx_dict["support_context"] = support_payload
+
+            if is_operation_snapshot_ai_enabled():
+                try:
+                    snap_role = infer_snapshot_role_from_client_context(ctx_dict)
+                    if snap_role:
+                        resolved_uid = resolve_user_id_for_tags_sync(token_uid)
+                        if resolved_uid:
+
+                            def _load_operation_context() -> dict[str, Any]:
+                                if snap_role == "driver":
+                                    raw = build_driver_demand_snapshot_sync(
+                                        resolved_uid, 20.0
+                                    )
+                                    return snapshot_to_llm_context(raw, "driver_demand")
+                                tag_id_inner = None
+                                if tag_min and tag_min.get("id"):
+                                    tag_id_inner = str(tag_min["id"]).strip()
+                                raw = build_passenger_availability_snapshot_sync(
+                                    resolved_uid, 20.0, tag_id_inner
+                                )
+                                return snapshot_to_llm_context(
+                                    raw, "passenger_availability"
+                                )
+
+                            op_ctx = await asyncio.to_thread(_load_operation_context)
+                            sc = dict(ctx_dict.get("support_context") or support_payload)
+                            sc["operation"] = op_ctx
+                            ctx_dict["support_context"] = sc
+                except Exception:
+                    logger.warning(
+                        "Leylek Zeka support_context operation atlandı",
+                        exc_info=True,
+                    )
     except Exception:
         logger.warning("Leylek Zeka support_context trip atlandı", exc_info=True)
 
