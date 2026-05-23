@@ -25,7 +25,7 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski cache girdilerini deploy sonrası baypas; ilçe → il kapsamı (Ankara + Muğla)
-_CACHE_KEY_VER = "v10_mugla_district_city_scope_v2"
+_CACHE_KEY_VER = "v11_autocomplete_preserve_filter_fallback"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -540,11 +540,13 @@ def city_match(
             return True
         if nk_dist and _text_mentions_place(blob, dist):
             return True
-        if nk_dist:
-            return False
         if lo is not None and la is not None:
             return _point_in_city_bbox(lo, la, bbox)
-        return _text_mentions_place(blob, ct)
+        # Koordinatsız Google autocomplete: bbox metin eşleşmesi yoksa bile TR scoped satırı eleme
+        if str(result.get("provider") or "") == "google":
+            if "turkiye" in blob_flat or "turkey" in blob_flat:
+                return True
+        return False
 
     if nk in blob_flat:
         return True
@@ -562,6 +564,33 @@ def _filter_results_city(
     if not (city or "").strip():
         return list(items)
     return [it for it in items if city_match(it, city, district=district)]
+
+
+def _filter_results_city_safe(
+    items: list[dict[str, Any]],
+    city: str,
+    *,
+    district: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Scoped filtre boş kalırsa ham Google / TR satırlarını döndür (prod boş sonuç hotfix).
+    """
+    if not (city or "").strip():
+        return list(items)
+    filtered = _filter_results_city(items, city, district=district)
+    if filtered:
+        return filtered
+    raw_keep: list[dict[str, Any]] = []
+    for it in items:
+        prov = str(it.get("provider") or "")
+        blob = _norm_key(_result_full_address_text(it))
+        if prov == "google":
+            raw_keep.append(it)
+        elif "turkiye" in blob or "turkey" in blob:
+            raw_keep.append(it)
+    if raw_keep:
+        return _dedupe_merged_city_results(raw_keep)[:20]
+    return []
 
 
 def _rank_city_scoped_results(
@@ -713,10 +742,12 @@ async def _enrich_google_rows_with_geocode(
 
         if geocode_budget is not None:
             if geocode_budget[0] <= 0:
+                out.append(row)
                 continue
             geocode_budget[0] -= 1
         else:
             if used_legacy >= max_geocode_calls:
+                out.append(row)
                 continue
             used_legacy += 1
 
@@ -726,6 +757,8 @@ async def _enrich_google_rows_with_geocode(
             enriched["lng"] = str(round(float(nlo), 7))
             enriched["lat"] = str(round(float(nla), 7))
             out.append(enriched)
+        else:
+            out.append(row)
     return out
 
 
@@ -1628,7 +1661,7 @@ async def api_places_search(
                         break
                     nr = _results_from_nominatim(nrows)
                     raw_rows = nr.get("results") if isinstance(nr.get("results"), list) else []
-                    collected.extend(_filter_results_city(raw_rows, city, district=dr))
+                    collected.extend(_filter_results_city_safe(raw_rows, city, district=dr))
                 except httpx.TimeoutException:
                     continue
 
@@ -1648,8 +1681,18 @@ async def api_places_search(
             if ng:
                 combined_city = [x for x in combined_city if _numeric_street_gate_keeps_item(x, ng)]
 
-            fr_box = _filter_results_city(combined_city, city, district=dr)
+            fr_box = _filter_results_city_safe(combined_city, city, district=dr)
             fr_box = _dedupe_merged_city_results(fr_box)
+
+            if not fr_box and combined_city:
+                google_raw = [
+                    x
+                    for x in combined_city
+                    if str(x.get("provider") or "") == "google"
+                    or "turkiye" in _norm_key(_result_full_address_text(x))
+                ]
+                if google_raw:
+                    fr_box = _dedupe_merged_city_results(google_raw)[:20]
 
             if fr_box:
                 fr_box = _rank_city_scoped_results(
@@ -1697,13 +1740,17 @@ async def api_places_search(
                     outbound = _result_google_autocomplete(preds_merged, max_predictions=20)
                     rows_raw = list(outbound.get("results") or [])
                     outbound["results"] = rows_raw
-                    fr = _filter_results_city(rows_raw, city, district=dr)
+                    fr = _filter_results_city_safe(rows_raw, city, district=dr)
                     if city_trim and fr:
                         fr = _rank_city_scoped_results(
                             fr, trimmed, city_trim, lat, lng, district=dr
                         )
                     if fr:
                         outbound["results"] = _dedupe_results(fr)
+                        _cache_set(cache_key_raw, outbound)
+                        return outbound
+                    if rows_raw:
+                        outbound["results"] = _dedupe_results(rows_raw)[:20]
                         _cache_set(cache_key_raw, outbound)
                         return outbound
 
@@ -1718,13 +1765,18 @@ async def api_places_search(
                 if sc2 == 200 and isinstance(gdata, dict) and str(gdata.get("status")) in ("OK", "ZERO_RESULTS"):
                     gb = _results_from_google_geocode(gdata)
                     if gb:
-                        fr2 = _filter_results_city(gb.get("results") or [], city, district=dr)
+                        fr2 = _filter_results_city_safe(gb.get("results") or [], city, district=dr)
                         if city_trim and fr2:
                             fr2 = _rank_city_scoped_results(
                                 fr2, trimmed, city_trim, lat, lng, district=dr
                             )
                         if fr2:
                             gb["results"] = _dedupe_results(fr2)
+                            _cache_set(cache_key_raw, gb)
+                            return gb
+                        raw_geo = list(gb.get("results") or [])
+                        if raw_geo:
+                            gb["results"] = _dedupe_results(raw_geo)[:20]
                             _cache_set(cache_key_raw, gb)
                             return gb
             except httpx.TimeoutException:
@@ -1755,7 +1807,7 @@ async def api_places_search(
 
                 nr = _results_from_nominatim(nrows)
                 raw_rows = nr.get("results") if isinstance(nr.get("results"), list) else []
-                acc_nom.extend(_filter_results_city(raw_rows, city, district=dr))
+                acc_nom.extend(_filter_results_city_safe(raw_rows, city, district=dr))
 
             except httpx.TimeoutException:
                 continue
