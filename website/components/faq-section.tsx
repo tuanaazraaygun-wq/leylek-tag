@@ -7,12 +7,12 @@ const faqs = [
   {
     question: "Ödeme ve ücretler nasıl işler?",
     answer:
-      "Leylek TAG uygulama içinde ödeme tahsilatı yapmaz. Yolculuk ücreti, yolculuk sonunda taraflar arasında nakit olarak tamamlanır. Kart ile ödeme özelliği aktif değildir; ilerleyen süreçte uygun altyapı ile değerlendirilecektir.",
+      "Leylek TAG uygulama içinde ödeme tahsilatı yapmaz. Yolculuk ücreti, yolculuk sonunda taraflar arasında nakit olarak tamamlanır. Kart ile ödeme özelliği aktif değildir; ilerleyen aşamalarda uygun altyapı ile değerlendirilecektir.",
   },
   {
     question: "Şehirler arası yolculuk ne zaman?",
     answer:
-      "Şehirler arası yolculuk akışı geliştirme sürecindedir. Planlı uzun yol eşleşmeleri yakında aktif edilecektir. Şu anda şehir içi yolculuk eşleşmesi önceliklidir.",
+      "Şehirler arası planlı rota ilanları ikincil önceliktedir. Platform odak noktası şehir içi güvenli eşleşme ve teklif akışıdır.",
   },
   {
     question: "Şehir içi akış nasıl işler?",

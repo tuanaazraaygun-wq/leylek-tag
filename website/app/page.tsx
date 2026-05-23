@@ -39,6 +39,11 @@ const experiences = [
     description:
       "Rota görünürlüğü, QR doğrulama ve Güven Al adımlarıyla şehir içinde kontrollü güvenli eşleşme.",
     tone: "cyan" as const,
+    microStates: [
+      { label: "QR aktif", active: true },
+      { label: "Güven görüşmesi hazır", active: true },
+      { label: "Profil görünür", active: true },
+    ],
   },
   {
     title: "Leylek Teklifi",
@@ -46,6 +51,11 @@ const experiences = [
     description:
       "Teklif görüşmesi, karşılıklı onay ve yolculuk öncesi anlaşma ile yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
     tone: "violet" as const,
+    microStates: [
+      { label: "Teklif akışı açık", active: true },
+      { label: "Rota uyumu izleniyor", active: true },
+      { label: "Leylek Zeka destekli", active: true },
+    ],
   },
 ];
 

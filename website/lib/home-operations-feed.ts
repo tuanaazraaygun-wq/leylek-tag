@@ -1,6 +1,6 @@
 /**
  * Curated pseudo-live operations feed for the marketing homepage.
- * Replace `getCuratedOperationsFeed` internals with API/socket data when ready.
+ * Swap curated arrays for API/socket aggregation via `loadHomeOperationsFeed`.
  */
 
 export type OperationsFeedScope = "intracity" | "intercity";
@@ -10,19 +10,30 @@ export type OperationsFeedStatus =
   | "offer_active"
   | "match_confirmed"
   | "qr_verified"
-  | "offer_flow_started";
+  | "offer_flow_started"
+  | "trust_session";
 
 export type OperationsFeedEvent = {
   id: string;
   city: string;
   district: string;
-  /** Primary event line (city · district context is also shown separately). */
-  message: string;
+  /** Primary operation line. */
+  headline: string;
+  /** Secondary system state (awaiting step, channel ready, etc.). */
+  subline: string;
   status: OperationsFeedStatus;
   statusLabel: string;
-  timeAgo: string;
+  /** Relative time label, e.g. "2 dk önce", "şimdi". */
+  timeLabel: string;
   tone: "cyan" | "violet" | "emerald" | "blue";
   scope: OperationsFeedScope;
+};
+
+export type OperationsMicroStat = {
+  id: string;
+  label: string;
+  value: string;
+  hint: string;
 };
 
 const INTRACITY_EVENTS: OperationsFeedEvent[] = [
@@ -30,10 +41,11 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     id: "ank-cankaya-kizilay-route",
     city: "Ankara",
     district: "Çankaya",
-    message: "Çankaya → Kızılay rota uyumu bulundu",
+    headline: "Kızılay yönüne rota uyumu bulundu",
+    subline: "QR başlangıç doğrulaması bekleniyor",
     status: "route_match",
     statusLabel: "Rota uyumu",
-    timeAgo: "Az önce",
+    timeLabel: "2 dk önce",
     tone: "cyan",
     scope: "intracity",
   },
@@ -41,10 +53,11 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     id: "ank-cayyolu-offer",
     city: "Ankara",
     district: "Çayyolu",
-    message: "Yolcu teklifi yayınlandı",
+    headline: "Yolcu teklifi rota uyumuna göre yayında",
+    subline: "Sürücü eşleşmesi bekleniyor",
     status: "offer_active",
     statusLabel: "Teklif aktif",
-    timeAgo: "1 dk",
+    timeLabel: "şimdi",
     tone: "violet",
     scope: "intracity",
   },
@@ -52,10 +65,11 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     id: "ist-kadikoy-flow",
     city: "İstanbul",
     district: "Kadıköy",
-    message: "Şehir içi teklif akışı başladı",
+    headline: "Şehir içi teklif akışı başlatıldı",
+    subline: "Sesli/yazılı iletişim hazır",
     status: "offer_flow_started",
     statusLabel: "Akış aktif",
-    timeAgo: "2 dk",
+    timeLabel: "4 dk önce",
     tone: "blue",
     scope: "intracity",
   },
@@ -63,10 +77,11 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     id: "izm-bornova-qr",
     city: "İzmir",
     district: "Bornova",
-    message: "QR doğrulaması tamamlandı",
+    headline: "QR başlangıç doğrulaması tamamlandı",
+    subline: "Yolculuk güven katmanına geçti",
     status: "qr_verified",
     statusLabel: "Doğrulandı",
-    timeAgo: "3 dk",
+    timeLabel: "6 dk önce",
     tone: "emerald",
     scope: "intracity",
   },
@@ -74,10 +89,11 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     id: "ist-besiktas-sisli-match",
     city: "İstanbul",
     district: "Beşiktaş",
-    message: "Beşiktaş → Şişli eşleşme onaylandı",
+    headline: "Beşiktaş → Şişli eşleşme onaylandı",
+    subline: "Görüntülü güven görüşmesi tamamlandı",
     status: "match_confirmed",
     statusLabel: "Eşleşme sağlandı",
-    timeAgo: "4 dk",
+    timeLabel: "8 dk önce",
     tone: "emerald",
     scope: "intracity",
   },
@@ -85,32 +101,35 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     id: "ank-ulus-offer",
     city: "Ankara",
     district: "Ulus",
-    message: "Rota uyumlu teklif önerisi gönderildi",
+    headline: "Rota uyumlu teklif önerisi gönderildi",
+    subline: "Leylek Zeka rota skoru uygulandı",
     status: "offer_active",
     statusLabel: "Teklif aktif",
-    timeAgo: "5 dk",
+    timeLabel: "9 dk önce",
     tone: "violet",
     scope: "intracity",
   },
   {
-    id: "ist-atasehir-qr",
+    id: "ist-atasehir-trust",
     city: "İstanbul",
     district: "Ataşehir",
-    message: "Başlangıç QR doğrulaması tamamlandı",
-    status: "qr_verified",
-    statusLabel: "Doğrulandı",
-    timeAgo: "6 dk",
-    tone: "emerald",
+    headline: "Güven görüşmesi oturumu başlatıldı",
+    subline: "Profil görünürlüğü doğrulandı",
+    status: "trust_session",
+    statusLabel: "Güven oturumu",
+    timeLabel: "11 dk önce",
+    tone: "cyan",
     scope: "intracity",
   },
   {
     id: "izm-karsiyaka-route",
     city: "İzmir",
     district: "Karşıyaka",
-    message: "Karşıyaka → Konak rota uyumu bulundu",
+    headline: "Karşıyaka → Konak rota uyumu bulundu",
+    subline: "Teklif optimizasyonu önerisi hazır",
     status: "route_match",
     statusLabel: "Rota uyumu",
-    timeAgo: "7 dk",
+    timeLabel: "13 dk önce",
     tone: "cyan",
     scope: "intracity",
   },
@@ -121,10 +140,11 @@ const INTERCITY_EVENTS: OperationsFeedEvent[] = [
     id: "ank-ist-listing",
     city: "Ankara",
     district: "Merkez",
-    message: "Ankara → İstanbul planlı rota ilanı aktif",
+    headline: "Ankara → İstanbul planlı rota ilanı aktif",
+    subline: "Uzun yol teklif akışı · ikincil öncelik",
     status: "offer_active",
     statusLabel: "Teklif aktif",
-    timeAgo: "12 dk",
+    timeLabel: "18 dk önce",
     tone: "blue",
     scope: "intercity",
   },
@@ -132,12 +152,64 @@ const INTERCITY_EVENTS: OperationsFeedEvent[] = [
     id: "izm-bursa-match",
     city: "İzmir",
     district: "Bornova",
-    message: "İzmir → Bursa eşleşme görüşmesi başladı",
+    headline: "İzmir → Bursa eşleşme görüşmesi başladı",
+    subline: "Planlı rota onayı bekleniyor",
     status: "offer_flow_started",
     statusLabel: "Akış aktif",
-    timeAgo: "18 dk",
+    timeLabel: "24 dk önce",
     tone: "violet",
     scope: "intercity",
+  },
+];
+
+/** Pilot-scope micro stats — not user/traffic totals. */
+const MICRO_STATS: OperationsMicroStat[] = [
+  {
+    id: "active-offers",
+    label: "Aktif şehir içi teklifler",
+    value: "12",
+    hint: "pilot olay",
+  },
+  {
+    id: "route-matches",
+    label: "Rota uyumları",
+    value: "9",
+    hint: "pilot olay",
+  },
+  {
+    id: "qr-steps",
+    label: "QR doğrulama adımları",
+    value: "6",
+    hint: "pilot olay",
+  },
+  {
+    id: "trust-sessions",
+    label: "Güven görüşmeleri",
+    value: "4",
+    hint: "pilot olay",
+  },
+];
+
+export const LEYLEK_ZEKA_CAPABILITIES = [
+  {
+    id: "route-suggest",
+    title: "Rota uyumlu öneriler",
+    description: "Pilot bölgelerde rota eşleşmesine göre teklif skorlama",
+  },
+  {
+    id: "offer-opt",
+    title: "Teklif optimizasyonu",
+    description: "Teklif akışında zaman ve rota uyumu desteği",
+  },
+  {
+    id: "trust-flow",
+    title: "Güven akışı desteği",
+    description: "QR ve güven adımlarında yönlendirme katmanı",
+  },
+  {
+    id: "ops-support",
+    title: "Şehir içi operasyon desteği",
+    description: "Pilot şehir olaylarında operasyon rehberliği",
   },
 ];
 
@@ -151,40 +223,57 @@ export function getCuratedIntercityOperationsFeed(): OperationsFeedEvent[] {
   return INTERCITY_EVENTS;
 }
 
+/** Pilot-scope operation summaries for the homepage panel header. */
+export function getCuratedOperationsMicroStats(): OperationsMicroStat[] {
+  return MICRO_STATS;
+}
+
 /** Future hook point for live data (city-live-data / websocket). */
 export async function loadHomeOperationsFeed(): Promise<{
   intracity: OperationsFeedEvent[];
   intercity: OperationsFeedEvent[];
+  microStats: OperationsMicroStat[];
 }> {
   // TODO: merge live city dashboard events when backend feed is public-safe.
   return {
     intracity: getCuratedIntracityOperationsFeed(),
     intercity: getCuratedIntercityOperationsFeed(),
+    microStats: getCuratedOperationsMicroStats(),
   };
 }
 
 export const statusBadgeStyles: Record<
   OperationsFeedStatus,
-  { badge: string; dot: string }
+  { badge: string; dot: string; row: string }
 > = {
   route_match: {
-    badge: "bg-cyan-400/12 text-cyan-100 ring-cyan-400/25",
-    dot: "bg-cyan-300 shadow-cyan-300/40",
+    badge: "bg-cyan-400/10 text-cyan-100/95 ring-cyan-400/22",
+    dot: "bg-cyan-300/90",
+    row: "border-cyan-400/10",
   },
   offer_active: {
-    badge: "bg-violet-400/12 text-violet-100 ring-violet-400/25",
-    dot: "bg-violet-400 shadow-violet-400/40",
+    badge: "bg-violet-400/10 text-violet-100/95 ring-violet-400/22",
+    dot: "bg-violet-400/90",
+    row: "border-violet-400/10",
   },
   match_confirmed: {
-    badge: "bg-emerald-400/12 text-emerald-100 ring-emerald-400/25",
-    dot: "bg-emerald-300 shadow-emerald-300/40",
+    badge: "bg-emerald-400/10 text-emerald-100/95 ring-emerald-400/22",
+    dot: "bg-emerald-300/90",
+    row: "border-emerald-400/10",
   },
   qr_verified: {
-    badge: "bg-emerald-400/12 text-emerald-100 ring-emerald-400/25",
-    dot: "bg-emerald-300 shadow-emerald-300/40",
+    badge: "bg-emerald-400/10 text-emerald-100/95 ring-emerald-400/22",
+    dot: "bg-emerald-300/90",
+    row: "border-emerald-400/10",
   },
   offer_flow_started: {
-    badge: "bg-blue-400/12 text-blue-100 ring-blue-400/25",
-    dot: "bg-blue-400 shadow-blue-400/40",
+    badge: "bg-blue-400/10 text-blue-100/95 ring-blue-400/22",
+    dot: "bg-blue-400/90",
+    row: "border-blue-400/10",
+  },
+  trust_session: {
+    badge: "bg-cyan-400/10 text-cyan-100/95 ring-cyan-400/22",
+    dot: "bg-cyan-300/90",
+    row: "border-cyan-400/10",
   },
 };

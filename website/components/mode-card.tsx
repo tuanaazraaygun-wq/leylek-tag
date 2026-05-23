@@ -1,8 +1,14 @@
+type ModeCardMicroState = {
+  label: string;
+  active?: boolean;
+};
+
 type ModeCardProps = {
   title: string;
   eyebrow: string;
   description: string;
   tone: "cyan" | "violet" | "blue";
+  microStates?: ModeCardMicroState[];
 };
 
 const toneStyles = {
@@ -46,7 +52,7 @@ function ModeCardHud({ iconClass }: { iconClass: string }) {
   );
 }
 
-export function ModeCard({ title, eyebrow, description, tone }: ModeCardProps) {
+export function ModeCard({ title, eyebrow, description, tone, microStates }: ModeCardProps) {
   const styles = toneStyles[tone];
 
   return (
@@ -78,6 +84,26 @@ export function ModeCard({ title, eyebrow, description, tone }: ModeCardProps) {
       <p className="relative mt-[1.125rem] text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100/88 sm:mt-6">
         {eyebrow}
       </p>
+      {microStates?.length ? (
+        <div className="relative mt-3 flex flex-wrap gap-1.5">
+          {microStates.map((state) => (
+            <span
+              key={state.label}
+              className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-300"
+            >
+              {state.active !== false ? (
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300/50 opacity-40" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300/85" />
+                </span>
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+              )}
+              {state.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <h3 className="relative mt-3 text-2xl font-black tracking-tight text-white">{title}</h3>
       <p className="relative mt-3 break-words text-sm leading-[1.68] text-white/[0.82]">{description}</p>
       <div className="relative mt-6 space-y-2">

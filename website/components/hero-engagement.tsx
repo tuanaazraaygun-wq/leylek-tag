@@ -218,7 +218,7 @@ function HeroRouteInputs() {
           <p className="mt-3 px-0.5 text-[11px] font-medium leading-relaxed text-slate-400/90 sm:text-[12px]">
             Rota bilgisi yalnızca bu tarayıcıya kaydedilir; sunucuya gönderilmez.
           </p>
-          <p className="mt-4 px-1 text-[10px] font-black uppercase tracking-[0.26em] text-slate-500">örnek çiftler</p>
+          <p className="mt-4 px-1 text-[10px] font-black uppercase tracking-[0.26em] text-slate-500">hızlı rota önerileri</p>
           <ul className="mt-2 grid gap-1.5 sm:grid-cols-3">
             {(["Kadıköy → Levent", "İstanbul → Ankara", "İzmir → Bursa"] as const).map((s) => {
               const [a, b] = s.split(" → ");
