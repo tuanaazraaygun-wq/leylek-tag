@@ -35,9 +35,21 @@ const CHAT_MESSAGE_MIN_LEN = 1;
 const SUBMIT_COOLDOWN_MS = 36_000;
 const USER_AGENT_MAX = 512;
 
-/** Karşılama balonunda sabit sistem metni — anında insan operatör vaadi yok. */
+/** Karşılama — bilgilendirme/yönlendirme; anında insan operatör vaadi yok. */
 const LIVE_SUPPORT_WELCOME =
-  "Merhaba. Bu akış Leylek Zeka ile yönlendirilebilecek bilgilendirme ve mesajların destek ekibine iletilmesi içindir. Yanıtlar müsaitlik durumunda buradan gelir; anında müşteri temsilcisi veya sürekli çevrimiçi bağlantı taahhüdü sunulmaz.";
+  "Merhaba. Leylek Zeka bilgilendirme ve yönlendirme sağlar; karar vermez. Mesajların destek ekibine güvenli biçimde iletilir. Yanıtlar müsaitlik durumunda buradan gelir.";
+
+const APP_SCOPE_NOTE =
+  "Uygulama içi işlemler — teklif, eşleşme, QR doğrulama — mobil uygulamada tamamlanır.";
+
+const SUPPORT_QUICK_TOPICS = [
+  { id: "qr", label: "QR doğrulama", prompt: "QR doğrulama süreci hakkında bilgi almak istiyorum." },
+  { id: "trust-call", label: "Güven görüşmesi", prompt: "Görüntülü güven görüşmesi hakkında bilgi almak istiyorum." },
+  { id: "account", label: "Hesap ve giriş", prompt: "Hesap ve giriş konusunda yardım almak istiyorum." },
+  { id: "ride-share", label: "Yol paylaşımı", prompt: "Yol paylaşımı akışı hakkında bilgi almak istiyorum." },
+  { id: "offer-match", label: "Teklif ve eşleşme", prompt: "Teklif ve eşleşme süreci hakkında bilgi almak istiyorum." },
+  { id: "security", label: "Güvenlik bildirimi", prompt: "Güvenlik bildirimi yapmak istiyorum." },
+] as const;
 
 type SupportTicketMetaRow = {
   id: string;
@@ -100,19 +112,93 @@ function mapSupportMessageInsertFeedback(error: {
 function SupportLeylekBadge({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border border-cyan-400/35 bg-gradient-to-br from-cyan-500/[0.16] via-cyan-400/[0.08] to-slate-900/60 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-cyan-50/96 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.22),0_6px_20px_-8px_rgba(34,211,238,0.35)] ${className}`}
+      className={`inline-flex items-center rounded-full border border-cyan-400/28 bg-cyan-500/[0.1] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-cyan-50/95 ${className}`}
     >
-      Leylek Zeka + Destek
+      Leylek Zeka
     </span>
   );
 }
 
 function SupportResponseCenterBadge() {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-500/[0.09] px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.11em] text-cyan-100/92 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.14)]">
-      <span className="h-1 w-1 shrink-0 rounded-full bg-cyan-300/90" aria-hidden />
-      Yanıt merkezi
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.11em] text-slate-300/90">
+      <span className="h-1 w-1 shrink-0 rounded-full bg-emerald-300/80" aria-hidden />
+      Destek merkezi
     </span>
+  );
+}
+
+function SupportWelcomeCard({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-xl border border-cyan-400/20 bg-[linear-gradient(152deg,rgba(34,211,238,0.1)_0%,rgba(15,23,42,0.88)_52%,rgba(8,47,73,0.42)_100%)] shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-md ${
+        compact ? "px-3 py-2.5 sm:rounded-2xl sm:px-3.5 sm:py-3" : "rounded-[1.05rem] px-3.5 py-3 sm:rounded-[1.15rem] sm:px-4 sm:py-3.5"
+      }`}
+    >
+      <div className="pointer-events-none absolute -right-10 -top-12 h-28 w-28 rounded-full bg-cyan-400/[0.08] blur-2xl" aria-hidden />
+      <div className="relative flex flex-wrap items-center gap-2">
+        <SupportLeylekBadge />
+        <span className="text-[9px] font-medium uppercase tracking-[0.1em] text-slate-500">bilgilendirme</span>
+      </div>
+      <p className="relative mt-2 text-[11px] font-bold uppercase tracking-[0.12em] text-cyan-100/80">
+        Karşılama
+      </p>
+      <p className={`relative mt-1.5 break-words leading-relaxed text-slate-50/95 ${compact ? "text-[12.5px]" : "text-[13px]"}`}>
+        {LIVE_SUPPORT_WELCOME}
+      </p>
+    </div>
+  );
+}
+
+function SupportAppScopeNote() {
+  return (
+    <p className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-slate-400">
+      {APP_SCOPE_NOTE}
+    </p>
+  );
+}
+
+function SupportQuickTopicChips({
+  onSelect,
+  disabled,
+}: {
+  onSelect: (prompt: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Hızlı konular</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {SUPPORT_QUICK_TOPICS.map((topic) => (
+          <button
+            key={topic.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(topic.prompt)}
+            className="rounded-lg border border-white/[0.09] bg-slate-950/50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:border-cyan-400/28 hover:bg-cyan-400/[0.06] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {topic.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SupportHumanFallback({ className = "" }: { className?: string }) {
+  return (
+    <div className={`rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2.5 ${className}`}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">İnsan destek</p>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+        Ekibimiz müsait olduğunda yanıtlar. Anında bağlantı taahhüdü sunulmaz.
+      </p>
+      <a
+        href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG · Destek")}`}
+        className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-cyan-200/90 underline-offset-2 transition hover:text-cyan-100 hover:underline"
+      >
+        {SUPPORT_EMAIL}
+      </a>
+    </div>
   );
 }
 
@@ -921,14 +1007,14 @@ export function SiteSupportPanel() {
         : "Talebin alındı — destek ekibi uygun olduğunda yanıtlar burada görünecek.";
 
   return (
-    <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end md:bottom-8 md:right-8 md:w-auto md:max-w-none">
+    <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end max-sm:right-0 max-sm:w-full max-sm:max-w-none max-sm:px-3 md:bottom-8 md:right-8 md:w-auto md:max-w-none md:px-0">
       {open ? (
         <>
           <button
             type="button"
             aria-label="Panoyu kapat"
             onClick={closePanel}
-            className="fixed inset-0 z-[71] bg-black/45 backdrop-blur-[3px]"
+            className="fixed inset-0 z-[71] bg-black/50 backdrop-blur-[4px]"
           />
 
           <div
@@ -937,7 +1023,7 @@ export function SiteSupportPanel() {
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descId}
-            className="relative z-[73] mb-3 flex max-h-[min(42rem,calc(100vh-5rem))] w-full max-w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.25rem] border border-white/[0.11] bg-slate-950/[0.94] shadow-[0_28px_90px_-28px_rgba(0,114,255,0.52),0_0_56px_-12px_rgba(34,211,238,0.24),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-cyan-400/[0.12] backdrop-blur-2xl"
+            className="relative z-[73] mb-3 flex max-h-[min(42rem,calc(100vh-5rem))] w-full max-w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.25rem] border border-white/[0.1] bg-slate-950/[0.96] shadow-[0_24px_80px_-28px_rgba(0,114,255,0.45),0_0_48px_-14px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-cyan-400/10 backdrop-blur-2xl max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:mb-0 max-sm:max-h-[min(88dvh,calc(100dvh-env(safe-area-inset-bottom,0px)-4.5rem))] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none max-sm:rounded-t-[1.35rem] max-sm:border-b-0 md:max-w-[min(24rem,calc(100vw-2rem))]"
           >
             <div
               className="pointer-events-none absolute inset-px rounded-[1.1875rem] bg-[linear-gradient(155deg,rgba(34,211,238,0.07)_0%,transparent_42%,rgba(108,99,255,0.06)_100%)] opacity-95"
@@ -951,7 +1037,7 @@ export function SiteSupportPanel() {
                     id={titleId}
                     className="text-lg font-black leading-snug tracking-tight text-white"
                   >
-                    Leylek TAG — Yanıt merkezi
+                    Leylek TAG Destek
                   </p>
                   <SupportResponseCenterBadge />
                 </div>
@@ -975,7 +1061,7 @@ export function SiteSupportPanel() {
             ) : !authReady ? (
               <div className="relative p-8 sm:p-10">
                 <p id={titleId} className="text-lg font-bold tracking-tight text-white">
-                  Yanıt merkezi
+                  Destek
                 </p>
                 <p id={descId} className="mt-3 text-[13px] leading-relaxed text-slate-500">
                   Oturum bilgisi kontrol ediliyor…
@@ -1078,7 +1164,7 @@ export function SiteSupportPanel() {
                         id={titleId}
                         className="text-[0.95rem] font-black leading-tight tracking-tight text-white sm:text-lg"
                       >
-                        Leylek TAG — Yanıt merkezi
+                        Leylek TAG Destek
                       </p>
                       {!resolvedStatus ? (
                         <>
@@ -1106,12 +1192,6 @@ export function SiteSupportPanel() {
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <SupportResponseCenterBadge />
                         <SupportLeylekBadge />
-                        <span
-                          className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400"
-                          title="Deneysel"
-                        >
-                          Beta
-                        </span>
                       </div>
                     </div>
                     <button
@@ -1130,14 +1210,7 @@ export function SiteSupportPanel() {
                       <p className="text-[12px] text-slate-500">Senkronize ediliyor…</p>
                     ) : null}
 
-                    <div className="rounded-xl rounded-tl-sm border border-cyan-400/26 bg-[linear-gradient(148deg,rgba(34,211,238,0.12)_0%,rgba(15,23,42,0.88)_48%,rgba(8,47,73,0.55)_100%)] px-3 py-2.5 shadow-[0_0_24px_-10px_rgba(34,211,238,0.3),inset_0_0_0_1px_rgba(103,232,249,0.12)] backdrop-blur-md sm:rounded-2xl sm:px-3.5 sm:py-3">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100/78">
-                        Bilgilendirme
-                      </p>
-                      <p className="mt-2 break-words text-[13px] leading-relaxed text-slate-50/96">
-                        {LIVE_SUPPORT_WELCOME}
-                      </p>
-                    </div>
+                    <SupportWelcomeCard compact />
 
                     {!resolvedStatus && !hasAdminReplyInThread && !hasAssignedAdmin ? (
                       <div className="max-w-[min(100%,21rem)] self-start rounded-xl rounded-tl-sm border border-cyan-400/22 bg-[linear-gradient(148deg,rgba(34,211,238,0.08)_0%,rgba(15,23,42,0.75)_55%)] px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.1)] backdrop-blur-sm sm:rounded-2xl sm:px-3.5 sm:py-3">
@@ -1267,7 +1340,14 @@ export function SiteSupportPanel() {
                 ) : null}
 
                 <div className="relative shrink-0 border-t border-white/[0.07] bg-black/45 px-3 py-2.5 backdrop-blur-md sm:px-4 sm:py-3 md:px-5">
-                  <form onSubmit={handleSendChat}>
+                  <SupportAppScopeNote />
+                  <div className="mt-2.5">
+                    <SupportQuickTopicChips
+                      onSelect={setChatInput}
+                      disabled={resolvedStatus || chatSending}
+                    />
+                  </div>
+                  <form onSubmit={handleSendChat} className="mt-3">
                     <textarea
                       value={chatInput}
                       aria-label="Sohbet mesajı"
@@ -1302,13 +1382,7 @@ export function SiteSupportPanel() {
                     </div>
 
                     {!resolvedStatus ? (
-                      <button
-                        type="button"
-                        onClick={() => window.open(`mailto:${SUPPORT_EMAIL}?subject=Leylek%20TAG`)}
-                        className="mx-auto mt-2 block py-2 text-[11px] font-semibold text-slate-500 underline-offset-4 transition hover:text-cyan-200/85 hover:underline"
-                      >
-                        E‑posta ile de ulaş
-                      </button>
+                      <SupportHumanFallback className="mt-2" />
                     ) : null}
                   </form>
                   <button
@@ -1329,21 +1403,15 @@ export function SiteSupportPanel() {
                         id={titleId}
                         className="text-[0.98rem] font-black leading-tight tracking-tight text-white sm:text-lg"
                       >
-                        Leylek TAG — Yanıt merkezi
+                        Leylek TAG Destek
                       </p>
                       <p id={descId} className="mt-2 text-[12px] leading-relaxed text-slate-400 sm:text-[13px]">
-                        Mesajların destek ekibine güvenli biçimde iletilmesi için bu pencereden yazabilirsin; yanıtlar müsaitlikle burada görünür. Oturum açtığın{" "}
-                        <span className="font-medium text-slate-300">Google e-postanın</span> kayda geçer.
+                        Leylek Zeka bilgilendirme sağlar; mesajların destek ekibine iletilmesi için bu pencereden yazabilirsin.{" "}
+                        <span className="font-medium text-slate-300">{sessionContactEmail}</span> kayda geçer.
                       </p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         <SupportResponseCenterBadge />
                         <SupportLeylekBadge />
-                        <span
-                          className="rounded-full border border-white/[0.1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400"
-                          title="Deneysel"
-                        >
-                          Beta
-                        </span>
                       </div>
                       {threadBootstrap ? (
                         <p className="mt-3 text-[12px] text-slate-500">Önceki görüşme kontrol ediliyor…</p>
@@ -1361,19 +1429,13 @@ export function SiteSupportPanel() {
 
                 <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-4 sm:px-5">
                   <div className="flex min-w-0 flex-col gap-3">
-                    <div className="relative overflow-hidden rounded-[1.15rem] border border-cyan-400/24 bg-[linear-gradient(150deg,rgba(34,211,238,0.14)_0%,rgba(15,23,42,0.82)_52%,rgba(8,47,73,0.45)_100%)] px-3.5 py-3 shadow-[0_0_40px_-14px_rgba(34,211,238,0.42),inset_0_0_0_1px_rgba(103,232,249,0.16)] backdrop-blur-md">
-                      <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-cyan-400/15 blur-2xl" aria-hidden />
-                      <div className="relative flex flex-wrap items-center gap-2">
-                        <SupportResponseCenterBadge />
-                        <SupportLeylekBadge />
-                      </div>
-                      <p className="relative mt-2.5 text-[11px] font-black uppercase tracking-[0.13em] text-cyan-100/85">
-                        Sistem mesajı
-                      </p>
-                      <p className="relative mt-2 break-words text-[13px] leading-relaxed text-slate-50/[0.96]">
-                        {LIVE_SUPPORT_WELCOME}
-                      </p>
-                    </div>
+                    <SupportWelcomeCard />
+                    <SupportQuickTopicChips
+                      onSelect={setMessage}
+                      disabled={status === "loading" || threadBootstrap}
+                    />
+                    <SupportAppScopeNote />
+                    <SupportHumanFallback />
                   </div>
                 </div>
 
@@ -1493,7 +1555,7 @@ export function SiteSupportPanel() {
                       href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG · Destek talebi")}`}
                       className="py-1 text-center text-[11px] font-semibold text-slate-500 underline-offset-4 transition hover:text-cyan-200/85 hover:underline"
                     >
-                      E‑posta ile ulaş
+                      {SUPPORT_EMAIL}
                     </Link>
                   </div>
                 </form>
@@ -1510,23 +1572,26 @@ export function SiteSupportPanel() {
         aria-controls={dialogId}
         aria-label={
           supportUnlocked
-            ? "Leylek TAG yanıt merkezi — destek kutusunu aç"
-            : "Destek — oturum açınca yanıt merkezine yazabilirsin"
+            ? "Leylek TAG destek — paneli aç"
+            : "Destek — oturum açınca yazabilirsin"
         }
-        className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-1.5 overflow-visible rounded-full px-3 py-3 pr-[1.2rem] text-[13px] backdrop-blur-md transition-[border-color,box-shadow,background-color] sm:gap-2 sm:px-5 sm:pr-[1.35rem] md:w-auto md:max-w-none ${
+        className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-2 overflow-visible rounded-full px-3.5 py-3 pr-[1.15rem] text-[13px] shadow-[0_12px_40px_-16px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-[border-color,box-shadow,transform] sm:gap-2.5 sm:px-5 sm:pr-[1.4rem] md:w-auto md:max-w-none ${
           supportUnlocked
-            ? "border border-cyan-400/32 bg-slate-950/92 font-bold text-white shadow-[0_14px_48px_-18px_rgba(0,114,255,0.35)] ring-1 ring-cyan-400/15 hover:border-cyan-300/48 hover:bg-slate-950/95 hover:shadow-[0_18px_52px_-20px_rgba(34,211,238,0.26)]"
-            : "border border-amber-500/28 bg-slate-950/96 font-semibold shadow-[0_12px_40px_-16px_rgba(0,0,0,0.65)] hover:border-amber-400/40 hover:bg-slate-950"
-        }`}
+            ? "border border-cyan-400/26 bg-slate-950/94 font-semibold text-white ring-1 ring-cyan-400/12 hover:border-cyan-300/38 hover:shadow-[0_16px_44px_-18px_rgba(34,211,238,0.22)]"
+            : "border border-amber-500/26 bg-slate-950/96 font-semibold hover:border-amber-400/38"
+        } ${open ? "max-sm:opacity-0 max-sm:pointer-events-none" : ""}`}
       >
         {supportUnlocked ? (
           <span
-            className="pointer-events-none absolute right-3.5 top-[0.6rem] h-2 w-2 shrink-0 rounded-full bg-cyan-400/85 shadow-[0_0_14px_rgba(34,211,238,0.45)] md:right-5"
+            className="pointer-events-none absolute right-3 top-[0.55rem] flex h-2 w-2 shrink-0 md:right-4"
             aria-hidden
-          />
+          >
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300/50 opacity-40" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-300/90 shadow-[0_0_10px_rgba(34,211,238,0.35)]" />
+          </span>
         ) : (
           <span
-            className="pointer-events-none absolute right-3.5 top-[0.55rem] md:right-5"
+            className="pointer-events-none absolute right-3 top-[0.55rem] md:right-4"
             aria-hidden
           >
             <svg
@@ -1548,15 +1613,15 @@ export function SiteSupportPanel() {
         <span className="relative z-[1] flex min-w-0 flex-1 flex-col items-start gap-0.5 leading-tight text-white/[0.94] sm:flex-row sm:flex-nowrap sm:items-baseline sm:gap-x-2">
           {supportUnlocked ? (
             <>
-              <span className="text-[11.5px] font-semibold tracking-tight text-slate-200/95 sm:text-[12px]">Leylek Zeka</span>
+              <span className="text-[11.5px] font-semibold tracking-tight text-slate-200/95 sm:text-[12px]">Destek</span>
               <span className="hidden font-light text-slate-500 sm:inline" aria-hidden>
                 ·
               </span>
-              <span className="text-[12.5px] font-bold tracking-tight text-cyan-100 sm:text-[0.975rem]">+ Destek</span>
+              <span className="text-[11.5px] font-bold tracking-tight text-cyan-100/95 sm:text-[12px]">Leylek Zeka</span>
             </>
           ) : (
             <span className="max-w-[11rem] text-[11.5px] font-semibold leading-snug text-amber-100/95 sm:max-w-none sm:text-[12px]">
-              Yanıt merkezi · giriş gerekli
+              Destek · giriş gerekli
             </span>
           )}
         </span>
