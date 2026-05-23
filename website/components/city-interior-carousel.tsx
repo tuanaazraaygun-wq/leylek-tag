@@ -192,7 +192,7 @@ export function CityInteriorCarousel({
     return (
       <div className={`relative ${className}`}>
         <div className="mx-auto flex max-w-[198px] flex-col items-center sm:max-w-[210px]">
-          <StoreScreenshotPhone src={s.src} alt={s.alt} widthClass="w-full max-w-none" fit="contain" ambient="quiet" />
+          <StoreScreenshotPhone src={s.src} alt={s.alt} widthClass="w-full max-w-none" fit="contain" presentation="app-store" />
           {s.caption ? (
             <p className="mt-4 max-w-xs text-center text-[11px] font-medium leading-relaxed text-slate-400 sm:text-[12px]">
               {s.caption}
@@ -264,7 +264,7 @@ export function CityInteriorCarousel({
                         alt={isFeatured ? slide.alt : ""}
                         widthClass="w-full max-w-none"
                         fit="contain"
-                        ambient="quiet"
+                        presentation="app-store"
                       />
                     </div>
                     {/* Yer tutucu: dikey sıçrama olmadan kart yüksekliği */}

@@ -130,14 +130,15 @@ export function PremiumScreenshotCarousel({
           <div
             key={slide.src}
             data-carousel-slide={index}
-            className="shrink-0 snap-center px-4 sm:w-[280px]"
+            className="shrink-0 snap-center px-4 sm:w-[300px] md:w-[340px]"
           >
-            <div className="mx-auto flex w-[240px] max-w-[88vw] flex-col items-center sm:w-[270px]">
+            <div className="mx-auto flex w-[260px] max-w-[88vw] flex-col items-center sm:w-[290px] md:w-[320px]">
               <StoreScreenshotPhone
                 src={slide.src}
                 alt={slide.alt}
                 widthClass="max-w-none w-full"
                 fit="contain"
+                presentation="app-store"
                 className="shadow-[0_24px_80px_rgba(0,114,255,0.14)]"
               />
               <p className="mt-4 max-w-[15rem] text-center text-[11px] font-semibold leading-relaxed tracking-wide text-slate-400 sm:text-xs">

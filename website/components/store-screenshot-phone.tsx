@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useState } from "react";
 
 export type StoreScreenshotFit = "contain" | "cover";
+export type StoreScreenshotPresentation = "device" | "app-store";
 
 type StoreScreenshotPhoneProps = {
   src: string;
@@ -14,6 +15,8 @@ type StoreScreenshotPhoneProps = {
   fit?: StoreScreenshotFit;
   /** Daha düz çerçeve; carousel vitrinleri için daha az parlama */
   ambient?: "default" | "quiet";
+  /** App Store iPad export — cihaz mockup’u olmadan düz premium kart */
+  presentation?: StoreScreenshotPresentation;
 };
 
 function StoreScreenshotPhoneInner({
@@ -24,6 +27,7 @@ function StoreScreenshotPhoneInner({
   widthClass = "max-w-[280px]",
   fit = "contain",
   ambient = "default",
+  presentation = "device",
 }: StoreScreenshotPhoneProps) {
   const [currentSrc, setCurrentSrc] = useState(src);
   const [visible, setVisible] = useState(true);
@@ -37,6 +41,42 @@ function StoreScreenshotPhoneInner({
     }
     setVisible(false);
   }, [currentSrc, fallbackSrc]);
+
+  const missingFallback = (
+    <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-3 px-6 text-center">
+      <span className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-200/45">Leylek TAG</span>
+      <p className="max-w-[14rem] text-xs font-medium leading-relaxed text-slate-500">
+        Görsel yüklenemedi — dosyanın doğru klasörde olduğunu kontrol et.
+      </p>
+    </div>
+  );
+
+  if (presentation === "app-store") {
+    return (
+      <div
+        className={`relative mx-auto overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070d14] shadow-[0_24px_80px_rgba(0,0,0,0.42)] ring-1 ring-white/[0.06] ${widthClass} ${className}`}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.035)_0%,transparent_42%)]" aria-hidden />
+        <div className="relative aspect-[2048/2732] w-full bg-gradient-to-b from-[#070d18] via-[#0a1628] to-[#050a14]">
+          {visible ? (
+            <Image
+              key={currentSrc}
+              src={currentSrc}
+              alt={alt}
+              width={2048}
+              height={2732}
+              className={`h-full w-full ${imgFit}`}
+              sizes="(max-width: 768px) 88vw, 360px"
+              onError={onError}
+              unoptimized
+            />
+          ) : (
+            missingFallback
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const shell =
     ambient === "quiet"
@@ -69,12 +109,7 @@ function StoreScreenshotPhoneInner({
               unoptimized
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <span className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-200/45">Leylek TAG</span>
-              <p className="max-w-[14rem] text-xs font-medium leading-relaxed text-slate-500">
-                Görsel yüklenemedi — dosyanın doğru klasörde olduğunu kontrol et.
-              </p>
-            </div>
+            missingFallback
           )}
         </div>
       </div>

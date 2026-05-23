@@ -3,7 +3,7 @@
 import Image from "next/image";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { STORE_ALL_APP_SCREENSHOTS } from "@/lib/branding-assets";
+import { DEFAULT_APP_SCREENSHOT_SLIDES } from "@/lib/app-screenshot-slides";
 
 const ROTATE_MS = 16_500;
 
@@ -137,7 +137,7 @@ export function HeroAppScreensRotator({
         return;
       }
       if (hoverPausedCarouselRef.current) return;
-      setActive((i) => (i + 1) % STORE_ALL_APP_SCREENSHOTS.length);
+      setActive((i) => (i + 1) % DEFAULT_APP_SCREENSHOT_SLIDES.length);
     }, ROTATE_MS);
     return () => window.clearInterval(id);
   }, []);
@@ -221,19 +221,16 @@ export function HeroAppScreensRotator({
         }}
         onMouseMove={boundaryMode ? undefined : onPhoneMouseMove}
       >
-        <div
-          className={`rounded-[2.18rem] border border-white/[0.078] bg-gradient-to-b from-slate-900/96 to-[#070b14]/98 p-[9px] shadow-[0_22px_70px_-14px_rgba(0,0,0,0.52)] ring-1 ring-cyan-400/[0.085] transition-shadow duration-500 hover:shadow-[0_30px_78px_-16px_rgba(0,114,255,0.15)] ${className}`}
-        >
-          <div className="pointer-events-none absolute inset-[2px] rounded-[2.02rem] bg-[radial-gradient(ellipse_80%_44%_at_50%_0%,rgba(34,211,238,0.055),transparent_68%)]" />
-          <div className="relative overflow-hidden rounded-[1.82rem] bg-[#070d14] shadow-inner ring-1 ring-white/[0.05]">
-            <div className="aspect-[1080/2340] w-full bg-gradient-to-b from-[#070d18] via-[#0a1628]/90 to-[#050a14]">
-              {STORE_ALL_APP_SCREENSHOTS.map((src, index) => (
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070d14] shadow-[0_22px_70px_-14px_rgba(0,0,0,0.52)] ring-1 ring-white/[0.06]">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.04)_0%,transparent_45%)]" aria-hidden />
+          <div className="relative aspect-[2048/2732] w-full bg-gradient-to-b from-[#070d18] via-[#0a1628]/90 to-[#050a14]">
+              {DEFAULT_APP_SCREENSHOT_SLIDES.map((slide, index) => (
                 <Image
-                  key={src}
-                  src={src}
-                  alt={`Leylek TAG uygulama ekranı ${index + 1}`}
-                  width={1080}
-                  height={2340}
+                  key={slide.src}
+                  src={slide.src}
+                  alt={slide.alt}
+                  width={2048}
+                  height={2732}
                   className={`absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-[1100ms] ease-[cubic-bezier(0.25,0.8,0.25,1)] ${
                     index === active ? "z-[1] opacity-100" : "z-0 opacity-0"
                   }`}
@@ -242,12 +239,11 @@ export function HeroAppScreensRotator({
                   priority={index === 0}
                 />
               ))}
-            </div>
           </div>
-          <div className="mx-auto mt-2 flex max-w-[9rem] justify-center gap-1.5" aria-hidden>
-            {STORE_ALL_APP_SCREENSHOTS.map((src, i) => (
+          <div className="mx-auto mt-2 flex max-w-[9rem] justify-center gap-1.5 pb-2" aria-hidden>
+            {DEFAULT_APP_SCREENSHOT_SLIDES.map((slide, i) => (
               <span
-                key={`hero-shot-dot-${src}`}
+                key={`hero-shot-dot-${slide.src}`}
                 className={`h-1 rounded-full transition-all duration-300 ${i === active ? "w-5 bg-cyan-400/90" : "w-2 bg-white/22"}`}
               />
             ))}

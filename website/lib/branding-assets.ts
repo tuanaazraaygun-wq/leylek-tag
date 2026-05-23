@@ -1,5 +1,6 @@
 /**
- * Branding görselleri `website/public/store/` altında — dosya yeniden adlandırılmaz.
+ * Branding görselleri `website/public/store/` altında.
+ * App Store vitrin PNG'leri: yolcu1–5, surucu1–4, yolcu6.
  */
 
 export const BRANDING_PATHS = {
@@ -18,27 +19,26 @@ export const BRANDING_PATHS = {
 
 export const LEGACY_FALLBACK_ICON = "/app-icon.png";
 
-/** `leylektag-yolcu-01 (1).png` — public URL güvenli biçimi */
-export const STORE_YOLCU_01_ESCAPED = "/store/leylektag-yolcu-01%20(1).png";
-
-/** Sekiz üretim ekranı — vitrin sırası (kart / carousel hep bu sırayla). */
+/** App Store vitrin sırası — 10 premium ekran. */
 export const STORE_ALL_APP_SCREENSHOTS = [
-  "/store/leylektag-surucu-01.png",
-  "/store/leylektag-surucu-02.png",
-  "/store/leylektag-surucu-03.png",
-  "/store/leylektag-surucu-04.png",
-  STORE_YOLCU_01_ESCAPED,
-  "/store/leylektag-yolcu-02.png",
-  "/store/leylektag-yolcu-03.png",
-  "/store/leylektag-yolcu-04.png",
+  "/store/yolcu1.png",
+  "/store/yolcu2.png",
+  "/store/yolcu3.png",
+  "/store/yolcu4.png",
+  "/store/yolcu5.png",
+  "/store/surucu1.png",
+  "/store/surucu2.png",
+  "/store/surucu3.png",
+  "/store/surucu4.png",
+  "/store/yolcu6.png",
 ] as const;
 
 export const STORE_SCREENSHOTS = {
   hero: STORE_ALL_APP_SCREENSHOTS[0],
-  /** Carousel / şerit bileşenleri için tam sekiz görsel */
+  /** Carousel / şerit bileşenleri için tam on görsel */
   previews: STORE_ALL_APP_SCREENSHOTS,
   featureWide: "/store/feature-graphic.png",
   sehirIciA: STORE_ALL_APP_SCREENSHOTS[5],
   sehirIciB: STORE_ALL_APP_SCREENSHOTS[7],
-  downloadFlow: STORE_ALL_APP_SCREENSHOTS[7],
+  downloadFlow: STORE_ALL_APP_SCREENSHOTS[9],
 } as const;

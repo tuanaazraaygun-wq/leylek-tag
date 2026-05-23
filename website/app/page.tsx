@@ -192,8 +192,8 @@ export default function Home() {
             <div className="mb-8 md:mb-10">
               <SectionHeading
                 eyebrow="uygulama vitrini"
-                title="Sekiz profesyonel ekran · backend destekli üründen sıralı seçki"
-                description="Gerçek sürücü ve yolcu panelleri: teklif yönetimi, karşılıklı onay ve QR doğrulama ile şehir içi eşleşme hissi masaüstünde ve mobilde carousel ile tam kadraj (contain)."
+                title="App Store ile uyumlu premium ekranlar"
+                description="Yolcu ve sürücü akışları aynı sırayla: teklif, güvenli eşleşme, QR doğrulama, görüntülü görüşme ve Leylek Zeka desteği. Website vitrini, App Store inceleme ekranlarıyla birebir hizalanır."
               />
             </div>
             <AppPreview />
