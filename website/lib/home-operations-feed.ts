@@ -190,29 +190,6 @@ const MICRO_STATS: OperationsMicroStat[] = [
   },
 ];
 
-export const LEYLEK_ZEKA_CAPABILITIES = [
-  {
-    id: "route-suggest",
-    title: "Rota uyumlu öneriler",
-    description: "Pilot bölgelerde rota eşleşmesine göre teklif skorlama",
-  },
-  {
-    id: "offer-opt",
-    title: "Teklif optimizasyonu",
-    description: "Teklif akışında zaman ve rota uyumu desteği",
-  },
-  {
-    id: "trust-flow",
-    title: "Güven akışı desteği",
-    description: "QR ve güven adımlarında yönlendirme katmanı",
-  },
-  {
-    id: "ops-support",
-    title: "Şehir içi operasyon desteği",
-    description: "Pilot şehir olaylarında operasyon rehberliği",
-  },
-];
-
 /** Curated intracity events — swap body for live API when connected. */
 export function getCuratedIntracityOperationsFeed(): OperationsFeedEvent[] {
   return INTRACITY_EVENTS;

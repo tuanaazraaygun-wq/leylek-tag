@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
-import { HomeCommunicationTrust } from "@/components/home-communication-trust";
+import { HomeTrustSafetyProtocol } from "@/components/home-trust-safety-protocol";
 import { AudienceSection } from "@/components/audience-section";
 import { BetaCta } from "@/components/beta-cta";
 import { BetaProcess } from "@/components/beta-process";
@@ -141,6 +141,10 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
+      <ScrollReveal staggerDelayMs={64} className="w-full">
+        <HomeTrustSafetyProtocol />
+      </ScrollReveal>
+
       <ScrollReveal staggerDelayMs={0} className="w-full">
         <HomeFourSteps />
       </ScrollReveal>
@@ -179,10 +183,7 @@ export default function Home() {
               />
             </div>
             <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.92fr_1fr]">
-              <div className="space-y-4">
-                <ActivityFeed variant="home" />
-                <HomeCommunicationTrust />
-              </div>
+              <ActivityFeed variant="home" />
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-1 lg:gap-5">
                 {experiences.map((experience) => (
                   <ModeCard key={experience.title} {...experience} />
