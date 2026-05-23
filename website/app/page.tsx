@@ -1,5 +1,5 @@
+import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
-import { AppPreview } from "@/components/app-preview";
 import { AudienceSection } from "@/components/audience-section";
 import { BetaCta } from "@/components/beta-cta";
 import { BetaProcess } from "@/components/beta-process";
@@ -18,8 +18,7 @@ import { RoleSelection } from "@/components/role-selection";
 import { SectionHeading } from "@/components/section-heading";
 import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
 import { HeroShowcaseStack } from "@/components/hero-showcase-stack";
-import { ValueProps } from "@/components/value-props";
-import { HeroTrustStrip } from "@/components/hero-trust-strip";
+import { TrustArchitectureShowcase } from "@/components/trust-architecture-showcase";
 import { HomeFourSteps } from "@/components/home-four-steps";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
 import { SectionMidCta } from "@/components/section-mid-cta";
@@ -96,7 +95,18 @@ export default function Home() {
                 </ButtonLink>
               </div>
 
-              <HeroTrustStrip />
+              <ul
+                className="mx-auto mt-5 flex max-w-lg flex-wrap justify-center gap-2 lg:mx-0 lg:justify-start"
+                aria-label="Güven katmanları özeti"
+              >
+                {["Çift onay", "QR doğrulama", "Güven katmanı"].map((label) => (
+                  <li key={label}>
+                    <span className="inline-flex items-center rounded-full border border-cyan-400/22 bg-cyan-400/[0.07] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/88">
+                      {label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <div className="relative min-h-0 w-full lg:-mt-2 lg:flex lg:min-w-0 lg:justify-end lg:pr-2">
@@ -112,6 +122,14 @@ export default function Home() {
         </Container>
       </HeroShell>
 
+      <section className="depth-ambient section-soft-vignette section-seam py-8 sm:py-10 md:py-12">
+        <ScrollReveal staggerDelayMs={48}>
+          <Container>
+            <TrustArchitectureShowcase />
+          </Container>
+        </ScrollReveal>
+      </section>
+
       <ScrollReveal staggerDelayMs={0} className="w-full">
         <HomeFourSteps />
       </ScrollReveal>
@@ -121,21 +139,6 @@ export default function Home() {
       </ScrollReveal>
 
       <SectionMidCta />
-
-      <section className="depth-ambient section-soft-vignette section-seam py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={96}>
-          <Container>
-            <div className="mb-8 md:mb-10">
-              <SectionHeading
-                eyebrow="güven mimarisi"
-                title="Güvenli ve kontrollü yolculuk deneyimi"
-                description="Sürücü ve yolcu, eşleşme sonrası rota, teklif ve doğrulama adımlarını şeffaf şekilde görür. Leylek TAG, yolculuk başlamadan önce güven katmanlarını netleştirir."
-              />
-            </div>
-            <ValueProps />
-          </Container>
-        </ScrollReveal>
-      </section>
 
       <section className="depth-well section-seam py-11 sm:py-14 md:py-[4.75rem]">
         <ScrollReveal staggerDelayMs={140}>
@@ -186,19 +189,16 @@ export default function Home() {
 
       <SectionMidCta />
 
-      <section className="depth-ambient section-seam py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={274}>
-          <Container>
-            <div className="mb-8 md:mb-10">
-              <SectionHeading
-                eyebrow="uygulama vitrini"
-                title="App Store ile uyumlu premium ekranlar"
-                description="Yolcu ve sürücü akışları aynı sırayla: teklif, güvenli eşleşme, QR doğrulama, görüntülü görüşme ve Leylek Zeka desteği. Website vitrini, App Store inceleme ekranlarıyla birebir hizalanır."
-              />
-            </div>
-            <AppPreview />
-          </Container>
-        </ScrollReveal>
+      <section className="depth-ambient section-seam py-6 sm:py-8">
+        <Container>
+          <p className="mx-auto max-w-xl text-center text-sm leading-relaxed text-slate-400">
+            10 premium ekranın tamamı{" "}
+            <Link href="/indir#play-vitrin" className="font-semibold text-cyan-300 underline-offset-2 hover:text-cyan-200 hover:underline">
+              indirme vitrininde
+            </Link>{" "}
+            de görüntülenebilir.
+          </p>
+        </Container>
       </section>
 
       <SectionMidCta />
