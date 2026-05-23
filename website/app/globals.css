@@ -210,7 +210,72 @@ a {
     animation-delay: inherit;
   }
 
+  @keyframes trust-vitrin-in {
+    from {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes trust-vitrin-out {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.992);
+    }
+  }
+
+  @keyframes trust-lightbox-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  @keyframes trust-lightbox-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .trust-vitrin-in {
+    animation: trust-vitrin-in 400ms cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+  }
+
+  .trust-vitrin-out {
+    animation: trust-vitrin-out 400ms cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+  }
+
+  .trust-lightbox-panel-in {
+    animation: trust-lightbox-in 380ms cubic-bezier(0.22, 0.9, 0.32, 1) forwards;
+  }
+
+  .trust-lightbox-backdrop-in {
+    animation: trust-lightbox-backdrop-in 320ms ease-out forwards;
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .trust-vitrin-in,
+    .trust-vitrin-out,
+    .trust-lightbox-panel-in,
+    .trust-lightbox-backdrop-in {
+      animation: none;
+    }
+
     .home-four-steps-track .home-step-icon {
       animation: none;
     }
