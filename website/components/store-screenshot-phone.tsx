@@ -66,7 +66,7 @@ function StoreScreenshotPhoneInner({
               width={2048}
               height={2732}
               className={`h-full w-full ${imgFit}`}
-              sizes="(max-width: 768px) 88vw, 360px"
+              sizes="(max-width: 768px) 94vw, 360px"
               onError={onError}
               unoptimized
             />

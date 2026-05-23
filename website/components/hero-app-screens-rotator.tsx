@@ -3,6 +3,7 @@
 import Image from "next/image";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import { DEFAULT_APP_SCREENSHOT_SLIDES } from "@/lib/app-screenshot-slides";
 
 const ROTATE_MS = 16_500;
@@ -27,6 +28,7 @@ export function HeroAppScreensRotator({
   pointerBoundaryRef,
 }: HeroAppScreensRotatorProps) {
   const [active, setActive] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const reduceMotionRef = useRef(false);
   const phoneHoverRef = useRef(false);
   /** Kolon içinde aktif pointer (mousemove sonrası). */
@@ -221,25 +223,33 @@ export function HeroAppScreensRotator({
         }}
         onMouseMove={boundaryMode ? undefined : onPhoneMouseMove}
       >
-        <div className="relative overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070d14] shadow-[0_22px_70px_-14px_rgba(0,0,0,0.52)] ring-1 ring-white/[0.06]">
+        <button
+          type="button"
+          onClick={() => setLightboxOpen(true)}
+          className="group relative w-full cursor-zoom-in overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070d14] text-left shadow-[0_22px_70px_-14px_rgba(0,0,0,0.52)] ring-1 ring-white/[0.06] transition duration-300 hover:border-cyan-400/22 hover:shadow-[0_26px_72px_-16px_rgba(0,114,255,0.28)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60"
+          aria-label={`${DEFAULT_APP_SCREENSHOT_SLIDES[active]?.alt ?? "Uygulama ekranı"} — büyüt`}
+        >
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.04)_0%,transparent_45%)]" aria-hidden />
           <div className="relative aspect-[2048/2732] w-full bg-gradient-to-b from-[#070d18] via-[#0a1628]/90 to-[#050a14]">
-              {DEFAULT_APP_SCREENSHOT_SLIDES.map((slide, index) => (
-                <Image
-                  key={slide.src}
-                  src={slide.src}
-                  alt={slide.alt}
-                  width={2048}
-                  height={2732}
-                  className={`absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-[1100ms] ease-[cubic-bezier(0.25,0.8,0.25,1)] ${
-                    index === active ? "z-[1] opacity-100" : "z-0 opacity-0"
-                  }`}
-                  sizes="(max-width: 768px) 92vw, 420px"
-                  unoptimized
-                  priority={index === 0}
-                />
-              ))}
+            {DEFAULT_APP_SCREENSHOT_SLIDES.map((slide, index) => (
+              <Image
+                key={slide.src}
+                src={slide.src}
+                alt={slide.alt}
+                width={2048}
+                height={2732}
+                className={`absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-[1100ms] ease-[cubic-bezier(0.25,0.8,0.25,1)] ${
+                  index === active ? "z-[1] opacity-100" : "z-0 opacity-0"
+                }`}
+                sizes="(max-width: 768px) 94vw, 420px"
+                unoptimized
+                priority={index === 0}
+              />
+            ))}
           </div>
+          <span className="pointer-events-none absolute inset-x-0 bottom-8 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-3 pb-2 pt-8 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/90 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
+            Büyütmek için tıkla
+          </span>
           <div className="mx-auto mt-2 flex max-w-[9rem] justify-center gap-1.5 pb-2" aria-hidden>
             {DEFAULT_APP_SCREENSHOT_SLIDES.map((slide, i) => (
               <span
@@ -248,8 +258,17 @@ export function HeroAppScreensRotator({
               />
             ))}
           </div>
-        </div>
+        </button>
       </div>
+
+      <ScreenshotLightbox
+        open={lightboxOpen}
+        slides={DEFAULT_APP_SCREENSHOT_SLIDES}
+        activeIndex={active}
+        onClose={() => setLightboxOpen(false)}
+        onSelectIndex={setActive}
+        titlePrefix="Uygulama vitrin"
+      />
     </div>
   );
 }

@@ -148,7 +148,7 @@ function VitrinSlideImage({
       width={imgW}
       height={imgH}
       className={`absolute inset-0 h-full w-full object-contain object-center ${animClass}`}
-      sizes="(max-width: 1024px) 92vw, 560px"
+      sizes="(max-width: 640px) 98vw, (max-width: 1024px) 94vw, 560px"
       unoptimized
       priority={priority}
       loading={priority ? undefined : "lazy"}
@@ -213,11 +213,11 @@ export function TrustArchitectureShowcase() {
         hoverPausedRef.current = false;
       }}
     >
-      <div className="relative overflow-hidden rounded-2xl border border-white/[0.11] bg-gradient-to-br from-white/[0.05] via-white/[0.02] to-transparent p-3 shadow-[0_24px_64px_-36px_rgba(0,114,255,0.42)] ring-1 ring-cyan-400/10 backdrop-blur-md sm:p-4">
+      <div className="relative overflow-hidden rounded-2xl border border-white/[0.11] bg-gradient-to-br from-white/[0.05] via-white/[0.02] to-transparent p-2 shadow-[0_24px_64px_-36px_rgba(0,114,255,0.42)] ring-1 ring-cyan-400/10 backdrop-blur-md sm:p-4">
         <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(34,211,238,0.07),transparent_62%)]" aria-hidden />
 
-        <div className="relative mb-3 flex flex-wrap items-center justify-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/22 bg-emerald-500/[0.08] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-100/90">
+        <div className="relative mb-2.5 flex flex-wrap items-center justify-center gap-1.5 sm:mb-3">
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/22 bg-emerald-500/[0.08] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-100/90 sm:text-[9px] sm:tracking-[0.16em]">
             <span className="h-1 w-1 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.65)]" aria-hidden />
             Canlı güven akışı
           </span>
@@ -226,53 +226,53 @@ export function TrustArchitectureShowcase() {
           </span>
         </div>
 
-        <p className="relative mb-2 text-center text-[10px] font-black uppercase tracking-[0.24em] text-cyan-200/75">
+        <p className="relative mb-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200/80 sm:tracking-[0.24em]">
           App Store · iPad vitrin
         </p>
 
         <button
           type="button"
           onClick={openLightbox}
-          className="group relative mx-auto block w-full max-w-[min(100%,36rem)] cursor-zoom-in overflow-hidden rounded-xl border border-white/[0.11] bg-[#070d14] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_16px_48px_-28px_rgba(0,114,255,0.35)] transition duration-300 ease-out hover:border-cyan-400/28 hover:shadow-[0_20px_56px_-26px_rgba(34,211,238,0.28)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60 lg:max-w-none"
+          className="group relative mx-auto block w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/[0.11] bg-[#070d14] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_16px_48px_-28px_rgba(0,114,255,0.35)] transition duration-300 ease-out hover:border-cyan-400/28 hover:shadow-[0_20px_56px_-26px_rgba(34,211,238,0.28)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60"
           aria-label={`${activeSlide.alt} — büyüt`}
         >
-          <div className="relative aspect-[2752/2064] w-full">
+          <div className="relative aspect-[2752/2064] w-full min-h-[11.5rem] sm:min-h-0">
             {outgoingIndex !== null ? (
               <VitrinSlideImage slide={slides[outgoingIndex]!} phase="out" />
             ) : null}
             <VitrinSlideImage slide={activeSlide} phase={outgoingIndex !== null ? "in" : "static"} priority={activeIndex === 0} />
           </div>
-          <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-3 pb-3 pt-10 text-left text-[11px] font-semibold text-white/95 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-3 pb-3 pt-10 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-white/95 opacity-100 transition-opacity duration-300 sm:text-[11px] sm:normal-case sm:tracking-normal sm:opacity-0 sm:group-hover:opacity-100">
             Büyütmek için tıkla
           </span>
         </button>
 
-        <p className="relative mt-3 text-center text-[11px] font-medium leading-relaxed text-slate-300/90 sm:text-xs">
-          {activeSlide.caption}
-        </p>
+        <div className="relative mt-3 flex flex-col items-center gap-2.5 px-1 sm:mt-3.5 sm:gap-3">
+          <p className="max-w-[22rem] text-center text-xs font-semibold leading-snug text-slate-100/95 sm:max-w-[26rem] sm:text-[13px] sm:leading-relaxed sm:text-slate-200/95">
+            {activeSlide.caption}
+          </p>
 
-        <div className="relative mt-3 flex flex-wrap items-center justify-center gap-1.5">
-          {slides.map((s, index) => (
-            <button
-              key={s.src}
-              type="button"
-              onClick={() => setSlideIndex(index)}
-              className={`rounded-full transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)] ${
-                index === activeIndex
-                  ? "h-1.5 w-5 bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.42)]"
-                  : "h-1.5 w-1.5 bg-white/22 hover:bg-white/42"
-              }`}
-              aria-label={`Ekran ${index + 1}${index === activeIndex ? " (aktif)" : ""}`}
-              aria-current={index === activeIndex ? true : undefined}
-            />
-          ))}
-        </div>
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
+            {slides.map((s, index) => (
+              <button
+                key={s.src}
+                type="button"
+                onClick={() => setSlideIndex(index)}
+                className={`rounded-full transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)] ${
+                  index === activeIndex
+                    ? "h-2 w-6 bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.42)]"
+                    : "h-2 w-2 bg-white/28 hover:bg-white/45"
+                }`}
+                aria-label={`Ekran ${index + 1}${index === activeIndex ? " (aktif)" : ""}`}
+                aria-current={index === activeIndex ? true : undefined}
+              />
+            ))}
+          </div>
 
-        <p className="relative mt-2.5 text-center">
-          <span className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          <span className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400 sm:tracking-[0.14em]">
             10 ekran · otomatik vitrin
           </span>
-        </p>
+        </div>
       </div>
     </div>
   );
@@ -335,6 +335,7 @@ export function TrustArchitectureShowcase() {
         activeIndex={activeIndex}
         onClose={closeLightbox}
         onSelectIndex={setSlideIndex}
+        titlePrefix="App Store · iPad vitrin"
       />
     </>
   );
