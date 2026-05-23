@@ -42,3 +42,21 @@ export const STORE_SCREENSHOTS = {
   sehirIciB: STORE_ALL_APP_SCREENSHOTS[7],
   downloadFlow: STORE_ALL_APP_SCREENSHOTS[9],
 } as const;
+
+/** Yatay iPad App Store vitrin — yalnızca güven mimarisi showcase bölümü. */
+export const IPAD_SHOWCASE_SCREENSHOTS = [
+  "/store/ipad-showcase/yolcu.ipad1.png",
+  "/store/ipad-showcase/yolcu.ipad2.png",
+  "/store/ipad-showcase/yolcu.ipad3.png",
+  "/store/ipad-showcase/yolcu.ipad4.png",
+  "/store/ipad-showcase/yolcu.ipad5.png",
+  "/store/ipad-showcase/surucu.ipad1.png",
+  "/store/ipad-showcase/surucu.ipad2.png",
+  "/store/ipad-showcase/surucu.ipad3.png",
+  "/store/ipad-showcase/surucu.ipad4.png",
+  "/store/ipad-showcase/surucu.ipad5.png",
+] as const;
+
+/** iPad yatay export boyutu (2752×2064). */
+export const IPAD_SHOWCASE_IMAGE_WIDTH = 2752;
+export const IPAD_SHOWCASE_IMAGE_HEIGHT = 2064;

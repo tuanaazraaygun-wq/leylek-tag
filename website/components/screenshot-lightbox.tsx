@@ -54,6 +54,10 @@ export function ScreenshotLightbox({
 
   if (!open || !slide) return null;
 
+  const imgW = slide.imageWidth ?? 2048;
+  const imgH = slide.imageHeight ?? 2732;
+  const isLandscape = imgW > imgH;
+
   return (
     <div className="fixed inset-0 z-[92] flex items-center justify-center p-4 sm:p-6" role="presentation">
       <button
@@ -66,7 +70,9 @@ export function ScreenshotLightbox({
         role="dialog"
         aria-modal="true"
         aria-labelledby="screenshot-lightbox-title"
-        className="relative z-[1] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/95 shadow-[0_32px_90px_-24px_rgba(0,114,255,0.45)] ring-1 ring-cyan-400/15"
+        className={`relative z-[1] flex w-full flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/95 shadow-[0_32px_90px_-24px_rgba(0,114,255,0.45)] ring-1 ring-cyan-400/15 ${
+          isLandscape ? "max-w-4xl" : "max-w-lg"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-4 py-3 sm:px-5">
@@ -86,15 +92,18 @@ export function ScreenshotLightbox({
           </button>
         </div>
 
-        <div className="relative aspect-[2048/2732] max-h-[min(68vh,640px)] w-full bg-gradient-to-b from-[#070d18] to-[#050a14]">
+        <div
+          className="relative w-full bg-gradient-to-b from-[#070d18] to-[#050a14]"
+          style={{ aspectRatio: `${imgW} / ${imgH}`, maxHeight: isLandscape ? "min(72vh, 520px)" : "min(68vh, 640px)" }}
+        >
           <Image
             key={slide.src}
             src={slide.src}
             alt={slide.alt}
-            width={2048}
-            height={2732}
+            width={imgW}
+            height={imgH}
             className="h-full w-full object-contain object-center"
-            sizes="(max-width: 768px) 92vw, 480px"
+            sizes={isLandscape ? "(max-width: 768px) 92vw, 896px" : "(max-width: 768px) 92vw, 480px"}
             unoptimized
             priority
           />
