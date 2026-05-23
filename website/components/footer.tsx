@@ -16,6 +16,7 @@ const productLinks = [
 ] as const;
 
 const legalLinks = [
+  { href: "/support", label: "Destek" },
   { href: "/gizlilik-politikasi", label: "Gizlilik Politikası" },
   { href: "/kullanim-sartlari", label: "Kullanım Şartları" },
   { href: "/kvkk", label: "KVKK" },
