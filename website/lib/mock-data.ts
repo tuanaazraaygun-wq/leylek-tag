@@ -16,6 +16,7 @@ export type IntercityListing = {
   note: string;
 };
 
+/** @deprecated Homepage feed uses `@/lib/home-operations-feed` — kept for legacy imports. */
 export const activityFeed: ActivityItem[] = [
   {
     id: "ankara-eskisehir",

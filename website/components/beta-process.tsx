@@ -4,7 +4,7 @@ const steps = [
     description: "Pilot kullanımda şehir içi ve Leylek Teklifi akışlarını birlikte iyileştiriyoruz.",
   },
   {
-    title: "İlk kullanıcılarla çalışan beta",
+    title: "Pilot toplulukla doğrulanan akış",
     description: "Erken erişim topluluğu ile güvenli eşleşme ve yolculuk paylaşımı deneyimini ölçüyoruz.",
   },
   {
@@ -12,7 +12,7 @@ const steps = [
     description: "Kullanıcı deneyimini gerçek ihtiyaçlara göre sadeleştirip güçlendiriyoruz.",
   },
   {
-    title: "Süreçte daha fazla şehir",
+    title: "Genişleyen şehir kapsamı",
     description: "Topluluk büyüdükçe aynı yöne gidenleri daha fazla şehirde buluşturmayı hedefliyoruz.",
   },
 ];

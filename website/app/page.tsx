@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
+import { HomeCommunicationTrust } from "@/components/home-communication-trust";
 import { AudienceSection } from "@/components/audience-section";
 import { BetaCta } from "@/components/beta-cta";
 import { BetaProcess } from "@/components/beta-process";
@@ -160,9 +161,19 @@ export default function Home() {
       <section className="depth-glass section-seam py-11 sm:py-14 md:py-[4.75rem]">
         <ScrollReveal staggerDelayMs={182}>
           <Container>
-            <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.8fr_1fr]">
-              <ActivityFeed />
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-2 lg:gap-8">
+            <div className="mb-8 md:mb-10">
+              <SectionHeading
+                eyebrow="platform akışı"
+                title="Canlı şehir içi hareket ve aktif rota akışı"
+                description="Pilot şehirlerde teklif, eşleşme, QR doğrulama ve rota uyumu olayları platform üzerinde izlenebilir."
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.92fr_1fr]">
+              <div className="space-y-4">
+                <ActivityFeed variant="home" />
+                <HomeCommunicationTrust />
+              </div>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-1 lg:gap-5">
                 {experiences.map((experience) => (
                   <ModeCard key={experience.title} {...experience} />
                 ))}
@@ -208,9 +219,9 @@ export default function Home() {
           <Container>
             <div className="mb-8 md:mb-10">
               <SectionHeading
-                eyebrow="beta süreci"
-                title="Önce kontrollü beta, sonra daha geniş topluluk."
-                description="Leylek TAG’i ilk kullanıcılarla birlikte geliştiriyoruz. Geri bildirimler, şehirler ve kullanım senaryoları ürün yönünü belirliyor."
+                eyebrow="platform büyümesi"
+                title="Pilot şehirlerden genişleyen kontrollü platform."
+                description="Leylek TAG şehir içi ve teklif akışlarını pilot toplulukla doğruluyor. Geri bildirimler, şehir kapsamı ve kullanım senaryoları ürün yol haritasını şekillendiriyor."
               />
             </div>
             <BetaProcess />

@@ -5,11 +5,11 @@ export function SocialProofPlaceholder() {
       <div className="relative mx-auto max-w-2xl">
         <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">topluluk sesi</p>
         <h2 className="mt-4 text-3xl font-black leading-tight tracking-[-0.025em] text-white">
-          Gerçek kullanıcı yorumları bu alanda süreçte yer alacak.
+          Gerçek topluluk deneyimleri dürüst şekilde paylaşılıyor.
         </h2>
         <p className="mt-4 text-sm leading-7 text-slate-300">
-          Çalışan deneyimleri paylaşılmadan önce sahte yorum kullanmıyoruz. İlk geri bildirimler geldikçe burayı
-          güncelleyeceğiz.
+          Sahte yorum kullanmıyoruz. App Store geri bildirimleri ve pilot kullanıcı deneyimleri doğrulandıkça bu alan
+          güncellenir.
         </p>
       </div>
     </div>
