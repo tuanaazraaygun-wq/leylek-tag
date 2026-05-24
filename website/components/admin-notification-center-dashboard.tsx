@@ -6,7 +6,12 @@ import type { Session } from "@supabase/supabase-js";
 
 import {
   audienceLabel,
+  BULK_PUSH_CONFIRM_PHRASE,
+  isActivePushAudience,
   isBulkNotificationAudience,
+  isBulkPushAudience,
+  isKycDisabledAudience,
+  isValidNotificationUserId,
   NOTIFICATION_AUDIENCE_LABELS,
   NOTIFICATION_AUDIENCES,
   NOTIFICATION_BODY_MAX,
@@ -14,6 +19,7 @@ import {
   type NotificationAudience,
   type NotificationChannel,
   type NotificationDraft,
+  type NotificationSendResult,
 } from "@/lib/admin-notification-draft-types";
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
@@ -62,7 +68,7 @@ function newDraftId(): string {
   return `draft-${Date.now()}`;
 }
 
-function PreviewPhoneCard({ title, body }: { title: string; body: string }) {
+function PreviewPhoneCard({ title, body, live }: { title: string; body: string; live?: boolean }) {
   const displayTitle = title.trim() || "Bildirim başlığı";
   const displayBody = body.trim() || "Mesaj önizlemesi burada görünür.";
 
@@ -73,7 +79,7 @@ function PreviewPhoneCard({ title, body }: { title: string; body: string }) {
           <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-500">Leylek TAG</p>
           <p className="mt-2 text-[13px] font-bold leading-snug text-white">{displayTitle}</p>
           <p className="mt-1.5 whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">{displayBody}</p>
-          <p className="mt-3 text-[9px] text-slate-600">Şimdi · Push (taslak)</p>
+          <p className="mt-3 text-[9px] text-slate-600">Şimdi · Push{live ? "" : " (önizleme)"}</p>
         </div>
       </div>
     </div>
@@ -173,6 +179,138 @@ function DraftConfirmModal({
   );
 }
 
+type PushSendConfirmModalProps = {
+  open: boolean;
+  audience: NotificationAudience;
+  userId: string;
+  title: string;
+  body: string;
+  kvkkAck: boolean;
+  confirmPhrase: string;
+  loading: boolean;
+  onKvkkChange: (v: boolean) => void;
+  onConfirmPhraseChange: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+};
+
+function PushSendConfirmModal({
+  open,
+  audience,
+  userId,
+  title,
+  body,
+  kvkkAck,
+  confirmPhrase,
+  loading,
+  onKvkkChange,
+  onConfirmPhraseChange,
+  onCancel,
+  onConfirm,
+}: PushSendConfirmModalProps) {
+  if (!open) return null;
+
+  const bulk = isBulkPushAudience(audience);
+  const confirmOk = !bulk || confirmPhrase.trim() === BULK_PUSH_CONFIRM_PHRASE;
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="push-send-confirm-title"
+      onClick={loading ? undefined : onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-white/[0.1] bg-slate-950 p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="push-send-confirm-title" className="text-sm font-bold text-white">
+          {bulk ? "Toplu push gönderimi" : "Gerçek push gönderimi"}
+        </h2>
+        <p className="mt-2 text-xs leading-relaxed text-rose-200/90">
+          {bulk
+            ? "Bu işlem seçili segmentteki kullanıcılara gerçek push bildirimi gönderir. Geri alınamaz."
+            : "Bu işlem seçili kullanıcının cihazına gerçek bir push bildirimi gönderir. Geri alınamaz."}
+        </p>
+        {audience === "all_users" ? (
+          <p className="mt-2 rounded-lg border border-rose-500/35 bg-rose-500/[0.1] px-3 py-2 text-[11px] font-semibold text-rose-100">
+            Bu bildirim tüm kayıtlı kullanıcılara gönderilir.
+          </p>
+        ) : null}
+        <dl className="mt-4 space-y-2 rounded-xl border border-white/[0.08] bg-black/35 px-3 py-2.5 text-[11px]">
+          <div>
+            <dt className="font-semibold text-slate-500">Hedef</dt>
+            <dd className="mt-0.5 text-slate-200">{audienceLabel(audience)}</dd>
+          </div>
+          {!bulk && userId.trim() ? (
+            <div>
+              <dt className="font-semibold text-slate-500">Kullanıcı ID</dt>
+              <dd className="mt-0.5 break-all font-mono text-slate-200">{userId.trim()}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt className="font-semibold text-slate-500">Başlık</dt>
+            <dd className="mt-0.5 text-slate-200">{title.trim()}</dd>
+          </div>
+          <div>
+            <dt className="font-semibold text-slate-500">Mesaj</dt>
+            <dd className="mt-0.5 whitespace-pre-wrap text-slate-300">{body.trim()}</dd>
+          </div>
+        </dl>
+        {bulk ? (
+          <div className="mt-4">
+            <label htmlFor="bulk-confirm-phrase" className="text-[10px] font-semibold text-slate-500">
+              Devam etmek için GÖNDER yazın
+            </label>
+            <input
+              id="bulk-confirm-phrase"
+              type="text"
+              value={confirmPhrase}
+              disabled={loading}
+              onChange={(e) => onConfirmPhraseChange(e.target.value)}
+              placeholder="GÖNDER"
+              autoComplete="off"
+              className="mt-1.5 w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-rose-400/35 disabled:opacity-50"
+            />
+          </div>
+        ) : null}
+        <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-[11px] leading-relaxed text-slate-400">
+          <input
+            type="checkbox"
+            checked={kvkkAck}
+            disabled={loading}
+            onChange={(e) => onKvkkChange(e.target.checked)}
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-black/40 accent-cyan-400"
+          />
+          <span>
+            Mesajın mevzuata uygun olduğunu, gereksiz kişisel veri içermediğini ve yalnızca yetkili admin
+            tarafından kullanılacağını onaylıyorum.
+          </span>
+        </label>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onCancel}
+            className="min-h-[40px] rounded-xl border border-white/[0.12] px-4 py-2 text-xs font-bold text-slate-300 hover:border-white/20 disabled:opacity-50"
+          >
+            İptal
+          </button>
+          <button
+            type="button"
+            disabled={!kvkkAck || !confirmOk || loading}
+            onClick={onConfirm}
+            className="min-h-[40px] rounded-xl bg-emerald-500/20 px-4 py-2 text-xs font-bold text-emerald-100 ring-1 ring-emerald-400/35 disabled:pointer-events-none disabled:opacity-45"
+          >
+            {loading ? "Gönderiliyor…" : bulk ? "Toplu push gönder" : "Gerçek push gönder"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AdminNotificationCenterDashboard() {
   const configured = useMemo(() => isSupabaseConfigured(), []);
   const client = configured ? getSupabaseBrowserClient() : null;
@@ -185,7 +323,7 @@ export function AdminNotificationCenterDashboard() {
   const [otpSent, setOtpSent] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [audience, setAudience] = useState<NotificationAudience>("all_users");
+  const [audience, setAudience] = useState<NotificationAudience>("specific_user");
   const [channel] = useState<NotificationChannel>("push");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -194,7 +332,20 @@ export function AdminNotificationCenterDashboard() {
   const [drafts, setDrafts] = useState<NotificationDraft[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmKvkk, setConfirmKvkk] = useState(false);
+  const [pushConfirmOpen, setPushConfirmOpen] = useState(false);
+  const [pushKvkk, setPushKvkk] = useState(false);
+  const [pushConfirmPhrase, setPushConfirmPhrase] = useState("");
+  const [sendLoading, setSendLoading] = useState(false);
+  const [sendResult, setSendResult] = useState<{
+    tone: "success" | "error";
+    message: string;
+    sent_count?: number;
+    total_users?: number;
+    users_with_token?: number;
+  } | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
+
+  const canSendRealPush = isActivePushAudience(audience);
 
   useEffect(() => {
     if (!client) return undefined;
@@ -215,6 +366,12 @@ export function AdminNotificationCenterDashboard() {
     const id = window.setTimeout(() => setDraftSuccess(null), 6000);
     return () => window.clearTimeout(id);
   }, [draftSuccess]);
+
+  useEffect(() => {
+    if (!sendResult) return undefined;
+    const id = window.setTimeout(() => setSendResult(null), 8000);
+    return () => window.clearTimeout(id);
+  }, [sendResult]);
 
   const signOut = useCallback(async () => {
     if (!client) return;
@@ -266,22 +423,42 @@ export function AdminNotificationCenterDashboard() {
     [client],
   );
 
-  const validateForm = useCallback((): string | null => {
+  const validateFormForDraft = useCallback((): string | null => {
     const t = title.trim();
     const b = body.trim();
     if (!t) return "Bildirim başlığı gerekli.";
     if (t.length > NOTIFICATION_TITLE_MAX) return `Başlık en fazla ${NOTIFICATION_TITLE_MAX} karakter olabilir.`;
     if (!b) return "Bildirim mesajı gerekli.";
     if (b.length > NOTIFICATION_BODY_MAX) return `Mesaj en fazla ${NOTIFICATION_BODY_MAX} karakter olabilir.`;
-    if (audience === "specific_user" && !specificTarget.trim()) {
-      return "Belirli kullanıcı hedefi için telefon, e-posta veya kullanıcı kimliği girin.";
+    if (audience === "specific_user" && specificTarget.trim() && !isValidNotificationUserId(specificTarget)) {
+      return "Taslak için UUID opsiyonel; girildiyse geçerli olmalı.";
+    }
+    return null;
+  }, [audience, body, specificTarget, title]);
+
+  const validateFormForPush = useCallback((): string | null => {
+    const t = title.trim();
+    const b = body.trim();
+    if (!t) return "Bildirim başlığı gerekli.";
+    if (t.length > NOTIFICATION_TITLE_MAX) return `Başlık en fazla ${NOTIFICATION_TITLE_MAX} karakter olabilir.`;
+    if (!b) return "Bildirim mesajı gerekli.";
+    if (b.length > NOTIFICATION_BODY_MAX) return `Mesaj en fazla ${NOTIFICATION_BODY_MAX} karakter olabilir.`;
+    if (isKycDisabledAudience(audience)) {
+      return "KYC segmentleri Faz 2'de açılacak.";
+    }
+    if (!isActivePushAudience(audience)) {
+      return "Geçersiz hedef kitle.";
+    }
+    if (audience === "specific_user") {
+      if (!specificTarget.trim()) return "Kullanıcı UUID gerekir.";
+      if (!isValidNotificationUserId(specificTarget)) return "Geçerli bir kullanıcı UUID girin.";
     }
     return null;
   }, [audience, body, specificTarget, title]);
 
   const saveDraft = useCallback(() => {
     if (!session?.user.email) return;
-    const err = validateForm();
+    const err = validateFormForDraft();
     if (err) {
       setFieldError(err);
       return;
@@ -300,13 +477,13 @@ export function AdminNotificationCenterDashboard() {
     };
 
     setDrafts((prev) => [draft, ...prev].slice(0, 20));
-    setDraftSuccess("Taslak kaydedildi. Gerçek gönderim henüz aktif değil.");
+    setDraftSuccess("Taslak kaydedildi (yerel). Gerçek gönderim yapılmadı.");
     setConfirmOpen(false);
     setConfirmKvkk(false);
-  }, [audience, body, channel, session, specificTarget, title, validateForm]);
+  }, [audience, body, channel, session, specificTarget, title, validateFormForDraft]);
 
   const handleDraftClick = useCallback(() => {
-    const err = validateForm();
+    const err = validateFormForDraft();
     if (err) {
       setFieldError(err);
       return;
@@ -314,7 +491,97 @@ export function AdminNotificationCenterDashboard() {
     setFieldError(null);
     setConfirmKvkk(false);
     setConfirmOpen(true);
-  }, [validateForm]);
+  }, [validateFormForDraft]);
+
+  const handlePushSendClick = useCallback(() => {
+    const err = validateFormForPush();
+    if (err) {
+      setFieldError(err);
+      return;
+    }
+    setFieldError(null);
+    setPushKvkk(false);
+    setPushConfirmPhrase("");
+    setPushConfirmOpen(true);
+  }, [validateFormForPush]);
+
+  const executePushSend = useCallback(async () => {
+    if (!session?.access_token) return;
+    const err = validateFormForPush();
+    if (err) {
+      setFieldError(err);
+      return;
+    }
+    const bulk = isBulkPushAudience(audience);
+    if (bulk && pushConfirmPhrase.trim() !== BULK_PUSH_CONFIRM_PHRASE) {
+      setFieldError('Toplu gönderim için "GÖNDER" yazmalısınız.');
+      return;
+    }
+    setSendLoading(true);
+    setFieldError(null);
+    try {
+      const requestBody: Record<string, string> = {
+        audience,
+        title: title.trim(),
+        body: body.trim(),
+      };
+      if (audience === "specific_user") {
+        requestBody.user_id = specificTarget.trim().toLowerCase();
+      } else {
+        requestBody.confirm_phrase = BULK_PUSH_CONFIRM_PHRASE;
+      }
+
+      const res = await fetch("/api/admin/notifications/send", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const data = (await res.json()) as NotificationSendResult & { message?: string; error?: string };
+      if (!res.ok) {
+        const msg =
+          data.message ??
+          (data.error === "rate_limited"
+            ? "Çok sık deneme. Lütfen bir dakika bekleyin."
+            : data.error === "rate_limited_bulk"
+              ? "Toplu gönderim sınırı: 5 dakikada en fazla 1 deneme."
+              : data.error === "faz_2_disabled"
+                ? "KYC segmentleri Faz 2'de açılacak."
+                : data.error === "bulk_confirm_required"
+                  ? 'Toplu gönderim için "GÖNDER" onayı gerekir.'
+                  : data.error === "forbidden"
+                    ? "Bu hesap bildirim göndermeye yetkili değil."
+                    : data.error === "server_misconfigured"
+                      ? "Sunucu yapılandırması eksik."
+                      : "Bildirim gönderilemedi.");
+        setSendResult({ tone: "error", message: msg });
+        return;
+      }
+      const sentCount = typeof data.sent_count === "number" ? data.sent_count : 0;
+      const totalUsers = typeof data.total_users === "number" ? data.total_users : undefined;
+      const usersWithToken =
+        typeof data.users_with_token === "number" ? data.users_with_token : undefined;
+      const msg = data.message ?? (sentCount > 0 ? "Bildirim gönderildi." : "Bildirim iletilemedi.");
+      const isSuccess = bulk ? sentCount > 0 : sentCount === 1;
+      setSendResult({
+        tone: isSuccess ? "success" : "error",
+        message: msg,
+        sent_count: sentCount,
+        total_users: totalUsers,
+        users_with_token: usersWithToken,
+      });
+      setPushConfirmOpen(false);
+      setPushKvkk(false);
+      setPushConfirmPhrase("");
+    } catch {
+      setSendResult({ tone: "error", message: "Bildirim gönderilemedi." });
+    } finally {
+      setSendLoading(false);
+    }
+  }, [session, audience, specificTarget, title, body, pushConfirmPhrase, validateFormForPush]);
 
   if (!configured || !client) {
     return (
@@ -416,7 +683,7 @@ export function AdminNotificationCenterDashboard() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/78">Admin · Bildirim</p>
           <h1 className="mt-1.5 text-xl font-black text-white">Bildirim Merkezi</h1>
           <p className="mt-1.5 max-w-2xl text-xs text-slate-400">
-            Taslak bildirim oluşturun. Gerçek gönderim backend entegrasyonu sonrası aktif olacak.
+            Faz 1B: belirli kullanıcı ve toplu push (tüm kullanıcılar, sürücüler, yolcular). KYC segmentleri Faz 2.
           </p>
           <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
@@ -444,12 +711,50 @@ export function AdminNotificationCenterDashboard() {
       </header>
 
       <div
-        className="mt-5 rounded-xl border border-amber-400/25 bg-amber-500/[0.07] px-4 py-3 text-[11px] leading-relaxed text-amber-100/95"
+        className="mt-5 rounded-xl border border-cyan-400/25 bg-cyan-500/[0.07] px-4 py-3 text-[11px] leading-relaxed text-cyan-100/95"
         role="status"
       >
-        <strong className="font-bold">Taslak modu.</strong> Gerçek gönderim backend entegrasyonu sonrası aktif
-        olacak. Bu aşamada hiçbir kullanıcıya push, SMS veya WhatsApp iletilmez.
+        <strong className="font-bold">Faz 1B.</strong> Gerçek push: belirli kullanıcı (UUID) veya toplu hedefler
+        (tüm kullanıcılar, sürücüler, yolcular). Toplu gönderimde &quot;GÖNDER&quot; onayı zorunlu. KYC segmentleri
+        Faz 2. SMS/WhatsApp yok.
       </div>
+
+      {sendResult ? (
+        <div
+          className={`mt-4 rounded-xl border px-3 py-2.5 text-xs ${
+            sendResult.tone === "success"
+              ? "border-emerald-400/25 bg-emerald-500/[0.08] text-emerald-100"
+              : "border-rose-400/25 bg-rose-500/[0.08] text-rose-100"
+          }`}
+          role="status"
+        >
+          <p>{sendResult.message}</p>
+          {(sendResult.sent_count !== undefined ||
+            sendResult.total_users !== undefined ||
+            sendResult.users_with_token !== undefined) && (
+            <dl className="mt-2 grid grid-cols-3 gap-2 border-t border-white/[0.08] pt-2 text-[10px]">
+              {sendResult.sent_count !== undefined ? (
+                <div>
+                  <dt className="text-slate-400">İletilen</dt>
+                  <dd className="font-bold">{sendResult.sent_count}</dd>
+                </div>
+              ) : null}
+              {sendResult.users_with_token !== undefined ? (
+                <div>
+                  <dt className="text-slate-400">Token&apos;lı</dt>
+                  <dd className="font-bold">{sendResult.users_with_token}</dd>
+                </div>
+              ) : null}
+              {sendResult.total_users !== undefined ? (
+                <div>
+                  <dt className="text-slate-400">Toplam hedef</dt>
+                  <dd className="font-bold">{sendResult.total_users}</dd>
+                </div>
+              ) : null}
+            </dl>
+          )}
+        </div>
+      ) : null}
 
       {draftSuccess ? (
         <p
@@ -498,34 +803,60 @@ export function AdminNotificationCenterDashboard() {
           <section className="rounded-xl border border-white/[0.08] bg-slate-950/90 p-4 ring-1 ring-white/[0.03]">
             <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Hedef kitle</h2>
             <fieldset className="mt-3 space-y-2">
-              {NOTIFICATION_AUDIENCES.map((id) => (
-                <label
-                  key={id}
-                  className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5 text-[11px] text-slate-300 transition hover:border-white/[0.12]"
-                >
-                  <input
-                    type="radio"
-                    name="audience"
-                    value={id}
-                    checked={audience === id}
-                    onChange={() => setAudience(id)}
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-cyan-400"
-                  />
-                  <span>{NOTIFICATION_AUDIENCE_LABELS[id]}</span>
-                </label>
-              ))}
+              {NOTIFICATION_AUDIENCES.map((id) => {
+                const kycDisabled = isKycDisabledAudience(id);
+                return (
+                  <label
+                    key={id}
+                    className={`flex items-start gap-2.5 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5 text-[11px] text-slate-300 transition ${
+                      kycDisabled ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-white/[0.12]"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="audience"
+                      value={id}
+                      checked={audience === id}
+                      disabled={kycDisabled}
+                      onChange={() => setAudience(id)}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-cyan-400 disabled:cursor-not-allowed"
+                    />
+                    <span>
+                      {NOTIFICATION_AUDIENCE_LABELS[id]}
+                      {kycDisabled ? (
+                        <span className="mt-0.5 block text-[9px] text-slate-600">Faz 2&apos;de açılacak.</span>
+                      ) : isBulkPushAudience(id) ? (
+                        <span className="mt-0.5 block text-[9px] text-emerald-600/80">Toplu push aktif.</span>
+                      ) : null}
+                    </span>
+                  </label>
+                );
+              })}
             </fieldset>
             {audience === "specific_user" ? (
-              <input
-                type="text"
-                value={specificTarget}
-                onChange={(e) => setSpecificTarget(e.target.value)}
-                placeholder="Telefon, e-posta veya kullanıcı kimliği"
-                className="mt-3 w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/35"
-              />
+              <div className="mt-3">
+                <label htmlFor="notif-user-id" className="text-[10px] font-semibold text-slate-500">
+                  Kullanıcı ID
+                </label>
+                <input
+                  id="notif-user-id"
+                  type="text"
+                  value={specificTarget}
+                  onChange={(e) => setSpecificTarget(e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="mt-1.5 w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 font-mono text-sm text-white outline-none focus:border-cyan-400/35"
+                />
+                <p className="mt-1.5 text-[10px] text-slate-500">
+                  Güvenli gönderim için kullanıcı UUID gerekir. Telefon/e-posta arama Faz 1C.
+                </p>
+              </div>
             ) : null}
             <p className="mt-3 text-[10px] text-slate-500">
-              Tahmini hedef: entegrasyon sonrası hesaplanacak
+              {audience === "specific_user"
+                ? "Tek kullanıcı hedefi — FCM push (token kayıtlı olmalı)."
+                : isBulkPushAudience(audience)
+                  ? "Tahmini hedef sayısı gönderim sonrası raporlanır."
+                  : "Bu segment Faz 2'de açılacak."}
             </p>
           </section>
 
@@ -586,14 +917,25 @@ export function AdminNotificationCenterDashboard() {
             >
               Taslak oluştur
             </button>
-            <button
-              type="button"
-              disabled
-              title="Backend entegrasyonu tamamlanana kadar kapalı"
-              className="min-h-[44px] cursor-not-allowed rounded-xl border border-white/[0.08] bg-black/30 px-5 py-2.5 text-xs font-bold text-slate-600 opacity-70"
-            >
-              Gönder (devre dışı)
-            </button>
+            {canSendRealPush ? (
+              <button
+                type="button"
+                onClick={handlePushSendClick}
+                disabled={sendLoading}
+                className="min-h-[44px] rounded-xl bg-emerald-500/20 px-5 py-2.5 text-xs font-bold text-emerald-100 ring-1 ring-emerald-400/35 hover:bg-emerald-500/25 disabled:pointer-events-none disabled:opacity-55"
+              >
+                {isBulkPushAudience(audience) ? "Toplu push gönder" : "Gerçek push gönder"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="KYC segmentleri Faz 2'de açılacak."
+                className="min-h-[44px] cursor-not-allowed rounded-xl border border-white/[0.08] bg-black/30 px-5 py-2.5 text-xs font-bold text-slate-600 opacity-70"
+              >
+                Gönder — Faz 2
+              </button>
+            )}
           </div>
         </div>
 
@@ -602,7 +944,7 @@ export function AdminNotificationCenterDashboard() {
             <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Önizleme</h2>
             <p className="mt-1 text-[10px] text-slate-500">Push bildirimi cihazda kabaca böyle görünür.</p>
             <div className="mt-4">
-              <PreviewPhoneCard title={title} body={body} />
+              <PreviewPhoneCard title={title} body={body} live={canSendRealPush} />
             </div>
             <dl className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[10px]">
               <div className="flex justify-between gap-2">
@@ -653,8 +995,28 @@ export function AdminNotificationCenterDashboard() {
         onConfirm={saveDraft}
       />
 
+      <PushSendConfirmModal
+        open={pushConfirmOpen}
+        audience={audience}
+        userId={specificTarget}
+        title={title}
+        body={body}
+        kvkkAck={pushKvkk}
+        confirmPhrase={pushConfirmPhrase}
+        loading={sendLoading}
+        onKvkkChange={setPushKvkk}
+        onConfirmPhraseChange={setPushConfirmPhrase}
+        onCancel={() => {
+          if (sendLoading) return;
+          setPushConfirmOpen(false);
+          setPushKvkk(false);
+          setPushConfirmPhrase("");
+        }}
+        onConfirm={() => void executePushSend()}
+      />
+
       <p className="sr-only" aria-live="polite">
-        {draftSuccess ?? ""}
+        {draftSuccess ?? sendResult?.message ?? ""}
       </p>
     </section>
   );
