@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AdminDeskSidePanel } from "@/components/admin-desk-side-panel";
+import { AdminSupportCannedChips } from "@/components/admin-support-canned-chips";
+import { AdminSupportDutyStrip } from "@/components/admin-support-duty-strip";
 import { getAdminSupportMagicLinkRedirectTo } from "@/lib/site-origin";
 import {
   SUPPORT_ADMIN_TYPING_EVENT,
@@ -298,16 +301,6 @@ const ACCEPT_CONVERSATION_WELCOME_BODY = `Merhaba 👋
 LeylekTAG canlı destek ekibine hoş geldiniz.
 Görüşmeniz bir temsilciye aktarılmıştır.
 Size yardımcı olmaktan memnuniyet duyarız.`;
-
-const CANNED_REPLY_PRESETS = [
-  "Merhaba, size nasıl yardımcı olabilirim?",
-  "Talebinizi inceliyorum.",
-  "Kısa süre içinde dönüş sağlayacağım.",
-  "Sorununuz çözüldü mü?",
-  "İyi yolculuklar dileriz.",
-  "Belgelerinizi kontrol ediyoruz.",
-  "Teknik ekibe yönlendirildi.",
-] as const;
 
 function deskVisitorTypingLabel(row: SupportMessageRow): string {
   const first = row.name?.trim().split(/\s+/)[0];
@@ -1011,17 +1004,31 @@ function AdminSupportChatSection({
       >
         <form
           onSubmit={(ev) => void sendAdminMessage(ev)}
-          className={`space-y-2 rounded-xl border p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition sm:p-3.5 ${
+          className={`space-y-2 rounded-xl border p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition sm:p-3 ${
             canUseComposer
               ? "border-cyan-400/40 bg-slate-950/80 ring-2 ring-cyan-400/35 ring-offset-2 ring-offset-slate-950"
               : "border-white/[0.08] bg-slate-950/55 opacity-[0.92]"
           }`}
         >
+          {canUseComposer ? (
+            <div className="space-y-1">
+              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Hazır cevap</p>
+              <AdminSupportCannedChips
+                disabled={sending}
+                onSelect={(text) => {
+                  setDraft((prev) => {
+                    const p = prev.trim();
+                    return p ? `${p}\n${text}` : text;
+                  });
+                }}
+              />
+            </div>
+          ) : null}
           <label className="grid gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">
               Canlı yanıt
               {sendError ? (
-                <span className="ml-2 rounded-md border border-rose-500/35 bg-rose-500/[0.12] px-1.5 py-px text-[10px] font-semibold lowercase text-rose-100/92">
+                <span className="ml-2 rounded-md border border-rose-500/35 bg-rose-500/[0.12] px-1.5 py-px text-[9px] font-semibold lowercase text-rose-100/92">
                   hata
                 </span>
               ) : null}
@@ -1030,7 +1037,7 @@ function AdminSupportChatSection({
               value={draft}
               onChange={(ev) => setDraft(ev.target.value)}
               onKeyDown={onComposerKeyDown}
-              rows={3}
+              rows={2}
               disabled={!canUseComposer || sending}
               placeholder={
                 canUseComposer
@@ -1040,14 +1047,14 @@ function AdminSupportChatSection({
                     : (composerHint ?? "Önce görüşmeyi kabul et.")
               }
               aria-label="Admin yanıtı"
-              className="min-h-[5.75rem] w-full resize-y rounded-xl border border-white/[0.12] bg-black/60 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none ring-0 transition placeholder:text-slate-500 focus:border-cyan-400/45 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.14)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[4.5rem] w-full resize-y rounded-lg border border-white/[0.12] bg-black/60 px-3 py-2 text-[12px] leading-relaxed text-white outline-none ring-0 transition placeholder:text-slate-500 focus:border-cyan-400/45 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.14)] disabled:cursor-not-allowed disabled:opacity-50"
             />
             {canUseComposer ? (
-              <span className="text-[10px] text-slate-500">Enter: gönder · Shift+Enter: yeni satır</span>
+              <span className="text-[9px] text-slate-500">Enter: gönder · Shift+Enter: yeni satır</span>
             ) : null}
           </label>
           {sendError ? (
-            <p className="text-[12px] font-medium text-rose-300/95" role="alert">
+            <p className="text-[11px] font-medium text-rose-300/95" role="alert">
               {sendError}
             </p>
           ) : null}
@@ -1055,7 +1062,7 @@ function AdminSupportChatSection({
             type="submit"
             disabled={!canUseComposer || sending || draft.trim().length < 1}
             aria-busy={sending}
-            className="inline-flex min-h-[52px] w-full touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-3 text-[14px] font-black tracking-tight text-white shadow-[0_14px_40px_-12px_rgba(34,211,238,0.5)] ring-1 ring-cyan-200/25 transition hover:brightness-[1.06] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-lg bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 px-4 py-2.5 text-[13px] font-bold tracking-tight text-white shadow-[0_10px_32px_-12px_rgba(34,211,238,0.45)] ring-1 ring-cyan-200/25 transition hover:brightness-[1.06] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {sending ? "Gönderiliyor…" : "Gönder"}
           </button>
@@ -1098,177 +1105,6 @@ function deskChannelLabel(row: SupportMessageRow): string {
   return "Web sitesi";
 }
 
-function AdminDeskSidePanel({
-  row,
-  viewerState,
-  onMarkResolved,
-  updating,
-  lastActivityIso,
-  onAppendCanned,
-}: AdminDeskSharedProps & { lastActivityIso: string | null; onAppendCanned?: (text: string) => void }) {
-  const st = rowStatusValue(row.status);
-  return (
-    <aside
-      aria-label="Görüşme özeti"
-      className="admin-desk-side relative flex w-full min-w-0 flex-col gap-4 rounded-[1.15rem] border border-cyan-400/[0.1] bg-slate-950/[0.55] p-4 shadow-[0_20px_56px_-38px_rgba(34,211,238,0.45)] ring-1 ring-white/[0.06] backdrop-blur-2xl xl:sticky xl:top-24 xl:max-h-[calc(100vh-7.5rem)] xl:overflow-y-auto xl:overscroll-contain"
-    >
-      <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(155deg,rgba(34,211,238,0.05),transparent_52%,rgba(139,92,246,0.04))] opacity-[0.97]" aria-hidden />
-      <div className="relative">
-        <p className="text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/75">Görüşme bilgileri</p>
-        <dl className="mt-4 space-y-2.5 text-[12px]">
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Durum</dt>
-            <dd>
-              <span
-                className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.11em] ${listStatusBadgeClass(st)}`}
-              >
-                {statusLabel(st)}
-              </span>
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Oluşturulma</dt>
-            <dd className="text-right font-mono text-[11px] text-slate-300/93">
-              {formatMediumIsoTr(row.created_at)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Son aktivite</dt>
-            <dd className="text-right font-mono text-[11px] text-slate-300/93">
-              {formatMediumIsoTr(lastActivityIso ?? row.created_at)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Kanal</dt>
-            <dd className="max-w-[12rem] truncate text-right text-slate-200/93">{deskChannelLabel(row)}</dd>
-          </div>
-          <div className="flex justify-between gap-3 pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Tarayıcı</dt>
-            <dd className="max-w-[12rem] text-right text-[11px] leading-snug text-slate-300/92">
-              {shortBrowserLabel(row.user_agent)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">IP</dt>
-            <dd className="font-mono text-[11px] text-slate-500">—</dd>
-          </div>
-        </dl>
-
-        <p className="mt-6 text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/75">Kullanıcı bilgileri</p>
-        <dl className="mt-4 space-y-2.5 text-[12px]">
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Ad</dt>
-            <dd className="max-w-[12rem] truncate text-right font-medium text-slate-100/94">
-              {row.name?.trim() || "—"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">E‑posta</dt>
-            <dd className="max-w-[min(14rem,calc(100vw-11rem))] break-all text-right text-[11px] text-slate-300/92">
-              {row.email?.trim() || "—"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Telefon</dt>
-            <dd className="text-right text-slate-500">—</dd>
-          </div>
-          <div className="flex justify-between gap-3 border-b border-white/[0.05] pb-2.5">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Kayıt</dt>
-            <dd className="text-right text-slate-500">—</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Toplam görüşme</dt>
-            <dd className="text-right text-slate-500">—</dd>
-          </div>
-        </dl>
-
-        <p className="mt-6 text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/75">Hızlı işlemler</p>
-        <div className="mt-3 grid gap-2">
-          <details className="group rounded-xl border border-cyan-400/28 bg-black/40 ring-1 ring-cyan-400/10 [&_summary::-webkit-details-marker]:hidden">
-            <summary className="flex cursor-pointer select-none items-center justify-between gap-2 rounded-xl px-3 py-3 text-[12px] font-bold text-cyan-50 transition hover:bg-cyan-500/[0.08]">
-              <span>Hazır cevaplar</span>
-              <svg
-                className="h-4 w-4 shrink-0 text-cyan-200/65 transition group-open:-rotate-180"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                aria-hidden
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
-              </svg>
-            </summary>
-            <div className="border-t border-white/[0.06] px-2 pb-2 pt-1">
-              <p className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Seçildiğinde yalnızca metin yazılır; göndermez
-              </p>
-              <ul className="max-h-[14rem] space-y-0.5 overflow-y-auto rounded-lg admin-support-inbox-scroll pr-0.5">
-                {CANNED_REPLY_PRESETS.map((preset) => (
-                  <li key={preset}>
-                    <button
-                      type="button"
-                      className="w-full rounded-lg px-2.5 py-2.5 text-left text-[12px] font-medium leading-snug text-slate-200 transition hover:bg-cyan-500/[0.14]"
-                      onClick={() => {
-                        onAppendCanned?.(preset);
-                      }}
-                    >
-                      {preset}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </details>
-          {viewerState === "self_reviewing" ? (
-            <button
-              type="button"
-              disabled={updating}
-              aria-busy={updating}
-              onClick={onMarkResolved}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-amber-400/28 bg-amber-500/[0.1] px-3 text-[12px] font-bold text-amber-50/95 shadow-[0_12px_32px_-14px_rgba(245,158,11,0.25)] ring-1 ring-white/[0.05] disabled:opacity-50"
-            >
-              {updating ? "Kaydediliyor…" : "Görüşmeyi kapat"}
-            </button>
-          ) : (
-            <button type="button" disabled className="inline-flex min-h-[44px] cursor-not-allowed items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 text-[12px] font-semibold text-slate-600">
-              Görüşmeyi kapat
-            </button>
-          )}
-          <button
-            type="button"
-            className="inline-flex min-h-[40px] cursor-not-allowed items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-white/[0.02] px-3 text-[11.5px] font-semibold text-slate-500"
-            disabled
-          >
-            Not ekle
-          </button>
-          <button
-            type="button"
-            className="inline-flex min-h-[40px] cursor-not-allowed items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-white/[0.02] px-3 text-[11.5px] font-semibold text-slate-500"
-            disabled
-          >
-            Kullanıcıyı engelle
-          </button>
-          <button
-            type="button"
-            className="inline-flex min-h-[40px] cursor-not-allowed items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-white/[0.02] px-3 text-[11.5px] font-semibold text-slate-500"
-            disabled
-          >
-            Dosya iste
-          </button>
-        </div>
-
-        <p className="mt-6 text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/75">Etiketler</p>
-        <button
-          type="button"
-          className="mt-2 inline-flex w-full min-h-[40px] items-center justify-center rounded-xl border border-dashed border-white/[0.14] bg-black/25 px-3 text-[11px] font-semibold text-slate-500"
-          disabled
-        >
-          + Etiket ekle
-        </button>
-      </div>
-    </aside>
-  );
-}
-
 type AdminDeskMainColumnProps = AdminDeskSharedProps & {
   composerStamp: { nonce: number; text: string } | null;
   onComposerStampConsumed: () => void;
@@ -1302,10 +1138,10 @@ function AdminDeskMainColumn({
         aria-hidden
       />
 
-      <div className="relative z-[1] flex shrink-0 flex-col gap-4 border-b border-white/[0.07] p-5 pb-5 sm:p-6">
-        <div className="flex flex-wrap items-start gap-4">
+      <div className="relative z-[1] flex shrink-0 flex-col gap-3 border-b border-white/[0.07] p-4 sm:p-5">
+        <div className="flex flex-wrap items-start gap-3">
           <div className="relative">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.1] bg-gradient-to-br from-cyan-400/25 via-sky-500/18 to-black/65 text-[13px] font-black text-white shadow-[0_0_28px_-10px_rgba(34,211,238,0.55)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.1] bg-gradient-to-br from-cyan-400/25 via-sky-500/18 to-black/65 text-[12px] font-black text-white">
               {initials}
             </div>
             <span
@@ -1315,7 +1151,7 @@ function AdminDeskMainColumn({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-[1.05rem] font-black tracking-tight text-white md:text-[1.15rem]">
+              <h2 className="truncate text-base font-bold tracking-tight text-white">
                 {displayName}
               </h2>
               <span className="font-mono text-[11px] font-bold text-slate-500">{ticketCode}</span>
@@ -1370,68 +1206,61 @@ function AdminDeskMainColumn({
           </div>
         </div>
 
-        <div className="grid gap-2.5 rounded-xl border border-white/[0.06] bg-black/[0.38] px-4 py-3 text-[12px] text-slate-400 backdrop-blur-md">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">İç not</p>
-          {viewerState === "self_reviewing" ? (
-            <p className="text-[12px] leading-relaxed text-cyan-100/90">
-              Bu görüşme sana atanmış.
-            </p>
-          ) : null}
-          {viewerState === "other_reviewing" || viewerState === "other_resolved" ? (
-            <p className="text-[12px] leading-relaxed text-amber-100/93">
-              Bu görüşme başka bir yönetici tarafından{" "}
-              {viewerState === "other_resolved" ? "yönetilip çözüldü" : "alındı"}.
-              {row.assigned_admin_email?.trim() ? (
-                <span className="mt-1 block font-mono text-[11px] text-slate-400">{row.assigned_admin_email.trim()}</span>
-              ) : null}
-            </p>
-          ) : null}
-          {viewerState === "reviewing_missing_assignment" ? (
-            <p className="leading-relaxed text-slate-400">
-              Kayıtta atama eksik (status inceleniyor). Güncelledikten sonra yenileyin{" "}
-              <span className="font-mono text-[11px] text-slate-500">website/supabase/support_assignments.sql</span>
-            </p>
-          ) : null}
-        </div>
+        {(viewerState === "self_reviewing" ||
+          viewerState === "other_reviewing" ||
+          viewerState === "other_resolved" ||
+          viewerState === "reviewing_missing_assignment") && (
+          <div className="rounded-lg border border-white/[0.06] bg-black/[0.32] px-3 py-2 text-[11px] text-slate-400">
+            {viewerState === "self_reviewing" ? (
+              <p className="text-cyan-100/85">Bu görüşme sana atanmış.</p>
+            ) : null}
+            {viewerState === "other_reviewing" || viewerState === "other_resolved" ? (
+              <p className="text-amber-100/90">
+                Başka yönetici{" "}
+                {viewerState === "other_resolved" ? "çözdü" : "inceliyor"}.
+                {row.assigned_admin_email?.trim() ? (
+                  <span className="mt-0.5 block font-mono text-[10px] text-slate-500">
+                    {row.assigned_admin_email.trim()}
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
+            {viewerState === "reviewing_missing_assignment" ? (
+              <p>Atama eksik — listeyi yenileyin.</p>
+            ) : null}
+          </div>
+        )}
       </div>
 
-      <div className="relative z-[1] flex min-h-0 flex-1 flex-col px-5 pb-4 pt-5 sm:px-6">
-        <div className="mb-4 shrink-0">
-          <div className="mx-auto mb-5 flex max-w-[95%] justify-center rounded-2xl border border-cyan-400/15 bg-black/45 px-4 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200/72">Sistem</p>
-              <p className="mt-1.5 whitespace-pre-line text-[13px] font-medium leading-relaxed text-slate-200/95">
-                {SYSTEM_DESK_WELCOME}
-              </p>
-            </div>
-          </div>
-
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">İlk mesaj</p>
-          {canReadBody ? (
-            <>
-              <div className="mt-2 max-h-[280px] overflow-y-auto rounded-2xl border border-white/[0.08] bg-gradient-to-br from-black/62 to-black/45 px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md sm:max-h-none sm:overflow-visible">
-                <p className="whitespace-pre-wrap text-[13.5px] font-normal leading-[1.7] text-slate-100/[0.94]">
+      <div className="relative z-[1] flex min-h-0 flex-1 flex-col px-4 pb-3 pt-3 sm:px-5">
+        <details
+          className="mb-2 shrink-0 rounded-lg border border-white/[0.07] bg-black/25 [&_summary::-webkit-details-marker]:hidden"
+          open={viewerState === "claimable_new"}
+        >
+          <summary className="cursor-pointer select-none px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300">
+            Başvuru metni
+          </summary>
+          <div className="space-y-2 border-t border-white/[0.06] px-3 py-2">
+            <p className="text-[10px] leading-snug text-slate-500">{SYSTEM_DESK_WELCOME.split("\n")[0]}</p>
+            {canReadBody ? (
+              <>
+                <p className="max-h-[120px] overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-slate-200/95">
                   {row.message}
                 </p>
-              </div>
-              {row.user_agent?.trim() ? (
-                <p className="mt-3 hidden font-mono text-[10px] leading-relaxed text-slate-600 sm:block">
-                  UA: {shortBrowserLabel(row.user_agent)}
-                </p>
-              ) : null}
-              {viewerState === "self_resolved" && row.closed_at ? (
-                <p className="mt-4 text-[12px] font-medium text-slate-500">
-                  Kapatıldı:{" "}
-                  <time dateTime={isoToMs(row.closed_at) !== null ? row.closed_at : undefined}>{formatMediumIsoTr(row.closed_at)}</time>
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className="mt-2 text-[12.5px] leading-relaxed text-slate-500">
-              Mesaj içeriği yalnızca görüşmeyi üstlenen yönetici tarafından görüntülenebilir.
-            </p>
-          )}
-        </div>
+                {viewerState === "self_resolved" && row.closed_at ? (
+                  <p className="text-[10px] text-slate-500">
+                    Kapatıldı:{" "}
+                    <time dateTime={isoToMs(row.closed_at) !== null ? row.closed_at : undefined}>
+                      {formatMediumIsoTr(row.closed_at)}
+                    </time>
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-[11px] text-slate-500">Kabul sonrası görüntülenir.</p>
+            )}
+          </div>
+        </details>
 
         <AdminSupportChatSection
           ticketId={row.id}
@@ -2155,6 +1984,7 @@ export function AdminSupportDashboard() {
               {session.user.email}
             </span>
           </p>
+          <AdminSupportDutyStrip />
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:shrink-0 lg:justify-end">
           <Link
@@ -2198,7 +2028,7 @@ export function AdminSupportDashboard() {
       ) : null}
 
       {listLoading && !rows.length ? (
-        <div className="admin-desk-shell mt-8 grid min-h-[28rem] grid-cols-1 gap-5 lg:min-h-[min(80vh,720px)] xl:grid-cols-[minmax(260px,0.95fr)_minmax(0,1.6fr)_minmax(248px,0.9fr)]">
+        <div className="admin-desk-shell mt-8 grid min-h-[28rem] grid-cols-1 gap-4 lg:min-h-[min(80vh,720px)] xl:grid-cols-[minmax(240px,0.88fr)_minmax(0,1.75fr)_minmax(196px,0.65fr)]">
           <div className="rounded-[1.2rem] border border-white/[0.08] bg-black/35 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
             <div className="h-9 w-full animate-pulse rounded-lg bg-white/[0.06]" />
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -2225,7 +2055,7 @@ export function AdminSupportDashboard() {
           <p className="text-sm font-medium text-slate-400">Bu filtrede görünecek ileti yok.</p>
         </div>
       ) : (
-        <div className="admin-desk-shell mt-8 grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(260px,0.95fr)_minmax(0,1.6fr)_minmax(248px,0.9fr)] xl:items-stretch">
+        <div className="admin-desk-shell mt-8 grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(240px,0.88fr)_minmax(0,1.75fr)_minmax(196px,0.65fr)] xl:items-stretch">
           <div className="flex min-h-0 min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:self-start">
             <div className="rounded-[1.1rem] border border-white/[0.09] bg-gradient-to-br from-black/55 to-black/38 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
               <div className="flex items-center justify-between gap-2">
@@ -2387,13 +2217,19 @@ export function AdminSupportDashboard() {
                 row={selectedRow}
                 viewerState={viewerConversationState(selectedRow, viewerId)}
                 updating={Boolean(updatingIds[selectedRow.id])}
-                onAccept={() => void acceptConversation(selectedRow.id, viewerId)}
                 onMarkResolved={() => void markConversationResolved(selectedRow.id, viewerId)}
-                supabaseClient={client}
-                viewerEmail={viewerEmail}
-                viewerId={viewerId}
-                lastActivityIso={resolveLastActivityIso(selectedRow, lastChatAtByTicket[selectedRow.id])}
-                onAppendCanned={(text) => setComposerCannedStamp({ nonce: Date.now(), text })}
+                statusLabel={statusLabel(rowStatusValue(selectedRow.status))}
+                statusBadgeClass={listStatusBadgeClass(rowStatusValue(selectedRow.status))}
+                createdLabel={formatMediumIsoTr(selectedRow.created_at)}
+                lastActivityLabel={formatMediumIsoTr(
+                  resolveLastActivityIso(selectedRow, lastChatAtByTicket[selectedRow.id]) ??
+                    selectedRow.created_at,
+                )}
+                channelLabel={deskChannelLabel(selectedRow)}
+                browserLabel={(() => {
+                  const b = shortBrowserLabel(selectedRow.user_agent);
+                  return b === "—" ? null : b;
+                })()}
               />
             ) : (
               <div className="hidden h-full min-h-[16rem] flex-col justify-center rounded-[1.15rem] border border-white/[0.07] bg-black/28 p-6 text-center backdrop-blur-md xl:flex">
