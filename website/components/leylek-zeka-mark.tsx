@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { BRANDING_PATHS } from "@/lib/branding-assets";
 
-const LOGO_SVG = "/logo-leylek.svg";
-const LOGO_PNG_FALLBACK = BRANDING_PATHS.logoMark;
+const LOGO_PRIMARY = "/store/leylek-logo-premium.png";
+const LOGO_FALLBACK = BRANDING_PATHS.logoMark;
 
 type LeylekZekaMarkProps = {
   size?: "sm" | "md" | "lg";
@@ -29,7 +29,7 @@ export function LeylekZekaMark({
   variant = "tile",
   className = "",
 }: LeylekZekaMarkProps) {
-  const [src, setSrc] = useState(LOGO_SVG);
+  const [src, setSrc] = useState(LOGO_PRIMARY);
 
   const mark = (
     // eslint-disable-next-line @next/next/no-img-element -- dekoratif mark; küçük SVG/PNG fallback
@@ -39,7 +39,7 @@ export function LeylekZekaMark({
       aria-hidden
       className={`${MARK_CLASS[size]} shrink-0 object-contain`}
       onError={() => {
-        if (src !== LOGO_PNG_FALLBACK) setSrc(LOGO_PNG_FALLBACK);
+        if (src !== LOGO_FALLBACK) setSrc(LOGO_FALLBACK);
       }}
     />
   );
