@@ -281,6 +281,12 @@ function formatDeskTicketId(rawId: string): string {
   return `#TK-${compact}`;
 }
 
+const CHAT_SCROLL_NEAR_BOTTOM_PX = 88;
+
+function isChatScrollNearBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= CHAT_SCROLL_NEAR_BOTTOM_PX;
+}
+
 /** Avatar baş harfi — PII sızdırmadan kısaltılmış. */
 function deskParticipantInitials(name: string | null | undefined, email: string | null | undefined): string {
   const n = String(name ?? "").trim();
@@ -406,8 +412,13 @@ function AdminSupportChatSection({
   const [typingBridgeSendReady, setTypingBridgeSendReady] = useState(false);
   const [typingBridgeRepairKey, setTypingBridgeRepairKey] = useState(0);
   const [realtimeRepairKey, setRealtimeRepairKey] = useState(0);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
+  const forceScrollRef = useRef(true);
+  const prevDisplayCountRef = useRef(0);
   const viewerEmailRef = useRef(viewerEmail);
   const viewerIdRef = useRef(viewerId);
   /** Yalnızca `channel.send`; asla `.on` çağrılmaz. */
@@ -431,6 +442,10 @@ function AdminSupportChatSection({
 
   useEffect(() => {
     processedComposerStampNonceRef.current = null;
+    nearBottomRef.current = true;
+    forceScrollRef.current = true;
+    prevDisplayCountRef.current = 0;
+    queueMicrotask(() => setShowJumpToBottom(false));
   }, [ticketId]);
 
   useEffect(() => {
@@ -465,8 +480,18 @@ function AdminSupportChatSection({
     [rows, ticketMessageBody],
   );
 
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+    nearBottomRef.current = true;
+    setShowJumpToBottom(false);
+  }, []);
+
+  const onChatScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const near = isChatScrollNearBottom(el);
+    nearBottomRef.current = near;
+    if (near) setShowJumpToBottom(false);
   }, []);
 
   const fetchChatMessages = useCallback(
@@ -522,8 +547,25 @@ function AdminSupportChatSection({
   }, [fetchChatMessages]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [displayRows.length, sending, scrollToBottom]);
+    const count = displayRows.length;
+    const prev = prevDisplayCountRef.current;
+    prevDisplayCountRef.current = count;
+
+    if (forceScrollRef.current) {
+      forceScrollRef.current = false;
+      queueMicrotask(() => scrollToBottom("auto"));
+      return;
+    }
+
+    if (count <= prev) return;
+
+    if (nearBottomRef.current) {
+      queueMicrotask(() => scrollToBottom("smooth"));
+      return;
+    }
+
+    setShowJumpToBottom(true);
+  }, [displayRows.length, scrollToBottom]);
 
   useEffect(() => {
     let mounted = true;
@@ -741,8 +783,10 @@ function AdminSupportChatSection({
       }
 
       setDraft("");
+      nearBottomRef.current = true;
+      forceScrollRef.current = true;
       queueMicrotask(() => {
-        scrollToBottom();
+        scrollToBottom("smooth");
       });
       const synced = await fetchChatMessages({ silent: true });
       if (!synced) {
@@ -878,6 +922,8 @@ function AdminSupportChatSection({
       ) : null}
 
       <div
+        ref={scrollContainerRef}
+        onScroll={onChatScroll}
         className={
           embedded
             ? "admin-support-desk-scroll relative mt-2 min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain rounded-xl border border-cyan-400/[0.12] bg-gradient-to-b from-black/58 via-black/42 to-black/30 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_40px_-20px_rgba(34,211,238,0.14)] backdrop-blur-md sm:mt-3 sm:px-3 sm:py-2.5"
@@ -994,12 +1040,27 @@ function AdminSupportChatSection({
           </div>
         ) : null}
 
+        {showJumpToBottom ? (
+          <div className="pointer-events-none sticky bottom-2 z-[3] flex justify-center pt-2">
+            <button
+              type="button"
+              onClick={() => scrollToBottom("smooth")}
+              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-slate-950/95 px-3 py-1.5 text-[10px] font-bold text-cyan-50 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.75)] ring-1 ring-cyan-400/20"
+            >
+              Yeni mesajlar
+              <span aria-hidden>↓</span>
+            </button>
+          </div>
+        ) : null}
+
         <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
       </div>
 
       <div
         className={`admin-support-chat-composer shrink-0 border-t border-white/[0.08] bg-gradient-to-t from-slate-950/[0.98] via-slate-950/90 to-transparent backdrop-blur-md ${
-          embedded ? "sticky bottom-0 z-[4] pb-2 pt-3 xl:pb-3" : "sticky bottom-0 z-[4] pb-3 pt-3"
+          embedded
+            ? "sticky bottom-0 z-[4] pt-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] xl:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+            : "sticky bottom-0 z-[4] pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
         }`}
       >
         <form
@@ -1011,18 +1072,15 @@ function AdminSupportChatSection({
           }`}
         >
           {canUseComposer ? (
-            <div className="space-y-1">
-              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Hazır cevap</p>
-              <AdminSupportCannedChips
-                disabled={sending}
-                onSelect={(text) => {
-                  setDraft((prev) => {
-                    const p = prev.trim();
-                    return p ? `${p}\n${text}` : text;
-                  });
-                }}
-              />
-            </div>
+            <AdminSupportCannedChips
+              disabled={sending}
+              onSelect={(text) => {
+                setDraft((prev) => {
+                  const p = prev.trim();
+                  return p ? `${p}\n${text}` : text;
+                });
+              }}
+            />
           ) : null}
           <label className="grid gap-1">
             <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">
@@ -1132,31 +1190,31 @@ function AdminDeskMainColumn({
   const presence = ticketDeskPresenceLabel(row, viewerId);
 
   return (
-    <div className="relative admin-support-detail-shell admin-desk-main flex max-h-[min(92vh,calc(100vh-6rem))] min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[1.35rem] border border-cyan-400/[0.12] bg-slate-950/[0.72] shadow-[0_32px_90px_-48px_rgba(34,211,238,0.52)] ring-1 ring-cyan-400/[0.12] backdrop-blur-2xl">
+    <div className="relative admin-support-detail-shell admin-desk-main flex max-h-[min(92dvh,calc(100dvh-6rem))] min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[1.35rem] border border-cyan-400/[0.12] bg-slate-950/[0.72] shadow-[0_32px_90px_-48px_rgba(34,211,238,0.52)] ring-1 ring-cyan-400/[0.12] backdrop-blur-2xl">
       <div
         className="pointer-events-none absolute inset-[1px] rounded-[calc(1.35rem-1px)] bg-[linear-gradient(135deg,rgba(34,211,238,0.07),transparent_42%,rgba(139,92,246,0.05))]"
         aria-hidden
       />
 
-      <div className="relative z-[1] flex shrink-0 flex-col gap-3 border-b border-white/[0.07] p-4 sm:p-5">
-        <div className="flex flex-wrap items-start gap-3">
+      <div className="relative z-[1] flex shrink-0 flex-col gap-2 border-b border-white/[0.07] p-3 sm:p-4">
+        <div className="flex flex-wrap items-start gap-2.5">
           <div className="relative">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.1] bg-gradient-to-br from-cyan-400/25 via-sky-500/18 to-black/65 text-[12px] font-black text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.1] bg-gradient-to-br from-cyan-400/25 via-sky-500/18 to-black/65 text-[10px] font-black text-white">
               {initials}
             </div>
             <span
-              className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-[2px] border-slate-950 shadow-[0_0_10px_rgba(34,211,238,0.42)] ring-2 ring-black/55 ${presence.dotClass}`}
+              className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-[2px] border-slate-950 shadow-[0_0_10px_rgba(34,211,238,0.42)] ring-2 ring-black/55 ${presence.dotClass}`}
               title={presence.label}
             />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-base font-bold tracking-tight text-white">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h2 className="truncate text-sm font-bold tracking-tight text-white">
                 {displayName}
               </h2>
-              <span className="font-mono text-[11px] font-bold text-slate-500">{ticketCode}</span>
+              <span className="font-mono text-[10px] font-bold text-slate-500">{ticketCode}</span>
               <span
-                className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] ${listStatusBadgeClass(st)}`}
+                className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] ${listStatusBadgeClass(st)}`}
               >
                 {statusLabel(st)}
               </span>
@@ -1164,20 +1222,20 @@ function AdminDeskMainColumn({
             {viewerState === "claimable_new" ? (
               <p
                 role="status"
-                className="mt-3 rounded-xl border border-violet-400/28 bg-gradient-to-r from-violet-500/[0.12] to-black/38 px-3.5 py-2 text-[11.5px] font-semibold leading-relaxed text-violet-100/95 backdrop-blur-sm"
+                className="mt-2 rounded-lg border border-violet-400/22 bg-violet-500/[0.08] px-2.5 py-1.5 text-[10px] font-semibold leading-snug text-violet-100/90"
               >
-                Şu anda aktif destek temsilcisi bulunmuyor.
+                Kuyrukta — kabul edince sohbet açılır.
               </p>
             ) : null}
 
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               {viewerState === "claimable_new" ? (
                 <button
                   type="button"
                   disabled={updating}
                   aria-busy={updating}
                   onClick={onAccept}
-                  className="admin-support-cta-accept inline-flex min-h-[46px] min-w-[min(100%,17rem)] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#08d7ff] via-sky-500 to-blue-600 px-5 py-3 text-[13px] font-black text-white shadow-[0_14px_40px_-14px_rgba(34,211,238,0.52)] ring-1 ring-cyan-200/25 disabled:opacity-55"
+                  className="admin-support-cta-accept inline-flex min-h-[40px] min-w-[min(100%,15rem)] items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#08d7ff] via-sky-500 to-blue-600 px-4 py-2 text-[12px] font-black text-white shadow-[0_10px_32px_-14px_rgba(34,211,238,0.48)] ring-1 ring-cyan-200/25 disabled:opacity-55"
                 >
                   {updating ? (
                     <span
@@ -1196,7 +1254,7 @@ function AdminDeskMainColumn({
                   disabled={updating}
                   aria-busy={updating}
                   onClick={onMarkResolved}
-                  className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-emerald-400/28 bg-gradient-to-b from-emerald-500/[0.16] to-black/35 px-5 py-3 text-[12.5px] font-bold text-emerald-50/95 shadow-[0_10px_36px_-14px_rgba(16,185,129,0.38)] backdrop-blur-md disabled:opacity-50"
+                  className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-lg border border-emerald-400/28 bg-gradient-to-b from-emerald-500/[0.16] to-black/35 px-4 py-2 text-[11px] font-bold text-emerald-50/95 shadow-[0_8px_28px_-14px_rgba(16,185,129,0.38)] backdrop-blur-md disabled:opacity-50"
                 >
                   <AdminSupportCheckGlyph />
                   <span>{updating ? "Kaydediliyor…" : "Çözüldü olarak işaretle"}</span>
@@ -1210,7 +1268,7 @@ function AdminDeskMainColumn({
           viewerState === "other_reviewing" ||
           viewerState === "other_resolved" ||
           viewerState === "reviewing_missing_assignment") && (
-          <div className="rounded-lg border border-white/[0.06] bg-black/[0.32] px-3 py-2 text-[11px] text-slate-400">
+          <div className="rounded-lg border border-white/[0.06] bg-black/[0.32] px-2.5 py-1.5 text-[10px] text-slate-400">
             {viewerState === "self_reviewing" ? (
               <p className="text-cyan-100/85">Bu görüşme sana atanmış.</p>
             ) : null}
@@ -1232,19 +1290,26 @@ function AdminDeskMainColumn({
         )}
       </div>
 
-      <div className="relative z-[1] flex min-h-0 flex-1 flex-col px-4 pb-3 pt-3 sm:px-5">
+      <div className="relative z-[1] flex min-h-0 flex-1 flex-col px-3 pb-3 pt-2 sm:px-4">
+        {viewerState === "self_reviewing" && canReadBody ? (
+          <p className="mb-1.5 line-clamp-1 shrink-0 text-[11px] text-slate-500" title={row.message}>
+            {row.message}
+          </p>
+        ) : null}
         <details
           className="mb-2 shrink-0 rounded-lg border border-white/[0.07] bg-black/25 [&_summary::-webkit-details-marker]:hidden"
           open={viewerState === "claimable_new"}
         >
-          <summary className="cursor-pointer select-none px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300">
+          <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300">
             Başvuru metni
           </summary>
-          <div className="space-y-2 border-t border-white/[0.06] px-3 py-2">
-            <p className="text-[10px] leading-snug text-slate-500">{SYSTEM_DESK_WELCOME.split("\n")[0]}</p>
+          <div className="space-y-1.5 border-t border-white/[0.06] px-2.5 py-2">
+            {viewerState === "claimable_new" ? (
+              <p className="text-[10px] leading-snug text-slate-500">{SYSTEM_DESK_WELCOME.split("\n")[0]}</p>
+            ) : null}
             {canReadBody ? (
               <>
-                <p className="max-h-[120px] overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-slate-200/95">
+                <p className="max-h-[96px] overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-slate-200/95">
                   {row.message}
                 </p>
                 {viewerState === "self_resolved" && row.closed_at ? (
@@ -1959,24 +2024,19 @@ export function AdminSupportDashboard() {
   const viewerEmail = session.user.email ?? "";
 
   return (
-    <section className="mx-auto min-h-[70vh] max-w-[min(92rem,calc(100vw-1.25rem))] px-3 pb-32 pt-8 sm:px-4 md:pb-24 md:pt-12">
-      <header className="flex flex-col gap-6 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
+    <section className="mx-auto min-h-[70dvh] max-w-[min(92rem,calc(100vw-1.25rem))] px-3 pb-[max(2rem,env(safe-area-inset-bottom,0px))] pt-6 sm:px-4 md:pt-10">
+      <header className="flex flex-col gap-4 border-b border-white/[0.08] pb-5 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.26em] text-cyan-300/78">Admin</p>
-          <h1 className="mt-2 flex flex-wrap items-center gap-2.5 text-[1.5rem] font-black tracking-[-0.02em] text-white sm:gap-3 md:text-[1.85rem] xl:text-[2rem]">
-            <span className="leading-tight">Kurumsal canlı destek</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/32 bg-slate-950/70 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.24em] text-emerald-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.16),0_0_32px_-10px_rgba(34,211,238,0.45)] backdrop-blur-xl">
-              <span className="livePulse h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden />
-              CANLI
-            </span>
-            <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-black/40 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-50/90 backdrop-blur-xl">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" aria-hidden />
-              Temsilci çevrimiçi
+          <p className="text-[9px] font-black uppercase tracking-[0.22em] text-cyan-300/78">Admin · Destek</p>
+          <h1 className="mt-1.5 flex flex-wrap items-center gap-2 text-[1.25rem] font-bold tracking-tight text-white md:text-[1.35rem]">
+            <span className="leading-tight">Canlı destek masası</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/28 bg-slate-950/70 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.2em] text-emerald-100 ring-1 ring-cyan-400/12">
+              <span className="livePulse h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden />
+              Canlı
             </span>
           </h1>
-          <p className="mt-3 max-w-xl text-[13px] leading-relaxed text-slate-400 md:text-[13.5px]">
-            Gönderilen mesajları incele; kullanıcı adı/e‑posta yalnızca formdan geldiği gibidir — hesap ile
-            eşlenmez.
+          <p className="mt-2 max-w-lg text-[11px] leading-relaxed text-slate-500">
+            Formdan gelen ad/e‑posta hesapla eşleşmez; yalnızca görüşme bağlamıdır.
           </p>
           <p className="mt-2.5 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
             <span className="font-medium text-slate-500">Oturum</span>
@@ -2028,7 +2088,7 @@ export function AdminSupportDashboard() {
       ) : null}
 
       {listLoading && !rows.length ? (
-        <div className="admin-desk-shell mt-8 grid min-h-[28rem] grid-cols-1 gap-4 lg:min-h-[min(80vh,720px)] xl:grid-cols-[minmax(240px,0.88fr)_minmax(0,1.75fr)_minmax(196px,0.65fr)]">
+        <div className="admin-desk-shell mt-8 grid min-h-[28rem] grid-cols-1 gap-4 lg:min-h-[min(80dvh,720px)] xl:grid-cols-[minmax(240px,0.88fr)_minmax(0,1.75fr)_minmax(196px,0.65fr)]">
           <div className="rounded-[1.2rem] border border-white/[0.08] bg-black/35 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
             <div className="h-9 w-full animate-pulse rounded-lg bg-white/[0.06]" />
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -2038,7 +2098,7 @@ export function AdminSupportDashboard() {
             </div>
             <div className="mt-4 space-y-2">
               {Array.from({ length: 7 }).map((_, i) => (
-                <div key={i} className="h-[4.25rem] animate-pulse rounded-xl bg-white/[0.05]" />
+                <div key={i} className="h-[3.25rem] animate-pulse rounded-xl bg-white/[0.05]" />
               ))}
             </div>
           </div>
@@ -2056,7 +2116,7 @@ export function AdminSupportDashboard() {
         </div>
       ) : (
         <div className="admin-desk-shell mt-8 grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(240px,0.88fr)_minmax(0,1.75fr)_minmax(196px,0.65fr)] xl:items-stretch">
-          <div className="flex min-h-0 min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:self-start">
+          <div className="flex min-h-0 min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:self-start">
             <div className="rounded-[1.1rem] border border-white/[0.09] bg-gradient-to-br from-black/55 to-black/38 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[10px] font-black uppercase tracking-[0.28em] text-cyan-200/78">Görüşmeler</p>
@@ -2130,40 +2190,40 @@ export function AdminSupportDashboard() {
                       type="button"
                       aria-current={active ? "true" : undefined}
                       onClick={() => setPickedId(row.id)}
-                      className={`admin-support-list-card group w-full rounded-[1rem] border border-white/[0.07] bg-gradient-to-br from-black/65 to-black/42 p-3.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl transition duration-200 ${
+                      className={`admin-support-list-card group w-full rounded-[0.9rem] border border-white/[0.07] bg-gradient-to-br from-black/65 to-black/42 p-2.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl transition duration-200 ${
                         active
                           ? "admin-support-list-card--active z-[1] border-cyan-400/65 bg-white/[0.12] shadow-[0_0_48px_-12px_rgba(34,211,238,0.55),0_0_0_1px_rgba(103,232,249,0.22),inset_0_0_32px_-8px_rgba(34,211,238,0.12)] ring-2 ring-cyan-400/35"
                           : "border-white/[0.055] hover:border-cyan-400/25"
                       }`}
                     >
-                      <div className="flex gap-3">
+                      <div className="flex gap-2">
                         <div className="relative shrink-0">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.1] bg-gradient-to-br from-cyan-500/25 to-black/60 text-[11px] font-black text-white">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.1] bg-gradient-to-br from-cyan-500/25 to-black/60 text-[10px] font-black text-white">
                             {initials}
                           </div>
                           <span
-                            className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-[2px] border-slate-950 ${presence.dotClass}`}
+                            className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-[2px] border-slate-950 ${presence.dotClass}`}
                             aria-hidden
                           />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="truncate text-[12.5px] font-semibold tracking-tight text-slate-100/94">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="truncate text-[12px] font-semibold tracking-tight text-slate-100/94">
                               {row.name?.trim() || row.email?.trim() || "Kimlik bilgisi yok"}
                             </span>
                           <span
-                              className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${listStatusBadgeClass(st)}`}
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${listStatusBadgeClass(st)}`}
                             >
                               {statusLabel(st)}
                             </span>
                           </div>
                           <time
                             dateTime={lastAct ?? row.created_at}
-                            className="mt-1 inline-block rounded-md border border-white/[0.06] bg-black/35 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-400 [font-variant-numeric:tabular-nums]"
+                            className="mt-0.5 inline-block rounded-md border border-white/[0.06] bg-black/35 px-1.5 py-px font-mono text-[9px] font-semibold text-slate-400 [font-variant-numeric:tabular-nums]"
                           >
                             {formatShortRelativeTr(lastAct ?? row.created_at ?? undefined)}
                           </time>
-                          <p className="mt-2 line-clamp-3 text-[12px] font-medium leading-snug text-slate-300/94">
+                          <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-slate-300/94">
                             {listMessagePreview(row, viewerId)}
                           </p>
                         </div>
@@ -2185,7 +2245,7 @@ export function AdminSupportDashboard() {
 
           <section
             aria-label="Seçili görüşme"
-            className="flex min-h-0 min-w-0 flex-col gap-5 xl:min-h-[min(92vh,calc(100vh-7rem))]"
+            className="flex min-h-0 min-w-0 flex-col gap-5 xl:min-h-[min(92dvh,calc(100dvh-7rem))]"
           >
             {selectedRow ? (
               <AdminDeskMainColumn
@@ -2211,7 +2271,7 @@ export function AdminSupportDashboard() {
             )}
           </section>
 
-          <div className="min-h-0 min-w-0 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:self-start">
+          <div className="min-h-0 min-w-0 xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:self-start">
             {selectedRow ? (
               <AdminDeskSidePanel
                 row={selectedRow}
@@ -2242,7 +2302,7 @@ export function AdminSupportDashboard() {
       {deskToast ? (
         <div
           role="alert"
-          className={`fixed bottom-6 right-5 z-[220] max-w-[min(92vw,22rem)] rounded-xl border px-4 py-3 text-[13px] font-semibold shadow-[0_16px_48px_-12px_rgba(0,0,0,0.65)] backdrop-blur-xl ${
+          className={`fixed bottom-[max(1.5rem,env(safe-area-inset-bottom,0px))] right-5 z-[220] max-w-[min(92vw,22rem)] rounded-xl border px-4 py-3 text-[13px] font-semibold shadow-[0_16px_48px_-12px_rgba(0,0,0,0.65)] backdrop-blur-xl ${
             deskToast.tone === "error"
               ? "border-rose-500/38 bg-rose-950/94 text-rose-50"
               : "border-emerald-400/38 bg-slate-950/94 text-emerald-50"

@@ -49,7 +49,7 @@ export function AdminDeskSidePanel({
   return (
     <aside
       aria-label="Görüşme özeti"
-      className="admin-desk-side relative flex w-full min-w-0 flex-col gap-2 rounded-xl border border-cyan-400/[0.1] bg-slate-950/[0.55] p-3 shadow-[0_12px_40px_-28px_rgba(34,211,238,0.35)] ring-1 ring-white/[0.06] backdrop-blur-xl xl:sticky xl:top-24 xl:max-h-[calc(100vh-7.5rem)] xl:overflow-y-auto xl:overscroll-contain"
+      className="admin-desk-side relative flex w-full min-w-0 flex-col gap-2 rounded-xl border border-cyan-400/[0.1] bg-slate-950/[0.55] p-3 shadow-[0_12px_40px_-28px_rgba(34,211,238,0.35)] ring-1 ring-white/[0.06] backdrop-blur-xl xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7.5rem)] xl:overflow-y-auto xl:overscroll-contain"
     >
       <p className="text-[9px] font-black uppercase tracking-[0.2em] text-cyan-300/75">Özet</p>
 
