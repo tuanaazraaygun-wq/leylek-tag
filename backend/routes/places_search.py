@@ -19,13 +19,15 @@ from fastapi import APIRouter, Query
 router = APIRouter(prefix="/places", tags=["places"])
 
 GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
+GEOAPIFY_API_KEY = (os.getenv("GEOAPIFY_API_KEY") or "").strip()
+_GEOAPIFY_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("GEOAPIFY_HTTP_TIMEOUT_SEC", "8") or "8"))
 
 # Önbellek: anahtar -> (monotonic_expire, gövde_dict)
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski cache girdilerini deploy sonrası baypas; ilçe → il kapsamı (Ankara + Muğla)
-_CACHE_KEY_VER = "v11_autocomplete_preserve_filter_fallback"
+_CACHE_KEY_VER = "v12_geoapify_fallback"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -1215,6 +1217,142 @@ def _results_from_nominatim(features: list[dict[str, Any]]) -> dict[str, Any]:
     return {"success": True, "cached": False, "provider_used": "nominatim", "results": mapped}
 
 
+def _has_google_provider_rows(items: list[dict[str, Any]]) -> bool:
+    return any(str(it.get("provider") or "") == "google" for it in items)
+
+
+def _map_geoapify_results(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    mapped: list[dict[str, Any]] = []
+    for item in raw[:12]:
+        if not isinstance(item, dict):
+            continue
+        la = item.get("lat")
+        lo = item.get("lon")
+        if la is None or lo is None:
+            continue
+        try:
+            latf = float(la)
+            lonf = float(lo)
+            if abs(latf) < 1e-9 and abs(lonf) < 1e-9:
+                continue
+        except (TypeError, ValueError):
+            continue
+        formatted = str(item.get("formatted") or "").strip()
+        line1 = str(item.get("address_line1") or item.get("name") or "").strip()
+        line2 = str(item.get("address_line2") or "").strip()
+        if not line1 and formatted:
+            parts = formatted.split(",", 1)
+            line1 = parts[0].strip()
+            if not line2 and len(parts) > 1:
+                line2 = parts[1].strip()
+        title = (line1 or formatted or "—")[:120]
+        if line2:
+            subtitle = line2[:200]
+        elif "," in formatted:
+            subtitle = formatted.split(",", 1)[1].strip()[:200]
+        else:
+            subtitle = ""
+        display_name = formatted or (f"{title}, {subtitle}".rstrip(", ") if subtitle else title)
+        gid = str(item.get("place_id") or "").strip()
+        pid = f"geoapify:{gid}" if gid else f"geoapify:{_geo_fallback_id(f'{latf},{lonf}')}"
+        mapped.append(
+            {
+                "place_id": pid,
+                "google_place_id": None,
+                "title": title,
+                "subtitle": subtitle,
+                "display_name": display_name[:300],
+                "lat": str(round(latf, 7)),
+                "lng": str(round(lonf, 7)),
+                "provider": "geoapify",
+            }
+        )
+    return mapped
+
+
+async def _geoapify_autocomplete(
+    client: httpx.AsyncClient,
+    q_text: str,
+    lat_o: Optional[float],
+    lng_o: Optional[float],
+) -> list[dict[str, Any]]:
+    text = q_text.strip()
+    if len(text) < 2 or not GEOAPIFY_API_KEY:
+        return []
+    params: dict[str, Any] = {
+        "apiKey": GEOAPIFY_API_KEY,
+        "text": text,
+        "lang": "tr",
+        "format": "json",
+        "limit": "12",
+        "filter": "countrycode:tr",
+    }
+    bias_la: Optional[float] = None
+    bias_ln: Optional[float] = None
+    if lat_o is not None and lng_o is not None:
+        try:
+            y = float(lat_o)
+            x = float(lng_o)
+            if y == y and x == x:
+                bias_la, bias_ln = y, x
+        except (TypeError, ValueError):
+            pass
+    if bias_la is not None and bias_ln is not None:
+        params["bias"] = f"proximity:{bias_ln},{bias_la}"
+    url = "https://api.geoapify.com/v1/geocode/autocomplete"
+    to = httpx.Timeout(_GEOAPIFY_HTTP_TIMEOUT_SEC, connect=min(5.0, _GEOAPIFY_HTTP_TIMEOUT_SEC))
+    try:
+        r = await client.get(url, params=params, timeout=to)
+    except (httpx.TimeoutException, httpx.RequestError):
+        return []
+    if r.status_code != 200 or not r.text:
+        return []
+    try:
+        data = r.json()
+    except ValueError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    rows = data.get("results")
+    if not isinstance(rows, list):
+        return []
+    return _map_geoapify_results([x for x in rows if isinstance(x, dict)])
+
+
+async def _geoapify_scoped_search(
+    client: httpx.AsyncClient,
+    trimmed: str,
+    city: str,
+    base_candidates: list[str],
+    lat: Optional[float],
+    lng: Optional[float],
+    *,
+    district: str = "",
+    city_raw: str = "",
+    max_http: int = 2,
+) -> list[dict[str, Any]]:
+    if not GEOAPIFY_API_KEY:
+        return []
+    cands = _nominatim_try_order(trimmed, city, base_candidates, district=district, city_raw=city_raw)
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    http_used = 0
+    for cand in cands:
+        if http_used >= max_http:
+            break
+        http_used += 1
+        rows = await _geoapify_autocomplete(client, cand, lat, lng)
+        for row in rows:
+            sk = _norm_key(f"{row.get('place_id')}|{row.get('display_name')}")
+            if sk in seen:
+                continue
+            seen.add(sk)
+            out.append(row)
+        if len(out) >= 12:
+            break
+    return out[:12]
+
+
 def _dedupe_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
@@ -1461,6 +1599,18 @@ async def _collect_turkey_wide_fallback(
     except (httpx.TimeoutException, Exception):
         pass
 
+    if GEOAPIFY_API_KEY and not _has_google_provider_rows(collected):
+        try:
+            for cand in _turkey_wide_query_candidates(trimmed)[:3]:
+                rows = await _geoapify_autocomplete(http, cand, lat, lng)
+                if rows:
+                    collected.extend(rows)
+                    break
+        except (httpx.TimeoutException, httpx.RequestError):
+            pass
+        except Exception:
+            pass
+
     for cand in _turkey_wide_query_candidates(trimmed):
         try:
             _nst, nrows, rate_hit = await _nominatim_search(http, cand)
@@ -1648,6 +1798,25 @@ async def api_places_search(
             except Exception:
                 pass
 
+            if GEOAPIFY_API_KEY and not _has_google_provider_rows(collected):
+                try:
+                    ga_rows = await _geoapify_scoped_search(
+                        http,
+                        trimmed,
+                        city,
+                        candidates,
+                        lat,
+                        lng,
+                        district=dr,
+                        city_raw=cr,
+                        max_http=3,
+                    )
+                    collected.extend(_filter_results_city_safe(ga_rows, city, district=dr))
+                except (httpx.TimeoutException, httpx.RequestError):
+                    pass
+                except Exception:
+                    pass
+
             nom_cands_m = _nominatim_try_order(
                 trimmed, city, candidates, district=dr, city_raw=cr
             )
@@ -1721,6 +1890,7 @@ async def api_places_search(
             return payload_fb
 
         outbound: Optional[dict[str, Any]] = None
+        google_got_rows = False
 
         # --- Kutu dışı: önce dar Google sonra geocode, sonra Nominatim ---
         if GOOGLE_MAPS_API_KEY:
@@ -1737,6 +1907,7 @@ async def api_places_search(
                     max_predictions=20,
                 )
                 if preds_merged:
+                    google_got_rows = True
                     outbound = _result_google_autocomplete(preds_merged, max_predictions=20)
                     rows_raw = list(outbound.get("results") or [])
                     outbound["results"] = rows_raw
@@ -1765,7 +1936,10 @@ async def api_places_search(
                 if sc2 == 200 and isinstance(gdata, dict) and str(gdata.get("status")) in ("OK", "ZERO_RESULTS"):
                     gb = _results_from_google_geocode(gdata)
                     if gb:
-                        fr2 = _filter_results_city_safe(gb.get("results") or [], city, district=dr)
+                        raw_geo = list(gb.get("results") or [])
+                        if raw_geo:
+                            google_got_rows = True
+                        fr2 = _filter_results_city_safe(raw_geo, city, district=dr)
                         if city_trim and fr2:
                             fr2 = _rank_city_scoped_results(
                                 fr2, trimmed, city_trim, lat, lng, district=dr
@@ -1774,12 +1948,46 @@ async def api_places_search(
                             gb["results"] = _dedupe_results(fr2)
                             _cache_set(cache_key_raw, gb)
                             return gb
-                        raw_geo = list(gb.get("results") or [])
                         if raw_geo:
                             gb["results"] = _dedupe_results(raw_geo)[:20]
                             _cache_set(cache_key_raw, gb)
                             return gb
             except httpx.TimeoutException:
+                pass
+            except Exception:
+                pass
+
+        if GEOAPIFY_API_KEY and not google_got_rows:
+            try:
+                ga_rows = await _geoapify_scoped_search(
+                    http,
+                    trimmed,
+                    city,
+                    candidates,
+                    lat,
+                    lng,
+                    district=dr,
+                    city_raw=cr,
+                    max_http=3,
+                )
+                ga_filtered = _filter_results_city_safe(ga_rows, city, district=dr)
+                if ga_filtered:
+                    ga_ranked = (
+                        _rank_city_scoped_results(
+                            ga_filtered, trimmed, city_trim, lat, lng, district=dr
+                        )
+                        if city_trim
+                        else ga_filtered
+                    )
+                    outbound = {
+                        "success": True,
+                        "cached": False,
+                        "provider_used": "geoapify",
+                        "results": _dedupe_results(ga_ranked)[:20],
+                    }
+                    _cache_set(cache_key_raw, outbound)
+                    return outbound
+            except (httpx.TimeoutException, httpx.RequestError):
                 pass
             except Exception:
                 pass
