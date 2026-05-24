@@ -8,6 +8,7 @@ import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
   ADMIN_SUPPORT_ROUTE_PATH,
   getOpsHubMagicLinkRedirectTo,
+  GROWTH_CENTER_ROUTE_PATH,
   KYC_ADMIN_ROUTE_PATH,
   NOTIFICATION_CENTER_ROUTE_PATH,
   SOCIAL_STUDIO_ROUTE_PATH,
@@ -53,6 +54,14 @@ const MODULE_CARDS: ModuleCard[] = [
     title: "Sosyal Medya Studio",
     href: SOCIAL_STUDIO_ROUTE_PATH,
     description: "Instagram/TikTok/X için güvenli içerik taslakları.",
+    statusLabel: "Faz 1",
+    statusTone: "beta",
+  },
+  {
+    id: "growth",
+    title: "Growth Center",
+    href: GROWTH_CENTER_ROUTE_PATH,
+    description: "Instagram API ve büyüme otomasyonu hazırlık merkezi.",
     statusLabel: "Faz 1",
     statusTone: "beta",
   },

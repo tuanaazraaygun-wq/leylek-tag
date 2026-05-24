@@ -17,6 +17,10 @@
  * Sosyal Medya Studio OAuth dönüşü (allowlist'e ekleyin):
  *   {origin}/support/social
  *
+ * Growth Center OAuth dönüşü (allowlist'e ekleyin):
+ *   https://leylektag.com/support/growth
+ *   http://localhost:3000/support/growth
+ *
  * Navbar “Google ile giriş” ana sayfa dönüşü (Site URL / root):
  *   http://localhost:3000/
  *   https://leylektag.com/
@@ -36,6 +40,9 @@ export const OPS_HUB_ROUTE_PATH = "/support/ops";
 
 /** Admin sosyal medya studio — statik taslak (paylaşım yok). */
 export const SOCIAL_STUDIO_ROUTE_PATH = "/support/social";
+
+/** Admin growth center — Instagram API hazırlık shell (Faz 1). */
+export const GROWTH_CENTER_ROUTE_PATH = "/support/growth";
 
 /** Public site origin; NEXT_PUBLIC_SITE_URL doluysa o, değilse tarayıcı (veya SSR fallback localhost). */
 export function getSiteOriginForRedirect(): string {
@@ -83,6 +90,12 @@ export function getOpsHubMagicLinkRedirectTo(): string {
 export function getSocialStudioMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${SOCIAL_STUDIO_ROUTE_PATH}`;
+}
+
+/** Growth center OAuth + magic link callback. */
+export function getGrowthCenterMagicLinkRedirectTo(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}${GROWTH_CENTER_ROUTE_PATH}`;
 }
 
 /** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */
