@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { LeylekZekaMark } from "@/components/leylek-zeka-mark";
 
 type SiteSupportPhoneShellProps = {
   dialogId: string;
@@ -49,36 +50,6 @@ export function SiteSupportPhoneShell({
   );
 }
 
-function LeylekHeaderAvatar() {
-  return (
-    <span
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-cyan-400/20 bg-gradient-to-br from-cyan-500/14 to-slate-900/90 shadow-[0_0_14px_-6px_rgba(34,211,238,0.4)]"
-      aria-hidden
-    >
-      <svg className="h-[1.05rem] w-[1.05rem] text-cyan-300/95" viewBox="0 0 24 24" fill="none">
-        <path
-          d="M5 13.5v3a2 2 0 0 0 2 2h1v-8H7a2 2 0 0 0-2 2v1Z"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M19 13.5v3a2 2 0 0 1-2 2h-1v-8h1a2 2 0 0 1 2 2v1Z"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M7 17.5V18a5 5 0 1 0 10 0v-.5"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-        />
-      </svg>
-    </span>
-  );
-}
-
 function headerStatusDotClass(statusLabel: string): string {
   if (statusLabel.includes("Yanıt")) return "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.55)] animate-pulse";
   if (statusLabel.includes("Destek")) return "bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,0.45)]";
@@ -103,7 +74,7 @@ export function SupportPhoneModalHeader({
   return (
     <div className="shrink-0 border-b border-white/[0.06] bg-slate-950/50 px-4 pb-2.5 pt-3 sm:px-5">
       <div className="flex items-start gap-2.5">
-        <LeylekHeaderAvatar />
+        <LeylekZekaMark size="md" variant="tile" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <p id={titleId} className="text-[15px] font-bold leading-tight tracking-tight text-white">
@@ -174,8 +145,9 @@ export function SupportEntryGateway({ onSelectLeylek, onSelectLive }: SupportEnt
         <button
           type="button"
           onClick={onSelectLeylek}
-          className="inline-flex min-h-[46px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-3 text-[14px] font-bold tracking-tight text-white shadow-[0_12px_36px_-16px_rgba(0,198,255,0.45)] transition hover:brightness-[1.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/50"
+          className="inline-flex min-h-[46px] touch-manipulation items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-3 text-[14px] font-bold tracking-tight text-white shadow-[0_12px_36px_-16px_rgba(0,198,255,0.45)] transition hover:brightness-[1.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/50"
         >
+          <LeylekZekaMark size="sm" variant="plain" />
           Leylek Zeka&apos;ya sor
         </button>
         <button

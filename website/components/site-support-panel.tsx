@@ -17,6 +17,7 @@ import {
   SupportEntryGateway,
   SupportPhoneModalHeader,
 } from "@/components/site-support-phone-shell";
+import { LeylekZekaMark } from "@/components/leylek-zeka-mark";
 import { getSupabaseTicketChatClient } from "@/lib/support-chat-client";
 import {
   SUPPORT_ADMIN_TYPING_EVENT,
@@ -205,57 +206,17 @@ function SupportChatSendGlyph({ className = "h-4 w-4" }: { className?: string })
 }
 
 function SupportBubbleAvatar({ variant }: { variant: "leylek" | "admin" }) {
-  const isLeylek = variant === "leylek";
+  if (variant === "leylek") {
+    return <LeylekZekaMark size="sm" variant="tile" className="mb-0.5" />;
+  }
+
   return (
     <span
-      className={`mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
-        isLeylek
-          ? "border-cyan-400/22 bg-gradient-to-br from-cyan-500/15 to-slate-900/90"
-          : "border-violet-400/22 bg-gradient-to-br from-violet-500/15 to-slate-900/90"
-      }`}
+      className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-violet-400/22 bg-gradient-to-br from-violet-500/15 to-slate-900/90"
       aria-hidden
     >
-      {isLeylek ? (
-        <SupportHeadsetGlyph className="h-3.5 w-3.5" />
-      ) : (
-        <span className="text-[9px] font-bold text-violet-200/90">D</span>
-      )}
+      <span className="text-[9px] font-bold text-violet-200/90">D</span>
     </span>
-  );
-}
-
-function SupportHeadsetGlyph({ className = "h-[1.125rem] w-[1.125rem]" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path
-        d="M5 13.5v3a2 2 0 0 0 2 2h1v-8H7a2 2 0 0 0-2 2v1Z"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinejoin="round"
-        className="text-cyan-300/92"
-      />
-      <path
-        d="M19 13.5v3a2 2 0 0 1-2 2h-1v-8h1a2 2 0 0 1 2 2v1Z"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinejoin="round"
-        className="text-cyan-300/92"
-      />
-      <path
-        d="M7 17.5V18a5 5 0 1 0 10 0v-.5"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        className="text-cyan-200/82"
-      />
-      <path
-        d="M9 11.75a3.25 3.25 0 0 1 6 0"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        opacity="0.55"
-      />
-    </svg>
   );
 }
 
@@ -1799,7 +1760,7 @@ export function SiteSupportPanel() {
             </svg>
           </span>
         )}
-        <SupportHeadsetGlyph className="relative z-[1] h-[1.05rem] w-[1.05rem] shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" />
+        <LeylekZekaMark size="sm" variant="tile" className="relative z-[1] shrink-0" />
         <span className="relative z-[1] flex min-w-0 flex-1 flex-col items-start gap-0.5 leading-tight text-white/[0.94] sm:flex-row sm:flex-nowrap sm:items-baseline sm:gap-x-2">
           {supportUnlocked ? (
             <>
