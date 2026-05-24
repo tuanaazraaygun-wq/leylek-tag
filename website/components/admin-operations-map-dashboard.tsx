@@ -6,18 +6,24 @@ import type { Session } from "@supabase/supabase-js";
 
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
+  applyTimelineToKpis,
   DENSITY_LEVEL_LABELS,
   densityLevelColor,
   getOperationsMapCityLabel,
   getOperationsMapDemoEventsByCity,
   getOperationsMapIntelligence,
   getOperationsMapRegionsByCity,
+  getOperationsMapTimelineLabel,
+  getTimelineEventHighlightIndex,
+  isTimelineEventVisible,
   OPERATIONS_MAP_INTELLIGENCE_DISCLAIMERS,
   OPERATIONS_MAP_SECURITY_NOTES,
+  OPERATIONS_MAP_TIMELINE_OPTIONS,
   SEVERITY_LEVEL_LABELS,
   type OperationsMapCity,
   type OperationsMapDemoEvent,
   type OperationsMapRegion,
+  type OperationsMapTimelineMinutes,
   type RegionIntelligence,
   type SeverityLevel,
 } from "@/lib/operations-map-demo-data";
@@ -86,12 +92,14 @@ function MockMapPanel({
   regions,
   layers,
   cityLabel,
+  timelineLabel,
   hoveredRegionId,
   onHoverRegion,
 }: {
   regions: OperationsMapRegion[];
   layers: Record<MapLayer, boolean>;
   cityLabel: string;
+  timelineLabel: string;
   hoveredRegionId: string | null;
   onHoverRegion: (id: string | null) => void;
 }) {
@@ -107,12 +115,17 @@ function MockMapPanel({
       <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(99,102,241,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.12)_1px,transparent_1px)] [background-size:96px_96px]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-cyan-500/[0.06] to-transparent" />
 
-      <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-lg border border-cyan-400/25 bg-black/60 px-2.5 py-1.5 text-[10px] font-bold text-cyan-100/90">
-          Demo veri · son 15 dk simülasyon
-        </span>
-        <span className="rounded-lg border border-white/10 bg-black/45 px-2 py-1 text-[9px] font-semibold text-slate-400">
-          {cityLabel} · anonim bölge
+      <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-lg border border-cyan-400/25 bg-black/60 px-2.5 py-1.5 text-[10px] font-bold text-cyan-100/90">
+            {timelineLabel}
+          </span>
+          <span className="rounded-lg border border-white/10 bg-black/45 px-2 py-1 text-[9px] font-semibold text-slate-400">
+            {cityLabel} · anonim bölge
+          </span>
+        </div>
+        <span className="w-fit rounded-md border border-amber-400/20 bg-amber-500/[0.08] px-2 py-0.5 text-[9px] font-semibold text-amber-100/90">
+          Gerçek kullanıcı verisi değildir
         </span>
       </div>
 
@@ -209,19 +222,24 @@ function MockMapPanel({
 function DemoEventLogPanel({
   events,
   activeIndex,
+  timelineMinutes,
 }: {
   events: OperationsMapDemoEvent[];
   activeIndex: number;
+  timelineMinutes: OperationsMapTimelineMinutes;
 }) {
   return (
     <aside className="flex h-full min-h-[240px] flex-col rounded-2xl border border-white/[0.08] bg-slate-950/90">
       <div className="border-b border-white/[0.06] px-3 py-2.5">
         <h2 className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Demo olay akışı</h2>
-        <p className="mt-0.5 text-[9px] text-slate-500">Statik simülasyon · websocket yok</p>
+        <p className="mt-0.5 text-[9px] text-slate-500">
+          Timeline oynatma · {timelineMinutes === 0 ? "şimdi" : `${timelineMinutes} dk önce`}
+        </p>
       </div>
       <ul className="flex-1 space-y-1 overflow-y-auto p-2">
         {events.map((event, index) => {
-          const active = index === activeIndex;
+          const visible = isTimelineEventVisible(event, timelineMinutes);
+          const active = visible && index === activeIndex;
           const toneClass =
             event.tone === "warning"
               ? "border-orange-400/25 bg-orange-500/[0.06]"
@@ -232,16 +250,58 @@ function DemoEventLogPanel({
             <li
               key={event.id}
               className={`rounded-lg border px-2.5 py-2 text-[10px] leading-relaxed transition ${
-                active ? `${toneClass} ring-1 ring-white/10` : "border-transparent text-slate-500"
+                active
+                  ? `${toneClass} ring-1 ring-white/10`
+                  : visible
+                    ? "border-transparent text-slate-500"
+                    : "border-transparent opacity-35 text-slate-600"
               }`}
             >
               <span className="font-mono text-[9px] text-slate-600">{event.minutesAgo} dk önce</span>
-              <p className={active ? "text-slate-200" : "text-slate-400"}>{event.message}</p>
+              <p className={active ? "text-slate-200" : visible ? "text-slate-400" : "text-slate-600"}>
+                {event.message}
+              </p>
             </li>
           );
         })}
       </ul>
     </aside>
+  );
+}
+
+function TimelineSegmentControl({
+  value,
+  onChange,
+}: {
+  value: OperationsMapTimelineMinutes;
+  onChange: (minutes: OperationsMapTimelineMinutes) => void;
+}) {
+  return (
+    <div
+      className="inline-flex w-full max-w-xl flex-wrap gap-1 rounded-xl border border-white/[0.1] bg-slate-950/90 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      role="tablist"
+      aria-label="Demo timeline oynatma"
+    >
+      {OPERATIONS_MAP_TIMELINE_OPTIONS.map((option) => {
+        const selected = value === option.minutes;
+        return (
+          <button
+            key={option.minutes}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(option.minutes)}
+            className={`min-h-[36px] flex-1 rounded-lg px-3 py-1.5 text-[11px] font-bold transition sm:min-w-[88px] sm:flex-none ${
+              selected
+                ? "border border-indigo-400/35 bg-gradient-to-b from-indigo-500/20 to-indigo-500/10 text-indigo-100 shadow-[0_0_20px_rgba(99,102,241,0.15)]"
+                : "border border-transparent text-slate-500 hover:border-white/10 hover:bg-white/[0.03] hover:text-slate-300"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -337,12 +397,18 @@ export function AdminOperationsMapDashboard() {
     routing: true,
   });
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
+  const [timelineMinutes, setTimelineMinutes] = useState<OperationsMapTimelineMinutes>(0);
   const [liveTick, setLiveTick] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const regions = useMemo(() => getOperationsMapRegionsByCity(city), [city]);
   const events = useMemo(() => getOperationsMapDemoEventsByCity(city), [city]);
   const intelligence = useMemo(() => getOperationsMapIntelligence(city), [city]);
+  const timelineKpis = useMemo(
+    () => applyTimelineToKpis(city, intelligence.kpis, timelineMinutes),
+    [city, intelligence.kpis, timelineMinutes],
+  );
+  const timelineLabel = useMemo(() => getOperationsMapTimelineLabel(timelineMinutes), [timelineMinutes]);
   const priorityIntel = useMemo(
     () => intelligence.regions.filter((item) => item.region.supplyGap === "yuksek"),
     [intelligence],
@@ -356,7 +422,12 @@ export function AdminOperationsMapDashboard() {
     [citySearch, regionFilter],
   );
   const cityLabel = useMemo(() => getOperationsMapCityLabel(city), [city]);
-  const activeEventIndex = events.length > 0 ? liveTick % events.length : 0;
+  const activeEventIndex = useMemo(() => {
+    if (timelineMinutes === 0 && events.length > 0) {
+      return liveTick % events.length;
+    }
+    return getTimelineEventHighlightIndex(events, timelineMinutes);
+  }, [events, liveTick, timelineMinutes]);
 
   useEffect(() => {
     if (!client) return undefined;
@@ -373,9 +444,10 @@ export function AdminOperationsMapDashboard() {
   }, [client]);
 
   useEffect(() => {
+    if (timelineMinutes !== 0) return undefined;
     const id = window.setInterval(() => setLiveTick((t) => t + 1), 4500);
     return () => window.clearInterval(id);
-  }, []);
+  }, [timelineMinutes]);
 
   useEffect(() => {
     if (!copyFeedback) return undefined;
@@ -532,7 +604,7 @@ export function AdminOperationsMapDashboard() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-300/78">Admin · Harita</p>
           <h1 className="mt-1.5 text-xl font-black text-white sm:text-2xl">LeylekTAG Operasyon Harita Merkezi</h1>
           <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-slate-400">
-            Anonim yoğunluk, boş bölge ve yönlendirme hazırlık ekranı. Faz 0C · Demo intelligence — canlı konum, OSRM ve gerçek kullanıcı verisi yok.
+            Anonim yoğunluk, boş bölge ve yönlendirme hazırlık ekranı. Faz 0D · Demo timeline oynatma — canlı konum, OSRM ve gerçek kullanıcı verisi yok.
           </p>
           <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
@@ -660,10 +732,10 @@ export function AdminOperationsMapDashboard() {
 
       <section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Demo KPI özeti">
         {[
-          { label: "Demo talep skoru", value: intelligence.kpis.demandScore },
-          { label: "Demo sürücü dengesi", value: intelligence.kpis.driverBalance },
-          { label: "Demo arz açığı", value: intelligence.kpis.supplyGapScore },
-          { label: "Demo öneri sayısı", value: intelligence.kpis.recommendationCount },
+          { label: "Demo talep skoru", value: timelineKpis.demandScore },
+          { label: "Demo sürücü dengesi", value: timelineKpis.driverBalance },
+          { label: "Demo arz açığı", value: timelineKpis.supplyGapScore },
+          { label: "Demo öneri sayısı", value: timelineKpis.recommendationCount },
         ].map((kpi) => (
           <div key={kpi.label} className="rounded-xl border border-white/[0.08] bg-slate-950/80 px-3 py-2.5">
             <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500">{kpi.label}</p>
@@ -737,15 +809,24 @@ export function AdminOperationsMapDashboard() {
         ))}
       </div>
 
+      <section className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Timeline oynatma</p>
+          <p className="mt-0.5 text-[10px] text-slate-400">{timelineLabel} · gerçek kullanıcı verisi değildir</p>
+        </div>
+        <TimelineSegmentControl value={timelineMinutes} onChange={setTimelineMinutes} />
+      </section>
+
       <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_minmax(220px,280px)]">
         <MockMapPanel
           regions={regions}
           layers={layers}
           cityLabel={cityLabel}
+          timelineLabel={timelineLabel}
           hoveredRegionId={hoveredRegionId}
           onHoverRegion={setHoveredRegionId}
         />
-        <DemoEventLogPanel events={events} activeIndex={activeEventIndex} />
+        <DemoEventLogPanel events={events} activeIndex={activeEventIndex} timelineMinutes={timelineMinutes} />
       </div>
 
       <section className="mt-8">

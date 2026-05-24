@@ -31,6 +31,20 @@ export const OPERATIONS_MAP_INTELLIGENCE_DISCLAIMERS = [
   "Otomatik push gönderilmez.",
 ] as const;
 
+export type OperationsMapTimelineMinutes = 0 | 5 | 10 | 15;
+
+export const OPERATIONS_MAP_TIMELINE_OPTIONS: { minutes: OperationsMapTimelineMinutes; label: string }[] = [
+  { minutes: 0, label: "Şimdi" },
+  { minutes: 5, label: "5 dk önce" },
+  { minutes: 10, label: "10 dk önce" },
+  { minutes: 15, label: "15 dk önce" },
+];
+
+export function getOperationsMapTimelineLabel(minutes: OperationsMapTimelineMinutes): string {
+  if (minutes === 0) return "Demo timeline · son 15 dk · Şimdi";
+  return `Demo timeline · son 15 dk · ${minutes} dk önce`;
+}
+
 export type RegionIntelligence = {
   region: OperationsMapRegion;
   severity: SeverityLevel;
@@ -464,6 +478,63 @@ function computeCityKpis(city: OperationsMapCity, regions: OperationsMapRegion[]
     supplyGapScore: Math.min(99, Math.round(avgGap * 30 + (hash % 5) + 6)),
     recommendationCount,
   };
+}
+
+function clampTimelineScore(value: number): number {
+  return Math.min(99, Math.max(8, Math.round(value)));
+}
+
+export function applyTimelineToKpis(
+  city: OperationsMapCity,
+  kpis: OperationsMapIntelligence["kpis"],
+  minutesAgo: OperationsMapTimelineMinutes,
+): OperationsMapIntelligence["kpis"] {
+  if (minutesAgo === 0) return kpis;
+
+  const drift = hashSlug(`${city}:timeline:${minutesAgo}`) % 4;
+  const recommendationDelta =
+    minutesAgo === 15 ? 1 : minutesAgo === 5 && drift % 2 === 0 ? -1 : 0;
+
+  return {
+    demandScore: clampTimelineScore(kpis.demandScore - minutesAgo * 0.9 - drift),
+    driverBalance: clampTimelineScore(kpis.driverBalance - minutesAgo * 0.55 + drift * 0.5),
+    supplyGapScore: clampTimelineScore(kpis.supplyGapScore + minutesAgo * 0.65 + drift),
+    recommendationCount: Math.max(0, kpis.recommendationCount + recommendationDelta),
+  };
+}
+
+export function getTimelineEventHighlightIndex(
+  events: OperationsMapDemoEvent[],
+  timelineMinutes: OperationsMapTimelineMinutes,
+): number {
+  if (events.length === 0) return 0;
+
+  const visible = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => isTimelineEventVisible(event, timelineMinutes));
+
+  if (visible.length === 0) return 0;
+
+  let bestIdx = visible[0].index;
+  let bestDist = Math.abs(visible[0].event.minutesAgo - timelineMinutes);
+
+  for (const item of visible) {
+    const dist = Math.abs(item.event.minutesAgo - timelineMinutes);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = item.index;
+    }
+  }
+
+  return bestIdx;
+}
+
+export function isTimelineEventVisible(
+  event: OperationsMapDemoEvent,
+  timelineMinutes: OperationsMapTimelineMinutes,
+): boolean {
+  if (timelineMinutes === 0) return true;
+  return event.minutesAgo >= timelineMinutes;
 }
 
 function expectedImpactLabel(severity: SeverityLevel): string {
