@@ -33,11 +33,78 @@ export type OperationsMapRegion = {
 };
 
 export const OPERATIONS_MAP_SECURITY_NOTES = [
+  "Bu ekran demo/anonim operasyon simülasyonudur.",
   "Tekil kullanıcı konumu gösterilmez.",
-  "Sadece anonim bölgesel yoğunluk (demo veri).",
-  "Push otomatik gönderilmez; taslak metinler yalnızca öneridir.",
+  "Push otomatik gönderilmez.",
   "OSRM yalnızca rota/ETA için ileride kullanılacak; bu fazda çağrı yok.",
 ] as const;
+
+export type OperationsMapDemoEvent = {
+  id: string;
+  city: OperationsMapCity;
+  minutesAgo: number;
+  message: string;
+  tone: "info" | "warning" | "success";
+};
+
+export const OPERATIONS_MAP_DEMO_EVENTS: OperationsMapDemoEvent[] = [
+  {
+    id: "ev-ankara-kizilay",
+    city: "ankara",
+    minutesAgo: 2,
+    message: "Ankara · Kızılay hattında talep artışı",
+    tone: "warning",
+  },
+  {
+    id: "ev-ankara-etlik",
+    city: "ankara",
+    minutesAgo: 8,
+    message: "Ankara · Etlik bölgesinde denge korunuyor",
+    tone: "success",
+  },
+  {
+    id: "ev-istanbul-kadikoy",
+    city: "istanbul",
+    minutesAgo: 3,
+    message: "İstanbul · Kadıköy çevresinde sürücü dengesi iyi",
+    tone: "success",
+  },
+  {
+    id: "ev-istanbul-levent",
+    city: "istanbul",
+    minutesAgo: 5,
+    message: "İstanbul · Levent hattında arz açığı yükseldi",
+    tone: "warning",
+  },
+  {
+    id: "ev-izmir-alsancak",
+    city: "izmir",
+    minutesAgo: 4,
+    message: "İzmir · Alsancak için yönlendirme önerisi",
+    tone: "info",
+  },
+  {
+    id: "ev-izmir-bornova",
+    city: "izmir",
+    minutesAgo: 11,
+    message: "İzmir · Bornova kampüs hattında sürücü çağrısı adayı",
+    tone: "warning",
+  },
+  {
+    id: "ev-ankara-batikent",
+    city: "ankara",
+    minutesAgo: 14,
+    message: "Ankara · Batıkent rotasında talep orta seviyede",
+    tone: "info",
+  },
+  {
+    id: "ev-istanbul-bakirkoy",
+    city: "istanbul",
+    minutesAgo: 12,
+    message: "İstanbul · Bakırköy hattı stabil — izleme modu",
+    tone: "info",
+  },
+];
 
 export const OPERATIONS_MAP_DEMO_REGIONS: OperationsMapRegion[] = [
   {
@@ -170,6 +237,14 @@ export const OPERATIONS_MAP_DEMO_REGIONS: OperationsMapRegion[] = [
 
 export function getOperationsMapRegionsByCity(city: OperationsMapCity): OperationsMapRegion[] {
   return OPERATIONS_MAP_DEMO_REGIONS.filter((r) => r.city === city);
+}
+
+export function getOperationsMapDemoEventsByCity(city: OperationsMapCity): OperationsMapDemoEvent[] {
+  return OPERATIONS_MAP_DEMO_EVENTS.filter((e) => e.city === city).sort((a, b) => a.minutesAgo - b.minutesAgo);
+}
+
+export function getHighSupplyGapRegions(city: OperationsMapCity): OperationsMapRegion[] {
+  return getOperationsMapRegionsByCity(city).filter((r) => r.supplyGap === "yuksek");
 }
 
 export function densityLevelColor(level: DensityLevel, kind: "passenger" | "driver" | "gap" | "routing"): string {
