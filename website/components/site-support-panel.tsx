@@ -28,6 +28,7 @@ import {
   readStoredSupportTicket,
   writeStoredSupportTicket,
 } from "@/lib/support-ticket-storage";
+import { requestSupportLeylekZeka } from "@/lib/support-leylek-zeka-client";
 import { isSupabaseConfigured } from "@/lib/supabase-client";
 
 const MESSAGE_MIN_LEN = 10;
@@ -242,6 +243,19 @@ const LIVE_SUPPORT_QUEUE_COPY = `Talebin alındı ve destek ekibine iletildi.
 Müsait olduklarında yanıtlar bu akışta görünür; süre net olarak garanti edilmez.
 İstersen bu pencereyi kapatabilir veya e‑posta ile de ulaşabilirsin.`;
 
+const LEYLEK_ZEKA_FAIL_BANNER =
+  "Leylek Zeka şu an yanıt veremedi; mesajınız destek ekibine iletildi.";
+
+function shouldSkipLeylekZekaAi(
+  meta: SupportTicketMetaRow | null,
+  lines: SupportChatRow[],
+): boolean {
+  if (!meta) return true;
+  if (trimRowStatus(meta.status) === "resolved") return true;
+  if ((meta.assigned_admin_id ?? "").trim().length > 0) return true;
+  return lines.some((ln) => (ln.sender_type ?? "").trim().toLowerCase() === "admin");
+}
+
 function trimRowStatus(raw: string | null | undefined): string {
   return raw?.trim()?.toLowerCase() ?? "";
 }
@@ -310,6 +324,7 @@ export function SiteSupportPanel() {
   const pathname = usePathname();
   const configured = useMemo(() => isSupabaseConfigured(), []);
   const { authReady, session, profile, oauthBusy, signInWithGoogle } = useSiteAuth();
+  const aiInFlightRef = useRef(false);
 
   const sessionContactEmail = useMemo(
     () => session?.user?.email?.trim().toLowerCase() ?? "",
@@ -338,6 +353,7 @@ export function SiteSupportPanel() {
   const [chatLines, setChatLines] = useState<SupportChatRow[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [aiTyping, setAiTyping] = useState(false);
   const [chatBanner, setChatBanner] = useState<string | null>(null);
   const [adminTypingPeek, setAdminTypingPeek] = useState(false);
   const [postgresRepairKey, setPostgresRepairKey] = useState(0);
@@ -364,7 +380,44 @@ export function SiteSupportPanel() {
 
   useEffect(() => {
     scrollChatToBottom();
-  }, [chatLines, adminTypingPeek, chatSending, scrollChatToBottom]);
+  }, [chatLines, adminTypingPeek, chatSending, aiTyping, scrollChatToBottom]);
+
+  const invokeLeylekZekaAfterUserMessage = useCallback(
+    async (
+      ticketId: string,
+      clientToken: string,
+      userMessage: string,
+      skipCheckMeta: SupportTicketMetaRow | null,
+      skipCheckLines: SupportChatRow[],
+    ) => {
+      if (aiInFlightRef.current) return;
+      if (shouldSkipLeylekZekaAi(skipCheckMeta, skipCheckLines)) return;
+
+      const accessToken = session?.access_token?.trim();
+      if (!accessToken) return;
+
+      aiInFlightRef.current = true;
+      setAiTyping(true);
+      try {
+        const result = await requestSupportLeylekZeka({
+          accessToken,
+          ticketId,
+          clientToken,
+          message: userMessage,
+        });
+        if ("skipped" in result && result.skipped) return;
+        if (!result.success) {
+          setChatBanner(LEYLEK_ZEKA_FAIL_BANNER);
+        }
+      } catch {
+        setChatBanner(LEYLEK_ZEKA_FAIL_BANNER);
+      } finally {
+        aiInFlightRef.current = false;
+        setAiTyping(false);
+      }
+    },
+    [session?.access_token],
+  );
 
   useEffect(() => {
     const endAt = cooldownEndsAtRef.current;
@@ -812,10 +865,12 @@ export function SiteSupportPanel() {
 
       setStatus("loading");
 
+      const userMsgText = message.trim();
+
       const payload = {
         name: name.trim() || null,
         email: sessionContactEmail,
-        message: message.trim(),
+        message: userMsgText,
         page_path: pathname ?? null,
         user_agent:
           typeof navigator !== "undefined" ? navigator.userAgent.slice(0, USER_AGENT_MAX) : null,
@@ -847,7 +902,7 @@ export function SiteSupportPanel() {
             support_message_id: created.id,
             sender_type: "user",
             sender_email: sessionContactEmail,
-            body: message.trim(),
+            body: userMsgText,
           })
           .select("id,support_message_id,sender_type,sender_email,body,created_at")
           .maybeSingle();
@@ -870,7 +925,8 @@ export function SiteSupportPanel() {
           .eq("support_message_id", created.id)
           .order("created_at", { ascending: true });
 
-        mergeChatBootstrap(Array.isArray(lines) ? (lines as SupportChatRow[]) : []);
+        const bootLines = Array.isArray(lines) ? (lines as SupportChatRow[]) : [];
+        mergeChatBootstrap(bootLines);
 
         const { data: meta } = await ticketClientReturning!
           .from("support_messages")
@@ -878,7 +934,8 @@ export function SiteSupportPanel() {
           .eq("id", created.id)
           .maybeSingle();
 
-        if (meta) setTicketMeta(meta as SupportTicketMetaRow);
+        const metaRow = meta ? (meta as SupportTicketMetaRow) : null;
+        if (metaRow) setTicketMeta(metaRow);
 
         setPanelView("thread");
         setStatus("idle");
@@ -888,6 +945,16 @@ export function SiteSupportPanel() {
         setChatBanner(
           "Talebin kaydedildi ve destek ekibine iletildi. Müsaitlik durumunda yanıtlar bu akışta görünecek.",
         );
+
+        if (metaRow) {
+          void invokeLeylekZekaAfterUserMessage(
+            created.id,
+            tokenNormalized,
+            userMsgText,
+            metaRow,
+            bootLines,
+          );
+        }
       } catch {
         setStatus("error");
         setFeedback("Bir şeyler ters gitti. Lütfen tekrar dene.");
@@ -904,6 +971,7 @@ export function SiteSupportPanel() {
       sessionContactEmail,
       supportUnlocked,
       validateComposer,
+      invokeLeylekZekaAfterUserMessage,
     ],
   );
 
@@ -950,11 +1018,25 @@ export function SiteSupportPanel() {
         setChatLines((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatRow]));
         setChatInput("");
         setChatBanner("Mesajın gönderildi ve destek akışına eklendi. Ekibimiz müsait olduğunda buradan yanıtlayacaktır.");
+
+        const nextLines = chatLines.some((r) => r.id === data.id)
+          ? chatLines
+          : [...chatLines, data as SupportChatRow];
+        void invokeLeylekZekaAfterUserMessage(ticketId, tk, body, ticketMeta, nextLines);
       } finally {
         setChatSending(false);
       }
     },
-    [chatInput, chatSending, sessionContactEmail, supportClientToken, supportUnlocked, ticketMeta],
+    [
+      chatInput,
+      chatLines,
+      chatSending,
+      invokeLeylekZekaAfterUserMessage,
+      sessionContactEmail,
+      supportClientToken,
+      supportUnlocked,
+      ticketMeta,
+    ],
   );
 
   const onNewConversationClick = useCallback(async () => {
@@ -1246,7 +1328,7 @@ export function SiteSupportPanel() {
                             className={`mx-auto ${baseWrap} max-w-[min(96%,24rem)] self-center border-amber-400/32 bg-gradient-to-br from-amber-500/[0.12] to-black/55 text-center text-amber-50/95 ring-1 ring-amber-400/15`}
                           >
                             <span className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-200/85">
-                              Sistem
+                              Leylek Zeka
                             </span>
                             <div className="mt-1.5 text-[12px] font-medium whitespace-pre-wrap leading-snug">{ln.body}</div>
                             {timeLabel ? (
@@ -1309,6 +1391,17 @@ export function SiteSupportPanel() {
                             className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-cyan-200/25 border-t-cyan-100"
                           />
                           Gönderiliyor…
+                        </div>
+                      </div>
+                    ) : null}
+                    {aiTyping ? (
+                      <div className="flex justify-center px-0.5" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-xl border border-amber-400/35 bg-amber-500/[0.1] px-3 py-2 text-[12px] font-bold text-amber-50/95 ring-1 ring-amber-400/20">
+                          <span
+                            aria-hidden
+                            className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-amber-200/25 border-t-amber-100"
+                          />
+                          Leylek Zeka yanıt hazırlıyor…
                         </div>
                       </div>
                     ) : null}
