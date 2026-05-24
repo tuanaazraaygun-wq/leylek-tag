@@ -10,10 +10,11 @@ import { NavbarSiteAuthDrawer, NavbarSiteAuthTop } from "@/components/navbar-sit
 import { BRANDING_PATHS, LEGACY_FALLBACK_ICON } from "@/lib/branding-assets";
 
 const navItems = [
-  { href: "/sehir-ici", label: "Şehir İçi" },
-  { href: "/muhabbet", label: "Leylek Teklifi" },
-  { href: "/guvenlik", label: "Güvenlik" },
   { href: "/nasil-calisir", label: "Nasıl Çalışır" },
+  { href: "/sehir-ici", label: "Şehir İçi" },
+  { href: "/sehirler-arasi", label: "Şehirler Arası" },
+  { href: "/guvenlik", label: "Güvenlik" },
+  { href: "/support", label: "Destek" },
 ];
 
 export function Navbar() {
@@ -72,18 +73,18 @@ export function Navbar() {
                     TAG
                   </span>
                 </span>
-                <span className="mt-1 block truncate text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400/95 sm:text-[11px] sm:tracking-[0.22em]">
+                <span className="mt-0.5 block truncate text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400/95 sm:text-[10px]">
                   Güvenli yolculuk paylaşımı
                 </span>
               </span>
             </Link>
 
-            <nav className="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label="Ana menü">
+            <nav className="hidden min-w-0 items-center gap-0.5 xl:flex" aria-label="Ana menü">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold transition ${
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
                     pathname === item.href
                       ? "bg-cyan-300/[0.12] text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.18)]"
                       : "text-slate-300/92 hover:bg-white/[0.07] hover:text-white"

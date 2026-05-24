@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
+import { HomeAppScopeSection } from "@/components/home-app-scope-section";
+import { HomeTrustKycSection } from "@/components/home-trust-kyc-section";
 import { HomeTrustSafetyProtocol } from "@/components/home-trust-safety-protocol";
-import { AudienceSection } from "@/components/audience-section";
 import { BetaCta } from "@/components/beta-cta";
-import { BetaProcess } from "@/components/beta-process";
 import { ButtonLink } from "@/components/button-link";
 import { ComparisonSection } from "@/components/comparison-section";
 import { Container } from "@/components/container";
@@ -17,12 +17,10 @@ import { FaqSection } from "@/components/faq-section";
 import { ModeCard } from "@/components/mode-card";
 import { RoleSelection } from "@/components/role-selection";
 import { SectionHeading } from "@/components/section-heading";
-import { SocialProofPlaceholder } from "@/components/social-proof-placeholder";
 import { HeroShowcaseStack } from "@/components/hero-showcase-stack";
 import { TrustArchitectureShowcase } from "@/components/trust-architecture-showcase";
 import { HomeFourSteps } from "@/components/home-four-steps";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
-import { SectionMidCta } from "@/components/section-mid-cta";
 
 function NasipPlayGlyph() {
   return (
@@ -32,29 +30,31 @@ function NasipPlayGlyph() {
   );
 }
 
-const experiences = [
+const scenarios = [
   {
+    href: "/sehir-ici",
     title: "Şehir içi",
-    eyebrow: "şehir içi teklif",
+    eyebrow: "günlük rota",
     description:
-      "Rota görünürlüğü, QR doğrulama ve Güven Al adımlarıyla şehir içinde kontrollü güvenli eşleşme.",
+      "Yakın rota eşleşmesi, QR doğrulama ve Güven Al adımlarıyla şehir içinde kontrollü paylaşım.",
     tone: "cyan" as const,
     microStates: [
       { label: "QR aktif", active: true },
-      { label: "Güven görüşmesi hazır", active: true },
+      { label: "Rota uyumu", active: true },
       { label: "Profil görünür", active: true },
     ],
   },
   {
-    title: "Leylek Teklifi",
-    eyebrow: "önce teklif",
+    href: "/sehirler-arasi",
+    title: "Şehirler arası",
+    eyebrow: "planlı yol",
     description:
-      "Teklif görüşmesi, karşılıklı onay ve yolculuk öncesi anlaşma ile yolculuk tekliflerini güvenli eşleşmeye dönüştür.",
-    tone: "violet" as const,
+      "Uzun yol senaryoları için planlı eşleşme akışı; pilot kapsamda kademeli olarak genişletilir.",
+    tone: "blue" as const,
     microStates: [
-      { label: "Teklif akışı açık", active: true },
-      { label: "Rota uyumu izleniyor", active: true },
-      { label: "Leylek Zeka destekli", active: true },
+      { label: "Planlı rota", active: true },
+      { label: "Ön teklif", active: true },
+      { label: "Pilot aşama", active: true },
     ],
   },
 ];
@@ -63,56 +63,59 @@ export default function Home() {
   return (
     <>
       <MobileStickyCta />
-      <HeroShell className="overflow-x-clip pb-14 pt-10 sm:pb-16 sm:pt-10 md:pb-20 md:pt-12 lg:pb-[5.25rem]">
+      <HeroShell className="overflow-x-clip pb-12 pt-8 sm:pb-14 sm:pt-10 md:pb-16 md:pt-11 lg:pb-[4.75rem]">
         <HeroPremiumBackdrop />
         <Container>
-          <div className="grid animate-fade-in-up grid-cols-1 gap-10 md:gap-11 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.02fr)] lg:items-start lg:gap-6 xl:gap-8">
+          <div className="grid animate-fade-in-up grid-cols-1 gap-8 md:gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.02fr)] lg:items-start lg:gap-6 xl:gap-8">
             <div className="min-w-0 px-px text-center lg:max-w-[36.75rem] lg:pr-1 lg:text-left">
               <div className="mx-auto lg:mx-0 lg:max-w-none">
-                <p className="text-[11px] font-black uppercase tracking-[0.34em] text-cyan-200/78 sm:text-xs">yolculuk paylaşımı</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-200/78 sm:text-[11px]">
+                  yolculuk paylaşımı
+                </p>
               </div>
-              <h1 className="mx-auto mt-[1.125rem] max-w-[min(22rem,calc(100vw-2rem))] text-balance text-[clamp(2rem,calc(0.92rem+5.2vw),2.62rem)] font-black leading-[0.99] tracking-[-0.044em] text-white antialiased contrast-more:tracking-normal sm:max-w-2xl sm:leading-[0.988] md:max-w-[min(42rem,calc(100vw-4rem))] md:text-[2.825rem] md:leading-[0.985] lg:mx-0 lg:max-w-[36rem] xl:text-[2.9375rem]">
+              <h1 className="mx-auto mt-4 max-w-[min(22rem,calc(100vw-2rem))] text-balance text-[clamp(1.75rem,calc(0.88rem+4.8vw),2.45rem)] font-black leading-[1.02] tracking-[-0.04em] text-white antialiased sm:max-w-2xl md:max-w-[min(40rem,calc(100vw-4rem))] md:text-[2.5rem] lg:mx-0 lg:max-w-[34rem]">
                 <span className="block">Aynı yöne gidenlerle</span>
-                <span className="mt-[0.4rem] block tracking-tight md:mt-2">
-                  <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#73eafd_43%,#0e9fe6_73%,#0066ef_100%)] bg-clip-text text-transparent [text-decoration:none] [text-shadow:none]">
+                <span className="mt-1 block tracking-tight md:mt-1.5">
+                  <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#73eafd_43%,#0e9fe6_73%,#0066ef_100%)] bg-clip-text text-transparent">
                     güvenli
                   </span>
                   <span className="mx-px font-semibold text-white/[0.77]">{` ve `}</span>
-                  <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#6be7fd_43%,#0d96de_73%,#005ee8_100%)] bg-clip-text text-transparent [text-decoration:none] [text-shadow:none]">
+                  <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#6be7fd_43%,#0d96de_73%,#005ee8_100%)] bg-clip-text text-transparent">
                     kontrollü
                   </span>
                 </span>
-                <span className="mt-[0.375rem] block md:mt-3">eşleşme.</span>
+                <span className="mt-1 block md:mt-2">eşleşme.</span>
               </h1>
 
-              <div className="[&_ul]:mt-4 sm:[&_ul]:mt-[1.125rem]">
+              <div className="[&_ul]:mt-3 sm:[&_ul]:mt-4">
                 <HeroTrustMicro />
               </div>
 
-              <p className="mx-auto mt-5 max-w-lg text-[0.9575rem] leading-[1.66] tracking-[0.01em] text-slate-300 sm:mt-6 sm:text-base md:mx-0 md:max-w-[26.5rem]">
-                Leylek TAG, rota odaklı eşleşme, QR doğrulama ve güven katmanlarıyla şehir içi yolculuk paylaşımını sadeleştirir.
+              <p className="mx-auto mt-4 max-w-lg text-[0.9375rem] leading-[1.62] text-slate-300 sm:mt-5 md:mx-0 md:max-w-[26rem]">
+                Leylek TAG, rota odaklı eşleşme, QR doğrulama ve güven katmanlarıyla şehir içi yolculuk paylaşımını
+                sadeleştirir.
               </p>
 
-              <div className="mx-auto mt-[1.375rem] flex max-w-xl flex-col items-stretch justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-[0.9375rem] md:mx-0 md:justify-start lg:max-w-none">
-                <ButtonLink href="/indir" className="w-full px-9 !py-[0.96rem] text-center text-[0.9375rem] sm:w-auto">
+              <div className="mx-auto mt-5 flex max-w-xl flex-col items-stretch justify-center gap-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:gap-3 md:mx-0 md:justify-start lg:max-w-none">
+                <ButtonLink href="/indir" className="w-full px-8 !py-[0.9rem] text-center text-[0.9rem] sm:w-auto">
                   Uygulamayı İndir
                 </ButtonLink>
                 <ButtonLink
                   href="/nasil-calisir"
                   variant="secondary"
-                  className="inline-flex w-full items-center justify-center gap-2.5 border-white/[0.072] bg-transparent px-[1.825rem] !py-[0.78rem] text-[0.9rem] font-semibold tracking-tight shadow-none backdrop-blur-sm hover:bg-white/[0.028] hover:shadow-none sm:w-auto sm:justify-center sm:gap-2"
+                  className="inline-flex w-full items-center justify-center gap-2 border-white/[0.072] bg-transparent px-6 !py-[0.72rem] text-[0.875rem] font-semibold tracking-tight shadow-none backdrop-blur-sm hover:bg-white/[0.028] sm:w-auto"
                 >
-                  <NasipPlayGlyph /> Nasıl Çalışır?
+                  <NasipPlayGlyph /> Nasıl Çalışır
                 </ButtonLink>
               </div>
 
               <ul
-                className="mx-auto mt-5 flex max-w-lg flex-wrap justify-center gap-2 lg:mx-0 lg:justify-start"
+                className="mx-auto mt-4 flex max-w-lg flex-wrap justify-center gap-2 lg:mx-0 lg:justify-start"
                 aria-label="Güven katmanları özeti"
               >
                 {["Çift onay", "QR doğrulama", "Güven katmanı"].map((label) => (
                   <li key={label}>
-                    <span className="inline-flex items-center rounded-full border border-cyan-400/22 bg-cyan-400/[0.07] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100/88">
+                    <span className="inline-flex items-center rounded-full border border-cyan-400/22 bg-cyan-400/[0.07] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-cyan-100/88">
                       {label}
                     </span>
                   </li>
@@ -125,13 +128,17 @@ export default function Home() {
             </div>
           </div>
 
-          <div id="hero-yol" className="scroll-mt-28 mt-14 min-w-0 w-full sm:mt-16 md:mt-[4.25rem]">
+          <div id="hero-yol" className="scroll-mt-28 mt-10 min-w-0 w-full sm:mt-12 md:mt-14">
             <HeroEngagement />
           </div>
 
           <HeroScrollHint />
         </Container>
       </HeroShell>
+
+      <ScrollReveal staggerDelayMs={40} className="w-full">
+        <HomeTrustKycSection />
+      </ScrollReveal>
 
       <section className="depth-ambient section-soft-vignette section-seam py-8 sm:py-10 md:py-12">
         <ScrollReveal staggerDelayMs={48}>
@@ -141,10 +148,6 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <ScrollReveal staggerDelayMs={64} className="w-full">
-        <HomeTrustSafetyProtocol />
-      </ScrollReveal>
-
       <ScrollReveal staggerDelayMs={0} className="w-full">
         <HomeFourSteps />
       </ScrollReveal>
@@ -153,51 +156,62 @@ export default function Home() {
         <RoleSelection />
       </ScrollReveal>
 
-      <SectionMidCta />
-
-      <section className="depth-well section-seam py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={140}>
+      <section className="depth-glass section-seam py-10 sm:py-12 md:py-14">
+        <ScrollReveal staggerDelayMs={120}>
           <Container>
-            <div className="mb-8 md:mb-10">
-              <SectionHeading
-                eyebrow="kimler için?"
-                title="Leylek TAG, yolculuk paylaşımını farklı ihtiyaçlar için bir araya getirir."
-                description="Günlük şehir içi planlardan teklif görüşmesine kadar, aynı yöne gidenleri topluluk içinde daha kontrollü buluşturur."
-              />
+            <SectionHeading
+              eyebrow="kullanım senaryoları"
+              title="Şehir içi ve şehirler arası ihtiyaçlara göre planlanmış akışlar."
+              description="Günlük rota paylaşımından planlı uzun yola kadar aynı güven katmanlarıyla ilerleyen senaryolar."
+            />
+            <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
+              {scenarios.map((scenario) => (
+                <Link
+                  key={scenario.href}
+                  href={scenario.href}
+                  className="tap-highlight block rounded-[1.35rem] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+                >
+                  <ModeCard
+                    title={scenario.title}
+                    eyebrow={scenario.eyebrow}
+                    description={scenario.description}
+                    tone={scenario.tone}
+                    microStates={scenario.microStates}
+                  />
+                </Link>
+              ))}
             </div>
-            <AudienceSection />
           </Container>
         </ScrollReveal>
       </section>
 
-      <SectionMidCta />
+      <ScrollReveal staggerDelayMs={160} className="w-full">
+        <HomeAppScopeSection />
+      </ScrollReveal>
 
-      <section className="depth-glass section-seam py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={182}>
+      <ScrollReveal staggerDelayMs={64} className="w-full">
+        <HomeTrustSafetyProtocol />
+      </ScrollReveal>
+
+      <section className="depth-glass section-seam py-8 sm:py-10 md:py-11">
+        <ScrollReveal staggerDelayMs={180}>
           <Container>
-            <div className="mb-8 md:mb-10">
-              <SectionHeading
-                eyebrow="platform akışı"
-                title="Canlı şehir içi hareket ve aktif rota akışı"
-                description="Pilot şehirlerde teklif, eşleşme, QR doğrulama ve rota uyumu olayları platform üzerinde izlenebilir."
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[0.92fr_1fr]">
+            <SectionHeading
+              eyebrow="platform akışı"
+              title="Pilot şehirlerde canlı rota ve eşleşme sinyalleri"
+              description="Teklif, onay ve QR doğrulama adımları platform üzerinde izlenebilir; özet akış bilgilendirme amaçlıdır."
+            />
+            <div className="mt-6 max-w-3xl">
               <ActivityFeed variant="home" />
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-6 lg:grid-cols-1 lg:gap-5">
-                {experiences.map((experience) => (
-                  <ModeCard key={experience.title} {...experience} />
-                ))}
-              </div>
             </div>
           </Container>
         </ScrollReveal>
       </section>
 
-      <section className="depth-well section-soft-vignette py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={226}>
+      <section className="depth-well section-soft-vignette py-10 sm:py-12 md:py-14">
+        <ScrollReveal staggerDelayMs={200}>
           <Container>
-            <div className="mb-8 md:mb-10">
+            <div className="mb-7 md:mb-8">
               <SectionHeading
                 eyebrow="neden farklı?"
                 title="Klasik yolculuk deneyiminden daha topluluk odaklı."
@@ -209,55 +223,14 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <SectionMidCta />
-
-      <section className="depth-ambient section-seam py-6 sm:py-8">
-        <Container>
-          <p className="mx-auto max-w-xl text-center text-sm leading-relaxed text-slate-400">
-            10 premium ekranın tamamı{" "}
-            <Link href="/indir#play-vitrin" className="font-semibold text-cyan-300 underline-offset-2 hover:text-cyan-200 hover:underline">
-              indirme vitrininde
-            </Link>{" "}
-            de görüntülenebilir.
-          </p>
-        </Container>
-      </section>
-
-      <SectionMidCta />
-
-      <section className="depth-glass py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={318}>
+      <section className="depth-ambient py-10 sm:py-12 md:py-14">
+        <ScrollReveal staggerDelayMs={240}>
           <Container>
-            <div className="mb-8 md:mb-10">
-              <SectionHeading
-                eyebrow="platform büyümesi"
-                title="Pilot şehirlerden genişleyen kontrollü platform."
-                description="Leylek TAG şehir içi ve teklif akışlarını pilot toplulukla doğruluyor. Geri bildirimler, şehir kapsamı ve kullanım senaryoları ürün yol haritasını şekillendiriyor."
-              />
-            </div>
-            <BetaProcess />
-          </Container>
-        </ScrollReveal>
-      </section>
-
-      <section className="depth-well section-seam py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={366}>
-          <Container>
-            <SocialProofPlaceholder />
-          </Container>
-        </ScrollReveal>
-      </section>
-
-      <SectionMidCta />
-
-      <section className="depth-ambient py-11 sm:py-14 md:py-[4.75rem]">
-        <ScrollReveal staggerDelayMs={412}>
-          <Container>
-            <div className="mb-8 md:mb-10">
+            <div className="mb-7 md:mb-8">
               <SectionHeading
                 eyebrow="sık sorulan sorular"
                 title="Leylek TAG hakkında merak edilenler"
-                description="Yolculuk paylaşımı, masraf paylaşımı, Leylek Teklifi ve güvenli eşleşme akışına dair kısa yanıtlar."
+                description="Yolculuk paylaşımı, masraf paylaşımı, teklif süreci ve güvenli eşleşme akışına dair kısa yanıtlar."
               />
             </div>
             <FaqSection />
@@ -265,7 +238,7 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      <ScrollReveal staggerDelayMs={468} className="w-full">
+      <ScrollReveal staggerDelayMs={280} className="w-full">
         <BetaCta />
       </ScrollReveal>
     </>

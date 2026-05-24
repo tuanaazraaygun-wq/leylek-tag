@@ -7,10 +7,10 @@ export function SectionMidCta() {
       <Container>
         <div className="flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-4">
           <ButtonLink href="/indir" className="w-full sm:w-auto sm:min-w-[200px]">
-            Eşleşmeyi başlat
+            Uygulamayı İndir
           </ButtonLink>
-          <ButtonLink href="/muhabbet" variant="secondary" className="w-full sm:w-auto sm:min-w-[200px]">
-            İlk teklifini oluştur
+          <ButtonLink href="/nasil-calisir" variant="secondary" className="w-full sm:w-auto sm:min-w-[200px]">
+            Nasıl Çalışır
           </ButtonLink>
         </div>
       </Container>
