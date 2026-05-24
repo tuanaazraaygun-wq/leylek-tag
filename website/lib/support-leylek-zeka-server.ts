@@ -146,6 +146,12 @@ export function shouldMuteLeylekZekaForTicket(ticket: LeylekZekaTicketRow): bool
   return false;
 }
 
+/** Güvenli log — yalnızca error code + ticket kısa prefix; token/email/key yok. */
+export function warnLeylekZekaEvent(code: string, ticketId: string): void {
+  const prefix = ticketId.replace(/-/g, "").slice(0, 8) || "unknown";
+  console.warn(`[leylek-zeka:${prefix}] ${code}`);
+}
+
 export async function threadHasAdminReply(
   service: SupabaseClient,
   ticketId: string,
@@ -157,7 +163,10 @@ export async function threadHasAdminReply(
     .eq("sender_type", "admin")
     .limit(1);
 
-  if (error) return true;
+  if (error) {
+    warnLeylekZekaEvent("admin_check_failed", ticketId);
+    return false;
+  }
   return Array.isArray(data) && data.length > 0;
 }
 

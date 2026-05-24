@@ -28,8 +28,8 @@ import {
   readStoredSupportTicket,
   writeStoredSupportTicket,
 } from "@/lib/support-ticket-storage";
-import { requestSupportLeylekZeka } from "@/lib/support-leylek-zeka-client";
-import { isSupabaseConfigured } from "@/lib/supabase-client";
+import { requestSupportLeylekZeka, type LeylekZekaErrorCode } from "@/lib/support-leylek-zeka-client";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
 
 const MESSAGE_MIN_LEN = 10;
 const CHAT_MESSAGE_MIN_LEN = 1;
@@ -162,21 +162,29 @@ function SupportAppScopeNote() {
 function SupportQuickTopicChips({
   onSelect,
   disabled,
+  compact = false,
 }: {
   onSelect: (prompt: string) => void;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Hızlı konular</p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <p
+        className={`font-bold uppercase tracking-[0.12em] text-slate-500 ${compact ? "text-[9px]" : "text-[10px]"}`}
+      >
+        Hızlı konular
+      </p>
+      <div className={`flex flex-wrap ${compact ? "mt-1 gap-1" : "mt-2 gap-1.5"}`}>
         {SUPPORT_QUICK_TOPICS.map((topic) => (
           <button
             key={topic.id}
             type="button"
             disabled={disabled}
             onClick={() => onSelect(topic.prompt)}
-            className="rounded-lg border border-white/[0.09] bg-slate-950/50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:border-cyan-400/28 hover:bg-cyan-400/[0.06] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-45"
+            className={`rounded-lg border border-white/[0.09] bg-slate-950/50 font-semibold text-slate-200 transition hover:border-cyan-400/28 hover:bg-cyan-400/[0.06] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-45 ${
+              compact ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-[11px]"
+            }`}
           >
             {topic.label}
           </button>
@@ -243,17 +251,50 @@ const LIVE_SUPPORT_QUEUE_COPY = `Talebin alındı ve destek ekibine iletildi.
 Müsait olduklarında yanıtlar bu akışta görünür; süre net olarak garanti edilmez.
 İstersen bu pencereyi kapatabilir veya e‑posta ile de ulaşabilirsin.`;
 
-const LEYLEK_ZEKA_FAIL_BANNER =
-  "Leylek Zeka şu an yanıt veremedi; mesajınız destek ekibine iletildi.";
+const LEYLEK_ZEKA_NO_SESSION_BANNER =
+  "Leylek Zeka için oturum yenilenemedi; mesajınız destek ekibine iletildi.";
+
+function leylekZekaFailBanner(error?: LeylekZekaErrorCode, status?: number): string {
+  const code = error ?? "";
+  if (status === 401 || code === "unauthorized") {
+    return "Oturum yenilenemedi; mesajınız destek ekibine iletildi.";
+  }
+  if (status === 403 || code === "forbidden") {
+    return "Görüşme doğrulanamadı; destek ekibi yanıtlayacak.";
+  }
+  if (status === 429 || code === "rate_limited") {
+    return "Leylek Zeka için birkaç saniye bekleyin; mesajınız kaydedildi.";
+  }
+  if (
+    status === 502 ||
+    status === 503 ||
+    code === "ai_unavailable" ||
+    code === "server_misconfigured" ||
+    code === "persist_failed"
+  ) {
+    return "Leylek Zeka geçici olarak yanıt veremedi; destek ekibi yanıtlayacak.";
+  }
+  return "Leylek Zeka şu an yanıt veremedi; mesajınız destek ekibine iletildi.";
+}
 
 function shouldSkipLeylekZekaAi(
   meta: SupportTicketMetaRow | null,
   lines: SupportChatRow[],
 ): boolean {
-  if (!meta) return true;
+  if (lines.some((ln) => (ln.sender_type ?? "").trim().toLowerCase() === "admin")) return true;
+  if (!meta) return false;
   if (trimRowStatus(meta.status) === "resolved") return true;
   if ((meta.assigned_admin_id ?? "").trim().length > 0) return true;
-  return lines.some((ln) => (ln.sender_type ?? "").trim().toLowerCase() === "admin");
+  return false;
+}
+
+function handleChatTextareaEnterSubmit(
+  e: React.KeyboardEvent<HTMLTextAreaElement>,
+  imeComposing: boolean,
+): void {
+  if (e.key !== "Enter" || e.shiftKey || imeComposing || e.nativeEvent.isComposing) return;
+  e.preventDefault();
+  e.currentTarget.form?.requestSubmit();
 }
 
 function trimRowStatus(raw: string | null | undefined): string {
@@ -355,12 +396,16 @@ export function SiteSupportPanel() {
   const [chatSending, setChatSending] = useState(false);
   const [aiTyping, setAiTyping] = useState(false);
   const [chatBanner, setChatBanner] = useState<string | null>(null);
+  const [leylekZekaBanner, setLeylekZekaBanner] = useState<string | null>(null);
   const [adminTypingPeek, setAdminTypingPeek] = useState(false);
   const [postgresRepairKey, setPostgresRepairKey] = useState(0);
   const [typingBridgeRepairKey, setTypingBridgeRepairKey] = useState(0);
   const [typingBridgeSendReady, setTypingBridgeSendReady] = useState(false);
 
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const chatScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const threadImeComposingRef = useRef(false);
+  const composerImeComposingRef = useRef(false);
   const knownChatIdsRef = useRef<Set<string>>(new Set());
   const typingBridgeSendOnlyRef = useRef<RealtimeChannel | null>(null);
   const typingBurstRef = useRef(0);
@@ -375,49 +420,16 @@ export function SiteSupportPanel() {
   const [cooldownRemainSec, setCooldownRemainSec] = useState(0);
 
   const scrollChatToBottom = useCallback(() => {
-    chatScrollAnchorRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    requestAnimationFrame(() => {
+      const el = chatScrollContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      chatScrollAnchorRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    });
   }, []);
 
   useEffect(() => {
     scrollChatToBottom();
   }, [chatLines, adminTypingPeek, chatSending, aiTyping, scrollChatToBottom]);
-
-  const invokeLeylekZekaAfterUserMessage = useCallback(
-    async (
-      ticketId: string,
-      clientToken: string,
-      userMessage: string,
-      skipCheckMeta: SupportTicketMetaRow | null,
-      skipCheckLines: SupportChatRow[],
-    ) => {
-      if (aiInFlightRef.current) return;
-      if (shouldSkipLeylekZekaAi(skipCheckMeta, skipCheckLines)) return;
-
-      const accessToken = session?.access_token?.trim();
-      if (!accessToken) return;
-
-      aiInFlightRef.current = true;
-      setAiTyping(true);
-      try {
-        const result = await requestSupportLeylekZeka({
-          accessToken,
-          ticketId,
-          clientToken,
-          message: userMessage,
-        });
-        if ("skipped" in result && result.skipped) return;
-        if (!result.success) {
-          setChatBanner(LEYLEK_ZEKA_FAIL_BANNER);
-        }
-      } catch {
-        setChatBanner(LEYLEK_ZEKA_FAIL_BANNER);
-      } finally {
-        aiInFlightRef.current = false;
-        setAiTyping(false);
-      }
-    },
-    [session?.access_token],
-  );
 
   useEffect(() => {
     const endAt = cooldownEndsAtRef.current;
@@ -587,6 +599,61 @@ export function SiteSupportPanel() {
     knownChatIdsRef.current = new Set(next.map((r) => r.id));
     setChatLines(next);
   }, []);
+
+  const resolveSiteAccessToken = useCallback(async (): Promise<string> => {
+    const fromSession = session?.access_token?.trim();
+    if (fromSession) return fromSession;
+    const client = getSupabaseBrowserClient();
+    if (!client) return "";
+    const { data } = await client.auth.getSession();
+    return data.session?.access_token?.trim() ?? "";
+  }, [session?.access_token]);
+
+  const invokeLeylekZekaAfterUserMessage = useCallback(
+    async (
+      ticketId: string,
+      clientToken: string,
+      userMessage: string,
+      skipCheckMeta: SupportTicketMetaRow | null,
+      skipCheckLines: SupportChatRow[],
+    ) => {
+      if (aiInFlightRef.current) return;
+      if (shouldSkipLeylekZekaAi(skipCheckMeta, skipCheckLines)) return;
+
+      const accessToken = await resolveSiteAccessToken();
+      if (!accessToken) {
+        setLeylekZekaBanner(LEYLEK_ZEKA_NO_SESSION_BANNER);
+        return;
+      }
+
+      aiInFlightRef.current = true;
+      setAiTyping(true);
+      setLeylekZekaBanner(null);
+      scrollChatToBottom();
+      try {
+        const result = await requestSupportLeylekZeka({
+          accessToken,
+          ticketId,
+          clientToken,
+          message: userMessage,
+        });
+        if ("skipped" in result && result.skipped) return;
+        if (!result.success) {
+          setLeylekZekaBanner(leylekZekaFailBanner(result.error, result.status));
+          return;
+        }
+        await pollTicketChatMessages(ticketId, clientToken);
+        scrollChatToBottom();
+      } catch {
+        setLeylekZekaBanner(leylekZekaFailBanner());
+      } finally {
+        aiInFlightRef.current = false;
+        setAiTyping(false);
+        scrollChatToBottom();
+      }
+    },
+    [pollTicketChatMessages, resolveSiteAccessToken, scrollChatToBottom],
+  );
 
   useEffect(() => {
     if (!open || !configured || !supportUnlocked) return undefined;
@@ -813,6 +880,7 @@ export function SiteSupportPanel() {
       e.preventDefault();
       setFeedback(null);
       setChatBanner(null);
+      setLeylekZekaBanner(null);
 
       if (honey.trim() !== "") return;
 
@@ -935,26 +1003,27 @@ export function SiteSupportPanel() {
           .maybeSingle();
 
         const metaRow = meta ? (meta as SupportTicketMetaRow) : null;
-        if (metaRow) setTicketMeta(metaRow);
+        const aiMeta: SupportTicketMetaRow =
+          metaRow ?? { id: created.id, status: "new", assigned_admin_id: null };
+        setTicketMeta(aiMeta);
 
         setPanelView("thread");
         setStatus("idle");
         setName("");
         setMessage("");
         setFeedback(null);
+        setLeylekZekaBanner(null);
         setChatBanner(
           "Talebin kaydedildi ve destek ekibine iletildi. Müsaitlik durumunda yanıtlar bu akışta görünecek.",
         );
 
-        if (metaRow) {
-          void invokeLeylekZekaAfterUserMessage(
-            created.id,
-            tokenNormalized,
-            userMsgText,
-            metaRow,
-            bootLines,
-          );
-        }
+        void invokeLeylekZekaAfterUserMessage(
+          created.id,
+          tokenNormalized,
+          userMsgText,
+          aiMeta,
+          bootLines,
+        );
       } catch {
         setStatus("error");
         setFeedback("Bir şeyler ters gitti. Lütfen tekrar dene.");
@@ -980,6 +1049,7 @@ export function SiteSupportPanel() {
       e.preventDefault();
       setFeedback(null);
       setChatBanner(null);
+      setLeylekZekaBanner(null);
 
       const body = chatInput.trim();
       if (body.length < CHAT_MESSAGE_MIN_LEN) {
@@ -1018,6 +1088,7 @@ export function SiteSupportPanel() {
         setChatLines((prev) => (prev.some((r) => r.id === data.id) ? prev : [...prev, data as SupportChatRow]));
         setChatInput("");
         setChatBanner("Mesajın gönderildi ve destek akışına eklendi. Ekibimiz müsait olduğunda buradan yanıtlayacaktır.");
+        scrollChatToBottom();
 
         const nextLines = chatLines.some((r) => r.id === data.id)
           ? chatLines
@@ -1032,6 +1103,7 @@ export function SiteSupportPanel() {
       chatLines,
       chatSending,
       invokeLeylekZekaAfterUserMessage,
+      scrollChatToBottom,
       sessionContactEmail,
       supportClientToken,
       supportUnlocked,
@@ -1286,8 +1358,11 @@ export function SiteSupportPanel() {
                   </div>
                 </div>
 
-                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2 sm:px-4 sm:py-3 md:px-5">
-                  <div className="flex min-w-0 flex-col gap-2 pb-1.5 sm:gap-2.5">
+                <div
+                  ref={chatScrollContainerRef}
+                  className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2 sm:px-4 sm:py-3 md:px-5"
+                >
+                  <div className="flex min-w-0 flex-col gap-2 pb-2 sm:gap-2.5">
                     {threadBootstrap ? (
                       <p className="text-[12px] text-slate-500">Senkronize ediliyor…</p>
                     ) : null}
@@ -1323,85 +1398,92 @@ export function SiteSupportPanel() {
 
                       if (sender === "system") {
                         return (
-                          <div
-                            key={ln.id}
-                            className={`mx-auto ${baseWrap} max-w-[min(96%,24rem)] self-center border-amber-400/32 bg-gradient-to-br from-amber-500/[0.12] to-black/55 text-center text-amber-50/95 ring-1 ring-amber-400/15`}
-                          >
-                            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-200/85">
-                              Leylek Zeka
-                            </span>
-                            <div className="mt-1.5 text-[12px] font-medium whitespace-pre-wrap leading-snug">{ln.body}</div>
-                            {timeLabel ? (
-                              <time
-                                className="mt-1.5 block font-mono text-[10px] font-medium tabular-nums text-amber-100/55"
-                                dateTime={ln.created_at}
-                              >
-                                {timeLabel}
-                              </time>
-                            ) : null}
+                          <div key={ln.id} className="flex justify-start px-0.5">
+                            <div
+                              className={`${baseWrap} max-w-[min(100%,19rem)] self-start rounded-tl-sm border-cyan-400/32 bg-gradient-to-br from-cyan-600/18 to-slate-950/88 text-slate-50 ring-1 ring-cyan-400/14 sm:rounded-tl-md`}
+                            >
+                              <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/92">
+                                Leylek Zeka
+                              </span>
+                              <div className="mt-1 whitespace-pre-wrap text-[13px] leading-snug">{ln.body}</div>
+                              {timeLabel ? (
+                                <time
+                                  className="mt-1 block font-mono text-[10px] font-medium tabular-nums text-cyan-100/50"
+                                  dateTime={ln.created_at}
+                                >
+                                  {timeLabel}
+                                </time>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       }
 
                       if (sender === "admin") {
                         return (
-                          <div
-                            key={ln.id}
-                            className={`${baseWrap} max-w-[min(100%,18.5rem)] self-end rounded-tr-sm border-cyan-400/35 bg-gradient-to-br from-cyan-600/22 to-slate-950/85 text-slate-50 ring-1 ring-cyan-400/12 sm:rounded-tr-md`}
-                          >
-                            <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/92">
-                              Destek Ekibi
-                            </span>
-                            <div className="mt-1 whitespace-pre-wrap">{ln.body}</div>
-                            {timeLabel ? (
-                              <time
-                                className="mt-1 block text-right font-mono text-[10px] font-medium tabular-nums text-cyan-100/50"
-                                dateTime={ln.created_at}
-                              >
-                                {timeLabel}
-                              </time>
-                            ) : null}
+                          <div key={ln.id} className="flex justify-start px-0.5">
+                            <div
+                              className={`${baseWrap} max-w-[min(100%,19rem)] self-start rounded-tl-sm border-violet-400/30 bg-gradient-to-br from-violet-600/16 to-slate-950/88 text-slate-50 ring-1 ring-violet-400/12 sm:rounded-tl-md`}
+                            >
+                              <span className="text-[9px] font-black uppercase tracking-[0.12em] text-violet-100/90">
+                                Destek
+                              </span>
+                              <div className="mt-1 whitespace-pre-wrap">{ln.body}</div>
+                              {timeLabel ? (
+                                <time
+                                  className="mt-1 block font-mono text-[10px] font-medium tabular-nums text-violet-100/50"
+                                  dateTime={ln.created_at}
+                                >
+                                  {timeLabel}
+                                </time>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       }
 
                       /** user */
                       return (
-                        <div
-                          key={ln.id}
-                          className={`${baseWrap} self-start rounded-tl-sm border-white/[0.1] bg-slate-900/80 text-slate-100 ring-1 ring-white/[0.04] sm:rounded-tl-md`}
-                        >
-                          <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
-                            Sen
-                          </span>
-                          <div className="mt-1 whitespace-pre-wrap">{ln.body}</div>
-                          {timeLabel ? (
-                            <time className="mt-1 block font-mono text-[10px] font-medium tabular-nums text-slate-500" dateTime={ln.created_at}>
-                              {timeLabel}
-                            </time>
-                          ) : null}
+                        <div key={ln.id} className="flex justify-end px-0.5">
+                          <div
+                            className={`${baseWrap} max-w-[min(100%,19rem)] self-end rounded-tr-sm border-white/[0.12] bg-gradient-to-br from-[#0072FF]/35 to-slate-900/90 text-slate-50 ring-1 ring-cyan-400/10 sm:rounded-tr-md`}
+                          >
+                            <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/75">
+                              Sen
+                            </span>
+                            <div className="mt-1 whitespace-pre-wrap">{ln.body}</div>
+                            {timeLabel ? (
+                              <time
+                                className="mt-1 block text-right font-mono text-[10px] font-medium tabular-nums text-cyan-100/45"
+                                dateTime={ln.created_at}
+                              >
+                                {timeLabel}
+                              </time>
+                            ) : null}
+                          </div>
                         </div>
                       );
                     })}
                     {chatSending ? (
-                      <div className="flex justify-start px-0.5" role="status" aria-live="polite">
-                        <div className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/35 bg-cyan-500/[0.12] px-3 py-2 text-[12px] font-bold text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.15)] ring-1 ring-cyan-400/20">
+                      <div className="flex justify-end px-0.5" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2 rounded-2xl rounded-tr-sm border border-cyan-400/30 bg-cyan-500/[0.12] px-3 py-2 text-[11px] font-semibold text-cyan-50 ring-1 ring-cyan-400/18">
                           <span
                             aria-hidden
-                            className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-cyan-200/25 border-t-cyan-100"
+                            className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-cyan-200/25 border-t-cyan-100"
                           />
                           Gönderiliyor…
                         </div>
                       </div>
                     ) : null}
                     {aiTyping ? (
-                      <div className="flex justify-center px-0.5" role="status" aria-live="polite">
-                        <div className="inline-flex items-center gap-2 rounded-xl border border-amber-400/35 bg-amber-500/[0.1] px-3 py-2 text-[12px] font-bold text-amber-50/95 ring-1 ring-amber-400/20">
-                          <span
-                            aria-hidden
-                            className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-amber-200/25 border-t-amber-100"
-                          />
-                          Leylek Zeka yanıt hazırlıyor…
+                      <div className="flex justify-start px-0.5" role="status" aria-live="polite">
+                        <div className="inline-flex items-center gap-2.5 rounded-2xl rounded-tl-sm border border-cyan-400/32 bg-gradient-to-r from-cyan-500/12 to-slate-950/80 px-3 py-2 ring-1 ring-cyan-400/16">
+                          <span className="flex gap-1" aria-hidden>
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200 [animation-delay:150ms]" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-200 [animation-delay:280ms]" />
+                          </span>
+                          <span className="text-[11px] font-semibold text-cyan-50/95">Leylek Zeka yazıyor…</span>
                         </div>
                       </div>
                     ) : null}
@@ -1431,38 +1513,52 @@ export function SiteSupportPanel() {
                     {chatBanner}
                   </div>
                 ) : null}
+                {leylekZekaBanner ? (
+                  <div className="shrink-0 px-5 pt-2 text-[12px] font-medium leading-snug text-amber-100/90" role="status" aria-live="polite">
+                    {leylekZekaBanner}
+                  </div>
+                ) : null}
 
-                <div className="relative shrink-0 border-t border-white/[0.07] bg-black/45 px-3 py-2.5 backdrop-blur-md sm:px-4 sm:py-3 md:px-5">
-                  <SupportAppScopeNote />
-                  <div className="mt-2.5">
+                <div className="relative shrink-0 border-t border-white/[0.07] bg-black/45 px-3 py-2 backdrop-blur-md sm:px-4 sm:py-2.5 md:px-5">
+                  <div className="mt-1.5">
                     <SupportQuickTopicChips
+                      compact
                       onSelect={setChatInput}
                       disabled={resolvedStatus || chatSending}
                     />
                   </div>
-                  <form onSubmit={handleSendChat} className="mt-3">
+                  <form onSubmit={handleSendChat} className="mt-2">
                     <textarea
                       value={chatInput}
                       aria-label="Sohbet mesajı"
-                      rows={resolvedStatus ? 3 : 2}
+                      rows={1}
                       placeholder={
-                        resolvedStatus ? "Çözülü görüşmede yazı gönderilemez." : "Yanıtınızı yazın…"
+                        resolvedStatus ? "Çözülü görüşmede yazı gönderilemez." : "Mesajınızı yazın… (Enter gönder)"
                       }
                       disabled={resolvedStatus || chatSending}
                       onChange={(ev) => setChatInput(ev.target.value)}
-                      className="min-h-[72px] w-full resize-none rounded-xl rounded-tr-md border border-cyan-400/22 bg-gradient-to-br from-white/[0.08] to-black/45 px-3 py-2.5 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] outline-none transition focus:border-cyan-400/45 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)] disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-[76px] sm:px-3.5 sm:py-3"
+                      onCompositionStart={() => {
+                        threadImeComposingRef.current = true;
+                      }}
+                      onCompositionEnd={() => {
+                        threadImeComposingRef.current = false;
+                      }}
+                      onKeyDown={(ev) =>
+                        handleChatTextareaEnterSubmit(ev, threadImeComposingRef.current)
+                      }
+                      className="max-h-[7.5rem] min-h-[2.75rem] w-full resize-none rounded-xl rounded-tr-md border border-cyan-400/22 bg-slate-950/75 px-3 py-2 text-[13px] leading-relaxed text-white outline-none transition focus:border-cyan-400/45 focus:ring-2 focus:ring-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-45"
                     />
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div className="mt-2 flex gap-2">
                       <button
                         type="submit"
                         disabled={resolvedStatus || chatSending}
-                        className="inline-flex min-h-[48px] touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-3 text-[14px] font-black tracking-tight text-white shadow-[0_14px_40px_-14px_rgba(0,198,255,0.48)] ring-1 ring-cyan-300/22 transition hover:brightness-[1.05] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="inline-flex min-h-[42px] flex-1 touch-manipulation items-center justify-center rounded-xl bg-gradient-to-r from-[#00C6FF] to-[#0072FF] px-4 py-2.5 text-[13px] font-black tracking-tight text-white shadow-[0_10px_32px_-14px_rgba(0,198,255,0.45)] ring-1 ring-cyan-300/20 transition hover:brightness-[1.05] disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {resolvedStatus ? "Kapalı" : chatSending ? "Gönderiliyor…" : "Gönder"}
                       </button>
                       <button
                         type="button"
-                        className={`inline-flex min-h-[48px] touch-manipulation items-center justify-center rounded-xl border px-3 py-3 text-[13px] font-bold leading-tight transition sm:px-4 ${
+                        className={`inline-flex min-h-[42px] shrink-0 touch-manipulation items-center justify-center rounded-xl border px-3 py-2.5 text-[12px] font-bold leading-tight transition ${
                           resolvedStatus
                             ? "border-emerald-400/45 bg-emerald-500/[0.12] text-emerald-50/95 hover:border-emerald-400/62"
                             : "border-white/[0.12] bg-white/[0.06] text-slate-50 hover:border-cyan-400/25 hover:bg-white/[0.08]"
@@ -1470,9 +1566,10 @@ export function SiteSupportPanel() {
                         disabled={chatSending || threadBootstrap}
                         onClick={() => void onNewConversationClick()}
                       >
-                        Yeni görüşme başlat
+                        Yeni
                       </button>
                     </div>
+                    <p className="mt-1.5 text-[10px] text-slate-500">Enter gönder · Shift+Enter yeni satır</p>
 
                     {!resolvedStatus ? (
                       <SupportHumanFallback className="mt-2" />
@@ -1520,24 +1617,24 @@ export function SiteSupportPanel() {
                   </div>
                 </div>
 
-                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-4 sm:px-5">
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <SupportWelcomeCard />
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-3 sm:px-5">
+                  <div className="flex min-w-0 flex-col gap-2.5">
+                    <SupportWelcomeCard compact />
                     <SupportQuickTopicChips
+                      compact
                       onSelect={setMessage}
                       disabled={status === "loading" || threadBootstrap}
                     />
                     <SupportAppScopeNote />
-                    <SupportHumanFallback />
                   </div>
                 </div>
 
                 <form
-                  className="relative shrink-0 border-t border-white/[0.07] bg-black/38 px-4 py-4 sm:px-5"
+                  className="relative shrink-0 border-t border-white/[0.07] bg-black/38 px-4 py-3 sm:px-5"
                   onSubmit={handleComposerSubmit}
                   noValidate
                 >
-                  <label className="relative grid gap-2">
+                  <label className="relative grid gap-1.5">
                     <span className="sr-only">
                       Mesajınız, en az {MESSAGE_MIN_LEN} karakter
                     </span>
@@ -1547,24 +1644,32 @@ export function SiteSupportPanel() {
                       aria-label={`Mesajını yaz, en az ${MESSAGE_MIN_LEN} karakter`}
                       required
                       minLength={MESSAGE_MIN_LEN}
-                      rows={4}
+                      rows={2}
                       value={message}
                       onChange={(ev) => setMessage(ev.target.value)}
                       disabled={status === "loading" || threadBootstrap}
-                      placeholder="Mesajını yaz…"
-                      className="min-h-[118px] w-full resize-none rounded-[1rem] rounded-tr-md border border-cyan-400/22 bg-gradient-to-br from-white/[0.09] to-black/45 px-3.5 py-3 text-[13px] leading-relaxed text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05),0_12px_40px_-28px_rgba(34,211,238,0.25)] outline-none transition focus:border-cyan-400/48 focus:shadow-[inset_0_0_0_1px_rgba(103,232,249,0.12),0_16px_48px_-26px_rgba(34,211,238,0.35)] disabled:opacity-55"
+                      placeholder="Mesajını yaz… (Enter ile başlat)"
+                      onCompositionStart={() => {
+                        composerImeComposingRef.current = true;
+                      }}
+                      onCompositionEnd={() => {
+                        composerImeComposingRef.current = false;
+                      }}
+                      onKeyDown={(ev) =>
+                        handleChatTextareaEnterSubmit(ev, composerImeComposingRef.current)
+                      }
+                      className="max-h-[8rem] min-h-[3.25rem] w-full resize-none rounded-xl rounded-tr-md border border-cyan-400/22 bg-slate-950/75 px-3 py-2.5 text-[13px] leading-relaxed text-white outline-none transition focus:border-cyan-400/45 focus:ring-2 focus:ring-cyan-400/15 disabled:opacity-55"
                     />
-                    <span className="text-[11px] font-medium text-slate-500">
-                      En az {MESSAGE_MIN_LEN} karakter. İsterseniz aşağıdan ad soyad ekleyebilirsiniz; e-posta alanı
-                      giriş yaptığınız Google adresinizle otomatik eşleşir.
+                    <span className="text-[10px] font-medium text-slate-500">
+                      En az {MESSAGE_MIN_LEN} karakter · Enter gönder · Shift+Enter yeni satır
                     </span>
                   </label>
 
-                  <div className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <div className="mt-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-2">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">
                       Destek kaydı e-postası
                     </p>
-                    <p className="mt-1 break-all font-mono text-[12px] font-medium text-slate-200">
+                    <p className="mt-0.5 break-all font-mono text-[11px] font-medium text-slate-200">
                       {sessionContactEmail}
                     </p>
                   </div>

@@ -14,6 +14,7 @@ import {
   validateLeylekZekaMessage,
   validateTicketId,
   verifySiteUserAccessToken,
+  warnLeylekZekaEvent,
 } from "@/lib/support-leylek-zeka-server";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" as const };
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
   if (!service || !url || !anonKey) {
+    console.warn("[leylek-zeka:unknown] server_misconfigured");
     return NextResponse.json(
       { success: false, error: "server_misconfigured" },
       { status: 503, headers: NO_STORE_HEADERS },
@@ -74,6 +76,7 @@ export async function POST(request: Request) {
   }
 
   if (!checkLeylekZekaRateLimit(identity.email, ticketId)) {
+    warnLeylekZekaEvent("rate_limited", ticketId);
     return NextResponse.json(
       { success: false, error: "rate_limited" },
       { status: 429, headers: NO_STORE_HEADERS },
@@ -82,6 +85,7 @@ export async function POST(request: Request) {
 
   const ticket = await fetchOwnedSupportTicket(service, ticketId, clientToken, identity.email);
   if (!ticket) {
+    warnLeylekZekaEvent("forbidden", ticketId);
     return NextResponse.json(
       { success: false, error: "forbidden" },
       { status: 403, headers: NO_STORE_HEADERS },
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
   });
 
   if (!ai) {
+    warnLeylekZekaEvent("ai_unavailable", ticketId);
     return NextResponse.json(
       { success: false, error: "ai_unavailable" },
       { status: 502, headers: NO_STORE_HEADERS },
@@ -120,6 +125,7 @@ export async function POST(request: Request) {
 
   const inserted = await insertLeylekZekaSystemReply(service, ticketId, ai.reply);
   if (!inserted) {
+    warnLeylekZekaEvent("persist_failed", ticketId);
     return NextResponse.json(
       { success: false, error: "persist_failed" },
       { status: 500, headers: NO_STORE_HEADERS },
