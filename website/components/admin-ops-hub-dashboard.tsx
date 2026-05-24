@@ -11,6 +11,7 @@ import {
   GROWTH_CENTER_ROUTE_PATH,
   KYC_ADMIN_ROUTE_PATH,
   NOTIFICATION_CENTER_ROUTE_PATH,
+  OPERATIONS_MAP_ROUTE_PATH,
   SOCIAL_STUDIO_ROUTE_PATH,
 } from "@/lib/site-origin";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
@@ -63,6 +64,14 @@ const MODULE_CARDS: ModuleCard[] = [
     href: GROWTH_CENTER_ROUTE_PATH,
     description: "Instagram API ve büyüme otomasyonu hazırlık merkezi.",
     statusLabel: "Faz 1",
+    statusTone: "beta",
+  },
+  {
+    id: "map",
+    title: "Operasyon Haritası",
+    href: OPERATIONS_MAP_ROUTE_PATH,
+    description: "Anonim yoğunluk ve yönlendirme hazırlık ekranı.",
+    statusLabel: "Faz 0",
     statusTone: "beta",
   },
 ];

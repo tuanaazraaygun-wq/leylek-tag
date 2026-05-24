@@ -21,6 +21,10 @@
  *   https://leylektag.com/support/growth
  *   http://localhost:3000/support/growth
  *
+ * Operasyon Haritası OAuth dönüşü (allowlist'e ekleyin):
+ *   https://leylektag.com/support/map
+ *   http://localhost:3000/support/map
+ *
  * Navbar “Google ile giriş” ana sayfa dönüşü (Site URL / root):
  *   http://localhost:3000/
  *   https://leylektag.com/
@@ -43,6 +47,9 @@ export const SOCIAL_STUDIO_ROUTE_PATH = "/support/social";
 
 /** Admin growth center — Instagram API hazırlık shell (Faz 1). */
 export const GROWTH_CENTER_ROUTE_PATH = "/support/growth";
+
+/** Admin operasyon haritası — anonim yoğunluk demo shell (Faz 0). */
+export const OPERATIONS_MAP_ROUTE_PATH = "/support/map";
 
 /** Public site origin; NEXT_PUBLIC_SITE_URL doluysa o, değilse tarayıcı (veya SSR fallback localhost). */
 export function getSiteOriginForRedirect(): string {
@@ -96,6 +103,12 @@ export function getSocialStudioMagicLinkRedirectTo(): string {
 export function getGrowthCenterMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${GROWTH_CENTER_ROUTE_PATH}`;
+}
+
+/** Operasyon haritası OAuth + magic link callback. */
+export function getOperationsMapMagicLinkRedirectTo(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}${OPERATIONS_MAP_ROUTE_PATH}`;
 }
 
 /** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */
