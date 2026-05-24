@@ -10,6 +10,7 @@ import {
   getOpsHubMagicLinkRedirectTo,
   KYC_ADMIN_ROUTE_PATH,
   NOTIFICATION_CENTER_ROUTE_PATH,
+  SOCIAL_STUDIO_ROUTE_PATH,
 } from "@/lib/site-origin";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
 
@@ -47,6 +48,14 @@ const MODULE_CARDS: ModuleCard[] = [
     statusLabel: "Faz 1B",
     statusTone: "beta",
   },
+  {
+    id: "social",
+    title: "Sosyal Medya Studio",
+    href: SOCIAL_STUDIO_ROUTE_PATH,
+    description: "Instagram/TikTok/X için güvenli içerik taslakları.",
+    statusLabel: "Faz 1",
+    statusTone: "beta",
+  },
 ];
 
 const LIVE_MODULES = [
@@ -58,7 +67,6 @@ const LIVE_MODULES = [
 const FAZ2_PLANNED = [
   "Bildirim KYC segmentleri (kyc_pending / kyc_approved)",
   "Operasyon analytics ve raporlama",
-  "Sosyal medya / içerik studio",
   "Referral ve kampanya yönetimi",
 ] as const;
 

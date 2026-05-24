@@ -14,6 +14,9 @@
  *   http://127.0.0.1:3000/support/admin
  *   https://leylektag.com/support/admin
  *
+ * Sosyal Medya Studio OAuth dönüşü (allowlist'e ekleyin):
+ *   {origin}/support/social
+ *
  * Navbar “Google ile giriş” ana sayfa dönüşü (Site URL / root):
  *   http://localhost:3000/
  *   https://leylektag.com/
@@ -30,6 +33,9 @@ export const NOTIFICATION_CENTER_ROUTE_PATH = "/support/notifications";
 
 /** Admin operasyon hub — modül navigasyonu (Faz 0; mutation yok). */
 export const OPS_HUB_ROUTE_PATH = "/support/ops";
+
+/** Admin sosyal medya studio — statik taslak (paylaşım yok). */
+export const SOCIAL_STUDIO_ROUTE_PATH = "/support/social";
 
 /** Public site origin; NEXT_PUBLIC_SITE_URL doluysa o, değilse tarayıcı (veya SSR fallback localhost). */
 export function getSiteOriginForRedirect(): string {
@@ -71,6 +77,12 @@ export function getNotificationCenterMagicLinkRedirectTo(): string {
 export function getOpsHubMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${OPS_HUB_ROUTE_PATH}`;
+}
+
+/** Sosyal medya studio OAuth + magic link callback. */
+export function getSocialStudioMagicLinkRedirectTo(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}${SOCIAL_STUDIO_ROUTE_PATH}`;
 }
 
 /** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */
