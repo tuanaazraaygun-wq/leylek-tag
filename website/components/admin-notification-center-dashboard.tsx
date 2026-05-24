@@ -11,7 +11,11 @@ import {
   isBulkNotificationAudience,
   isBulkPushAudience,
   isKycDisabledAudience,
+  isValidNotificationSpecificTarget,
   isValidNotificationUserId,
+  maskNotificationPhone,
+  maskNotificationUserId,
+  normalizeNotificationPhoneDigits,
   NOTIFICATION_AUDIENCE_LABELS,
   NOTIFICATION_AUDIENCES,
   NOTIFICATION_BODY_MAX,
@@ -183,7 +187,7 @@ function DraftConfirmModal({
 type PushSendConfirmModalProps = {
   open: boolean;
   audience: NotificationAudience;
-  userId: string;
+  specificTarget: string;
   title: string;
   body: string;
   kvkkAck: boolean;
@@ -195,10 +199,19 @@ type PushSendConfirmModalProps = {
   onConfirm: () => void;
 };
 
+function formatSpecificTargetPreview(value: string): string {
+  const t = value.trim();
+  if (!t) return "";
+  if (isValidNotificationUserId(t)) return maskNotificationUserId(t);
+  const phone10 = normalizeNotificationPhoneDigits(t);
+  if (phone10) return maskNotificationPhone(phone10);
+  return "•••";
+}
+
 function PushSendConfirmModal({
   open,
   audience,
-  userId,
+  specificTarget,
   title,
   body,
   kvkkAck,
@@ -244,10 +257,10 @@ function PushSendConfirmModal({
             <dt className="font-semibold text-slate-500">Hedef</dt>
             <dd className="mt-0.5 text-slate-200">{audienceLabel(audience)}</dd>
           </div>
-          {!bulk && userId.trim() ? (
+          {!bulk && specificTarget.trim() ? (
             <div>
-              <dt className="font-semibold text-slate-500">Kullanıcı ID</dt>
-              <dd className="mt-0.5 break-all font-mono text-slate-200">{userId.trim()}</dd>
+              <dt className="font-semibold text-slate-500">Hedef kullanıcı</dt>
+              <dd className="mt-0.5 font-mono text-slate-200">{formatSpecificTargetPreview(specificTarget)}</dd>
             </div>
           ) : null}
           <div>
@@ -343,6 +356,9 @@ export function AdminNotificationCenterDashboard() {
     sent_count?: number;
     total_users?: number;
     users_with_token?: number;
+    resolveMethod?: "uuid" | "phone";
+    resolved_user_id?: string;
+    masked_phone?: string;
   } | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
@@ -431,8 +447,8 @@ export function AdminNotificationCenterDashboard() {
     if (t.length > NOTIFICATION_TITLE_MAX) return `Başlık en fazla ${NOTIFICATION_TITLE_MAX} karakter olabilir.`;
     if (!b) return "Bildirim mesajı gerekli.";
     if (b.length > NOTIFICATION_BODY_MAX) return `Mesaj en fazla ${NOTIFICATION_BODY_MAX} karakter olabilir.`;
-    if (audience === "specific_user" && specificTarget.trim() && !isValidNotificationUserId(specificTarget)) {
-      return "Taslak için UUID opsiyonel; girildiyse geçerli olmalı.";
+    if (audience === "specific_user" && specificTarget.trim() && !isValidNotificationSpecificTarget(specificTarget)) {
+      return "Taslak için hedef opsiyonel; girildiyse telefon veya UUID geçerli olmalı.";
     }
     return null;
   }, [audience, body, specificTarget, title]);
@@ -451,8 +467,10 @@ export function AdminNotificationCenterDashboard() {
       return "Geçersiz hedef kitle.";
     }
     if (audience === "specific_user") {
-      if (!specificTarget.trim()) return "Kullanıcı UUID gerekir.";
-      if (!isValidNotificationUserId(specificTarget)) return "Geçerli bir kullanıcı UUID girin.";
+      if (!specificTarget.trim()) return "Telefon numarası veya kullanıcı UUID gerekir.";
+      if (!isValidNotificationSpecificTarget(specificTarget)) {
+        return "Geçerli bir telefon numarası (05xxxxxxxxx) veya kullanıcı UUID girin.";
+      }
     }
     return null;
   }, [audience, body, specificTarget, title]);
@@ -527,7 +545,9 @@ export function AdminNotificationCenterDashboard() {
         body: body.trim(),
       };
       if (audience === "specific_user") {
-        requestBody.user_id = specificTarget.trim().toLowerCase();
+        requestBody.specific_target = isValidNotificationUserId(specificTarget)
+          ? specificTarget.trim().toLowerCase()
+          : specificTarget.trim();
       } else {
         requestBody.confirm_phrase = BULK_PUSH_CONFIRM_PHRASE;
       }
@@ -553,7 +573,13 @@ export function AdminNotificationCenterDashboard() {
                 ? "KYC segmentleri Faz 2'de açılacak."
                 : data.error === "bulk_confirm_required"
                   ? 'Toplu gönderim için "GÖNDER" onayı gerekir.'
-                  : data.error === "forbidden"
+                  : data.error === "user_not_found"
+                    ? "Bu telefon numarasına kayıtlı kullanıcı bulunamadı."
+                    : data.error === "ambiguous_phone"
+                      ? "Bu numaraya bağlı birden fazla kullanıcı var. UUID ile hedefleyin."
+                      : data.error === "invalid_specific_target"
+                        ? "Geçerli telefon numarası veya kullanıcı UUID gerekir."
+                        : data.error === "forbidden"
                     ? "Bu hesap bildirim göndermeye yetkili değil."
                     : data.error === "server_misconfigured"
                       ? "Sunucu yapılandırması eksik."
@@ -573,6 +599,9 @@ export function AdminNotificationCenterDashboard() {
         sent_count: sentCount,
         total_users: totalUsers,
         users_with_token: usersWithToken,
+        resolveMethod: data.resolveMethod,
+        resolved_user_id: data.resolved_user_id,
+        masked_phone: data.masked_phone,
       });
       setPushConfirmOpen(false);
       setPushKvkk(false);
@@ -684,7 +713,7 @@ export function AdminNotificationCenterDashboard() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/78">Admin · Bildirim</p>
           <h1 className="mt-1.5 text-xl font-black text-white">Bildirim Merkezi</h1>
           <p className="mt-1.5 max-w-2xl text-xs text-slate-400">
-            Faz 1B: belirli kullanıcı ve toplu push (tüm kullanıcılar, sürücüler, yolcular). KYC segmentleri Faz 2.
+            Faz 1C: belirli kullanıcı telefon veya UUID; toplu push Faz 1B. KYC segmentleri Faz 2.
           </p>
           <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
@@ -721,9 +750,9 @@ export function AdminNotificationCenterDashboard() {
         className="mt-5 rounded-xl border border-cyan-400/25 bg-cyan-500/[0.07] px-4 py-3 text-[11px] leading-relaxed text-cyan-100/95"
         role="status"
       >
-        <strong className="font-bold">Faz 1B.</strong> Gerçek push: belirli kullanıcı (UUID) veya toplu hedefler
-        (tüm kullanıcılar, sürücüler, yolcular). Toplu gönderimde &quot;GÖNDER&quot; onayı zorunlu. KYC segmentleri
-        Faz 2. SMS/WhatsApp yok.
+        <strong className="font-bold">Faz 1C.</strong> Belirli kullanıcı: telefon numarası veya UUID ile FCM push.
+        Toplu hedefler (tüm kullanıcılar, sürücüler, yolcular) Faz 1B. Toplu gönderimde &quot;GÖNDER&quot; onayı zorunlu.
+        KYC segmentleri Faz 2. SMS/WhatsApp yok.
       </div>
 
       {sendResult ? (
@@ -736,24 +765,45 @@ export function AdminNotificationCenterDashboard() {
           role="status"
         >
           <p>{sendResult.message}</p>
-          {(sendResult.sent_count !== undefined ||
+          {(sendResult.resolveMethod ||
+            sendResult.resolved_user_id ||
+            sendResult.masked_phone ||
+            sendResult.sent_count !== undefined ||
             sendResult.total_users !== undefined ||
             sendResult.users_with_token !== undefined) && (
-            <dl className="mt-2 grid grid-cols-3 gap-2 border-t border-white/[0.08] pt-2 text-[10px]">
+            <dl className="mt-2 space-y-1.5 border-t border-white/[0.08] pt-2 text-[10px]">
+              {sendResult.resolveMethod ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Hedefleme</dt>
+                  <dd className="font-semibold">{sendResult.resolveMethod === "phone" ? "Telefon" : "UUID"}</dd>
+                </div>
+              ) : null}
+              {sendResult.masked_phone ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Telefon</dt>
+                  <dd className="font-mono">{sendResult.masked_phone}</dd>
+                </div>
+              ) : null}
+              {sendResult.resolved_user_id ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-400">Kullanıcı ID</dt>
+                  <dd className="font-mono">{sendResult.resolved_user_id}</dd>
+                </div>
+              ) : null}
               {sendResult.sent_count !== undefined ? (
-                <div>
+                <div className="flex justify-between gap-2">
                   <dt className="text-slate-400">İletilen</dt>
                   <dd className="font-bold">{sendResult.sent_count}</dd>
                 </div>
               ) : null}
-              {sendResult.users_with_token !== undefined ? (
-                <div>
+              {sendResult.users_with_token !== undefined && sendResult.users_with_token > 0 ? (
+                <div className="flex justify-between gap-2">
                   <dt className="text-slate-400">Token&apos;lı</dt>
                   <dd className="font-bold">{sendResult.users_with_token}</dd>
                 </div>
               ) : null}
-              {sendResult.total_users !== undefined ? (
-                <div>
+              {sendResult.total_users !== undefined && sendResult.total_users > 0 ? (
+                <div className="flex justify-between gap-2">
                   <dt className="text-slate-400">Toplam hedef</dt>
                   <dd className="font-bold">{sendResult.total_users}</dd>
                 </div>
@@ -843,18 +893,18 @@ export function AdminNotificationCenterDashboard() {
             {audience === "specific_user" ? (
               <div className="mt-3">
                 <label htmlFor="notif-user-id" className="text-[10px] font-semibold text-slate-500">
-                  Kullanıcı ID
+                  Telefon numarası veya kullanıcı UUID
                 </label>
                 <input
                   id="notif-user-id"
                   type="text"
                   value={specificTarget}
                   onChange={(e) => setSpecificTarget(e.target.value)}
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  placeholder="05xxxxxxxxx veya kullanıcı UUID"
                   className="mt-1.5 w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 font-mono text-sm text-white outline-none focus:border-cyan-400/35"
                 />
                 <p className="mt-1.5 text-[10px] text-slate-500">
-                  Güvenli gönderim için kullanıcı UUID gerekir. Telefon/e-posta arama Faz 1C.
+                  Telefon yalnızca kullanıcıyı bulmak için kullanılır; gönderim FCM push ile yapılır (SMS değil).
                 </p>
               </div>
             ) : null}
@@ -960,8 +1010,10 @@ export function AdminNotificationCenterDashboard() {
               </div>
               {audience === "specific_user" && specificTarget.trim() ? (
                 <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Alıcı</dt>
-                  <dd className="truncate text-right font-mono text-slate-300">{specificTarget.trim()}</dd>
+                  <dt className="text-slate-500">Hedef</dt>
+                  <dd className="truncate text-right font-mono text-slate-300">
+                    {formatSpecificTargetPreview(specificTarget)}
+                  </dd>
                 </div>
               ) : null}
             </dl>
@@ -1005,7 +1057,7 @@ export function AdminNotificationCenterDashboard() {
       <PushSendConfirmModal
         open={pushConfirmOpen}
         audience={audience}
-        userId={specificTarget}
+        specificTarget={specificTarget}
         title={title}
         body={body}
         kvkkAck={pushKvkk}

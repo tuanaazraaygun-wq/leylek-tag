@@ -32,13 +32,19 @@ export async function POST(request: Request) {
 
   const parsed = parseNotificationSendBody(body);
   if ("error" in parsed) {
+    const status =
+      parsed.error === "user_not_found"
+        ? 404
+        : parsed.error === "ambiguous_phone"
+          ? 409
+          : 400;
     return NextResponse.json(
       {
         success: false,
         error: parsed.error,
         message: notificationSendErrorMessage(parsed.error),
       },
-      { status: 400, headers: NO_STORE_HEADERS },
+      { status, headers: NO_STORE_HEADERS },
     );
   }
 
