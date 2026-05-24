@@ -1,5 +1,7 @@
-/** GET /api/admin/kyc/pending — KYC başvuru satırı (read-only panel). */
+/** GET /api/admin/kyc/pending — KYC başvuru satırı. */
 export type KycStatusFilter = "all" | "pending" | "approved" | "rejected";
+
+export type KycReviewAction = "approve" | "reject" | "request_docs";
 
 export const KYC_LIST_STATUSES = ["pending", "approved", "rejected", "needs_documents"] as const;
 export type KycListStatus = (typeof KYC_LIST_STATUSES)[number];
@@ -28,6 +30,29 @@ export type KycPendingRow = {
   selfie_url: string | null;
   ai_status: string | null;
   ai_warnings: string[];
+  kyc_last_reviewed_by: string | null;
+  kyc_last_reviewed_at: string | null;
+  kyc_last_review_action: string | null;
+  kyc_admin_note: string | null;
+  kyc_user_message: string | null;
+};
+
+export type KycActionRequestBody = {
+  action: KycReviewAction;
+  user_id: string;
+  user_message?: string;
+  admin_note?: string;
+  expected_kyc_status?: string;
+};
+
+export type KycActionResponse = {
+  success?: boolean;
+  error?: string;
+  message?: string;
+  detail?: string;
+  user_id?: string;
+  action?: KycReviewAction;
+  kyc_status?: string;
 };
 
 export function isSafeKycImageUrl(url: unknown): url is string {

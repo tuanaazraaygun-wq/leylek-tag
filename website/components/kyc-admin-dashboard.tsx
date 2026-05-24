@@ -4,16 +4,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 
+import { KycActionDialog } from "@/components/kyc-action-dialog";
+import { KycApplicationCard } from "@/components/kyc-application-card";
+import { KycDocLightbox, type KycDocItem } from "@/components/kyc-doc-lightbox";
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
-  isSafeKycImageUrl,
   kycCountLabel,
   kycDisplayField,
   kycEmptyListMessage,
-  kycStatusBadgeClass,
-  kycStatusLabel,
-  kycVehicleKindLabel,
+  type KycActionResponse,
   type KycPendingRow,
+  type KycReviewAction,
   type KycStatusFilter,
 } from "@/lib/kyc-admin-types";
 import { getKycAdminMagicLinkRedirectTo } from "@/lib/site-origin";
@@ -35,137 +36,16 @@ const STATUS_FILTERS: { id: KycStatusFilter; label: string }[] = [
   { id: "rejected", label: "Reddedilen" },
 ];
 
-function KycDocSlot({ label, url }: { label: string; url: string | null }) {
-  if (!url || !isSafeKycImageUrl(url)) {
-    return (
-      <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <p className="mt-2 text-sm text-slate-500">Yok</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 block overflow-hidden rounded-lg ring-1 ring-white/[0.08] transition hover:ring-cyan-400/35"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt={label} className="h-28 w-full object-cover bg-slate-900" loading="lazy" />
-      </a>
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-block text-[11px] font-semibold text-cyan-300/90 underline-offset-2 hover:underline"
-      >
-        Tam boyut aç
-      </a>
-    </div>
-  );
-}
-
-function KycApplicationCard({ row }: { row: KycPendingRow }) {
-  const kind = row.pending_vehicle_kind || row.kyc_vehicle_kind;
-  const warnings = row.ai_warnings?.length ? row.ai_warnings.join(" · ") : "—";
-  const approvedKinds =
-    row.approved_vehicle_kinds.length > 0
-      ? row.approved_vehicle_kinds.map((k) => kycVehicleKindLabel(k)).join(", ")
-      : "—";
-
-  return (
-    <article className="rounded-2xl border border-white/[0.09] bg-slate-950/[0.92] p-5 shadow-[0_20px_60px_-32px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.04]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.07] pb-4">
-        <div className="min-w-0">
-          <h2 className="text-lg font-black text-white">{kycDisplayField(row.name)}</h2>
-          <p className="mt-1 font-mono text-xs text-slate-400">{row.phone ?? "—"}</p>
-          <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{row.user_id}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 text-right">
-          <span
-            className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${kycStatusBadgeClass(row.kyc_status)}`}
-          >
-            {kycStatusLabel(row.kyc_status)}
-          </span>
-          <span className="text-[11px] text-slate-500">
-            Başvuru:{" "}
-            {row.kyc_submitted_at ? new Date(row.kyc_submitted_at).toLocaleString("tr-TR") : "—"}
-          </span>
-        </div>
-      </div>
-
-      <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Doğrulama</dt>
-          <dd className="mt-0.5 text-slate-200">
-            {row.is_verified === true ? "Evet" : row.is_verified === false ? "Hayır" : "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Onaylı tipler</dt>
-          <dd className="mt-0.5 text-slate-200">{approvedKinds}</dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Onay tarihi</dt>
-          <dd className="mt-0.5 text-slate-200">
-            {row.kyc_approved_at ? new Date(row.kyc_approved_at).toLocaleString("tr-TR") : "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Red tarihi</dt>
-          <dd className="mt-0.5 text-slate-200">
-            {row.kyc_rejected_at ? new Date(row.kyc_rejected_at).toLocaleString("tr-TR") : "—"}
-          </dd>
-        </div>
-        <div className="sm:col-span-2">
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Red gerekçesi</dt>
-          <dd className="mt-0.5 text-slate-300">{kycDisplayField(row.kyc_rejection_reason)}</dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Araç tipi</dt>
-          <dd className="mt-0.5 text-slate-200">{kycVehicleKindLabel(kind)}</dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Plaka</dt>
-          <dd className="mt-0.5 text-slate-200">{kycDisplayField(row.plate_number)}</dd>
-        </div>
-        <div className="sm:col-span-2">
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Araç</dt>
-          <dd className="mt-0.5 text-slate-200">
-            {kycDisplayField(row.vehicle_brand)} {kycDisplayField(row.vehicle_model)} (
-            {kycDisplayField(row.vehicle_year)}) · {kycDisplayField(row.vehicle_color)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">AI durumu</dt>
-          <dd className="mt-0.5 text-slate-200">{kycDisplayField(row.ai_status)}</dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">AI uyarıları</dt>
-          <dd className="mt-0.5 text-slate-300">{warnings}</dd>
-        </div>
-      </dl>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KycDocSlot label="Ehliyet" url={row.license_photo_url} />
-        <KycDocSlot label="Araç" url={row.vehicle_photo_url} />
-        <KycDocSlot label="Motor" url={row.motorcycle_photo_url} />
-        <KycDocSlot label="Selfie" url={row.selfie_url} />
-      </div>
-    </article>
-  );
-}
+const ACTION_SUCCESS: Record<KycReviewAction, string> = {
+  approve: "Başvuru onaylandı.",
+  reject: "Başvuru reddedildi.",
+  request_docs: "Eksik belge talebi kaydedildi.",
+};
 
 async function fetchKycList(
   accessToken: string,
   statusFilter: KycStatusFilter,
-): Promise<{
-  rows: KycPendingRow[];
-  error: string | null;
-}> {
+): Promise<{ rows: KycPendingRow[]; error: string | null }> {
   try {
     const qs = statusFilter === "all" ? "" : `?status=${encodeURIComponent(statusFilter)}`;
     const res = await fetch(`/api/admin/kyc/pending${qs}`, {
@@ -186,6 +66,35 @@ async function fetchKycList(
   } catch {
     return { rows: [], error: "Liste yüklenemedi." };
   }
+}
+
+async function postKycAction(
+  accessToken: string,
+  payload: {
+    action: KycReviewAction;
+    user_id: string;
+    user_message?: string;
+    admin_note?: string;
+    expected_kyc_status: string;
+  },
+): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch("/api/admin/kyc/action", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = (await res.json()) as KycActionResponse;
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: body.message ?? body.error ?? "İşlem başarısız.",
+    };
+  }
+  return { ok: true, message: ACTION_SUCCESS[payload.action] };
 }
 
 async function reconcileKycAdminSession(
@@ -227,8 +136,22 @@ export function KycAdminDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const [rows, setRows] = useState<KycPendingRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<KycStatusFilter>("all");
+
+  const [actionTarget, setActionTarget] = useState<KycPendingRow | null>(null);
+  const [actionType, setActionType] = useState<KycReviewAction>("approve");
+  const [actionDialogKey, setActionDialogKey] = useState(0);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actingUserId, setActingUserId] = useState<string | null>(null);
+
+  const [lightbox, setLightbox] = useState<{
+    items: KycDocItem[];
+    index: number;
+    subtitle: string;
+  } | null>(null);
 
   const loadList = useCallback(async () => {
     if (!session?.access_token || !isAdmin) return;
@@ -272,6 +195,50 @@ export function KycAdminDashboard() {
     setIsAdmin(false);
     setRows([]);
   }, [client]);
+
+  const openAction = useCallback((row: KycPendingRow, action: KycReviewAction) => {
+    setActionDialogKey((k) => k + 1);
+    setActionTarget(row);
+    setActionType(action);
+    setActionError(null);
+  }, []);
+
+  const closeAction = useCallback(() => {
+    if (actionLoading) return;
+    setActionTarget(null);
+    setActionError(null);
+  }, [actionLoading]);
+
+  const confirmAction = useCallback(
+    async (fields: { user_message: string; admin_note: string }) => {
+      if (!session?.access_token || !actionTarget) return;
+      setActionLoading(true);
+      setActionError(null);
+      setActingUserId(actionTarget.user_id);
+      try {
+        const result = await postKycAction(session.access_token, {
+          action: actionType,
+          user_id: actionTarget.user_id,
+          user_message: fields.user_message || undefined,
+          admin_note: fields.admin_note || undefined,
+          expected_kyc_status: "pending",
+        });
+        if (!result.ok) {
+          setActionError(result.message);
+          return;
+        }
+        setActionTarget(null);
+        setActionSuccess(result.message);
+        await loadList();
+      } catch {
+        setActionError("İşlem başarısız.");
+      } finally {
+        setActionLoading(false);
+        setActingUserId(null);
+      }
+    },
+    [session, actionTarget, actionType, loadList],
+  );
 
   const sendMagicLink = useCallback(
     async (e: React.FormEvent) => {
@@ -410,21 +377,20 @@ export function KycAdminDashboard() {
 
   return (
     <section className="mx-auto min-h-[70vh] max-w-[min(92rem,calc(100vw-1.25rem))] px-3 pb-24 pt-8 sm:px-4 md:pt-12">
-      <header className="flex flex-col gap-4 border-b border-white/[0.08] pb-6 lg:flex-row lg:items-start lg:justify-between">
+      <header className="flex flex-col gap-4 border-b border-white/[0.08] pb-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/78">Admin · KYC</p>
-          <h1 className="mt-2 text-2xl font-black text-white">KYC başvuruları</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-400">
-            Bekleyen, onaylanan ve reddedilen sürücü başvurularını görüntüleyin. Bu panel{" "}
-            <strong className="font-semibold text-amber-200/95">salt okunur</strong> moddadır; onay veya red işlemi
-            yapılamaz.
+          <h1 className="mt-1.5 text-xl font-black text-white">KYC başvuruları</h1>
+          <p className="mt-1.5 max-w-2xl text-xs text-slate-400">
+            Bekleyen başvuruları inceleyin; onay, red veya eksik belge talebi gönderin. Push bildirimi bu
+            sürümde gönderilmez.
           </p>
-          <p className="mt-2 font-mono text-xs text-slate-500">{session.user.email}</p>
+          <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             href="/support/admin"
-            className="inline-flex min-h-[44px] items-center rounded-xl border border-white/[0.12] px-4 py-2.5 text-xs font-bold text-cyan-100/95 hover:border-cyan-400/35"
+            className="inline-flex min-h-[40px] items-center rounded-xl border border-white/[0.12] px-3 py-2 text-xs font-bold text-cyan-100/95 hover:border-cyan-400/35"
           >
             Destek paneli
           </Link>
@@ -432,34 +398,40 @@ export function KycAdminDashboard() {
             type="button"
             onClick={() => void loadList()}
             disabled={listLoading}
-            className="inline-flex min-h-[44px] items-center rounded-xl border border-white/[0.12] px-4 py-2.5 text-xs font-bold text-cyan-100/95 disabled:opacity-50"
+            className="inline-flex min-h-[40px] items-center rounded-xl border border-white/[0.12] px-3 py-2 text-xs font-bold text-cyan-100/95 disabled:opacity-50"
           >
             {listLoading ? "Yükleniyor…" : "Yenile"}
           </button>
           <button
             type="button"
             onClick={() => void signOut()}
-            className="inline-flex min-h-[44px] items-center rounded-xl border border-rose-500/35 px-4 py-2.5 text-xs font-bold text-rose-100/95"
+            className="inline-flex min-h-[40px] items-center rounded-xl border border-rose-500/35 px-3 py-2 text-xs font-bold text-rose-100/95"
           >
             Çıkış
           </button>
         </div>
       </header>
 
-      <div
-        className="mt-6 rounded-xl border border-amber-400/25 bg-amber-500/[0.08] px-4 py-3 text-sm text-amber-100/95"
-        role="status"
-      >
-        Salt okunur mod — karar verme ve bildirim gönderme Faz 2&apos;de eklenecek.
-      </div>
+      {actionSuccess ? (
+        <p className="mt-4 rounded-xl border border-emerald-400/25 bg-emerald-500/[0.08] px-3 py-2 text-xs text-emerald-100" role="status">
+          {actionSuccess}
+          <button
+            type="button"
+            className="ml-2 underline"
+            onClick={() => setActionSuccess(null)}
+          >
+            Kapat
+          </button>
+        </p>
+      ) : null}
 
       {loadError ? (
-        <p className="mt-6 text-sm text-rose-300" role="alert">
+        <p className="mt-4 text-xs text-rose-300" role="alert">
           {loadError}
         </p>
       ) : null}
 
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-5 flex flex-wrap gap-2">
         {STATUS_FILTERS.map((f) => {
           const active = statusFilter === f.id;
           return (
@@ -468,7 +440,7 @@ export function KycAdminDashboard() {
               type="button"
               onClick={() => setStatusFilter(f.id)}
               disabled={listLoading}
-              className={`rounded-full border px-3.5 py-1.5 text-xs font-bold transition disabled:opacity-50 ${
+              className={`rounded-full border px-3 py-1 text-[11px] font-bold transition disabled:opacity-50 ${
                 active
                   ? "border-cyan-400/45 bg-cyan-500/15 text-cyan-100"
                   : "border-white/[0.12] bg-black/30 text-slate-400 hover:border-white/20 hover:text-slate-200"
@@ -480,19 +452,49 @@ export function KycAdminDashboard() {
         })}
       </div>
 
-      <p className="mt-4 text-sm text-slate-400">
+      <p className="mt-3 text-xs text-slate-400">
         {kycCountLabel(statusFilter, rows.length, listLoading && !rows.length)}
       </p>
 
-      <div className="mt-6 grid gap-5">
+      <div className="mt-4 grid gap-3">
         {!listLoading && rows.length === 0 ? (
           <p className="rounded-xl border border-white/[0.08] bg-black/30 px-4 py-8 text-center text-sm text-slate-500">
             {kycEmptyListMessage(statusFilter)}
           </p>
         ) : (
-          rows.map((row) => <KycApplicationCard key={row.user_id} row={row} />)
+          rows.map((row) => (
+            <KycApplicationCard
+              key={row.user_id}
+              row={row}
+              acting={actingUserId === row.user_id}
+              onOpenDoc={(items, index, subtitle) => setLightbox({ items, index, subtitle })}
+              onAction={(action) => openAction(row, action)}
+            />
+          ))
         )}
       </div>
+
+      <KycActionDialog
+        key={actionDialogKey}
+        open={Boolean(actionTarget)}
+        action={actionType}
+        userName={kycDisplayField(actionTarget?.name)}
+        loading={actionLoading}
+        error={actionError}
+        onClose={closeAction}
+        onConfirm={(fields) => void confirmAction(fields)}
+      />
+
+      <KycDocLightbox
+        open={Boolean(lightbox)}
+        items={lightbox?.items ?? []}
+        index={lightbox?.index ?? 0}
+        subtitle={lightbox?.subtitle ?? ""}
+        onClose={() => setLightbox(null)}
+        onSelectIndex={(index) =>
+          setLightbox((prev) => (prev ? { ...prev, index } : null))
+        }
+      />
     </section>
   );
 }

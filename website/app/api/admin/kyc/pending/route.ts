@@ -73,6 +73,11 @@ function mapKycRow(
     selfie_url: strOrNull(dd.selfie_url),
     ai_status: strOrNull(dd.ai_status),
     ai_warnings: warningsList(dd.ai_warnings),
+    kyc_last_reviewed_by: strOrNull(dd.kyc_last_reviewed_by),
+    kyc_last_reviewed_at: strOrNull(dd.kyc_last_reviewed_at),
+    kyc_last_review_action: strOrNull(dd.kyc_last_review_action),
+    kyc_admin_note: strOrNull(dd.kyc_admin_note),
+    kyc_user_message: strOrNull(dd.kyc_user_message),
   };
 }
 

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/** Supabase Auth + admin_users — salt okunur KYC belge inceleme. */
+/** Supabase Auth + admin_users — KYC belge inceleme ve karar. */
 export default function KycAdminPage() {
   return (
     <SupportAdminErrorBoundary>
