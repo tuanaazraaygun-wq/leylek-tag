@@ -8,14 +8,18 @@ import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
   DENSITY_LEVEL_LABELS,
   densityLevelColor,
-  getHighSupplyGapRegions,
   getOperationsMapCityLabel,
   getOperationsMapDemoEventsByCity,
+  getOperationsMapIntelligence,
   getOperationsMapRegionsByCity,
+  OPERATIONS_MAP_INTELLIGENCE_DISCLAIMERS,
   OPERATIONS_MAP_SECURITY_NOTES,
+  SEVERITY_LEVEL_LABELS,
   type OperationsMapCity,
   type OperationsMapDemoEvent,
   type OperationsMapRegion,
+  type RegionIntelligence,
+  type SeverityLevel,
 } from "@/lib/operations-map-demo-data";
 import {
   filterTurkeyCities,
@@ -241,13 +245,30 @@ function DemoEventLogPanel({
   );
 }
 
+function severityBadgeClass(severity: SeverityLevel): string {
+  if (severity === "kritik") return "border-rose-400/40 bg-rose-500/15 text-rose-100";
+  if (severity === "yuksek") return "border-orange-400/35 bg-orange-500/12 text-orange-100";
+  if (severity === "orta") return "border-amber-400/30 bg-amber-500/10 text-amber-100";
+  return "border-slate-400/25 bg-slate-500/10 text-slate-300";
+}
+
+function SeverityBadge({ severity }: { severity: SeverityLevel }) {
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${severityBadgeClass(severity)}`}>
+      {SEVERITY_LEVEL_LABELS[severity]}
+    </span>
+  );
+}
+
 function RecommendationCard({
-  region,
+  item,
   onCopy,
 }: {
-  region: OperationsMapRegion;
+  item: RegionIntelligence;
   onCopy: (text: string) => void;
 }) {
+  const { region, severity, impactScore, urgency, safeSendNote } = item;
+
   return (
     <article className="rounded-xl border border-orange-400/25 bg-gradient-to-br from-orange-500/[0.08] to-slate-950/90 p-4 ring-1 ring-orange-400/10">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -255,9 +276,19 @@ function RecommendationCard({
           <p className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-200/90">Arz açığı yüksek</p>
           <h3 className="mt-1 text-sm font-bold text-white">{region.region}</h3>
         </div>
-        <span className="rounded-full border border-orange-400/30 bg-orange-500/10 px-2 py-0.5 text-[9px] font-bold text-orange-100">
-          Öncelik
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <SeverityBadge severity={severity} />
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+        <div className="rounded-lg border border-white/[0.06] bg-black/30 px-2 py-1.5">
+          <p className="font-semibold text-slate-500">Etki skoru</p>
+          <p className="mt-0.5 font-bold text-cyan-100">{impactScore}/100</p>
+        </div>
+        <div className="rounded-lg border border-white/[0.06] bg-black/30 px-2 py-1.5">
+          <p className="font-semibold text-slate-500">Aciliyet</p>
+          <p className="mt-0.5 font-bold text-orange-100">{SEVERITY_LEVEL_LABELS[urgency]}</p>
+        </div>
       </div>
       <div className="mt-3 space-y-2 text-[11px]">
         <div>
@@ -267,6 +298,10 @@ function RecommendationCard({
         <div>
           <p className="font-semibold text-slate-400">Push taslağı</p>
           <p className="mt-0.5 leading-relaxed text-slate-300">{region.suggestedPushDraft}</p>
+        </div>
+        <div>
+          <p className="font-semibold text-slate-400">Güvenli gönderim notu</p>
+          <p className="mt-0.5 leading-relaxed text-slate-400">{safeSendNote}</p>
         </div>
       </div>
       <button
@@ -307,7 +342,15 @@ export function AdminOperationsMapDashboard() {
 
   const regions = useMemo(() => getOperationsMapRegionsByCity(city), [city]);
   const events = useMemo(() => getOperationsMapDemoEventsByCity(city), [city]);
-  const priorityRegions = useMemo(() => getHighSupplyGapRegions(city), [city]);
+  const intelligence = useMemo(() => getOperationsMapIntelligence(city), [city]);
+  const priorityIntel = useMemo(
+    () => intelligence.regions.filter((item) => item.region.supplyGap === "yuksek"),
+    [intelligence],
+  );
+  const severityByRegionId = useMemo(
+    () => new Map(intelligence.regions.map((item) => [item.region.id, item.severity])),
+    [intelligence],
+  );
   const filteredCities = useMemo(
     () => filterTurkeyCities({ query: citySearch, region: regionFilter }),
     [citySearch, regionFilter],
@@ -489,7 +532,7 @@ export function AdminOperationsMapDashboard() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-300/78">Admin · Harita</p>
           <h1 className="mt-1.5 text-xl font-black text-white sm:text-2xl">LeylekTAG Operasyon Harita Merkezi</h1>
           <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-slate-400">
-            Anonim yoğunluk, boş bölge ve yönlendirme hazırlık ekranı. Faz 0B · Demo simülasyon — canlı konum ve OSRM yok.
+            Anonim yoğunluk, boş bölge ve yönlendirme hazırlık ekranı. Faz 0C · Demo intelligence — canlı konum, OSRM ve gerçek kullanıcı verisi yok.
           </p>
           <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
@@ -508,9 +551,17 @@ export function AdminOperationsMapDashboard() {
 
       <div className="mt-5 space-y-2 rounded-xl border border-indigo-400/25 bg-indigo-500/[0.07] px-4 py-3 text-[11px] leading-relaxed text-indigo-100/95" role="status">
         <p>
-          <strong className="font-bold">Bu ekran demo/anonim operasyon simülasyonudur.</strong>
+          <strong className="font-bold">Demo intelligence — gerçek kullanıcı verisi değildir.</strong>
         </p>
-        <p>Tekil kullanıcı konumu gösterilmez. Push otomatik gönderilmez.</p>
+        <p>Operasyon önerileri admin onayı gerektirir. Tekil kullanıcı konumu gösterilmez; push otomatik gönderilmez.</p>
+        <ul className="space-y-1 text-indigo-100/85">
+          {OPERATIONS_MAP_INTELLIGENCE_DISCLAIMERS.map((note) => (
+            <li key={note} className="flex items-start gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-indigo-300/80" aria-hidden />
+              {note}
+            </li>
+          ))}
+        </ul>
         {copyFeedback ? <p className="text-emerald-300">{copyFeedback}</p> : null}
       </div>
 
@@ -607,6 +658,67 @@ export function AdminOperationsMapDashboard() {
         </div>
       </section>
 
+      <section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Demo KPI özeti">
+        {[
+          { label: "Demo talep skoru", value: intelligence.kpis.demandScore },
+          { label: "Demo sürücü dengesi", value: intelligence.kpis.driverBalance },
+          { label: "Demo arz açığı", value: intelligence.kpis.supplyGapScore },
+          { label: "Demo öneri sayısı", value: intelligence.kpis.recommendationCount },
+        ].map((kpi) => (
+          <div key={kpi.label} className="rounded-xl border border-white/[0.08] bg-slate-950/80 px-3 py-2.5">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500">{kpi.label}</p>
+            <p className="mt-1 text-lg font-black text-white">
+              {kpi.label === "Demo öneri sayısı" ? kpi.value : `${kpi.value}/100`}
+            </p>
+          </div>
+        ))}
+      </section>
+
+      <section className="mt-6">
+        <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+          Intelligence özeti · {cityLabel}
+        </h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { title: "En yoğun bölge", value: intelligence.summary.busiestRegion },
+            { title: "En yüksek arz açığı", value: intelligence.summary.highestGapRegion },
+            { title: "Dengeli bölge", value: intelligence.summary.balancedRegion },
+            { title: "Önerilen aksiyon", value: intelligence.summary.recommendedAction },
+          ].map((card) => (
+            <article key={card.title} className="rounded-xl border border-white/[0.08] bg-slate-950/80 p-3">
+              <p className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-200/80">{card.title}</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-200">{card.value}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-6 rounded-xl border border-violet-400/20 bg-violet-500/[0.05] p-4">
+        <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-violet-200/90">
+          Operasyon önerisi · demo rule engine
+        </h2>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500">Sistem önerisi</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-200">{intelligence.panel.systemSuggestion}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500">Beklenen etki</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-200">{intelligence.panel.expectedImpact}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500">Risk seviyesi</p>
+            <div className="mt-1">
+              <SeverityBadge severity={intelligence.panel.riskLevel} />
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500">Önerilen mesaj</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-300">{intelligence.panel.suggestedMessage}</p>
+          </div>
+        </div>
+      </section>
+
       <div className="mt-4 flex flex-wrap gap-2">
         {MAP_LAYERS.map((layer) => (
           <button
@@ -640,10 +752,10 @@ export function AdminOperationsMapDashboard() {
         <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
           Öncelikli bölgeler · arz açığı yüksek · {cityLabel}
         </h2>
-        {priorityRegions.length > 0 ? (
+        {priorityIntel.length > 0 ? (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {priorityRegions.map((region) => (
-              <RecommendationCard key={region.id} region={region} onCopy={handleCopyDraft} />
+            {priorityIntel.map((item) => (
+              <RecommendationCard key={item.region.id} item={item} onCopy={handleCopyDraft} />
             ))}
           </div>
         ) : (
@@ -660,6 +772,7 @@ export function AdminOperationsMapDashboard() {
             <thead className="border-b border-white/[0.08] bg-black/40 text-[10px] uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-3 py-2.5 font-semibold">Bölge</th>
+                <th className="px-3 py-2.5 font-semibold">Şiddet</th>
                 <th className="px-3 py-2.5 font-semibold">Talep</th>
                 <th className="px-3 py-2.5 font-semibold">Sürücü</th>
                 <th className="px-3 py-2.5 font-semibold">Arz açığı</th>
@@ -667,20 +780,31 @@ export function AdminOperationsMapDashboard() {
               </tr>
             </thead>
             <tbody>
-              {regions.map((row) => (
+              {regions.map((row) => {
+                const severity = severityByRegionId.get(row.id) ?? "dusuk";
+                return (
                 <tr
                   key={row.id}
                   className={`border-b border-white/[0.05] last:border-0 ${
                     row.supplyGap === "yuksek" ? "bg-orange-500/[0.04]" : ""
                   }`}
                 >
-                  <td className="px-3 py-3 align-top font-medium text-slate-200">{row.region}</td>
+                  <td className="px-3 py-3 align-top font-medium text-slate-200">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {row.region}
+                      {severity === "kritik" ? <SeverityBadge severity="kritik" /> : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <SeverityBadge severity={severity} />
+                  </td>
                   <td className="px-3 py-3 align-top text-slate-400">{DENSITY_LEVEL_LABELS[row.passengerLevel]}</td>
                   <td className="px-3 py-3 align-top text-slate-400">{DENSITY_LEVEL_LABELS[row.driverLevel]}</td>
                   <td className="px-3 py-3 align-top text-slate-400">{DENSITY_LEVEL_LABELS[row.supplyGap]}</td>
                   <td className="px-3 py-3 align-top text-slate-400">{row.recommendation}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

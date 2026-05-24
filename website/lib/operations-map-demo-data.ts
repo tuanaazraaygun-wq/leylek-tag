@@ -16,6 +16,51 @@ export const DENSITY_LEVEL_LABELS: Record<DensityLevel, string> = {
   yuksek: "Yüksek",
 };
 
+export type SeverityLevel = "dusuk" | "orta" | "yuksek" | "kritik";
+
+export const SEVERITY_LEVEL_LABELS: Record<SeverityLevel, string> = {
+  dusuk: "Düşük",
+  orta: "Orta",
+  yuksek: "Yüksek",
+  kritik: "Kritik",
+};
+
+export const OPERATIONS_MAP_INTELLIGENCE_DISCLAIMERS = [
+  "Demo intelligence — gerçek kullanıcı verisi değildir.",
+  "Operasyon önerileri admin onayı gerektirir.",
+  "Otomatik push gönderilmez.",
+] as const;
+
+export type RegionIntelligence = {
+  region: OperationsMapRegion;
+  severity: SeverityLevel;
+  impactScore: number;
+  urgency: SeverityLevel;
+  safeSendNote: string;
+};
+
+export type OperationsMapIntelligence = {
+  summary: {
+    busiestRegion: string;
+    highestGapRegion: string;
+    balancedRegion: string;
+    recommendedAction: string;
+  };
+  kpis: {
+    demandScore: number;
+    driverBalance: number;
+    supplyGapScore: number;
+    recommendationCount: number;
+  };
+  panel: {
+    systemSuggestion: string;
+    expectedImpact: string;
+    riskLevel: SeverityLevel;
+    suggestedMessage: string;
+  };
+  regions: RegionIntelligence[];
+};
+
 export type OperationsMapRegion = {
   id: string;
   city: OperationsMapCity;
@@ -372,6 +417,107 @@ export function getOperationsMapDemoEventsByCity(city: OperationsMapCity): Opera
 
 export function getHighSupplyGapRegions(city: OperationsMapCity): OperationsMapRegion[] {
   return getOperationsMapRegionsByCity(city).filter((r) => r.supplyGap === "yuksek");
+}
+
+function levelScore(level: DensityLevel): number {
+  if (level === "dusuk") return 1;
+  if (level === "orta") return 2;
+  return 3;
+}
+
+function severityRank(severity: SeverityLevel): number {
+  if (severity === "kritik") return 4;
+  if (severity === "yuksek") return 3;
+  if (severity === "orta") return 2;
+  return 1;
+}
+
+export function computeRegionSeverity(region: OperationsMapRegion): SeverityLevel {
+  const passenger = levelScore(region.passengerLevel);
+  const driver = levelScore(region.driverLevel);
+  const gap = levelScore(region.supplyGap);
+  const score = passenger + gap * 2 - driver;
+
+  if (gap === 3 && passenger >= 2 && driver <= 2) return "kritik";
+  if (score >= 7) return "kritik";
+  if (score >= 5) return "yuksek";
+  if (score >= 3) return "orta";
+  return "dusuk";
+}
+
+function computeImpactScore(region: OperationsMapRegion): number {
+  const base = 35 + levelScore(region.supplyGap) * 18 + levelScore(region.passengerLevel) * 10;
+  const penalty = levelScore(region.driverLevel) * 4;
+  return Math.min(98, Math.max(12, base - penalty));
+}
+
+function computeCityKpis(city: OperationsMapCity, regions: OperationsMapRegion[], regionIntel: RegionIntelligence[]) {
+  const hash = hashSlug(city);
+  const avgPassenger = regions.reduce((sum, r) => sum + levelScore(r.passengerLevel), 0) / regions.length;
+  const avgDriver = regions.reduce((sum, r) => sum + levelScore(r.driverLevel), 0) / regions.length;
+  const avgGap = regions.reduce((sum, r) => sum + levelScore(r.supplyGap), 0) / regions.length;
+  const recommendationCount = regionIntel.filter((item) => item.severity !== "dusuk").length;
+
+  return {
+    demandScore: Math.min(99, Math.round(avgPassenger * 28 + (hash % 9) + 8)),
+    driverBalance: Math.min(99, Math.round(100 - Math.abs(avgPassenger - avgDriver) * 14 - avgGap * 8)),
+    supplyGapScore: Math.min(99, Math.round(avgGap * 30 + (hash % 5) + 6)),
+    recommendationCount,
+  };
+}
+
+function expectedImpactLabel(severity: SeverityLevel): string {
+  if (severity === "kritik") return "Yoğun talep ve arz açığı — sürücü yönlendirme taslakları öncelik kazanabilir (demo).";
+  if (severity === "yuksek") return "Belirli hatlarda talep artışı — kontrollü bilgilendirme taslakları değerlendirilebilir (demo).";
+  if (severity === "orta") return "Sınırlı etki — izleme ve rutin teklif akışı yeterli olabilir (demo).";
+  return "Düşük etki — ek aksiyon gerekmiyor (demo simülasyon).";
+}
+
+export function getOperationsMapIntelligence(city: OperationsMapCity): OperationsMapIntelligence {
+  const regions = getOperationsMapRegionsByCity(city);
+  const regionIntel: RegionIntelligence[] = regions.map((region) => {
+    const severity = computeRegionSeverity(region);
+    return {
+      region,
+      severity,
+      impactScore: computeImpactScore(region),
+      urgency: severity,
+      safeSendNote: "Demo intelligence — gerçek kullanıcı verisi değildir. Admin onayı gerekir; otomatik gönderim yok.",
+    };
+  });
+
+  const busiest = regions.reduce((best, region) =>
+    levelScore(region.passengerLevel) > levelScore(best.passengerLevel) ? region : best,
+  );
+  const highestGap = regions.reduce((best, region) =>
+    levelScore(region.supplyGap) > levelScore(best.supplyGap) ? region : best,
+  );
+  const balanced = regions.reduce((best, region) => {
+    const balanceScore =
+      Math.abs(levelScore(region.passengerLevel) - levelScore(region.driverLevel)) + levelScore(region.supplyGap);
+    const bestScore =
+      Math.abs(levelScore(best.passengerLevel) - levelScore(best.driverLevel)) + levelScore(best.supplyGap);
+    return balanceScore < bestScore ? region : best;
+  });
+
+  const top = [...regionIntel].sort((a, b) => severityRank(b.severity) - severityRank(a.severity))[0] ?? regionIntel[0];
+
+  return {
+    summary: {
+      busiestRegion: busiest.region,
+      highestGapRegion: highestGap.region,
+      balancedRegion: balanced.region,
+      recommendedAction: top?.region.recommendation ?? "Demo izleme modu — ek aksiyon gerekmez.",
+    },
+    kpis: computeCityKpis(city, regions, regionIntel),
+    panel: {
+      systemSuggestion: top?.region.recommendation ?? "Şehir genelinde demo izleme modu önerilir.",
+      expectedImpact: expectedImpactLabel(top?.severity ?? "dusuk"),
+      riskLevel: top?.severity ?? "dusuk",
+      suggestedMessage: top?.region.suggestedPushDraft ?? "Demo intelligence mesajı — admin onayı gerekir.",
+    },
+    regions: regionIntel,
+  };
 }
 
 export function densityLevelColor(level: DensityLevel, kind: "passenger" | "driver" | "gap" | "routing"): string {
