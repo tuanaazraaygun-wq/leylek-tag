@@ -12,6 +12,11 @@ import {
   useState,
 } from "react";
 import { useSiteAuth } from "@/components/site-auth-provider";
+import {
+  SiteSupportPhoneShell,
+  SupportEntryGateway,
+  SupportPhoneModalHeader,
+} from "@/components/site-support-phone-shell";
 import { getSupabaseTicketChatClient } from "@/lib/support-chat-client";
 import {
   SUPPORT_ADMIN_TYPING_EVENT,
@@ -68,6 +73,8 @@ type SupportChatRow = {
 };
 
 type PanelView = "composer" | "thread";
+
+type SupportEntryIntent = "leylek" | "live" | null;
 
 /** AI replies must remain server-side only. */
 
@@ -380,6 +387,7 @@ export function SiteSupportPanel() {
 
   const [open, setOpen] = useState(false);
   const [panelView, setPanelView] = useState<PanelView>("composer");
+  const [entryIntent, setEntryIntent] = useState<SupportEntryIntent>(null);
   const [threadBootstrap, setThreadBootstrap] = useState(false);
 
   const [ticketMeta, setTicketMeta] = useState<SupportTicketMetaRow | null>(null);
@@ -432,6 +440,15 @@ export function SiteSupportPanel() {
   }, [chatLines, adminTypingPeek, chatSending, aiTyping, scrollChatToBottom]);
 
   useEffect(() => {
+    if (!open) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
+  useEffect(() => {
     const endAt = cooldownEndsAtRef.current;
     if (!endAt) {
       setCooldownRemainSec(0);
@@ -479,7 +496,10 @@ export function SiteSupportPanel() {
     });
   }, [realtimeTicketId, supportClientToken]);
 
-  const closePanel = useCallback(() => setOpen(false), []);
+  const closePanel = useCallback(() => {
+    setOpen(false);
+    setEntryIntent(null);
+  }, []);
 
   const resetComposerOnly = useCallback(() => {
     setStatus("idle");
@@ -503,6 +523,7 @@ export function SiteSupportPanel() {
     setChatBanner(null);
     setAdminTypingPeek(false);
     setPanelView("composer");
+    setEntryIntent(null);
     resetComposerOnly();
   }, [resetComposerOnly]);
 
@@ -1120,6 +1141,7 @@ export function SiteSupportPanel() {
     /** Thread yoksa sadece yeni bileti formdan doldurmak için */
     if (!stored?.ticketId) {
       resetComposerOnly();
+      setEntryIntent(null);
       setPanelView("composer");
       return;
     }
@@ -1153,6 +1175,26 @@ export function SiteSupportPanel() {
   );
 
   const hasAssignedAdmin = Boolean((ticketMeta?.assigned_admin_id ?? "").trim().length > 0);
+
+  const phoneStatusLabel = aiTyping
+    ? "Yanıt hazırlanıyor"
+    : hasAdminReplyInThread
+      ? "Destek ekibi aktif"
+      : "Çevrimiçi";
+
+  const showEntryGateway = Boolean(
+    supportUnlocked &&
+      panelView === "composer" &&
+      !ticketMeta?.id &&
+      entryIntent === null &&
+      !threadBootstrap,
+  );
+
+  const composerIntentSubtitle =
+    entryIntent === "live"
+      ? "Mesajın destek ekibine iletilir; Leylek Zeka ilk bilgilendirmeyi yapabilir."
+      : "Sorunu yaz, Leylek Zeka önce bilgilendirsin.";
+
   const queueStatusPrimary =
     resolvedStatus || hasAdminReplyInThread
       ? "Görüşme açık — destek ekibinin yanıtları aşağıdaki akışta."
@@ -1161,29 +1203,14 @@ export function SiteSupportPanel() {
         : "Talebin alındı — destek ekibi uygun olduğunda yanıtlar burada görünecek.";
 
   return (
-    <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end max-sm:right-0 max-sm:w-full max-sm:max-w-none max-sm:px-3 md:bottom-8 md:right-8 md:w-auto md:max-w-none md:px-0">
+    <>
       {open ? (
-        <>
-          <button
-            type="button"
-            aria-label="Panoyu kapat"
-            onClick={closePanel}
-            className="fixed inset-0 z-[71] bg-black/50 backdrop-blur-[4px]"
-          />
-
-          <div
-            role="dialog"
-            id={dialogId}
-            aria-modal="true"
-            aria-labelledby={titleId}
-            aria-describedby={descId}
-            className="relative z-[73] mb-3 flex max-h-[min(42rem,calc(100vh-5rem))] w-full max-w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.25rem] border border-white/[0.1] bg-slate-950/[0.96] shadow-[0_24px_80px_-28px_rgba(0,114,255,0.45),0_0_48px_-14px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-cyan-400/10 backdrop-blur-2xl max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:mb-0 max-sm:max-h-[min(88dvh,calc(100dvh-env(safe-area-inset-bottom,0px)-4.5rem))] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none max-sm:rounded-t-[1.35rem] max-sm:border-b-0 md:max-w-[min(24rem,calc(100vw-2rem))]"
-          >
-            <div
-              className="pointer-events-none absolute inset-px rounded-[1.1875rem] bg-[linear-gradient(155deg,rgba(34,211,238,0.07)_0%,transparent_42%,rgba(108,99,255,0.06)_100%)] opacity-95"
-              aria-hidden
-            />
-
+        <SiteSupportPhoneShell
+          dialogId={dialogId}
+          titleId={titleId}
+          descId={descId}
+          onOverlayClose={closePanel}
+        >
             {!configured ? (
               <div className="relative p-5 sm:p-6">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1311,52 +1338,13 @@ export function SiteSupportPanel() {
               </div>
             ) : panelView === "thread" && ticketMeta?.id ? (
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="shrink-0 border-b border-white/[0.07] px-4 pb-2 pt-3 sm:px-5 sm:pb-3 sm:pt-4 md:px-6">
-                  <div className="flex items-start justify-between gap-2 sm:gap-3">
-                    <div className="min-w-0">
-                      <p
-                        id={titleId}
-                        className="text-[0.95rem] font-black leading-tight tracking-tight text-white sm:text-lg"
-                      >
-                        Leylek TAG Destek
-                      </p>
-                      {!resolvedStatus ? (
-                        <>
-                          <p
-                            id={descId}
-                            className="mt-2 text-[12px] font-semibold leading-snug text-cyan-100/88"
-                          >
-                            {queueStatusPrimary}
-                          </p>
-                          <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
-                            {hasAdminReplyInThread
-                              ? "Bu pencereden ekibimizle yazışmaya devam edebilirsiniz."
-                              : "Durumunuzu bu pencereden takip edebilir; yanıtlar kayıt altına alınır."}
-                          </p>
-                        </>
-                      ) : (
-                        <p
-                          id={descId}
-                          className="mt-2 text-[12px] font-semibold leading-snug text-amber-200/90"
-                        >
-                          Bu görüşme çözüldü olarak kapandı. Yeni sorun için aşağıdan yeni görüşme
-                          başlatabilirsin.
-                        </p>
-                      )}
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <SupportResponseCenterBadge />
-                        <SupportLeylekBadge />
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closePanel}
-                      className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-bold text-slate-400 transition hover:border-cyan-400/25 hover:text-slate-200"
-                    >
-                      Kapat
-                    </button>
-                  </div>
-                </div>
+                <SupportPhoneModalHeader
+                  titleId={titleId}
+                  descId={descId}
+                  statusLabel={phoneStatusLabel}
+                  subtitle={queueStatusPrimary}
+                  onClose={closePanel}
+                />
 
                 <div
                   ref={chatScrollContainerRef}
@@ -1584,38 +1572,28 @@ export function SiteSupportPanel() {
                   </button>
                 </div>
               </div>
+            ) : showEntryGateway ? (
+              <>
+                <SupportPhoneModalHeader
+                  titleId={titleId}
+                  descId={descId}
+                  statusLabel="Çevrimiçi"
+                  onClose={closePanel}
+                />
+                <SupportEntryGateway
+                  onSelectLeylek={() => setEntryIntent("leylek")}
+                  onSelectLive={() => setEntryIntent("live")}
+                />
+              </>
             ) : (
               <div className="relative flex min-h-0 flex-1 flex-col">
-                <div className="shrink-0 border-b border-white/[0.07] px-5 pb-3 pt-4 sm:px-6 sm:pt-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p
-                        id={titleId}
-                        className="text-[0.98rem] font-black leading-tight tracking-tight text-white sm:text-lg"
-                      >
-                        Leylek TAG Destek
-                      </p>
-                      <p id={descId} className="mt-2 text-[12px] leading-relaxed text-slate-400 sm:text-[13px]">
-                        Leylek Zeka bilgilendirme sağlar; mesajların destek ekibine iletilmesi için bu pencereden yazabilirsin.{" "}
-                        <span className="font-medium text-slate-300">{sessionContactEmail}</span> kayda geçer.
-                      </p>
-                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                        <SupportResponseCenterBadge />
-                        <SupportLeylekBadge />
-                      </div>
-                      {threadBootstrap ? (
-                        <p className="mt-3 text-[12px] text-slate-500">Önceki görüşme kontrol ediliyor…</p>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closePanel}
-                      className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-bold text-slate-400 transition hover:border-cyan-400/25 hover:text-slate-200"
-                    >
-                      Kapat
-                    </button>
-                  </div>
-                </div>
+                <SupportPhoneModalHeader
+                  titleId={titleId}
+                  descId={descId}
+                  statusLabel={phoneStatusLabel}
+                  subtitle={composerIntentSubtitle}
+                  onClose={closePanel}
+                />
 
                 <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-3 sm:px-5">
                   <div className="flex min-w-0 flex-col gap-2.5">
@@ -1625,6 +1603,9 @@ export function SiteSupportPanel() {
                       onSelect={setMessage}
                       disabled={status === "loading" || threadBootstrap}
                     />
+                    {threadBootstrap ? (
+                      <p className="text-[12px] text-slate-500">Önceki görüşme kontrol ediliyor…</p>
+                    ) : null}
                     <SupportAppScopeNote />
                   </div>
                 </div>
@@ -1759,26 +1740,27 @@ export function SiteSupportPanel() {
                 </form>
               </div>
             )}
-          </div>
-        </>
+        </SiteSupportPhoneShell>
       ) : null}
 
-      <button
-        type="button"
-        onClick={togglePanel}
-        aria-expanded={open}
-        aria-controls={dialogId}
-        aria-label={
-          supportUnlocked
-            ? "Leylek TAG destek — paneli aç"
-            : "Destek — oturum açınca yazabilirsin"
-        }
-        className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-2 overflow-visible rounded-full px-3.5 py-3 pr-[1.15rem] text-[13px] shadow-[0_12px_40px_-16px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-[border-color,box-shadow,transform] sm:gap-2.5 sm:px-5 sm:pr-[1.4rem] md:w-auto md:max-w-none ${
-          supportUnlocked
-            ? "border border-cyan-400/26 bg-slate-950/94 font-semibold text-white ring-1 ring-cyan-400/12 hover:border-cyan-300/38 hover:shadow-[0_16px_44px_-18px_rgba(34,211,238,0.22)]"
-            : "border border-amber-500/26 bg-slate-950/96 font-semibold hover:border-amber-400/38"
-        } ${open ? "max-sm:opacity-0 max-sm:pointer-events-none" : ""}`}
-      >
+      {!open ? (
+        <div className="fixed bottom-[calc(5.35rem+env(safe-area-inset-bottom,0px))] right-4 z-[72] flex w-[calc(100%-2rem)] max-w-[min(26rem,calc(100vw-2rem))] flex-col items-end max-sm:right-0 max-sm:w-full max-sm:max-w-none max-sm:px-3 md:bottom-8 md:right-8 md:w-auto md:max-w-none md:px-0">
+          <button
+            type="button"
+            onClick={togglePanel}
+            aria-expanded={open}
+            aria-controls={dialogId}
+            aria-label={
+              supportUnlocked
+                ? "Leylek TAG destek — paneli aç"
+                : "Destek — oturum açınca yazabilirsin"
+            }
+            className={`tap-highlight relative ml-auto inline-flex max-w-full min-w-0 touch-manipulation items-center justify-center gap-2 overflow-visible rounded-full px-3.5 py-3 pr-[1.15rem] text-[13px] shadow-[0_12px_40px_-16px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-[border-color,box-shadow,transform] sm:gap-2.5 sm:px-5 sm:pr-[1.4rem] md:w-auto md:max-w-none ${
+              supportUnlocked
+                ? "border border-cyan-400/26 bg-slate-950/94 font-semibold text-white ring-1 ring-cyan-400/12 hover:border-cyan-300/38 hover:shadow-[0_16px_44px_-18px_rgba(34,211,238,0.22)]"
+                : "border border-amber-500/26 bg-slate-950/96 font-semibold hover:border-amber-400/38"
+            }`}
+          >
         {supportUnlocked ? (
           <span
             className="pointer-events-none absolute right-3 top-[0.55rem] flex h-2 w-2 shrink-0 md:right-4"
@@ -1823,7 +1805,9 @@ export function SiteSupportPanel() {
             </span>
           )}
         </span>
-      </button>
-    </div>
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
