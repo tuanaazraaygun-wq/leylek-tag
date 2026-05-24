@@ -389,6 +389,12 @@ export function KycAdminDashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
+            href="/support/ops"
+            className="inline-flex min-h-[40px] items-center rounded-xl border border-white/[0.12] px-3 py-2 text-xs font-bold text-cyan-100/95 hover:border-cyan-400/35"
+          >
+            Operasyon Merkezi
+          </Link>
+          <Link
             href="/support/notifications"
             className="inline-flex min-h-[40px] items-center rounded-xl border border-white/[0.12] px-3 py-2 text-xs font-bold text-cyan-100/95 hover:border-cyan-400/35"
           >

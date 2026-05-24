@@ -26,6 +26,7 @@ import {
   ADMIN_SUPPORT_ROUTE_PATH,
   getNotificationCenterMagicLinkRedirectTo,
   KYC_ADMIN_ROUTE_PATH,
+  OPS_HUB_ROUTE_PATH,
 } from "@/lib/site-origin";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
 
@@ -688,6 +689,12 @@ export function AdminNotificationCenterDashboard() {
           <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={OPS_HUB_ROUTE_PATH}
+            className="inline-flex min-h-[40px] items-center rounded-xl border border-white/[0.12] px-3 py-2 text-xs font-bold text-cyan-100/95 hover:border-cyan-400/35"
+          >
+            Operasyon Merkezi
+          </Link>
           <Link
             href={ADMIN_SUPPORT_ROUTE_PATH}
             className="inline-flex min-h-[40px] items-center rounded-xl border border-white/[0.12] px-3 py-2 text-xs font-bold text-cyan-100/95 hover:border-cyan-400/35"

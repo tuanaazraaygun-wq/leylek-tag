@@ -28,6 +28,9 @@ export const KYC_ADMIN_ROUTE_PATH = "/support/kyc";
 /** Admin bildirim merkezi (taslak-only; admin_users ile aynı yetki). */
 export const NOTIFICATION_CENTER_ROUTE_PATH = "/support/notifications";
 
+/** Admin operasyon hub — modül navigasyonu (Faz 0; mutation yok). */
+export const OPS_HUB_ROUTE_PATH = "/support/ops";
+
 /** Public site origin; NEXT_PUBLIC_SITE_URL doluysa o, değilse tarayıcı (veya SSR fallback localhost). */
 export function getSiteOriginForRedirect(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -62,6 +65,12 @@ export function getKycAdminMagicLinkRedirectTo(): string {
 export function getNotificationCenterMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${NOTIFICATION_CENTER_ROUTE_PATH}`;
+}
+
+/** Operasyon hub OAuth + magic link callback. */
+export function getOpsHubMagicLinkRedirectTo(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}${OPS_HUB_ROUTE_PATH}`;
 }
 
 /** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */
