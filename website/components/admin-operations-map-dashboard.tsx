@@ -9,15 +9,21 @@ import {
   DENSITY_LEVEL_LABELS,
   densityLevelColor,
   getHighSupplyGapRegions,
+  getOperationsMapCityLabel,
   getOperationsMapDemoEventsByCity,
   getOperationsMapRegionsByCity,
-  OPERATIONS_MAP_CITIES,
-  OPERATIONS_MAP_CITY_LABELS,
   OPERATIONS_MAP_SECURITY_NOTES,
   type OperationsMapCity,
   type OperationsMapDemoEvent,
   type OperationsMapRegion,
 } from "@/lib/operations-map-demo-data";
+import {
+  filterTurkeyCities,
+  getTurkeyCityLabel,
+  OPERATIONS_MAP_POPULAR_CITY_SLUGS,
+  TURKEY_GEOGRAPHIC_REGIONS,
+  type TurkeyGeographicRegion,
+} from "@/lib/turkey-cities";
 import {
   ADMIN_SUPPORT_ROUTE_PATH,
   getOperationsMapMagicLinkRedirectTo,
@@ -287,6 +293,8 @@ export function AdminOperationsMapDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const [city, setCity] = useState<OperationsMapCity>("ankara");
+  const [citySearch, setCitySearch] = useState("");
+  const [regionFilter, setRegionFilter] = useState<TurkeyGeographicRegion | "all">("all");
   const [layers, setLayers] = useState<Record<MapLayer, boolean>>({
     passenger: true,
     driver: true,
@@ -300,6 +308,11 @@ export function AdminOperationsMapDashboard() {
   const regions = useMemo(() => getOperationsMapRegionsByCity(city), [city]);
   const events = useMemo(() => getOperationsMapDemoEventsByCity(city), [city]);
   const priorityRegions = useMemo(() => getHighSupplyGapRegions(city), [city]);
+  const filteredCities = useMemo(
+    () => filterTurkeyCities({ query: citySearch, region: regionFilter }),
+    [citySearch, regionFilter],
+  );
+  const cityLabel = useMemo(() => getOperationsMapCityLabel(city), [city]);
   const activeEventIndex = events.length > 0 ? liveTick % events.length : 0;
 
   useEffect(() => {
@@ -501,47 +514,122 @@ export function AdminOperationsMapDashboard() {
         {copyFeedback ? <p className="text-emerald-300">{copyFeedback}</p> : null}
       </div>
 
-      <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {OPERATIONS_MAP_CITIES.map((id) => (
+      <section className="mt-6 rounded-xl border border-white/[0.08] bg-slate-950/80 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Şehir seçimi</p>
+            <p className="mt-1 text-sm font-bold text-white">
+              {cityLabel}
+              <span className="ml-2 text-[10px] font-normal text-slate-500">· demo/anonim simülasyon</span>
+            </p>
+          </div>
+          <span className="rounded-lg border border-white/[0.08] bg-black/30 px-2 py-1 text-[10px] text-slate-400">
+            {filteredCities.length} il
+          </span>
+        </div>
+
+        <label className="mt-3 block">
+          <span className="sr-only">Şehir ara</span>
+          <input
+            type="search"
+            value={citySearch}
+            onChange={(e) => setCitySearch(e.target.value)}
+            placeholder="Şehir ara"
+            className="w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-400/35"
+          />
+        </label>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setRegionFilter("all")}
+            className={`min-h-[28px] rounded-lg border px-2 py-0.5 text-[10px] font-semibold ${
+              regionFilter === "all"
+                ? "border-indigo-400/35 bg-indigo-500/15 text-indigo-100"
+                : "border-white/[0.08] text-slate-500"
+            }`}
+          >
+            Tümü
+          </button>
+          {TURKEY_GEOGRAPHIC_REGIONS.map((region) => (
             <button
-              key={id}
+              key={region}
               type="button"
-              onClick={() => setCity(id)}
-              className={`min-h-[36px] rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
-                city === id
-                  ? "border-indigo-400/40 bg-indigo-500/15 text-indigo-100"
-                  : "border-white/[0.1] bg-black/30 text-slate-400 hover:border-white/20"
+              onClick={() => setRegionFilter(region)}
+              className={`min-h-[28px] rounded-lg border px-2 py-0.5 text-[10px] font-semibold ${
+                regionFilter === region
+                  ? "border-indigo-400/35 bg-indigo-500/15 text-indigo-100"
+                  : "border-white/[0.08] text-slate-500"
               }`}
             >
-              {OPERATIONS_MAP_CITY_LABELS[id]}
+              {region}
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {MAP_LAYERS.map((layer) => (
-            <button
-              key={layer.id}
-              type="button"
-              onClick={() => toggleLayer(layer.id)}
-              aria-pressed={layers[layer.id]}
-              className={`min-h-[32px] rounded-lg border px-2.5 py-1 text-[10px] font-semibold ${
-                layers[layer.id]
-                  ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-100"
-                  : "border-white/[0.08] bg-black/25 text-slate-500"
-              }`}
-            >
-              {layer.label}
-            </button>
-          ))}
+
+        <div className="mt-3">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Popüler / pilot</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {OPERATIONS_MAP_POPULAR_CITY_SLUGS.map((slug) => (
+              <button
+                key={slug}
+                type="button"
+                onClick={() => setCity(slug)}
+                className={`min-h-[32px] rounded-lg border px-2.5 py-1 text-[10px] font-bold ${
+                  city === slug
+                    ? "border-cyan-400/35 bg-cyan-500/15 text-cyan-100"
+                    : "border-white/[0.1] bg-black/30 text-slate-300 hover:border-white/20"
+                }`}
+              >
+                {getTurkeyCityLabel(slug)}
+              </button>
+            ))}
+          </div>
         </div>
+
+        <div className="mt-3 max-h-40 overflow-y-auto rounded-xl border border-white/[0.06] bg-black/25 p-2">
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 md:grid-cols-4">
+            {filteredCities.map((entry) => (
+              <button
+                key={entry.slug}
+                type="button"
+                onClick={() => setCity(entry.slug)}
+                className={`rounded-lg border px-2 py-1.5 text-left text-[10px] font-medium transition ${
+                  city === entry.slug
+                    ? "border-indigo-400/40 bg-indigo-500/15 text-indigo-100"
+                    : "border-transparent text-slate-400 hover:border-white/10 hover:bg-white/[0.03]"
+                }`}
+              >
+                {entry.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {MAP_LAYERS.map((layer) => (
+          <button
+            key={layer.id}
+            type="button"
+            onClick={() => toggleLayer(layer.id)}
+            aria-pressed={layers[layer.id]}
+            className={`min-h-[32px] rounded-lg border px-2.5 py-1 text-[10px] font-semibold ${
+              layers[layer.id]
+                ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-100"
+                : "border-white/[0.08] bg-black/25 text-slate-500"
+            }`}
+          >
+            {layer.label}
+          </button>
+        ))}
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_minmax(220px,280px)]">
         <MockMapPanel
           regions={regions}
           layers={layers}
-          cityLabel={OPERATIONS_MAP_CITY_LABELS[city]}
+          cityLabel={cityLabel}
           hoveredRegionId={hoveredRegionId}
           onHoverRegion={setHoveredRegionId}
         />
@@ -550,7 +638,7 @@ export function AdminOperationsMapDashboard() {
 
       <section className="mt-8">
         <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
-          Öncelikli bölgeler · arz açığı yüksek · {OPERATIONS_MAP_CITY_LABELS[city]}
+          Öncelikli bölgeler · arz açığı yüksek · {cityLabel}
         </h2>
         {priorityRegions.length > 0 ? (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -565,7 +653,7 @@ export function AdminOperationsMapDashboard() {
 
       <section className="mt-8">
         <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
-          Bölgesel yoğunluk listesi · {OPERATIONS_MAP_CITY_LABELS[city]}
+          Bölgesel yoğunluk listesi · {cityLabel}
         </h2>
         <div className="mt-3 overflow-x-auto rounded-xl border border-white/[0.08]">
           <table className="w-full min-w-[640px] text-left text-[11px]">

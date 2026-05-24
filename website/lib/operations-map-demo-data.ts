@@ -1,14 +1,14 @@
-export const OPERATIONS_MAP_CITIES = ["ankara", "istanbul", "izmir"] as const;
+import {
+  getTurkeyCityBySlug,
+  getTurkeyCityLabel,
+  type OperationsMapCitySlug,
+} from "@/lib/turkey-cities";
 
-export type OperationsMapCity = (typeof OPERATIONS_MAP_CITIES)[number];
+export type { OperationsMapCitySlug };
+
+export type OperationsMapCity = OperationsMapCitySlug;
 
 export type DensityLevel = "dusuk" | "orta" | "yuksek";
-
-export const OPERATIONS_MAP_CITY_LABELS: Record<OperationsMapCity, string> = {
-  ankara: "Ankara",
-  istanbul: "İstanbul",
-  izmir: "İzmir",
-};
 
 export const DENSITY_LEVEL_LABELS: Record<DensityLevel, string> = {
   dusuk: "Düşük",
@@ -22,7 +22,6 @@ export type OperationsMapRegion = {
   region: string;
   lat: number;
   lng: number;
-  /** Mock harita konumu (%), gerçek konum değil — bölgesel yoğunluk göstergesi. */
   mapX: number;
   mapY: number;
   passengerLevel: DensityLevel;
@@ -47,7 +46,9 @@ export type OperationsMapDemoEvent = {
   tone: "info" | "warning" | "success";
 };
 
-export const OPERATIONS_MAP_DEMO_EVENTS: OperationsMapDemoEvent[] = [
+const PILOT_CITY_SLUGS = new Set(["ankara", "istanbul", "izmir"]);
+
+const PILOT_OPERATIONS_MAP_DEMO_EVENTS: OperationsMapDemoEvent[] = [
   {
     id: "ev-ankara-kizilay",
     city: "ankara",
@@ -106,7 +107,7 @@ export const OPERATIONS_MAP_DEMO_EVENTS: OperationsMapDemoEvent[] = [
   },
 ];
 
-export const OPERATIONS_MAP_DEMO_REGIONS: OperationsMapRegion[] = [
+const PILOT_OPERATIONS_MAP_DEMO_REGIONS: OperationsMapRegion[] = [
   {
     id: "ankara-cankaya",
     city: "ankara",
@@ -235,12 +236,138 @@ export const OPERATIONS_MAP_DEMO_REGIONS: OperationsMapRegion[] = [
   },
 ];
 
+function hashSlug(slug: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < slug.length; i += 1) {
+    h ^= slug.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function levelFromHash(hash: number, slot: number): DensityLevel {
+  const v = (hash >> (slot * 2)) & 3;
+  if (v === 0) return "dusuk";
+  if (v === 1 || v === 2) return "orta";
+  return "yuksek";
+}
+
+const fallbackRegionCache = new Map<string, OperationsMapRegion[]>();
+const fallbackEventCache = new Map<string, OperationsMapDemoEvent[]>();
+
+function generateFallbackRegions(city: OperationsMapCity): OperationsMapRegion[] {
+  const entry = getTurkeyCityBySlug(city);
+  const name = entry?.name ?? city;
+  const hash = hashSlug(city);
+
+  const templates = [
+    {
+      suffix: "merkez",
+      label: "Merkez",
+      mapX: 48 + (hash % 12),
+      mapY: 46 + ((hash >> 3) % 10),
+      passengerSlot: 0,
+      driverSlot: 1,
+      gapSlot: 2,
+      recommendation: "Merkez hattında anonim talep izleniyor — demo simülasyon.",
+    },
+    {
+      suffix: "kampus",
+      label: "Kampüs / eğitim hattı",
+      mapX: 68 + ((hash >> 5) % 8),
+      mapY: 32 + ((hash >> 7) % 12),
+      passengerSlot: 3,
+      driverSlot: 4,
+      gapSlot: 5,
+      recommendation: "Kampüs çevresinde yönlendirme önerisi hazırlanabilir (onay gerekir).",
+    },
+    {
+      suffix: "ulasim",
+      label: "Otogar / ulaşım hattı",
+      mapX: 26 + ((hash >> 9) % 10),
+      mapY: 58 + ((hash >> 11) % 10),
+      passengerSlot: 6,
+      driverSlot: 7,
+      gapSlot: 8,
+      recommendation: "Ulaşım hattında denge korunuyor — demo izleme modu.",
+    },
+  ] as const;
+
+  return templates.map((tpl, index) => {
+    const passengerLevel = levelFromHash(hash, tpl.passengerSlot);
+    const driverLevel = levelFromHash(hash, tpl.driverSlot);
+    const supplyGap = levelFromHash(hash, tpl.gapSlot);
+    const lat = 36 + (hash % 9) + index * 0.01;
+    const lng = 26 + ((hash >> 4) % 14) + index * 0.01;
+
+    return {
+      id: `${city}-${tpl.suffix}`,
+      city,
+      region: `${name} · ${tpl.label}`,
+      lat,
+      lng,
+      mapX: tpl.mapX,
+      mapY: tpl.mapY,
+      passengerLevel,
+      driverLevel,
+      supplyGap,
+      recommendation: tpl.recommendation,
+      suggestedPushDraft: `${name} çevresinde yolculuk paylaşımı talebi artıyor. Yakındaki uygun sürücüler için yönlendirme önerisi hazırlanabilir.`,
+    };
+  });
+}
+
+function generateFallbackEvents(city: OperationsMapCity): OperationsMapDemoEvent[] {
+  const name = getTurkeyCityLabel(city);
+  return [
+    {
+      id: `ev-${city}-merkez`,
+      city,
+      minutesAgo: 3,
+      message: `${name} · Merkez hattında talep izleniyor`,
+      tone: "info",
+    },
+    {
+      id: `ev-${city}-ulasim`,
+      city,
+      minutesAgo: 7,
+      message: `${name} · Ulaşım hattında denge korunuyor`,
+      tone: "success",
+    },
+    {
+      id: `ev-${city}-kampus`,
+      city,
+      minutesAgo: 11,
+      message: `${name} · Kampüs çevresinde yönlendirme önerisi`,
+      tone: "warning",
+    },
+  ];
+}
+
+export function getOperationsMapCityLabel(city: OperationsMapCity): string {
+  return getTurkeyCityLabel(city);
+}
+
 export function getOperationsMapRegionsByCity(city: OperationsMapCity): OperationsMapRegion[] {
-  return OPERATIONS_MAP_DEMO_REGIONS.filter((r) => r.city === city);
+  if (PILOT_CITY_SLUGS.has(city)) {
+    return PILOT_OPERATIONS_MAP_DEMO_REGIONS.filter((r) => r.city === city);
+  }
+  const cached = fallbackRegionCache.get(city);
+  if (cached) return cached;
+  const generated = generateFallbackRegions(city);
+  fallbackRegionCache.set(city, generated);
+  return generated;
 }
 
 export function getOperationsMapDemoEventsByCity(city: OperationsMapCity): OperationsMapDemoEvent[] {
-  return OPERATIONS_MAP_DEMO_EVENTS.filter((e) => e.city === city).sort((a, b) => a.minutesAgo - b.minutesAgo);
+  if (PILOT_CITY_SLUGS.has(city)) {
+    return PILOT_OPERATIONS_MAP_DEMO_EVENTS.filter((e) => e.city === city).sort((a, b) => a.minutesAgo - b.minutesAgo);
+  }
+  const cached = fallbackEventCache.get(city);
+  if (cached) return cached;
+  const generated = generateFallbackEvents(city);
+  fallbackEventCache.set(city, generated);
+  return generated;
 }
 
 export function getHighSupplyGapRegions(city: OperationsMapCity): OperationsMapRegion[] {
