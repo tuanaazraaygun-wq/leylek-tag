@@ -240,12 +240,12 @@ function PushSendConfirmModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="push-send-confirm-title" className="text-sm font-bold text-white">
-          {bulk ? "Toplu push gönderimi" : "Gerçek push gönderimi"}
+          {bulk ? "Toplu push gönderimi" : "Bildirim gönderimi"}
         </h2>
         <p className="mt-2 text-xs leading-relaxed text-rose-200/90">
           {bulk
             ? "Bu işlem seçili segmentteki kullanıcılara gerçek push bildirimi gönderir. Geri alınamaz."
-            : "Bu işlem seçili kullanıcının cihazına gerçek bir push bildirimi gönderir. Geri alınamaz."}
+            : "Bu bildirim seçili kullanıcıya gönderilir. Geri alınamaz."}
         </p>
         {audience === "all_users" ? (
           <p className="mt-2 rounded-lg border border-rose-500/35 bg-rose-500/[0.1] px-3 py-2 text-[11px] font-semibold text-rose-100">
@@ -317,7 +317,7 @@ function PushSendConfirmModal({
             onClick={onConfirm}
             className="min-h-[40px] rounded-xl bg-emerald-500/20 px-4 py-2 text-xs font-bold text-emerald-100 ring-1 ring-emerald-400/35 disabled:pointer-events-none disabled:opacity-45"
           >
-            {loading ? "Gönderiliyor…" : bulk ? "Toplu push gönder" : "Gerçek push gönder"}
+            {loading ? "Gönderiliyor…" : "Gönder"}
           </button>
         </div>
       </div>
@@ -353,6 +353,7 @@ export function AdminNotificationCenterDashboard() {
   const [sendResult, setSendResult] = useState<{
     tone: "success" | "error";
     message: string;
+    detail?: string;
     sent_count?: number;
     total_users?: number;
     users_with_token?: number;
@@ -591,11 +592,14 @@ export function AdminNotificationCenterDashboard() {
       const totalUsers = typeof data.total_users === "number" ? data.total_users : undefined;
       const usersWithToken =
         typeof data.users_with_token === "number" ? data.users_with_token : undefined;
-      const msg = data.message ?? (sentCount > 0 ? "Bildirim gönderildi." : "Bildirim iletilemedi.");
+      const backendDetail =
+        typeof data.message === "string" && data.message.trim() ? data.message.trim() : undefined;
       const isSuccess = bulk ? sentCount > 0 : sentCount === 1;
+      const summary = isSuccess ? "Mesaj iletildi" : "Mesaj iletilemedi";
       setSendResult({
         tone: isSuccess ? "success" : "error",
-        message: msg,
+        message: summary,
+        detail: backendDetail,
         sent_count: sentCount,
         total_users: totalUsers,
         users_with_token: usersWithToken,
@@ -764,7 +768,10 @@ export function AdminNotificationCenterDashboard() {
           }`}
           role="status"
         >
-          <p>{sendResult.message}</p>
+          <p className="font-semibold">{sendResult.message}</p>
+          {sendResult.detail ? (
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{sendResult.detail}</p>
+          ) : null}
           {(sendResult.resolveMethod ||
             sendResult.resolved_user_id ||
             sendResult.masked_phone ||
@@ -981,7 +988,7 @@ export function AdminNotificationCenterDashboard() {
                 disabled={sendLoading}
                 className="min-h-[44px] rounded-xl bg-emerald-500/20 px-5 py-2.5 text-xs font-bold text-emerald-100 ring-1 ring-emerald-400/35 hover:bg-emerald-500/25 disabled:pointer-events-none disabled:opacity-55"
               >
-                {isBulkPushAudience(audience) ? "Toplu push gönder" : "Gerçek push gönder"}
+                Gönder
               </button>
             ) : (
               <button
