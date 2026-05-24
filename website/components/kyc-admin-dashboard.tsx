@@ -7,9 +7,14 @@ import type { Session } from "@supabase/supabase-js";
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
   isSafeKycImageUrl,
+  kycCountLabel,
   kycDisplayField,
+  kycEmptyListMessage,
+  kycStatusBadgeClass,
+  kycStatusLabel,
   kycVehicleKindLabel,
   type KycPendingRow,
+  type KycStatusFilter,
 } from "@/lib/kyc-admin-types";
 import { getKycAdminMagicLinkRedirectTo } from "@/lib/site-origin";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
@@ -17,9 +22,18 @@ import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-c
 type PendingResponse = {
   success?: boolean;
   pending_count?: number;
+  total_count?: number;
+  status_filter?: string;
   requests?: KycPendingRow[];
   error?: string;
 };
+
+const STATUS_FILTERS: { id: KycStatusFilter; label: string }[] = [
+  { id: "all", label: "Tümü" },
+  { id: "pending", label: "Bekleyen" },
+  { id: "approved", label: "Onaylanan" },
+  { id: "rejected", label: "Reddedilen" },
+];
 
 function KycDocSlot({ label, url }: { label: string; url: string | null }) {
   if (!url || !isSafeKycImageUrl(url)) {
@@ -54,9 +68,13 @@ function KycDocSlot({ label, url }: { label: string; url: string | null }) {
   );
 }
 
-function PendingKycCard({ row }: { row: KycPendingRow }) {
+function KycApplicationCard({ row }: { row: KycPendingRow }) {
   const kind = row.pending_vehicle_kind || row.kyc_vehicle_kind;
   const warnings = row.ai_warnings?.length ? row.ai_warnings.join(" · ") : "—";
+  const approvedKinds =
+    row.approved_vehicle_kinds.length > 0
+      ? row.approved_vehicle_kinds.map((k) => kycVehicleKindLabel(k)).join(", ")
+      : "—";
 
   return (
     <article className="rounded-2xl border border-white/[0.09] bg-slate-950/[0.92] p-5 shadow-[0_20px_60px_-32px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.04]">
@@ -67,16 +85,45 @@ function PendingKycCard({ row }: { row: KycPendingRow }) {
           <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{row.user_id}</p>
         </div>
         <div className="flex flex-col items-end gap-1.5 text-right">
-          <span className="rounded-full border border-amber-400/35 bg-amber-500/[0.1] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-100">
-            {row.kyc_status}
+          <span
+            className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${kycStatusBadgeClass(row.kyc_status)}`}
+          >
+            {kycStatusLabel(row.kyc_status)}
           </span>
           <span className="text-[11px] text-slate-500">
+            Başvuru:{" "}
             {row.kyc_submitted_at ? new Date(row.kyc_submitted_at).toLocaleString("tr-TR") : "—"}
           </span>
         </div>
       </div>
 
       <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Doğrulama</dt>
+          <dd className="mt-0.5 text-slate-200">
+            {row.is_verified === true ? "Evet" : row.is_verified === false ? "Hayır" : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Onaylı tipler</dt>
+          <dd className="mt-0.5 text-slate-200">{approvedKinds}</dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Onay tarihi</dt>
+          <dd className="mt-0.5 text-slate-200">
+            {row.kyc_approved_at ? new Date(row.kyc_approved_at).toLocaleString("tr-TR") : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Red tarihi</dt>
+          <dd className="mt-0.5 text-slate-200">
+            {row.kyc_rejected_at ? new Date(row.kyc_rejected_at).toLocaleString("tr-TR") : "—"}
+          </dd>
+        </div>
+        <div className="sm:col-span-2">
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Red gerekçesi</dt>
+          <dd className="mt-0.5 text-slate-300">{kycDisplayField(row.kyc_rejection_reason)}</dd>
+        </div>
         <div>
           <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Araç tipi</dt>
           <dd className="mt-0.5 text-slate-200">{kycVehicleKindLabel(kind)}</dd>
@@ -112,12 +159,16 @@ function PendingKycCard({ row }: { row: KycPendingRow }) {
   );
 }
 
-async function fetchPendingList(accessToken: string): Promise<{
+async function fetchKycList(
+  accessToken: string,
+  statusFilter: KycStatusFilter,
+): Promise<{
   rows: KycPendingRow[];
   error: string | null;
 }> {
   try {
-    const res = await fetch("/api/admin/kyc/pending", {
+    const qs = statusFilter === "all" ? "" : `?status=${encodeURIComponent(statusFilter)}`;
+    const res = await fetch(`/api/admin/kyc/pending${qs}`, {
       cache: "no-store",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -177,19 +228,20 @@ export function KycAdminDashboard() {
   const [rows, setRows] = useState<KycPendingRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<KycStatusFilter>("all");
 
-  const loadPending = useCallback(async () => {
+  const loadList = useCallback(async () => {
     if (!session?.access_token || !isAdmin) return;
     setListLoading(true);
     setLoadError(null);
     try {
-      const { rows: nextRows, error } = await fetchPendingList(session.access_token);
+      const { rows: nextRows, error } = await fetchKycList(session.access_token, statusFilter);
       setRows(nextRows);
       if (error) setLoadError(error);
     } finally {
       setListLoading(false);
     }
-  }, [session, isAdmin]);
+  }, [session, isAdmin, statusFilter]);
 
   useEffect(() => {
     if (!client) return undefined;
@@ -208,10 +260,10 @@ export function KycAdminDashboard() {
   useEffect(() => {
     if (!session || !isAdmin) return undefined;
     queueMicrotask(() => {
-      void loadPending();
+      void loadList();
     });
     return undefined;
-  }, [session, isAdmin, loadPending]);
+  }, [session, isAdmin, loadList]);
 
   const signOut = useCallback(async () => {
     if (!client) return;
@@ -361,9 +413,9 @@ export function KycAdminDashboard() {
       <header className="flex flex-col gap-4 border-b border-white/[0.08] pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/78">Admin · KYC</p>
-          <h1 className="mt-2 text-2xl font-black text-white">Sürücü belge inceleme</h1>
+          <h1 className="mt-2 text-2xl font-black text-white">KYC başvuruları</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
-            Bekleyen KYC başvurularını görüntüleyin. Bu panel{" "}
+            Bekleyen, onaylanan ve reddedilen sürücü başvurularını görüntüleyin. Bu panel{" "}
             <strong className="font-semibold text-amber-200/95">salt okunur</strong> moddadır; onay veya red işlemi
             yapılamaz.
           </p>
@@ -378,7 +430,7 @@ export function KycAdminDashboard() {
           </Link>
           <button
             type="button"
-            onClick={() => void loadPending()}
+            onClick={() => void loadList()}
             disabled={listLoading}
             className="inline-flex min-h-[44px] items-center rounded-xl border border-white/[0.12] px-4 py-2.5 text-xs font-bold text-cyan-100/95 disabled:opacity-50"
           >
@@ -407,17 +459,38 @@ export function KycAdminDashboard() {
         </p>
       ) : null}
 
-      <p className="mt-6 text-sm text-slate-400">
-        {listLoading && !rows.length ? "Yükleniyor…" : `${rows.length} bekleyen başvuru`}
+      <div className="mt-6 flex flex-wrap gap-2">
+        {STATUS_FILTERS.map((f) => {
+          const active = statusFilter === f.id;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setStatusFilter(f.id)}
+              disabled={listLoading}
+              className={`rounded-full border px-3.5 py-1.5 text-xs font-bold transition disabled:opacity-50 ${
+                active
+                  ? "border-cyan-400/45 bg-cyan-500/15 text-cyan-100"
+                  : "border-white/[0.12] bg-black/30 text-slate-400 hover:border-white/20 hover:text-slate-200"
+              }`}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="mt-4 text-sm text-slate-400">
+        {kycCountLabel(statusFilter, rows.length, listLoading && !rows.length)}
       </p>
 
       <div className="mt-6 grid gap-5">
         {!listLoading && rows.length === 0 ? (
           <p className="rounded-xl border border-white/[0.08] bg-black/30 px-4 py-8 text-center text-sm text-slate-500">
-            Bekleyen KYC başvurusu yok.
+            {kycEmptyListMessage(statusFilter)}
           </p>
         ) : (
-          rows.map((row) => <PendingKycCard key={row.user_id} row={row} />)
+          rows.map((row) => <KycApplicationCard key={row.user_id} row={row} />)
         )}
       </div>
     </section>
