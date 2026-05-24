@@ -22,6 +22,9 @@
 /** Tek canonical pathname (leading slash ile). Bazı CDN/WAF yapıları /admin altını 404 yapabiliyor. */
 export const ADMIN_SUPPORT_ROUTE_PATH = "/support/admin";
 
+/** KYC inceleme paneli (read-only; admin_users ile aynı yetki). */
+export const KYC_ADMIN_ROUTE_PATH = "/support/kyc";
+
 /** Public site origin; NEXT_PUBLIC_SITE_URL doluysa o, değilse tarayıcı (veya SSR fallback localhost). */
 export function getSiteOriginForRedirect(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -44,6 +47,12 @@ export function getSiteOriginForRedirect(): string {
 export function getAdminSupportMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${ADMIN_SUPPORT_ROUTE_PATH}`;
+}
+
+/** KYC panel OAuth + magic link callback. */
+export function getKycAdminMagicLinkRedirectTo(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}${KYC_ADMIN_ROUTE_PATH}`;
 }
 
 /** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */

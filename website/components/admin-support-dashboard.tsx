@@ -2157,6 +2157,12 @@ export function AdminSupportDashboard() {
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:shrink-0 lg:justify-end">
+          <Link
+            href="/support/kyc"
+            className="admin-support-toolbar-outline inline-flex min-h-[44px] shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.12] bg-transparent px-4 py-2.5 text-[12px] font-bold text-cyan-100/95 hover:border-cyan-400/35"
+          >
+            KYC İnceleme
+          </Link>
           <button
             type="button"
             onClick={() => void refreshDashboard()}
