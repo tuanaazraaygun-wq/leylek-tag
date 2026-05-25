@@ -328,15 +328,33 @@ function PushSendConfirmModal({
 
 const EMPTY_OPS_MAP_PREFILL = { active: false, title: "", body: "" } as const;
 
-function readOpsMapPrefillFromLocation() {
+type OpsMapPrefillSnapshot = {
+  active: boolean;
+  title: string;
+  body: string;
+};
+
+let cachedOpsMapSearch = "";
+let cachedOpsMapPrefill: OpsMapPrefillSnapshot = EMPTY_OPS_MAP_PREFILL;
+
+function readOpsMapPrefillFromLocation(): OpsMapPrefillSnapshot {
   if (typeof window === "undefined") return EMPTY_OPS_MAP_PREFILL;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("source") !== "ops-map") return EMPTY_OPS_MAP_PREFILL;
-  return {
+  const search = window.location.search;
+  if (search === cachedOpsMapSearch) return cachedOpsMapPrefill;
+
+  cachedOpsMapSearch = search;
+  const params = new URLSearchParams(search);
+  if (params.get("source") !== "ops-map") {
+    cachedOpsMapPrefill = EMPTY_OPS_MAP_PREFILL;
+    return cachedOpsMapPrefill;
+  }
+
+  cachedOpsMapPrefill = {
     active: true,
     title: sanitizeOpsWorkflowQueryText(params.get("title"), NOTIFICATION_TITLE_MAX),
     body: sanitizeOpsWorkflowQueryText(params.get("body"), NOTIFICATION_BODY_MAX),
   };
+  return cachedOpsMapPrefill;
 }
 
 function subscribeOpsMapPrefill() {

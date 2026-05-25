@@ -117,13 +117,31 @@ function CopyButton({ label, text, onCopied }: { label: string; text: string; on
 
 const EMPTY_SOCIAL_QUERY_PREFILL = { opsMapHint: false, city: null as SocialCity | null };
 
-function readSocialStudioQueryFromLocation() {
+type SocialQueryPrefillSnapshot = {
+  opsMapHint: boolean;
+  city: SocialCity | null;
+};
+
+let cachedSocialSearch = "";
+let cachedSocialPrefill: SocialQueryPrefillSnapshot = EMPTY_SOCIAL_QUERY_PREFILL;
+
+function readSocialStudioQueryFromLocation(): SocialQueryPrefillSnapshot {
   if (typeof window === "undefined") return EMPTY_SOCIAL_QUERY_PREFILL;
-  const params = new URLSearchParams(window.location.search);
-  return {
-    opsMapHint: params.get("source") === "ops-map",
-    city: resolveSocialCityFromOpsMapSlug(params.get("city")),
-  };
+  const search = window.location.search;
+  if (search === cachedSocialSearch) return cachedSocialPrefill;
+
+  cachedSocialSearch = search;
+  const params = new URLSearchParams(search);
+  const opsMapHint = params.get("source") === "ops-map";
+  const city = resolveSocialCityFromOpsMapSlug(params.get("city"));
+
+  if (!opsMapHint && !city) {
+    cachedSocialPrefill = EMPTY_SOCIAL_QUERY_PREFILL;
+  } else {
+    cachedSocialPrefill = { opsMapHint, city };
+  }
+
+  return cachedSocialPrefill;
 }
 
 function subscribeSocialStudioQuery() {
