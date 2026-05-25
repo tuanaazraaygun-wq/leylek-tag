@@ -37,6 +37,17 @@ export const SOCIAL_CITY_LABELS: Record<SocialCity, string> = {
   genel: "Genel",
 };
 
+export function isSocialCity(value: string): value is SocialCity {
+  return (SOCIAL_CITIES as readonly string[]).includes(value);
+}
+
+/** Ops Map slug → Social Studio city; unsupported slugs return null (keep Genel). */
+export function resolveSocialCityFromOpsMapSlug(slug: string | null | undefined): SocialCity | null {
+  if (!slug) return null;
+  if (isSocialCity(slug)) return slug;
+  return null;
+}
+
 export const SOCIAL_TONE_LABELS: Record<SocialTone, string> = {
   kurumsal: "Kurumsal",
   samimi: "Samimi",

@@ -7,6 +7,8 @@ import type { Session } from "@supabase/supabase-js";
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
   applyTimelineToKpis,
+  buildNotificationCenterPrefillQuery,
+  buildSocialStudioPrefillQuery,
   DENSITY_LEVEL_LABELS,
   densityLevelColor,
   getOperationsMapCityLabel,
@@ -44,6 +46,7 @@ import {
   KYC_ADMIN_ROUTE_PATH,
   NOTIFICATION_CENTER_ROUTE_PATH,
   OPS_HUB_ROUTE_PATH,
+  SOCIAL_STUDIO_ROUTE_PATH,
 } from "@/lib/site-origin";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
 
@@ -308,7 +311,15 @@ function TimelineSegmentControl({
   );
 }
 
-function PushDraftPackPanel({ pack, onCopy }: { pack: PushDraftPack; onCopy: (text: string) => void }) {
+function PushDraftPackPanel({
+  pack,
+  city,
+  onCopy,
+}: {
+  pack: PushDraftPack;
+  city: OperationsMapCity;
+  onCopy: (text: string) => void;
+}) {
   return (
     <section className="mt-8 rounded-xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/[0.06] to-slate-950/90 p-4 ring-1 ring-cyan-400/10">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -321,6 +332,12 @@ function PushDraftPackPanel({ pack, onCopy }: { pack: PushDraftPack; onCopy: (te
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SeverityBadge severity={pack.severity} />
+          <Link
+            href={`${SOCIAL_STUDIO_ROUTE_PATH}?${buildSocialStudioPrefillQuery(city)}`}
+            className="inline-flex min-h-[36px] items-center rounded-xl border border-white/[0.12] px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:border-violet-400/30 hover:text-violet-100"
+          >
+            Sosyal içerik hazırla
+          </Link>
           <Link
             href={NOTIFICATION_CENTER_ROUTE_PATH}
             className="inline-flex min-h-[36px] items-center rounded-xl border border-white/[0.12] px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:border-cyan-400/30 hover:text-cyan-100"
@@ -386,6 +403,18 @@ function PushDraftPackPanel({ pack, onCopy }: { pack: PushDraftPack; onCopy: (te
               >
                 Tam paketi kopyala
               </button>
+              <Link
+                href={`${NOTIFICATION_CENTER_ROUTE_PATH}?${buildNotificationCenterPrefillQuery({
+                  city,
+                  tone: variation.tone,
+                  title: variation.title,
+                  message: variation.message,
+                  label: `${variation.toneLabel} taslak`,
+                })}`}
+                className="inline-flex min-h-[32px] items-center rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1 text-[10px] font-bold text-indigo-100 hover:border-indigo-400/40"
+              >
+                Bildirim Merkezi&apos;nde hazırla
+              </Link>
             </div>
           </article>
         ))}
@@ -945,7 +974,7 @@ export function AdminOperationsMapDashboard() {
         )}
       </section>
 
-      <PushDraftPackPanel pack={pushDraftPack} onCopy={handleCopyDraft} />
+      <PushDraftPackPanel pack={pushDraftPack} city={city} onCopy={handleCopyDraft} />
 
       <section className="mt-8">
         <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">

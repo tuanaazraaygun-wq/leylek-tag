@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Session } from "@supabase/supabase-js";
 
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
@@ -24,6 +24,7 @@ import {
   SOCIAL_RISK_COPY_NOTES,
   SOCIAL_TONE_LABELS,
   SOCIAL_TONES,
+  resolveSocialCityFromOpsMapSlug,
   type SocialCity,
   type SocialContentType,
   type SocialPlatform,
@@ -114,6 +115,21 @@ function CopyButton({ label, text, onCopied }: { label: string; text: string; on
   );
 }
 
+const EMPTY_SOCIAL_QUERY_PREFILL = { opsMapHint: false, city: null as SocialCity | null };
+
+function readSocialStudioQueryFromLocation() {
+  if (typeof window === "undefined") return EMPTY_SOCIAL_QUERY_PREFILL;
+  const params = new URLSearchParams(window.location.search);
+  return {
+    opsMapHint: params.get("source") === "ops-map",
+    city: resolveSocialCityFromOpsMapSlug(params.get("city")),
+  };
+}
+
+function subscribeSocialStudioQuery() {
+  return () => {};
+}
+
 export function AdminSocialStudioDashboard() {
   const configured = useMemo(() => isSupabaseConfigured(), []);
   const client = configured ? getSupabaseBrowserClient() : null;
@@ -128,7 +144,14 @@ export function AdminSocialStudioDashboard() {
 
   const [platform, setPlatform] = useState<SocialPlatform>("instagram");
   const [contentType, setContentType] = useState<SocialContentType>("post");
-  const [city, setCity] = useState<SocialCity>("genel");
+  const queryPrefill = useSyncExternalStore(
+    subscribeSocialStudioQuery,
+    readSocialStudioQueryFromLocation,
+    () => EMPTY_SOCIAL_QUERY_PREFILL,
+  );
+  const [cityOverride, setCityOverride] = useState<SocialCity | null>(null);
+  const city = cityOverride ?? queryPrefill.city ?? "genel";
+  const opsMapCityHint = queryPrefill.opsMapHint;
   const [tone, setTone] = useState<SocialTone>("kurumsal");
   const [variationIndex, setVariationIndex] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -164,7 +187,7 @@ export function AdminSocialStudioDashboard() {
   }, []);
 
   const onCityChange = useCallback((v: SocialCity) => {
-    setCity(v);
+    setCityOverride(v);
     setVariationIndex(0);
   }, []);
 
@@ -350,6 +373,13 @@ export function AdminSocialStudioDashboard() {
       <div className="mt-5 rounded-xl border border-cyan-400/25 bg-cyan-500/[0.07] px-4 py-3 text-[11px] leading-relaxed text-cyan-100/95" role="status">
         <strong className="font-bold">Faz 1 · Taslak-only.</strong> Statik şablonlar; harici AI/LLM ve sosyal platform API&apos;si yok.
         İçeriği panoya kopyalayıp kendi hesabınızdan manuel paylaşın.
+        {opsMapCityHint ? (
+          <p className="mt-2">
+            <span className="inline-flex rounded-full border border-violet-400/35 bg-violet-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-violet-100">
+              Operasyon Haritası şehir önerisi
+            </span>
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">

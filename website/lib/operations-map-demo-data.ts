@@ -72,6 +72,38 @@ export type PushDraftPack = {
   fullPackText: string;
 };
 
+export function sanitizeOpsWorkflowQueryText(value: string | null | undefined, maxLen: number): string {
+  if (!value) return "";
+  return value.replace(/[\0-\x1F\x7F]/g, "").trim().slice(0, maxLen);
+}
+
+export function buildNotificationCenterPrefillQuery(params: {
+  city: OperationsMapCity;
+  tone: PushDraftTone;
+  title: string;
+  message: string;
+  label?: string;
+}): string {
+  const search = new URLSearchParams();
+  search.set("source", "ops-map");
+  search.set("title", sanitizeOpsWorkflowQueryText(params.title, 80));
+  search.set("body", sanitizeOpsWorkflowQueryText(params.message, 500));
+  search.set("city", params.city);
+  search.set("tone", params.tone);
+  if (params.label) {
+    search.set("label", sanitizeOpsWorkflowQueryText(params.label, 40));
+  }
+  return search.toString();
+}
+
+export function buildSocialStudioPrefillQuery(city: OperationsMapCity): string {
+  const search = new URLSearchParams({
+    source: "ops-map",
+    city,
+  });
+  return search.toString();
+}
+
 export type RegionIntelligence = {
   region: OperationsMapRegion;
   severity: SeverityLevel;

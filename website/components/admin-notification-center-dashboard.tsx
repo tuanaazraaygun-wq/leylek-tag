@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Session } from "@supabase/supabase-js";
 
 import {
@@ -26,6 +26,7 @@ import {
   type NotificationSendResult,
 } from "@/lib/admin-notification-draft-types";
 import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
+import { sanitizeOpsWorkflowQueryText } from "@/lib/operations-map-demo-data";
 import {
   ADMIN_SUPPORT_ROUTE_PATH,
   getNotificationCenterMagicLinkRedirectTo,
@@ -325,6 +326,23 @@ function PushSendConfirmModal({
   );
 }
 
+const EMPTY_OPS_MAP_PREFILL = { active: false, title: "", body: "" } as const;
+
+function readOpsMapPrefillFromLocation() {
+  if (typeof window === "undefined") return EMPTY_OPS_MAP_PREFILL;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("source") !== "ops-map") return EMPTY_OPS_MAP_PREFILL;
+  return {
+    active: true,
+    title: sanitizeOpsWorkflowQueryText(params.get("title"), NOTIFICATION_TITLE_MAX),
+    body: sanitizeOpsWorkflowQueryText(params.get("body"), NOTIFICATION_BODY_MAX),
+  };
+}
+
+function subscribeOpsMapPrefill() {
+  return () => {};
+}
+
 export function AdminNotificationCenterDashboard() {
   const configured = useMemo(() => isSupabaseConfigured(), []);
   const client = configured ? getSupabaseBrowserClient() : null;
@@ -339,8 +357,15 @@ export function AdminNotificationCenterDashboard() {
 
   const [audience, setAudience] = useState<NotificationAudience>("specific_user");
   const [channel] = useState<NotificationChannel>("push");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const opsMapPrefill = useSyncExternalStore(
+    subscribeOpsMapPrefill,
+    readOpsMapPrefillFromLocation,
+    () => EMPTY_OPS_MAP_PREFILL,
+  );
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
+  const [bodyOverride, setBodyOverride] = useState<string | null>(null);
+  const title = titleOverride ?? (opsMapPrefill.active ? opsMapPrefill.title : "");
+  const body = bodyOverride ?? (opsMapPrefill.active ? opsMapPrefill.body : "");
   const [specificTarget, setSpecificTarget] = useState("");
   const [draftSuccess, setDraftSuccess] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<NotificationDraft[]>([]);
@@ -364,6 +389,7 @@ export function AdminNotificationCenterDashboard() {
   const [fieldError, setFieldError] = useState<string | null>(null);
 
   const canSendRealPush = isActivePushAudience(audience);
+  const opsMapPrefillActive = opsMapPrefill.active;
 
   useEffect(() => {
     if (!client) return undefined;
@@ -759,6 +785,18 @@ export function AdminNotificationCenterDashboard() {
         KYC segmentleri Faz 2. SMS/WhatsApp yok.
       </div>
 
+      {opsMapPrefillActive ? (
+        <div
+          className="mt-4 rounded-xl border border-indigo-400/25 bg-indigo-500/[0.08] px-4 py-3 text-[11px] leading-relaxed text-indigo-100/95"
+          role="status"
+        >
+          <span className="inline-flex rounded-full border border-indigo-400/35 bg-indigo-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-100">
+            Operasyon Haritası taslağı
+          </span>
+          <p className="mt-2">Bu taslak otomatik gönderilmedi; admin onayı gerekir.</p>
+        </div>
+      ) : null}
+
       {sendResult ? (
         <div
           className={`mt-4 rounded-xl border px-3 py-2.5 text-xs ${
@@ -935,7 +973,7 @@ export function AdminNotificationCenterDashboard() {
                   id="notif-title"
                   type="text"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value.slice(0, NOTIFICATION_TITLE_MAX))}
+                  onChange={(e) => setTitleOverride(e.target.value.slice(0, NOTIFICATION_TITLE_MAX))}
                   maxLength={NOTIFICATION_TITLE_MAX}
                   placeholder="Kısa başlık"
                   className="mt-1.5 w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/35"
@@ -951,7 +989,7 @@ export function AdminNotificationCenterDashboard() {
                 <textarea
                   id="notif-body"
                   value={body}
-                  onChange={(e) => setBody(e.target.value.slice(0, NOTIFICATION_BODY_MAX))}
+                  onChange={(e) => setBodyOverride(e.target.value.slice(0, NOTIFICATION_BODY_MAX))}
                   maxLength={NOTIFICATION_BODY_MAX}
                   rows={5}
                   placeholder="Kullanıcıya iletilecek mesaj"

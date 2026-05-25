@@ -24,6 +24,13 @@ type StatusCard = {
   tone: StatusTone;
 };
 
+const NEXT_SAFE_PHASES = [
+  { phase: "Faz 2", title: "Instagram insights read-only", detail: "Salt okunur metrikler; otomatik yayın yok." },
+  { phase: "Faz 3", title: "Yorum / mention inbox", detail: "Moderasyon kuyruğu; admin onaylı yanıt taslakları." },
+  { phase: "Faz 4", title: "Admin onaylı yayınlama", detail: "Graph API ile kontrollü paylaşım; otomasyon yok." },
+  { phase: "Faz 5", title: "DM destek akışı", detail: "Mesaj taslakları; spam guardrail ile sınırlı." },
+] as const;
+
 const STATUS_CARDS: StatusCard[] = [
   { id: "social-studio", label: "Social Studio", status: "Hazır", tone: "ready" },
   { id: "meta-app", label: "Meta App", status: "Hazırlanacak", tone: "pending" },
@@ -286,6 +293,19 @@ export function AdminGrowthCenterDashboard() {
               </div>
               <p className="mt-2 text-[11px] text-slate-400">{card.status}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Sıradaki güvenli fazlar</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {NEXT_SAFE_PHASES.map((item) => (
+            <article key={item.phase} className="rounded-xl border border-white/[0.08] bg-slate-950/90 p-4">
+              <p className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-200/80">{item.phase}</p>
+              <h3 className="mt-1 text-sm font-bold text-white">{item.title}</h3>
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{item.detail}</p>
+            </article>
           ))}
         </div>
       </section>
