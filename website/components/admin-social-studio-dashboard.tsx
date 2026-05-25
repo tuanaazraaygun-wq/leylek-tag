@@ -15,6 +15,7 @@ import {
 import {
   buildSocialContent,
   formatSocialCopyBundle,
+  getSocialCityCtaUrl,
   SOCIAL_CITIES,
   SOCIAL_CITY_LABELS,
   SOCIAL_CONTENT_TYPES,
@@ -91,7 +92,7 @@ function SelectField<T extends string>({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
-        className="mt-1.5 w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/35"
+        className="mt-1.5 w-full min-w-0 max-w-full rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/35"
       >
         {options.map((opt) => (
           <option key={opt} value={opt} className="bg-slate-950">
@@ -221,6 +222,7 @@ export function AdminSocialStudioDashboard() {
 
   const fullBundle = useMemo(() => formatSocialCopyBundle(content), [content]);
   const hashtagLine = content.hashtags.join(" ");
+  const cityCtaLink = useMemo(() => getSocialCityCtaUrl(city), [city]);
 
   const signOut = useCallback(async () => {
     if (!client) return;
@@ -452,6 +454,7 @@ export function AdminSocialStudioDashboard() {
             <CopyButton label="CTA kopyala" text={content.cta} onCopied={onCopied} />
           </div>
           <p className="mt-3 text-sm text-slate-200">{content.cta}</p>
+          <p className="mt-2 break-all text-[10px] text-slate-500">CTA linki: {cityCtaLink}</p>
         </article>
 
         <div className="flex flex-wrap gap-2">

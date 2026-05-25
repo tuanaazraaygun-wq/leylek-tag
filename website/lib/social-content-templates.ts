@@ -10,8 +10,27 @@ export const SOCIAL_CONTENT_TYPES = [
 ] as const;
 export type SocialContentType = (typeof SOCIAL_CONTENT_TYPES)[number];
 
-export const SOCIAL_CITIES = ["ankara", "istanbul", "izmir", "genel"] as const;
+export const SOCIAL_LANDING_CITY_SLUGS = [
+  "ankara",
+  "istanbul",
+  "izmir",
+  "bursa",
+  "antalya",
+  "konya",
+  "adana",
+  "eskisehir",
+  "gaziantep",
+  "kayseri",
+  "mersin",
+  "samsun",
+] as const;
+
+export type SocialLandingCitySlug = (typeof SOCIAL_LANDING_CITY_SLUGS)[number];
+
+export const SOCIAL_CITIES = ["genel", ...SOCIAL_LANDING_CITY_SLUGS] as const;
 export type SocialCity = (typeof SOCIAL_CITIES)[number];
+
+export const SOCIAL_TEMPLATE_CITIES: readonly SocialCity[] = SOCIAL_CITIES;
 
 export const SOCIAL_TONES = ["kurumsal", "samimi", "kisa", "kampanya"] as const;
 export type SocialTone = (typeof SOCIAL_TONES)[number];
@@ -31,10 +50,39 @@ export const SOCIAL_CONTENT_TYPE_LABELS: Record<SocialContentType, string> = {
 };
 
 export const SOCIAL_CITY_LABELS: Record<SocialCity, string> = {
+  genel: "Genel",
   ankara: "Ankara",
   istanbul: "İstanbul",
   izmir: "İzmir",
-  genel: "Genel",
+  bursa: "Bursa",
+  antalya: "Antalya",
+  konya: "Konya",
+  adana: "Adana",
+  eskisehir: "Eskişehir",
+  gaziantep: "Gaziantep",
+  kayseri: "Kayseri",
+  mersin: "Mersin",
+  samsun: "Samsun",
+};
+
+export function getSocialCityCtaUrl(city: SocialCity): string {
+  if (city === "genel") return "https://leylektag.com/indir";
+  return `https://leylektag.com/sehir/${city}`;
+}
+
+const SOCIAL_CITY_HASHTAGS: Record<SocialLandingCitySlug, string> = {
+  ankara: "#Ankara",
+  istanbul: "#Istanbul",
+  izmir: "#Izmir",
+  bursa: "#Bursa",
+  antalya: "#Antalya",
+  konya: "#Konya",
+  adana: "#Adana",
+  eskisehir: "#Eskisehir",
+  gaziantep: "#Gaziantep",
+  kayseri: "#Kayseri",
+  mersin: "#Mersin",
+  samsun: "#Samsun",
 };
 
 export function isSocialCity(value: string): value is SocialCity {
@@ -124,154 +172,160 @@ const TEMPLATES: SocialTemplate[] = [
     id: "post-kurumsal-genel",
     platforms: ["instagram", "x"],
     contentTypes: ["post"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kurumsal"],
     variationLabel: "Kurumsal tanıtım",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? `${c}'da ` : ""}aynı yöne giden yolcu ve sürücüleri karşılıklı teklif ve onayla buluşturan Leylek TAG.\n\nYolculuk paylaşımı ve masraf paylaşımı topluluk kuralları çerçevesinde ilerler. Ticari taşımacılık hizmeti sunulmaz.`,
     storyText: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + " · " : ""}Leylek TAG — kontrollü yolculuk paylaşımı. Uygulamayı indir →`,
-    cta: () => "leylektag.com/indir",
+    cta: (ctx) => getSocialCityCtaUrl(ctx.city),
     extraHashtags: ["#LeylekTAG"],
   },
   {
     id: "post-samimi-genel",
     platforms: ["instagram", "tiktok"],
     contentTypes: ["post"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["samimi"],
     variationLabel: "Samimi tanıtım",
     caption: ({ cityLabel: c }) =>
       `Aynı yöne gidiyorsan boş koltuk veya rota paylaşımı Leylek TAG ile daha net.\n\n${c !== "Genel" ? c + "'da " : ""}teklifini aç, detayları konuş, karşılıklı onayla eşleş. Yolculuk paylaşımı — gelir vaadi yok, topluluk odaklı.`,
     storyText: () => "Boş koltuğun mu var? Rota mı arıyorsun? Leylek TAG’i dene →",
-    cta: () => "Uygulamayı indir: leylektag.com/indir",
+    cta: (ctx) => `Uygulamayı indir: ${getSocialCityCtaUrl(ctx.city)}`,
   },
   {
     id: "post-kisa-x",
     platforms: ["x", "tiktok"],
     contentTypes: ["post"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kisa"],
     variationLabel: "Kısa duyuru",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + ": " : ""}Aynı yöne gidenler için yolculuk paylaşımı — Leylek TAG. Karşılıklı teklif, onay, QR doğrulama.`,
     storyText: () => "Leylek TAG · yolculuk paylaşımı",
-    cta: () => "leylektag.com/indir",
+    cta: (ctx) => getSocialCityCtaUrl(ctx.city),
   },
   {
     id: "story-samimi",
     platforms: ["instagram", "tiktok"],
     contentTypes: ["story"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["samimi", "kisa"],
     variationLabel: "Story hook",
     caption: ({ cityLabel: c }) =>
       `Story metni aşağıda. ${c !== "Genel" ? c + " için " : ""}görsel üzerine kısa metin + kaydırma linki ekleyin.`,
     storyText: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + " · " : ""}Aynı yöne gidenler burada 👇\nYolculuk paylaşımı · Leylek TAG`,
-    cta: () => "Link: leylektag.com/indir",
+    cta: (ctx) => `Link: ${getSocialCityCtaUrl(ctx.city)}`,
   },
   {
     id: "story-kampanya",
     platforms: ["instagram", "tiktok", "x"],
     contentTypes: ["story", "kampanya"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kampanya"],
     variationLabel: "Kampanya story",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + " pilot " : "Pilot "}topluluğa davet: Leylek TAG ile şehir içi yolculuk paylaşımını keşfet.\n\nOtomatik paylaşım yok — metni kopyalayıp kendi kanalınızda yayınlayın.`,
     storyText: () => "Pilot topluluk · Leylek TAG\nYolculuk paylaşımı · Şimdi dene",
-    cta: () => "Detay: leylektag.com/indir",
+    cta: (ctx) => `Detay: ${getSocialCityCtaUrl(ctx.city)}`,
     extraHashtags: ["#PilotTopluluk"],
   },
   {
     id: "kampanya-kurumsal",
     platforms: ["instagram", "x"],
     contentTypes: ["kampanya"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kurumsal", "kampanya"],
     variationLabel: "Kampanya duyurusu",
     caption: ({ cityLabel: c }) =>
       `Kampanya metni — ${c !== "Genel" ? c : "Türkiye geneli"}\n\nLeylek TAG: karşılıklı teklif ve onayla ilerleyen yolculuk paylaşımı platformu. Masraf paylaşımı taraflar arasında netleşir; platform tahsilat yapmaz.\n\nUygunluk ve kurallara uyum kullanıcı sorumluluğundadır.`,
     storyText: ({ cityLabel: c }) => `${c !== "Genel" ? c + " · " : ""}Kampanya · Leylek TAG`,
-    cta: () => "leylektag.com/indir · leylektag.com/nasil-calisir",
+    cta: (ctx) =>
+      ctx.city === "genel"
+        ? "https://leylektag.com/indir · https://leylektag.com/nasil-calisir"
+        : getSocialCityCtaUrl(ctx.city),
     extraHashtags: ["#LeylekTAG", "#YolculukPaylasimi"],
   },
   {
     id: "surucu-samimi",
     platforms: ["instagram", "tiktok", "x"],
     contentTypes: ["surucu_cagrisi"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["samimi", "kampanya"],
     variationLabel: "Sürücü çağrısı — samimi",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + "'da " : ""}zaten gideceğin rotada boş koltuğun mu var?\n\nLeylek TAG ile aynı yöne giden yolcularla masraf paylaşımını karşılıklı teklif ve onayla netleştir. Profesyonel taşımacılık veya gelir garantisi yoktur — topluluk temelli yolculuk paylaşımı.`,
     storyText: () => "Sürücüler: boş koltuğunu paylaş 🚗\nLeylek TAG · yolculuk paylaşımı",
-    cta: () => "Sürücü olarak başla: leylektag.com/indir",
+    cta: (ctx) => `Sürücü olarak başla: ${getSocialCityCtaUrl(ctx.city)}`,
     extraHashtags: ["#BosKoltuk", "#Surucu"],
   },
   {
     id: "surucu-kurumsal",
     platforms: ["instagram", "x"],
     contentTypes: ["surucu_cagrisi"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kurumsal"],
     variationLabel: "Sürücü çağrısı — kurumsal",
     caption: ({ cityLabel: c }) =>
       `Sürücü daveti${c !== "Genel" ? ` · ${c}` : ""}\n\nPlanladığınız rota üzerinde boş koltuk paylaşımı için Leylek TAG uygulamasında teklif oluşturun. Eşleşme karşılıklı onay ve QR doğrulama adımlarıyla ilerler.`,
     storyText: ({ cityLabel: c }) => `${c !== "Genel" ? c + " · " : ""}Sürücü daveti · Leylek TAG`,
-    cta: () => "leylektag.com/indir",
+    cta: (ctx) => getSocialCityCtaUrl(ctx.city),
     extraHashtags: ["#BosKoltuk"],
   },
   {
     id: "yolcu-samimi",
     platforms: ["instagram", "tiktok", "x"],
     contentTypes: ["yolcu_cagrisi"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["samimi", "kisa"],
     variationLabel: "Yolcu çağrısı — samimi",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + "'da " : ""}aynı yöne mi gidiyorsun?\n\nLeylek TAG ile rota paylaşımı ve masraf paylaşımını karşılıklı teklif görüşmesiyle netleştir. Yolculuk paylaşımı topluluk kuralları çerçevesindedir.`,
     storyText: () => "Yolcu: rotanı paylaş, teklifleri gör 👋",
-    cta: () => "leylektag.com/indir",
+    cta: (ctx) => getSocialCityCtaUrl(ctx.city),
     extraHashtags: ["#Yolcu", "#MasrafPaylasimi"],
   },
   {
     id: "yolcu-kurumsal",
     platforms: ["instagram", "x"],
     contentTypes: ["yolcu_cagrisi"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kurumsal", "kampanya"],
     variationLabel: "Yolcu çağrısı — kurumsal",
     caption: ({ cityLabel: c }) =>
       `Yolcu daveti${c !== "Genel" ? ` · ${c}` : ""}\n\nGideceğiniz rotayı uygulamada paylaşın; uygun tekliflerle masraf paylaşımını karşılıklı netleştirin. Leylek TAG ticari taşımacılık hizmeti değildir.`,
     storyText: ({ cityLabel: c }) => `${c !== "Genel" ? c + " · " : ""}Yolcu daveti · Leylek TAG`,
-    cta: () => "leylektag.com/indir · leylektag.com/sehir-ici",
+    cta: (ctx) =>
+      ctx.city === "genel"
+        ? "https://leylektag.com/indir · https://leylektag.com/sehir-ici"
+        : getSocialCityCtaUrl(ctx.city),
     extraHashtags: ["#YolculukPaylasimi"],
   },
   {
     id: "tiktok-kisa-kampanya",
     platforms: ["tiktok"],
     contentTypes: ["post", "kampanya", "yolcu_cagrisi", "surucu_cagrisi"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kisa", "kampanya"],
     variationLabel: "TikTok kısa hook",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + " · " : ""}Aynı yöne gidenler? Leylek TAG.\nYolculuk paylaşımı · karşılıklı onay · QR doğrulama`,
     storyText: () => "POV: Rotanı paylaştın, teklif geldi ✅\n#LeylekTAG",
-    cta: () => "Bio link: leylektag.com/indir",
+    cta: (ctx) => `Bio link: ${getSocialCityCtaUrl(ctx.city)}`,
   },
   {
     id: "x-kisa-surucu",
     platforms: ["x"],
     contentTypes: ["post", "surucu_cagrisi", "kampanya"],
-    cities: ["genel", "ankara", "istanbul", "izmir"],
+    cities: SOCIAL_TEMPLATE_CITIES,
     tones: ["kisa"],
     variationLabel: "X kısa sürücü",
     caption: ({ cityLabel: c }) =>
       `${c !== "Genel" ? c + ": " : ""}Boş koltuk paylaşımı · Leylek TAG. Yolculuk paylaşımı, karşılıklı teklif. Gelir vaadi yok.`,
     storyText: () => "Leylek TAG · yolculuk paylaşımı",
-    cta: () => "leylektag.com/indir",
+    cta: (ctx) => getSocialCityCtaUrl(ctx.city),
   },
 ];
 
@@ -285,15 +339,19 @@ function templateMatches(t: SocialTemplate, ctx: TemplateContext): boolean {
 }
 
 function pickHashtags(template: SocialTemplate, city: SocialCity): string[] {
-  const base: string[] = [...SOCIAL_SAFE_HASHTAGS];
+  const base: string[] = ["#LeylekTAG", "#YolculukPaylasimi"];
+  if (city !== "genel") {
+    const cityTag = SOCIAL_CITY_HASHTAGS[city];
+    if (cityTag && !base.includes(cityTag)) base.push(cityTag);
+  }
+  for (const tag of SOCIAL_SAFE_HASHTAGS) {
+    if (!base.includes(tag)) base.push(tag);
+  }
   if (template.extraHashtags) {
     for (const tag of template.extraHashtags) {
       if (!base.includes(tag)) base.push(tag);
     }
   }
-  if (city === "ankara" && !base.includes("#Ankara")) base.push("#Ankara");
-  if (city === "istanbul" && !base.includes("#Istanbul")) base.push("#Istanbul");
-  if (city === "izmir" && !base.includes("#Izmir")) base.push("#Izmir");
   return base.slice(0, 10);
 }
 
