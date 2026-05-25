@@ -12,6 +12,7 @@ import {
   getOperationsMapCityLabel,
   getOperationsMapDemoEventsByCity,
   getOperationsMapIntelligence,
+  getOperationsMapPushDraftPack,
   getOperationsMapRegionsByCity,
   getOperationsMapTimelineLabel,
   getTimelineEventHighlightIndex,
@@ -19,11 +20,13 @@ import {
   OPERATIONS_MAP_INTELLIGENCE_DISCLAIMERS,
   OPERATIONS_MAP_SECURITY_NOTES,
   OPERATIONS_MAP_TIMELINE_OPTIONS,
+  PUSH_DRAFT_PACK_DISCLAIMERS,
   SEVERITY_LEVEL_LABELS,
   type OperationsMapCity,
   type OperationsMapDemoEvent,
   type OperationsMapRegion,
   type OperationsMapTimelineMinutes,
+  type PushDraftPack,
   type RegionIntelligence,
   type SeverityLevel,
 } from "@/lib/operations-map-demo-data";
@@ -305,6 +308,100 @@ function TimelineSegmentControl({
   );
 }
 
+function PushDraftPackPanel({ pack, onCopy }: { pack: PushDraftPack; onCopy: (text: string) => void }) {
+  return (
+    <section className="mt-8 rounded-xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/[0.06] to-slate-950/90 p-4 ring-1 ring-cyan-400/10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-cyan-200/90">Push taslak paketi</h2>
+          <p className="mt-1 text-[11px] text-slate-400">Gönderim yapılmaz, sadece kopyalanır.</p>
+          <p className="mt-2 text-[10px] text-slate-500">
+            {pack.cityLabel} · {pack.regionName}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SeverityBadge severity={pack.severity} />
+          <Link
+            href={NOTIFICATION_CENTER_ROUTE_PATH}
+            className="inline-flex min-h-[36px] items-center rounded-xl border border-white/[0.12] px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:border-cyan-400/30 hover:text-cyan-100"
+          >
+            Bildirim Merkezi&apos;ne git
+          </Link>
+        </div>
+      </div>
+
+      <ul className="mt-3 space-y-1.5">
+        {PUSH_DRAFT_PACK_DISCLAIMERS.map((note) => (
+          <li key={note} className="flex items-start gap-2 text-[10px] leading-relaxed text-slate-400">
+            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-400/70" aria-hidden />
+            {note}
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        {pack.variations.map((variation) => (
+          <article
+            key={variation.tone}
+            className="rounded-xl border border-white/[0.08] bg-black/25 p-3"
+          >
+            <p className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-200/80">{variation.toneLabel}</p>
+            <div className="mt-3 space-y-2 text-[10px]">
+              <div>
+                <p className="font-semibold text-slate-500">Başlık</p>
+                <p className="mt-0.5 leading-relaxed text-slate-200">{variation.title}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-500">Mesaj</p>
+                <p className="mt-0.5 leading-relaxed text-slate-300">{variation.message}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-500">Hedef açıklaması</p>
+                <p className="mt-0.5 leading-relaxed text-slate-400">{variation.targetDescription}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-500">Risk notu</p>
+                <p className="mt-0.5 leading-relaxed text-slate-400">{variation.riskNote}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => onCopy(variation.title)}
+                className="inline-flex min-h-[32px] items-center rounded-lg border border-white/[0.1] px-2.5 py-1 text-[10px] font-bold text-slate-300 hover:border-cyan-400/25"
+              >
+                Başlığı kopyala
+              </button>
+              <button
+                type="button"
+                onClick={() => onCopy(variation.message)}
+                className="inline-flex min-h-[32px] items-center rounded-lg border border-white/[0.1] px-2.5 py-1 text-[10px] font-bold text-slate-300 hover:border-cyan-400/25"
+              >
+                Mesajı kopyala
+              </button>
+              <button
+                type="button"
+                onClick={() => onCopy(variation.fullVariationText)}
+                className="inline-flex min-h-[32px] items-center rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-bold text-cyan-100 hover:border-cyan-400/40"
+              >
+                Tam paketi kopyala
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onCopy(pack.fullPackText)}
+        className="mt-4 inline-flex min-h-[36px] items-center rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold text-cyan-100 hover:border-cyan-400/45"
+      >
+        Tüm taslak paketini kopyala
+      </button>
+    </section>
+  );
+}
+
 function severityBadgeClass(severity: SeverityLevel): string {
   if (severity === "kritik") return "border-rose-400/40 bg-rose-500/15 text-rose-100";
   if (severity === "yuksek") return "border-orange-400/35 bg-orange-500/12 text-orange-100";
@@ -409,6 +506,10 @@ export function AdminOperationsMapDashboard() {
     [city, intelligence.kpis, timelineMinutes],
   );
   const timelineLabel = useMemo(() => getOperationsMapTimelineLabel(timelineMinutes), [timelineMinutes]);
+  const pushDraftPack = useMemo(
+    () => getOperationsMapPushDraftPack(city, timelineMinutes),
+    [city, timelineMinutes],
+  );
   const priorityIntel = useMemo(
     () => intelligence.regions.filter((item) => item.region.supplyGap === "yuksek"),
     [intelligence],
@@ -604,7 +705,7 @@ export function AdminOperationsMapDashboard() {
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-300/78">Admin · Harita</p>
           <h1 className="mt-1.5 text-xl font-black text-white sm:text-2xl">LeylekTAG Operasyon Harita Merkezi</h1>
           <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-slate-400">
-            Anonim yoğunluk, boş bölge ve yönlendirme hazırlık ekranı. Faz 0D · Demo timeline oynatma — canlı konum, OSRM ve gerçek kullanıcı verisi yok.
+            Anonim yoğunluk, boş bölge ve yönlendirme hazırlık ekranı. Faz 0E · Push taslak paketi — canlı konum, OSRM ve gerçek kullanıcı verisi yok.
           </p>
           <p className="mt-1 font-mono text-[10px] text-slate-500">{session.user.email}</p>
         </div>
@@ -843,6 +944,8 @@ export function AdminOperationsMapDashboard() {
           <p className="mt-3 text-[11px] text-slate-500">Bu şehirde yüksek arz açığı demo bölgesi yok.</p>
         )}
       </section>
+
+      <PushDraftPackPanel pack={pushDraftPack} onCopy={handleCopyDraft} />
 
       <section className="mt-8">
         <h2 className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">

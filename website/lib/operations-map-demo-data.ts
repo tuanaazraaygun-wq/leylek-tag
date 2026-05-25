@@ -45,6 +45,33 @@ export function getOperationsMapTimelineLabel(minutes: OperationsMapTimelineMinu
   return `Demo timeline · son 15 dk · ${minutes} dk önce`;
 }
 
+export const PUSH_DRAFT_PACK_DISCLAIMERS = [
+  "Bu taslaklar demo öneridir.",
+  "Gönderim için Bildirim Merkezi'nde admin onayı gerekir.",
+  "Otomatik push gönderilmez.",
+] as const;
+
+export type PushDraftTone = "kisa" | "dengeli" | "acil";
+
+export type PushDraftVariation = {
+  tone: PushDraftTone;
+  toneLabel: string;
+  title: string;
+  message: string;
+  targetDescription: string;
+  riskNote: string;
+  fullVariationText: string;
+};
+
+export type PushDraftPack = {
+  cityLabel: string;
+  regionName: string;
+  severity: SeverityLevel;
+  disclaimers: readonly string[];
+  variations: PushDraftVariation[];
+  fullPackText: string;
+};
+
 export type RegionIntelligence = {
   region: OperationsMapRegion;
   severity: SeverityLevel;
@@ -588,6 +615,120 @@ export function getOperationsMapIntelligence(city: OperationsMapCity): Operation
       suggestedMessage: top?.region.suggestedPushDraft ?? "Demo intelligence mesajı — admin onayı gerekir.",
     },
     regions: regionIntel,
+  };
+}
+
+function regionShortName(region: string): string {
+  return region.split("/")[0]?.trim() || region;
+}
+
+function getPushDraftPackTargetRegionIntel(city: OperationsMapCity): RegionIntelligence {
+  const intel = getOperationsMapIntelligence(city);
+  const sorted = [...intel.regions].sort((a, b) => {
+    const severityDelta = severityRank(b.severity) - severityRank(a.severity);
+    if (severityDelta !== 0) return severityDelta;
+    const gapDelta = levelScore(b.region.supplyGap) - levelScore(a.region.supplyGap);
+    if (gapDelta !== 0) return gapDelta;
+    return b.impactScore - a.impactScore;
+  });
+
+  const fallbackRegion = getOperationsMapRegionsByCity(city)[0];
+  return (
+    sorted[0] ?? {
+      region: fallbackRegion,
+      severity: computeRegionSeverity(fallbackRegion),
+      impactScore: computeImpactScore(fallbackRegion),
+      urgency: computeRegionSeverity(fallbackRegion),
+      safeSendNote: "Demo intelligence — gerçek kullanıcı verisi değildir.",
+    }
+  );
+}
+
+function buildPushDraftVariationText(variation: {
+  toneLabel: string;
+  title: string;
+  message: string;
+  targetDescription: string;
+  riskNote: string;
+}): string {
+  return [
+    `Ton: ${variation.toneLabel}`,
+    `Başlık: ${variation.title}`,
+    `Mesaj: ${variation.message}`,
+    `Hedef: ${variation.targetDescription}`,
+    `Risk: ${variation.riskNote}`,
+  ].join("\n");
+}
+
+export function getOperationsMapPushDraftPack(
+  city: OperationsMapCity,
+  timelineMinutes: OperationsMapTimelineMinutes = 0,
+): PushDraftPack {
+  const target = getPushDraftPackTargetRegionIntel(city);
+  const cityLabel = getOperationsMapCityLabel(city);
+  const area = regionShortName(target.region.region);
+  const drift = hashSlug(`${city}:${target.region.id}:pack:${timelineMinutes}`) % 3;
+  const timelinePhrase =
+    timelineMinutes === 0 ? "güncel demo ölçüm" : `demo timeline · ${timelineMinutes} dk önce`;
+
+  const draftVariations: Omit<PushDraftVariation, "fullVariationText">[] = [
+    {
+      tone: "kisa",
+      toneLabel: "Kısa",
+      title: `${cityLabel} · yakın çevre`,
+      message: [
+        `${area} yakın çevresinde yolculuk paylaşımı talebi var. Uygun olduğunuzda uygulamayı kontrol edebilirsiniz.`,
+        `${area} hattında yolculuk paylaşımı ihtiyacı izleniyor. Müsait olduğunuzda yakın çevre tekliflerine bakabilirsiniz.`,
+        `${area} çevresinde talep artışı (demo). Uygun olduğunuzda teklif akışını inceleyin.`,
+      ][drift],
+      targetDescription: `${area} yakın çevresinde aktif sürücü adayları (demo hedef — tekil konum yok).`,
+      riskNote: "Kısa metin — bağlam sınırlı; Bildirim Merkezi'nde admin onayı gerekir.",
+    },
+    {
+      tone: "dengeli",
+      toneLabel: "Dengeli",
+      title: `${cityLabel} · ${area} yönlendirme`,
+      message: [
+        `${area} çevresinde yolculuk paylaşımı talebi artıyor (${timelinePhrase}). Uygun olduğunuzda yakın çevre tekliflerini inceleyebilirsiniz; zorunluluk yoktur.`,
+        `${cityLabel} · ${area} hattında dengeli yolculuk paylaşımı ihtiyacı var. Yakın çevrede müsait sürücüler için bilgilendirme taslak adayı.`,
+        `${area} bölgesinde yolculuk paylaşımı yoğunluğu yükseldi. Uygun olduğunuzda teklifleri gözden geçirebilirsiniz — gelir vaadi içermez.`,
+      ][(drift + 1) % 3],
+      targetDescription: `Öncelikli bölge yoğunluğuna göre anonim demo segment · ${timelinePhrase}.`,
+      riskNote: "Dengeli ton — gelir vaadi yok, yanıltıcı ifade kullanılmaz.",
+    },
+    {
+      tone: "acil",
+      toneLabel: "Acil",
+      title: `${cityLabel} · öncelikli hat`,
+      message: [
+        `${area} hattında yolculuk paylaşımı ihtiyacı yükseldi. Müsait olduğunuzda yakın çevre tekliflerine göz atmanız operasyon dengelemesine yardımcı olabilir.`,
+        `${area} yakın çevresinde öncelikli yolculuk paylaşımı talebi (demo). Uygun olduğunuzda uygulamayı açmanız yeterli — baskı yoktur.`,
+        `${cityLabel} · ${area} için acil demo yönlendirme taslağı. Yakın çevre tekliflerini uygun olduğunuzda değerlendirin.`,
+      ][(drift + 2) % 3],
+      targetDescription: `Yüksek arz açığı demo bölgesi · ${area} yakın çevre (anonim).`,
+      riskNote: "Acil ton dikkatli kullanılmalı; otomatik push gönderilmez.",
+    },
+  ];
+
+  const variations: PushDraftVariation[] = draftVariations.map((variation) => ({
+    ...variation,
+    fullVariationText: buildPushDraftVariationText(variation),
+  }));
+
+  const fullPackText = [
+    `Push taslak paketi · ${cityLabel} · ${target.region.region}`,
+    ...PUSH_DRAFT_PACK_DISCLAIMERS,
+    "",
+    variations.map((variation) => variation.fullVariationText).join("\n\n"),
+  ].join("\n");
+
+  return {
+    cityLabel,
+    regionName: target.region.region,
+    severity: target.severity,
+    disclaimers: PUSH_DRAFT_PACK_DISCLAIMERS,
+    variations,
+    fullPackText,
   };
 }
 
