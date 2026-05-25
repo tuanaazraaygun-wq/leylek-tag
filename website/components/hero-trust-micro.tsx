@@ -1,4 +1,9 @@
-const items = ["Karşılıklı onay", "QR doğrulama", "Rota netliği"] as const;
+const items = [
+  "Karşılıklı onay",
+  "Doğrulama",
+  "Canlı destek",
+  "KVKK ve kullanıcı kontrolü",
+] as const;
 
 /** Headline altı kısa güven ipuçları — istatistik/iddaya yok. */
 export function HeroTrustMicro() {

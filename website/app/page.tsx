@@ -30,6 +30,14 @@ function NasipPlayGlyph() {
   );
 }
 
+const POPULAR_CITY_LINKS = [
+  { href: "/sehir/ankara", label: "Ankara" },
+  { href: "/sehir/istanbul", label: "İstanbul" },
+  { href: "/sehir/izmir", label: "İzmir" },
+  { href: "/sehir/bursa", label: "Bursa" },
+  { href: "/sehir/antalya", label: "Antalya" },
+] as const;
+
 const scenarios = [
   {
     href: "/sehir-ici",
@@ -91,36 +99,48 @@ export default function Home() {
                 <HeroTrustMicro />
               </div>
 
-              <p className="mx-auto mt-4 max-w-lg text-[0.9375rem] leading-[1.62] text-slate-300 sm:mt-5 md:mx-0 md:max-w-[26rem]">
-                Leylek TAG, rota odaklı eşleşme, QR doğrulama ve güven katmanlarıyla şehir içi yolculuk paylaşımını
-                sadeleştirir.
+              <p className="mx-auto mt-4 max-w-lg text-[0.9375rem] leading-[1.62] text-slate-300 sm:mt-5 md:mx-0 md:max-w-[28rem]">
+                <span className="font-semibold text-slate-200/95">Leylek TAG nedir?</span> Aynı yöne giden yolcu ve
+                sürücüleri karşılıklı onayla buluşturan yolculuk paylaşımı platformudur. Masraf paylaşımı teklif
+                görüşmesinde netleşir; teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır.
+              </p>
+
+              <p className="mx-auto mt-3 max-w-lg rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-[12px] leading-relaxed text-slate-400 md:mx-0 md:max-w-[28rem]">
+                Leylek TAG, kullanıcıların rota ve yolculuk paylaşımı için bir araya geldiği topluluk odaklı bir
+                platformdur; ticari taşımacılık hizmeti sunmaz.
               </p>
 
               <div className="mx-auto mt-5 flex max-w-xl flex-col items-stretch justify-center gap-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:gap-3 md:mx-0 md:justify-start lg:max-w-none">
                 <ButtonLink href="/indir" className="w-full px-8 !py-[0.9rem] text-center text-[0.9rem] sm:w-auto">
-                  Uygulamayı İndir
+                  Uygulamayı indir
                 </ButtonLink>
                 <ButtonLink
                   href="/nasil-calisir"
                   variant="secondary"
                   className="inline-flex w-full items-center justify-center gap-2 border-white/[0.072] bg-transparent px-6 !py-[0.72rem] text-[0.875rem] font-semibold tracking-tight shadow-none backdrop-blur-sm hover:bg-white/[0.028] sm:w-auto"
                 >
-                  <NasipPlayGlyph /> Nasıl Çalışır
+                  <NasipPlayGlyph /> Nasıl çalışır?
                 </ButtonLink>
               </div>
 
-              <ul
-                className="mx-auto mt-4 flex max-w-lg flex-wrap justify-center gap-2 lg:mx-0 lg:justify-start"
-                aria-label="Güven katmanları özeti"
+              <nav
+                className="mx-auto mt-5 max-w-lg lg:mx-0 lg:max-w-none"
+                aria-label="Popüler şehir landing sayfaları"
               >
-                {["Çift onay", "QR doğrulama", "Güven katmanı"].map((label) => (
-                  <li key={label}>
-                    <span className="inline-flex items-center rounded-full border border-cyan-400/22 bg-cyan-400/[0.07] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-cyan-100/88">
-                      {label}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Popüler şehirler</p>
+                <ul className="mt-2.5 flex flex-wrap justify-center gap-2 lg:justify-start">
+                  {POPULAR_CITY_LINKS.map((city) => (
+                    <li key={city.href}>
+                      <Link
+                        href={city.href}
+                        className="inline-flex min-h-[36px] items-center rounded-full border border-cyan-400/22 bg-cyan-400/[0.07] px-3 py-1.5 text-[12px] font-semibold text-cyan-100/90 transition hover:border-cyan-400/35 hover:text-cyan-50"
+                      >
+                        {city.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
             </div>
 
             <div className="relative min-h-0 w-full lg:-mt-2 lg:flex lg:min-w-0 lg:justify-end lg:pr-2">

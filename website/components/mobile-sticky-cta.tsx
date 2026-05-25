@@ -7,7 +7,7 @@ export function MobileStickyCta() {
   const pathname = usePathname();
   const onDownloadPage = pathname === "/indir";
 
-  const label = onDownloadPage ? "Uygulamayı aç" : "Yolunu bul";
+  const label = "Uygulamayı indir";
   const href = onDownloadPage ? "/indir#indir-magaza" : "/indir";
 
   return (
