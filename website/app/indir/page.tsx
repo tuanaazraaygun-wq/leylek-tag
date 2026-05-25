@@ -11,43 +11,62 @@ import { PageHero } from "@/components/page-hero";
 import { StoreButton } from "@/components/store-button";
 
 export const metadata: Metadata = {
-  title: "Uygulamayı Aç | Leylek TAG",
+  title: "Leylek TAG'i İndir | Yolculuk Paylaşımı",
   description:
-    "Teklif oluşturma, karşılıklı onay ve QR ile yolculuk doğrulaması Leylek TAG uygulamasında tamamlanır. Web’de özet görünüm; süreç için uygulamaya geç.",
+    "Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları Leylek TAG mobil uygulamasında tamamlanır.",
 };
 
-const downloadNotes = [
+const benefitCards = [
   {
-    title: "Teklif ve rotalar",
-    description: "Uygulamada teklifini oluştur; şehir içi akışta sürdür.",
+    eyebrow: "yolcu için",
+    title: "Rotanı paylaş, teklifleri gör",
+    description:
+      "Gideceğin rotayı uygulamada aç; uygun tekliflerle masraf paylaşımını karşılıklı görüşerek netleştir. Platform ticari taşımacılık hizmeti sunmaz.",
   },
   {
-    title: "Eşleşme ve görüşme",
-    description: "Karşılıklı onay ve güvenli teklif görüşmesi adımlarını mobil deneyimde tamamla.",
+    eyebrow: "sürücü için",
+    title: "Boş koltuğunu paylaş",
+    description:
+      "Planladığın rota üzerinde boş koltuğunu aynı yöne giden yolcularla paylaş; teklif ve karşılıklı onayla eşleş. Gelir taahhüdü veya profesyonel taşımacılık iddiası yoktur.",
   },
   {
-    title: "QR ile doğrulama",
-    description: "Yolculuk başlangıcı ve kontrol adımları QR doğrulamasıyla uygulama içinde yönetilir.",
+    eyebrow: "güvenlik",
+    title: "Güvenlik ve doğrulama",
+    description:
+      "Karşılıklı onay, QR ile yolculuk doğrulaması ve topluluk kurallarıyla kontrollü eşleşme akışı. Uygunluk kullanıcı sorumluluğundadır.",
   },
-];
+] as const;
 
 export default function DownloadPage() {
   return (
     <>
       <PageHero
-        eyebrow="uygulama"
-        title="Teklif ve eşleşme sürecini uygulamada tamamla"
-        description="Karşılıklı onay, güvenli teklif görüşmesi ve QR ile yolculuk doğrulaması Leylek TAG mobil deneyiminde bir araya gelir."
+        eyebrow="indir"
+        title="Leylek TAG'i indir"
+        description="Yolculuk paylaşımını şehirde dene. Şehrinde yolculuk paylaşımı için uygulamayı indir."
         primaryHref="/indir#indir-magaza"
-        primaryLabel="Uygulamayı Aç"
+        primaryLabel="Uygulamayı indir"
         secondaryHref="/indir#uygulama-akisi"
-        secondaryLabel="Uygulama Akışını Gör"
-        ctaHint="Web’de bilgilendirici içerik ve özet görünüm; tam akış için uygulamaya geç."
+        secondaryLabel="Uygulama akışını gör"
+        ctaHint="Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır."
       />
 
       <section className="border-y border-white/[0.06] bg-white/[0.02] py-10 sm:py-12">
         <Container>
           <DownloadPageTrust />
+        </Container>
+      </section>
+
+      <section className="py-8 sm:py-10">
+        <Container>
+          <div className="glass-panel rounded-2xl border border-white/[0.08] p-5 sm:p-6">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-200/80">uyum ve süreç</p>
+            <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-300">
+              <p>Leylek TAG yolculuk paylaşımı ve masraf paylaşımı deneyimi sunar.</p>
+              <p>Uygulama içi işlemler, doğrulama ve teklif süreçleri mobil uygulamada tamamlanır.</p>
+              <p>Uygunluk ve kurallar kullanıcı sorumluluğundadır.</p>
+            </div>
+          </div>
         </Container>
       </section>
 
@@ -64,16 +83,18 @@ export default function DownloadPage() {
               <div className="min-w-0">
                 <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">indirme</p>
                 <h2 className="mt-4 text-3xl font-black leading-tight text-white sm:text-4xl">
-                  Mağaza bağlantıları yayına bağlanma sürecinde
+                  Resmi mağaza bağlantıları
                 </h2>
                 <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
-                  Google Play için erken erişim ve açık test süreçleri değerlendirilirken, App Store yayını hazırlık sürecindedir. Bağlantılar hazır olduğunda tek dokunuşla resmi sayfaya yönlendireceğiz; güncel haber için erken erişim formunu kullanabilirsin.
+                  Google Play için erken erişim ve açık test süreçleri değerlendirilirken App Store yayını hazırlık
+                  aşamasındadır. Bağlantılar hazır olduğunda buradan resmi sayfaya yönlendirileceksin; güncel haber
+                  için erken erişim formunu kullanabilirsin.
                 </p>
                 <p className="mt-4 text-sm font-semibold text-emerald-200/90">
                   Beta sürecine dahil olarak geri bildirimle ürünün şekillenmesine katkı verebilirsin.
                 </p>
                 <div className="mt-8 flex w-full max-w-md flex-col gap-4">
-                  <StoreButton eyebrow="hazırlık sürecinde" label="App Store" />
+                  <StoreButton eyebrow="iOS yakında" label="App Store" />
                   <StoreButton eyebrow="erken erişim / açık test" label="Google Play" />
                 </div>
                 <div className="mt-6">
@@ -83,8 +104,8 @@ export default function DownloadPage() {
                 </div>
               </div>
               <div className="grid gap-4">
-                {downloadNotes.map((note) => (
-                  <FeatureCard key={note.title} {...note} eyebrow="uygulama" />
+                {benefitCards.map((card) => (
+                  <FeatureCard key={card.title} {...card} />
                 ))}
               </div>
             </div>
