@@ -25,6 +25,10 @@
  *   https://leylektag.com/support/map
  *   http://localhost:3000/support/map
  *
+ * Analytics Center OAuth dönüşü (allowlist'e ekleyin):
+ *   https://leylektag.com/support/analytics
+ *   http://localhost:3000/support/analytics
+ *
  * Navbar “Google ile giriş” ana sayfa dönüşü (Site URL / root):
  *   http://localhost:3000/
  *   https://leylektag.com/
@@ -50,6 +54,9 @@ export const GROWTH_CENTER_ROUTE_PATH = "/support/growth";
 
 /** Admin operasyon haritası — anonim yoğunluk demo shell (Faz 0). */
 export const OPERATIONS_MAP_ROUTE_PATH = "/support/map";
+
+/** Admin analytics center — read-only demo KPI shell (Faz 1B). */
+export const ANALYTICS_CENTER_ROUTE_PATH = "/support/analytics";
 
 /** Public site origin; NEXT_PUBLIC_SITE_URL doluysa o, değilse tarayıcı (veya SSR fallback localhost). */
 export function getSiteOriginForRedirect(): string {
@@ -109,6 +116,12 @@ export function getGrowthCenterMagicLinkRedirectTo(): string {
 export function getOperationsMapMagicLinkRedirectTo(): string {
   const origin = getSiteOriginForRedirect();
   return `${origin.replace(/\/$/, "")}${OPERATIONS_MAP_ROUTE_PATH}`;
+}
+
+/** Analytics center OAuth + magic link callback. */
+export function getAnalyticsCenterMagicLinkRedirectTo(): string {
+  const origin = getSiteOriginForRedirect();
+  return `${origin.replace(/\/$/, "")}${ANALYTICS_CENTER_ROUTE_PATH}`;
 }
 
 /** Vitrin Google OAuth ana sayfa dönüşü (`${origin}/`). */

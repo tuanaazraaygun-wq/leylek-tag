@@ -8,6 +8,7 @@ import { isEmailListedKycAdmin } from "@/lib/kyc-admin-auth";
 import {
   ADMIN_SUPPORT_ROUTE_PATH,
   getOpsHubMagicLinkRedirectTo,
+  ANALYTICS_CENTER_ROUTE_PATH,
   GROWTH_CENTER_ROUTE_PATH,
   KYC_ADMIN_ROUTE_PATH,
   NOTIFICATION_CENTER_ROUTE_PATH,
@@ -72,6 +73,14 @@ const MODULE_CARDS: ModuleCard[] = [
     href: OPERATIONS_MAP_ROUTE_PATH,
     description: "81 il, demo intelligence ve push taslak paketi.",
     statusLabel: "Faz 0",
+    statusTone: "beta",
+  },
+  {
+    id: "analytics",
+    title: "Analytics Center",
+    href: ANALYTICS_CENTER_ROUTE_PATH,
+    description: "Operasyon ve growth metrikleri için read-only hazırlık ekranı.",
+    statusLabel: "Faz 1B",
     statusTone: "beta",
   },
 ];
