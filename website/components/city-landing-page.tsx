@@ -10,6 +10,7 @@ import {
   getOtherCityLandingLinks,
   type CityLandingContent,
 } from "@/lib/city-landing-content";
+import { getGuideNavLinks } from "@/lib/guide-content";
 
 function CityFaqList({ faq }: { faq: CityLandingContent["faq"] }) {
   return (
@@ -44,6 +45,7 @@ type CityLandingPageProps = {
 
 export function CityLandingPage({ content }: CityLandingPageProps) {
   const otherCities = getOtherCityLandingLinks(content.slug);
+  const guideLinks = getGuideNavLinks();
 
   return (
     <>
@@ -132,6 +134,32 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
           <div className="mt-8">
             <CityFaqList faq={content.faq} />
           </div>
+        </Container>
+      </section>
+
+      <section className="border-t border-white/[0.06] py-12">
+        <Container>
+          <SectionHeading
+            eyebrow="rehberler"
+            title="İlgili rehberler"
+            description={`${content.cityName} için yolculuk paylaşımı ve masraf paylaşımı hakkında bilgilendirici içerikler.`}
+          />
+          <nav className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="İlgili rehberler">
+            {guideLinks.map((guide) => (
+              <Link
+                key={guide.slug}
+                href={guide.href}
+                className="glass-panel flex min-h-[44px] flex-col justify-center rounded-xl border border-white/[0.08] px-4 py-3 transition hover:border-cyan-400/30 hover:text-cyan-50"
+              >
+                <span className="text-[13px] font-semibold leading-snug text-cyan-100/95">{guide.title}</span>
+              </Link>
+            ))}
+          </nav>
+          <p className="mt-4">
+            <Link href="/rehber" className="text-sm font-semibold text-cyan-200/90 hover:text-cyan-50 hover:underline">
+              Tüm rehberler →
+            </Link>
+          </p>
         </Container>
       </section>
 
