@@ -6,7 +6,18 @@ import { PageHero } from "@/components/page-hero";
 import { SectionHeading } from "@/components/section-heading";
 
 export const metadata: Metadata = {
-  title: "Şehirler Arası Yol Paylaşımı",
+  title: "Şehirler Arası",
+  description:
+    "Planlı uzun yol yolculuk paylaşımı ve masraf paylaşımı. Leylek TAG şehirler arası akışı pilot kapsamda kademeli genişletilir.",
+  alternates: {
+    canonical: "/sehirler-arasi",
+  },
+  openGraph: {
+    title: "Şehirler Arası Yolculuk Paylaşımı | Leylek TAG",
+    description:
+      "Planlı uzun yol yolculuk paylaşımı ve masraf paylaşımı. Leylek TAG şehirler arası akışı pilot kapsamda kademeli genişletilir.",
+    url: "/sehirler-arasi",
+  },
 };
 
 export default function IntercityPage() {

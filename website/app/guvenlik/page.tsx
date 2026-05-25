@@ -13,9 +13,13 @@ const PAGE_DESCRIPTION =
 export const metadata: Metadata = {
   title: "Güvenlik",
   description: PAGE_DESCRIPTION,
+  alternates: {
+    canonical: "/guvenlik",
+  },
   openGraph: {
     title: PAGE_TITLE,
     description: PAGE_DESCRIPTION,
+    url: "/guvenlik",
   },
 };
 

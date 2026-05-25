@@ -8,6 +8,17 @@ import { PageHero } from "@/components/page-hero";
 
 export const metadata: Metadata = {
   title: "Şehir İçi",
+  description:
+    "Şehir içi yolculuk paylaşımı ve masraf paylaşımı. Rota odaklı eşleşme, karşılıklı onay ve QR doğrulama Leylek TAG mobil uygulamasında.",
+  alternates: {
+    canonical: "/sehir-ici",
+  },
+  openGraph: {
+    title: "Şehir İçi Yolculuk Paylaşımı | Leylek TAG",
+    description:
+      "Şehir içi yolculuk paylaşımı ve masraf paylaşımı. Rota odaklı eşleşme, karşılıklı onay ve QR doğrulama Leylek TAG mobil uygulamasında.",
+    url: "/sehir-ici",
+  },
 };
 
 const steps = [

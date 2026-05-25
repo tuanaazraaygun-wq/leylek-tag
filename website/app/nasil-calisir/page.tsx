@@ -13,9 +13,13 @@ const PAGE_DESCRIPTION =
 export const metadata: Metadata = {
   title: "Nasıl Çalışır",
   description: PAGE_DESCRIPTION,
+  alternates: {
+    canonical: "/nasil-calisir",
+  },
   openGraph: {
     title: PAGE_TITLE,
     description: PAGE_DESCRIPTION,
+    url: "/nasil-calisir",
   },
 };
 

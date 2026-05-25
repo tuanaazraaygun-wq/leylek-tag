@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { ActivityFeed } from "@/components/activity-feed";
 import { HomeAppScopeSection } from "@/components/home-app-scope-section";
 import { HomeTrustKycSection } from "@/components/home-trust-kyc-section";
@@ -21,6 +22,21 @@ import { HeroShowcaseStack } from "@/components/hero-showcase-stack";
 import { TrustArchitectureShowcase } from "@/components/trust-architecture-showcase";
 import { HomeFourSteps } from "@/components/home-four-steps";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
+
+const HOME_DESCRIPTION =
+  "Leylek TAG ile yolculuk paylaşımı ve masraf paylaşımı. Karşılıklı onay, QR doğrulama; teklif ve eşleşme mobil uygulamada tamamlanır.";
+
+export const metadata: Metadata = {
+  description: HOME_DESCRIPTION,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Leylek TAG | Güvenli Yolculuk Paylaşımı Topluluğu",
+    description: HOME_DESCRIPTION,
+    url: "/",
+  },
+};
 
 function NasipPlayGlyph() {
   return (

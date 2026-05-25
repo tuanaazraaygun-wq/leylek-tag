@@ -11,9 +11,18 @@ import { PageHero } from "@/components/page-hero";
 import { StoreButton } from "@/components/store-button";
 
 export const metadata: Metadata = {
-  title: "Leylek TAG'i İndir | Yolculuk Paylaşımı",
+  title: "İndir",
   description:
     "Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları Leylek TAG mobil uygulamasında tamamlanır.",
+  alternates: {
+    canonical: "/indir",
+  },
+  openGraph: {
+    title: "Leylek TAG'i İndir | Yolculuk Paylaşımı",
+    description:
+      "Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları Leylek TAG mobil uygulamasında tamamlanır.",
+    url: "/indir",
+  },
 };
 
 const benefitCards = [

@@ -38,16 +38,16 @@ const legalResourceLinks = [
 ] as const;
 
 export const metadata: Metadata = {
-  title: "Leylek TAG Destek",
+  title: "Destek",
   description:
-    "Leylek TAG kullanıcı destek, hesap, güvenlik, QR doğrulama ve yol paylaşımı yardım sayfası.",
+    "Leylek TAG kullanıcı destek, hesap, güvenlik, QR doğrulama ve yolculuk paylaşımı yardım sayfası.",
   alternates: {
     canonical: "/support",
   },
   openGraph: {
     title: "Leylek TAG Destek",
     description:
-      "Leylek TAG kullanıcı destek, hesap, güvenlik, QR doğrulama ve yol paylaşımı yardım sayfası.",
+      "Leylek TAG kullanıcı destek, hesap, güvenlik, QR doğrulama ve yolculuk paylaşımı yardım sayfası.",
     url: "/support",
   },
 };
