@@ -1,12 +1,13 @@
 import Link from "next/link";
 
+import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
-import { CtaBand } from "@/components/cta-band";
 import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 import { SectionHeading } from "@/components/section-heading";
 import {
   CITY_LANDING_HOW_IT_WORKS,
+  getOtherCityLandingLinks,
   type CityLandingContent,
 } from "@/lib/city-landing-content";
 
@@ -42,6 +43,8 @@ type CityLandingPageProps = {
 };
 
 export function CityLandingPage({ content }: CityLandingPageProps) {
+  const otherCities = getOtherCityLandingLinks(content.slug);
+
   return (
     <>
       <PageHero
@@ -52,7 +55,7 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
         primaryLabel="Uygulamayı indir"
         secondaryHref="/nasil-calisir"
         secondaryLabel="Nasıl çalışır?"
-        ctaHint="Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır."
+        ctaHint="Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır."
       />
 
       <section className="border-y border-white/[0.06] bg-white/[0.02] py-10 sm:py-12">
@@ -132,7 +135,59 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
         </Container>
       </section>
 
-      <CtaBand />
+      <section className="border-t border-white/[0.06] py-12">
+        <Container>
+          <SectionHeading
+            eyebrow="diğer şehirler"
+            title="Diğer şehirlerde Leylek TAG"
+            description="Aynı yöne giden yolcu ve sürücüler için yolculuk paylaşımı ve masraf paylaşımı — diğer şehir sayfalarına göz at."
+          />
+          <nav
+            className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+            aria-label="Diğer şehir landing sayfaları"
+          >
+            {otherCities.map((city) => (
+              <Link
+                key={city.slug}
+                href={city.href}
+                className="glass-panel flex min-h-[44px] items-center justify-center rounded-xl border border-white/[0.08] px-3 py-3 text-center text-[13px] font-semibold text-cyan-100/95 transition hover:border-cyan-400/30 hover:text-cyan-50"
+              >
+                {city.cityName}
+              </Link>
+            ))}
+          </nav>
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container>
+          <div className="glass-panel relative overflow-hidden rounded-[2rem] border border-cyan-400/[0.14] p-8 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.08),0_28px_80px_-44px_rgba(0,198,255,0.42)] ring-1 ring-cyan-400/[0.08] sm:p-10">
+            <span
+              className="pointer-events-none absolute inset-px rounded-[calc(2rem-1px)] bg-[linear-gradient(135deg,rgba(34,211,238,0.09)_0%,transparent_45%,rgba(99,102,241,0.06)_100%)] opacity-[0.95]"
+              aria-hidden
+            />
+            <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/82">yolculuk paylaşımı</p>
+                <h2 className="mt-4 text-3xl font-black tracking-tight text-white">
+                  Yolculuk paylaşımını şehirde dene
+                </h2>
+                <p className="mt-4 max-w-2xl text-[15px] leading-[1.75] text-slate-300/95">
+                  {content.cityName} içinde aynı yöne giden yolcu ve sürücüler için karşılıklı teklif, onay ve QR
+                  doğrulama akışı. Masraf paylaşımı taraflar arasında netleşir; platform ticari taşımacılık hizmeti
+                  sunmaz.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                <ButtonLink href="/indir">Uygulamayı indir</ButtonLink>
+                <ButtonLink href="/nasil-calisir" variant="secondary">
+                  Nasıl çalışır?
+                </ButtonLink>
+              </div>
+            </div>
+          </div>
+        </Container>
+      </section>
 
       <section className="pb-10 pt-2">
         <Container>

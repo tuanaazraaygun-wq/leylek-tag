@@ -513,3 +513,18 @@ export function getCityLandingBySlug(slug: string): CityLandingContent | null {
   if (!isCityLandingSlug(slug)) return null;
   return CITY_LANDING_CONTENT[slug];
 }
+
+export type CityLandingLink = {
+  slug: CityLandingSlug;
+  cityName: string;
+  href: string;
+};
+
+/** Aktif şehir hariç diğer landing sayfaları — iç linkleme için. */
+export function getOtherCityLandingLinks(excludeSlug: string): CityLandingLink[] {
+  return CITY_LANDING_SLUGS.filter((slug) => slug !== excludeSlug).map((slug) => ({
+    slug,
+    cityName: CITY_LANDING_CONTENT[slug].cityName,
+    href: `/sehir/${slug}`,
+  }));
+}
