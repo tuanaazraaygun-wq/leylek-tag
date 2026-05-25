@@ -528,3 +528,20 @@ export function getOtherCityLandingLinks(excludeSlug: string): CityLandingLink[]
     href: `/sehir/${slug}`,
   }));
 }
+
+export type CityLandingHubCard = CityLandingLink & {
+  summary: string;
+};
+
+/** Tüm şehir landing sayfaları — /sehirler hub için. */
+export function getAllCityLandingLinks(): CityLandingHubCard[] {
+  return CITY_LANDING_SLUGS.map((slug) => {
+    const content = CITY_LANDING_CONTENT[slug];
+    return {
+      slug,
+      cityName: content.cityName,
+      href: `/sehir/${slug}`,
+      summary: content.heroSubtitle,
+    };
+  });
+}
