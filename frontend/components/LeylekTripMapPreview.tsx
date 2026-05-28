@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, Image, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Dimensions, Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
 import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
+import { MapDestinationFlagPin, MapEntityMarkerImage, MapPickupPin } from '../lib/mapMarkerChrome';
 
 type Coord = { latitude: number; longitude: number };
 
@@ -14,7 +15,6 @@ type LeylekTripMapPreviewProps = {
   deviceLocation?: Coord | null;
   routePolyline?: string | null;
   sessionStatus?: string | null;
-  passengerGender?: 'female' | 'male' | null;
   passengerUserId?: string | null;
   driverVehicleKind?: 'car' | 'motorcycle' | null;
   style?: StyleProp<ViewStyle>;
@@ -74,15 +74,6 @@ function decodePolyline(encoded?: string | null): Coord[] {
   return coordinates.filter(isCoord);
 }
 
-function MarkerBubble({ label, color, icon }: { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }) {
-  return (
-    <View style={[styles.markerBubble, { borderColor: color }]}>
-      <Ionicons name={icon} size={15} color={color} />
-      <Text style={[styles.markerText, { color }]}>{label}</Text>
-    </View>
-  );
-}
-
 export default function LeylekTripMapPreview({
   pickup,
   dropoff,
@@ -91,7 +82,6 @@ export default function LeylekTripMapPreview({
   deviceLocation,
   routePolyline,
   sessionStatus,
-  passengerGender,
   passengerUserId,
   driverVehicleKind,
   style,
@@ -193,10 +183,10 @@ export default function LeylekTripMapPreview({
     return () => clearTimeout(t);
   }, [fitCoords, mapReady]);
 
-  const polylineStroke = '#047857';
+  const polylineStroke = '#22D3EE';
   const driverKind: 'car' | 'motorcycle' = driverVehicleKind === 'motorcycle' ? 'motorcycle' : 'car';
   const driverMarkerImage = getDriverMarkerImage(driverKind);
-  const passengerMarkerImage = getPassengerMarkerImage(passengerGender, passengerUserId || null);
+  const passengerMarkerImage = getPassengerMarkerImage();
   const driverMarkerPx = driverKind === 'motorcycle' ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar;
   const passengerMarkerPx = MARKER_PIXEL.passenger;
 
@@ -230,18 +220,18 @@ export default function LeylekTripMapPreview({
       >
         {isCoord(pickup) ? (
           <Marker coordinate={pickup} anchor={{ x: 0.5, y: 1 }}>
-            <MarkerBubble label="Alış" color="#2563EB" icon="location" />
+            <MapPickupPin compact />
           </Marker>
         ) : null}
         {isCoord(dropoff) ? (
-          <Marker coordinate={dropoff} anchor={{ x: 0.5, y: 1 }}>
-            <MarkerBubble label="Varış" color="#16A34A" icon="flag" />
+          <Marker coordinate={dropoff} anchor={{ x: 0.15, y: 0.95 }}>
+            <MapDestinationFlagPin compact />
           </Marker>
         ) : null}
         {isCoord(driverLocation) ? (
           <Marker coordinate={driverLocation} anchor={{ x: 0.5, y: 1 }}>
             <View style={styles.personMarkerWrap}>
-              <Image source={driverMarkerImage} style={{ width: driverMarkerPx, height: driverMarkerPx }} resizeMode="contain" />
+              <MapEntityMarkerImage source={driverMarkerImage} size={driverMarkerPx} />
               <Text style={styles.personMarkerLabel}>Sürücü</Text>
             </View>
           </Marker>
@@ -249,7 +239,7 @@ export default function LeylekTripMapPreview({
         {isCoord(passengerLocation) ? (
           <Marker coordinate={passengerLocation} anchor={{ x: 0.5, y: 1 }}>
             <View style={styles.personMarkerWrap}>
-              <Image source={passengerMarkerImage} style={{ width: passengerMarkerPx, height: passengerMarkerPx }} resizeMode="contain" />
+              <MapEntityMarkerImage source={passengerMarkerImage} size={passengerMarkerPx} />
               <Text style={styles.personMarkerLabel}>Yolcu</Text>
             </View>
           </Marker>
@@ -306,9 +296,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderRadius: 999,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     paddingHorizontal: 8,
     paddingVertical: 5,
   },

@@ -20,15 +20,19 @@ import {
   Animated,
   Share,
   Modal,
-  Image,
   ScrollView,
   BackHandler,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { getPassengerMarkerImage, getDriverMarkerImage } from '../lib/mapNavMarkers';
+import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { API_BASE_URL } from '../lib/backendConfig';
+import { callCheck } from '../lib/callCheck';
+import { displayFirstName } from '../lib/displayName';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -49,11 +53,6 @@ if (Platform.OS !== 'web') {
     console.log('⚠️ react-native-maps yüklenemedi:', e);
   }
 }
-
-import { API_BASE_URL } from '../lib/backendConfig';
-import { callCheck } from '../lib/callCheck';
-import { displayFirstName } from '../lib/displayName';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const API_URL = API_BASE_URL;
 
@@ -118,8 +117,6 @@ interface Props {
   onMatch: (driverData: any) => void;
   /** Yolcu araç/motor tercihi — yakındaki sürücü sayısı dispatch ile aynı filtreyi kullanır */
   passengerVehicleKind?: 'car' | 'motorcycle';
-  /** Harita: yolcu kendi pini (kadın/erkek PNG) */
-  passengerGender?: 'female' | 'male' | null;
   selfUserId?: string | null;
 }
 
@@ -134,7 +131,6 @@ export default function PassengerWaitingScreen({
   onPressBack,
   onMatch,
   passengerVehicleKind = 'car',
-  passengerGender = null,
   selfUserId = null,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -386,7 +382,7 @@ export default function PassengerWaitingScreen({
               strokeWidth={1}
             />
             
-            {/* Yolcu — kadın/erkek PNG (sürücü ekranındaki yolcu pini ile aynı kaynak) */}
+            {/* Yolcu konumu */}
             <Marker
               coordinate={userLocation}
               anchor={{ x: 0.5, y: 1 }}
@@ -395,13 +391,9 @@ export default function PassengerWaitingScreen({
               zIndex={5000}
             >
               <MarkerPinWrap>
-                <Image
-                  source={getPassengerMarkerImage(passengerGender ?? null, selfUserId)}
-                  style={{
-                    width: WAIT_MAP_PIN.passenger,
-                    height: WAIT_MAP_PIN.passenger,
-                  }}
-                  resizeMode="contain"
+                <MapEntityMarkerImage
+                  source={getPassengerMarkerImage()}
+                  size={WAIT_MAP_PIN.passenger}
                 />
               </MarkerPinWrap>
             </Marker>
@@ -415,9 +407,7 @@ export default function PassengerWaitingScreen({
                 tracksViewChanges={waitingMapTracks}
               >
                 <MarkerPinWrap>
-                  <View style={styles.destinationMarker}>
-                    <Ionicons name="flag" size={13} color="rgba(243,248,255,0.94)" />
-                  </View>
+                  <MapDestinationFlagPin compact />
                 </MarkerPinWrap>
               </Marker>
             ) : null}
@@ -440,7 +430,7 @@ export default function PassengerWaitingScreen({
                   zIndex={4000 + (index % 40)}
                 >
                   <MarkerPinWrap>
-                    <Image source={src} style={{ width: px, height: px }} resizeMode="contain" />
+                    <MapEntityMarkerImage source={src} size={px} />
                   </MarkerPinWrap>
                 </Marker>
               );

@@ -120,7 +120,7 @@ import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
-import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
+import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import { playMatchChimeSound, playDriverNewOfferLuxuryTone, unloadDriverNewOfferLuxuryTone } from '../utils/sound';
 import {
@@ -948,7 +948,6 @@ export default function App() {
   const [cities, setCities] = useState<string[]>([]);
   const [showCityPicker, setShowCityPicker] = useState(false);
   const [citySearchQuery, setCitySearchQuery] = useState('');
-  const [registerGender, setRegisterGender] = useState<'female' | 'male' | null>(null);
 
   const filteredCities = useMemo(() => {
     const q = citySearchQuery.trim().toLocaleLowerCase('tr-TR');
@@ -2488,8 +2487,8 @@ export default function App() {
             setScreen('set-pin');
           }
         } else {
-          // Yeni kullanıcı - Eğer isim, şehir ve cinsiyet zaten girilmişse kayıt yap
-          if (name && selectedCity && registerGender) {
+          // Yeni kullanıcı - isim ve şehir hazırsa kayıt yap
+          if (name && selectedCity) {
             try {
               const currentDeviceId = deviceId || await getOrCreateDeviceId();
               const registerResponse = await fetch(`${API_URL}/auth/register`, {
@@ -2501,7 +2500,6 @@ export default function App() {
                   city: selectedCity,
                   role: 'passenger',
                   device_id: currentDeviceId,
-                  gender: registerGender,
                 })
               });
               
@@ -2835,7 +2833,7 @@ export default function App() {
     }
 
     const { columnW: regCol, isShort: regShort, isCompact: regCompact } = premiumAuthDims;
-    const canRegisterSubmit = !!(firstName && lastName && registerGender && selectedCity && phone.length >= 10);
+    const canRegisterSubmit = !!(firstName && lastName && selectedCity && phone.length >= 10);
 
     return (
       <>
@@ -2880,54 +2878,6 @@ export default function App() {
                   setLastName(t);
                 }}
               />
-            </View>
-
-            <Text style={pap.phoneLabel}>Cinsiyet</Text>
-            <View style={pap.genderRowPremium}>
-              <TouchableOpacity
-                style={[pap.genderChipPremium, registerGender === 'female' && pap.genderChipPremiumActive]}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setRegisterGender('female');
-                }}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityState={{ selected: registerGender === 'female' }}
-              >
-                <Ionicons
-                  name="woman-outline"
-                  size={22}
-                  color={registerGender === 'female' ? '#F8FAFC' : PREMIUM_AUTH_CYAN}
-                />
-                <Text
-                  style={[
-                    pap.genderChipLabelPremium,
-                    registerGender === 'female' && pap.genderChipLabelPremiumActive,
-                  ]}
-                >
-                  Kadın
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[pap.genderChipPremium, registerGender === 'male' && pap.genderChipPremiumActive]}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setRegisterGender('male');
-                }}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityState={{ selected: registerGender === 'male' }}
-              >
-                <Ionicons name="man-outline" size={22} color={registerGender === 'male' ? '#F8FAFC' : PREMIUM_AUTH_CYAN} />
-                <Text
-                  style={[
-                    pap.genderChipLabelPremium,
-                    registerGender === 'male' && pap.genderChipLabelPremiumActive,
-                  ]}
-                >
-                  Erkek
-                </Text>
-              </TouchableOpacity>
             </View>
 
             <Text style={pap.phoneLabel}>Yaşadığınız şehir</Text>
@@ -2985,7 +2935,7 @@ export default function App() {
               busy={loading}
               onPress={async () => {
                 void tapButtonHaptic();
-                if (firstName && lastName && registerGender && selectedCity && phone.length >= 10) {
+                if (firstName && lastName && selectedCity && phone.length >= 10) {
                   setName(`${firstName} ${lastName}`);
                   setLoading(true);
                   try {
@@ -3198,13 +3148,11 @@ export default function App() {
               last_name: lastName,
               city: selectedCity,
               device_id: currentDeviceId,
-              gender: registerGender || undefined,
             })
           });
           const setPinData = await setPinResponse.json();
           if (setPinData.success) {
-            const nextUser =
-              registerGender && user ? ({ ...user, gender: registerGender } as User) : user;
+            const nextUser = user;
             if (nextUser) {
               await saveUser(nextUser);
               console.log('USER_SAVED', nextUser);
@@ -3233,7 +3181,6 @@ export default function App() {
             city: selectedCity,
             pin,
             device_id: currentDeviceId,
-            gender: registerGender || undefined,
           })
         });
         const registerData = await registerResponse.json();
@@ -11853,7 +11800,6 @@ function PassengerDashboard({
           tagId={activeTag.id}
           offeredPrice={activeTag.final_price || activeTag.offered_price || 0}
           passengerVehicleKind={activePassengerMapVehicleKind}
-          passengerGender={parseGender(user?.gender)}
           selfUserId={user?.id}
           onPressBack={handleCancelTag}
           onCancel={handleCancelTag}
@@ -11896,7 +11842,6 @@ function PassengerDashboard({
               driverLocations={offerDriverLocations}
               height={SCREEN_HEIGHT * 0.32}
               nearbyDriverCount={nearbyDriverCount}
-              selfGender={parseGender(user?.gender)}
               selfUserId={user?.id}
             />
           </View>
@@ -12154,7 +12099,6 @@ function PassengerDashboard({
                       : 'car'
                   }
                   peerMapPinScale={1.04}
-                  selfGender={parseGender(user?.gender)}
                   userName={user.name}
                   otherUserName={displayFirstName(activeTag?.driver_name, 'Şoför')}
                   otherUserId={activeTag?.driver_id}
@@ -17419,7 +17363,6 @@ function DriverDashboard({
                 : 'car'
             }
             driverSelfVehicleKind={driverVehicleKind}
-            otherPassengerGender={parseGender(activeTag?.passenger_gender)}
             passengerPaymentMethod={normalizePassengerPaymentMethod(activeTag?.passenger_payment_method) ?? undefined}
             isDriver={true}
             userName={user.name}

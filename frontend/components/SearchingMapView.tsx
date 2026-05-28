@@ -9,11 +9,12 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Dimensions, Image } from 'react-native';
+import { View, Text, StyleSheet, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
 import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
+import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -65,8 +66,6 @@ interface SearchingMapViewProps {
   driverLocations: DriverLocation[];
   height?: number;
   nearbyDriverCount?: number; // 20 km içindeki toplam sürücü sayısı
-  /** index.tsx’ten — PassengerWaitingScreen / LiveMapView ile aynı yolcu PNG mantığı */
-  selfGender?: 'female' | 'male' | null;
   selfUserId?: string | null;
 }
 
@@ -76,7 +75,6 @@ export default function SearchingMapView({
   driverLocations,
   height = SCREEN_HEIGHT * 0.35,
   nearbyDriverCount = 0,
-  selfGender = null,
   selfUserId = null,
 }: SearchingMapViewProps) {
   const mapRef = useRef<any>(null);
@@ -212,13 +210,9 @@ export default function SearchingMapView({
             zIndex={5000}
           >
             <MarkerPinWrap>
-              <Image
-                source={getPassengerMarkerImage(selfGender ?? null, selfUserId)}
-                style={{
-                  width: MARKER_PIXEL.passenger,
-                  height: MARKER_PIXEL.passenger,
-                }}
-                resizeMode="contain"
+              <MapEntityMarkerImage
+                source={getPassengerMarkerImage()}
+                size={MARKER_PIXEL.passenger}
               />
             </MarkerPinWrap>
           </Marker>
@@ -231,13 +225,7 @@ export default function SearchingMapView({
             title="Hedef"
             anchor={{ x: 0.15, y: 0.95 }}
           >
-            <View style={styles.flagMarker}>
-              <View style={styles.flagPole} />
-              <View style={styles.flagBody}>
-                <Ionicons name="flag" size={16} color="#FFF" />
-              </View>
-              <View style={styles.flagBase} />
-            </View>
+            <MapDestinationFlagPin />
           </Marker>
         )}
 
@@ -259,7 +247,7 @@ export default function SearchingMapView({
             >
               <View style={{ alignItems: 'center' }} collapsable={false}>
               <MarkerPinWrap>
-                <Image source={src} style={{ width: px, height: px }} resizeMode="contain" />
+                <MapEntityMarkerImage source={src} size={px} />
               </MarkerPinWrap>
               {driver.price ? (
                 <View style={styles.carPriceTag} pointerEvents="none">

@@ -13,7 +13,6 @@ import {
   Easing,
   Modal,
   Image,
-  ImageBackground,
   InteractionManager,
   ActivityIndicator,
   type TextStyle,
@@ -30,13 +29,13 @@ import {
   ROUTE_LOADING_UI,
   ROUTE_UNAVAILABLE_REVEAL_DELAY_MS,
 } from '../lib/routeLoadingUiConstants';
-import type { PassengerGender } from '../lib/passengerFieldHelpers';
 import {
   getDriverMarkerImage,
   getPassengerMarkerImage,
   getDriverNavRotationOffsetDeg,
   MARKER_PIXEL,
 } from '../lib/mapNavMarkers';
+import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import InRideSaferForceEndModal from './InRideSaferForceEndModal';
@@ -74,22 +73,9 @@ function TripMapMarkerImage({
 }: {
   source: number;
   scale?: number;
-  /** NAV_MARKER_IMG / MARKER_PIXEL ile APK ile aynı ölçü */
   size?: number;
 }) {
-  return (
-    <View
-      collapsable={false}
-      pointerEvents="none"
-      style={{
-        alignItems: 'center',
-        justifyContent: 'center',
-        transform: scale !== 1 ? [{ scale }] : undefined,
-      }}
-    >
-      <Image source={source} style={{ width: size, height: size }} resizeMode="contain" />
-    </View>
-  );
+  return <MapEntityMarkerImage source={source} size={size} scale={scale} />;
 }
 
 /** Sürücü Yolcuya Git: rota bearing ile dönen neon yön oku (asset yok, yalnız bu Marker). */
@@ -282,9 +268,6 @@ interface LiveMapViewProps {
   onOpenLeylekZekaSupport?: () => void;
   /** Karşı taraf marker ölçümü (index ile uyumlu; varsayılan 1) */
   peerMapPinScale?: number;
-  selfGender?: PassengerGender | null;
-  /** Sürücü haritasında yolcu cinsiyeti — marker ikonu */
-  otherPassengerGender?: PassengerGender | null;
   /** Sürücü: `otherLocation` yolcu canlı GPS değil, tag alım (pickup) yedeğinden geliyorsa */
   otherLocationFromPickupFallback?: boolean;
   /** Biniş QR doğrulandı — yolcu pini gizlenir, üst metin güncellenir; matched iken GPS ile hedef fazına geçiş engellenir */
@@ -2238,8 +2221,6 @@ export default function LiveMapView({
   trustRequestLabel,
   onOpenLeylekZekaSupport,
   peerMapPinScale = 1,
-  selfGender = null,
-  otherPassengerGender = null,
   otherLocationFromPickupFallback = false,
   boardingConfirmed = false,
   onDriverEnteredDestinationNavigation,
@@ -5982,7 +5963,7 @@ export default function LiveMapView({
                 source={
                   isDriver
                     ? getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')
-                    : getPassengerMarkerImage(selfGender ?? null, userId ?? null)
+                    : getPassengerMarkerImage()
                 }
                 size={
                   isDriver
@@ -6007,7 +5988,7 @@ export default function LiveMapView({
               <TripMapMarkerImage
                 source={
                   isDriver
-                    ? getPassengerMarkerImage(otherPassengerGender ?? null, otherUserId ?? null)
+                    ? getPassengerMarkerImage()
                     : getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')
                 }
                 scale={peerMapPinScale}
@@ -6030,13 +6011,7 @@ export default function LiveMapView({
               tracksViewChanges={pinTracks}
               zIndex={3000}
             >
-              <View style={styles.proFlagMarker} collapsable={false}>
-                <View style={styles.proFlagPole} />
-                <View style={styles.proFlagBody}>
-                  <Ionicons name="flag" size={14} color="rgba(243,248,255,0.94)" />
-                </View>
-                <View style={styles.proFlagBase} />
-              </View>
+              <MapDestinationFlagPin />
             </Marker>
           )}
         </MapView>
@@ -6150,7 +6125,7 @@ export default function LiveMapView({
             <View style={styles.driverRidePassengerRow}>
               <View style={styles.driverRidePassengerAvatarWrap}>
                 <TripMapMarkerImage
-                  source={getPassengerMarkerImage(otherPassengerGender ?? null, otherUserId ?? null)}
+                  source={getPassengerMarkerImage()}
                   size={40}
                 />
               </View>
