@@ -103,6 +103,21 @@ export default function SettingsHubScreen() {
           </Pressable>
         </View>
 
+        {user?.role === 'driver' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Ödeme bilgileri</Text>
+            <Pressable style={styles.row} onPress={() => router.push('/driver-bank-accounts' as any)}>
+              <View style={styles.rowLeft}>
+                <Ionicons name="card-outline" size={20} color="#22D3EE" />
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowText}>IBAN hesabınızı yönetin</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(148, 163, 184, 0.65)" />
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Destek</Text>
           <Text style={styles.company}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
@@ -232,6 +247,7 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(30, 58, 95, 0.55)',
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1, paddingRight: 8 },
+  rowTextCol: { flex: 1, flexShrink: 1 },
   rowText: { color: 'rgba(243, 248, 255, 0.93)', fontSize: 14, fontWeight: '600', flexShrink: 1 },
   dangerText: { color: 'rgba(248, 113, 113, 0.95)' },
 });
