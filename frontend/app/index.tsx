@@ -989,28 +989,13 @@ export default function App() {
   const handleOpenDriverProfile = useCallback(() => {
     console.log('DRIVER_PROFILE_OPEN_START');
     void playTapSound();
-    const uid = user?.id != null ? String(user.id).trim() : '';
-    const openHub = () => router.push('/settings-hub' as never);
     try {
-      if (uid) {
-        router.push(`/muhabbet-profile/${encodeURIComponent(uid)}` as never);
-        return;
-      }
-      openHub();
+      router.push('/settings-hub' as never);
     } catch (e) {
       console.warn('DRIVER_PROFILE_OPEN_FAILED', e);
-      if (uid) {
-        try {
-          openHub();
-        } catch (e2) {
-          console.warn('DRIVER_PROFILE_OPEN_FAILED', e2);
-          appAlert('Profil', 'Profil ekranı açılamadı. Lütfen tekrar deneyin.');
-        }
-      } else {
-        appAlert('Profil', 'Profil bilgisi yüklenemedi.');
-      }
+      appAlert('Ayarlar', 'Ayarlar ekranı açılamadı. Lütfen tekrar deneyin.');
     }
-  }, [playTapSound, router, user?.id]);
+  }, [playTapSound, router]);
   
   // KYC Status (Sürücü başvuru durumu)
   const [kycStatus, setKycStatus] = useState<{status: string; submitted_at: string | null} | null>(null);
