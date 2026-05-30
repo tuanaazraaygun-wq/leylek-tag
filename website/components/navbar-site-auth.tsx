@@ -1,35 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SiteAuthLoginTrigger, SiteAuthPanel } from "@/components/site-auth-panel";
 import { useSiteAuth } from "@/components/site-auth-provider";
-
-function GoogleNavbarGlyph({ className = "h-[18px] w-[18px]" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden>
-      <path
-        fill="#4285F4"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-      />
-    </svg>
-  );
-}
 
 /** Üst bar: giriş / hesap menüsü — tüm kırılımlarda görünür. */
 export function NavbarSiteAuthTop() {
-  const { authReady, configured, session, navLabel, oauthBusy, signInWithGoogle, signOut } =
-    useSiteAuth();
+  const { authReady, configured, session, navLabel, oauthBusy, signOut } = useSiteAuth();
+  const [panelOpen, setPanelOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -56,31 +34,21 @@ export function NavbarSiteAuthTop() {
       <div
         aria-busy="true"
         aria-label="Oturum yükleniyor"
-        className="h-11 min-w-[6.5rem] shrink-0 rounded-xl border border-white/[0.07] bg-white/[0.03]"
+        className="h-11 min-w-[5.5rem] shrink-0 rounded-full border border-white/[0.07] bg-white/[0.03]"
       />
     );
   }
 
   if (!session) {
     return (
-      <button
-        type="button"
-        onClick={() => void signInWithGoogle()}
-        disabled={oauthBusy}
-        aria-busy={oauthBusy}
-        className="group relative flex h-11 min-h-[44px] shrink-0 touch-manipulation items-center gap-2 overflow-hidden rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.07] to-white/[0.03] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition hover:border-white/[0.16] hover:from-white/[0.09] hover:to-white/[0.04] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:min-w-[7.25rem] sm:px-3.5"
-      >
-        <GoogleNavbarGlyph className="relative z-[1] shrink-0 opacity-95" />
-        <span className="relative z-[1] whitespace-nowrap text-[13px] font-semibold tracking-tight text-white">
-          Giriş
-        </span>
-        {oauthBusy ? (
-          <span
-            aria-hidden
-            className="relative z-[1] h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/25 border-t-white/80"
-          />
-        ) : null}
-      </button>
+      <>
+        <SiteAuthLoginTrigger
+          onClick={() => setPanelOpen(true)}
+          disabled={oauthBusy}
+          busy={oauthBusy}
+        />
+        <SiteAuthPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+      </>
     );
   }
 
@@ -91,7 +59,7 @@ export function NavbarSiteAuthTop() {
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((v) => !v)}
-        className="relative flex h-11 max-w-[148px] min-h-[44px] touch-manipulation items-center gap-1.5 overflow-hidden rounded-xl border border-white/[0.1] bg-white/[0.05] pl-3 pr-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/[0.16] sm:max-w-[200px]"
+        className="relative flex h-11 max-w-[148px] min-h-[44px] touch-manipulation items-center gap-1.5 overflow-hidden rounded-full border border-white/[0.1] bg-white/[0.05] pl-3 pr-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl transition hover:border-white/[0.16] sm:max-w-[200px]"
       >
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white">{navLabel}</span>
         <svg
@@ -130,15 +98,8 @@ export function NavbarSiteAuthTop() {
 
 /** Mobil drawer içi hesap alanı */
 export function NavbarSiteAuthDrawer({ onNavigate }: { onNavigate?: () => void }) {
-  const {
-    authReady,
-    configured,
-    session,
-    navLabel,
-    oauthBusy,
-    signInWithGoogle,
-    signOut,
-  } = useSiteAuth();
+  const { authReady, configured, session, navLabel, oauthBusy, signOut } = useSiteAuth();
+  const [panelOpen, setPanelOpen] = useState(false);
 
   if (!configured) return null;
 
@@ -157,20 +118,18 @@ export function NavbarSiteAuthDrawer({ onNavigate }: { onNavigate?: () => void }
 
   if (!session) {
     return (
-      <button
-        type="button"
-        onClick={() => void signInWithGoogle()}
-        disabled={oauthBusy}
-        className="group relative flex min-h-[52px] w-full touch-manipulation flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.07] to-white/[0.03] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md transition hover:border-white/[0.15] disabled:opacity-45"
-      >
-        <span className="flex items-center gap-2">
-          <GoogleNavbarGlyph className="h-5 w-5 shrink-0" />
-          <span className="text-[15px] font-semibold text-white">Giriş</span>
-        </span>
-        <span className="text-[11px] font-medium text-slate-500">
-          {oauthBusy ? "Yönlendiriliyor…" : "Google hesabınızla devam edin"}
-        </span>
-      </button>
+      <>
+        <SiteAuthLoginTrigger
+          className="w-full"
+          onClick={() => {
+            setPanelOpen(true);
+            onNavigate?.();
+          }}
+          disabled={oauthBusy}
+          busy={oauthBusy}
+        />
+        <SiteAuthPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+      </>
     );
   }
 
