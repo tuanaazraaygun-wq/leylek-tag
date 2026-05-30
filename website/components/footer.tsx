@@ -148,7 +148,7 @@ export function Footer() {
                 © {currentYear} Leylek TAG
               </p>
               <p className="max-w-xl text-[12px] font-normal leading-[1.76] text-slate-500">
-                Beta süreci · Topluluk odaklı · Web bilgi vitrini · Uygulamada süreç
+                Resmi mağazalar · Güvenli yolculuk · Topluluk odaklı · Web bilgi vitrini
               </p>
               <p className="max-w-xl text-[11px] font-normal leading-[1.72] text-slate-500/95">
                 Leylek TAG taksi hizmeti değildir; topluluk temelli yolculuk ve masraf paylaşımı deneyimi sunar.

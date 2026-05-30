@@ -1,15 +1,17 @@
 type StoreButtonProps = {
   label: string;
   eyebrow: string;
+  href: string;
   className?: string;
 };
 
-export function StoreButton({ label, eyebrow, className = "" }: StoreButtonProps) {
+export function StoreButton({ label, eyebrow, href, className = "" }: StoreButtonProps) {
   return (
-    <button
-      type="button"
-      disabled
-      className={`flex w-full min-h-[56px] items-center gap-4 rounded-2xl border border-white/15 bg-white/[0.09] px-5 py-4 text-left opacity-95 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:border-cyan-300/25 sm:min-w-[min(100%,320px)] ${className}`}
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex w-full min-h-[56px] items-center gap-4 rounded-2xl border border-white/15 bg-white/[0.09] px-5 py-4 text-left opacity-95 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:border-cyan-300/25 hover:bg-white/[0.12] sm:min-w-[min(100%,320px)] ${className}`}
     >
       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-cyan-300/18 text-cyan-100">
         <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" aria-hidden="true">
@@ -25,6 +27,6 @@ export function StoreButton({ label, eyebrow, className = "" }: StoreButtonProps
         <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-100/85">{eyebrow}</span>
         <span className="mt-1 block text-base font-black text-white">{label}</span>
       </span>
-    </button>
+    </a>
   );
 }

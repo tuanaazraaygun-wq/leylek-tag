@@ -22,6 +22,7 @@ import { HeroShowcaseStack } from "@/components/hero-showcase-stack";
 import { TrustArchitectureShowcase } from "@/components/trust-architecture-showcase";
 import { HomeFourSteps } from "@/components/home-four-steps";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const HOME_DESCRIPTION =
   "Leylek TAG ile yolculuk paylaşımı ve masraf paylaşımı. Karşılıklı onay, QR doğrulama; teklif ve eşleşme mobil uygulamada tamamlanır.";
@@ -127,8 +128,8 @@ export default function Home() {
               </p>
 
               <div className="mx-auto mt-5 flex max-w-xl flex-col items-stretch justify-center gap-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:gap-3 md:mx-0 md:justify-start lg:max-w-none">
-                <ButtonLink href="/indir" className="w-full px-8 !py-[0.9rem] text-center text-[0.9rem] sm:w-auto">
-                  Uygulamayı indir
+                <ButtonLink href={DOWNLOAD_PAGE_URL} className="w-full px-8 !py-[0.9rem] text-center text-[0.9rem] sm:w-auto">
+                  Uygulamayı İndir
                 </ButtonLink>
                 <ButtonLink
                   href="/nasil-calisir"
@@ -234,7 +235,7 @@ export default function Home() {
           <Container>
             <SectionHeading
               eyebrow="platform akışı"
-              title="Pilot şehirlerde canlı rota ve eşleşme sinyalleri"
+              title="Aktif şehirlerde canlı rota ve eşleşme sinyalleri"
               description="Teklif, onay ve QR doğrulama adımları platform üzerinde izlenebilir; özet akış bilgilendirme amaçlıdır."
             />
             <div className="mt-6 max-w-3xl">

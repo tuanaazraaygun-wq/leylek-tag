@@ -18,7 +18,7 @@ export function DownloadAppFlowPreview() {
           veya ana sayfadaki vitrin bloklarından göz atabilirsin.
         </p>
         <p className="mx-auto mt-3 max-w-lg text-center text-xs font-semibold text-cyan-100/85">
-          Geri bildirimin bizim için önemli; beta ile birlikte bu akış daha da sağlamlaşır.
+          Geri bildiriminiz ürün yol haritamızı şekillendirir; süreç sürekli iyileştirilir.
         </p>
         <div className="mx-auto mt-10 grid max-w-3xl gap-4 rounded-3xl border border-white/[0.08] bg-white/[0.04] p-5 sm:grid-cols-2 sm:p-7">
           {[

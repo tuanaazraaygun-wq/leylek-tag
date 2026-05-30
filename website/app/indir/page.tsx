@@ -9,6 +9,7 @@ import { PlayStoreScreenshotStrip } from "@/components/play-store-screenshot-str
 import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 import { StoreButton } from "@/components/store-button";
+import { APP_STORE_URL, DOWNLOAD_PAGE_URL, GOOGLE_PLAY_URL } from "@/lib/store-links";
 
 export const metadata: Metadata = {
   title: "İndir",
@@ -53,8 +54,8 @@ export default function DownloadPage() {
         eyebrow="indir"
         title="Leylek TAG'i indir"
         description="Yolculuk paylaşımını şehirde dene. Şehrinde yolculuk paylaşımı için uygulamayı indir."
-        primaryHref="/indir#indir-magaza"
-        primaryLabel="Uygulamayı indir"
+        primaryHref={DOWNLOAD_PAGE_URL}
+        primaryLabel="Uygulamayı İndir"
         secondaryHref="/indir#uygulama-akisi"
         secondaryLabel="Uygulama akışını gör"
         ctaHint="Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır."
@@ -95,20 +96,16 @@ export default function DownloadPage() {
                   Resmi mağaza bağlantıları
                 </h2>
                 <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
-                  Google Play için erken erişim ve açık test süreçleri değerlendirilirken App Store yayını hazırlık
-                  aşamasındadır. Bağlantılar hazır olduğunda buradan resmi sayfaya yönlendirileceksin; güncel haber
-                  için erken erişim formunu kullanabilirsin.
-                </p>
-                <p className="mt-4 text-sm font-semibold text-emerald-200/90">
-                  Beta sürecine dahil olarak geri bildirimle ürünün şekillenmesine katkı verebilirsin.
+                  Leylek TAG&apos;i resmi mağazalardan güvenle indirin. App Store ve Google Play bağlantıları aşağıdadır;
+                  teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır.
                 </p>
                 <div className="mt-8 flex w-full max-w-md flex-col gap-4">
-                  <StoreButton eyebrow="iOS yakında" label="App Store" />
-                  <StoreButton eyebrow="erken erişim / açık test" label="Google Play" />
+                  <StoreButton href={APP_STORE_URL} eyebrow="App Store'dan indir" label="App Store" />
+                  <StoreButton href={GOOGLE_PLAY_URL} eyebrow="Google Play'den indir" label="Google Play" />
                 </div>
                 <div className="mt-6">
                   <ButtonLink href="#erken-erisim" variant="secondary" className="w-full sm:w-auto sm:min-w-[240px]">
-                    Beta için haber ver
+                    Güncellemelerden haberdar ol
                   </ButtonLink>
                 </div>
               </div>
@@ -126,10 +123,10 @@ export default function DownloadPage() {
         <Container>
           <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
             <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">erken erişim</p>
-              <h2 className="mt-4 text-3xl font-black leading-tight text-white">Uygulama açıldığında haber verelim.</h2>
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">güncellemeler</p>
+              <h2 className="mt-4 text-3xl font-black leading-tight text-white">Yeni özellik ve duyurulardan haberdar ol.</h2>
               <p className="mt-4 text-sm leading-7 text-slate-300">
-                Form gönderildiğinde yerel olarak onay görürsün; yayına yaklaştıkça seni bilgilendiririz.
+                Form gönderildiğinde yerel olarak onay görürsün; ürün ve şehir güncellemeleri hakkında seni bilgilendiririz.
               </p>
             </div>
             <EarlyAccessForm />

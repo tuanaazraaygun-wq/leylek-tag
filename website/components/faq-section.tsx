@@ -64,9 +64,9 @@ const faqs: readonly FaqItem[] = [
   {
     question: "Uygulama mağazalarında durum nedir?",
     answer:
-      "Google Play tarafında erken erişim ve açık test süreçleri değerlendirilirken App Store yayını hazırlık aşamasındadır.",
-    highlights: ["Google Play: erken erişim / açık test", "App Store: hazırlık süreci"],
-    note: "Güncel mağaza bağlantıları indirme sayfasında paylaşılır.",
+      "Leylek TAG App Store ve Google Play'de yer alır. Güncel indirme bağlantılarına indirme sayfasından ulaşabilirsiniz.",
+    highlights: ["App Store", "Google Play"],
+    note: "Resmi mağaza bağlantıları indirme sayfasında paylaşılır.",
   },
 ];
 

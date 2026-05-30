@@ -1,5 +1,6 @@
 import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 export function BetaCta() {
   return (
@@ -20,7 +21,7 @@ export function BetaCta() {
               </p>
             </div>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:flex-col">
-              <ButtonLink href="/indir" className="w-full sm:w-auto">
+              <ButtonLink href={DOWNLOAD_PAGE_URL} className="w-full sm:w-auto">
                 Uygulamayı İndir
               </ButtonLink>
               <ButtonLink href="/nasil-calisir" variant="secondary" className="w-full sm:w-auto">

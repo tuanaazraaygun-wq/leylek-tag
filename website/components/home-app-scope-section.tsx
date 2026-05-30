@@ -1,9 +1,10 @@
 import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const WEB_SCOPE = [
   "Ürün ve güvenlik bilgisi",
-  "İndirme ve erken erişim",
+  "Resmi mağazalardan indirme",
   "Destek ve yasal kaynaklar",
 ] as const;
 
@@ -64,7 +65,7 @@ export function HomeAppScopeSection() {
           </div>
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <ButtonLink href="/indir" className="w-full sm:w-auto sm:min-w-[200px]">
+          <ButtonLink href={DOWNLOAD_PAGE_URL} className="w-full sm:w-auto sm:min-w-[200px]">
             Uygulamayı İndir
           </ButtonLink>
           <ButtonLink href="/nasil-calisir" variant="secondary" className="w-full sm:w-auto sm:min-w-[200px]">

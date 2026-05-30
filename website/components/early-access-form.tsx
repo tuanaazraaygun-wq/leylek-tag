@@ -17,10 +17,10 @@ export function EarlyAccessForm() {
   return (
     <form onSubmit={handleSubmit} className="glass-panel rounded-[2rem] p-6 sm:p-8">
       <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">erken erişim formu</p>
-        <h2 className="mt-4 text-2xl font-black tracking-tight text-white sm:text-3xl">Beta topluluğuna katıl</h2>
+        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/80">güncellemeler</p>
+        <h2 className="mt-4 text-2xl font-black tracking-tight text-white sm:text-3xl">Güncellemelerden haberdar ol</h2>
         <p className="mt-3 text-sm leading-7 text-slate-300">
-          Bilgilerini bırak; Leylek TAG beta süreci, Google Play erken erişim/açık test ve App Store hazırlık süreci hakkında seni bilgilendirelim.
+          Bilgilerini bırak; yeni özellikler, şehir kapsamı ve ürün duyuruları hakkında seni bilgilendirelim.
         </p>
       </div>
 
@@ -77,12 +77,12 @@ export function EarlyAccessForm() {
         type="submit"
         className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-cyan-200 via-cyan-300 to-blue-400 px-5 py-3 text-sm font-black text-slate-950 shadow-glow transition hover:-translate-y-0.5 sm:w-auto"
       >
-        Beta topluluğuna katıl
+        Güncellemelerden haberdar ol
       </button>
 
       {isSubmitted ? (
         <p className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-4 py-3 text-sm font-semibold text-emerald-100">
-          Teşekkürler; talebini kaydettik. Yayına yaklaştıkça seninle iletişime geçeceğiz.
+          Teşekkürler; talebini kaydettik. Güncellemelerden seni haberdar edeceğiz.
         </p>
       ) : null}
     </form>

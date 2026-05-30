@@ -8,6 +8,7 @@ import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
 import { NavbarSiteAuthDrawer, NavbarSiteAuthTop } from "@/components/navbar-site-auth";
 import { BRANDING_PATHS, LEGACY_FALLBACK_ICON } from "@/lib/branding-assets";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const navItems = [
   { href: "/nasil-calisir", label: "Nasıl Çalışır" },
@@ -98,7 +99,7 @@ export function Navbar() {
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <NavbarSiteAuthTop />
               <ButtonLink
-                href="/indir"
+                href={DOWNLOAD_PAGE_URL}
                 className="hidden !min-h-[44px] whitespace-nowrap !rounded-full !px-4 !py-2.5 !text-[13px] !shadow-[0_10px_28px_-6px_rgba(0,198,255,0.35)] hover:!shadow-[0_14px_36px_-4px_rgba(0,198,255,0.42)] sm:inline-flex"
               >
                 Uygulamayı İndir
@@ -137,7 +138,7 @@ export function Navbar() {
               </Link>
             ))}
             <NavbarSiteAuthDrawer onNavigate={() => setIsOpen(false)} />
-            <ButtonLink href="/indir" className="mt-1 w-full !py-3" onClick={() => setIsOpen(false)}>
+            <ButtonLink href={DOWNLOAD_PAGE_URL} className="mt-1 w-full !py-3" onClick={() => setIsOpen(false)}>
               Uygulamayı İndir
             </ButtonLink>
           </nav>

@@ -17,7 +17,7 @@ export function PlayStoreScreenshotStrip() {
           Yolcu ve sürücü akışları: teklif, güvenli eşleşme, QR doğrulama, görüntülü görüşme ve Leylek Zeka desteği. Görseller mağaza vitriniyle aynı sıra ve kadrajda sunulur.
         </p>
         <p className="mx-auto mt-2 max-w-lg text-center text-xs font-semibold leading-relaxed text-cyan-200/85">
-          iOS App Store inceleme süreciyle uyumlu vitrin — güncel sürüm ekranları.
+          App Store ve Google Play mağaza vitriniyle uyumlu — güncel sürüm ekranları.
         </p>
         <div className="mt-12">
           <PremiumScreenshotCarousel slides={DEFAULT_APP_SCREENSHOT_SLIDES} />

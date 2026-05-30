@@ -1,14 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 export function MobileStickyCta() {
-  const pathname = usePathname();
-  const onDownloadPage = pathname === "/indir";
-
-  const label = "Uygulamayı indir";
-  const href = onDownloadPage ? "/indir#indir-magaza" : "/indir";
+  const label = "Uygulamayı İndir";
+  const href = DOWNLOAD_PAGE_URL;
 
   return (
     <div className="safe-bottom fixed bottom-0 left-0 right-0 z-[60] border-t border-white/10 bg-slate-950/92 px-4 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl md:hidden">

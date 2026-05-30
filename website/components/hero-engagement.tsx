@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ButtonLink } from "@/components/button-link";
 import { useSiteAction } from "@/components/site-action-context";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const LS_ROUTE_KEY = "leylek_last_route_search";
 
@@ -72,8 +73,8 @@ function HeroDiscoveryHint() {
     <div className="rounded-2xl border border-white/[0.065] bg-white/[0.02] px-4 py-3.5 sm:px-5">
       <p className="text-center text-[12px] leading-relaxed text-slate-400 sm:text-left sm:text-[13px]">
         Teklif sürecinin tamamı mobil uygulamada tamamlanır. Web vitrini ürünü ve güven ilkelerini net biçimde gösterir.{" "}
-        <Link href="/indir" className="font-semibold text-cyan-100/95 underline-offset-[3px] hover:text-white hover:underline">
-          İndiriş sayfası
+        <Link href={DOWNLOAD_PAGE_URL} className="font-semibold text-cyan-100/95 underline-offset-[3px] hover:text-white hover:underline">
+          İndirme sayfası
         </Link>
       </p>
     </div>
@@ -196,7 +197,7 @@ function HeroRouteInputs() {
             </div>
 
             <div className="shrink-0 xl:flex xl:flex-col xl:items-stretch xl:pt-7">
-              <ButtonLink href="/indir" className="w-full whitespace-nowrap !px-5 !py-3 !text-[13px] xl:w-auto" onMouseDown={() => flushPersist()}>
+              <ButtonLink href={DOWNLOAD_PAGE_URL} className="w-full whitespace-nowrap !px-5 !py-3 !text-[13px] xl:w-auto" onMouseDown={() => flushPersist()}>
                 Uygulamada teklif oluştur
               </ButtonLink>
             </div>

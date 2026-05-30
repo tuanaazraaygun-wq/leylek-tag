@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const SESSION_KEY = "leylek_scroll_cta_done";
 
@@ -64,11 +65,11 @@ export function ScrollCtaPopup() {
           Teklif, karşılıklı onay ve QR ile yolculuk doğrulaması adımları uygulamada tamamlanır.
         </p>
         <Link
-          href="/indir#indir-magaza"
+          href={DOWNLOAD_PAGE_URL}
           className="ripple-bg tap-highlight mt-5 flex min-h-[48px] w-full items-center justify-center rounded-full bg-gradient-to-br from-[#00C6FF] to-[#0072FF] text-sm font-bold text-white shadow-lg shadow-cyan-500/25 transition hover:brightness-110 active:scale-[0.96]"
           onClick={() => setOpen(false)}
         >
-          Uygulamayı aç
+          Uygulamayı İndir
         </Link>
       </div>
     </div>
