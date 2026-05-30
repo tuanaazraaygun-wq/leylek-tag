@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useSiteAuth } from "@/components/site-auth-provider";
 
 function GoogleOAuthGlyph({ className = "h-5 w-5" }: { className?: string }) {
@@ -90,6 +91,12 @@ type SiteAuthPanelProps = {
 
 export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
   const { oauthBusy, signInWithGoogle, signInWithApple } = useSiteAuth();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frameId);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -105,11 +112,11 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  const panelMarkup = (
     <div
-      className="fixed inset-0 z-[88] flex items-center justify-center bg-black/55 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md"
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -170,6 +177,8 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
       </div>
     </div>
   );
+
+  return createPortal(panelMarkup, document.body);
 }
 
 export function SiteAuthLoginTrigger({
