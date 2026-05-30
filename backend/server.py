@@ -90,6 +90,21 @@ from services.muhabbet_moderation import moderate_muhabbet_text, ModerationUnava
 import services.route_matching as _route_matching
 from route_service import get_route_cached
 import trust_service as _trust_service
+from services.driver_iban_service import (
+    IbanAccountNotFoundError,
+    IbanPaymentsDisabledError,
+    IbanValidationError,
+    PaymentDetailsForbiddenError,
+    PaymentDetailsNotAvailableError,
+    build_snapshot_fields_for_tag_update,
+    create_driver_bank_account,
+    get_driver_bank_account,
+    get_trip_payment_details_for_passenger,
+    list_driver_bank_accounts,
+    set_default_driver_bank_account,
+    soft_delete_driver_bank_account,
+    update_driver_bank_account,
+)
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
@@ -1543,6 +1558,21 @@ async def get_dispatch_config() -> dict:
 
 def _dispatch_env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _iban_payments_enabled() -> bool:
+    return os.getenv("IBAN_PAYMENTS_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _iban_snapshot_on_match_enabled() -> bool:
+    return _iban_payments_enabled() and os.getenv(
+        "IBAN_SNAPSHOT_ON_MATCH", ""
+    ).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _require_iban_payments_http() -> None:
+    if not _iban_payments_enabled():
+        raise HTTPException(status_code=404, detail="IBAN payments not available")
 
 
 def _dispatch_score_shadow_compute(
@@ -8184,6 +8214,185 @@ async def get_all_kyc_requests(admin_phone: str):
         logger.error(f"Get all KYC error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ==================== DRIVER IBAN (Phase 1-B) ====================
+
+
+class DriverBankAccountCreateBody(BaseModel):
+    iban: str
+    account_holder_name: str
+    label: Optional[str] = None
+    is_default: bool = False
+
+
+class DriverBankAccountUpdateBody(BaseModel):
+    iban: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    label: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+async def _resolve_iban_http_user_id(
+    user_id: Optional[str] = None,
+    http_request: Optional[Request] = None,
+) -> str:
+    auth_user_id = None
+    try:
+        if http_request:
+            authorization = http_request.headers.get("Authorization")
+            if authorization:
+                parts = str(authorization).strip().split(None, 1)
+                if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+                    auth_user_id = verify_access_token(parts[1].strip())
+    except Exception:
+        auth_user_id = None
+    effective = (str(user_id).strip() if user_id else "") or auth_user_id
+    if not effective:
+        raise HTTPException(status_code=422, detail="user_id gerekli")
+    resolved = await resolve_user_id(str(effective).strip())
+    rid = str(resolved or effective).strip().lower()
+    if auth_user_id and user_id:
+        try:
+            uid_res = await resolve_user_id(str(user_id).strip())
+            uid_norm = str(uid_res or user_id).strip().lower()
+        except Exception:
+            uid_norm = str(user_id).strip().lower()
+        if uid_norm != str(auth_user_id).strip().lower():
+            raise HTTPException(status_code=403, detail="Yetkisiz")
+    return rid
+
+
+def _raise_driver_iban_http(exc: Exception) -> None:
+    if isinstance(exc, IbanPaymentsDisabledError):
+        raise HTTPException(status_code=404, detail="IBAN payments not available") from exc
+    if isinstance(exc, IbanValidationError):
+        raise HTTPException(status_code=422, detail="Geçersiz banka hesabı bilgisi") from exc
+    if isinstance(exc, IbanAccountNotFoundError):
+        raise HTTPException(status_code=404, detail="Bank account not found") from exc
+    if isinstance(exc, PaymentDetailsForbiddenError):
+        raise HTTPException(status_code=403, detail="Not authorized") from exc
+    if isinstance(exc, PaymentDetailsNotAvailableError):
+        raise HTTPException(status_code=404, detail="Payment details not available") from exc
+    raise HTTPException(status_code=500, detail="Internal error") from exc
+
+
+@api_router.get("/driver/bank-accounts")
+async def list_driver_bank_accounts_http(
+    user_id: str = None,
+    http_request: Request = None,
+):
+    _require_iban_payments_http()
+    try:
+        driver_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        accounts = list_driver_bank_accounts(supabase, driver_id)
+        return {"success": True, "accounts": accounts}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
+@api_router.get("/driver/bank-accounts/{account_id}")
+async def get_driver_bank_account_http(
+    account_id: str,
+    user_id: str = None,
+    http_request: Request = None,
+):
+    _require_iban_payments_http()
+    try:
+        driver_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        account = get_driver_bank_account(supabase, driver_id, account_id)
+        return {"success": True, "account": account}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
+@api_router.post("/driver/bank-accounts")
+async def create_driver_bank_account_http(
+    body: DriverBankAccountCreateBody,
+    user_id: str = None,
+    http_request: Request = None,
+):
+    _require_iban_payments_http()
+    try:
+        driver_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        account = create_driver_bank_account(
+            supabase,
+            driver_id,
+            body.iban,
+            body.account_holder_name,
+            label=body.label,
+            is_default=body.is_default,
+        )
+        return {"success": True, "account": account}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
+@api_router.patch("/driver/bank-accounts/{account_id}")
+async def update_driver_bank_account_http(
+    account_id: str,
+    body: DriverBankAccountUpdateBody,
+    user_id: str = None,
+    http_request: Request = None,
+):
+    _require_iban_payments_http()
+    try:
+        driver_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        account = update_driver_bank_account(
+            supabase,
+            driver_id,
+            account_id,
+            iban=body.iban,
+            account_holder_name=body.account_holder_name,
+            label=body.label,
+            is_default=body.is_default,
+        )
+        return {"success": True, "account": account}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
+@api_router.delete("/driver/bank-accounts/{account_id}")
+async def delete_driver_bank_account_http(
+    account_id: str,
+    user_id: str = None,
+    http_request: Request = None,
+):
+    _require_iban_payments_http()
+    try:
+        driver_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        result = soft_delete_driver_bank_account(supabase, driver_id, account_id)
+        return {"success": True, **result}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
+@api_router.post("/driver/bank-accounts/{account_id}/set-default")
+async def set_default_driver_bank_account_http(
+    account_id: str,
+    user_id: str = None,
+    http_request: Request = None,
+):
+    _require_iban_payments_http()
+    try:
+        driver_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        account = set_default_driver_bank_account(supabase, driver_id, account_id)
+        return {"success": True, "account": account}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
 # ==================== BLOCKING SYSTEM ====================
 
 @api_router.post("/user/block")
@@ -9030,6 +9239,26 @@ async def check_end_request(tag_id: str, user_id: str):
         return {"success": False, "has_request": False}
 
 
+@api_router.get("/trip/{tag_id}/payment-details")
+async def get_trip_payment_details_http(
+    tag_id: str,
+    user_id: str = None,
+    passenger_id: str = None,
+    http_request: Request = None,
+):
+    """Authorized passenger only — full IBAN after boarding (Phase 1-B)."""
+    _require_iban_payments_http()
+    try:
+        pid = passenger_id or user_id
+        viewer_id = await _resolve_iban_http_user_id(user_id=pid, http_request=http_request)
+        details = get_trip_payment_details_for_passenger(supabase, tag_id, viewer_id)
+        return details
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_driver_iban_http(exc)
+
+
 @api_router.get("/trip/{tag_id}")
 async def get_trip_status(tag_id: str):
     """Yolculuk durumunu al - polling için"""
@@ -9357,18 +9586,20 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
                 )
 
         matched_at_iso = datetime.utcnow().isoformat()
+        tag_update_fields = {
+            "status": "matched",
+            "driver_id": driver_id_final,
+            "driver_name": driver_name,
+            "accepted_offer_id": real_offer_id,
+            "final_price": offer["price"],
+            "matched_at": matched_at_iso,
+        }
+        tag_update_fields.update(
+            build_snapshot_fields_for_tag_update(supabase, driver_id_final)
+        )
         tag_upd = (
             supabase.table("tags")
-            .update(
-                {
-                    "status": "matched",
-                    "driver_id": driver_id_final,
-                    "driver_name": driver_name,
-                    "accepted_offer_id": real_offer_id,
-                    "final_price": offer["price"],
-                    "matched_at": matched_at_iso,
-                }
-            )
+            .update(tag_update_fields)
             .eq("id", tag_id_final)
             .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
             .execute()
@@ -10580,6 +10811,9 @@ async def driver_accept_offer_http(
             "driver_name": driver_name,
             "matched_at": matched_at,
         }
+        update_data.update(
+            build_snapshot_fields_for_tag_update(supabase, resolved_driver_id)
+        )
 
         # postgrest-py 2.x: update() sonrası .select() yok (SyncFilterRequestBuilder).
         # Varsayılan Prefer: return=representation ile güncellenen satır( lar) ur.data içinde gelir.
@@ -17058,6 +17292,9 @@ async def handle_driver_accept_offer(sid, data):
             "driver_name": driver_name,
             "matched_at": datetime.now(timezone.utc).isoformat(),
         }
+        _upd_body.update(
+            build_snapshot_fields_for_tag_update(supabase, resolved_driver_id)
+        )
         ur_sock = (
             supabase.table("tags")
             .update(_upd_body)
@@ -18662,12 +18899,22 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
 
         # Atomik güncelleme — yalnızca waiting / pending / offers_received
         # postgrest-py 2.x: update().select() kullanılamaz; return=representation varsayılan → data dolu
-        update_result = supabase.table("tags").update({
+        ride_accept_update = {
             "status": "matched",
             "driver_id": resolved_driver_id,
             "driver_name": driver_name,
-            "matched_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST).execute()
+            "matched_at": datetime.utcnow().isoformat(),
+        }
+        ride_accept_update.update(
+            build_snapshot_fields_for_tag_update(supabase, resolved_driver_id)
+        )
+        update_result = (
+            supabase.table("tags")
+            .update(ride_accept_update)
+            .eq("id", tag_id)
+            .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
+            .execute()
+        )
         
         if not update_result.data:
             _match_accept_log(
