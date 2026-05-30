@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useSiteAuth } from "@/components/site-auth-provider";
 
 function GoogleOAuthGlyph({ className = "h-5 w-5" }: { className?: string }) {
@@ -46,13 +46,50 @@ function LoginTriggerIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function AuthProviderButton({
+  label,
+  onClick,
+  disabled,
+  busy,
+  busyLabel,
+  icon,
+  variant = "default",
+}: {
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+  busy: boolean;
+  busyLabel: string;
+  icon: ReactNode;
+  variant?: "default" | "apple";
+}) {
+  const isApple = variant === "apple";
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-busy={busy}
+      onClick={onClick}
+      className={`flex min-h-[52px] w-full min-w-0 touch-manipulation items-center justify-center gap-3 rounded-xl border px-4 text-[14px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        isApple
+          ? "border-white/[0.14] bg-white/[0.92] text-slate-950 hover:border-white/25 hover:bg-white"
+          : "border-white/[0.12] bg-white/[0.06] text-white hover:border-white/[0.18] hover:bg-white/[0.09]"
+      }`}
+    >
+      <span className="shrink-0">{icon}</span>
+      <span className="min-w-0 truncate">{busy ? busyLabel : label}</span>
+    </button>
+  );
+}
+
 type SiteAuthPanelProps = {
   open: boolean;
   onClose: () => void;
 };
 
 export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
-  const { oauthBusy, signInWithGoogle } = useSiteAuth();
+  const { oauthBusy, signInWithGoogle, signInWithApple } = useSiteAuth();
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +109,7 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/72 p-4 backdrop-blur-[3px] sm:items-center sm:p-6"
+      className="fixed inset-0 z-[88] flex items-center justify-center bg-black/55 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md"
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -82,7 +119,7 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="site-auth-panel-title"
-        className="relative w-full max-w-[26rem] overflow-hidden rounded-[1.5rem] border border-white/[0.1] bg-[#0a1424]/[0.98] shadow-[0_32px_100px_-24px_rgba(0,0,0,0.85),0_0_0_1px_rgba(103,232,249,0.08)] backdrop-blur-xl"
+        className="relative flex w-full max-w-[min(26rem,calc(100vw-2rem))] max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-2rem))] flex-col overflow-hidden rounded-[1.5rem] border border-white/[0.1] bg-[#0a1424]/[0.98] shadow-[0_32px_100px_-24px_rgba(0,0,0,0.85),0_0_0_1px_rgba(103,232,249,0.08)] backdrop-blur-xl"
       >
         <span
           className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-cyan-500/[0.12] to-transparent"
@@ -91,7 +128,7 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 z-[1] flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-slate-500 transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white"
+          className="absolute right-3 top-3 z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-500 transition hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white"
           aria-label="Kapat"
         >
           <span aria-hidden className="text-lg leading-none">
@@ -99,7 +136,7 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
           </span>
         </button>
 
-        <div className="relative px-6 pb-6 pt-7 sm:px-7 sm:pb-7 sm:pt-8">
+        <div className="relative min-h-0 overflow-y-auto overscroll-contain px-6 pb-6 pt-7 sm:px-7 sm:pb-7 sm:pt-8">
           <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-200/75">hesap</p>
           <h2 id="site-auth-panel-title" className="mt-2 pr-8 text-xl font-black tracking-tight text-white sm:text-[1.35rem]">
             Leylek TAG&apos;e giriş yap
@@ -107,30 +144,23 @@ export function SiteAuthPanel({ open, onClose }: SiteAuthPanelProps) {
           <p className="mt-2 text-sm leading-relaxed text-slate-400">Hesabınıza güvenli şekilde devam edin.</p>
 
           <div className="mt-6 space-y-3">
-            <button
-              type="button"
+            <AuthProviderButton
+              label="Google ile giriş yap"
+              busyLabel="Yönlendiriliyor…"
               disabled={oauthBusy}
-              aria-busy={oauthBusy}
+              busy={oauthBusy}
               onClick={() => void signInWithGoogle()}
-              className="flex min-h-[52px] w-full touch-manipulation items-center justify-center gap-3 rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-[14px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-white/[0.18] hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <GoogleOAuthGlyph className="h-5 w-5 shrink-0" />
-              {oauthBusy ? "Yönlendiriliyor…" : "Google ile giriş yap"}
-            </button>
-
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              title="Apple ile giriş hazırlanıyor"
-              className="flex min-h-[52px] w-full cursor-not-allowed items-center justify-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 text-[14px] font-semibold text-slate-500 opacity-80"
-            >
-              <AppleOAuthGlyph className="h-5 w-5 shrink-0 text-slate-500" />
-              <span className="text-left">
-                <span className="block">Apple ile giriş yap</span>
-                <span className="mt-0.5 block text-[11px] font-medium text-slate-600">Apple ile giriş hazırlanıyor</span>
-              </span>
-            </button>
+              icon={<GoogleOAuthGlyph className="h-5 w-5" />}
+            />
+            <AuthProviderButton
+              variant="apple"
+              label="Apple ile giriş yap"
+              busyLabel="Yönlendiriliyor…"
+              disabled={oauthBusy}
+              busy={oauthBusy}
+              onClick={() => void signInWithApple()}
+              icon={<AppleOAuthGlyph className="h-5 w-5 text-slate-950" />}
+            />
           </div>
 
           <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-500">

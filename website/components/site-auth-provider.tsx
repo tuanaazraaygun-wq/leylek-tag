@@ -23,6 +23,7 @@ type SiteAuthContextValue = {
   navLabel: string;
   oauthBusy: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -157,31 +158,38 @@ export function SiteAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured, client, refreshProfileFromSession]);
 
-  const signInWithGoogle = useCallback(async () => {
-    if (!client) return;
+  const signInWithOAuth = useCallback(
+    async (provider: "google" | "apple") => {
+      if (!client) return;
 
-    const redirectTo = getWebsiteOAuthRedirectToHome();
-    if (!assertHttpRedirect(redirectTo)) {
-      return;
-    }
+      const redirectTo = getWebsiteOAuthRedirectToHome();
+      if (!assertHttpRedirect(redirectTo)) {
+        return;
+      }
 
-    setOauthBusy(true);
-    try {
-      const { error } = await client.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo,
-          skipBrowserRedirect: false,
-          queryParams: { prompt: "select_account" },
-        },
-      });
-      if (error) {
+      setOauthBusy(true);
+      try {
+        const { error } = await client.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo,
+            skipBrowserRedirect: false,
+            ...(provider === "google" ? { queryParams: { prompt: "select_account" } } : {}),
+          },
+        });
+        if (error) {
+          setOauthBusy(false);
+        }
+      } catch {
         setOauthBusy(false);
       }
-    } catch {
-      setOauthBusy(false);
-    }
-  }, [client]);
+    },
+    [client],
+  );
+
+  const signInWithGoogle = useCallback(() => signInWithOAuth("google"), [signInWithOAuth]);
+
+  const signInWithApple = useCallback(() => signInWithOAuth("apple"), [signInWithOAuth]);
 
   const signOut = useCallback(async () => {
     if (!client) return;
@@ -261,9 +269,10 @@ export function SiteAuthProvider({ children }: { children: ReactNode }) {
       navLabel,
       oauthBusy,
       signInWithGoogle,
+      signInWithApple,
       signOut,
     }),
-    [authReady, configured, session, profile, navLabel, oauthBusy, signInWithGoogle, signOut],
+    [authReady, configured, session, profile, navLabel, oauthBusy, signInWithGoogle, signInWithApple, signOut],
   );
 
   return (
