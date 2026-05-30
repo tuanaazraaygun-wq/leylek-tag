@@ -12981,29 +12981,6 @@ function PassengerDashboard({
                           </View>
                         </TouchableOpacity>
 
-                        <View
-                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardDisabled]}
-                          accessibilityState={{ disabled: true }}
-                        >
-                          <View style={styles.priceModalPayOptionLeft}>
-                            <Ionicons name="card-outline" size={22} color="rgba(186,201,222,0.55)" />
-                          </View>
-                          <View style={styles.priceModalPayOptionBody}>
-                            <View style={styles.priceModalPayOptionTitleRow}>
-                              <Text style={styles.priceModalPayOptionTitleMuted}>Kart ile Öde</Text>
-                              <View style={styles.priceModalPayBadgeSoon}>
-                                <Text style={styles.priceModalPayBadgeSoonText}>Yakında</Text>
-                              </View>
-                            </View>
-                            <Text style={styles.priceModalPayOptionDesc}>
-                              Güvenli kart ödemesi kısa süre içinde aktif olacak.
-                            </Text>
-                          </View>
-                          <View style={styles.priceModalPayRadioOuterMuted}>
-                            <View style={styles.priceModalPayRadioInnerMuted} />
-                          </View>
-                        </View>
-
                         <View style={styles.priceModalPayDefaultNote}>
                           <Ionicons name="information-circle-outline" size={17} color="rgba(186,201,222,0.72)" />
                           <Text style={styles.priceModalPayDefaultNoteText}>
