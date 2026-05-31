@@ -9304,18 +9304,30 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
 @api_router.get("/trip/check-end-request")
 async def check_end_request(tag_id: str, user_id: str):
     """Sonlandırma isteği var mı — eski mutual end_request veya force_end_counterparty."""
+    no_request = {"success": True, "has_request": False, "request": None}
     try:
-        result = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
+        result = (
+            supabase.table("tags")
+            .select("id, status, passenger_id, driver_id, end_request")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
 
         if not result.data:
-            return {"success": True, "has_request": False}
+            return no_request
 
-        er = result.data[0].get("end_request")
+        tag = result.data[0]
+        st = str(tag.get("status") or "").lower()
+        if st in ("completed", "cancelled"):
+            return no_request
+
+        er = tag.get("end_request")
         if not er or not isinstance(er, dict):
-            return {"success": True, "has_request": False}
+            return no_request
 
         if str(er.get("status") or "").lower() != "pending":
-            return {"success": True, "has_request": False}
+            return no_request
 
         try:
             viewer = await resolve_user_id(str(user_id).strip()) or str(user_id).strip()
@@ -9335,14 +9347,13 @@ async def check_end_request(tag_id: str, user_id: str):
             except Exception:
                 ini_r = ini
             ini_l = str(ini_r or "").strip().lower()
-            if not ini_l:
-                return {"success": True, "has_request": False}
-            if ini_l == viewer_l:
-                return {"success": True, "has_request": False}
+            if not ini_l or ini_l == viewer_l:
+                return no_request
             it = er.get("initiator_type") or "unknown"
             return {
                 "success": True,
                 "has_request": True,
+                "request": er,
                 "requester_id": ini_r,
                 "requester_type": str(it),
                 "request_kind": "force_end_counterparty",
@@ -9350,23 +9361,24 @@ async def check_end_request(tag_id: str, user_id: str):
 
         rid = er.get("requester_id")
         if not rid:
-            return {"success": True, "has_request": False}
+            return no_request
         try:
             rq_r = await resolve_user_id(str(rid).strip()) or str(rid).strip()
         except Exception:
             rq_r = str(rid).strip()
         if str(rq_r).strip().lower() == viewer_l:
-            return {"success": True, "has_request": False}
+            return no_request
         return {
             "success": True,
             "has_request": True,
+            "request": er,
             "requester_id": rq_r,
             "requester_type": er.get("user_type", "unknown"),
             "request_kind": "trip_end",
         }
     except Exception as e:
         logger.error(f"Check end request error: {e}")
-        return {"success": False, "has_request": False}
+        return {"success": False, "has_request": False, "request": None}
 
 
 @api_router.get("/trip/{tag_id}/payment-details")
