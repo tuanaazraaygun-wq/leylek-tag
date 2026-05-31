@@ -105,6 +105,19 @@ from services.driver_iban_service import (
     soft_delete_driver_bank_account,
     update_driver_bank_account,
 )
+from services.transfer_payment_service import (
+    TransferPaymentDisabledError,
+    TransferPaymentForbiddenError,
+    TransferPaymentNotFoundError,
+    TransferPaymentStateError,
+    TransferPaymentValidationError,
+    claim_transfer_payment,
+    fetch_tag_for_transfer,
+    get_transfer_payment_status_public,
+    is_iban_transfer_confirm_required,
+    respond_transfer_payment,
+    should_reject_complete_qr,
+)
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
@@ -1570,9 +1583,121 @@ def _iban_snapshot_on_match_enabled() -> bool:
     ).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _iban_transfer_confirm_required() -> bool:
+    return is_iban_transfer_confirm_required()
+
+
 def _require_iban_payments_http() -> None:
     if not _iban_payments_enabled():
         raise HTTPException(status_code=404, detail="IBAN payments not available")
+
+
+def _require_iban_transfer_confirm_http() -> None:
+    _require_iban_payments_http()
+    if not _iban_transfer_confirm_required():
+        raise HTTPException(status_code=404, detail="IBAN transfer confirmation not available")
+
+
+def _raise_transfer_payment_http(exc: Exception) -> None:
+    if isinstance(exc, TransferPaymentDisabledError):
+        raise HTTPException(status_code=404, detail="IBAN transfer confirmation not available") from exc
+    if isinstance(exc, TransferPaymentForbiddenError):
+        raise HTTPException(status_code=403, detail="Not authorized") from exc
+    if isinstance(exc, TransferPaymentValidationError):
+        raise HTTPException(status_code=422, detail=str(exc) or "Geçersiz istek") from exc
+    if isinstance(exc, TransferPaymentStateError):
+        raise HTTPException(status_code=409, detail=str(exc) or "Geçersiz durum") from exc
+    if isinstance(exc, TransferPaymentNotFoundError):
+        raise HTTPException(status_code=404, detail="Yolculuk bulunamadı") from exc
+    raise HTTPException(status_code=500, detail="Internal error") from exc
+
+
+async def _transfer_payment_safe_passenger_name(user_id: str, fallback: str = "Yolcu") -> str:
+    user = await get_cached_user(user_id)
+    if not user:
+        return fallback
+    first = str(user.get("first_name") or "").strip()
+    if first:
+        return first
+    full = str(user.get("name") or "").strip()
+    if not full:
+        return fallback
+    parts = full.split()
+    return parts[0] if parts else fallback
+
+
+async def _emit_transfer_payment_claimed(driver_id: str, tag_id: str, passenger_id: str) -> None:
+    passenger_name = await _transfer_payment_safe_passenger_name(passenger_id)
+    payload = {
+        "tag_id": str(tag_id),
+        "passenger_id": str(passenger_id),
+        "driver_id": str(driver_id),
+        "passenger_name": passenger_name,
+        "message": "Yol paylaşım ücretini aldınız mı?",
+        "request_kind": "transfer_payment",
+    }
+    try:
+        await sio.emit("transfer_payment_claimed", payload, room=_normalize_user_room(driver_id))
+    except Exception as socket_err:
+        logger.warning("transfer_payment_claimed socket: %s", socket_err)
+    try:
+        await send_trip_push_and_log(
+            str(driver_id),
+            "transfer_payment_claimed",
+            "Ödeme onayı",
+            f"{passenger_name} ödeme yaptığını bildirdi. Onaylayın.",
+            {
+                "type": "transfer_payment_claimed",
+                "tag_id": str(tag_id),
+                "passenger_name": passenger_name,
+            },
+        )
+    except Exception as push_err:
+        logger.warning("transfer_payment_claimed push: %s", push_err)
+
+
+async def _emit_transfer_payment_confirmed(passenger_id: str, tag_id: str) -> None:
+    payload = {
+        "tag_id": str(tag_id),
+        "message": "Sürücü ödemeyi onayladı. Yolculuk tamamlandı.",
+        "request_kind": "transfer_payment",
+    }
+    try:
+        await sio.emit("transfer_payment_confirmed", payload, room=_normalize_user_room(passenger_id))
+    except Exception as socket_err:
+        logger.warning("transfer_payment_confirmed socket: %s", socket_err)
+    try:
+        await send_trip_push_and_log(
+            str(passenger_id),
+            "transfer_payment_confirmed",
+            "Ödeme onaylandı",
+            "Sürücü ödemeyi aldığını onayladı.",
+            {"type": "transfer_payment_confirmed", "tag_id": str(tag_id)},
+        )
+    except Exception as push_err:
+        logger.warning("transfer_payment_confirmed push: %s", push_err)
+
+
+async def _emit_transfer_payment_disputed(passenger_id: str, tag_id: str) -> None:
+    payload = {
+        "tag_id": str(tag_id),
+        "message": "Sürücü ödeme almadığını bildirdi. Destek inceleyecek.",
+        "request_kind": "transfer_payment",
+    }
+    try:
+        await sio.emit("transfer_payment_disputed", payload, room=_normalize_user_room(passenger_id))
+    except Exception as socket_err:
+        logger.warning("transfer_payment_disputed socket: %s", socket_err)
+    try:
+        await send_trip_push_and_log(
+            str(passenger_id),
+            "transfer_payment_disputed",
+            "Ödeme uyuşmazlığı",
+            "Sürücü ödeme almadığını bildirdi.",
+            {"type": "transfer_payment_disputed", "tag_id": str(tag_id)},
+        )
+    except Exception as push_err:
+        logger.warning("transfer_payment_disputed push: %s", push_err)
 
 
 def _dispatch_score_shadow_compute(
@@ -8232,6 +8357,11 @@ class DriverBankAccountUpdateBody(BaseModel):
     is_default: Optional[bool] = None
 
 
+class TransferPaymentRespondBody(BaseModel):
+    approved: bool
+    dispute_note: Optional[str] = None
+
+
 async def _resolve_iban_http_user_id(
     user_id: Optional[str] = None,
     http_request: Optional[Request] = None,
@@ -9257,6 +9387,101 @@ async def get_trip_payment_details_http(
         raise
     except Exception as exc:
         _raise_driver_iban_http(exc)
+
+
+@api_router.post("/trip/{tag_id}/transfer-payment/claim")
+async def transfer_payment_claim_http(
+    tag_id: str,
+    user_id: str = None,
+    passenger_id: str = None,
+    http_request: Request = None,
+):
+    """Yolcu: havale/EFT ödedim — sürücü onayı bekler (completed yok)."""
+    _require_iban_transfer_confirm_http()
+    try:
+        pid = passenger_id or user_id
+        viewer_id = await _resolve_iban_http_user_id(user_id=pid, http_request=http_request)
+        result = claim_transfer_payment(supabase, tag_id, viewer_id)
+        invalidate_tag_cache(tag_id, result.get("passenger_id"), result.get("driver_id"))
+        if not result.get("idempotent"):
+            await _emit_transfer_payment_claimed(
+                str(result.get("driver_id") or ""),
+                tag_id,
+                str(result.get("passenger_id") or viewer_id),
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_transfer_payment_http(exc)
+
+
+@api_router.post("/trip/{tag_id}/transfer-payment/respond")
+async def transfer_payment_respond_http(
+    tag_id: str,
+    body: TransferPaymentRespondBody,
+    user_id: str = None,
+    driver_id: str = None,
+    http_request: Request = None,
+):
+    """Sürücü: ödemeyi aldım / almadım."""
+    _require_iban_transfer_confirm_http()
+    try:
+        did = driver_id or user_id
+        viewer_id = await _resolve_iban_http_user_id(user_id=did, http_request=http_request)
+        result = respond_transfer_payment(
+            supabase,
+            tag_id,
+            viewer_id,
+            approved=bool(body.approved),
+            dispute_note=body.dispute_note,
+        )
+        invalidate_tag_cache(tag_id, result.get("passenger_id"), result.get("driver_id"))
+        if result.get("approved"):
+            await _emit_show_rating_modals_for_normal_tag_complete(
+                tag_id,
+                str(result.get("passenger_id") or ""),
+                str(result.get("driver_id") or ""),
+            )
+            await _emit_transfer_payment_confirmed(str(result.get("passenger_id") or ""), tag_id)
+            asyncio.create_task(
+                log_trip_completion(
+                    tag_id,
+                    str(result.get("driver_id") or ""),
+                    str(result.get("passenger_id") or ""),
+                    0,
+                    0,
+                    str(result.get("completed_at") or datetime.utcnow().isoformat()),
+                    "iban_transfer",
+                )
+            )
+        else:
+            await _emit_transfer_payment_disputed(str(result.get("passenger_id") or ""), tag_id)
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_transfer_payment_http(exc)
+
+
+@api_router.get("/trip/{tag_id}/transfer-payment/status")
+async def transfer_payment_status_http(
+    tag_id: str,
+    user_id: str = None,
+    http_request: Request = None,
+):
+    """Yolcu veya sürücü — güvenli transfer_payment durumu (IBAN yok)."""
+    _require_iban_transfer_confirm_http()
+    try:
+        viewer_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
+        tag_row = fetch_tag_for_transfer(supabase, tag_id)
+        if not tag_row:
+            raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
+        return get_transfer_payment_status_public(tag_row, viewer_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_transfer_payment_http(exc)
 
 
 @api_router.get("/trip/{tag_id}")
@@ -15948,8 +16173,8 @@ async def complete_trip_with_qr(request: Request):
         if not tag_id or not scanner_user_id or not scanned_user_id:
             return {"success": False, "detail": "Eksik parametreler"}
         
-        # 1. Tag'i getir
-        tag = await get_cached_tag(tag_id)
+        # 1. Tag'i getir (IBAN transfer guard alanları dahil)
+        tag = fetch_tag_for_transfer(supabase, tag_id)
         if not tag:
             return {"success": False, "detail": "Yolculuk bulunamadı"}
         
@@ -15986,6 +16211,10 @@ async def complete_trip_with_qr(request: Request):
                     "success": False,
                     "detail": "Onay, teklifte seçtiğiniz ödeme ile aynı olmalı.",
                 }
+
+        reject_msg = should_reject_complete_qr(tag, booked_pm, confirmed_pm)
+        if reject_msg:
+            raise HTTPException(status_code=409, detail=reject_msg)
         
         # 3. Yolculuğu tamamla
         completed_at = datetime.utcnow().isoformat()
@@ -16068,6 +16297,8 @@ async def complete_trip_with_qr(request: Request):
             "elapsed_ms": round(elapsed)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"QR Trip complete error: {e}")
         return {"success": False, "detail": str(e)}
