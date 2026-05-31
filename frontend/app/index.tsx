@@ -8242,6 +8242,8 @@ function PassengerDashboard({
 
   const tripPaymentDetails = useTripPaymentDetails();
   const [driverPaymentSheetVisible, setDriverPaymentSheetVisible] = useState(false);
+  const [driverPaymentSheetMode, setDriverPaymentSheetMode] = useState<'info' | 'trip_end'>('info');
+  const tripEndIbanCompleteInFlightRef = useRef(false);
 
   const canOpenDriverPaymentDetails = useMemo(() => {
     if (!user?.id || !activeTag?.id) return false;
@@ -8259,12 +8261,14 @@ function PassengerDashboard({
 
   const handleOpenDriverPaymentDetails = useCallback(() => {
     if (!canOpenDriverPaymentDetails || !activeTag?.id || !user?.id) return;
+    setDriverPaymentSheetMode('info');
     setDriverPaymentSheetVisible(true);
     void tripPaymentDetails.load(activeTag.id, user.id);
   }, [canOpenDriverPaymentDetails, activeTag?.id, user?.id, tripPaymentDetails]);
 
   const handleCloseDriverPaymentDetails = useCallback(() => {
     setDriverPaymentSheetVisible(false);
+    setDriverPaymentSheetMode('info');
     tripPaymentDetails.clear();
   }, [tripPaymentDetails]);
 
@@ -8349,6 +8353,93 @@ function PassengerDashboard({
     rateUserId: string;
     rateUserName: string;
   } | null>(null);
+
+  const handlePassengerTripEndComplete = useCallback(
+    (showRating: boolean, rateUserId: string, rateUserName: string) => {
+      setShowQRModal(false);
+      if (showRating) {
+        setRatingModalData({
+          visible: true,
+          tagId: activeTag?.id || '',
+          rateUserId: activeTag?.driver_id || rateUserId || '',
+          rateUserName: rateUserName || displayFirstName(activeTag?.driver_name, 'Sürücü'),
+        });
+      }
+      setActiveTag(null);
+    },
+    [activeTag?.id, activeTag?.driver_id, activeTag?.driver_name],
+  );
+
+  const handleOpenTripEndDriverIban = useCallback(() => {
+    if (!canOpenDriverPaymentDetails || !activeTag?.id || !user?.id) return;
+    setShowQRModal(false);
+    setDriverPaymentSheetMode('trip_end');
+    setDriverPaymentSheetVisible(true);
+    void tripPaymentDetails.load(activeTag.id, user.id);
+  }, [canOpenDriverPaymentDetails, activeTag?.id, user?.id, tripPaymentDetails]);
+
+  const handleTripEndIbanPaid = useCallback(async () => {
+    if (tripEndIbanCompleteInFlightRef.current) return;
+    const tagId = activeTag?.id ? String(activeTag.id) : '';
+    const driverId = activeTag?.driver_id ? String(activeTag.driver_id) : '';
+    const uid = user?.id ? String(user.id) : '';
+    if (!tagId || !driverId || !uid) {
+      appAlert('Hata', 'Eşleşme bilgisi bulunamadı.');
+      return;
+    }
+    tripEndIbanCompleteInFlightRef.current = true;
+    try {
+      const response = await fetch(`${API_URL}/trip/complete-qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          tag_id: tagId,
+          scanner_user_id: uid,
+          scanned_user_id: driverId,
+          latitude: userLocation?.latitude || 0,
+          longitude: userLocation?.longitude || 0,
+          payment_confirmed_method: 'cash',
+        }),
+      });
+      const raw = await response.text();
+      let result: { success?: boolean; detail?: string; driver_name?: string } = {};
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        appAlert(
+          'Hata',
+          response.ok ? 'Sunucu yanıtı okunamadı' : `Sunucu hatası (${response.status})`,
+        );
+        return;
+      }
+      if (result.success) {
+        Vibration.vibrate([0, 100, 50, 100]);
+        setDriverPaymentSheetVisible(false);
+        setDriverPaymentSheetMode('info');
+        tripPaymentDetails.clear();
+        handlePassengerTripEndComplete(
+          true,
+          driverId,
+          result.driver_name || displayFirstName(activeTag?.driver_name, 'Sürücü'),
+        );
+      } else {
+        appAlert('Hata', result.detail || `Yolculuk bitirilemedi (${response.status})`);
+      }
+    } catch {
+      appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+    } finally {
+      tripEndIbanCompleteInFlightRef.current = false;
+    }
+  }, [
+    activeTag?.id,
+    activeTag?.driver_id,
+    activeTag?.driver_name,
+    user?.id,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    tripPaymentDetails,
+    handlePassengerTripEndComplete,
+  ]);
   
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -13540,8 +13631,9 @@ function PassengerDashboard({
         loading={tripPaymentDetails.loading}
         error={tripPaymentDetails.error}
         details={tripPaymentDetails.details}
-        mode="info"
+        mode={driverPaymentSheetMode}
         onClose={handleCloseDriverPaymentDetails}
+        onPaid={driverPaymentSheetMode === 'trip_end' ? handleTripEndIbanPaid : undefined}
       />
 
       {/* 🆕 QR İLE YOLCULUK BİTİRME MODALI */}
@@ -13557,21 +13649,9 @@ function PassengerDashboard({
         myLongitude={userLocation?.longitude}
         otherLatitude={activeTag?.driver_latitude}
         otherLongitude={activeTag?.driver_longitude}
-        onComplete={(showRating, rateUserId, rateUserName) => {
-          // Yolculuk tamamlandı
-          setShowQRModal(false);
-          if (showRating) {
-            // Puanlama modalını aç
-            setRatingModalData({
-              visible: true,
-              tagId: activeTag?.id || '',
-              rateUserId: activeTag?.driver_id || '',
-              rateUserName: rateUserName || displayFirstName(activeTag?.driver_name, 'Sürücü')
-            });
-          }
-          // Sayfayı yenile
-          setActiveTag(null);
-        }}
+        showIbanOption={canOpenDriverPaymentDetails}
+        onChooseDriverIban={handleOpenTripEndDriverIban}
+        onComplete={handlePassengerTripEndComplete}
       />
 
       <BoardingPassengerPromptModal

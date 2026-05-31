@@ -37,6 +37,9 @@ interface QRTripEndModalProps {
   otherLongitude?: number;
   /** Teklifte yolcunun seçtiği ödeme (yalnızca yolcu QR akışında) */
   bookingPaymentMethod?: PaymentMethod | null;
+  /** Yolcu: eşleşmede IBAN snapshot varsa bitiş ekranında seçenek göster */
+  showIbanOption?: boolean;
+  onChooseDriverIban?: () => void;
   onComplete: (showRating: boolean, rateUserId: string, rateUserName: string) => void;
 }
 
@@ -52,13 +55,15 @@ export default function QRTripEndModal({
   otherLatitude,
   otherLongitude,
   bookingPaymentMethod = null,
+  showIbanOption = false,
+  onChooseDriverIban,
   onComplete,
 }: QRTripEndModalProps) {
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
-  /** Yolcu: QR doğru okunduktan sonra ödeme onayı adımı */
-  const [passengerStep, setPassengerStep] = useState<'scan' | 'payment'>('scan');
+  /** Yolcu: bitirme yolu seçimi / QR / ödeme onayı */
+  const [passengerStep, setPassengerStep] = useState<'choose' | 'scan' | 'payment'>('scan');
   const [pendingDriverId, setPendingDriverId] = useState<string | null>(null);
   const [legacyPaymentPick, setLegacyPaymentPick] = useState<PaymentMethod | null>(null);
   const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
@@ -70,15 +75,19 @@ export default function QRTripEndModal({
     if (visible) {
       setScanned(false);
       setProcessing(false);
-      setPassengerStep('scan');
+      setPassengerStep(!isDriver && showIbanOption ? 'choose' : 'scan');
       setPendingDriverId(null);
       setLegacyPaymentPick(null);
       lastScannedValueRef.current = { data: '', ts: 0 };
-      if (!isDriver && !hasPermission?.granted) {
-        requestPermission();
-      }
     }
-  }, [visible, isDriver, hasPermission?.granted, requestPermission]);
+  }, [visible, isDriver, showIbanOption]);
+
+  useEffect(() => {
+    if (!visible || isDriver || passengerStep !== 'scan') return;
+    if (!hasPermission?.granted) {
+      requestPermission();
+    }
+  }, [visible, isDriver, passengerStep, hasPermission?.granted, requestPermission]);
 
   const submitCompleteQr = useCallback(
     async (paymentConfirmed: PaymentMethod, driverUserId: string) => {
@@ -192,7 +201,7 @@ export default function QRTripEndModal({
   const handleClose = () => {
     setScanned(false);
     setProcessing(false);
-    setPassengerStep('scan');
+    setPassengerStep(!isDriver && showIbanOption ? 'choose' : 'scan');
     setPendingDriverId(null);
     setLegacyPaymentPick(null);
     lastScannedValueRef.current = { data: '', ts: 0 };
@@ -221,9 +230,11 @@ export default function QRTripEndModal({
             <Text style={styles.title}>
               {isDriver
                 ? 'QR Kodunuz'
-                : passengerStep === 'payment'
-                  ? 'Yolculuk sonu — ödeme'
-                  : 'QR Tarayın'}
+                : passengerStep === 'choose'
+                  ? 'Yol paylaşımını bitir'
+                  : passengerStep === 'payment'
+                    ? 'Yolculuk sonu — ödeme'
+                    : 'QR Tarayın'}
             </Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
               <Text style={styles.closeBtnText}>✕</Text>
@@ -248,6 +259,42 @@ export default function QRTripEndModal({
                 <Text style={styles.hint}>
                   Yolcu QR kodu taradığında yolculuk tamamlanır
                 </Text>
+              </View>
+            ) : passengerStep === 'choose' ? (
+              <View style={styles.choosePanel}>
+                <Text style={styles.instruction}>Yolculuğu nasıl bitirmek istersiniz?</Text>
+                <TouchableOpacity
+                  style={styles.chooseOption}
+                  onPress={() => onChooseDriverIban?.()}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sürücü IBAN'ını gör"
+                >
+                  <View style={styles.chooseOptionIconWrap}>
+                    <Ionicons name="card-outline" size={24} color="#22D3EE" />
+                  </View>
+                  <View style={styles.chooseOptionTextCol}>
+                    <Text style={styles.chooseOptionTitle}>Sürücü IBAN'ını gör</Text>
+                    <Text style={styles.chooseOptionSubtitle}>Havale/EFT ile ödediyseniz</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.chooseOption}
+                  onPress={() => setPassengerStep('scan')}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sürücü QR kodunu tara"
+                >
+                  <View style={styles.chooseOptionIconWrap}>
+                    <Ionicons name="qr-code-outline" size={24} color="#22D3EE" />
+                  </View>
+                  <View style={styles.chooseOptionTextCol}>
+                    <Text style={styles.chooseOptionTitle}>Sürücü QR kodunu tara</Text>
+                    <Text style={styles.chooseOptionSubtitle}>Nakit ödeme onayı</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                </TouchableOpacity>
               </View>
             ) : passengerStep === 'scan' ? (
               <View style={styles.cameraContainer}>
@@ -493,6 +540,45 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 8,
+  },
+  choosePanel: {
+    gap: 12,
+  },
+  chooseOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16, 26, 43, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  chooseOptionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chooseOptionTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  chooseOptionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.94)',
+  },
+  chooseOptionSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(186, 201, 222, 0.82)',
   },
   qrContainer: {
     alignItems: 'center',
