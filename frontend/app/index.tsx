@@ -652,6 +652,8 @@ interface Tag {
   /** Nav / harita alias (pickup ile aynı) */
   passenger_lat?: number;
   passenger_lng?: number;
+  /** UUID snapshot only; full IBAN is never stored in activeTag. */
+  matched_bank_account_id?: string | null;
   /** Sürücü zorla bitir — yolcu onayı beklerken (backend tags.end_request) */
   end_request?: {
     kind?: string;
@@ -763,6 +765,9 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
     Object.keys(prevRi as Record<string, unknown>).length > 0
   ) {
     (base as { route_info?: unknown }).route_info = prevRi as Tag['route_info'];
+  }
+  if (!('matched_bank_account_id' in incoming)) {
+    base.matched_bank_account_id = prev.matched_bank_account_id;
   }
   return base;
 }
