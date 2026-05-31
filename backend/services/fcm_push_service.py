@@ -214,6 +214,11 @@ def send_fcm_notification_sync(
                         sound="default",
                     ),
                 ),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(sound="default"),
+                    ),
+                ),
             )
             response = messaging.send(msg, app=app)
             return True, None
