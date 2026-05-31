@@ -33,6 +33,30 @@ export type TransferPaymentClaimResponse = {
   claimed_at?: string;
 };
 
+export type TransferPaymentStatusResponse = {
+  success?: boolean;
+  tag_id?: string;
+  status?: string;
+  claimed_at?: string;
+  confirmed_at?: string;
+  disputed_at?: string;
+};
+
+export type TransferPaymentRespondResponse = {
+  success?: boolean;
+  approved?: boolean;
+  status?: string;
+  tag_id?: string;
+  show_rating?: boolean;
+  completed_at?: string;
+  report_id?: string | null;
+};
+
+export type TransferPaymentRespondParams = {
+  approved: boolean;
+  disputeNote?: string;
+};
+
 type ErrorBody = { detail?: string; message?: string };
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -187,6 +211,101 @@ export async function claimTransferPayment(
     const json = (await res.json()) as TransferPaymentClaimResponse;
     if (json?.success === false) {
       return { ok: false, code: 'UNKNOWN', message: 'Ödeme bildirimi gönderilemedi' };
+    }
+    return { ok: true, data: json ?? {} };
+  } catch {
+    return { ok: false, code: 'UNKNOWN', message: 'Yanıt okunamadı' };
+  }
+}
+
+export async function fetchTransferPaymentStatus(
+  tagId: string,
+  userId: string,
+): Promise<TripPaymentApiResult<TransferPaymentStatusResponse>> {
+  const tid = String(tagId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!tid) {
+    return { ok: false, code: 'NOT_FOUND', message: 'Yolculuk bilgisi bulunamadı' };
+  }
+  if (!uid) {
+    return { ok: false, code: 'FORBIDDEN', message: 'Giriş yapmanız gerekiyor' };
+  }
+
+  const headers = await authHeaders();
+  const qTag = encodeURIComponent(tid);
+  const url = `${API_BASE_URL}/trip/${qTag}/transfer-payment/status?user_id=${userQuery(uid)}`;
+
+  const res = await fetchWithTimeout(url, { method: 'GET', headers, timeoutMs: 15000 });
+  if (!res) {
+    return { ok: false, code: 'NETWORK', message: 'Bağlantı hatası' };
+  }
+
+  if (!res.ok) {
+    const body = await readErrorBody(res);
+    const detail =
+      typeof body.detail === 'string' ? body.detail : typeof body.message === 'string' ? body.message : '';
+    return mapHttpError(res.status, detail);
+  }
+
+  try {
+    const json = (await res.json()) as TransferPaymentStatusResponse;
+    if (json?.success === false) {
+      return { ok: false, code: 'UNKNOWN', message: 'Durum alınamadı' };
+    }
+    return { ok: true, data: json ?? {} };
+  } catch {
+    return { ok: false, code: 'UNKNOWN', message: 'Yanıt okunamadı' };
+  }
+}
+
+export async function respondTransferPayment(
+  tagId: string,
+  userId: string,
+  params: TransferPaymentRespondParams,
+): Promise<TripPaymentApiResult<TransferPaymentRespondResponse>> {
+  const tid = String(tagId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!tid) {
+    return { ok: false, code: 'NOT_FOUND', message: 'Yolculuk bilgisi bulunamadı' };
+  }
+  if (!uid) {
+    return { ok: false, code: 'FORBIDDEN', message: 'Giriş yapmanız gerekiyor' };
+  }
+
+  const headers = await authHeaders();
+  const qTag = encodeURIComponent(tid);
+  const url = `${API_BASE_URL}/trip/${qTag}/transfer-payment/respond?user_id=${userQuery(uid)}`;
+  const body: { approved: boolean; dispute_note?: string } = { approved: !!params.approved };
+  const note = String(params.disputeNote || '').trim();
+  if (!params.approved && note) {
+    body.dispute_note = note.slice(0, 500);
+  }
+
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    timeoutMs: 15000,
+  });
+  if (!res) {
+    return { ok: false, code: 'NETWORK', message: 'Bağlantı hatası' };
+  }
+
+  if (!res.ok) {
+    const errBody = await readErrorBody(res);
+    const detail =
+      typeof errBody.detail === 'string'
+        ? errBody.detail
+        : typeof errBody.message === 'string'
+          ? errBody.message
+          : '';
+    return mapHttpError(res.status, detail);
+  }
+
+  try {
+    const json = (await res.json()) as TransferPaymentRespondResponse;
+    if (json?.success === false) {
+      return { ok: false, code: 'UNKNOWN', message: 'Yanıt gönderilemedi' };
     }
     return { ok: true, data: json ?? {} };
   } catch {

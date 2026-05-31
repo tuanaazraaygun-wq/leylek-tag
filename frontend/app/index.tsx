@@ -45,6 +45,7 @@ import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
 import PassengerDriverForceEndReviewModal from '../components/PassengerDriverForceEndReviewModal';
+import TransferPaymentConfirmModal from '../components/TransferPaymentConfirmModal';
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
@@ -53,7 +54,7 @@ import { driverWaitingShellStyles as dws } from '../components/driver/driverWait
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
 import useSocket from '../hooks/useSocket';
-import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
+import { useSocketContext, getOrCreateSocket } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete, { getRegisteredCityCenter } from '../components/PlacesAutocomplete';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
@@ -91,7 +92,11 @@ import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
 import { useTripPaymentDetails } from '../hooks/useTripPaymentDetails';
-import { claimTransferPayment } from '../lib/tripPaymentApi';
+import {
+  claimTransferPayment,
+  fetchTransferPaymentStatus,
+  respondTransferPayment,
+} from '../lib/tripPaymentApi';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import {
   haversineMetersLatLng,
@@ -14361,6 +14366,14 @@ function DriverDashboard({
     rateUserId: string;
     rateUserName: string;
   } | null>(null);
+
+  const [transferPaymentConfirmVisible, setTransferPaymentConfirmVisible] = useState(false);
+  const [transferPaymentPassengerName, setTransferPaymentPassengerName] = useState('');
+  const [transferPaymentSubmitting, setTransferPaymentSubmitting] = useState(false);
+  const transferPaymentAwaitingShownRef = useRef<Set<string>>(new Set());
+  const transferPaymentConfirmVisibleRef = useRef(false);
+  const driverActiveTagRef = useRef<Tag | null>(null);
+  driverActiveTagRef.current = activeTag;
   
   // 🆕 Sürücü Dashboard Panel State'leri
   const [showDriverPackagesModal, setShowDriverPackagesModal] = useState(false);
@@ -15208,6 +15221,145 @@ function DriverDashboard({
     },
     ...driverTrustSocketHandlers,
   });
+
+  useEffect(() => {
+    transferPaymentConfirmVisibleRef.current = transferPaymentConfirmVisible;
+  }, [transferPaymentConfirmVisible]);
+
+  useEffect(() => {
+    if (activeTag?.id) return;
+    setTransferPaymentConfirmVisible(false);
+    setTransferPaymentPassengerName('');
+    setTransferPaymentSubmitting(false);
+  }, [activeTag?.id]);
+
+  const tryOpenTransferPaymentConfirm = useCallback(
+    (payload: { tag_id?: string; passenger_name?: string; claimed_at?: string }) => {
+      const tagId = String(payload.tag_id || '').trim();
+      if (!tagId || !user?.id) return;
+      const tag = driverActiveTagRef.current;
+      if (!tag?.id || String(tag.id) !== tagId) return;
+      const st = String(tag.status || '').trim().toLowerCase();
+      if (st !== 'matched' && st !== 'in_progress') return;
+      if (!String(tag.matched_bank_account_id || '').trim()) return;
+      if (transferPaymentConfirmVisibleRef.current) return;
+
+      const claimKey = payload.claimed_at
+        ? `${tagId}:${String(payload.claimed_at).trim()}`
+        : `${tagId}:awaiting`;
+      if (transferPaymentAwaitingShownRef.current.has(claimKey)) return;
+
+      transferPaymentAwaitingShownRef.current.add(claimKey);
+      setTransferPaymentPassengerName(
+        displayFirstName(payload.passenger_name || tag.passenger_name, 'Yolcu'),
+      );
+      setTransferPaymentConfirmVisible(true);
+    },
+    [user?.id],
+  );
+
+  useEffect(() => {
+    const socket = getOrCreateSocket();
+    const handler = (data: unknown) => {
+      const d = (data || {}) as Record<string, unknown>;
+      tryOpenTransferPaymentConfirm({
+        tag_id: typeof d.tag_id === 'string' ? d.tag_id : String(d.tag_id || ''),
+        passenger_name: typeof d.passenger_name === 'string' ? d.passenger_name : undefined,
+      });
+    };
+    socket.on('transfer_payment_claimed', handler);
+    return () => {
+      socket.off('transfer_payment_claimed', handler);
+    };
+  }, [tryOpenTransferPaymentConfirm]);
+
+  useEffect(() => {
+    const tagId = activeTag?.id ? String(activeTag.id) : '';
+    const bankId = String(activeTag?.matched_bank_account_id || '').trim();
+    const st = String(activeTag?.status || '').trim().toLowerCase();
+    const uid = user?.id ? String(user.id) : '';
+    if (!tagId || !bankId || !uid) return;
+    if (st !== 'matched' && st !== 'in_progress') return;
+
+    const tick = async () => {
+      if (transferPaymentConfirmVisibleRef.current) return;
+      const result = await fetchTransferPaymentStatus(tagId, uid);
+      if (!result.ok) return;
+      if (String(result.data.status || '').trim() !== 'awaiting_driver') return;
+      tryOpenTransferPaymentConfirm({
+        tag_id: tagId,
+        passenger_name: driverActiveTagRef.current?.passenger_name,
+        claimed_at: result.data.claimed_at,
+      });
+    };
+
+    void tick();
+    const interval = setInterval(() => {
+      void tick();
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [
+    activeTag?.id,
+    activeTag?.matched_bank_account_id,
+    activeTag?.status,
+    user?.id,
+    tryOpenTransferPaymentConfirm,
+  ]);
+
+  const handleTransferPaymentApprove = useCallback(async () => {
+    if (transferPaymentSubmitting) return;
+    const tagId = activeTag?.id ? String(activeTag.id) : '';
+    const uid = user?.id ? String(user.id) : '';
+    if (!tagId || !uid) {
+      appAlert('Hata', 'Yolculuk bilgisi bulunamadı.');
+      return;
+    }
+    setTransferPaymentSubmitting(true);
+    try {
+      const result = await respondTransferPayment(tagId, uid, { approved: true });
+      if (result.ok) {
+        setTransferPaymentConfirmVisible(false);
+        setTransferPaymentPassengerName('');
+        return;
+      }
+      appAlert('Hata', result.message);
+    } catch {
+      appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+    } finally {
+      setTransferPaymentSubmitting(false);
+    }
+  }, [activeTag?.id, transferPaymentSubmitting, user?.id]);
+
+  const handleTransferPaymentReject = useCallback(
+    async (note: string) => {
+      if (transferPaymentSubmitting) return;
+      const tagId = activeTag?.id ? String(activeTag.id) : '';
+      const uid = user?.id ? String(user.id) : '';
+      if (!tagId || !uid) {
+        appAlert('Hata', 'Yolculuk bilgisi bulunamadı.');
+        return;
+      }
+      setTransferPaymentSubmitting(true);
+      try {
+        const result = await respondTransferPayment(tagId, uid, {
+          approved: false,
+          disputeNote: note,
+        });
+        if (result.ok) {
+          setTransferPaymentConfirmVisible(false);
+          setTransferPaymentPassengerName('');
+          appAlert('Bildirim', 'Bildiriminiz alındı. Destek ekibi inceleyecek.');
+          return;
+        }
+        appAlert('Hata', result.message);
+      } catch {
+        appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+      } finally {
+        setTransferPaymentSubmitting(false);
+      }
+    },
+    [activeTag?.id, transferPaymentSubmitting, user?.id],
+  );
 
   useEffect(() => {
     const tid = activeTag?.id ? String(activeTag.id) : '';
@@ -18154,6 +18306,14 @@ function DriverDashboard({
         </View>
       </Modal>
       
+      <TransferPaymentConfirmModal
+        visible={transferPaymentConfirmVisible}
+        passengerName={transferPaymentPassengerName}
+        loading={transferPaymentSubmitting}
+        onApprove={handleTransferPaymentApprove}
+        onReject={handleTransferPaymentReject}
+      />
+
       <PassengerDriverForceEndReviewModal
         visible={!!driverPassengerForceEndReview}
         submitting={driverForceEndReviewSubmitting}
