@@ -132,7 +132,7 @@
           "icon": "./assets/images/leylek-logo-premium.png",
           "color": "#22D3EE",
           "sounds": [],
-          "defaultChannelId": "default"
+          "defaultChannelId": "default_v2"
         }
       ],
       "@react-native-firebase/app",

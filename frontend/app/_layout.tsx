@@ -54,24 +54,24 @@ export default function RootLayout() {
     void ExpoSplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  // Android: default + offers (MAX) — push token kaydından önce; usePushNotifications içinde tekrar yok
+  // Android: default_v2 + offers_v2 (MAX) — push token kaydından önce; usePushNotifications içinde tekrar yok
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     let cancelled = false;
     (async () => {
       try {
-        await Notifications.setNotificationChannelAsync('default', {
+        await Notifications.setNotificationChannelAsync('default_v2', {
           name: 'Default',
           importance: Notifications.AndroidImportance.MAX,
           sound: 'default',
         });
-        await Notifications.setNotificationChannelAsync('offers', {
+        await Notifications.setNotificationChannelAsync('offers_v2', {
           name: 'Offers',
           importance: Notifications.AndroidImportance.MAX,
           sound: 'default',
         });
         if (!cancelled) {
-          console.log('[PUSH] Android channels: default, offers (MAX)');
+          console.log('[PUSH] Android channels: default_v2, offers_v2 (MAX)');
         }
       } catch (err) {
         if (!cancelled) console.warn('[PUSH] Android channel setup failed:', err);

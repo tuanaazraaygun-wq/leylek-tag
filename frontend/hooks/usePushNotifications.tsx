@@ -258,7 +258,7 @@ function runRegisterForPushNotificationsChain(
 
   const afterAndroidChannels =
     Platform.OS === 'android'
-      ? Notifications.setNotificationChannelAsync('match', {
+      ? Notifications.setNotificationChannelAsync('match_v2', {
           name: 'Eslesme Bildirimleri',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 400, 200, 400],
@@ -266,7 +266,7 @@ function runRegisterForPushNotificationsChain(
           sound: 'default',
         })
           .then(() =>
-            Notifications.setNotificationChannelAsync('calls', {
+            Notifications.setNotificationChannelAsync('calls_v2', {
               name: 'Arama Bildirimleri',
               importance: Notifications.AndroidImportance.MAX,
               vibrationPattern: [0, 700, 300, 700],
@@ -276,7 +276,7 @@ function runRegisterForPushNotificationsChain(
             })
           )
           .then(() =>
-            Notifications.setNotificationChannelAsync('admin', {
+            Notifications.setNotificationChannelAsync('admin_v2', {
               name: 'Duyurular',
               importance: Notifications.AndroidImportance.MAX,
               vibrationPattern: [0, 250, 150, 250],
