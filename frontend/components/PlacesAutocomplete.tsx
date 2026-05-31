@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   FlatList,
   ScrollView,
   StyleSheet,
@@ -1256,6 +1257,8 @@ export default function PlacesAutocomplete({
   const [predictionActionError, setPredictionActionError] = useState<string | null>(null);
   /** Aktif arama iptali — yeni istek veya unmount önceki fetch'leri keser */
   const placesSearchAbortRef = useRef<AbortController | null>(null);
+  /** Öneri satırına çift basmayı keser (klavye blur + async Details yarışı) */
+  const selectionInFlightRef = useRef(false);
   /** replayOnBiasChange: aynı semantik anahtarda searchReplayTick artırılmasın (abort/replan döngüsü) */
   const lastPlacesReplayKeyRef = useRef<string>('');
   const replayBiasDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2554,58 +2557,69 @@ export default function PlacesAutocomplete({
     return { main, secondary };
   };
 
-  // Seçim işlemi
-  const handleSelectPrediction = async (item: PlaceResult) => {
+  const dismissKeyboardAfterSelection = () => {
     if (!tech) {
       Keyboard.dismiss();
     }
+  };
 
-    setPredictionActionError(null);
-    const formatted = formatAddress(item);
+  // Seçim işlemi
+  const handleSelectPrediction = async (item: PlaceResult) => {
+    if (selectionInFlightRef.current) return;
+    selectionInFlightRef.current = true;
 
-    if (item.source === 'google' && item.google_place_id) {
-      const key = getGoogleMapsApiKey();
-      if (!key) {
-        setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
+    try {
+      setPredictionActionError(null);
+      const formatted = formatAddress(item);
+
+      if (item.source === 'google' && item.google_place_id) {
+        const key = getGoogleMapsApiKey();
+        if (!key) {
+          setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
+          return;
+        }
+        setLoading(true);
+        try {
+          const det = await googlePlaceDetailsLatLng(item.google_place_id, key);
+          setQuery(formatted.main);
+          setShowPredictions(false);
+          setShowPopular(false);
+          setPredictions([]);
+          onPlaceSelected({
+            address: det.formattedAddress || item.display_name,
+            latitude: det.lat,
+            longitude: det.lng,
+          });
+          dismissKeyboardAfterSelection();
+        } catch {
+          setPredictionActionError('Adres doğrulanamadı. Başka bir sonuç seçin veya tekrar arayın.');
+        } finally {
+          setLoading(false);
+        }
         return;
       }
-      setLoading(true);
-      try {
-        const det = await googlePlaceDetailsLatLng(item.google_place_id, key);
-        setQuery(formatted.main);
-        setShowPredictions(false);
-        setShowPopular(false);
-        setPredictions([]);
-        onPlaceSelected({
-          address: det.formattedAddress || item.display_name,
-          latitude: det.lat,
-          longitude: det.lng,
-        });
-      } catch {
-        setPredictionActionError('Adres doğrulanamadı. Başka bir sonuç seçin veya tekrar arayın.');
-      } finally {
-        setLoading(false);
+
+      const latitude = parseFloat(item.lat);
+      const longitude = parseFloat(item.lon);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        setPredictionActionError('Bu konum seçilemedi. Başka bir sonuç deneyin.');
+        return;
       }
-      return;
+
+      setQuery(formatted.main);
+      setShowPredictions(false);
+      setShowPopular(false);
+      setPredictions([]);
+
+      onPlaceSelected({
+        address: item.display_name,
+        latitude,
+        longitude,
+      });
+      dismissKeyboardAfterSelection();
+    } finally {
+      selectionInFlightRef.current = false;
     }
-
-    const latitude = parseFloat(item.lat);
-    const longitude = parseFloat(item.lon);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setPredictionActionError('Bu konum seçilemedi. Başka bir sonuç deneyin.');
-      return;
-    }
-
-    setQuery(formatted.main);
-    setShowPredictions(false);
-    setShowPopular(false);
-    setPredictions([]);
-
-    onPlaceSelected({
-      address: item.display_name,
-      latitude,
-      longitude,
-    });
   };
 
   const handleQuickPick = (qp: MuhabbetQuickPickPlace, selectionSource?: PlaceSelectionSource) => {
@@ -2721,14 +2735,14 @@ export default function PlacesAutocomplete({
               <FlatList
                 data={predictions}
                 keyExtractor={(item) => item.place_id}
-                keyboardShouldPersistTaps="handled"
+                keyboardShouldPersistTaps="always"
                 nestedScrollEnabled
                 renderItem={({ item }) => {
                   const formatted = formatAddress(item);
                   return (
-                    <TouchableOpacity
+                    <Pressable
                       style={[styles.predictionItem, tech && styles.predictionItemTech]}
-                      onPress={() => void handleSelectPrediction(item)}
+                      onPressIn={() => void handleSelectPrediction(item)}
                     >
                       <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
                         <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
@@ -2759,7 +2773,7 @@ export default function PlacesAutocomplete({
                         ) : null}
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
-                    </TouchableOpacity>
+                    </Pressable>
                   );
                 }}
                 ItemSeparatorComponent={() => (
@@ -2947,14 +2961,14 @@ export default function PlacesAutocomplete({
           <FlatList
             data={predictions}
             keyExtractor={(item) => item.place_id}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             nestedScrollEnabled
             renderItem={({ item }) => {
               const formatted = formatAddress(item);
               return (
-                <TouchableOpacity
+                <Pressable
                   style={[styles.predictionItem, tech && styles.predictionItemTech]}
-                  onPress={() => void handleSelectPrediction(item)}
+                  onPressIn={() => void handleSelectPrediction(item)}
                 >
                   <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
                     <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
@@ -2982,7 +2996,7 @@ export default function PlacesAutocomplete({
                     ) : null}
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
-                </TouchableOpacity>
+                </Pressable>
               );
             }}
             ItemSeparatorComponent={() => (
