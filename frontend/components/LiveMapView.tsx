@@ -2183,6 +2183,63 @@ const NavigationIcon = ({ onPress }: { onPress: () => void }) => {
   );
 };
 
+function PassengerDriverIbanFab({ onPress }: { onPress: () => void }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    pulse.setValue(1);
+    Animated.sequence([
+      Animated.timing(pulse, {
+        toValue: 1.05,
+        duration: 380,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 380,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(pulse, {
+        toValue: 1.05,
+        duration: 380,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 380,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [pulse]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale: pulse }] }}>
+      <View style={styles.passengerIbanFabGlow}>
+        <Pressable
+          style={({ pressed }) => [styles.passengerIbanFabPressable, pressed && { opacity: 0.92 }]}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel="Sürücü IBAN'ı"
+        >
+          <LinearGradient
+            colors={['rgba(16, 26, 43, 0.98)', 'rgba(30, 58, 95, 0.9)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.passengerIbanFab}
+          >
+            <Ionicons name="wallet-outline" size={18} color="#22D3EE" />
+            <Text style={styles.passengerIbanFabText}>Sürücü IBAN'ı</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function LiveMapView({
   userLocation,
   otherLocation,
@@ -7327,18 +7384,12 @@ export default function LiveMapView({
           pointerEvents="box-none"
           style={[styles.passengerIbanFabWrap, { top: Math.max(insets.top, 10) + 6 }]}
         >
-          <Pressable
-            style={({ pressed }) => [styles.passengerIbanFab, pressed && { opacity: 0.9 }]}
+          <PassengerDriverIbanFab
             onPress={() => {
               void tapButtonHaptic();
               onOpenDriverPaymentDetails?.();
             }}
-            accessibilityRole="button"
-            accessibilityLabel="Sürücü IBAN'ı"
-          >
-            <Ionicons name="card-outline" size={16} color="#22D3EE" />
-            <Text style={styles.passengerIbanFabText}>Sürücü IBAN'ı</Text>
-          </Pressable>
+          />
         </View>
       ) : null}
 
@@ -8424,28 +8475,35 @@ const styles = StyleSheet.create({
     right: 12,
     zIndex: 94,
   },
+  passengerIbanFabGlow: {
+    borderRadius: 24,
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.42,
+    shadowRadius: 14,
+    elevation: 12,
+  },
+  passengerIbanFabPressable: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    maxWidth: SCREEN_WIDTH * 0.5,
+  },
   passengerIbanFab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.38)',
-    shadowColor: 'rgba(8, 17, 31, 0.72)',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.38,
-    shadowRadius: 8,
-    elevation: 8,
-    maxWidth: SCREEN_WIDTH * 0.46,
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 238, 0.72)',
+    borderTopColor: '#22D3EE',
   },
   passengerIbanFabText: {
-    color: 'rgba(243, 248, 255, 0.94)',
-    fontSize: 12,
+    color: 'rgba(243, 248, 255, 0.96)',
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.25,
   },
   passengerLiveLabel: {
     color: '#22D3EE',

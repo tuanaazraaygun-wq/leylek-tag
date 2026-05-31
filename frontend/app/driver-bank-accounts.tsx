@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getPersistedUserRaw } from '../lib/sessionToken';
@@ -49,6 +51,7 @@ function clearFormState(setters: {
 
 export default function DriverBankAccountsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [userId, setUserId] = useState('');
   const [isDriver, setIsDriver] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -401,81 +404,96 @@ export default function DriverBankAccountsScreen() {
 
       <Modal visible={formVisible} animationType="slide" transparent onRequestClose={resetForm}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingAccountId ? 'IBAN düzenle' : 'IBAN ekle'}</Text>
-              <Pressable onPress={resetForm} hitSlop={12}>
-                <Ionicons name="close" size={22} color="rgba(172, 188, 212, 0.95)" />
-              </Pressable>
-            </View>
-
-            {loadingEdit ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="small" color="#22D3EE" />
-              </View>
-            ) : (
-              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalBody}>
-                <Text style={styles.fieldLabel}>IBAN</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formIban}
-                  onChangeText={setFormIban}
-                  placeholder="TR00 0000 0000 0000 0000 0000 00"
-                  placeholderTextColor="rgba(148, 163, 184, 0.55)"
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  editable={crudEnabled && !saving}
-                />
-
-                <Text style={styles.fieldLabel}>Hesap sahibi ad soyad</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formHolderName}
-                  onChangeText={setFormHolderName}
-                  placeholder="Ad Soyad"
-                  placeholderTextColor="rgba(148, 163, 184, 0.55)"
-                  autoCapitalize="words"
-                  editable={crudEnabled && !saving}
-                />
-
-                <Text style={styles.fieldLabel}>Etiket (isteğe bağlı)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formLabel}
-                  onChangeText={setFormLabel}
-                  placeholder="Ev, iş…"
-                  placeholderTextColor="rgba(148, 163, 184, 0.55)"
-                  editable={crudEnabled && !saving}
-                />
-
-                <View style={styles.switchRow}>
-                  <View style={styles.switchTextCol}>
-                    <Text style={styles.switchLabel}>Varsayılan hesap</Text>
-                    <Text style={styles.switchHint}>Eşleşmede yolcuya gösterilecek hesap</Text>
-                  </View>
-                  <Switch
-                    value={formIsDefault}
-                    onValueChange={setFormIsDefault}
-                    disabled={!crudEnabled || saving}
-                    trackColor={{ false: '#1E3A5F', true: 'rgba(34, 211, 238, 0.45)' }}
-                    thumbColor={formIsDefault ? '#22D3EE' : '#94A3B8'}
-                  />
-                </View>
-
-                <Pressable
-                  style={[styles.primaryBtn, styles.modalSaveBtn, saving ? styles.btnDisabled : null]}
-                  disabled={saving || !crudEnabled}
-                  onPress={() => void handleSave()}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#08111F" />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>Kaydet</Text>
-                  )}
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardAvoid}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          >
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{editingAccountId ? 'IBAN düzenle' : 'IBAN ekle'}</Text>
+                <Pressable onPress={resetForm} hitSlop={12}>
+                  <Ionicons name="close" size={22} color="rgba(172, 188, 212, 0.95)" />
                 </Pressable>
-              </ScrollView>
-            )}
-          </View>
+              </View>
+
+              {loadingEdit ? (
+                <View style={styles.modalLoading}>
+                  <ActivityIndicator size="small" color="#22D3EE" />
+                </View>
+              ) : (
+                <>
+                  <ScrollView
+                    style={styles.modalScroll}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={styles.modalBody}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    <Text style={styles.fieldLabel}>IBAN</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formIban}
+                      onChangeText={setFormIban}
+                      placeholder="TR00 0000 0000 0000 0000 0000 00"
+                      placeholderTextColor="rgba(148, 163, 184, 0.55)"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      editable={crudEnabled && !saving}
+                    />
+
+                    <Text style={styles.fieldLabel}>Hesap sahibi ad soyad</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formHolderName}
+                      onChangeText={setFormHolderName}
+                      placeholder="Ad Soyad"
+                      placeholderTextColor="rgba(148, 163, 184, 0.55)"
+                      autoCapitalize="words"
+                      editable={crudEnabled && !saving}
+                    />
+
+                    <Text style={styles.fieldLabel}>Etiket (isteğe bağlı)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formLabel}
+                      onChangeText={setFormLabel}
+                      placeholder="Ev, iş…"
+                      placeholderTextColor="rgba(148, 163, 184, 0.55)"
+                      editable={crudEnabled && !saving}
+                    />
+
+                    <View style={styles.switchRow}>
+                      <View style={styles.switchTextCol}>
+                        <Text style={styles.switchLabel}>Varsayılan hesap</Text>
+                        <Text style={styles.switchHint}>Eşleşmede yolcuya gösterilecek hesap</Text>
+                      </View>
+                      <Switch
+                        value={formIsDefault}
+                        onValueChange={setFormIsDefault}
+                        disabled={!crudEnabled || saving}
+                        trackColor={{ false: '#1E3A5F', true: 'rgba(34, 211, 238, 0.45)' }}
+                        thumbColor={formIsDefault ? '#22D3EE' : '#94A3B8'}
+                      />
+                    </View>
+                  </ScrollView>
+
+                  <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                    <Pressable
+                      style={[styles.primaryBtn, styles.modalSaveBtn, saving ? styles.btnDisabled : null]}
+                      disabled={saving || !crudEnabled}
+                      onPress={() => void handleSave()}
+                    >
+                      {saving ? (
+                        <ActivityIndicator size="small" color="#08111F" />
+                      ) : (
+                        <Text style={styles.primaryBtnText}>Kaydet</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -634,8 +652,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(1, 8, 24, 0.72)',
     justifyContent: 'flex-end',
   },
-  modalSheet: {
+  modalKeyboardAvoid: {
+    width: '100%',
     maxHeight: '88%',
+  },
+  modalSheet: {
+    maxHeight: '100%',
     backgroundColor: '#0B1220',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -654,7 +676,12 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(30, 58, 95, 0.55)',
   },
   modalTitle: { fontSize: 18, fontWeight: '800', color: 'rgba(243, 248, 255, 0.96)' },
-  modalBody: { padding: 16, gap: 8, paddingBottom: 28 },
+  modalScroll: { flexGrow: 0, flexShrink: 1 },
+  modalBody: { padding: 16, gap: 8, paddingBottom: 8 },
+  modalFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
   modalLoading: { padding: 32, alignItems: 'center' },
   fieldLabel: {
     fontSize: 13,
