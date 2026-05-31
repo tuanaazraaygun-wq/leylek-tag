@@ -91,6 +91,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
 import { useTripPaymentDetails } from '../hooks/useTripPaymentDetails';
+import { claimTransferPayment } from '../lib/tripPaymentApi';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import {
   haversineMetersLatLng,
@@ -8381,65 +8382,28 @@ function PassengerDashboard({
   const handleTripEndIbanPaid = useCallback(async () => {
     if (tripEndIbanCompleteInFlightRef.current) return;
     const tagId = activeTag?.id ? String(activeTag.id) : '';
-    const driverId = activeTag?.driver_id ? String(activeTag.driver_id) : '';
     const uid = user?.id ? String(user.id) : '';
-    if (!tagId || !driverId || !uid) {
+    if (!tagId || !uid) {
       appAlert('Hata', 'Eşleşme bilgisi bulunamadı.');
       return;
     }
     tripEndIbanCompleteInFlightRef.current = true;
     try {
-      const response = await fetch(`${API_URL}/trip/complete-qr`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          tag_id: tagId,
-          scanner_user_id: uid,
-          scanned_user_id: driverId,
-          latitude: userLocation?.latitude || 0,
-          longitude: userLocation?.longitude || 0,
-          payment_confirmed_method: 'cash',
-        }),
-      });
-      const raw = await response.text();
-      let result: { success?: boolean; detail?: string; driver_name?: string } = {};
-      try {
-        result = raw ? JSON.parse(raw) : {};
-      } catch {
-        appAlert(
-          'Hata',
-          response.ok ? 'Sunucu yanıtı okunamadı' : `Sunucu hatası (${response.status})`,
-        );
-        return;
-      }
-      if (result.success) {
-        Vibration.vibrate([0, 100, 50, 100]);
+      const result = await claimTransferPayment(tagId, uid);
+      if (result.ok) {
         setDriverPaymentSheetVisible(false);
         setDriverPaymentSheetMode('info');
         tripPaymentDetails.clear();
-        handlePassengerTripEndComplete(
-          true,
-          driverId,
-          result.driver_name || displayFirstName(activeTag?.driver_name, 'Sürücü'),
-        );
-      } else {
-        appAlert('Hata', result.detail || `Yolculuk bitirilemedi (${response.status})`);
+        appAlert('IBAN', 'Sürücü ödeme onayı bekleniyor.');
+        return;
       }
+      appAlert('Hata', result.message);
     } catch {
       appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
     } finally {
       tripEndIbanCompleteInFlightRef.current = false;
     }
-  }, [
-    activeTag?.id,
-    activeTag?.driver_id,
-    activeTag?.driver_name,
-    user?.id,
-    userLocation?.latitude,
-    userLocation?.longitude,
-    tripPaymentDetails,
-    handlePassengerTripEndComplete,
-  ]);
+  }, [activeTag?.id, user?.id, tripPaymentDetails]);
   
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);

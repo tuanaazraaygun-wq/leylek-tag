@@ -8,6 +8,7 @@ export type TripPaymentApiErrorCode =
   | 'UNAVAILABLE'
   | 'NOT_FOUND'
   | 'FORBIDDEN'
+  | 'CONFLICT'
   | 'NETWORK'
   | 'UNKNOWN';
 
@@ -22,6 +23,14 @@ export type TripPaymentDetailsResponse = {
   iban: string;
   account_holder_name: string | null;
   label?: string | null;
+};
+
+export type TransferPaymentClaimResponse = {
+  success?: boolean;
+  idempotent?: boolean;
+  status?: string;
+  tag_id?: string;
+  claimed_at?: string;
 };
 
 type ErrorBody = { detail?: string; message?: string };
@@ -55,6 +64,9 @@ function mapHttpError(status: number, detail: string): TripPaymentApiResult<neve
     if (lower.includes('iban payments not available')) {
       return { ok: false, code: 'UNAVAILABLE', message: 'Bu özellik şu an aktif değil' };
     }
+    if (lower.includes('transfer confirmation not available')) {
+      return { ok: false, code: 'UNAVAILABLE', message: 'Bu özellik şu an aktif değil' };
+    }
     if (
       lower.includes('payment details not available') ||
       lower.includes('bank account snapshot') ||
@@ -63,6 +75,10 @@ function mapHttpError(status: number, detail: string): TripPaymentApiResult<neve
       return { ok: false, code: 'UNAVAILABLE', message: 'Sürücü IBAN bilgisi bulunamadı' };
     }
     return { ok: false, code: 'NOT_FOUND', message: raw || 'Ödeme bilgisi bulunamadı' };
+  }
+
+  if (status === 409) {
+    return { ok: false, code: 'CONFLICT', message: raw || 'İşlem şu an tamamlanamıyor' };
   }
 
   if (status === 403) {
@@ -128,6 +144,51 @@ export async function fetchTripPaymentDetails(
         account_holder_name: json.account_holder_name ?? null,
       },
     };
+  } catch {
+    return { ok: false, code: 'UNKNOWN', message: 'Yanıt okunamadı' };
+  }
+}
+
+export async function claimTransferPayment(
+  tagId: string,
+  userId: string,
+): Promise<TripPaymentApiResult<TransferPaymentClaimResponse>> {
+  const tid = String(tagId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!tid) {
+    return { ok: false, code: 'NOT_FOUND', message: 'Yolculuk bilgisi bulunamadı' };
+  }
+  if (!uid) {
+    return { ok: false, code: 'FORBIDDEN', message: 'Giriş yapmanız gerekiyor' };
+  }
+
+  const headers = await authHeaders();
+  const qTag = encodeURIComponent(tid);
+  const url = `${API_BASE_URL}/trip/${qTag}/transfer-payment/claim?user_id=${userQuery(uid)}`;
+
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+    timeoutMs: 15000,
+  });
+  if (!res) {
+    return { ok: false, code: 'NETWORK', message: 'Bağlantı hatası' };
+  }
+
+  if (!res.ok) {
+    const body = await readErrorBody(res);
+    const detail =
+      typeof body.detail === 'string' ? body.detail : typeof body.message === 'string' ? body.message : '';
+    return mapHttpError(res.status, detail);
+  }
+
+  try {
+    const json = (await res.json()) as TransferPaymentClaimResponse;
+    if (json?.success === false) {
+      return { ok: false, code: 'UNKNOWN', message: 'Ödeme bildirimi gönderilemedi' };
+    }
+    return { ok: true, data: json ?? {} };
   } catch {
     return { ok: false, code: 'UNKNOWN', message: 'Yanıt okunamadı' };
   }
