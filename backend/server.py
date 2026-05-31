@@ -11436,6 +11436,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "pickup_eta_min": pickup_min_i,
                 "passenger_preferred_vehicle": tag.get("passenger_preferred_vehicle"),
                 "passenger_payment_method": tag.get("passenger_payment_method"),
+                "matched_bank_account_id": tag.get("matched_bank_account_id"),
                 "end_request": tag.get("end_request"),
             }
             

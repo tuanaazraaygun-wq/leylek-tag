@@ -15275,10 +15275,9 @@ function DriverDashboard({
 
   useEffect(() => {
     const tagId = activeTag?.id ? String(activeTag.id) : '';
-    const bankId = String(activeTag?.matched_bank_account_id || '').trim();
     const st = String(activeTag?.status || '').trim().toLowerCase();
     const uid = user?.id ? String(user.id) : '';
-    if (!tagId || !bankId || !uid) return;
+    if (!tagId || !uid) return;
     if (st !== 'matched' && st !== 'in_progress') return;
 
     const tick = async () => {
@@ -15298,13 +15297,7 @@ function DriverDashboard({
       void tick();
     }, 12000);
     return () => clearInterval(interval);
-  }, [
-    activeTag?.id,
-    activeTag?.matched_bank_account_id,
-    activeTag?.status,
-    user?.id,
-    tryOpenTransferPaymentConfirm,
-  ]);
+  }, [activeTag?.id, activeTag?.status, user?.id, tryOpenTransferPaymentConfirm]);
 
   const handleTransferPaymentApprove = useCallback(async () => {
     if (transferPaymentSubmitting) return;
