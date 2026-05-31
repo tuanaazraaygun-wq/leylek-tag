@@ -27,6 +27,7 @@ import TagMatchTransitionOverlay, {
   TAG_MATCH_TRANSITION_HOLD_MS,
 } from '../components/TagMatchTransitionOverlay';
 import QRTripEndModal from '../components/QRTripEndModal';
+import DriverPaymentDetailsSheet from '../components/DriverPaymentDetailsSheet';
 import BoardingPassengerPromptModal from '../components/BoardingPassengerPromptModal';
 import BoardingScanModal, { type BoardingScanModalProps } from '../components/BoardingScanModal';
 import DriverBoardingQRModal from '../components/DriverBoardingQRModal';
@@ -89,6 +90,7 @@ import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
+import { useTripPaymentDetails } from '../hooks/useTripPaymentDetails';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import {
   haversineMetersLatLng,
@@ -8238,6 +8240,34 @@ function PassengerDashboard({
   // 🆕 QR Modal State
   const [showQRModal, setShowQRModal] = useState(false);
 
+  const tripPaymentDetails = useTripPaymentDetails();
+  const [driverPaymentSheetVisible, setDriverPaymentSheetVisible] = useState(false);
+
+  const canOpenDriverPaymentDetails = useMemo(() => {
+    if (!user?.id || !activeTag?.id) return false;
+    if (!activeTag.boarding_confirmed_at) return false;
+    if (!String(activeTag.matched_bank_account_id || '').trim()) return false;
+    const st = String(activeTag.status || '').trim().toLowerCase();
+    return st === 'matched' || st === 'in_progress';
+  }, [
+    user?.id,
+    activeTag?.id,
+    activeTag?.boarding_confirmed_at,
+    activeTag?.matched_bank_account_id,
+    activeTag?.status,
+  ]);
+
+  const handleOpenDriverPaymentDetails = useCallback(() => {
+    if (!canOpenDriverPaymentDetails || !activeTag?.id || !user?.id) return;
+    setDriverPaymentSheetVisible(true);
+    void tripPaymentDetails.load(activeTag.id, user.id);
+  }, [canOpenDriverPaymentDetails, activeTag?.id, user?.id, tripPaymentDetails]);
+
+  const handleCloseDriverPaymentDetails = useCallback(() => {
+    setDriverPaymentSheetVisible(false);
+    tripPaymentDetails.clear();
+  }, [tripPaymentDetails]);
+
   const [passengerBoardingPromptVisible, setPassengerBoardingPromptVisible] = useState(false);
   const [passengerBoardingScanVisible, setPassengerBoardingScanVisible] = useState(false);
   const [passengerBoardingReminderBannerVisible, setPassengerBoardingReminderBannerVisible] =
@@ -12408,6 +12438,9 @@ function PassengerDashboard({
                   onShowQRModal={() => setShowQRModal(true)}
                   onShowBoardingScanModal={openPassengerBoardingScanManualEntry}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
+                  onOpenDriverPaymentDetails={
+                    canOpenDriverPaymentDetails ? handleOpenDriverPaymentDetails : undefined
+                  }
                 />
 
                 <PassengerDriverForceEndReviewModal
@@ -13502,6 +13535,15 @@ function PassengerDashboard({
         </View>
       </Modal>
       
+      <DriverPaymentDetailsSheet
+        visible={driverPaymentSheetVisible}
+        loading={tripPaymentDetails.loading}
+        error={tripPaymentDetails.error}
+        details={tripPaymentDetails.details}
+        mode="info"
+        onClose={handleCloseDriverPaymentDetails}
+      />
+
       {/* 🆕 QR İLE YOLCULUK BİTİRME MODALI */}
       <QRTripEndModal
         visible={showQRModal}

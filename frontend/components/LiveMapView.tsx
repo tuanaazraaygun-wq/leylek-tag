@@ -272,6 +272,8 @@ interface LiveMapViewProps {
   otherLocationFromPickupFallback?: boolean;
   /** Biniş QR doğrulandı — yolcu pini gizlenir, üst metin güncellenir; matched iken GPS ile hedef fazına geçiş engellenir */
   boardingConfirmed?: boolean;
+  /** Yolcu: biniş sonrası sürücü IBAN sheet (lazy fetch index’te) */
+  onOpenDriverPaymentDetails?: () => void;
   /** Sürücü: navigasyon pickup → destination geçişi (biniş sonrası hedef fazı) — yolcuya bildirim tetiklemek için */
   onDriverEnteredDestinationNavigation?: () => void;
   /** Sürücü "Yolcuya Git" — doğrulamadan hemen önce (index’te DRIVER_NAV_COORDS vb.) */
@@ -2223,6 +2225,7 @@ export default function LiveMapView({
   peerMapPinScale = 1,
   otherLocationFromPickupFallback = false,
   boardingConfirmed = false,
+  onOpenDriverPaymentDetails,
   onDriverEnteredDestinationNavigation,
   onDriverYolcuyaGitAttempt,
   driverYolcuyaGitCoordContext = null,
@@ -2250,6 +2253,13 @@ export default function LiveMapView({
   >(null);
   const applyDriverActiveFollowViewportRef = useRef<(() => void) | null>(null);
   const insets = useSafeAreaInsets();
+  const showDriverIbanButton = useMemo(() => {
+    if (isDriver || !boardingConfirmed || !onOpenDriverPaymentDetails) return false;
+    const tid = String(tagId || '').trim();
+    if (!tid) return false;
+    const st = String(tagStatus || '').trim().toLowerCase();
+    return st === 'matched' || st === 'in_progress';
+  }, [isDriver, boardingConfirmed, onOpenDriverPaymentDetails, tagId, tagStatus]);
   const routeInfoRef = useRef(routeInfo);
   routeInfoRef.current = routeInfo;
 
@@ -7312,6 +7322,26 @@ export default function LiveMapView({
         </TouchableOpacity>
       </Modal>
 
+      {showDriverIbanButton ? (
+        <View
+          pointerEvents="box-none"
+          style={[styles.passengerIbanFabWrap, { top: Math.max(insets.top, 10) + 6 }]}
+        >
+          <Pressable
+            style={({ pressed }) => [styles.passengerIbanFab, pressed && { opacity: 0.9 }]}
+            onPress={() => {
+              void tapButtonHaptic();
+              onOpenDriverPaymentDetails?.();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Sürücü IBAN'ı"
+          >
+            <Ionicons name="card-outline" size={16} color="#22D3EE" />
+            <Text style={styles.passengerIbanFabText}>Sürücü IBAN'ı</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {onInRideComplaintForceEnd ? (
         <InRideSaferForceEndModal
           visible={inRideSaferFeVisible}
@@ -8388,6 +8418,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 2,
     maxWidth: SCREEN_WIDTH * 0.62,
+  },
+  passengerIbanFabWrap: {
+    position: 'absolute',
+    right: 12,
+    zIndex: 94,
+  },
+  passengerIbanFab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    shadowColor: 'rgba(8, 17, 31, 0.72)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 8,
+    elevation: 8,
+    maxWidth: SCREEN_WIDTH * 0.46,
+  },
+  passengerIbanFabText: {
+    color: 'rgba(243, 248, 255, 0.94)',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   passengerLiveLabel: {
     color: '#22D3EE',
