@@ -16,13 +16,20 @@ from urllib.parse import quote_plus
 import httpx
 from fastapi import APIRouter, Query
 
+# Faz 1: Redis places önbelleği (REDIS_CACHE=0 → yalnız _CACHE bellek)
+from redis_cache import cache_get as _redis_cache_get, cache_set as _redis_cache_set
+
 router = APIRouter(prefix="/places", tags=["places"])
+
+# Redis namespace — /api/places/search yanıt gövdesi (cached flag istemcide aynı kalır)
+_PLACES_CACHE_NS = "places"
 
 GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 GEOAPIFY_API_KEY = (os.getenv("GEOAPIFY_API_KEY") or "").strip()
 _GEOAPIFY_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("GEOAPIFY_HTTP_TIMEOUT_SEC", "8") or "8"))
 
-# Önbellek: anahtar -> (monotonic_expire, gövde_dict)
+# Önbellek bellek fallback: anahtar -> (monotonic_expire, gövde_dict)
+# Faz 1: birincil TTL Redis'te; Redis yoksa veya REDIS_CACHE=0 ise yalnız bu dict kullanılır
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
@@ -816,6 +823,11 @@ def _nominatim_try_order(
 
 
 def _cache_get(key: str) -> Optional[dict[str, Any]]:
+    # Faz 1: önce Redis (TTL = _CACHE_TTL_SEC); miss/hata → bellek monotonic süre
+    redis_hit = _redis_cache_get(_PLACES_CACHE_NS, key)
+    if isinstance(redis_hit, dict):
+        return dict(redis_hit)
+
     entry = _CACHE.get(key)
     if not entry:
         return None
@@ -830,6 +842,10 @@ def _cache_get(key: str) -> Optional[dict[str, Any]]:
 
 
 def _cache_set(key: str, payload: dict[str, Any]) -> None:
+    body = dict(payload)
+    # Redis + bellek çift yazım (sessiz fallback redis_cache içinde)
+    _redis_cache_set(_PLACES_CACHE_NS, key, body, _CACHE_TTL_SEC)
+
     if len(_CACHE) > _CACHE_MAX:
         for k in list(_CACHE.keys())[:512]:
             try:
@@ -837,7 +853,7 @@ def _cache_set(key: str, payload: dict[str, Any]) -> None:
             except KeyError:
                 pass
     exp = time.monotonic() + _CACHE_TTL_SEC
-    _CACHE[key] = (exp, dict(payload))
+    _CACHE[key] = (exp, body)
 
 
 def _fold_city(s: str) -> str:

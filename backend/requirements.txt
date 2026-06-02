@@ -93,6 +93,7 @@ watchfiles==1.1.1
 websockets==15.0.1
 yarl==1.22.0
 python-socketio==5.16.0
+redis==5.2.1
 simple-websocket==1.1.0
 websockets==15.0.1
 firebase_admin==7.2.0

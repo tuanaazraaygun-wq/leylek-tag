@@ -1,6 +1,6 @@
 """
 Route Service - Rota Hesaplama ve Cache
-OSRM API ile rota hesaplama, Redis benzeri in-memory cache
+OSRM API ile rota hesaplama, Redis + bellek fallback (Faz 1, REDIS_CACHE)
 """
 
 import asyncio
@@ -10,15 +10,25 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Tuple
 import logging
 
+from redis_cache import (
+    cache_delete,
+    cache_get,
+    cache_set,
+    memory_entry_count,
+    redis_cache_enabled,
+    trim_memory_namespace,
+)
+
 logger = logging.getLogger(__name__)
 
 # ==================== ROUTE CACHE ====================
+# Faz 1: Redis namespace "route" (+ bellek yedek). Eski ROUTE_CACHE dict kaldırıldı.
 # Key: "driver_id:passenger_id" veya "lat1,lng1:lat2,lng2"
 # Value: {distance_km, duration_min, geometry, cached_at}
 
-ROUTE_CACHE: Dict[str, dict] = {}
+ROUTE_CACHE_NS = "route"
 CACHE_TTL_SECONDS = 300  # 5 dakika cache
-MAX_CACHE_SIZE = 1000  # Maksimum cache boyutu
+MAX_CACHE_SIZE = 1000  # Maksimum bellek fallback boyutu
 
 
 def _get_cache_key(lat1: float, lng1: float, lat2: float, lng2: float) -> str:
@@ -32,27 +42,44 @@ def _get_pair_cache_key(driver_id: str, passenger_id: str) -> str:
 
 
 def _is_cache_valid(cached_at: str) -> bool:
-    """Cache'in geçerli olup olmadığını kontrol et"""
+    """Bellek fallback girişleri için TTL (Redis hit'te setex zaten süresi yönetir)."""
     try:
         cached_time = datetime.fromisoformat(cached_at)
         return datetime.utcnow() - cached_time < timedelta(seconds=CACHE_TTL_SECONDS)
-    except:
+    except Exception:
         return False
 
 
+def _route_cache_read(key: str) -> Optional[dict]:
+    """Redis → bellek; geçersiz cached_at ise None."""
+    cached = cache_get(ROUTE_CACHE_NS, key)
+    if not isinstance(cached, dict):
+        return None
+    if _is_cache_valid(cached.get("cached_at", "")):
+        return cached
+    cache_delete(ROUTE_CACHE_NS, key)
+    return None
+
+
+def _route_cache_write(key: str, value: dict) -> None:
+    """Redis setex + bellek çift yazım."""
+    cache_set(ROUTE_CACHE_NS, key, value, CACHE_TTL_SECONDS)
+
+
 def _cleanup_old_cache():
-    """Eski cache girişlerini temizle"""
-    global ROUTE_CACHE
-    if len(ROUTE_CACHE) > MAX_CACHE_SIZE:
-        # En eski %20'yi sil
-        sorted_keys = sorted(
-            ROUTE_CACHE.keys(),
-            key=lambda k: ROUTE_CACHE[k].get('cached_at', ''),
+    """Bellek fallback taşmasını kırp (Redis kendi TTL ile temizler)."""
+    trim_memory_namespace(
+        ROUTE_CACHE_NS,
+        MAX_CACHE_SIZE,
+        max(1, MAX_CACHE_SIZE // 5),
+    )
+    if memory_entry_count(ROUTE_CACHE_NS) > MAX_CACHE_SIZE:
+        logger.info(
+            "🧹 Route bellek cache kırpıldı (ns=%s, kalan≈%s, redis=%s)",
+            ROUTE_CACHE_NS,
+            memory_entry_count(ROUTE_CACHE_NS),
+            redis_cache_enabled(),
         )
-        keys_to_delete = sorted_keys[:len(sorted_keys) // 5]
-        for key in keys_to_delete:
-            del ROUTE_CACHE[key]
-        logger.info(f"🧹 Cache temizlendi: {len(keys_to_delete)} giriş silindi")
 
 
 # ==================== OSRM API ====================
@@ -80,19 +107,17 @@ async def get_route_cached(
     # 1. Sürücü-yolcu çifti cache'i kontrol et
     if driver_id and passenger_id:
         pair_key = _get_pair_cache_key(driver_id, passenger_id)
-        if pair_key in ROUTE_CACHE:
-            cached = ROUTE_CACHE[pair_key]
-            if _is_cache_valid(cached.get('cached_at', '')):
-                logger.info(f"✅ Cache HIT (pair): {driver_id[:8]}:{passenger_id[:8]}")
-                return {**cached, "from_cache": True}
+        cached = _route_cache_read(pair_key)
+        if cached:
+            logger.info(f"✅ Cache HIT (pair): {driver_id[:8]}:{passenger_id[:8]}")
+            return {**cached, "from_cache": True}
     
     # 2. Koordinat bazlı cache kontrol et
     coord_key = _get_cache_key(start_lat, start_lng, end_lat, end_lng)
-    if coord_key in ROUTE_CACHE:
-        cached = ROUTE_CACHE[coord_key]
-        if _is_cache_valid(cached.get('cached_at', '')):
-            logger.info(f"✅ Cache HIT (coord): {coord_key}")
-            return {**cached, "from_cache": True}
+    cached = _route_cache_read(coord_key)
+    if cached:
+        logger.info(f"✅ Cache HIT (coord): {coord_key}")
+        return {**cached, "from_cache": True}
     
     # 3. Cache'de yok - OSRM'den al
     try:
@@ -114,12 +139,12 @@ async def get_route_cached(
                 "cached_at": datetime.utcnow().isoformat()
             }
             
-            # Cache'e kaydet
-            ROUTE_CACHE[coord_key] = result
+            # Cache'e kaydet (Redis + bellek)
+            _route_cache_write(coord_key, result)
             if driver_id and passenger_id:
-                ROUTE_CACHE[_get_pair_cache_key(driver_id, passenger_id)] = result
+                _route_cache_write(_get_pair_cache_key(driver_id, passenger_id), result)
             
-            # Cache temizliği
+            # Bellek fallback temizliği
             _cleanup_old_cache()
             
             logger.info(f"📍 OSRM: {result['distance_km']}km, {result['duration_min']}dk")
@@ -174,17 +199,18 @@ async def get_route_for_offer(
 
 
 def invalidate_pair_cache(driver_id: str, passenger_id: str):
-    """Sürücü-yolcu çifti cache'ini invalidate et"""
+    """Sürücü-yolcu çifti cache'ini invalidate et (Redis + bellek)."""
     pair_key = _get_pair_cache_key(driver_id, passenger_id)
-    if pair_key in ROUTE_CACHE:
-        del ROUTE_CACHE[pair_key]
-        logger.info(f"🗑️ Cache invalidated: {driver_id[:8]}:{passenger_id[:8]}")
+    cache_delete(ROUTE_CACHE_NS, pair_key)
+    logger.info(f"🗑️ Cache invalidated: {driver_id[:8]}:{passenger_id[:8]}")
 
 
 def get_cache_stats() -> dict:
-    """Cache istatistikleri"""
+    """Cache istatistikleri (bellek fallback + Redis bayrağı)."""
     return {
-        "total_entries": len(ROUTE_CACHE),
+        "total_entries": memory_entry_count(ROUTE_CACHE_NS),
         "max_size": MAX_CACHE_SIZE,
-        "ttl_seconds": CACHE_TTL_SECONDS
+        "ttl_seconds": CACHE_TTL_SECONDS,
+        "redis_cache_enabled": redis_cache_enabled(),
+        "namespace": ROUTE_CACHE_NS,
     }
