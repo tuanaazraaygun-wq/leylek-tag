@@ -39,7 +39,7 @@
       "versionCode": 38,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/leylek-logo-premium.png",
+        "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
         "backgroundColor": "#08111F"
       },
       "edgeToEdgeEnabled": true,
