@@ -62,6 +62,9 @@ export default function QRTripEndModal({
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
+  /** iOS: kamera cold-start — BoardingScanModal ile aynı session/remount pattern */
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraSessionKey, setCameraSessionKey] = useState(0);
   /** Yolcu: bitirme yolu seçimi / QR / ödeme onayı */
   const [passengerStep, setPassengerStep] = useState<'choose' | 'scan' | 'payment'>('scan');
   const [pendingDriverId, setPendingDriverId] = useState<string | null>(null);
@@ -82,12 +85,24 @@ export default function QRTripEndModal({
     }
   }, [visible, isDriver, showIbanOption]);
 
+  /** Yolcu scan adımına girince kamera oturumunu yenile (visible+scan — IBAN choose sonrası dahil) */
   useEffect(() => {
     if (!visible || isDriver || passengerStep !== 'scan') return;
+    setCameraSessionKey((k) => k + 1);
+    setCameraReady(false);
+    setScanned(false);
+    lastScannedValueRef.current = { data: '', ts: 0 };
     if (!hasPermission?.granted) {
-      requestPermission();
+      void requestPermission();
     }
   }, [visible, isDriver, passengerStep, hasPermission?.granted, requestPermission]);
+
+  const scannerActive =
+    !isDriver &&
+    passengerStep === 'scan' &&
+    cameraReady &&
+    !scanned &&
+    !processing;
 
   const submitCompleteQr = useCallback(
     async (paymentConfirmed: PaymentMethod, driverUserId: string) => {
@@ -139,7 +154,7 @@ export default function QRTripEndModal({
   const handleBarCodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
       if (isDriver) return;
-      if (scanned || processing) return;
+      if (!cameraReady || scanned || processing) return;
       const raw = (data || '').trim();
       if (!raw.startsWith('leylektag://end?')) {
         return;
@@ -179,7 +194,7 @@ export default function QRTripEndModal({
       setPassengerStep('payment');
       setScanned(false);
     },
-    [isDriver, scanned, processing, tagId],
+    [isDriver, cameraReady, scanned, processing, tagId],
   );
 
   const handlePassengerPaymentConfirm = (method: PaymentMethod) => {
@@ -201,6 +216,7 @@ export default function QRTripEndModal({
   const handleClose = () => {
     setScanned(false);
     setProcessing(false);
+    setCameraReady(false);
     setPassengerStep(!isDriver && showIbanOption ? 'choose' : 'scan');
     setPendingDriverId(null);
     setLegacyPaymentPick(null);
@@ -302,31 +318,22 @@ export default function QRTripEndModal({
                   {`${firstName}'ın QR kodunu tarayın`}
                 </Text>
 
-                {processing && (
-                  <View style={styles.processingOverlay}>
-                    <ActivityIndicator size="large" color="#22D3EE" />
-                    <Text style={styles.processingText}>İşleniyor…</Text>
-                  </View>
-                )}
-
                 {hasPermission?.granted ? (
                   <View style={styles.cameraWrapper}>
                     <CameraView
+                      key={`trip-end-cam-${cameraSessionKey}`}
                       style={styles.camera}
                       facing="back"
                       barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                       onCameraReady={() => {
+                        setCameraReady(true);
                         if (__DEV__) {
                           console.log('[QRTripEndModal] onCameraReady');
                         }
                       }}
-                      onBarcodeScanned={
-                        passengerStep === 'scan' && !scanned && !processing
-                          ? handleBarCodeScanned
-                          : undefined
-                      }
+                      onBarcodeScanned={scannerActive ? handleBarCodeScanned : undefined}
                     />
-                    <View style={styles.scanOverlay}>
+                    <View style={styles.scanOverlay} pointerEvents="none">
                       <View style={styles.scanFrame}>
                         <View style={[styles.corner, styles.topLeft]} />
                         <View style={[styles.corner, styles.topRight]} />
@@ -334,6 +341,18 @@ export default function QRTripEndModal({
                         <View style={[styles.corner, styles.bottomRight]} />
                       </View>
                     </View>
+                    {!cameraReady && !processing ? (
+                      <View style={styles.cameraStatusOverlay}>
+                        <ActivityIndicator size="large" color="#22D3EE" />
+                        <Text style={styles.processingText}>Kamera hazırlanıyor…</Text>
+                      </View>
+                    ) : null}
+                    {processing ? (
+                      <View style={styles.cameraStatusOverlay}>
+                        <ActivityIndicator size="large" color="#22D3EE" />
+                        <Text style={styles.processingText}>İşleniyor…</Text>
+                      </View>
+                    ) : null}
                   </View>
                 ) : (
                   <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
@@ -612,17 +631,13 @@ const styles = StyleSheet.create({
   cameraContainer: {
     alignItems: 'center',
   },
-  processingOverlay: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    bottom: 60,
+  /** Kamera kutusu içi: hazırlanıyor / işleniyor (BoardingScanModal ile uyumlu) */
+  cameraStatusOverlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(8, 17, 31, 0.88)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
-    borderRadius: 16,
   },
   processingText: {
     marginTop: 12,
