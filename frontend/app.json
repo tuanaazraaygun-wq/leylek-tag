@@ -9,6 +9,7 @@
     "scheme": "leylektag",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
+    "privacyPolicyUrl": "https://leylektag.com/gizlilik-politikasi",
     "ios": {
       "icon": "./assets/ios.premium.logo.png",
       "supportsTablet": true,

@@ -170,6 +170,9 @@ Karanfil Mah. Konur Sokak No:23
 ✓ Sesli görüşme / VoIP ve varsa sesli mesaj özellikleri
 ✓ Cihaz, log ve güvenlik kayıtları
 
+BANKA HESABI / IBAN
+Banka hesabı/IBAN bilgileriniz yalnızca yolculuk ücreti ödemesi için kullanılır, üçüncü taraflarla paylaşılmaz.
+
 VERİ SAKLAMA SÜRESİ
 Veriler, hizmet sunumu süresince ve yasal yükümlülükler kapsamında saklanır. Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
 
