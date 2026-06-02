@@ -3,7 +3,7 @@
     "name": "Leylek TAG",
     "slug": "leylektag-app",
     "owner": "leylektagappp",
-    "version": "1.0.36",
+    "version": "1.0.37",
     "orientation": "portrait",
     "icon": "./assets/images/leylek-logo-premium.png",
     "scheme": "leylektag",
@@ -14,7 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.leylektag.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "config": {
         "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
       },
@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.leylektag.app",
-      "versionCode": 37,
+      "versionCode": 38,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/leylek-logo-premium.png",
