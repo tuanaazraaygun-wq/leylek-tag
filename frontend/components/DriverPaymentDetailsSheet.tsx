@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { TripPaymentDetailsResponse } from '../lib/tripPaymentApi';
 import { appAlert } from '../contexts/AppAlertContext';
@@ -37,11 +38,8 @@ async function copyPlainText(text: string): Promise<boolean> {
       }
       return false;
     }
-    const clipboardMod = require('expo-clipboard') as {
-      setStringAsync?: (input: string) => Promise<void>;
-    };
-    if (typeof clipboardMod.setStringAsync === 'function') {
-      await clipboardMod.setStringAsync(value);
+    if (typeof Clipboard.setStringAsync === 'function') {
+      await Clipboard.setStringAsync(value);
       return true;
     }
     return false;
