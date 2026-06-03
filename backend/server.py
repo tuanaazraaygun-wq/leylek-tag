@@ -1384,7 +1384,7 @@ def _trip_passenger_vehicle_pref(
 
 # ==================== DISPATCH QUEUE CONFIG ====================
 DISPATCH_CONFIG = {
-    "matching_radius_km": 20,        # Sürücü arama yarıçapı (km) - 20 km
+    "matching_radius_km": 10,        # Sürücü arama yarıçapı (km) - 10 km
     "max_driver_dispatch": 10,       # Maksimum kaç sürücüye teklif gönderilsin
     "driver_offer_timeout": 10,      # Sürücü yanıt süresi (saniye) - 10 sn
     "enabled": True,                 # Dispatch queue aktif mi
@@ -1453,10 +1453,10 @@ except (TypeError, ValueError):
     ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = 30.0
 DISPATCH_TIMEOUT = int(round(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS))
 try:
-    _dr = float(os.getenv("DISPATCH_RADIUS_KM", "20").strip().replace(",", "."))
+    _dr = float(os.getenv("DISPATCH_RADIUS_KM", "10").strip().replace(",", "."))
     DISPATCH_RADIUS_KM = max(5.0, min(100.0, _dr))
 except (TypeError, ValueError):
-    DISPATCH_RADIUS_KM = 20.0
+    DISPATCH_RADIUS_KM = 10.0
 SEQUENTIAL_DISPATCH_RADIUS_KM = DISPATCH_RADIUS_KM
 BROADCAST_RADIUS_KM = DISPATCH_RADIUS_KM
 
@@ -2183,7 +2183,7 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
             return
 
         cfg = await get_dispatch_config()
-        matching_radius_km = float(cfg.get("matching_radius_km", DISPATCH_CONFIG.get("matching_radius_km", 20)))
+        matching_radius_km = float(DISPATCH_RADIUS_KM)
         timeout_sec = int(cfg.get("driver_offer_timeout", DISPATCH_CONFIG.get("driver_offer_timeout", 10)))
 
         resolved_driver_id = await resolve_user_id(driver_id)
