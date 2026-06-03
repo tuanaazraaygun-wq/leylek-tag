@@ -22,7 +22,7 @@ class TagVehiclePricing:
 TAG_PRICING_BY_CITY: Dict[str, Dict[str, TagVehiclePricing]] = {
     "ankara": {
         "car": TagVehiclePricing(base=65.0, per_km=22.0, per_min=3.5, minimum=175.0),
-        "motorcycle": TagVehiclePricing(base=45.0, per_km=14.0, per_min=2.5, minimum=125.0),
+        "motorcycle": TagVehiclePricing(base=45.0, per_km=16.0, per_min=2.5, minimum=125.0),
     },
 }
 
