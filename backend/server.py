@@ -5211,6 +5211,149 @@ def verify_access_token(token: str) -> Optional[str]:
         return None
 
 
+# ==================== JWT TRANSITION (phase 1: log-only / dual observe, no blocking) ====================
+
+_JWT_TRANSITION_ENDPOINT_ENV: dict[str, str] = {
+    "update-location": "LOCATION_AUTH_MODE",
+    "ride/create": "RIDE_CREATE_AUTH_MODE",
+    "go-online": "DRIVER_ONLINE_AUTH_MODE",
+    "go-offline": "DRIVER_ONLINE_AUTH_MODE",
+}
+
+_jwt_transition_enforce_downgrade_logged = False
+
+
+def _parse_jwt_transition_auth_mode(raw: Optional[str]) -> str:
+    """off | log | dual | enforce — unknown values become off."""
+    s = (raw or "").strip().lower()
+    if s in ("1", "true", "yes", "on"):
+        return "log"
+    if s in ("off", "", "0", "false", "no"):
+        return "off"
+    if s in ("log", "dual", "enforce"):
+        return s
+    logger.warning("[jwt_transition] unknown_auth_mode raw=%r using_off=1", str(raw)[:32])
+    return "off"
+
+
+def _get_jwt_transition_mode(endpoint_key: str) -> str:
+    global _jwt_transition_enforce_downgrade_logged
+    override = os.getenv("JWT_TRANSITION_AUTH_MODE", "").strip()
+    if override:
+        mode = _parse_jwt_transition_auth_mode(override)
+    else:
+        env_name = _JWT_TRANSITION_ENDPOINT_ENV.get(endpoint_key, "")
+        mode = _parse_jwt_transition_auth_mode(os.getenv(env_name, "off") if env_name else "off")
+    if mode == "enforce" and not _jwt_transition_enforce_downgrade_logged:
+        _jwt_transition_enforce_downgrade_logged = True
+        logger.warning(
+            "[jwt_transition] enforce_mode_configured phase=1 observation_only no_blocking=1"
+        )
+    return mode
+
+
+def _request_has_authorization_header(request: Optional[Request]) -> bool:
+    if request is None:
+        return False
+    try:
+        auth = request.headers.get("authorization") or request.headers.get("Authorization")
+        return bool(auth and str(auth).strip())
+    except Exception:
+        return False
+
+
+def _extract_bearer_sub_optional(request: Optional[Request]) -> Tuple[Optional[str], str]:
+    """Returns (jwt sub lower, reason). Never logs token or Authorization header."""
+    if request is None:
+        return None, "no_request"
+    try:
+        if not _request_has_authorization_header(request):
+            return None, "no_auth_header"
+        authorization = request.headers.get("authorization") or request.headers.get("Authorization")
+        parts = str(authorization).strip().split(None, 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+            return None, "malformed_auth_header"
+        sub = verify_access_token(parts[1].strip())
+        if not sub:
+            return None, "invalid_token"
+        return sub, "ok"
+    except Exception:
+        return None, "token_extract_error"
+
+
+async def _normalize_claimed_user_id(raw: Optional[str]) -> Tuple[Optional[str], str]:
+    """Resolve claimed user id to canonical users.id (lower). Never logs raw id."""
+    cand = str(raw or "").strip()
+    if not cand:
+        return None, "empty_claimed"
+    try:
+        resolved = await resolve_user_id(cand)
+        if not resolved:
+            return None, "claimed_user_unresolved"
+        return str(resolved).strip().lower(), "ok"
+    except Exception:
+        return None, "claimed_resolve_error"
+
+
+async def observe_optional_auth_for_user_action(
+    *,
+    endpoint: str,
+    request: Optional[Request],
+    claimed_user_id_raw: Optional[str],
+) -> None:
+    """
+    Phase 1: structured observation only. Never blocks, never mutates handler flow.
+    Safe fields only: endpoint, mode, auth_present, masked ids, mismatch, reason.
+    """
+    try:
+        mode = _get_jwt_transition_mode(endpoint)
+        if mode == "off":
+            return
+
+        auth_present = _request_has_authorization_header(request)
+        if mode == "dual" and not auth_present:
+            return
+
+        actor_sub: Optional[str] = None
+        extract_reason = "no_auth_header"
+        if auth_present:
+            actor_sub, extract_reason = _extract_bearer_sub_optional(request)
+
+        claimed_sub, claimed_reason = await _normalize_claimed_user_id(claimed_user_id_raw)
+
+        mismatch = bool(
+            actor_sub
+            and claimed_sub
+            and str(actor_sub).strip().lower() != str(claimed_sub).strip().lower()
+        )
+
+        reason = extract_reason
+        if mismatch:
+            reason = "user_id_mismatch"
+        elif claimed_reason != "ok" and claimed_sub is None and auth_present and actor_sub:
+            reason = claimed_reason
+        elif claimed_reason != "ok" and claimed_sub is None and not auth_present:
+            reason = claimed_reason
+
+        log_fn = logger.warning if mismatch else logger.info
+        log_fn(
+            "[jwt_transition] endpoint=%s mode=%s auth_present=%s actor=%s claimed=%s mismatch=%s reason=%s",
+            endpoint,
+            mode,
+            auth_present,
+            _mask_log_id(actor_sub),
+            _mask_log_id(claimed_sub),
+            mismatch,
+            reason,
+        )
+    except Exception as obs_err:
+        logger.warning(
+            "[jwt_transition] observer_failed endpoint=%s err_type=%s",
+            endpoint,
+            type(obs_err).__name__,
+        )
+
+
 async def get_authenticated_user_id_from_authorization(
     authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
 ) -> str:
@@ -7743,9 +7886,19 @@ async def get_user(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/user/update-location")
-async def update_location(user_id: str, latitude: float, longitude: float):
+async def update_location(
+    user_id: str,
+    latitude: float,
+    longitude: float,
+    request: Request = None,
+):
     """Kullanıcı konumunu güncelle"""
     try:
+        await observe_optional_auth_for_user_action(
+            endpoint="update-location",
+            request=request,
+            claimed_user_id_raw=user_id,
+        )
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(user_id)
         
@@ -18991,6 +19144,11 @@ async def create_ride(http_request: Request):
     except Exception:
         auth_user_id = None
     payload = await _parse_create_ride_offer_json(http_request)
+    await observe_optional_auth_for_user_action(
+        endpoint="ride/create",
+        request=http_request,
+        claimed_user_id_raw=str(payload.passenger_id or ""),
+    )
     return await _create_ride_offer_execute(payload, auth_user_id=auth_user_id)
 
 
@@ -36235,9 +36393,14 @@ async def activate_driver_package(user_id: str, package_id: str):
         return {"success": False, "detail": str(e)}
 
 @api_router.post("/driver/go-offline")
-async def driver_go_offline(user_id: str):
+async def driver_go_offline(user_id: str, request: Request = None):
     """Sürücüyü offline yap (manuel)"""
     try:
+        await observe_optional_auth_for_user_action(
+            endpoint="go-offline",
+            request=request,
+            claimed_user_id_raw=user_id,
+        )
         supabase.table("users").update({
             "driver_online": False,
             "updated_at": datetime.utcnow().isoformat()
@@ -36250,9 +36413,14 @@ async def driver_go_offline(user_id: str):
         return {"success": False, "detail": str(e)}
 
 @api_router.post("/driver/go-online")
-async def driver_go_online(user_id: str):
+async def driver_go_online(user_id: str, request: Request = None):
     """Sürücüyü online yap (aktif paketi varsa). Admin numaraları otomatik 1 yıl paket alır."""
     try:
+        await observe_optional_auth_for_user_action(
+            endpoint="go-online",
+            request=request,
+            claimed_user_id_raw=user_id,
+        )
         result = supabase.table("users").select("phone, driver_active_until, driver_details").eq("id", user_id).execute()
         if not result.data:
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
