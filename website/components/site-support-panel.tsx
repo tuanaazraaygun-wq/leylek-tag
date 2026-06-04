@@ -36,6 +36,7 @@ import {
 } from "@/lib/support-ticket-storage";
 import { requestSupportLeylekZeka, type LeylekZekaErrorCode } from "@/lib/support-leylek-zeka-client";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
+import { trackSupportOpen } from "@/lib/track-event";
 
 const MESSAGE_MIN_LEN = 10;
 const CHAT_MESSAGE_MIN_LEN = 1;
@@ -522,6 +523,9 @@ export function SiteSupportPanel() {
   const togglePanel = useCallback(() => {
     setOpen((prev) => {
       const nextOpen = !prev;
+      if (nextOpen) {
+        trackSupportOpen({ page: pathname ?? undefined, placement: "support_bubble" });
+      }
       if (nextOpen && configured && authReady) {
         const nameHint = profile?.full_name?.trim() ?? "";
         queueMicrotask(() => {
@@ -530,7 +534,7 @@ export function SiteSupportPanel() {
       }
       return nextOpen;
     });
-  }, [authReady, configured, profile?.full_name]);
+  }, [authReady, configured, pathname, profile?.full_name]);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -1167,13 +1171,13 @@ export function SiteSupportPanel() {
 
   const composerIntentSubtitle =
     entryIntent === "live"
-      ? "Mesajın destek ekibine iletilir."
-      : "Size anında yardımcı olmaya hazır.";
+      ? "Mesajın destek ekibine iletilir; yanıtlar müsaitlik durumuna göre gelir."
+      : "Leylek Zeka ön bilgilendirme sağlar; gerektiğinde insan destek devreye girer.";
 
   const threadHeaderSubtitle =
     hasAdminReplyInThread || hasAssignedAdmin
       ? "Destek ekibi görüşmeye katıldı."
-      : "Size anında yardımcı olmaya hazır.";
+      : "Müsaitlik durumuna göre destek ekibi yanıt verir.";
 
   const hasThreadMessages = chatLines.length > 0;
   const threadDateChip = hasThreadMessages ? formatChatDateChipTr(chatLines[0]?.created_at) : "";

@@ -1,5 +1,8 @@
+"use client";
+
 import { ButtonLink } from "@/components/button-link";
 import { Container } from "@/components/container";
+import { trackCityLandingCta } from "@/lib/track-event";
 
 type PageHeroProps = {
   eyebrow: string;
@@ -11,6 +14,7 @@ type PageHeroProps = {
   secondaryLabel?: string;
   /** Küçük güven / ek bilgi satırı (CTA’nın hemen altında). */
   ctaHint?: string;
+  citySlug?: string;
 };
 
 export function PageHero({
@@ -22,7 +26,17 @@ export function PageHero({
   secondaryHref,
   secondaryLabel,
   ctaHint,
+  citySlug,
 }: PageHeroProps) {
+  const handlePrimaryClick = () => {
+    trackCityLandingCta({
+      city_slug: citySlug,
+      role: "download",
+      placement: "city_hero_primary",
+      page: citySlug ? `/sehir/${citySlug}` : undefined,
+    });
+  };
+
   return (
     <section className="relative overflow-hidden py-12 sm:py-16 md:py-[4.5rem]">
       <div className="absolute inset-0 -z-10 bg-radial-glow opacity-80" />
@@ -34,7 +48,7 @@ export function PageHero({
           </h1>
           <p className="mt-4 max-w-2xl text-[15px] leading-7 text-slate-300 sm:text-base">{description}</p>
           <div className="mt-7 flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <ButtonLink href={primaryHref} className="w-full sm:w-auto sm:min-w-[200px]">
+            <ButtonLink href={primaryHref} className="w-full sm:w-auto sm:min-w-[200px]" onClick={handlePrimaryClick}>
               {primaryLabel}
             </ButtonLink>
             {secondaryHref && secondaryLabel ? (

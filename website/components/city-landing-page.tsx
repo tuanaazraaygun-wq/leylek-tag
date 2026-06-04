@@ -58,6 +58,7 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
         secondaryHref="/nasil-calisir"
         secondaryLabel="Nasıl çalışır?"
         ctaHint="Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır."
+        citySlug={content.slug}
       />
 
       <section className="border-y border-white/[0.06] bg-white/[0.02] py-10 sm:py-12">

@@ -64,10 +64,10 @@ export const CITY_LANDING_CONTENT: Record<CityLandingSlug, CityLandingContent> =
     cityName: "Ankara",
     title: "Ankara Yolculuk Paylaşımı | Leylek TAG",
     description:
-      "Ankara'da aynı yöne giden yolcu ve sürücüleri karşılıklı teklif ve onayla buluşturan Leylek TAG. Şehir içi masraf paylaşımı için uygulamayı indir.",
+      "Ankara'da Kızılay, Çankaya, Keçiören, Yenimahalle ve Çayyolu güzergâhlarında yolculuk paylaşımı. Leylek TAG ile yolcu ve sürücüyü uygulamada buluşturun; ticari taşımacılık değildir.",
     heroTitle: "Ankara'da aynı yöne gidenlerle kontrollü yolculuk paylaşımı.",
     heroSubtitle:
-      "Başkentte günlük rotalar, kampüs ve iş güzergâhları için karşılıklı teklif, onay ve QR destekli doğrulama akışı.",
+      "Kızılay, Çankaya, Keçiören, Yenimahalle ve Çayyolu rotalarında günlük yol paylaşımı; karşılıklı teklif, onay ve QR destekli doğrulama akışı.",
     passengerCta:
       "Yolcu olarak gideceğin rotayı uygulamada paylaş; uygun sürücü teklifleriyle masraf paylaşımını karşılıklı görüşerek netleştir. Leylek TAG ticari taşımacılık hizmeti sunmaz.",
     driverCta:
@@ -91,8 +91,12 @@ export const CITY_LANDING_CONTENT: Record<CityLandingSlug, CityLandingContent> =
     ],
     keywords: [
       "Ankara yolculuk paylaşımı",
-      "Ankara masraf paylaşımı",
-      "Ankara boş koltuk",
+      "Ankara yol paylaşımı",
+      "Kızılay yolculuk paylaşımı",
+      "Çankaya masraf paylaşımı",
+      "Keçiören boş koltuk",
+      "Yenimahalle yol paylaşımı",
+      "Çayyolu yolculuk paylaşımı",
       "Leylek TAG Ankara",
     ],
   },

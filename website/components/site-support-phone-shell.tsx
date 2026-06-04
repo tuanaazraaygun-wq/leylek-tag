@@ -68,7 +68,7 @@ export function SupportPhoneModalHeader({
   titleId,
   descId,
   statusLabel,
-  subtitle = "Size anında yardımcı olmaya hazır.",
+  subtitle = "Müsaitlik durumuna göre destek ekibi yanıt verir.",
   onClose,
 }: SupportPhoneModalHeaderProps) {
   return (

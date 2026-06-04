@@ -94,30 +94,26 @@ export function ActivityFeed({ variant = "default" }: ActivityFeedProps) {
       <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-            operasyon paneli
+            pilot vitrin
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
-            {isHome ? "Canlı şehir içi hareket" : "Aktif rota akışı"}
+            {isHome ? "Örnek uygulama akışı" : "Örnek rota akışı"}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">
             {isHome
-              ? "Ankara, İstanbul ve İzmir pilot bölgeleri · platform olayları"
-              : "Şehir içi teklif, eşleşme ve doğrulama adımları"}
+              ? "Ankara, İstanbul ve İzmir pilot bölgeleri · canlı operasyon verisi değildir"
+              : "Şehir içi teklif, eşleşme ve doğrulama adımlarının örnek görünümü"}
           </p>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-emerald-400/18 bg-emerald-400/8 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-100/90">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300/60 opacity-50" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300/90" />
-          </span>
-          Canlı
+        <span className="flex shrink-0 items-center gap-1.5 rounded-md border border-cyan-400/18 bg-cyan-400/8 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-cyan-100/90">
+          Örnek akış
         </span>
       </div>
 
       {isHome ? (
         <div className="mt-4">
           <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-500">
-            pilot şehir özeti
+            pilot vitrin özeti
           </p>
           <div className="mt-2">
             <OperationsMicroStats />
@@ -126,8 +122,8 @@ export function ActivityFeed({ variant = "default" }: ActivityFeedProps) {
       ) : null}
 
       <div className="mt-4 flex items-center justify-between gap-2">
-        <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-500">aktif olay akışı</p>
-        <p className="text-[9px] text-slate-600">son güncelleme · canlı</p>
+        <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-500">örnek olay akışı</p>
+        <p className="text-[9px] text-slate-600">uygulama deneyimi örneği</p>
       </div>
 
       <ScrollingFeed events={intracityEvents} />

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Container } from "@/components/container";
+import { trackDriverCta, trackPassengerCta } from "@/lib/track-event";
 
 const roles = [
   {
@@ -10,6 +11,7 @@ const roles = [
     label: "Yolcuyum",
     badge: "Yolculuk teklifi aç",
     description: "Şehir içi yolculuk teklifini aç; güvenli eşleşme ve QR adımlarını incele.",
+    role: "passenger" as const,
     gradient: "from-[#00C6FF]/90 to-[#0072FF]/90",
     ring: "from-[#00C6FF] to-[#0072FF]",
     hoverGlow: "hover:shadow-[0_0_48px_rgba(0,198,255,0.32)]",
@@ -28,6 +30,7 @@ const roles = [
     label: "Sürücüyüm",
     badge: "Boş koltuğunu paylaş",
     description: "Uygulamayı indir; boş koltuğunu şehir içi teklifle paylaş.",
+    role: "driver" as const,
     gradient: "from-[#43E97B]/90 to-[#38F9D7]/90",
     ring: "from-[#43E97B] to-[#38F9D7]",
     hoverGlow: "hover:shadow-[0_0_48px_rgba(108,99,255,0.3)]",
@@ -50,6 +53,15 @@ const roles = [
 export function RoleSelection() {
   const pathname = usePathname();
 
+  const handleRoleClick = (role: "passenger" | "driver") => {
+    const meta = { placement: "role_selection", page: pathname ?? undefined };
+    if (role === "passenger") {
+      trackPassengerCta(meta);
+    } else {
+      trackDriverCta(meta);
+    }
+  };
+
   return (
     <section className="depth-well section-seam relative py-10 sm:py-14 md:py-20" aria-labelledby="role-selection-heading">
       <div className="absolute inset-x-0 top-0 -z-10 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
@@ -70,6 +82,7 @@ export function RoleSelection() {
               <Link
                 key={role.href}
                 href={role.href}
+                onClick={() => handleRoleClick(role.role)}
                 aria-current={isSelected ? "page" : undefined}
                 className={`tap-highlight group relative flex min-h-[11rem] cursor-pointer flex-col overflow-hidden rounded-2xl border p-5 text-left shadow-[0_8px_32px_rgba(0,0,0,0.25)] backdrop-blur-xl transition-all duration-300 ease-out hover:scale-[1.05] hover:brightness-110 active:scale-[0.98] active:ring-2 active:ring-white/35 sm:p-6 md:min-h-0 md:p-8 ${
                   isSelected

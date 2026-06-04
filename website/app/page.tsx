@@ -21,11 +21,12 @@ import { SectionHeading } from "@/components/section-heading";
 import { HeroShowcaseStack } from "@/components/hero-showcase-stack";
 import { TrustArchitectureShowcase } from "@/components/trust-architecture-showcase";
 import { HomeFourSteps } from "@/components/home-four-steps";
+import { HomeHeroStoreStrip } from "@/components/home-hero-store-strip";
 import { MobileStickyCta } from "@/components/mobile-sticky-cta";
 import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const HOME_DESCRIPTION =
-  "Leylek TAG ile yolculuk paylaşımı ve masraf paylaşımı. Karşılıklı onay, QR doğrulama; teklif ve eşleşme mobil uygulamada tamamlanır.";
+  "Ankara odaklı Leylek TAG ile yolculuk paylaşımı ve masraf paylaşımı. Kızılay, Çankaya ve çevresinde yolcu-sürücü eşleşmesi uygulamada; ticari taşımacılık değildir.";
 
 export const metadata: Metadata = {
   description: HOME_DESCRIPTION,
@@ -95,11 +96,11 @@ export default function Home() {
             <div className="min-w-0 px-px text-center lg:max-w-[36.75rem] lg:pr-1 lg:text-left">
               <div className="mx-auto lg:mx-0 lg:max-w-none">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-200/78 sm:text-[11px]">
-                  yolculuk paylaşımı
+                  Ankara · yolculuk paylaşımı
                 </p>
               </div>
               <h1 className="mx-auto mt-4 max-w-[min(22rem,calc(100vw-2rem))] text-balance text-[clamp(1.75rem,calc(0.88rem+4.8vw),2.45rem)] font-black leading-[1.02] tracking-[-0.04em] text-white antialiased sm:max-w-2xl md:max-w-[min(40rem,calc(100vw-4rem))] md:text-[2.5rem] lg:mx-0 lg:max-w-[34rem]">
-                <span className="block">Aynı yöne gidenlerle</span>
+                <span className="block">Ankara&apos;da aynı yöne gidenlerle</span>
                 <span className="mt-1 block tracking-tight md:mt-1.5">
                   <span className="bg-[linear-gradient(102deg,#e9fbff_0%,#73eafd_43%,#0e9fe6_73%,#0066ef_100%)] bg-clip-text text-transparent">
                     güvenli
@@ -117,14 +118,15 @@ export default function Home() {
               </div>
 
               <p className="mx-auto mt-4 max-w-lg text-[0.9375rem] leading-[1.62] text-slate-300 sm:mt-5 md:mx-0 md:max-w-[28rem]">
-                <span className="font-semibold text-slate-200/95">Leylek TAG nedir?</span> Aynı yöne giden yolcu ve
-                sürücüleri karşılıklı onayla buluşturan yolculuk paylaşımı platformudur. Masraf paylaşımı teklif
-                görüşmesinde netleşir; teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır.
+                <span className="font-semibold text-slate-200/95">Leylek TAG nedir?</span> Ankara pilot bölgesinde
+                yolcu ve sürücüyü uygulama içinde karşılıklı onayla buluşturan yol paylaşımı platformudur. App Store
+                ve Google Play&apos;den indirilebilir; teklif, eşleşme ve doğrulama adımları mobil uygulamada
+                tamamlanır.
               </p>
 
               <p className="mx-auto mt-3 max-w-lg rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-[12px] leading-relaxed text-slate-400 md:mx-0 md:max-w-[28rem]">
-                Leylek TAG, kullanıcıların rota ve yolculuk paylaşımı için bir araya geldiği topluluk odaklı bir
-                platformdur; ticari taşımacılık hizmeti sunmaz.
+                Topluluk odaklı yolculuk ve masraf paylaşımı platformudur; taksi veya ticari taşımacılık hizmeti
+                sunmaz.
               </p>
 
               <div className="mx-auto mt-5 flex max-w-xl flex-col items-stretch justify-center gap-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:gap-3 md:mx-0 md:justify-start lg:max-w-none">
@@ -139,6 +141,8 @@ export default function Home() {
                   <NasipPlayGlyph /> Nasıl çalışır?
                 </ButtonLink>
               </div>
+
+              <HomeHeroStoreStrip />
 
               <nav
                 className="mx-auto mt-5 max-w-lg lg:mx-0 lg:max-w-none"
@@ -235,8 +239,8 @@ export default function Home() {
           <Container>
             <SectionHeading
               eyebrow="platform akışı"
-              title="Aktif şehirlerde canlı rota ve eşleşme sinyalleri"
-              description="Teklif, onay ve QR doğrulama adımları platform üzerinde izlenebilir; özet akış bilgilendirme amaçlıdır."
+              title="Pilot bölgelerde uygulama akışı örneği"
+              description="Teklif, onay ve QR doğrulama adımlarının örnek görünümü; canlı operasyon verisi değildir."
             />
             <div className="mt-6 max-w-3xl">
               <ActivityFeed variant="home" />

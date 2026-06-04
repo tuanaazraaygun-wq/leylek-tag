@@ -1,3 +1,8 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+import { trackStoreClick } from "@/lib/track-event";
+
 type StoreDownloadCardProps = {
   href: string;
   storeName: string;
@@ -5,6 +10,10 @@ type StoreDownloadCardProps = {
   ctaLabel: string;
   variant: "apple" | "google";
   className?: string;
+  size?: "default" | "compact";
+  trackSource?: string;
+  trackPage?: string;
+  trackPlacement?: string;
 };
 
 function AppleGlyph() {
@@ -30,53 +39,76 @@ export function StoreDownloadCard({
   ctaLabel,
   variant,
   className = "",
+  size = "default",
+  trackSource = "website",
+  trackPage,
+  trackPlacement,
 }: StoreDownloadCardProps) {
+  const pathname = usePathname();
   const isApple = variant === "apple";
+  const isCompact = size === "compact";
+
+  const handleClick = () => {
+    trackStoreClick(variant, {
+      source: trackSource,
+      page: trackPage ?? pathname ?? undefined,
+      placement: trackPlacement,
+    });
+  };
 
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className={`group relative flex min-h-[168px] flex-col justify-between overflow-hidden rounded-[1.75rem] border p-6 shadow-[0_28px_80px_-36px_rgba(0,114,255,0.55)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_36px_96px_-28px_rgba(0,198,255,0.45)] sm:min-h-[180px] sm:p-7 ${className} ${
+      onClick={handleClick}
+      className={`group relative flex flex-col justify-between overflow-hidden rounded-[1.75rem] border shadow-[0_28px_80px_-36px_rgba(0,114,255,0.55)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_36px_96px_-28px_rgba(0,198,255,0.45)] ${className} ${
+        isCompact ? "min-h-[132px] p-4 sm:min-h-[140px] sm:p-5" : "min-h-[168px] p-6 sm:min-h-[180px] sm:p-7"
+      } ${
         isApple
           ? "border-white/14 bg-gradient-to-br from-slate-900/90 via-[#0c1829] to-cyan-950/80 hover:border-cyan-300/35"
-          : "border-emerald-400/20 bg-gradient-to-br from-slate-900/90 via-[#0c1829] to-emerald-950/50 hover:border-emerald-300/35"
+          : "border-cyan-400/20 bg-gradient-to-br from-slate-900/90 via-[#0c1829] to-cyan-950/70 hover:border-cyan-300/30"
       }`}
     >
       <span
         className={`pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full blur-3xl transition-opacity duration-300 group-hover:opacity-100 ${
-          isApple ? "bg-cyan-400/12 opacity-80" : "bg-emerald-400/10 opacity-80"
+          isApple ? "bg-cyan-400/12 opacity-80" : "bg-cyan-400/10 opacity-80"
         }`}
         aria-hidden
       />
       <div className="relative flex items-start justify-between gap-4">
         <span
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ${
+          className={`flex shrink-0 items-center justify-center rounded-2xl border shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ${
+            isCompact ? "h-11 w-11" : "h-14 w-14"
+          } ${
             isApple
               ? "border-cyan-300/25 bg-cyan-400/15 text-cyan-50"
-              : "border-emerald-300/25 bg-emerald-400/15 text-emerald-50"
+              : "border-cyan-300/25 bg-cyan-400/15 text-cyan-50"
           }`}
         >
           {isApple ? <AppleGlyph /> : <PlayGlyph />}
         </span>
-        <span
-          className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
-            isApple ? "bg-cyan-400/12 text-cyan-100/90" : "bg-emerald-400/12 text-emerald-100/90"
-          }`}
-        >
-          Resmi mağaza
-        </span>
+        {!isCompact ? (
+          <span
+            className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+              isApple ? "bg-cyan-400/12 text-cyan-100/90" : "bg-cyan-400/12 text-cyan-100/90"
+            }`}
+          >
+            Resmi mağaza
+          </span>
+        ) : null}
       </div>
-      <div className="relative mt-6">
-        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{deviceLine}</p>
-        <h3 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-[1.65rem]">{storeName}</h3>
+      <div className={`relative ${isCompact ? "mt-4" : "mt-6"}`}>
+        {!isCompact ? (
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{deviceLine}</p>
+        ) : null}
+        <h3 className={`font-black tracking-tight text-white ${isCompact ? "text-lg sm:text-xl" : "mt-2 text-2xl sm:text-[1.65rem]"}`}>
+          {storeName}
+        </h3>
         <p
-          className={`mt-4 inline-flex min-h-[44px] items-center rounded-full px-5 text-sm font-black text-slate-950 shadow-lg transition group-hover:brightness-110 ${
-            isApple
-              ? "bg-gradient-to-r from-cyan-200 via-cyan-300 to-sky-400"
-              : "bg-gradient-to-r from-emerald-200 via-emerald-300 to-teal-400"
-          }`}
+          className={`inline-flex items-center rounded-full font-black text-slate-950 shadow-lg transition group-hover:brightness-110 ${
+            isCompact ? "mt-3 min-h-[40px] px-4 text-xs" : "mt-4 min-h-[44px] px-5 text-sm"
+          } bg-gradient-to-r from-cyan-200 via-cyan-300 to-sky-400`}
         >
           {ctaLabel}
         </p>

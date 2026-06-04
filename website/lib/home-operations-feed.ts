@@ -23,7 +23,7 @@ export type OperationsFeedEvent = {
   subline: string;
   status: OperationsFeedStatus;
   statusLabel: string;
-  /** Relative time label, e.g. "2 dk önce", "şimdi". */
+  /** Demo time label — not live operational data. */
   timeLabel: string;
   tone: "cyan" | "violet" | "emerald" | "blue";
   scope: OperationsFeedScope;
@@ -45,7 +45,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "QR başlangıç doğrulaması bekleniyor",
     status: "route_match",
     statusLabel: "Rota uyumu",
-    timeLabel: "2 dk önce",
+    timeLabel: "örnek adım",
     tone: "cyan",
     scope: "intracity",
   },
@@ -57,7 +57,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Sürücü eşleşmesi bekleniyor",
     status: "offer_active",
     statusLabel: "Teklif aktif",
-    timeLabel: "şimdi",
+    timeLabel: "örnek",
     tone: "violet",
     scope: "intracity",
   },
@@ -69,7 +69,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Sesli/yazılı iletişim hazır",
     status: "offer_flow_started",
     statusLabel: "Akış aktif",
-    timeLabel: "4 dk önce",
+    timeLabel: "örnek adım",
     tone: "blue",
     scope: "intracity",
   },
@@ -81,7 +81,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Yolculuk güven katmanına geçti",
     status: "qr_verified",
     statusLabel: "Doğrulandı",
-    timeLabel: "6 dk önce",
+    timeLabel: "örnek adım",
     tone: "emerald",
     scope: "intracity",
   },
@@ -93,7 +93,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Görüntülü güven görüşmesi tamamlandı",
     status: "match_confirmed",
     statusLabel: "Eşleşme sağlandı",
-    timeLabel: "8 dk önce",
+    timeLabel: "örnek adım",
     tone: "emerald",
     scope: "intracity",
   },
@@ -105,7 +105,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Leylek Zeka rota skoru uygulandı",
     status: "offer_active",
     statusLabel: "Teklif aktif",
-    timeLabel: "9 dk önce",
+    timeLabel: "örnek adım",
     tone: "violet",
     scope: "intracity",
   },
@@ -117,7 +117,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Profil görünürlüğü doğrulandı",
     status: "trust_session",
     statusLabel: "Güven oturumu",
-    timeLabel: "11 dk önce",
+    timeLabel: "örnek adım",
     tone: "cyan",
     scope: "intracity",
   },
@@ -129,7 +129,7 @@ const INTRACITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Teklif optimizasyonu önerisi hazır",
     status: "route_match",
     statusLabel: "Rota uyumu",
-    timeLabel: "13 dk önce",
+    timeLabel: "örnek adım",
     tone: "cyan",
     scope: "intracity",
   },
@@ -144,7 +144,7 @@ const INTERCITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Uzun yol teklif akışı · ikincil öncelik",
     status: "offer_active",
     statusLabel: "Teklif aktif",
-    timeLabel: "18 dk önce",
+    timeLabel: "örnek adım",
     tone: "blue",
     scope: "intercity",
   },
@@ -156,7 +156,7 @@ const INTERCITY_EVENTS: OperationsFeedEvent[] = [
     subline: "Planlı rota onayı bekleniyor",
     status: "offer_flow_started",
     statusLabel: "Akış aktif",
-    timeLabel: "24 dk önce",
+    timeLabel: "örnek adım",
     tone: "violet",
     scope: "intercity",
   },
@@ -168,25 +168,25 @@ const MICRO_STATS: OperationsMicroStat[] = [
     id: "active-offers",
     label: "Aktif şehir içi teklifler",
     value: "12",
-    hint: "pilot olay",
+    hint: "örnek vitrin",
   },
   {
     id: "route-matches",
     label: "Rota uyumları",
     value: "9",
-    hint: "pilot olay",
+    hint: "örnek vitrin",
   },
   {
     id: "qr-steps",
     label: "QR doğrulama adımları",
     value: "6",
-    hint: "pilot olay",
+    hint: "örnek vitrin",
   },
   {
     id: "trust-sessions",
     label: "Güven görüşmeleri",
     value: "4",
-    hint: "pilot olay",
+    hint: "örnek vitrin",
   },
 ];
 

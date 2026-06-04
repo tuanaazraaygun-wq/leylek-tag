@@ -48,6 +48,7 @@ export default function DownloadPage() {
               deviceLine="iPhone ve iPad için indir"
               ctaLabel="App Store'dan İndir"
               variant="apple"
+              trackPlacement="download_page"
             />
             <StoreDownloadCard
               href={GOOGLE_PLAY_URL}
@@ -55,6 +56,7 @@ export default function DownloadPage() {
               deviceLine="Android cihazlar için indir"
               ctaLabel="Google Play'den İndir"
               variant="google"
+              trackPlacement="download_page"
             />
           </div>
         </Container>

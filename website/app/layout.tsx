@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Footer } from "@/components/footer";
+import { MetaPixel } from "@/components/meta-pixel";
 import { SiteSupportPanel } from "@/components/site-support-panel";
 import { Navbar } from "@/components/navbar";
 import { SiteAuthProvider } from "@/components/site-auth-provider";
@@ -26,7 +27,9 @@ export const metadata: Metadata = {
     "Leylek TAG, yolcu ve sürücüleri karşılıklı teklif ve onay mantığıyla buluşturan, QR doğrulama destekli yolculuk eşleştirme platformudur.",
   keywords: [
     "Leylek TAG",
+    "Ankara yolculuk paylaşımı",
     "yolculuk paylaşımı",
+    "yol paylaşımı",
     "masraf paylaşımı",
     "güvenli eşleşme",
     "aynı yöne gidenler",
@@ -86,6 +89,7 @@ export default function RootLayout({
   return (
     <html lang="tr">
       <body className={inter.className}>
+        <MetaPixel />
         <SiteAuthProvider>
           <Navbar />
           <SiteActionProvider>
