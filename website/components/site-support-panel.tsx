@@ -34,6 +34,7 @@ import {
   readStoredSupportTicket,
   writeStoredSupportTicket,
 } from "@/lib/support-ticket-storage";
+import { notifySupportAdminsClient } from "@/lib/support-admin-notify-client";
 import { requestSupportLeylekZeka, type LeylekZekaErrorCode } from "@/lib/support-leylek-zeka-client";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-client";
 import { trackSupportOpen } from "@/lib/track-event";
@@ -609,6 +610,24 @@ export function SiteSupportPanel() {
     return data.session?.access_token?.trim() ?? "";
   }, [session?.access_token]);
 
+  const fireAdminNotify = useCallback(
+    async (
+      event: "new_ticket" | "user_message",
+      ticketId: string,
+      clientToken: string,
+    ) => {
+      const accessToken = await resolveSiteAccessToken();
+      if (!accessToken) return;
+      void notifySupportAdminsClient({
+        event,
+        ticketId,
+        clientToken,
+        accessToken,
+      });
+    },
+    [resolveSiteAccessToken],
+  );
+
   const invokeLeylekZekaAfterUserMessage = useCallback(
     async (
       ticketId: string,
@@ -1017,6 +1036,8 @@ export function SiteSupportPanel() {
           "Talebin kaydedildi ve destek ekibine iletildi. Müsaitlik durumunda yanıtlar bu akışta görünecek.",
         );
 
+        void fireAdminNotify("new_ticket", created.id, tokenNormalized);
+
         void invokeLeylekZekaAfterUserMessage(
           created.id,
           tokenNormalized,
@@ -1040,6 +1061,7 @@ export function SiteSupportPanel() {
       sessionContactEmail,
       supportUnlocked,
       validateComposer,
+      fireAdminNotify,
       invokeLeylekZekaAfterUserMessage,
     ],
   );
@@ -1093,6 +1115,11 @@ export function SiteSupportPanel() {
         const nextLines = chatLines.some((r) => r.id === data.id)
           ? chatLines
           : [...chatLines, data as SupportChatRow];
+
+        if (shouldSkipLeylekZekaAi(ticketMeta, nextLines)) {
+          void fireAdminNotify("user_message", ticketId, tk);
+        }
+
         void invokeLeylekZekaAfterUserMessage(ticketId, tk, body, ticketMeta, nextLines);
       } finally {
         setChatSending(false);
@@ -1102,6 +1129,7 @@ export function SiteSupportPanel() {
       chatInput,
       chatLines,
       chatSending,
+      fireAdminNotify,
       invokeLeylekZekaAfterUserMessage,
       scrollChatToBottom,
       sessionContactEmail,
