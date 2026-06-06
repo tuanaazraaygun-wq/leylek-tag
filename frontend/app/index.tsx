@@ -13810,7 +13810,7 @@ function PassengerDashboard({
                         </Text>
                       </Animated.View>
                       <Text style={styles.pickupRouteSubtitle}>
-                        Alınacağınız noktayı seçin. İsterseniz mevcut konumunuzdan devam edin.
+                        Adres arayın veya konumunuzu kullanın.
                       </Text>
                       <View style={styles.destinationSearchShellModern}>
                         <PlacesAutocomplete
@@ -13900,9 +13900,6 @@ function PassengerDashboard({
                           <Text style={styles.routeRecentSectionTitle}>
                             Son kullanılan alınış noktaları
                           </Text>
-                          <Text style={styles.routeRecentSectionSubtitle}>
-                            Daha önce çağırdığınız noktaları tek dokunuşla seçin.
-                          </Text>
                           <View style={styles.routeRecentList}>
                             {recentPickups.map((point, index) => (
                               <TouchableOpacity
@@ -13919,17 +13916,6 @@ function PassengerDashboard({
                                     <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
                                       {point.address}
                                     </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel(
-                                            resolveRouteHistoryDisplaySource(point, 'pickup'),
-                                            'pickup',
-                                          )}
-                                        </Text>
-                                      </View>
-                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
-                                    </View>
                                   </View>
                                   <Ionicons
                                     name="chevron-forward"
@@ -13997,10 +13983,6 @@ function PassengerDashboard({
                           )}
                         </LinearGradient>
                       </TouchableOpacity>
-                      <View style={styles.pickupRouteAccentLine} />
-                      <Text style={styles.pickupRouteFooterHint}>
-                        LeylekTAG — alınış noktanız teklif ve eşleşme için güvenle kullanılır.
-                      </Text>
                     </View>
                   ) : (
                     <View style={styles.destinationFloatingPanel} pointerEvents="auto">
@@ -14145,9 +14127,6 @@ function PassengerDashboard({
                       {recentDestinations.length > 0 ? (
                         <View style={styles.routeRecentSection}>
                           <Text style={styles.routeRecentSectionTitle}>Son gidilen yerler</Text>
-                          <Text style={styles.routeRecentSectionSubtitle}>
-                            Daha önce gittiğiniz adresleri hızlıca seçin.
-                          </Text>
                           <View style={styles.routeRecentList}>
                             {recentDestinations.map((point, index) => (
                               <TouchableOpacity
@@ -14164,17 +14143,6 @@ function PassengerDashboard({
                                     <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
                                       {point.address}
                                     </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel(
-                                            resolveRouteHistoryDisplaySource(point, 'destination'),
-                                            'destination',
-                                          )}
-                                        </Text>
-                                      </View>
-                                      <Text style={styles.routeRecentCardMeta}>Varış noktası</Text>
-                                    </View>
                                   </View>
                                   <Ionicons
                                     name="chevron-forward"
@@ -25978,7 +25946,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 26, 43, 0.72)',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: '#1E3A5F',
-    maxHeight: '52%',
+    maxHeight: '54%',
     shadowColor: '#020617',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.32,
@@ -25987,7 +25955,7 @@ const styles = StyleSheet.create({
   },
   pickupRouteFloatingPanel: {
     borderTopColor: 'rgba(34, 211, 238, 0.18)',
-    maxHeight: '58%',
+    maxHeight: '60%',
   },
   pickupRouteSubtitle: {
     fontSize: 14,
@@ -26044,20 +26012,6 @@ const styles = StyleSheet.create({
     color: 'rgba(148, 163, 184, 0.92)',
     lineHeight: 17,
   },
-  pickupRouteAccentLine: {
-    marginTop: 16,
-    height: 1,
-    backgroundColor: 'rgba(34, 211, 238, 0.14)',
-  },
-  pickupRouteFooterHint: {
-    marginTop: 12,
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(100, 116, 139, 0.88)',
-    textAlign: 'center',
-    lineHeight: 16,
-    paddingHorizontal: 8,
-  },
   destinationMapPickBtnWrap: {
     marginTop: 16,
     borderRadius: 20,
@@ -26112,8 +26066,8 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   pickupSaveSection: {
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 8,
+    marginBottom: 2,
   },
   pickupSaveTitle: {
     fontSize: 12,
@@ -26134,7 +26088,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(34, 211, 238, 0.32)',
     backgroundColor: 'rgba(8, 17, 31, 0.74)',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 14,
   },
   pickupSaveBtnText: {
