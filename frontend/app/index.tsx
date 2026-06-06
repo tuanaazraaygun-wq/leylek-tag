@@ -8505,6 +8505,8 @@ function PassengerDashboard({
   const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
 
   const destinationPickerMapRef = useRef<any>(null);
+  /** Arama/map seçimi sonrası GPS tick'lerinin destinationPickerPin'i ezmesini engeller */
+  const destinationPickerPinUserLockRef = useRef(false);
   const destinationSnapshotOnPickerOpenRef = useRef<{
     address: string;
     latitude: number;
@@ -8526,6 +8528,31 @@ function PassengerDashboard({
   const [recentDestinations, setRecentDestinations] = useState<RouteHistoryPoint[]>([]);
   const [savedHomeAddress, setSavedHomeAddress] = useState<SavedAddress | null>(null);
   const [savedWorkAddress, setSavedWorkAddress] = useState<SavedAddress | null>(null);
+  const [routePickerKeyboardHeight, setRoutePickerKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (!showDestinationPicker) {
+      setRoutePickerKeyboardHeight(0);
+      return undefined;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = (e: { endCoordinates: { height: number } }) => {
+      setRoutePickerKeyboardHeight(e.endCoordinates.height);
+    };
+    const onHide = () => setRoutePickerKeyboardHeight(0);
+    const subShow = Keyboard.addListener(showEvent, onShow);
+    const subHide = Keyboard.addListener(hideEvent, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [showDestinationPicker]);
+
+  const routePickerPanelMaxHeight =
+    showDestinationPicker && routePickerKeyboardHeight > 0
+      ? Math.max(320, paxWindowHeight - routePickerKeyboardHeight - insets.top - 64)
+      : undefined;
 
   useEffect(() => {
     if (
@@ -11793,42 +11820,19 @@ function PassengerDashboard({
     }
   };
 
-  /** Arama: yalnızca bölge — haritaya odaklanır; hedef geçerli sayılmaz */
+  /** Arama: seçilen önerinin lat/lng doğrudan hedef olarak kesinleşir; modal kapanır */
   const handleDestinationAreaFromSearch = (place: {
     address: string;
     latitude: number;
     longitude: number;
   }) => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
-    __paxFn('isNativeGoogleMapsSupported', isNativeGoogleMapsSupported);
     __paxFn('commitDestinationFromMap', commitDestinationFromMap);
     void tapButtonHaptic();
-    /** GMS yok (Huawei vb.): MapView mount = crash; arama sonucunu doğrudan hedef kabul et */
-    if (!isNativeGoogleMapsSupported()) {
-      void commitDestinationFromMap(place.address, place.latitude, place.longitude, {
-        autoOpenTagPriceFlow: true,
-        historySource: 'search',
-      });
-      return;
-    }
-    setDestination(null);
-    setDestinationAwaitingMapTap(true);
-    setDestinationPickerPhase('map');
-    const { latitude: lat, longitude: lng } = place;
-    setDestinationPickerPin({ latitude: lat, longitude: lng });
-    __paxFn('requestAnimationFrame', globalThis.requestAnimationFrame as unknown);
-    requestAnimationFrame(() => {
-      try {
-        destinationPickerMapRef.current?.animateToRegion?.(
-          {
-            latitude: lat,
-            longitude: lng,
-            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-          },
-          420,
-        );
-      } catch (_) {}
+    if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
+    void commitDestinationFromMap(place.address, place.latitude, place.longitude, {
+      autoOpenTagPriceFlow: true,
+      historySource: 'search',
     });
   };
 
@@ -11840,27 +11844,8 @@ function PassengerDashboard({
   }) => {
     void tapButtonHaptic();
     if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
-    if (!isNativeGoogleMapsSupported()) {
-      commitPickupFromMap(place.address, place.latitude, place.longitude, {
-        historySource: 'search',
-      });
-      return;
-    }
-    setDestinationPickerPhase('map');
-    const { latitude: lat, longitude: lng } = place;
-    setDestinationPickerPin({ latitude: lat, longitude: lng });
-    requestAnimationFrame(() => {
-      try {
-        destinationPickerMapRef.current?.animateToRegion?.(
-          {
-            latitude: lat,
-            longitude: lng,
-            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-          },
-          420,
-        );
-      } catch (_) {}
+    commitPickupFromMap(place.address, place.latitude, place.longitude, {
+      historySource: 'search',
     });
   };
 
@@ -11877,6 +11862,7 @@ function PassengerDashboard({
     }
 
     setDestinationPickerPhase('map');
+    destinationPickerPinUserLockRef.current = true;
 
     const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
     const lat =
@@ -11912,6 +11898,7 @@ function PassengerDashboard({
     setDestination(null);
     setDestinationAwaitingMapTap(true);
     setDestinationPickerPhase('map');
+    destinationPickerPinUserLockRef.current = true;
 
     const pickupResolved = resolvePassengerPickupCoords(passengerPickup, userLocation);
     const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
@@ -12119,9 +12106,7 @@ function PassengerDashboard({
     setDestinationPickerPhase('search');
     setDestinationPickerGeocoding(false);
     setDestinationAwaitingMapTap(false);
-    if (routePickerStep === 'destination') {
-      setDestination(null);
-    }
+    destinationPickerPinUserLockRef.current = false;
   };
 
   /** Destination picker geri — map fazı korunur; destination search → pickup; pickup → kapat/rol */
@@ -12155,31 +12140,36 @@ function PassengerDashboard({
   };
 
   useEffect(() => {
-    if (showDestinationPicker) {
-      setDestinationPickerGeocoding(false);
-      __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
-      const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
-      const lat =
-        userLocation?.latitude ??
-        destination?.latitude ??
-        cityLL?.latitude ??
-        DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
-      const lng =
-        userLocation?.longitude ??
-        destination?.longitude ??
-        cityLL?.longitude ??
-        DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
-      setDestinationPickerPin({ latitude: lat, longitude: lng });
-    } else {
+    if (!showDestinationPicker) {
+      destinationPickerPinUserLockRef.current = false;
       setDestinationPickerPin(null);
+      return;
     }
+    setDestinationPickerGeocoding(false);
+    if (destinationPickerPinUserLockRef.current) return;
+    if (destinationPickerPhase === 'map' || destinationAwaitingMapTap) return;
+    __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
+    const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
+    const lat =
+      userLocation?.latitude ??
+      destination?.latitude ??
+      cityLL?.latitude ??
+      DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
+    const lng =
+      userLocation?.longitude ??
+      destination?.longitude ??
+      cityLL?.longitude ??
+      DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
   }, [
     showDestinationPicker,
-    userLocation?.latitude,
-    userLocation?.longitude,
+    destinationPickerPhase,
+    destinationAwaitingMapTap,
     destination?.latitude,
     destination?.longitude,
     passengerAddressSearchCityScope,
+    userLocation?.latitude,
+    userLocation?.longitude,
   ]);
 
   useEffect(() => {
@@ -13816,10 +13806,17 @@ function PassengerDashboard({
                   keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 20}
                 >
                   {routePickerStep === 'pickup' ? (
-                    <View style={[styles.destinationFloatingPanel, styles.pickupRouteFloatingPanel]} pointerEvents="auto">
+                    <View
+                      style={[
+                        styles.destinationFloatingPanel,
+                        styles.pickupRouteFloatingPanel,
+                        routePickerPanelMaxHeight != null ? { maxHeight: routePickerPanelMaxHeight } : null,
+                      ]}
+                      pointerEvents="auto"
+                    >
                       <ScrollView
                         showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
+                        keyboardShouldPersistTaps="always"
                         nestedScrollEnabled={Platform.OS === 'android'}
                         contentContainerStyle={styles.routePickerPanelScrollContent}
                       >
@@ -13827,7 +13824,7 @@ function PassengerDashboard({
                         style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 10 }}
                       >
                         <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
-                          Sürücü nereye gelsin?
+                          Adım 1 · Sürücü nereye gelsin?
                         </Text>
                       </Animated.View>
                       <Text style={styles.pickupRouteSubtitle}>
@@ -14033,18 +14030,30 @@ function PassengerDashboard({
                       </ScrollView>
                     </View>
                   ) : (
-                    <View style={styles.destinationFloatingPanel} pointerEvents="auto">
+                    <View
+                      style={[
+                        styles.destinationFloatingPanel,
+                        routePickerPanelMaxHeight != null ? { maxHeight: routePickerPanelMaxHeight } : null,
+                      ]}
+                      pointerEvents="auto"
+                    >
                       <ScrollView
                         showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
+                        keyboardShouldPersistTaps="always"
                         nestedScrollEnabled={Platform.OS === 'android'}
                         contentContainerStyle={styles.routePickerPanelScrollContent}
                       >
                       <Animated.View
                         style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
                       >
-                        <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
-                          Nereye gitmek istiyorsunuz?
+                        <Text
+                          style={[
+                            styles.destinationHeroTitle,
+                            styles.destinationHeroTitleAnimated,
+                            styles.destinationStepHeroTitle,
+                          ]}
+                        >
+                          Adım 2 · Nereye gitmek istiyorsunuz?
                         </Text>
                       </Animated.View>
                       {!isNativeGoogleMapsSupported() ? (
@@ -14075,7 +14084,7 @@ function PassengerDashboard({
                       </View>
                       {isNativeGoogleMapsSupported() ? (
                         <Text style={styles.destinationSearchFlowHint}>
-                          Yazın, haritada doğrulayın.
+                          Listeden seçin veya haritadan işaretleyin.
                         </Text>
                       ) : null}
 
@@ -25905,6 +25914,12 @@ const styles = StyleSheet.create({
     lineHeight: 27,
     letterSpacing: -0.28,
     marginTop: 0,
+  },
+  /** Route picker adım 2 — cyan vurgu (pickup adım 1 beyaz kalır) */
+  destinationStepHeroTitle: {
+    color: '#22D3EE',
+    textShadowColor: 'rgba(34, 211, 238, 0.38)',
+    textShadowRadius: 8,
   },
   destinationCrosshairOverlay: {
     ...StyleSheet.absoluteFillObject,

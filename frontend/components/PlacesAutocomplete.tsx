@@ -1261,7 +1261,7 @@ export default function PlacesAutocomplete({
   const placesSearchAbortRef = useRef<AbortController | null>(null);
   /** Öneri satırına çift basmayı keser (klavye blur + async Details yarışı) */
   const selectionInFlightRef = useRef(false);
-  /** onPressIn + onPress fallback aynı satırda çift tetiklenmesin (sync Nominatim yolu) */
+  /** onPress + selectionInFlightRef — çift tetiklemeyi keser */
   const lastSelectionTapRef = useRef<{ key: string | null; at: number }>({
     key: null,
     at: 0,
@@ -2565,9 +2565,7 @@ export default function PlacesAutocomplete({
   };
 
   const dismissKeyboardAfterSelection = () => {
-    if (!tech) {
-      Keyboard.dismiss();
-    }
+    Keyboard.dismiss();
   };
 
   // Seçim işlemi
@@ -2579,7 +2577,7 @@ export default function PlacesAutocomplete({
     const now = Date.now();
     if (
       lastSelectionTapRef.current.key === selectionKey &&
-      now - lastSelectionTapRef.current.at < 500
+      now - lastSelectionTapRef.current.at < 200
     ) {
       return;
     }
@@ -2657,7 +2655,6 @@ export default function PlacesAutocomplete({
           isSelecting && styles.predictionItemSelecting,
         ]}
         disabled={rowDisabled}
-        onPressIn={() => void handleSelectPrediction(item)}
         onPress={() => void handleSelectPrediction(item)}
       >
         <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
@@ -2745,9 +2742,7 @@ export default function PlacesAutocomplete({
   );
 
   const handleQuickPick = (qp: MuhabbetQuickPickPlace, selectionSource?: PlaceSelectionSource) => {
-    if (!tech) {
-      Keyboard.dismiss();
-    }
+    Keyboard.dismiss();
     setQuery(qp.label);
     setShowPredictions(false);
     setShowPopular(false);
