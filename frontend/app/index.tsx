@@ -68,6 +68,7 @@ import {
 } from '../lib/passengerRouteHistory';
 import {
   getSavedAddresses,
+  removeSavedAddress,
   saveSavedAddress,
   type SavedAddress,
 } from '../lib/passengerSavedAddresses';
@@ -12079,6 +12080,30 @@ function PassengerDashboard({
     setTimeout(() => setShowToast(false), 2500);
   };
 
+  const handleRemoveSavedAddress = (label: 'home' | 'work') => {
+    const uid = String(user?.id ?? '').trim();
+    if (!uid) return;
+    void tapButtonHaptic();
+    appAlert(label === 'home' ? 'Ev adresi silinsin mi?' : 'İş adresi silinsin mi?', undefined, [
+      { text: 'İptal', style: 'cancel' },
+      {
+        text: 'Sil',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            await removeSavedAddress(uid, label);
+            const saved = await getSavedAddresses(uid);
+            setSavedHomeAddress(saved.home);
+            setSavedWorkAddress(saved.work);
+            setToastMessage(label === 'home' ? '🏠 Ev adresi silindi' : '🏢 İş adresi silindi');
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 2500);
+          })();
+        },
+      },
+    ]);
+  };
+
   const closeDestinationPickerModal = () => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
@@ -13862,60 +13887,88 @@ function PassengerDashboard({
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
                             {savedHomeAddress ? (
-                              <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
-                                activeOpacity={0.88}
-                                onPress={() => selectSavedPickup(savedHomeAddress)}
-                              >
-                                <View style={styles.routeRecentCardRow}>
-                                  <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="home-outline" size={18} color="#22D3EE" />
-                                  </View>
-                                  <View style={styles.routeRecentCardTextCol}>
-                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
-                                      Ev
-                                    </Text>
-                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
-                                      {savedHomeAddress.address}
-                                    </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel('saved', 'pickup')}
-                                        </Text>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                                <TouchableOpacity
+                                  style={styles.savedQuickCardBody}
+                                  activeOpacity={0.88}
+                                  onPress={() => selectSavedPickup(savedHomeAddress)}
+                                >
+                                  <View style={styles.routeRecentCardRow}>
+                                    <View style={styles.routeRecentIconRing}>
+                                      <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                    </View>
+                                    <View style={styles.routeRecentCardTextCol}>
+                                      <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                        Ev
+                                      </Text>
+                                      <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                        {savedHomeAddress.address}
+                                      </Text>
+                                      <View style={styles.routeRecentCardMetaRow}>
+                                        <View style={styles.routeRecentSourceBadge}>
+                                          <Text style={styles.routeRecentSourceBadgeText}>
+                                            {routeHistorySourceLabel('saved', 'pickup')}
+                                          </Text>
+                                        </View>
                                       </View>
                                     </View>
                                   </View>
-                                </View>
-                              </TouchableOpacity>
+                                </TouchableOpacity>
+                                <Pressable
+                                  style={styles.savedQuickDeleteBtn}
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                  onPress={() => handleRemoveSavedAddress('home')}
+                                >
+                                  <Ionicons
+                                    name="trash-outline"
+                                    size={14}
+                                    color="rgba(248, 113, 113, 0.82)"
+                                    style={styles.savedQuickDeleteIcon}
+                                  />
+                                </Pressable>
+                              </View>
                             ) : null}
                             {savedWorkAddress ? (
-                              <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
-                                activeOpacity={0.88}
-                                onPress={() => selectSavedPickup(savedWorkAddress)}
-                              >
-                                <View style={styles.routeRecentCardRow}>
-                                  <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="business-outline" size={18} color="#22D3EE" />
-                                  </View>
-                                  <View style={styles.routeRecentCardTextCol}>
-                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
-                                      İş
-                                    </Text>
-                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
-                                      {savedWorkAddress.address}
-                                    </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel('saved', 'pickup')}
-                                        </Text>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                                <TouchableOpacity
+                                  style={styles.savedQuickCardBody}
+                                  activeOpacity={0.88}
+                                  onPress={() => selectSavedPickup(savedWorkAddress)}
+                                >
+                                  <View style={styles.routeRecentCardRow}>
+                                    <View style={styles.routeRecentIconRing}>
+                                      <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                    </View>
+                                    <View style={styles.routeRecentCardTextCol}>
+                                      <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                        İş
+                                      </Text>
+                                      <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                        {savedWorkAddress.address}
+                                      </Text>
+                                      <View style={styles.routeRecentCardMetaRow}>
+                                        <View style={styles.routeRecentSourceBadge}>
+                                          <Text style={styles.routeRecentSourceBadgeText}>
+                                            {routeHistorySourceLabel('saved', 'pickup')}
+                                          </Text>
+                                        </View>
                                       </View>
                                     </View>
                                   </View>
-                                </View>
-                              </TouchableOpacity>
+                                </TouchableOpacity>
+                                <Pressable
+                                  style={styles.savedQuickDeleteBtn}
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                  onPress={() => handleRemoveSavedAddress('work')}
+                                >
+                                  <Ionicons
+                                    name="trash-outline"
+                                    size={14}
+                                    color="rgba(248, 113, 113, 0.82)"
+                                    style={styles.savedQuickDeleteIcon}
+                                  />
+                                </Pressable>
+                              </View>
                             ) : null}
                           </View>
                         </View>
@@ -14031,60 +14084,88 @@ function PassengerDashboard({
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
                             {savedHomeAddress ? (
-                              <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
-                                activeOpacity={0.88}
-                                onPress={() => selectSavedDestination(savedHomeAddress)}
-                              >
-                                <View style={styles.routeRecentCardRow}>
-                                  <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="home-outline" size={18} color="#22D3EE" />
-                                  </View>
-                                  <View style={styles.routeRecentCardTextCol}>
-                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
-                                      Ev
-                                    </Text>
-                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
-                                      {savedHomeAddress.address}
-                                    </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel('saved', 'destination')}
-                                        </Text>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                                <TouchableOpacity
+                                  style={styles.savedQuickCardBody}
+                                  activeOpacity={0.88}
+                                  onPress={() => selectSavedDestination(savedHomeAddress)}
+                                >
+                                  <View style={styles.routeRecentCardRow}>
+                                    <View style={styles.routeRecentIconRing}>
+                                      <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                    </View>
+                                    <View style={styles.routeRecentCardTextCol}>
+                                      <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                        Ev
+                                      </Text>
+                                      <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                        {savedHomeAddress.address}
+                                      </Text>
+                                      <View style={styles.routeRecentCardMetaRow}>
+                                        <View style={styles.routeRecentSourceBadge}>
+                                          <Text style={styles.routeRecentSourceBadgeText}>
+                                            {routeHistorySourceLabel('saved', 'destination')}
+                                          </Text>
+                                        </View>
                                       </View>
                                     </View>
                                   </View>
-                                </View>
-                              </TouchableOpacity>
+                                </TouchableOpacity>
+                                <Pressable
+                                  style={styles.savedQuickDeleteBtn}
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                  onPress={() => handleRemoveSavedAddress('home')}
+                                >
+                                  <Ionicons
+                                    name="trash-outline"
+                                    size={14}
+                                    color="rgba(248, 113, 113, 0.82)"
+                                    style={styles.savedQuickDeleteIcon}
+                                  />
+                                </Pressable>
+                              </View>
                             ) : null}
                             {savedWorkAddress ? (
-                              <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
-                                activeOpacity={0.88}
-                                onPress={() => selectSavedDestination(savedWorkAddress)}
-                              >
-                                <View style={styles.routeRecentCardRow}>
-                                  <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="business-outline" size={18} color="#22D3EE" />
-                                  </View>
-                                  <View style={styles.routeRecentCardTextCol}>
-                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
-                                      İş
-                                    </Text>
-                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
-                                      {savedWorkAddress.address}
-                                    </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel('saved', 'destination')}
-                                        </Text>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                                <TouchableOpacity
+                                  style={styles.savedQuickCardBody}
+                                  activeOpacity={0.88}
+                                  onPress={() => selectSavedDestination(savedWorkAddress)}
+                                >
+                                  <View style={styles.routeRecentCardRow}>
+                                    <View style={styles.routeRecentIconRing}>
+                                      <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                    </View>
+                                    <View style={styles.routeRecentCardTextCol}>
+                                      <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                        İş
+                                      </Text>
+                                      <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                        {savedWorkAddress.address}
+                                      </Text>
+                                      <View style={styles.routeRecentCardMetaRow}>
+                                        <View style={styles.routeRecentSourceBadge}>
+                                          <Text style={styles.routeRecentSourceBadgeText}>
+                                            {routeHistorySourceLabel('saved', 'destination')}
+                                          </Text>
+                                        </View>
                                       </View>
                                     </View>
                                   </View>
-                                </View>
-                              </TouchableOpacity>
+                                </TouchableOpacity>
+                                <Pressable
+                                  style={styles.savedQuickDeleteBtn}
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                  onPress={() => handleRemoveSavedAddress('work')}
+                                >
+                                  <Ionicons
+                                    name="trash-outline"
+                                    size={14}
+                                    color="rgba(248, 113, 113, 0.82)"
+                                    style={styles.savedQuickDeleteIcon}
+                                  />
+                                </Pressable>
+                              </View>
                             ) : null}
                           </View>
                         </View>
@@ -26127,6 +26208,28 @@ const styles = StyleSheet.create({
   savedQuickCard: {
     flex: 1,
     minWidth: 0,
+  },
+  savedQuickCardWrap: {
+    flex: 1,
+    minWidth: 0,
+    position: 'relative',
+  },
+  savedQuickCardBody: {
+    flex: 1,
+  },
+  savedQuickDeleteBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    zIndex: 2,
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.22)',
+  },
+  savedQuickDeleteIcon: {
+    opacity: 0.88,
   },
   savedQuickCardPremium: {
     borderRadius: 16,
