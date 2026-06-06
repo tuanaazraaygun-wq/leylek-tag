@@ -3774,7 +3774,7 @@ async def rolling_dispatch_stop(
     revoke_offers: bool = True,
     except_driver_id: Optional[str] = None,
 ) -> None:
-    """Zamanlayıcıyı durdur, rolling state'i sil; isteğe bağlı batch'e remove_offer."""
+    """Zamanlayıcıyı durdur, rolling state'i sil; revoke_offers ise offered_driver_ids (tüm dalgalar) remove_offer."""
     _st_obs = rolling_dispatch_index.get(tag_id)
     _obs_pid = None
     _obs_offered_n = None
@@ -3812,10 +3812,25 @@ async def rolling_dispatch_stop(
     st = rolling_dispatch_index.pop(tag_id, None)
     if revoke_offers and st:
         ex = str(except_driver_id).strip().lower() if except_driver_id else None
-        for did in st.get("current_batch") or []:
-            if ex and str(did).strip().lower() == ex:
+        _oid_raw = st.get("offered_driver_ids")
+        if _oid_raw is None or (isinstance(_oid_raw, (set, list, tuple)) and len(_oid_raw) == 0):
+            _oid_raw = st.get("current_batch") or []
+        if isinstance(_oid_raw, set):
+            revoke_ids = [
+                str(x).strip().lower()
+                for x in _oid_raw
+                if x is not None and str(x).strip() != ""
+            ]
+        else:
+            revoke_ids = [
+                str(x).strip().lower()
+                for x in (_oid_raw or [])
+                if x is not None and str(x).strip() != ""
+            ]
+        _oo = st.get("offered_driver_ids")
+        for did in revoke_ids:
+            if ex and did == ex:
                 continue
-            _oo = st.get("offered_driver_ids")
             _tag_dispatch_obs_log(
                 "remove_offer_emit",
                 tag_id=str(tag_id),
@@ -3858,9 +3873,9 @@ async def rolling_dispatch_stop(
 
 async def rolling_dispatch_batch(tag_id: str) -> None:
     """
-    Dalga başına BATCH_SIZE (5) sürücü; yarıçap DISPATCH_RADIUS_KM; süre ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS (varsayılan 30 sn).
+    Dalga başına BATCH_SIZE (5) sürücü; yarıçap DISPATCH_RADIUS_KM; süre ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS.
     Önce henüz bu döngüde gösterilmemiş uygun sürücüler seçilir; kalan yoksa offered_driver_ids sıfırlanıp baştan dönülür.
-    Önceki batch ile kıyas: yalnız çıkan sürücülere remove_offer. Kabul: tags atomik güncelleme + rolling_dispatch_stop (değişmez).
+    Dalga geçişinde remove_offer yok — önceki dalgalar ekranda kalır; revoke yalnız rolling_dispatch_stop (kabul/iptal).
     """
     state = rolling_dispatch_index.get(tag_id)
     if not state:
@@ -3974,24 +3989,12 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             use_relaxed_vehicle,
         )
         _bseq_ex = int(state.get("batch_seq") or 0)
-        for did in prev_batch:
-            logger.info("[rolling_dispatch_wave_remove] tag=%s driver_id=%s reason=exhausted", tag_id, did)
-            _tag_dispatch_obs_log(
-                "remove_offer_emit",
-                tag_id=str(tag_id),
-                passenger_id=tag_data.get("passenger_id"),
-                batch_seq=_bseq_ex,
-                driver_ids=[str(did)],
-                current_batch=prev_batch,
-                offered_count=len(offered_driver_ids),
-                radius_km=float(DISPATCH_RADIUS_KM),
-                timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
-                reason="rolling_wave_eligible_empty_remove",
-            )
-            try:
-                await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
-            except Exception:
-                pass
+        logger.info(
+            "[DISPATCH_BATCH] tag=%s event=exhausted_no_revoke offered_total=%s prev_batch=%s",
+            tag_id,
+            len(offered_driver_ids),
+            prev_batch,
+        )
         pid = (tag_data or {}).get("passenger_id")
         await rolling_dispatch_stop(tag_id, revoke_offers=False)
         if pid:
@@ -4049,26 +4052,6 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         len(unoffered_entries),
         len(eligible),
     )
-
-    _closing_wave_seq = int(state.get("batch_seq") or 0)
-    for did in prev_set - next_set:
-        logger.info("[rolling_dispatch_wave_remove] tag=%s driver_id=%s", tag_id, did)
-        _tag_dispatch_obs_log(
-            "remove_offer_emit",
-            tag_id=str(tag_id),
-            passenger_id=tag_data.get("passenger_id"),
-            batch_seq=_closing_wave_seq,
-            driver_ids=[str(did)],
-            current_batch=list(prev_batch),
-            offered_count=len(offered_driver_ids),
-            radius_km=float(DISPATCH_RADIUS_KM),
-            timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
-            reason="rolling_wave_transition_remove",
-        )
-        try:
-            await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
-        except Exception:
-            pass
 
     newly_arrived_set = next_set if cycle_reset_this_wave else (next_set - prev_set)
 
@@ -4142,8 +4125,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         "passenger_payment_method": tag_data.get("passenger_payment_method"),
     }
 
-    # Bu batch için eski waiting/sent satırlarını kapat; insert her sürücüde emit SONRASI
-    await _expire_dispatch_queue_rows_for_tag(tag_id)
+    # Dalga geçişinde dispatch_queue sent satırları korunur (polling); expire yalnız stop/kabul/iptal.
 
     n_queue_ok = 0
     slot_i = 0
