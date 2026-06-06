@@ -7822,11 +7822,33 @@ function bumpRouteHistoryPoint(
   return [{ ...point, usedAt: Date.now(), source: 'recent' }, ...filtered];
 }
 
-function pickupRecentCardMeta(point: RouteHistoryPoint): string {
-  if (point.source === 'gps' || point.address.trim() === 'Konumum') {
-    return 'GPS konumu';
+function routeHistorySourceLabel(
+  source: RouteHistorySource | undefined,
+  _role: 'pickup' | 'destination',
+): string {
+  switch (source) {
+    case 'gps':
+      return 'GPS';
+    case 'map':
+      return 'Harita';
+    case 'search':
+      return 'Arama';
+    case 'saved':
+      return 'Kayıtlı';
+    case 'recent':
+      return 'Son kullanım';
+    default:
+      return 'Son kullanım';
   }
-  return 'Son alınış noktası';
+}
+
+function resolveRouteHistoryDisplaySource(
+  point: RouteHistoryPoint,
+  role: 'pickup' | 'destination',
+): RouteHistorySource | undefined {
+  if (point.source) return point.source;
+  if (role === 'pickup' && point.address.trim() === 'Konumum') return 'gps';
+  return undefined;
 }
 
 type IosDriverLocBootstrapReason = 'appstate_active' | 'active_tag_seed' | 'current_fix';
@@ -13800,6 +13822,9 @@ function PassengerDashboard({
                           <Text style={styles.routeRecentSectionTitle}>
                             Son kullanılan alınış noktaları
                           </Text>
+                          <Text style={styles.routeRecentSectionSubtitle}>
+                            Daha önce çağırdığınız noktaları tek dokunuşla seçin.
+                          </Text>
                           <View style={styles.routeRecentList}>
                             {recentPickups.map((point, index) => (
                               <TouchableOpacity
@@ -13816,9 +13841,17 @@ function PassengerDashboard({
                                     <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
                                       {point.address}
                                     </Text>
-                                    <Text style={styles.routeRecentCardMeta}>
-                                      {pickupRecentCardMeta(point)}
-                                    </Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel(
+                                            resolveRouteHistoryDisplaySource(point, 'pickup'),
+                                            'pickup',
+                                          )}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
+                                    </View>
                                   </View>
                                   <Ionicons
                                     name="chevron-forward"
@@ -13880,6 +13913,9 @@ function PassengerDashboard({
                       {recentDestinations.length > 0 ? (
                         <View style={styles.routeRecentSection}>
                           <Text style={styles.routeRecentSectionTitle}>Son gidilen yerler</Text>
+                          <Text style={styles.routeRecentSectionSubtitle}>
+                            Daha önce gittiğiniz adresleri hızlıca seçin.
+                          </Text>
                           <View style={styles.routeRecentList}>
                             {recentDestinations.map((point, index) => (
                               <TouchableOpacity
@@ -13896,7 +13932,17 @@ function PassengerDashboard({
                                     <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
                                       {point.address}
                                     </Text>
-                                    <Text style={styles.routeRecentCardMeta}>Son hedef</Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel(
+                                            resolveRouteHistoryDisplaySource(point, 'destination'),
+                                            'destination',
+                                          )}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Varış noktası</Text>
+                                    </View>
                                   </View>
                                   <Ionicons
                                     name="chevron-forward"
@@ -25836,6 +25882,14 @@ const styles = StyleSheet.create({
     color: 'rgba(34, 211, 238, 0.88)',
     letterSpacing: 0.35,
     textTransform: 'uppercase',
+    marginBottom: 6,
+    paddingHorizontal: 2,
+  },
+  routeRecentSectionSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(148, 163, 184, 0.92)',
+    lineHeight: 17,
     marginBottom: 10,
     paddingHorizontal: 2,
   },
@@ -25845,26 +25899,37 @@ const styles = StyleSheet.create({
   routeRecentCard: {
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.24)',
-    backgroundColor: 'rgba(8, 17, 31, 0.62)',
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+    backgroundColor: 'rgba(8, 17, 31, 0.74)',
     overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(34, 211, 238, 0.14)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   routeRecentCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 12,
     gap: 10,
   },
   routeRecentIconRing: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.28)',
+    borderColor: 'rgba(34, 211, 238, 0.34)',
   },
   routeRecentCardTextCol: {
     flex: 1,
@@ -25876,8 +25941,29 @@ const styles = StyleSheet.create({
     color: 'rgba(248, 250, 252, 0.96)',
     lineHeight: 19,
   },
+  routeRecentCardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 5,
+  },
+  routeRecentSourceBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+  },
+  routeRecentSourceBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(34, 211, 238, 0.95)',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
+  },
   routeRecentCardMeta: {
-    marginTop: 3,
     fontSize: 11,
     fontWeight: '600',
     color: 'rgba(148, 163, 184, 0.9)',
