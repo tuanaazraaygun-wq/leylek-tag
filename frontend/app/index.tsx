@@ -7858,15 +7858,6 @@ function routeHistorySourceLabel(
   }
 }
 
-function resolveRouteHistoryDisplaySource(
-  point: RouteHistoryPoint,
-  role: 'pickup' | 'destination',
-): RouteHistorySource | undefined {
-  if (point.source) return point.source;
-  if (role === 'pickup' && point.address.trim() === 'Konumum') return 'gps';
-  return undefined;
-}
-
 type IosDriverLocBootstrapReason = 'appstate_active' | 'active_tag_seed' | 'current_fix';
 
 function logIosDriverLocBootstrap(
@@ -14032,7 +14023,7 @@ function PassengerDashboard({
                       </View>
                       {isNativeGoogleMapsSupported() ? (
                         <Text style={styles.destinationSearchFlowHint}>
-                          Hedefinizi yazın, ardından haritada konumu doğrulayın.
+                          Yazın, haritada doğrulayın.
                         </Text>
                       ) : null}
 
@@ -25981,12 +25972,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.34)',
+    borderColor: 'rgba(34, 211, 238, 0.44)',
     shadowColor: '#22D3EE',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.22,
     shadowRadius: 14,
-    elevation: 8,
+    elevation: 9,
   },
   pickupUseLocationBtnWrapAfterSearch: {
     marginTop: 12,
@@ -25997,7 +25988,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 14,
     gap: 12,
-    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+    backgroundColor: 'rgba(12, 24, 40, 0.62)',
   },
   pickupUseLocationIconRing: {
     width: 44,
@@ -26005,9 +25996,9 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
+    borderColor: 'rgba(34, 211, 238, 0.42)',
   },
   pickupUseLocationTextCol: {
     flex: 1,
@@ -26031,12 +26022,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.34)',
+    borderColor: 'rgba(34, 211, 238, 0.22)',
     shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   destinationMapPickBtnGlass: {
     flexDirection: 'row',
@@ -26044,7 +26035,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 14,
     gap: 12,
-    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+    backgroundColor: 'rgba(8, 17, 31, 0.48)',
   },
   destinationMapPickIconRing: {
     width: 44,
@@ -26052,9 +26043,9 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
+    borderColor: 'rgba(34, 211, 238, 0.24)',
   },
   destinationMapPickTextCol: {
     flex: 1,
@@ -26084,14 +26075,14 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   pickupSaveSectionBottom: {
-    marginTop: 14,
+    marginTop: 10,
   },
   pickupSaveTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: 'rgba(34, 211, 238, 0.88)',
+    color: 'rgba(34, 211, 238, 0.68)',
     letterSpacing: 0.35,
-    marginBottom: 8,
+    marginBottom: 6,
     paddingHorizontal: 2,
   },
   pickupSaveBtnRow: {
@@ -26112,8 +26103,10 @@ const styles = StyleSheet.create({
   pickupSaveChipBtn: {
     flex: 1,
     justifyContent: 'center',
-    paddingVertical: 9,
+    paddingVertical: 8,
     paddingHorizontal: 10,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+    backgroundColor: 'rgba(8, 17, 31, 0.58)',
   },
   pickupSaveChipText: {
     fontSize: 13,
