@@ -1447,10 +1447,10 @@ if os.getenv("DISPATCH_VEHICLE_FILTER_DISABLED", "").strip().lower() in ("1", "t
 # Rolling batch: bellek + dispatch_queue tablosu (sürücü polling / çoklu worker toleransı)
 BATCH_SIZE = 5
 try:
-    _rbt = float(os.getenv("DISPATCH_BATCH_TIMEOUT_SECONDS", "30").strip().replace(",", "."))
+    _rbt = float(os.getenv("DISPATCH_BATCH_TIMEOUT_SECONDS", "60").strip().replace(",", "."))
     ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = max(15.0, min(60.0, _rbt))
 except (TypeError, ValueError):
-    ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = 30.0
+    ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = 60.0
 DISPATCH_TIMEOUT = int(round(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS))
 try:
     _dr = float(os.getenv("DISPATCH_RADIUS_KM", "10").strip().replace(",", "."))
@@ -2091,7 +2091,7 @@ async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, 
         ok = await send_trip_push_and_log(
             resolved_driver_id,
             "new_ride_request",
-            "Yeni teklif geldi",
+            "Yeni yol paylaşımı teklifi",
             _push_body_offer_from_context(offer_data),
             _new_offer_push_data_from_offer(offer_data),
         )
@@ -12302,7 +12302,7 @@ def _push_first_name(name: Optional[str], max_len: int = 10) -> str:
 
 
 def _push_body_offer_from_context(offer_data: dict) -> str:
-    """Sürücü yolculuk teklifi — TL, yol km, kabul penceresi (Android önizleme ~72)."""
+    """Sürücü yolculuk teklifi — TL, pickup yakınlığı (trip km değil; Android önizleme ~72)."""
     parts: List[str] = []
     try:
         raw = offer_data.get("offered_price") or offer_data.get("final_price")
@@ -12312,28 +12312,34 @@ def _push_body_offer_from_context(offer_data: dict) -> str:
                 parts.append(f"{p} TL")
     except (TypeError, ValueError):
         pass
+    pk_km = None
     try:
-        dkm = offer_data.get("distance_km")
-        if dkm is None:
-            dkm = offer_data.get("trip_distance_km")
-        if dkm is not None and float(dkm) > 0:
-            parts.append(f"{float(dkm):.0f} km")
+        for _pk_key in ("pickup_distance_km", "distance_to_pickup"):
+            _pk_raw = offer_data.get(_pk_key)
+            if _pk_raw is not None and float(_pk_raw) > 0:
+                pk_km = float(_pk_raw)
+                break
     except (TypeError, ValueError):
         pass
-    to_sn = None
+    pk_min = None
     try:
-        raw_to = offer_data.get("dispatch_timeout")
-        if raw_to is not None and int(raw_to) > 0:
-            to_sn = int(raw_to)
+        for _eta_key in ("pickup_eta_min", "time_to_passenger_min"):
+            _eta_raw = offer_data.get(_eta_key)
+            if _eta_raw is not None and int(_eta_raw) > 0:
+                pk_min = int(_eta_raw)
+                break
     except (TypeError, ValueError):
         pass
 
-    if parts and to_sn is not None:
-        s = " • ".join(parts) + f" • {to_sn} sn içinde kabul et"
+    if pk_km is not None:
+        if pk_min is not None:
+            parts.append(f"{pk_km:.0f} km")
+            s = " • ".join(parts) + f" • {pk_min} dk yakınınızda"
+        else:
+            parts.append(f"{pk_km:.0f} km yakınınızda")
+            s = " • ".join(parts)
     elif parts:
-        s = " • ".join(parts) + " • Detayları görmek için dokun"
-    elif to_sn is not None:
-        s = f"{to_sn} sn içinde kabul et"
+        s = " • ".join(parts)
     else:
         s = "Detayları görmek için dokun"
     return s if len(s) <= 72 else s[:69] + "…"
