@@ -8022,6 +8022,7 @@ class DriverKYCSubmit(BaseModel):
     motorcycle_photo_base64: Optional[str] = None  # Motor fotoğrafı
     ai_status: Optional[str] = None  # green | yellow | red (istemci ön kontrol özeti)
     ai_warnings: Optional[List[str]] = None
+    kyc_terms_accepted_at: Optional[str] = None  # ISO8601 — istemci sürücü koşulları onayı
 
 @api_router.post("/driver/kyc/submit")
 async def submit_driver_kyc(data: DriverKYCSubmit):
@@ -8166,6 +8167,8 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             driver_details.pop("vehicle_photo_url", None)
         if selfie_url:
             driver_details["selfie_url"] = selfie_url
+        if data.kyc_terms_accepted_at is not None and str(data.kyc_terms_accepted_at).strip():
+            driver_details["kyc_terms_accepted_at"] = str(data.kyc_terms_accepted_at).strip()[:64]
         
         supabase.table("users").update({
             "driver_details": driver_details,

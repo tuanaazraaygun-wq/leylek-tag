@@ -543,19 +543,19 @@ function EmptyPhotoAddCard({
       <View style={emptyPhotoStyles.iconRing}>
         <Ionicons name="camera" size={46} color={KYC_P.cyan} />
       </View>
-      <Text style={emptyPhotoStyles.headline}>Fotoğraf ekle</Text>
+      <Text style={emptyPhotoStyles.headline}>{webMode ? 'Fotoğraf ekle' : 'Kamera ile çek'}</Text>
       <Text style={emptyPhotoStyles.hint}>{hint}</Text>
       <View style={emptyPhotoStyles.aiRow}>
         <Ionicons name="sparkles" size={16} color={KYC_P.cyan} />
         <Text style={emptyPhotoStyles.aiRowText}>
           {webMode
             ? 'Dosya seçildiğinde güvenli yükleme ve otomatik ön kontrol başlar.'
-            : 'Galeri veya kamera — yükleme sonrası AI destekli ön kontrol otomatik çalışır.'}
+            : 'Kamera ile çekin — yükleme sonrası ön kontrol otomatik çalışır.'}
         </Text>
       </View>
       <View style={emptyPhotoStyles.primaryLabelRow}>
-        <Text style={emptyPhotoStyles.primaryLabel}>Fotoğraf ekle</Text>
-        <Ionicons name={webMode ? 'cloud-upload-outline' : 'images'} size={22} color={KYC_P.cyan} />
+        <Text style={emptyPhotoStyles.primaryLabel}>{webMode ? 'Dosya seç' : 'Kamera ile çek'}</Text>
+        <Ionicons name={webMode ? 'cloud-upload-outline' : 'camera'} size={22} color={KYC_P.cyan} />
       </View>
     </>
   );
@@ -592,9 +592,9 @@ function EmptyPhotoAddCard({
     <View style={emptyPhotoStyles.wrapCol}>
       <View style={emptyPhotoStyles.cardOuter}>
         <Pressable
-          onPress={() => void onPickGallery()}
+          onPress={() => void onPickCamera()}
           accessibilityRole="button"
-          accessibilityLabel="Fotoğraf ekle, galeri"
+          accessibilityLabel="Kamera ile fotoğraf çek"
           style={({ pressed, hovered }) => [
             emptyPhotoStyles.pressWrap,
             (pressed || Boolean(hovered)) && emptyPhotoStyles.pressWrapActive,
@@ -611,17 +611,25 @@ function EmptyPhotoAddCard({
         </Pressable>
       </View>
       <View style={emptyPhotoStyles.secondaryRow}>
-        <TouchableOpacity style={emptyPhotoStyles.secondaryBtn} onPress={() => void onPickCamera()} activeOpacity={0.82}>
-          <Ionicons name="camera-outline" size={18} color={KYC_P.cyan} />
-          <Text style={emptyPhotoStyles.secondaryBtnText}>Kamera</Text>
-        </TouchableOpacity>
-        <View style={emptyPhotoStyles.secondarySep} />
         <TouchableOpacity style={emptyPhotoStyles.secondaryBtn} onPress={() => void onPickGallery()} activeOpacity={0.82}>
           <Ionicons name="images-outline" size={18} color={KYC_P.cyan} />
-          <Text style={emptyPhotoStyles.secondaryBtnText}>Galeri</Text>
+          <Text style={emptyPhotoStyles.secondaryBtnText}>Galeriden seç</Text>
         </TouchableOpacity>
       </View>
     </View>
+  );
+}
+
+function KycTermsCheckbox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <TouchableOpacity style={styles.termsRow} onPress={onToggle} activeOpacity={0.82}>
+      <View style={[styles.termsBox, checked && styles.termsBoxChecked]}>
+        {checked ? <Ionicons name="checkmark" size={16} color="#FFF" /> : null}
+      </View>
+      <Text style={styles.termsText}>
+        Sürücü gider paylaşımı koşullarını ve KVKK aydınlatmasını okudum, kabul ediyorum.
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -775,6 +783,7 @@ export default function DriverKYCScreen({
   const [selfiePhoto, setSelfiePhoto] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   
   // Marka arama
   const [brandSearch, setBrandSearch] = useState('');
@@ -1001,12 +1010,8 @@ export default function DriverKYCScreen({
 
   const vehiclePhotoForAi = isMotorKyc ? motorcyclePhoto : vehiclePhoto;
   const vehicleDocReady =
-    !!vehiclePhotoForAi &&
-    !analyzingVehicle &&
-    !!vehicleAi &&
-    vehicleAi.status !== 'red';
-  const licenseDocReady =
-    !!licensePhoto && !analyzingLicense && !!licenseAi && licenseAi.status !== 'red';
+    !!vehiclePhotoForAi && !analyzingVehicle && !!vehicleAi;
+  const licenseDocReady = !!licensePhoto && !analyzingLicense && !!licenseAi;
 
   const canGoNext = (): boolean => {
     if (isMotorKyc) {
@@ -1024,6 +1029,7 @@ export default function DriverKYCScreen({
   };
 
   const canSubmitFinal = (): boolean => {
+    if (!termsAccepted) return false;
     if (isMotorKyc) {
       return (
         vehicleBrand.trim() &&
@@ -1032,9 +1038,7 @@ export default function DriverKYCScreen({
         !!licensePhoto &&
         !!selfiePhoto &&
         !!vehicleAi &&
-        !!licenseAi &&
-        vehicleAi.status !== 'red' &&
-        licenseAi.status !== 'red'
+        !!licenseAi
       );
     }
     return (
@@ -1044,9 +1048,7 @@ export default function DriverKYCScreen({
       !!vehiclePhoto &&
       !!licensePhoto &&
       !!vehicleAi &&
-      !!licenseAi &&
-      vehicleAi.status !== 'red' &&
-      licenseAi.status !== 'red'
+      !!licenseAi
     );
   };
 
@@ -1132,8 +1134,8 @@ export default function DriverKYCScreen({
       Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
-    if (vehicleAi.status === 'red' || licenseAi.status === 'red') {
-      const msg = 'Kırmızı ön kontrol sonucu varken başvuru gönderilemez. Fotoğrafları güncelleyin.';
+    if (!termsAccepted) {
+      const msg = 'Başvuruyu göndermek için sürücü koşullarını kabul etmelisiniz.';
       Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
@@ -1151,6 +1153,7 @@ export default function DriverKYCScreen({
       console.log('Vehicle Photo Size:', Math.round((vehiclePhoto?.length || 0) / 1024), 'KB');
       console.log('License Photo Size:', Math.round((licensePhoto?.length || 0) / 1024), 'KB');
 
+      const termsAcceptedAt = new Date().toISOString();
       const bodyData: Record<string, unknown> = isMotorKyc
         ? {
             user_id: userId,
@@ -1163,6 +1166,7 @@ export default function DriverKYCScreen({
             selfie_photo_base64: selfiePhoto,
             ai_status: aiStatus,
             ai_warnings: aiWarnings,
+            kyc_terms_accepted_at: termsAcceptedAt,
           }
         : {
             user_id: userId,
@@ -1176,6 +1180,7 @@ export default function DriverKYCScreen({
             license_photo_base64: licensePhoto,
             ai_status: aiStatus,
             ai_warnings: aiWarnings,
+            kyc_terms_accepted_at: termsAcceptedAt,
           };
 
       setSubmitStatus('Sunucuya bağlanılıyor...');
@@ -1395,10 +1400,11 @@ export default function DriverKYCScreen({
                     </View>
                   ) : null}
                   {vehicleAi?.status === 'red' ? (
-                    <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
-                      <Text style={styles.blockBannerText}>
-                        Bu fotoğrafla ilerlenemez. Lütfen daha net bir görüntü yükleyin.
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
+                      <Text style={styles.warnBannerText}>
+                        Ön kontrol uyarısı: fotoğraf kalitesi düşük görünüyor; yine de devam edebilirsiniz;
+                        mümkünse daha net bir görüntü tercih edin.
                       </Text>
                     </View>
                   ) : null}
@@ -1457,10 +1463,11 @@ export default function DriverKYCScreen({
                     </View>
                   ) : null}
                   {licenseAi?.status === 'red' ? (
-                    <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
-                      <Text style={styles.blockBannerText}>
-                        Ehliyet fotoğrafı yetersiz. Lütfen net ve kadrajı tam bir görüntü yükleyin.
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
+                      <Text style={styles.warnBannerText}>
+                        Ön kontrol uyarısı: ehliyet fotoğrafı zayıf görünüyor; yine de devam edebilirsiniz;
+                        mümkünse net ve kadrajı tam bir görüntü tercih edin.
                       </Text>
                     </View>
                   ) : null}
@@ -1495,6 +1502,10 @@ export default function DriverKYCScreen({
                     Ön kontrol özeti ve belgeleriniz güvenli biçimde inceleme kuyruğuna iletilecek. Son karar her
                     zaman admin ekibindedir.
                   </Text>
+                  <KycTermsCheckbox
+                    checked={termsAccepted}
+                    onToggle={() => setTermsAccepted((v) => !v)}
+                  />
                 </>
               )}
             </>
@@ -1572,9 +1583,12 @@ export default function DriverKYCScreen({
                     </View>
                   ) : null}
                   {vehicleAi?.status === 'red' ? (
-                    <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
-                      <Text style={styles.blockBannerText}>Bu fotoğrafla ilerlenemez. Lütfen daha net bir görüntü yükleyin.</Text>
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
+                      <Text style={styles.warnBannerText}>
+                        Ön kontrol uyarısı: fotoğraf kalitesi düşük görünüyor; yine de devam edebilirsiniz;
+                        mümkünse daha net bir görüntü tercih edin.
+                      </Text>
                     </View>
                   ) : null}
                   {vehicleAi?.status === 'yellow' ? (
@@ -1628,9 +1642,12 @@ export default function DriverKYCScreen({
                     </View>
                   ) : null}
                   {licenseAi?.status === 'red' ? (
-                    <View style={styles.blockBanner}>
-                      <Ionicons name="close-circle" size={22} color="rgba(251,169,173,0.95)" />
-                      <Text style={styles.blockBannerText}>Ehliyet fotoğrafı yetersiz. Lütfen net bir görüntü yükleyin.</Text>
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="rgba(253,217,148,0.92)" />
+                      <Text style={styles.warnBannerText}>
+                        Ön kontrol uyarısı: ehliyet fotoğrafı zayıf görünüyor; yine de devam edebilirsiniz;
+                        mümkünse net bir görüntü tercih edin.
+                      </Text>
                     </View>
                   ) : null}
                   {licenseAi?.status === 'yellow' ? (
@@ -1691,6 +1708,10 @@ export default function DriverKYCScreen({
                     Selfie yalnızca admin incelemesi içindir. Ön kontrol özeti ve belgeler güvenli şekilde kuyruğa
                     iletilir; son karar her zaman admin ekibindedir.
                   </Text>
+                  <KycTermsCheckbox
+                    checked={termsAccepted}
+                    onToggle={() => setTermsAccepted((v) => !v)}
+                  />
                 </>
               )}
             </>
@@ -2037,6 +2058,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(253,230,174,0.94)',
     lineHeight: 18,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginTop: 18,
+    paddingVertical: 4,
+  },
+  termsBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: KYC_P.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  termsBoxChecked: {
+    backgroundColor: KYC_P.cyan,
+    borderColor: KYC_P.cyan,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 14,
+    color: KYC_P.textMd,
+    lineHeight: 20,
   },
   summaryTitle: {
     fontSize: 17,
