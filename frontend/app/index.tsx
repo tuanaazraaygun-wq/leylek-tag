@@ -59,8 +59,11 @@ import { useSocketContext, getOrCreateSocket } from '../contexts/SocketContext';
 import PlacesAutocomplete, { getRegisteredCityCenter } from '../components/PlacesAutocomplete';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
 import {
+  getRecentDestinations,
+  getRecentPickups,
   pushRecentDestination,
   pushRecentPickup,
+  type RouteHistoryPoint,
   type RouteHistorySource,
 } from '../lib/passengerRouteHistory';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
@@ -7804,6 +7807,28 @@ function resolvePassengerPickupCoords(
   return null;
 }
 
+function routeHistoryCoordKey(latitude: number, longitude: number): string {
+  return `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+}
+
+function bumpRouteHistoryPoint(
+  items: RouteHistoryPoint[],
+  point: RouteHistoryPoint,
+): RouteHistoryPoint[] {
+  const key = routeHistoryCoordKey(point.latitude, point.longitude);
+  const filtered = items.filter(
+    (item) => routeHistoryCoordKey(item.latitude, item.longitude) !== key,
+  );
+  return [{ ...point, usedAt: Date.now(), source: 'recent' }, ...filtered];
+}
+
+function pickupRecentCardMeta(point: RouteHistoryPoint): string {
+  if (point.source === 'gps' || point.address.trim() === 'Konumum') {
+    return 'GPS konumu';
+  }
+  return 'Son alınış noktası';
+}
+
 type IosDriverLocBootstrapReason = 'appstate_active' | 'active_tag_seed' | 'current_fix';
 
 function logIosDriverLocBootstrap(
@@ -8465,6 +8490,8 @@ function PassengerDashboard({
   const [routePickerStep, setRoutePickerStep] = useState<'pickup' | 'destination'>('pickup');
   const [passengerPickup, setPassengerPickup] = useState<PassengerRoutePoint | null>(null);
   const [pickupConfirmBusy, setPickupConfirmBusy] = useState(false);
+  const [recentPickups, setRecentPickups] = useState<RouteHistoryPoint[]>([]);
+  const [recentDestinations, setRecentDestinations] = useState<RouteHistoryPoint[]>([]);
 
   useEffect(() => {
     if (
@@ -8712,6 +8739,36 @@ function PassengerDashboard({
     setDestinationPickerPhase('search');
     setRoutePickerStep(passengerPickup ? 'destination' : 'pickup');
   }, [showDestinationPicker, passengerPickup]);
+
+  useEffect(() => {
+    if (!showDestinationPicker) return;
+    const uid = String(user?.id ?? '').trim();
+    if (!uid) {
+      setRecentPickups([]);
+      setRecentDestinations([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [pickups, destinations] = await Promise.all([
+          getRecentPickups(uid),
+          getRecentDestinations(uid),
+        ]);
+        if (cancelled) return;
+        setRecentPickups(pickups);
+        setRecentDestinations(destinations);
+      } catch {
+        if (!cancelled) {
+          setRecentPickups([]);
+          setRecentDestinations([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showDestinationPicker, user?.id]);
 
   useEffect(() => {
     if (!showPriceModal) return;
@@ -11780,6 +11837,33 @@ function PassengerDashboard({
     }
   };
 
+  const selectRecentPickup = (point: RouteHistoryPoint) => {
+    void tapButtonHaptic();
+    setPassengerPickup({
+      address: point.address,
+      latitude: point.latitude,
+      longitude: point.longitude,
+    });
+    setRoutePickerStep('destination');
+    setDestinationPickerPhase('search');
+    setDestinationPickerAutocompleteMountKey((k) => k + 1);
+    setRecentPickups((prev) => bumpRouteHistoryPoint(prev, point));
+    void pushRecentPickup(String(user?.id ?? ''), {
+      address: point.address,
+      latitude: point.latitude,
+      longitude: point.longitude,
+      source: 'recent',
+    });
+  };
+
+  const selectRecentDestination = (point: RouteHistoryPoint) => {
+    void tapButtonHaptic();
+    void commitDestinationFromMap(point.address, point.latitude, point.longitude, {
+      autoOpenTagPriceFlow: true,
+      historySource: 'recent',
+    });
+  };
+
   const closeDestinationPickerModal = () => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
@@ -13531,6 +13615,42 @@ function PassengerDashboard({
                           )}
                         </LinearGradient>
                       </TouchableOpacity>
+                      {recentPickups.length > 0 ? (
+                        <View style={styles.routeRecentSection}>
+                          <Text style={styles.routeRecentSectionTitle}>
+                            Son kullanılan alınış noktaları
+                          </Text>
+                          <View style={styles.routeRecentList}>
+                            {recentPickups.map((point, index) => (
+                              <TouchableOpacity
+                                key={`pickup-${routeHistoryCoordKey(point.latitude, point.longitude)}-${point.usedAt}-${index}`}
+                                style={styles.routeRecentCard}
+                                activeOpacity={0.88}
+                                onPress={() => selectRecentPickup(point)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="time-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {point.address}
+                                    </Text>
+                                    <Text style={styles.routeRecentCardMeta}>
+                                      {pickupRecentCardMeta(point)}
+                                    </Text>
+                                  </View>
+                                  <Ionicons
+                                    name="chevron-forward"
+                                    size={18}
+                                    color="rgba(34, 211, 238, 0.72)"
+                                  />
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      ) : null}
                       <View style={styles.pickupRouteAccentLine} />
                       <Text style={styles.pickupRouteFooterHint}>
                         LeylekTAG — alınış noktanız teklif ve eşleşme için güvenle kullanılır.
@@ -13550,6 +13670,39 @@ function PassengerDashboard({
                           Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
                           kaydedilir.
                         </Text>
+                      ) : null}
+
+                      {recentDestinations.length > 0 ? (
+                        <View style={styles.routeRecentSection}>
+                          <Text style={styles.routeRecentSectionTitle}>Son gidilen yerler</Text>
+                          <View style={styles.routeRecentList}>
+                            {recentDestinations.map((point, index) => (
+                              <TouchableOpacity
+                                key={`dest-${routeHistoryCoordKey(point.latitude, point.longitude)}-${point.usedAt}-${index}`}
+                                style={styles.routeRecentCard}
+                                activeOpacity={0.88}
+                                onPress={() => selectRecentDestination(point)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="navigate-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {point.address}
+                                    </Text>
+                                    <Text style={styles.routeRecentCardMeta}>Son hedef</Text>
+                                  </View>
+                                  <Ionicons
+                                    name="chevron-forward"
+                                    size={18}
+                                    color="rgba(34, 211, 238, 0.72)"
+                                  />
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
                       ) : null}
 
                       <View style={styles.destinationSearchShellModern}>
@@ -25392,6 +25545,62 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     paddingHorizontal: 8,
+  },
+  routeRecentSection: {
+    marginTop: 16,
+  },
+  routeRecentSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(34, 211, 238, 0.88)',
+    letterSpacing: 0.35,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  routeRecentList: {
+    gap: 8,
+  },
+  routeRecentCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.24)',
+    backgroundColor: 'rgba(8, 17, 31, 0.62)',
+    overflow: 'hidden',
+  },
+  routeRecentCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  routeRecentIconRing: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+  },
+  routeRecentCardTextCol: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  routeRecentCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(248, 250, 252, 0.96)',
+    lineHeight: 19,
+  },
+  routeRecentCardMeta: {
+    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(148, 163, 184, 0.9)',
+    lineHeight: 15,
   },
   destinationMapHintRow: {
     flexDirection: 'row',
