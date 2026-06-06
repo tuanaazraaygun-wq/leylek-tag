@@ -1255,6 +1255,8 @@ export default function PlacesAutocomplete({
   const [popularGeocodeError, setPopularGeocodeError] = useState<string | null>(null);
   /** Öneri seçimi (Places Details / koordinat) */
   const [predictionActionError, setPredictionActionError] = useState<string | null>(null);
+  /** Aktif öneri satırı — “Seçiliyor…” feedback */
+  const [selectingPlaceId, setSelectingPlaceId] = useState<string | null>(null);
   /** Aktif arama iptali — yeni istek veya unmount önceki fetch'leri keser */
   const placesSearchAbortRef = useRef<AbortController | null>(null);
   /** Öneri satırına çift basmayı keser (klavye blur + async Details yarışı) */
@@ -2567,6 +2569,7 @@ export default function PlacesAutocomplete({
   const handleSelectPrediction = async (item: PlaceResult) => {
     if (selectionInFlightRef.current) return;
     selectionInFlightRef.current = true;
+    setSelectingPlaceId(item.place_id);
 
     try {
       setPredictionActionError(null);
@@ -2619,7 +2622,66 @@ export default function PlacesAutocomplete({
       dismissKeyboardAfterSelection();
     } finally {
       selectionInFlightRef.current = false;
+      setSelectingPlaceId(null);
     }
+  };
+
+  const renderPredictionRow = (item: PlaceResult) => {
+    const formatted = formatAddress(item);
+    const isSelecting = selectingPlaceId === item.place_id;
+    const rowDisabled = selectingPlaceId != null && !isSelecting;
+    return (
+      <Pressable
+        style={[
+          styles.predictionItem,
+          tech && styles.predictionItemTech,
+          rowDisabled && styles.predictionItemDisabled,
+          isSelecting && styles.predictionItemSelecting,
+        ]}
+        disabled={rowDisabled}
+        onPressIn={() => void handleSelectPrediction(item)}
+        onPress={() => void handleSelectPrediction(item)}
+      >
+        <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
+          <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
+        </View>
+        <View style={styles.predictionTextContainer}>
+          <Text
+            style={[styles.predictionMainText, tech && styles.predictionMainTextTech]}
+            numberOfLines={2}
+          >
+            {formatted.main}
+          </Text>
+          <Text
+            style={[styles.predictionSecondaryText, tech && styles.predictionSecondaryTextTech]}
+            numberOfLines={2}
+          >
+            {formatted.secondary}
+          </Text>
+          {item.isSilentRefinement ? (
+            <Text
+              style={[styles.predictionRefineHint, tech && styles.predictionRefineHintTech]}
+              numberOfLines={1}
+            >
+              Konumu haritadan doğrulamanız önerilir
+            </Text>
+          ) : null}
+        </View>
+        {isSelecting ? (
+          <View style={styles.predictionSelectingTrailing}>
+            <ActivityIndicator size="small" color={tech ? '#38BDF8' : '#3FA9F5'} />
+            <Text
+              style={[styles.predictionSelectingText, tech && styles.predictionSelectingTextTech]}
+              numberOfLines={1}
+            >
+              Seçiliyor…
+            </Text>
+          </View>
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
+        )}
+      </Pressable>
+    );
   };
 
   const handleQuickPick = (qp: MuhabbetQuickPickPlace, selectionSource?: PlaceSelectionSource) => {
@@ -2737,45 +2799,7 @@ export default function PlacesAutocomplete({
                 keyExtractor={(item) => item.place_id}
                 keyboardShouldPersistTaps="always"
                 nestedScrollEnabled
-                renderItem={({ item }) => {
-                  const formatted = formatAddress(item);
-                  return (
-                    <Pressable
-                      style={[styles.predictionItem, tech && styles.predictionItemTech]}
-                      onPressIn={() => void handleSelectPrediction(item)}
-                    >
-                      <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
-                        <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
-                      </View>
-                      <View style={styles.predictionTextContainer}>
-                        <Text
-                          style={[styles.predictionMainText, tech && styles.predictionMainTextTech]}
-                          numberOfLines={2}
-                        >
-                          {formatted.main}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.predictionSecondaryText,
-                            tech && styles.predictionSecondaryTextTech,
-                          ]}
-                          numberOfLines={2}
-                        >
-                          {formatted.secondary}
-                        </Text>
-                        {item.isSilentRefinement ? (
-                          <Text
-                            style={[styles.predictionRefineHint, tech && styles.predictionRefineHintTech]}
-                            numberOfLines={1}
-                          >
-                            Konumu haritadan doğrulamanız önerilir
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
-                    </Pressable>
-                  );
-                }}
+                renderItem={({ item }) => renderPredictionRow(item)}
                 ItemSeparatorComponent={() => (
                   <View style={[styles.separator, tech && styles.separatorTech]} />
                 )}
@@ -2963,42 +2987,7 @@ export default function PlacesAutocomplete({
             keyExtractor={(item) => item.place_id}
             keyboardShouldPersistTaps="always"
             nestedScrollEnabled
-            renderItem={({ item }) => {
-              const formatted = formatAddress(item);
-              return (
-                <Pressable
-                  style={[styles.predictionItem, tech && styles.predictionItemTech]}
-                  onPressIn={() => void handleSelectPrediction(item)}
-                >
-                  <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
-                    <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
-                  </View>
-                  <View style={styles.predictionTextContainer}>
-                    <Text
-                      style={[styles.predictionMainText, tech && styles.predictionMainTextTech]}
-                      numberOfLines={2}
-                    >
-                      {formatted.main}
-                    </Text>
-                    <Text
-                      style={[styles.predictionSecondaryText, tech && styles.predictionSecondaryTextTech]}
-                      numberOfLines={2}
-                    >
-                      {formatted.secondary}
-                    </Text>
-                    {item.isSilentRefinement ? (
-                      <Text
-                        style={[styles.predictionRefineHint, tech && styles.predictionRefineHintTech]}
-                        numberOfLines={1}
-                      >
-                        Konumu haritadan doğrulamanız önerilir
-                      </Text>
-                    ) : null}
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
-                </Pressable>
-              );
-            }}
+            renderItem={({ item }) => renderPredictionRow(item)}
             ItemSeparatorComponent={() => (
               <View style={[styles.separator, tech && styles.separatorTech]} />
             )}
@@ -3262,6 +3251,26 @@ const styles = StyleSheet.create({
   },
   predictionItemTech: {
     backgroundColor: 'transparent',
+  },
+  predictionItemDisabled: {
+    opacity: 0.45,
+  },
+  predictionItemSelecting: {
+    opacity: 0.92,
+  },
+  predictionSelectingTrailing: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 72,
+    gap: 4,
+  },
+  predictionSelectingText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3FA9F5',
+  },
+  predictionSelectingTextTech: {
+    color: '#38BDF8',
   },
   iconContainer: {
     width: 40,

@@ -148,27 +148,50 @@ export async function googlePlacesAutocompleteMerged(
   return Array.from(byId.values());
 }
 
+const PLACE_DETAILS_TIMEOUT_MS = 8000;
+
 export async function googlePlaceDetailsLatLng(
   placeId: string,
   apiKey: string,
+  externalSignal?: AbortSignal,
 ): Promise<{ lat: number; lng: number; formattedAddress: string }> {
-  const params = new URLSearchParams({
-    place_id: placeId,
-    key: apiKey,
-    fields: 'geometry/location,formatted_address',
-    language: 'tr',
-  });
-  const res = await fetch(`${DETAILS_URL}?${params.toString()}`);
-  const data = (await res.json()) as GoogleDetailsResponse;
-  if (data.status !== 'OK' || !data.result?.geometry?.location) {
-    throw new Error(data.error_message || data.status || 'place_details_failed');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PLACE_DETAILS_TIMEOUT_MS);
+
+  const abortFromExternal = () => controller.abort();
+  if (externalSignal?.aborted) {
+    clearTimeout(timeoutId);
+    throw new Error('place_details_aborted');
   }
-  const loc = data.result.geometry.location;
-  return {
-    lat: loc.lat,
-    lng: loc.lng,
-    formattedAddress: data.result.formatted_address || '',
-  };
+  externalSignal?.addEventListener('abort', abortFromExternal);
+
+  try {
+    const params = new URLSearchParams({
+      place_id: placeId,
+      key: apiKey,
+      fields: 'geometry/location,formatted_address',
+      language: 'tr',
+    });
+    const res = await fetch(`${DETAILS_URL}?${params.toString()}`, { signal: controller.signal });
+    const data = (await res.json()) as GoogleDetailsResponse;
+    if (data.status !== 'OK' || !data.result?.geometry?.location) {
+      throw new Error(data.error_message || data.status || 'place_details_failed');
+    }
+    const loc = data.result.geometry.location;
+    return {
+      lat: loc.lat,
+      lng: loc.lng,
+      formattedAddress: data.result.formatted_address || '',
+    };
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error(externalSignal?.aborted ? 'place_details_aborted' : 'place_details_timeout');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener('abort', abortFromExternal);
+  }
 }
 
 export async function googleGeocodeText(
