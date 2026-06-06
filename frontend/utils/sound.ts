@@ -4,6 +4,14 @@
  */
 import { Platform, AppState } from 'react-native';
 import { Audio } from 'expo-av';
+import {
+  DEFAULT_DRIVER_OFFER_SOUND,
+  DEFAULT_DRIVER_OFFER_VOLUME,
+  getDriverOfferSoundPreference,
+  getDriverOfferSoundVolume,
+  type DriverOfferSoundType,
+} from '../lib/driverOfferSoundPrefs';
+import { getPersistedUserRaw } from '../lib/sessionToken';
 
 const SOUND_URLS = {
   tap: 'https://assets.mixkit.co/active_storage/sfx/1109/1109-preview.mp3',
@@ -15,12 +23,22 @@ const SOUND_URLS = {
 const MATCH_CHIME_VOLUME = 0.46;
 const MATCH_CHIME_DEBOUNCE_MS = 2800;
 
-/** Sürücü — yeni TAG / istek ön planda yumuşak bildirim */
-const DRIVER_NEW_OFFER_VOLUME = 0.38;
+/** Sürücü — yeni TAG / istek ön planda bildirim (cooldown) */
 const DRIVER_NEW_OFFER_COOLDOWN_MS = 1000;
+
+const DRIVER_OFFER_SOUND_SOURCES = {
+  classic: require('../assets/sounds/driver-offer-classic.wav'),
+  urgent: require('../assets/sounds/driver-offer-urgent.wav'),
+  fallback: require('../assets/sounds/leylektag-luxury-tone.wav'),
+} as const;
 
 let matchChimeLoadPromise: Promise<Audio.Sound | null> | null = null;
 let lastMatchChimeAt = 0;
+
+let driverOfferSound: Audio.Sound | null = null;
+let driverOfferLoadPromise: Promise<Audio.Sound | null> | null = null;
+let driverOfferLoadedKind: DriverOfferSoundType | 'fallback' | null = null;
+let lastDriverOfferLuxuryAt = 0;
 
 async function playUri(uri: string, volume = 0.7): Promise<void> {
   if (Platform.OS === 'web') return;
@@ -117,69 +135,175 @@ export async function playMatchChimeSound(): Promise<void> {
   }
 }
 
-let driverOfferLuxurySound: Audio.Sound | null = null;
-let driverOfferLuxuryLoadPromise: Promise<Audio.Sound | null> | null = null;
-let lastDriverOfferLuxuryAt = 0;
+async function resolveDriverOfferUserId(): Promise<string | null> {
+  try {
+    const raw = await getPersistedUserRaw();
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string };
+    const uid = String(parsed?.id || '').trim();
+    return uid || null;
+  } catch {
+    return null;
+  }
+}
 
-async function ensureDriverOfferLuxuryLoaded(): Promise<Audio.Sound | null> {
+async function createDriverOfferSound(kind: DriverOfferSoundType): Promise<Audio.Sound | null> {
+  const primarySource = DRIVER_OFFER_SOUND_SOURCES[kind];
+  try {
+    const { sound } = await Audio.Sound.createAsync(primarySource, {
+      shouldPlay: false,
+      volume: DEFAULT_DRIVER_OFFER_VOLUME,
+      isLooping: false,
+    });
+    return sound;
+  } catch (e) {
+    if (__DEV__) console.warn(`utils/sound driver-offer ${kind} wav`, e);
+    try {
+      const { sound } = await Audio.Sound.createAsync(DRIVER_OFFER_SOUND_SOURCES.fallback, {
+        shouldPlay: false,
+        volume: DEFAULT_DRIVER_OFFER_VOLUME,
+        isLooping: false,
+      });
+      return sound;
+    } catch (e2) {
+      if (__DEV__) console.warn('utils/sound driver-offer fallback wav', e2);
+      return null;
+    }
+  }
+}
+
+async function unloadDriverOfferSoundInternal(): Promise<void> {
+  driverOfferLoadPromise = null;
+  driverOfferLoadedKind = null;
+  const sound = driverOfferSound;
+  driverOfferSound = null;
+  if (!sound) return;
+  try {
+    await sound.stopAsync();
+    await sound.unloadAsync();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function ensureDriverOfferSoundLoaded(kind: DriverOfferSoundType): Promise<Audio.Sound | null> {
   if (Platform.OS === 'web') return null;
-  if (!driverOfferLuxuryLoadPromise) {
-    driverOfferLuxuryLoadPromise = (async (): Promise<Audio.Sound | null> => {
+  if (driverOfferLoadedKind === kind && driverOfferSound) {
+    return driverOfferSound;
+  }
+
+  await unloadDriverOfferSoundInternal();
+
+  if (!driverOfferLoadPromise) {
+    driverOfferLoadPromise = (async (): Promise<Audio.Sound | null> => {
       try {
         await loadSounds();
-        const { sound } = await Audio.Sound.createAsync(
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('../assets/sounds/leylektag-luxury-tone.wav'),
-          {
-            shouldPlay: false,
-            volume: DRIVER_NEW_OFFER_VOLUME,
-            isLooping: false,
-          },
-        );
-        driverOfferLuxurySound = sound;
+        const sound = await createDriverOfferSound(kind);
+        if (!sound) {
+          driverOfferLoadPromise = null;
+          return null;
+        }
+        driverOfferSound = sound;
+        driverOfferLoadedKind = kind;
         return sound;
       } catch (e) {
-        if (__DEV__) console.warn('utils/sound driver-offer luxury wav', e);
-        driverOfferLuxuryLoadPromise = null;
+        if (__DEV__) console.warn('ensureDriverOfferSoundLoaded', e);
+        driverOfferLoadPromise = null;
         return null;
       }
     })();
   }
-  return driverOfferLuxuryLoadPromise;
+
+  return driverOfferLoadPromise;
+}
+
+async function playDriverOfferToneOnce(
+  kind: DriverOfferSoundType,
+  volume: number,
+  opts?: { bypassCooldown?: boolean; useCache?: boolean },
+): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+
+  const now = Date.now();
+  if (!opts?.bypassCooldown && now - lastDriverOfferLuxuryAt < DRIVER_NEW_OFFER_COOLDOWN_MS) {
+    return;
+  }
+
+  try {
+    await loadSounds();
+
+    if (opts?.useCache === false) {
+      let sound: Audio.Sound | null = null;
+      try {
+        sound = await createDriverOfferSound(kind);
+      } catch {
+        sound = null;
+      }
+      if (!sound) return;
+      await sound.setVolumeAsync(volume);
+      await sound.setPositionAsync(0);
+      await sound.playAsync();
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound?.unloadAsync().catch(() => {});
+        }
+      });
+      return;
+    }
+
+    const sound = await ensureDriverOfferSoundLoaded(kind);
+    if (!sound) return;
+    if (!opts?.bypassCooldown) {
+      lastDriverOfferLuxuryAt = now;
+    }
+    await sound.setVolumeAsync(volume);
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+  } catch (e) {
+    if (__DEV__) console.warn('playDriverOfferToneOnce', e);
+  }
 }
 
 /**
  * Sürücü paneli — yeni talep/teklif (foreground). Çift tetik ve çakışma için cooldown.
+ * Ses türü ve seviye AsyncStorage tercihlerinden okunur.
  */
 export async function playDriverNewOfferLuxuryTone(): Promise<void> {
-  if (Platform.OS === 'web') return;
-  if (AppState.currentState !== 'active') return;
-  const now = Date.now();
-  if (now - lastDriverOfferLuxuryAt < DRIVER_NEW_OFFER_COOLDOWN_MS) return;
-  try {
-    await loadSounds();
-    const sound = await ensureDriverOfferLuxuryLoaded();
-    if (!sound) return;
-    lastDriverOfferLuxuryAt = now;
-    await sound.setVolumeAsync(DRIVER_NEW_OFFER_VOLUME);
-    await sound.setPositionAsync(0);
-    await sound.playAsync();
-  } catch (e) {
-    if (__DEV__) console.warn('playDriverNewOfferLuxuryTone', e);
-  }
+  const userId = await resolveDriverOfferUserId();
+  const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
+  const volume = userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME;
+  await playDriverOfferToneOnce(kind, volume, { useCache: true });
+}
+
+export type PreviewDriverOfferSoundOptions = {
+  userId?: string;
+  type?: DriverOfferSoundType;
+  volume?: number;
+};
+
+/**
+ * Ayarlar ekranı — seçilen sesi önizler.
+ * Cooldown ve seenIds bypass; gerçek teklif akışını etkilemez.
+ */
+export async function previewDriverOfferSound(options?: PreviewDriverOfferSoundOptions): Promise<void> {
+  const userId = options?.userId ?? (await resolveDriverOfferUserId());
+  const kind =
+    options?.type ??
+    (userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND);
+  const volume =
+    options?.volume ??
+    (userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME);
+  await playDriverOfferToneOnce(kind, volume, { bypassCooldown: true, useCache: false });
+}
+
+/** Tercih kaydedildiğinde önbelleği temizle */
+export async function invalidateDriverOfferSoundCache(): Promise<void> {
+  await unloadDriverNewOfferLuxuryTone();
 }
 
 /** DriverDashboard unmount — ses nesnesini boşalt */
 export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
-  driverOfferLuxuryLoadPromise = null;
   lastDriverOfferLuxuryAt = 0;
-  const s = driverOfferLuxurySound;
-  driverOfferLuxurySound = null;
-  if (!s) return;
-  try {
-    await s.stopAsync();
-    await s.unloadAsync();
-  } catch {
-    /* ignore */
-  }
+  await unloadDriverOfferSoundInternal();
 }

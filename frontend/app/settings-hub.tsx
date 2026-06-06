@@ -104,18 +104,35 @@ export default function SettingsHubScreen() {
         </View>
 
         {user?.role === 'driver' ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Ödeme bilgileri</Text>
-            <Pressable style={styles.row} onPress={() => router.push('/driver-bank-accounts' as any)}>
-              <View style={styles.rowLeft}>
-                <Ionicons name="card-outline" size={20} color="#22D3EE" />
-                <View style={styles.rowTextCol}>
-                  <Text style={styles.rowText}>IBAN hesabınızı yönetin</Text>
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Sürücü</Text>
+              <Pressable
+                style={styles.row}
+                onPress={() => router.push('/driver-offer-sound-settings' as any)}
+              >
+                <View style={styles.rowLeft}>
+                  <Ionicons name="volume-high-outline" size={20} color="#22D3EE" />
+                  <View style={styles.rowTextCol}>
+                    <Text style={styles.rowText}>Teklif Sesi</Text>
+                  </View>
                 </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="rgba(148, 163, 184, 0.65)" />
-            </Pressable>
-          </View>
+                <Ionicons name="chevron-forward" size={18} color="rgba(148, 163, 184, 0.65)" />
+              </Pressable>
+            </View>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Ödeme bilgileri</Text>
+              <Pressable style={styles.row} onPress={() => router.push('/driver-bank-accounts' as any)}>
+                <View style={styles.rowLeft}>
+                  <Ionicons name="card-outline" size={20} color="#22D3EE" />
+                  <View style={styles.rowTextCol}>
+                    <Text style={styles.rowText}>IBAN hesabınızı yönetin</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="rgba(148, 163, 184, 0.65)" />
+              </Pressable>
+            </View>
+          </>
         ) : null}
 
         <View style={styles.card}>
