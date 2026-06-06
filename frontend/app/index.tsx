@@ -58,6 +58,11 @@ import { useSocketContext, getOrCreateSocket } from '../contexts/SocketContext';
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete, { getRegisteredCityCenter } from '../components/PlacesAutocomplete';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
+import {
+  pushRecentDestination,
+  pushRecentPickup,
+  type RouteHistorySource,
+} from '../lib/passengerRouteHistory';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { callAlertPrompt, isAlertPromptCallable } from '../lib/alertPrompt';
 import { callCheck } from '../lib/callCheck';
@@ -11610,10 +11615,16 @@ function PassengerDashboard({
     address: string,
     lat: number,
     lng: number,
-    opts?: { autoOpenTagPriceFlow?: boolean },
+    opts?: { autoOpenTagPriceFlow?: boolean; historySource?: RouteHistorySource },
   ) => {
     const newDestination = { address, latitude: lat, longitude: lng };
     setDestination(newDestination);
+    void pushRecentDestination(String(user?.id ?? ''), {
+      address,
+      latitude: lat,
+      longitude: lng,
+      source: opts?.historySource ?? 'map',
+    });
     setDestinationAwaitingMapTap(false);
     setShowDestinationPicker(false);
 
@@ -11678,6 +11689,7 @@ function PassengerDashboard({
     if (!isNativeGoogleMapsSupported()) {
       void commitDestinationFromMap(place.address, place.latitude, place.longitude, {
         autoOpenTagPriceFlow: true,
+        historySource: 'search',
       });
       return;
     }
@@ -11753,6 +11765,12 @@ function PassengerDashboard({
         address: 'Konumum',
         latitude: coords.latitude,
         longitude: coords.longitude,
+      });
+      void pushRecentPickup(String(user?.id ?? ''), {
+        address: 'Konumum',
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        source: 'gps',
       });
       setRoutePickerStep('destination');
       setDestinationPickerPhase('search');
