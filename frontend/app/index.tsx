@@ -11771,6 +11771,44 @@ function PassengerDashboard({
     });
   };
 
+  /** Faz 1B-3: arama beklemeden doğrudan harita ile hedef seçimi */
+  const openDestinationMapPickerDirect = () => {
+    void tapButtonHaptic();
+    if (!DestinationPickerMapView || !isNativeGoogleMapsSupported()) return;
+
+    setDestination(null);
+    setDestinationAwaitingMapTap(true);
+    setDestinationPickerPhase('map');
+
+    const pickupResolved = resolvePassengerPickupCoords(passengerPickup, userLocation);
+    const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
+    const lat =
+      pickupResolved?.latitude ??
+      userLocation?.latitude ??
+      cityLL?.latitude ??
+      DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
+    const lng =
+      pickupResolved?.longitude ??
+      userLocation?.longitude ??
+      cityLL?.longitude ??
+      DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
+    requestAnimationFrame(() => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+          },
+          420,
+        );
+      } catch (_) {}
+    });
+  };
+
   const confirmPassengerPickupFromGps = async () => {
     if (pickupConfirmBusy) return;
     setPickupConfirmBusy(true);
@@ -13703,6 +13741,32 @@ function PassengerDashboard({
                             ))}
                           </View>
                         </View>
+                      ) : null}
+
+                      {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+                        <TouchableOpacity
+                          style={styles.destinationMapPickBtnWrap}
+                          activeOpacity={0.88}
+                          onPress={openDestinationMapPickerDirect}
+                        >
+                          <LinearGradient
+                            colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.destinationMapPickBtnGlass}
+                          >
+                            <View style={styles.destinationMapPickIconRing}>
+                              <Ionicons name="map-outline" size={22} color="#22D3EE" />
+                            </View>
+                            <View style={styles.destinationMapPickTextCol}>
+                              <Text style={styles.destinationMapPickBtnText}>Haritadan seç</Text>
+                              <Text style={styles.destinationMapPickBtnSub}>
+                                Hedefi harita üzerinde işaretleyin
+                              </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                          </LinearGradient>
+                        </TouchableOpacity>
                       ) : null}
 
                       <View style={styles.destinationSearchShellModern}>
@@ -25545,6 +25609,53 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     paddingHorizontal: 8,
+  },
+  destinationMapPickBtnWrap: {
+    marginTop: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.34)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  destinationMapPickBtnGlass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    gap: 12,
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+  },
+  destinationMapPickIconRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+  },
+  destinationMapPickTextCol: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  destinationMapPickBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: 'rgba(248, 250, 252, 0.98)',
+    letterSpacing: -0.2,
+  },
+  destinationMapPickBtnSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(148, 163, 184, 0.92)',
+    lineHeight: 17,
   },
   routeRecentSection: {
     marginTop: 16,
