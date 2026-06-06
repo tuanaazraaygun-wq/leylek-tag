@@ -1878,11 +1878,24 @@ function isAcceptableDestinationRouteGeometry(coords: MapLatLng[]): boolean {
   return pathM / crowM >= DEST_ROUTE_GEOM_MIN_PATH_CROW_RATIO;
 }
 
-function destinationRouteCoordsOrEmpty(coords: MapLatLng[] | null | undefined): MapLatLng[] {
+function destinationRouteCoordsOrEmpty(
+  coords: MapLatLng[] | null | undefined,
+  options?: { passengerGeomFallback?: boolean },
+): MapLatLng[] {
   if (!coords || coords.length < 2) return [];
   if (!isAcceptableDestinationRouteGeometry(coords)) {
     const pathM = polylineLengthMeters(coords);
     const crowM = haversineMeters(coords[0], coords[coords.length - 1]);
+    if (options?.passengerGeomFallback) {
+      logNavDiag('DEST_ROUTE_GEOMETRY_PASSENGER_FALLBACK', {
+        leg: 'destination_polyline',
+        points: coords.length,
+        path_m: Math.round(pathM),
+        crow_m: Math.round(crowM),
+        ratio: Number((crowM > 0 ? pathM / crowM : 0).toFixed(4)),
+      });
+      return coords;
+    }
     logNavDiag('DEST_ROUTE_GEOMETRY_REJECTED', {
       leg: 'destination_polyline',
       points: coords.length,
@@ -4213,7 +4226,9 @@ export default function LiveMapView({
       ) {
         const coords = decodeOsrmPolyline(br.overview_polyline, 5);
         if (coords.length >= 2) {
-          const destCoords = destinationRouteCoordsOrEmpty(coords);
+          const destCoords = destinationRouteCoordsOrEmpty(coords, {
+            passengerGeomFallback: !isDriver,
+          });
           if (destCoords.length >= 2) {
             setDestinationRoute(destCoords);
             return;
@@ -4904,27 +4919,30 @@ export default function LiveMapView({
           originFallbackUsed,
         });
 
-        if (isDriver && isValidMapCoord(ol)) {
-          const serverPolyline = decodeMeetingPolylineFromServerRouteInfo(routeInfoRef.current);
-          if (serverPolyline && serverPolyline.length >= 2) {
-            if (commitMeetingPolyline(serverPolyline)) {
-              meetingHasOsrmPolylineRef.current = serverPolyline.length >= 3;
-              pickupNavStepsRef.current = null;
-              const fromRi = readPickupKmMinFromRouteInfo(routeInfoRef.current);
-              if (fromRi) {
-                setMeetingDistance(fromRi.km);
-                setMeetingDuration(fromRi.min);
-                meetingMetricSourceRef.current = 'routeInfo';
-              }
-              endMeetingRoadLoadingUi();
-              logRouteFetchDiag('server_polyline_fallback_used', {
-                pointCount: serverPolyline.length,
-                hasResolvedStart: isValidMapCoord(ul),
-                hasResolvedEnd: true,
-                hasUserLocation: isValidRouteEndpoint(userLocation),
-              });
-              return;
+        const serverPolyline = decodeMeetingPolylineFromServerRouteInfo(routeInfoRef.current);
+        const serverFallbackAllowed =
+          serverPolyline != null &&
+          serverPolyline.length >= 2 &&
+          (isDriver ? isValidMapCoord(ol) : true);
+        if (serverFallbackAllowed) {
+          if (commitMeetingPolyline(serverPolyline)) {
+            meetingHasOsrmPolylineRef.current = serverPolyline.length >= 3;
+            pickupNavStepsRef.current = null;
+            const fromRi = readPickupKmMinFromRouteInfo(routeInfoRef.current);
+            if (fromRi) {
+              setMeetingDistance(fromRi.km);
+              setMeetingDuration(fromRi.min);
+              meetingMetricSourceRef.current = 'routeInfo';
             }
+            endMeetingRoadLoadingUi();
+            logRouteFetchDiag('server_polyline_fallback_used', {
+              pointCount: serverPolyline.length,
+              isDriver,
+              hasResolvedStart: isValidMapCoord(ul),
+              hasResolvedEnd: isDriver ? true : isValidMapCoord(ol),
+              hasUserLocation: isValidRouteEndpoint(userLocation),
+            });
+            return;
           }
         }
 
@@ -4934,6 +4952,18 @@ export default function LiveMapView({
 
       const uMeet = ul as MapLatLng;
       const oMeet = ol as MapLatLng;
+
+      if (!isDriver && meetingRouteCoordinatesRef.current.length < 2) {
+        const seedPolyline = decodeMeetingPolylineFromServerRouteInfo(routeInfoRef.current);
+        if (seedPolyline && seedPolyline.length >= 2) {
+          if (commitMeetingPolyline(seedPolyline)) {
+            meetingHasOsrmPolylineRef.current = seedPolyline.length >= 3;
+            logRouteFetchDiag('server_polyline_passenger_seed', {
+              pointCount: seedPolyline.length,
+            });
+          }
+        }
+      }
 
       if (isDriver && navOn && navStage === 'destination') {
         return;
@@ -5699,7 +5729,7 @@ export default function LiveMapView({
     Number.isFinite(meetingDistance) &&
     Number.isFinite(meetingDuration);
   const meetingPolylineRoadReady = meetingRouteCoordinates.length >= 2;
-  const destinationPolylineRoadReady = destinationRoute.length > 2;
+  const destinationPolylineRoadReady = destinationRoute.length >= 2;
   const showMeetingRouteUnavailable =
     !meetingHasUiMetrics &&
     meetingRouteMetricsUnavailable &&
@@ -5935,6 +5965,7 @@ export default function LiveMapView({
                 strokeWidth={8}
                 lineJoin="round"
                 lineCap="round"
+                zIndex={10}
               />
             )}
           {isDriver &&
@@ -5990,7 +6021,7 @@ export default function LiveMapView({
                 ) : null}
               </>
             )}
-          {destinationRoute.length > 2 &&
+          {destinationRoute.length >= 2 &&
             destinationLocation &&
             !(isDriver && navigationMode && navigationStage === 'pickup') &&
             !(isDriver && navigationMode && navigationStage === 'destination' && driverNavRouteLayers?.palette === 'dest') && (
@@ -5998,9 +6029,10 @@ export default function LiveMapView({
                 coordinates={destinationRoute}
                 strokeColor="#22D3EE"
                 strokeWidth={8}
-                lineDashPattern={[12, 6]}
+                {...(Platform.OS === 'ios' ? {} : { lineDashPattern: [12, 6] })}
                 lineJoin="round"
                 lineCap="round"
+                zIndex={10}
               />
             )}
 
