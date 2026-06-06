@@ -7779,6 +7779,26 @@ function hasValidPassengerPickupCoords(
   );
 }
 
+type PassengerRoutePoint = {
+  address: string;
+  latitude: number;
+  longitude: number;
+};
+
+/** Faz 1A: açık pickup snapshot; yoksa canlı GPS fallback */
+function resolvePassengerPickupCoords(
+  pickup: PassengerRoutePoint | null | undefined,
+  liveGps: { latitude?: unknown; longitude?: unknown } | null | undefined,
+): { latitude: number; longitude: number } | null {
+  if (hasValidPassengerPickupCoords(pickup)) {
+    return { latitude: pickup.latitude, longitude: pickup.longitude };
+  }
+  if (hasValidPassengerPickupCoords(liveGps)) {
+    return { latitude: liveGps.latitude, longitude: liveGps.longitude };
+  }
+  return null;
+}
+
 type IosDriverLocBootstrapReason = 'appstate_active' | 'active_tag_seed' | 'current_fix';
 
 function logIosDriverLocBootstrap(
@@ -8436,6 +8456,10 @@ function PassengerDashboard({
   const [destinationPickerPhase, setDestinationPickerPhase] = useState<'search' | 'map'>('search');
   /** Modal her açılışta PlacesAutocomplete remount — RN Modal kapalıyken child mount kalabildiği için query/effect takılı kalmayı önler. */
   const [destinationPickerAutocompleteMountKey, setDestinationPickerAutocompleteMountKey] = useState(0);
+  /** Faz 1A: pickup → destination iki adımlı rota seçimi */
+  const [routePickerStep, setRoutePickerStep] = useState<'pickup' | 'destination'>('pickup');
+  const [passengerPickup, setPassengerPickup] = useState<PassengerRoutePoint | null>(null);
+  const [pickupConfirmBusy, setPickupConfirmBusy] = useState(false);
 
   useEffect(() => {
     if (
@@ -8557,9 +8581,10 @@ function PassengerDashboard({
     if (postLoginTagResumePending) return;
     if (activeTag || destination) return;
     if (passengerDestinationAutoOpenedRef.current) return;
-    /** İlk çizim sonrası: ara hedef yüzü flaş etmeden hedef picker açılsın */
+    /** İlk çizim sonrası: pickup adımıyla modal açılsın */
     const id = requestAnimationFrame(() => {
       setShowDestinationPicker(true);
+      setRoutePickerStep('pickup');
       setDestinationPickerPhase('search');
       passengerDestinationAutoOpenedRef.current = true;
     });
@@ -8579,6 +8604,8 @@ function PassengerDashboard({
     setDestinationAwaitingMapTap(false);
     setDestinationPickerPhase('search');
     setDestinationPickerGeocoding(false);
+    setRoutePickerStep('pickup');
+    setPassengerPickup(null);
     passengerDestinationAutoOpenedRef.current = true;
   }, [activeTag, setShowDestinationPicker, resetPriceOfferPaymentUi]);
 
@@ -8678,7 +8705,8 @@ function PassengerDashboard({
     destinationSnapshotOnPickerOpenRef.current = destination;
     setDestinationAwaitingMapTap(false);
     setDestinationPickerPhase('search');
-  }, [showDestinationPicker]);
+    setRoutePickerStep(passengerPickup ? 'destination' : 'pickup');
+  }, [showDestinationPicker, passengerPickup]);
 
   useEffect(() => {
     if (!showPriceModal) return;
@@ -10512,12 +10540,13 @@ function PassengerDashboard({
 
   // Hedef veya konum değişince fiyatı arka planda sunucudan al (cihazda rota/kuş uçuşu yok)
   useEffect(() => {
-    if (!destination || !userLocation) {
+    const pickupResolved = resolvePassengerPickupCoords(passengerPickup, userLocation);
+    if (!destination || !pickupResolved) {
       pricePrefetchRef.current = null;
       return;
     }
-    const plat = userLocation.latitude;
-    const plng = userLocation.longitude;
+    const plat = pickupResolved.latitude;
+    const plng = pickupResolved.longitude;
     const dlat = Number(destination.latitude);
     const dlng = Number(destination.longitude);
     if (!Number.isFinite(plat) || !Number.isFinite(plng) || !Number.isFinite(dlat) || !Number.isFinite(dlng)) {
@@ -10556,6 +10585,8 @@ function PassengerDashboard({
   }, [
     destination?.latitude,
     destination?.longitude,
+    passengerPickup?.latitude,
+    passengerPickup?.longitude,
     userLocation?.latitude,
     userLocation?.longitude,
     rideVehiclePreference,
@@ -10600,7 +10631,7 @@ function PassengerDashboard({
 
       setPriceLoading(true);
 
-      let pickupCoords = hasValidPassengerPickupCoords(userLocation) ? userLocation : null;
+      let pickupCoords = resolvePassengerPickupCoords(passengerPickup, userLocation);
       if (!pickupCoords) {
         if (Platform.OS === 'ios') {
           const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
@@ -10790,15 +10821,16 @@ function PassengerDashboard({
 
   // 🆕 Araç/Motor seçimi değişince fiyatı tekrar hesapla
   const recalcPrice = async (nextVehicleKind: 'car' | 'motorcycle') => {
-    if (!destination || !userLocation) return;
+    const pickupResolved = resolvePassengerPickupCoords(passengerPickup, userLocation);
+    if (!destination || !pickupResolved) return;
     try {
       setPriceLoading(true);
       const response = await fetch(`${API_URL}/price/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pickup_lat: userLocation.latitude,
-          pickup_lng: userLocation.longitude,
+          pickup_lat: pickupResolved.latitude,
+          pickup_lng: pickupResolved.longitude,
           dropoff_lat: destination.latitude,
           dropoff_lng: destination.longitude,
           passenger_vehicle_kind: nextVehicleKind,
@@ -10862,7 +10894,7 @@ function PassengerDashboard({
     }
     if (passengerSendOfferInFlightRef.current) return;
 
-    let pickupCoords = hasValidPassengerPickupCoords(userLocation) ? userLocation : null;
+    let pickupCoords = resolvePassengerPickupCoords(passengerPickup, userLocation);
     if (!pickupCoords) {
       if (Platform.OS === 'ios') {
         const { coords, permissionStatus } = await seedIosUserLocationIfGranted({
@@ -11670,6 +11702,66 @@ function PassengerDashboard({
     });
   };
 
+  const confirmPassengerPickupFromGps = async () => {
+    if (pickupConfirmBusy) return;
+    setPickupConfirmBusy(true);
+    try {
+      void tapButtonHaptic();
+
+      let coords = resolvePassengerPickupCoords(null, userLocation);
+      if (!coords) {
+        if (Platform.OS === 'ios') {
+          const { coords: seeded, permissionStatus } = await seedIosUserLocationIfGranted({
+            requestIfUndetermined: true,
+          });
+          logIosLocationBootstrap('pickup_confirm', {
+            permissionStatus,
+            seeded: !!seeded,
+          });
+          if (!seeded) {
+            appAlert(
+              'Konum İzni Gerekli',
+              permissionStatus === 'gps_error'
+                ? 'Konum alınamadı. GPS açık olduğundan emin olup tekrar deneyin.'
+                : 'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
+              [{ text: 'Tamam' }],
+            );
+            return;
+          }
+          coords = seeded;
+        } else {
+          __paxFn('requestLocationPermission', requestLocationPermission);
+          const granted = await requestLocationPermission();
+          if (!granted) {
+            appAlert(
+              'Konum İzni Gerekli',
+              'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
+              [{ text: 'Tamam' }],
+            );
+            return;
+          }
+          if (hasValidPassengerPickupCoords(userLocation)) {
+            coords = userLocation;
+          } else {
+            console.log('[PAX_LOC] pickup_confirm → granted (userLocation may update async)');
+            return;
+          }
+        }
+      }
+
+      setPassengerPickup({
+        address: 'Konumum',
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      });
+      setRoutePickerStep('destination');
+      setDestinationPickerPhase('search');
+      setDestinationPickerAutocompleteMountKey((k) => k + 1);
+    } finally {
+      setPickupConfirmBusy(false);
+    }
+  };
+
   const closeDestinationPickerModal = () => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
@@ -11681,10 +11773,33 @@ function PassengerDashboard({
     setShowDestinationPicker(false);
   };
 
-  /** iOS destination picker geri — doğrudan rol ekranı (Android mevcut kapat akışı) */
+  /** Destination picker geri — map fazı korunur; destination search → pickup; pickup → kapat/rol */
   const handleDestinationPickerBackPress = () => {
     void tapButtonHaptic();
     Keyboard.dismiss();
+
+    if (destinationPickerPhase === 'map') {
+      if (Platform.OS === 'ios') {
+        if (destinationAwaitingMapTap) {
+          setDestination(destinationSnapshotOnPickerOpenRef.current);
+        }
+        setDestinationAwaitingMapTap(false);
+        setDestinationPickerPhase('search');
+        setShowDestinationPicker(false);
+        setScreen('role-select');
+        return;
+      }
+      closeDestinationPickerModal();
+      return;
+    }
+
+    if (routePickerStep === 'destination') {
+      setRoutePickerStep('pickup');
+      setDestination(null);
+      setDestinationAwaitingMapTap(false);
+      return;
+    }
+
     if (Platform.OS === 'ios') {
       if (destinationAwaitingMapTap) {
         setDestination(destinationSnapshotOnPickerOpenRef.current);
@@ -12817,9 +12932,13 @@ function PassengerDashboard({
             </View>
             
             <View style={styles.passengerDestHeroCard}>
-              <Text style={styles.welcomeQuestionVeryTop}>Nereye gitmek istiyorsunuz?</Text>
+              <Text style={styles.welcomeQuestionVeryTop}>
+                {passengerPickup ? 'Nereye gitmek istiyorsunuz?' : 'Sürücü nereye gelsin?'}
+              </Text>
               <Text style={styles.passengerDestGuideCaption}>
-                Gitmek istediğiniz hedefi seçin.
+                {passengerPickup
+                  ? 'Gitmek istediğiniz hedefi seçin.'
+                  : 'Önce alınış noktanızı, ardından hedefinizi belirleyin.'}
               </Text>
             </View>
             
@@ -13352,46 +13471,95 @@ function PassengerDashboard({
                   style={styles.destinationKeyboardAvoid}
                   keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 20}
                 >
-                  <View style={styles.destinationFloatingPanel} pointerEvents="auto">
-                    <Animated.View
-                      style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
-                    >
-                      <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
-                        Nereye gitmek istiyorsunuz?
+                  {routePickerStep === 'pickup' ? (
+                    <View style={[styles.destinationFloatingPanel, styles.pickupRouteFloatingPanel]} pointerEvents="auto">
+                      <Animated.View
+                        style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 10 }}
+                      >
+                        <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
+                          Sürücü nereye gelsin?
+                        </Text>
+                      </Animated.View>
+                      <Text style={styles.pickupRouteSubtitle}>
+                        Alınacağınız noktayı seçin. İsterseniz mevcut konumunuzdan devam edin.
                       </Text>
-                    </Animated.View>
-                    {!isNativeGoogleMapsSupported() ? (
-                      <Text style={styles.destinationNoGmsHint}>
-                        Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
-                        kaydedilir.
+                      <TouchableOpacity
+                        style={styles.pickupUseLocationBtnWrap}
+                        activeOpacity={0.88}
+                        disabled={pickupConfirmBusy}
+                        onPress={() => void confirmPassengerPickupFromGps()}
+                      >
+                        <LinearGradient
+                          colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.pickupUseLocationBtnGlass}
+                        >
+                          <View style={styles.pickupUseLocationIconRing}>
+                            <Ionicons name="locate" size={22} color="#22D3EE" />
+                          </View>
+                          <View style={styles.pickupUseLocationTextCol}>
+                            <Text style={styles.pickupUseLocationBtnText}>
+                              {pickupConfirmBusy ? 'Konum alınıyor…' : 'Konumumu kullan'}
+                            </Text>
+                            <Text style={styles.pickupUseLocationBtnSub}>
+                              GPS konumunuz alınış noktası olarak kullanılacak.
+                            </Text>
+                          </View>
+                          {pickupConfirmBusy ? (
+                            <ActivityIndicator size="small" color="#22D3EE" />
+                          ) : (
+                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                      <View style={styles.pickupRouteAccentLine} />
+                      <Text style={styles.pickupRouteFooterHint}>
+                        LeylekTAG — alınış noktanız teklif ve eşleşme için güvenle kullanılır.
                       </Text>
-                    ) : null}
-
-                    <View style={styles.destinationSearchShellModern}>
-                      <PlacesAutocomplete
-                        key={destinationPickerAutocompleteMountKey}
-                        placeholder="Mahalle, sokak veya mekan ara"
-                        city={passengerAddressSearchCityScope}
-                        hidePopularChips
-                        visualVariant="tech"
-                        suggestionsFirst
-                        strictCityBounds={!!passengerAddressSearchCityScope.trim()}
-                        biasLatitude={userLocation?.latitude}
-                        biasLongitude={userLocation?.longitude}
-                        biasDeltaDeg={0.22}
-                        inputSize="large"
-                        predictionMaxHeightBonus={56}
-                        forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
-                        replayOnBiasChange
-                        onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
-                      />
                     </View>
-                    {isNativeGoogleMapsSupported() ? (
-                      <Text style={styles.destinationSearchFlowHint}>
-                        Hedefinizi yazın, ardından haritada konumu doğrulayın.
-                      </Text>
-                    ) : null}
-                  </View>
+                  ) : (
+                    <View style={styles.destinationFloatingPanel} pointerEvents="auto">
+                      <Animated.View
+                        style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
+                      >
+                        <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
+                          Nereye gitmek istiyorsunuz?
+                        </Text>
+                      </Animated.View>
+                      {!isNativeGoogleMapsSupported() ? (
+                        <Text style={styles.destinationNoGmsHint}>
+                          Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
+                          kaydedilir.
+                        </Text>
+                      ) : null}
+
+                      <View style={styles.destinationSearchShellModern}>
+                        <PlacesAutocomplete
+                          key={destinationPickerAutocompleteMountKey}
+                          placeholder="Mahalle, sokak veya mekan ara"
+                          city={passengerAddressSearchCityScope}
+                          hidePopularChips
+                          visualVariant="tech"
+                          suggestionsFirst
+                          strictCityBounds={!!passengerAddressSearchCityScope.trim()}
+                          biasLatitude={userLocation?.latitude}
+                          biasLongitude={userLocation?.longitude}
+                          biasDeltaDeg={0.22}
+                          inputSize="large"
+                          predictionMaxHeightBonus={56}
+                          forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
+                          replayOnBiasChange
+                          onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
+                        />
+                      </View>
+                      {isNativeGoogleMapsSupported() ? (
+                        <Text style={styles.destinationSearchFlowHint}>
+                          Hedefinizi yazın, ardından haritada konumu doğrulayın.
+                        </Text>
+                      ) : null}
+                    </View>
+                  )}
                 </KeyboardAvoidingView>
               ) : null}
             </SafeAreaView>
@@ -25133,6 +25301,79 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.32,
     shadowRadius: 20,
     elevation: 14,
+  },
+  pickupRouteFloatingPanel: {
+    borderTopColor: 'rgba(34, 211, 238, 0.18)',
+    maxHeight: '58%',
+  },
+  pickupRouteSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(186, 201, 222, 0.92)',
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 16,
+    paddingHorizontal: 6,
+  },
+  pickupUseLocationBtnWrap: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.34)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  pickupUseLocationBtnGlass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    gap: 12,
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+  },
+  pickupUseLocationIconRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+  },
+  pickupUseLocationTextCol: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  pickupUseLocationBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: 'rgba(248, 250, 252, 0.98)',
+    letterSpacing: -0.2,
+  },
+  pickupUseLocationBtnSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(148, 163, 184, 0.92)',
+    lineHeight: 17,
+  },
+  pickupRouteAccentLine: {
+    marginTop: 16,
+    height: 1,
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
+  },
+  pickupRouteFooterHint: {
+    marginTop: 12,
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(100, 116, 139, 0.88)',
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: 8,
   },
   destinationMapHintRow: {
     flexDirection: 'row',
