@@ -13831,12 +13831,42 @@ function PassengerDashboard({
                           onPlaceSelected={(place) => handlePickupAreaFromSearch(place)}
                         />
                       </View>
+                      <TouchableOpacity
+                        style={[styles.pickupUseLocationBtnWrap, styles.pickupUseLocationBtnWrapAfterSearch]}
+                        activeOpacity={0.88}
+                        disabled={pickupConfirmBusy}
+                        onPress={() => void confirmPassengerPickupFromGps()}
+                      >
+                        <LinearGradient
+                          colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.pickupUseLocationBtnGlass}
+                        >
+                          <View style={styles.pickupUseLocationIconRing}>
+                            <Ionicons name="locate" size={22} color="#22D3EE" />
+                          </View>
+                          <View style={styles.pickupUseLocationTextCol}>
+                            <Text style={styles.pickupUseLocationBtnText}>
+                              {pickupConfirmBusy ? 'Konum alınıyor…' : 'Konumumu kullan'}
+                            </Text>
+                            <Text style={styles.pickupUseLocationBtnSub}>
+                              GPS konumunuz alınış noktası olarak kullanılacak.
+                            </Text>
+                          </View>
+                          {pickupConfirmBusy ? (
+                            <ActivityIndicator size="small" color="#22D3EE" />
+                          ) : (
+                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
                       {savedHomeAddress || savedWorkAddress ? (
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
                             {savedHomeAddress ? (
                               <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
                                 activeOpacity={0.88}
                                 onPress={() => selectSavedPickup(savedHomeAddress)}
                               >
@@ -13857,7 +13887,6 @@ function PassengerDashboard({
                                           {routeHistorySourceLabel('saved', 'pickup')}
                                         </Text>
                                       </View>
-                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
                                     </View>
                                   </View>
                                 </View>
@@ -13865,7 +13894,7 @@ function PassengerDashboard({
                             ) : null}
                             {savedWorkAddress ? (
                               <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
                                 activeOpacity={0.88}
                                 onPress={() => selectSavedPickup(savedWorkAddress)}
                               >
@@ -13886,7 +13915,6 @@ function PassengerDashboard({
                                           {routeHistorySourceLabel('saved', 'pickup')}
                                         </Text>
                                       </View>
-                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
                                     </View>
                                   </View>
                                 </View>
@@ -13953,36 +13981,6 @@ function PassengerDashboard({
                           </LinearGradient>
                         </TouchableOpacity>
                       ) : null}
-                      <TouchableOpacity
-                        style={styles.pickupUseLocationBtnWrap}
-                        activeOpacity={0.88}
-                        disabled={pickupConfirmBusy}
-                        onPress={() => void confirmPassengerPickupFromGps()}
-                      >
-                        <LinearGradient
-                          colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={styles.pickupUseLocationBtnGlass}
-                        >
-                          <View style={styles.pickupUseLocationIconRing}>
-                            <Ionicons name="locate" size={22} color="#22D3EE" />
-                          </View>
-                          <View style={styles.pickupUseLocationTextCol}>
-                            <Text style={styles.pickupUseLocationBtnText}>
-                              {pickupConfirmBusy ? 'Konum alınıyor…' : 'Konumumu kullan'}
-                            </Text>
-                            <Text style={styles.pickupUseLocationBtnSub}>
-                              GPS konumunuz alınış noktası olarak kullanılacak.
-                            </Text>
-                          </View>
-                          {pickupConfirmBusy ? (
-                            <ActivityIndicator size="small" color="#22D3EE" />
-                          ) : (
-                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
-                          )}
-                        </LinearGradient>
-                      </TouchableOpacity>
                     </View>
                   ) : (
                     <View style={styles.destinationFloatingPanel} pointerEvents="auto">
@@ -13998,40 +13996,6 @@ function PassengerDashboard({
                           Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
                           kaydedilir.
                         </Text>
-                      ) : null}
-
-                      {routePickerStep === 'destination' &&
-                      destinationPickerPhase === 'search' &&
-                      hasValidPassengerPickupCoords(passengerPickup) &&
-                      !(
-                        pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) &&
-                        pickupCoordsMatchSaved(passengerPickup, savedWorkAddress)
-                      ) ? (
-                        <View style={styles.pickupSaveSection}>
-                          <Text style={styles.pickupSaveTitle}>Bu adresi kaydet</Text>
-                          <View style={styles.pickupSaveBtnRow}>
-                            {!pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) ? (
-                              <TouchableOpacity
-                                style={styles.pickupSaveBtn}
-                                activeOpacity={0.88}
-                                onPress={() => void handleSavePickupAsFavorite('home')}
-                              >
-                                <Ionicons name="home-outline" size={18} color="#22D3EE" />
-                                <Text style={styles.pickupSaveBtnText}>Ev olarak kaydet</Text>
-                              </TouchableOpacity>
-                            ) : null}
-                            {!pickupCoordsMatchSaved(passengerPickup, savedWorkAddress) ? (
-                              <TouchableOpacity
-                                style={styles.pickupSaveBtn}
-                                activeOpacity={0.88}
-                                onPress={() => void handleSavePickupAsFavorite('work')}
-                              >
-                                <Ionicons name="business-outline" size={18} color="#22D3EE" />
-                                <Text style={styles.pickupSaveBtnText}>İş olarak kaydet</Text>
-                              </TouchableOpacity>
-                            ) : null}
-                          </View>
-                        </View>
                       ) : null}
 
                       <View style={styles.destinationSearchShellModern}>
@@ -14064,7 +14028,7 @@ function PassengerDashboard({
                           <View style={styles.savedQuickRow}>
                             {savedHomeAddress ? (
                               <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
                                 activeOpacity={0.88}
                                 onPress={() => selectSavedDestination(savedHomeAddress)}
                               >
@@ -14085,7 +14049,6 @@ function PassengerDashboard({
                                           {routeHistorySourceLabel('saved', 'destination')}
                                         </Text>
                                       </View>
-                                      <Text style={styles.routeRecentCardMeta}>Varış noktası</Text>
                                     </View>
                                   </View>
                                 </View>
@@ -14093,7 +14056,7 @@ function PassengerDashboard({
                             ) : null}
                             {savedWorkAddress ? (
                               <TouchableOpacity
-                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                style={[styles.savedQuickCard, styles.savedQuickCardPremium]}
                                 activeOpacity={0.88}
                                 onPress={() => selectSavedDestination(savedWorkAddress)}
                               >
@@ -14114,7 +14077,6 @@ function PassengerDashboard({
                                           {routeHistorySourceLabel('saved', 'destination')}
                                         </Text>
                                       </View>
-                                      <Text style={styles.routeRecentCardMeta}>Varış noktası</Text>
                                     </View>
                                   </View>
                                 </View>
@@ -14180,6 +14142,38 @@ function PassengerDashboard({
                             <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
                           </LinearGradient>
                         </TouchableOpacity>
+                      ) : null}
+
+                      {routePickerStep === 'destination' &&
+                      destinationPickerPhase === 'search' &&
+                      hasValidPassengerPickupCoords(passengerPickup) &&
+                      !(
+                        pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) &&
+                        pickupCoordsMatchSaved(passengerPickup, savedWorkAddress)
+                      ) ? (
+                        <View style={[styles.pickupSaveSection, styles.pickupSaveSectionBottom]}>
+                          <Text style={styles.pickupSaveTitle}>Alınış adresini kaydet</Text>
+                          <View style={styles.pickupSaveBtnRow}>
+                            {!pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) ? (
+                              <TouchableOpacity
+                                style={[styles.pickupSaveBtn, styles.pickupSaveChipBtn]}
+                                activeOpacity={0.88}
+                                onPress={() => void handleSavePickupAsFavorite('home')}
+                              >
+                                <Text style={styles.pickupSaveChipText}>🏠 Ev</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            {!pickupCoordsMatchSaved(passengerPickup, savedWorkAddress) ? (
+                              <TouchableOpacity
+                                style={[styles.pickupSaveBtn, styles.pickupSaveChipBtn]}
+                                activeOpacity={0.88}
+                                onPress={() => void handleSavePickupAsFavorite('work')}
+                              >
+                                <Text style={styles.pickupSaveChipText}>🏢 İş</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        </View>
                       ) : null}
                     </View>
                   )}
@@ -25977,6 +25971,9 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 8,
   },
+  pickupUseLocationBtnWrapAfterSearch: {
+    marginTop: 12,
+  },
   pickupUseLocationBtnGlass: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -26069,6 +26066,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 2,
   },
+  pickupSaveSectionBottom: {
+    marginTop: 14,
+  },
   pickupSaveTitle: {
     fontSize: 12,
     fontWeight: '800',
@@ -26078,6 +26078,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   pickupSaveBtnRow: {
+    flexDirection: 'row',
     gap: 8,
   },
   pickupSaveBtn: {
@@ -26090,6 +26091,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8, 17, 31, 0.74)',
     paddingVertical: 10,
     paddingHorizontal: 14,
+  },
+  pickupSaveChipBtn: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+  },
+  pickupSaveChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E2E8F0',
+    textAlign: 'center',
   },
   pickupSaveBtnText: {
     fontSize: 14,
@@ -26104,6 +26117,24 @@ const styles = StyleSheet.create({
   savedQuickCard: {
     flex: 1,
     minWidth: 0,
+  },
+  savedQuickCardPremium: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.44)',
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(34, 211, 238, 0.22)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   savedQuickCardTitle: {
     fontSize: 12,
