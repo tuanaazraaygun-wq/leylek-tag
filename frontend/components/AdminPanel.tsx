@@ -150,8 +150,70 @@ function tripStatusLabel(status: string | undefined) {
     waiting: 'Bekliyor',
     pending: 'Hazırlanıyor',
     offers_received: 'Teklifler',
+    expired: 'Süresi doldu',
   };
   return map[s] || (s ? s : '—');
+}
+
+type AdminTripDetailChip = {
+  label: string;
+  variant: 'default' | 'warning' | 'success';
+};
+
+type AdminTripRow = {
+  status?: string | null;
+  cancel_reason?: string | null;
+  end_method?: string | null;
+  end_type?: string | null;
+  boarding_confirmed_at?: string | null;
+};
+
+function tripCancelDetailLabel(cancelReason: unknown): string {
+  const key = String(cancelReason ?? '').trim().toLowerCase();
+  if (!key) return 'İptal: Neden kayıtsız';
+  const map: Record<string, string> = {
+    passenger_cancelled: 'İptal: Yolcu',
+    inactivity_timeout: 'İptal: İnaktivite',
+    forced_finish_before_boarding: 'İptal: Biniş öncesi zorla',
+    force_ended_before_boarding: 'İptal: Biniş öncesi zorla',
+  };
+  return map[key] ?? 'İptal: Neden kayıtsız';
+}
+
+function tripCompletionDetailLabel(endMethod: unknown, endType: unknown): string {
+  const em = String(endMethod ?? '').trim().toLowerCase();
+  const et = String(endType ?? '').trim().toLowerCase();
+  if (em === 'qr' || em === 'qr_dynamic') return 'Bitiş: QR';
+  if (em === 'iban_transfer') return 'Bitiş: IBAN';
+  if (em === 'manual') return 'Bitiş: Manuel';
+  if (et === 'force') return 'Bitiş: Force-end';
+  if (et === 'mutual') return 'Bitiş: Karşılıklı';
+  return 'Bitiş: Manuel / API';
+}
+
+function getTripDetailChips(t: AdminTripRow): AdminTripDetailChip[] {
+  const status = String(t?.status ?? '').trim().toLowerCase();
+  const chips: AdminTripDetailChip[] = [];
+  const hasBoarding = Boolean(String(t?.boarding_confirmed_at ?? '').trim());
+
+  if (status === 'cancelled') {
+    chips.push({ label: tripCancelDetailLabel(t.cancel_reason), variant: 'default' });
+  }
+  if (status === 'completed') {
+    chips.push({
+      label: tripCompletionDetailLabel(t.end_method, t.end_type),
+      variant: 'default',
+    });
+    if (hasBoarding) {
+      chips.push({ label: 'Biniş: ✓', variant: 'success' });
+    } else {
+      chips.push({ label: '⚠ Biniş yok', variant: 'warning' });
+    }
+  } else if (hasBoarding) {
+    chips.push({ label: 'Biniş: ✓', variant: 'success' });
+  }
+
+  return chips;
 }
 
 function formatApiDetail(d: unknown): string {
@@ -1248,7 +1310,9 @@ function AdminContent({ adminPhone, onClose }: Props) {
               {trips.length} listeleniyor
               {tripTotal != null ? ` · ${tripTotal} toplam` : ''}
             </Text>
-            {trips.slice(0, 50).map((t, i) => (
+            {trips.slice(0, 50).map((t, i) => {
+              const detailChips = getTripDetailChips(t);
+              return (
               <View key={t.id || i} style={styles.card}>
                 <View style={styles.cardRow}>
                   <View style={styles.cardLeft}>
@@ -1266,8 +1330,25 @@ function AdminContent({ adminPhone, onClose }: Props) {
                     </Text>
                   </View>
                 </View>
+                {detailChips.length > 0 ? (
+                  <View style={styles.tripChipRow}>
+                    {detailChips.map((chip, chipIdx) => (
+                      <Text
+                        key={`${t.id || i}-chip-${chipIdx}`}
+                        style={[
+                          styles.tripChip,
+                          chip.variant === 'warning' ? styles.tripChipWarning : null,
+                          chip.variant === 'success' ? styles.tripChipSuccess : null,
+                        ]}
+                      >
+                        {chip.label}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
               </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -2157,6 +2238,30 @@ const styles = StyleSheet.create({
   statusRed: {
     backgroundColor: '#DC2626',
     color: '#FFF',
+  },
+  tripChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    gap: 6,
+  },
+  tripChip: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#CBD5E1',
+    backgroundColor: '#334155',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  tripChipWarning: {
+    color: '#FDE68A',
+    backgroundColor: '#78350F',
+  },
+  tripChipSuccess: {
+    color: '#A7F3D0',
+    backgroundColor: '#064E3B',
   },
   onlineBadge: {
     backgroundColor: '#059669',
