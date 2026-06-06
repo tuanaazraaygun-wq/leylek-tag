@@ -2684,6 +2684,48 @@ export default function PlacesAutocomplete({
     );
   };
 
+  const renderSearchLoadingPanel = () => (
+    <View style={styles.searchLoadingPanel} pointerEvents="none">
+      <View style={styles.searchLoadingHeader}>
+        <ActivityIndicator size="small" color={tech ? '#38BDF8' : '#3FA9F5'} />
+        <View style={styles.searchLoadingHeaderTextCol}>
+          <Text style={[styles.searchLoadingTitle, tech && styles.searchLoadingTitleTech]}>
+            Adresler aranıyor…
+          </Text>
+          <Text style={[styles.searchLoadingSub, tech && styles.searchLoadingSubTech]}>
+            En iyi eşleşmeler birazdan listelenecek.
+          </Text>
+        </View>
+      </View>
+      {[0, 1].map((ix) => (
+        <View
+          key={`search-loading-skeleton-${ix}`}
+          style={[styles.searchLoadingSkeletonRow, tech && styles.searchLoadingSkeletonRowTech]}
+        >
+          <View
+            style={[styles.searchLoadingSkeletonIcon, tech && styles.searchLoadingSkeletonIconTech]}
+          />
+          <View style={styles.searchLoadingSkeletonTextCol}>
+            <View
+              style={[
+                styles.searchLoadingSkeletonLine,
+                styles.searchLoadingSkeletonLineMain,
+                tech && styles.searchLoadingSkeletonLineTech,
+              ]}
+            />
+            <View
+              style={[
+                styles.searchLoadingSkeletonLine,
+                styles.searchLoadingSkeletonLineSub,
+                tech && styles.searchLoadingSkeletonLineTech,
+              ]}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
   const handleQuickPick = (qp: MuhabbetQuickPickPlace, selectionSource?: PlaceSelectionSource) => {
     if (!tech) {
       Keyboard.dismiss();
@@ -2780,9 +2822,27 @@ export default function PlacesAutocomplete({
       ? []
       : POPULAR_PLACES[popularCityKey];
 
+  const showSearchLoadingPanel =
+    loading &&
+    showPredictions &&
+    predictions.length === 0 &&
+    query.trim().length >= 2;
+
   return (
     <View style={[styles.container, tech && suggestionsFirst && styles.containerTechSuggestionsFirst]}>
       {/* Öneriler — hedef modalında üstte */}
+      {tech && suggestionsFirst && showPredictions && showSearchLoadingPanel ? (
+        <View
+          style={[
+            styles.predictionsContainer,
+            tech && styles.predictionsContainerTech,
+            tech && styles.predictionsAboveInput,
+            predictionBoxDims,
+          ]}
+        >
+          {renderSearchLoadingPanel()}
+        </View>
+      ) : null}
       {tech && suggestionsFirst
         ? showPredictions &&
           predictions.length > 0 && (
@@ -2972,6 +3032,19 @@ export default function PlacesAutocomplete({
           </View>
         </View>
       )}
+
+      {/* Arama loading — varsayılan: input altında */}
+      {showSearchLoadingPanel && !(tech && suggestionsFirst) ? (
+        <View
+          style={[
+            styles.predictionsContainer,
+            tech && styles.predictionsContainerTech,
+            predictionBoxDims,
+          ]}
+        >
+          {renderSearchLoadingPanel()}
+        </View>
+      ) : null}
 
       {/* Öneriler — varsayılan: input altında */}
       {showPredictions && predictions.length > 0 && !(tech && suggestionsFirst) && (
@@ -3322,6 +3395,81 @@ const styles = StyleSheet.create({
   separatorTech: {
     backgroundColor: 'rgba(51, 65, 85, 0.9)',
     marginLeft: 66,
+  },
+  searchLoadingPanel: {
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+  },
+  searchLoadingHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  searchLoadingHeaderTextCol: {
+    flex: 1,
+    paddingTop: 1,
+  },
+  searchLoadingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+    letterSpacing: -0.1,
+  },
+  searchLoadingTitleTech: {
+    color: '#E2E8F0',
+  },
+  searchLoadingSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    lineHeight: 17,
+  },
+  searchLoadingSubTech: {
+    color: '#94A3B8',
+  },
+  searchLoadingSkeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    minHeight: 56,
+  },
+  searchLoadingSkeletonRowTech: {
+    opacity: 0.95,
+  },
+  searchLoadingSkeletonIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E5E7EB',
+    marginRight: 12,
+  },
+  searchLoadingSkeletonIconTech: {
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.18)',
+  },
+  searchLoadingSkeletonTextCol: {
+    flex: 1,
+    gap: 8,
+  },
+  searchLoadingSkeletonLine: {
+    borderRadius: 6,
+    backgroundColor: '#E5E7EB',
+  },
+  searchLoadingSkeletonLineTech: {
+    backgroundColor: 'rgba(51, 65, 85, 0.72)',
+  },
+  searchLoadingSkeletonLineMain: {
+    height: 12,
+    width: '72%',
+  },
+  searchLoadingSkeletonLineSub: {
+    height: 10,
+    width: '48%',
   },
   
   // Sonuç yok
