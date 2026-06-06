@@ -9673,7 +9673,6 @@ function PassengerDashboard({
         };
       });
       setPassengerBoardingPromptVisible(false);
-      setPassengerBoardingScanVisible(false);
       setPassengerBoardingReminderBannerVisible(false);
     },
     onPassengerDestinationNavHint: (data) => {

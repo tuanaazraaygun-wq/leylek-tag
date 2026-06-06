@@ -48,15 +48,38 @@ export default function BoardingScanModal({
   const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
   const cooldownUntilRef = useRef<number>(0);
+  const mountedRef = useRef(true);
+  const closingRef = useRef(false);
+  const verifiedClosingRef = useRef(false);
+  const verifyInFlightRef = useRef(false);
+  const scannedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (scannedResetTimerRef.current != null) {
+        clearTimeout(scannedResetTimerRef.current);
+        scannedResetTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!visible) {
+      setCameraReady(false);
+      closingRef.current = false;
+      verifiedClosingRef.current = false;
+      verifyInFlightRef.current = false;
       return;
     }
     setCameraSessionKey((k) => k + 1);
     setCameraReady(false);
     setScanned(false);
     setProcessing(false);
+    closingRef.current = false;
+    verifiedClosingRef.current = false;
+    verifyInFlightRef.current = false;
     cooldownUntilRef.current = 0;
     lastScannedValueRef.current = { data: '', ts: 0 };
     if (!hasPermission?.granted) {
@@ -64,9 +87,34 @@ export default function BoardingScanModal({
     }
   }, [visible, hasPermission?.granted, requestPermission]);
 
+  const canMutateScanState = useCallback(
+    () => mountedRef.current && !closingRef.current && !verifiedClosingRef.current,
+    [],
+  );
+
+  const handleClose = useCallback(() => {
+    closingRef.current = true;
+    verifiedClosingRef.current = false;
+    verifyInFlightRef.current = false;
+    setCameraReady(false);
+    if (mountedRef.current) {
+      setScanned(false);
+      setProcessing(false);
+    }
+    lastScannedValueRef.current = { data: '', ts: 0 };
+    cooldownUntilRef.current = 0;
+    onClose();
+  }, [onClose]);
+
   const verifyBoarding = useCallback(
     async (scannedData: string) => {
-      setProcessing(true);
+      if (verifyInFlightRef.current || closingRef.current || verifiedClosingRef.current) {
+        return;
+      }
+      verifyInFlightRef.current = true;
+      if (canMutateScanState()) {
+        setProcessing(true);
+      }
       try {
         const tok = await waitForPersistedAccessToken();
         if (!tok?.trim()) {
@@ -104,6 +152,9 @@ export default function BoardingScanModal({
           const tag_id =
             (typeof rawTag === 'string' && rawTag.trim()) || propTag || undefined;
           console.log('BOARDING_SCAN_SUCCESS', { tag_id, used_prop_fallback: !rawTag && !!propTag });
+          verifiedClosingRef.current = true;
+          closingRef.current = true;
+          setCameraReady(false);
           const closeModal = await Promise.resolve(
             onVerified({
               tag_id,
@@ -114,6 +165,9 @@ export default function BoardingScanModal({
           );
           if (closeModal === true) {
             onClose();
+          } else {
+            verifiedClosingRef.current = false;
+            closingRef.current = false;
           }
         } else {
           const detail = (json.detail || '').toLowerCase();
@@ -131,23 +185,44 @@ export default function BoardingScanModal({
       } catch {
         appAlert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
       } finally {
+        verifyInFlightRef.current = false;
+        if (!canMutateScanState()) {
+          return;
+        }
         setProcessing(false);
         lastScannedValueRef.current = { data: '', ts: 0 };
         const now = Date.now();
         const delay = Math.max(0, cooldownUntilRef.current - now);
         if (delay > 0) {
-          setTimeout(() => setScanned(false), delay);
+          if (scannedResetTimerRef.current != null) {
+            clearTimeout(scannedResetTimerRef.current);
+          }
+          scannedResetTimerRef.current = setTimeout(() => {
+            scannedResetTimerRef.current = null;
+            if (canMutateScanState()) {
+              setScanned(false);
+            }
+          }, delay);
         } else {
           setScanned(false);
         }
       }
     },
-    [latitude, longitude, onVerified, onClose, tagId],
+    [latitude, longitude, onVerified, onClose, tagId, canMutateScanState],
   );
 
   const onBarcodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
-      if (!cameraReady || scanned || processing) return;
+      if (
+        !cameraReady ||
+        scanned ||
+        processing ||
+        verifyInFlightRef.current ||
+        closingRef.current ||
+        verifiedClosingRef.current
+      ) {
+        return;
+      }
       if (Date.now() < cooldownUntilRef.current) return;
       const d = (data || '').trim();
       if (!d.startsWith('leylektag://board')) {
@@ -173,7 +248,7 @@ export default function BoardingScanModal({
         <View style={styles.container}>
           <View style={styles.header}>
             <Text style={styles.title}>Biniş kodunu tarayın</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} hitSlop={12}>
               <Text style={styles.closeText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -193,6 +268,9 @@ export default function BoardingScanModal({
                 facing="back"
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onCameraReady={() => {
+                  if (!mountedRef.current || closingRef.current || verifiedClosingRef.current) {
+                    return;
+                  }
                   setCameraReady(true);
                   if (__DEV__) {
                     console.log('[BoardingScanModal] onCameraReady');
