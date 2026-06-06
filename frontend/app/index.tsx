@@ -7503,112 +7503,7 @@ function FullScreenOfferCard({
   );
 }
 
-// ==================== SIMPLE PULSE BUTTON ====================
-function AnimatedPulseButton({
-  onPress,
-  loading,
-  disabled,
-}: {
-  onPress: () => void;
-  loading: boolean;
-  disabled?: boolean;
-}) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const opacityAnim = useRef(new Animated.Value(0.7)).current;
-  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
-  const opacityAnimRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  useEffect(() => {
-    // Basit scale animasyonu
-    animationRef.current = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.15,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    animationRef.current.start();
-
-    // Opacity animasyonu
-    opacityAnimRef.current = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacityAnim, {
-          toValue: 0.7,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    opacityAnimRef.current.start();
-
-    return () => {
-      animationRef.current?.stop();
-      opacityAnimRef.current?.stop();
-    };
-  }, []);
-
-  const handlePress = () => {
-    if (disabled || loading) return;
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.9,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1.15,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    onPress();
-  };
-
-  return (
-    <TouchableOpacity 
-      onPress={handlePress} 
-      disabled={loading || disabled}
-      activeOpacity={disabled ? 1 : 0.8}
-      style={[styles.callButtonContainer, disabled && { opacity: 0.48 }]}
-    >
-      <Animated.View style={[{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}>
-        <LinearGradient
-          colors={
-            loading || disabled
-              ? ['#64748B', '#475569']
-              : ['#22D3EE', '#0EA5E9', '#2563EB', '#4338CA']
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientButton}
-        >
-          {loading ? (
-            <ActivityIndicator size="large" color="#FFF" />
-          ) : (
-            <>
-              <Ionicons name="location" size={60} color="#FFF" />
-              <Text style={styles.callButtonText}>TEKLİF GÖNDER</Text>
-            </>
-          )}
-        </LinearGradient>
-      </Animated.View>
-      
-      {/* Glow/Pulse efekti için dış halka */}
-      <Animated.View style={[styles.pulseRing, { transform: [{ scale: scaleAnim }], opacity: opacityAnim }]} />
-    </TouchableOpacity>
-  );
-}
+// ==================== SIMPLE PULSE BUTTON — kaldırıldı (legacy TEKLİF GÖNDER); küçük CTA kullanılıyor ====================
 
 /** Tag id — QR/optimistic eşleşmesi için (UUID büyük/küçük harf farkını absorbe eder) */
 function normalizeTripTagIdForCompare(raw: string | undefined | null): string {
@@ -8055,7 +7950,6 @@ function PassengerDashboard({
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
-  const [showArrowHint, setShowArrowHint] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
   const [selectedDriverName, setSelectedDriverName] = useState<string | null>(null);
   
@@ -13250,6 +13144,12 @@ function PassengerDashboard({
         ]}
         pointerEvents={showDestinationPicker ? 'none' : 'auto'}
       >
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(8, 17, 31, 0.86)', 'rgba(11, 18, 32, 0.91)', 'rgba(15, 23, 42, 0.94)']}
+          locations={[0, 0.42, 1]}
+          style={StyleSheet.absoluteFillObject}
+        />
       <ScrollView 
         style={styles.contentFullScreen}
         contentContainerStyle={styles.passengerHomeScrollContent}
@@ -13257,7 +13157,6 @@ function PassengerDashboard({
       >
         {!activeTag ? (
           <View style={styles.emptyStateContainerFull}>
-            {/* Geri ve Çıkış Butonları */}
             <View style={styles.fullScreenTopBar}>
               <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={styles.fullScreenBackBtn}>
                 <Ionicons name="chevron-back" size={26} color="#22D3EE" />
@@ -13266,58 +13165,62 @@ function PassengerDashboard({
                 <Ionicons name="log-out-outline" size={24} color="#F87171" />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.passengerDestHeroCard}>
-              <Text style={styles.welcomeQuestionVeryTop}>
-                {passengerPickup ? 'Nereye gitmek istiyorsunuz?' : 'Sürücü nereye gelsin?'}
-              </Text>
-              <Text style={styles.passengerDestGuideCaption}>
-                {passengerPickup
-                  ? 'Gitmek istediğiniz hedefi seçin.'
-                  : 'Önce alınış noktanızı, ardından hedefinizi belirleyin.'}
+
+            <View style={styles.passengerIdleIntroCard}>
+              <Text style={styles.passengerIdleIntroTitle}>Yolculuğunuzu planlayın</Text>
+              <Text style={styles.passengerIdleIntroCaption}>
+                Alınış ve hedef noktanızı seçin; teklifinizi gönderin.
               </Text>
             </View>
-            
-            {/* Kişi Adı - Leyleklerin arasında */}
-            <Text style={styles.welcomeNameBetweenStorks}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
-            
-            {/* Hedef Seçme Alanı - DAHA BÜYÜK VE EFEKTLİ */}
+
             <TouchableOpacity
               style={styles.destinationBoxBig}
               onPress={() => {
                 playTapSound();
                 setShowDestinationPicker(true);
-                setShowArrowHint(false);
               }}
-              activeOpacity={0.7}
+              activeOpacity={0.88}
             >
               <View style={styles.destinationIconBig}>
-                <Ionicons name="navigate" size={30} color="#22D3EE" />
+                <Ionicons name="navigate" size={28} color="#22D3EE" />
               </View>
-              <Text
-                style={styles.destinationTextBig}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {destination ? destination.address : 'Hedef Seçin'}
-              </Text>
+              <View style={styles.passengerRouteCtaTextCol}>
+                <Text style={styles.passengerRouteCtaLabel}>
+                  {destination ? 'Rotayı düzenle' : 'Yol paylaşımı başlat'}
+                </Text>
+                <Text
+                  style={styles.destinationTextBig}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {destination ? destination.address : 'Alınış ve hedef noktanızı seçin'}
+                </Text>
+              </View>
               <View style={styles.destinationArrowBig}>
-                <Ionicons name="arrow-forward" size={22} color="#22D3EE" />
+                <Ionicons name="chevron-forward" size={22} color="#22D3EE" />
               </View>
             </TouchableOpacity>
 
-            {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
-            {showArrowHint && (
-              <View style={styles.arrowHintSky}>
-                <Text style={styles.arrowTextSky}>☝️ Önce hedef seçin!</Text>
-              </View>
-            )}
-            
-            <AnimatedPulseButton 
-              onPress={handleCallButton} 
-              loading={loading || priceLoading}
-              disabled={!destination}
-            />
+            {destination ? (
+              <TouchableOpacity
+                style={[
+                  styles.passengerIdleSendOfferBtn,
+                  (loading || priceLoading) && styles.passengerIdleSendOfferBtnDisabled,
+                ]}
+                activeOpacity={0.88}
+                disabled={loading || priceLoading}
+                onPress={() => void handleCallButton()}
+              >
+                {loading || priceLoading ? (
+                  <ActivityIndicator size="small" color="#F8FAFF" />
+                ) : (
+                  <>
+                    <Ionicons name="paper-plane-outline" size={20} color="#F8FAFF" />
+                    <Text style={styles.passengerIdleSendOfferBtnText}>Teklif gönder</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
             
             {/* 🆕 MARTI TAG - Fiyat Teklif Modal */}
             <Modal
@@ -19991,10 +19894,76 @@ const styles = StyleSheet.create({
   destinationTextBig: {
     flex: 1,
     minWidth: 0,
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(224, 242, 254, 0.94)',
+    lineHeight: 21,
+  },
+  passengerIdleIntroCard: {
+    alignSelf: 'stretch',
+    marginHorizontal: 12,
+    marginBottom: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    backgroundColor: 'rgba(16, 26, 43, 0.62)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  passengerIdleIntroTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: 'rgba(243, 248, 255, 0.96)',
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  passengerIdleIntroCaption: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(186, 201, 222, 0.88)',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  passengerRouteCtaTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  passengerRouteCtaLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
+  },
+  passengerIdleSendOfferBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 16,
+    marginHorizontal: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  passengerIdleSendOfferBtnDisabled: {
+    opacity: 0.72,
+  },
+  passengerIdleSendOfferBtnText: {
     fontSize: 16,
-    color: 'rgba(243, 248, 255, 0.95)',
-    fontWeight: '700',
-    letterSpacing: 0.15,
+    fontWeight: '800',
+    color: 'rgba(248, 250, 252, 0.98)',
+    letterSpacing: 0.2,
   },
   destinationArrowBig: {
     width: 44,
@@ -21901,43 +21870,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
-  // Animated Pulse Button Styles
-  callButtonContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: Platform.OS === 'android' ? 36 : 44,
-  },
-  gradientButton: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.65)',
-    shadowColor: 'rgba(34, 211, 238, 0.35)',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 14,
-  },
-  callButtonText: {
-    color: '#F8FAFC',
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: 10,
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-  pulseRing: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    borderWidth: 2,
-    borderColor: 'rgba(34, 211, 238, 0.45)',
-    opacity: 0.35,
-  },
   emptyStateContainer: {
     flex: 1,
     alignItems: 'center',
@@ -21964,6 +21896,7 @@ const styles = StyleSheet.create({
   /** Yolcu ana (ara) içerik — hedef modal açıkken görünmez; kapatınca etkileşimli */
   passengerHomeLayer: {
     flex: 1,
+    position: 'relative',
   },
   passengerHomeLayerBehindPickerOpen: {
     opacity: 0,
