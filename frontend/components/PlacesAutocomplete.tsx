@@ -1261,6 +1261,11 @@ export default function PlacesAutocomplete({
   const placesSearchAbortRef = useRef<AbortController | null>(null);
   /** Öneri satırına çift basmayı keser (klavye blur + async Details yarışı) */
   const selectionInFlightRef = useRef(false);
+  /** onPressIn + onPress fallback aynı satırda çift tetiklenmesin (sync Nominatim yolu) */
+  const lastSelectionTapRef = useRef<{ key: string | null; at: number }>({
+    key: null,
+    at: 0,
+  });
   /** replayOnBiasChange: aynı semantik anahtarda searchReplayTick artırılmasın (abort/replan döngüsü) */
   const lastPlacesReplayKeyRef = useRef<string>('');
   const replayBiasDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2567,6 +2572,19 @@ export default function PlacesAutocomplete({
 
   // Seçim işlemi
   const handleSelectPrediction = async (item: PlaceResult) => {
+    const placeIdKey = String(item.place_id ?? '').trim();
+    const selectionKey =
+      placeIdKey ||
+      `${item.source ?? 'unknown'}:${item.lat}:${item.lon}:${String(item.display_name ?? '').trim()}`;
+    const now = Date.now();
+    if (
+      lastSelectionTapRef.current.key === selectionKey &&
+      now - lastSelectionTapRef.current.at < 500
+    ) {
+      return;
+    }
+    lastSelectionTapRef.current = { key: selectionKey, at: now };
+
     if (selectionInFlightRef.current) return;
     selectionInFlightRef.current = true;
     setSelectingPlaceId(item.place_id);
