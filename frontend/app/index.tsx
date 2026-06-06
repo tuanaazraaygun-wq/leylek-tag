@@ -8486,6 +8486,8 @@ function PassengerDashboard({
   const [destinationPickerPhase, setDestinationPickerPhase] = useState<'search' | 'map'>('search');
   /** Modal her açılışta PlacesAutocomplete remount — RN Modal kapalıyken child mount kalabildiği için query/effect takılı kalmayı önler. */
   const [destinationPickerAutocompleteMountKey, setDestinationPickerAutocompleteMountKey] = useState(0);
+  /** Pickup arama remount — destination key ile karışmasın */
+  const [pickupPickerAutocompleteMountKey, setPickupPickerAutocompleteMountKey] = useState(0);
   /** Faz 1A: pickup → destination iki adımlı rota seçimi */
   const [routePickerStep, setRoutePickerStep] = useState<'pickup' | 'destination'>('pickup');
   const [passengerPickup, setPassengerPickup] = useState<PassengerRoutePoint | null>(null);
@@ -11667,6 +11669,27 @@ function PassengerDashboard({
     );
   };
 
+  /** Haritadan kesin alınış noktası — destination adımına geç; modal açık kalır */
+  const commitPickupFromMap = (
+    address: string,
+    lat: number,
+    lng: number,
+    opts?: { historySource?: RouteHistorySource },
+  ) => {
+    setPassengerPickup({ address, latitude: lat, longitude: lng });
+    void pushRecentPickup(String(user?.id ?? ''), {
+      address,
+      latitude: lat,
+      longitude: lng,
+      source: opts?.historySource ?? 'map',
+    });
+    setDestinationAwaitingMapTap(false);
+    setDestinationPickerPhase('search');
+    setRoutePickerStep('destination');
+    setPickupPickerAutocompleteMountKey((k) => k + 1);
+    setDestinationPickerAutocompleteMountKey((k) => k + 1);
+  };
+
   /** Haritadan kesin nokta — hedef geçerli; modal kapanır */
   const commitDestinationFromMap = async (
     address: string,
@@ -11756,6 +11779,78 @@ function PassengerDashboard({
     const { latitude: lat, longitude: lng } = place;
     setDestinationPickerPin({ latitude: lat, longitude: lng });
     __paxFn('requestAnimationFrame', globalThis.requestAnimationFrame as unknown);
+    requestAnimationFrame(() => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+          },
+          420,
+        );
+      } catch (_) {}
+    });
+  };
+
+  /** Faz 1D-A: arama ile alınış bölgesi — haritada doğrulama */
+  const handlePickupAreaFromSearch = (place: {
+    address: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    void tapButtonHaptic();
+    if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
+    if (!isNativeGoogleMapsSupported()) {
+      commitPickupFromMap(place.address, place.latitude, place.longitude, {
+        historySource: 'search',
+      });
+      return;
+    }
+    setDestinationPickerPhase('map');
+    const { latitude: lat, longitude: lng } = place;
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
+    requestAnimationFrame(() => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+          },
+          420,
+        );
+      } catch (_) {}
+    });
+  };
+
+  /** Faz 1D-A: arama beklemeden doğrudan harita ile alınış seçimi */
+  const openPickupMapPickerDirect = () => {
+    void tapButtonHaptic();
+    if (!DestinationPickerMapView || !isNativeGoogleMapsSupported()) {
+      appAlert(
+        'Harita',
+        'Bu cihazda harita seçimi kullanılamıyor. Lütfen adres arayın veya konumunuzu kullanın.',
+        [{ text: 'Tamam' }],
+      );
+      return;
+    }
+
+    setDestinationPickerPhase('map');
+
+    const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
+    const lat =
+      userLocation?.latitude ??
+      cityLL?.latitude ??
+      DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
+    const lng =
+      userLocation?.longitude ??
+      cityLL?.longitude ??
+      DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
     requestAnimationFrame(() => {
       try {
         destinationPickerMapRef.current?.animateToRegion?.(
@@ -12061,8 +12156,13 @@ function PassengerDashboard({
     }
 
     try {
-      __paxFn('commitDestinationFromMap', commitDestinationFromMap);
-      await commitDestinationFromMap(address, latitude, longitude, { autoOpenTagPriceFlow: true });
+      if (routePickerStep === 'pickup') {
+        __paxFn('commitPickupFromMap', commitPickupFromMap);
+        commitPickupFromMap(address, latitude, longitude, { historySource: 'map' });
+      } else {
+        __paxFn('commitDestinationFromMap', commitDestinationFromMap);
+        await commitDestinationFromMap(address, latitude, longitude, { autoOpenTagPriceFlow: true });
+      }
     } finally {
       setDestinationPickerGeocoding(false);
     }
@@ -13590,14 +13690,16 @@ function PassengerDashboard({
                       onPress={() => {
                         void tapButtonHaptic();
                         setDestinationPickerPhase('search');
-                        setDestinationAwaitingMapTap(false);
-                        setDestination(null);
+                        if (routePickerStep === 'destination') {
+                          setDestinationAwaitingMapTap(false);
+                          setDestination(null);
+                        }
                       }}
                       style={styles.destinationChangeAreaBtn}
                       activeOpacity={0.85}
                     >
                       <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
-                        Mahalle / sokak değiştir
+                        {routePickerStep === 'pickup' ? 'Adres ara' : 'Mahalle / sokak değiştir'}
                       </Text>
                     </TouchableOpacity>
                   ) : null}
@@ -13623,6 +13725,50 @@ function PassengerDashboard({
                       <Text style={styles.pickupRouteSubtitle}>
                         Alınacağınız noktayı seçin. İsterseniz mevcut konumunuzdan devam edin.
                       </Text>
+                      <View style={styles.destinationSearchShellModern}>
+                        <PlacesAutocomplete
+                          key={pickupPickerAutocompleteMountKey}
+                          placeholder="Mahalle, sokak, cadde veya mekan ara"
+                          city={passengerAddressSearchCityScope}
+                          hidePopularChips
+                          visualVariant="tech"
+                          suggestionsFirst
+                          strictCityBounds={!!passengerAddressSearchCityScope.trim()}
+                          biasLatitude={userLocation?.latitude}
+                          biasLongitude={userLocation?.longitude}
+                          biasDeltaDeg={0.22}
+                          inputSize="large"
+                          predictionMaxHeightBonus={56}
+                          forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
+                          replayOnBiasChange
+                          onPlaceSelected={(place) => handlePickupAreaFromSearch(place)}
+                        />
+                      </View>
+                      {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+                        <TouchableOpacity
+                          style={styles.destinationMapPickBtnWrap}
+                          activeOpacity={0.88}
+                          onPress={openPickupMapPickerDirect}
+                        >
+                          <LinearGradient
+                            colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.destinationMapPickBtnGlass}
+                          >
+                            <View style={styles.destinationMapPickIconRing}>
+                              <Ionicons name="map-outline" size={22} color="#22D3EE" />
+                            </View>
+                            <View style={styles.destinationMapPickTextCol}>
+                              <Text style={styles.destinationMapPickBtnText}>Haritadan seç</Text>
+                              <Text style={styles.destinationMapPickBtnSub}>
+                                Alınış noktasını harita üzerinde işaretleyin
+                              </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      ) : null}
                       <TouchableOpacity
                         style={styles.pickupUseLocationBtnWrap}
                         activeOpacity={0.88}
@@ -13807,9 +13953,20 @@ function PassengerDashboard({
               style={[styles.destinationMapConfirmWrap, { paddingBottom: Math.max(insets.bottom, 14) + 8 }]}
               pointerEvents="box-none"
             >
-              <Text style={styles.destinationMapHintMinimal}>
-                Haritayı hedefin üzerine getirin ve konumu onaylayın.
-              </Text>
+              {routePickerStep === 'pickup' ? (
+                <>
+                  <Text style={styles.destinationMapHintTitle}>
+                    Alınış noktasını haritada doğrulayın
+                  </Text>
+                  <Text style={styles.destinationMapHintMinimal}>
+                    Haritayı sürücünün geleceği noktanın üzerine getirin.
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.destinationMapHintMinimal}>
+                  Haritayı hedefin üzerine getirin ve konumu onaylayın.
+                </Text>
+              )}
               <TouchableOpacity
                 style={styles.destinationMapConfirmBtnWrap}
                 activeOpacity={0.88}
@@ -25450,6 +25607,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
     lineHeight: 18,
+    paddingHorizontal: 16,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  destinationMapHintTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: 'rgba(241, 245, 249, 0.98)',
+    textAlign: 'center',
+    marginBottom: 6,
+    lineHeight: 20,
     paddingHorizontal: 16,
     textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowOffset: { width: 0, height: 1 },
