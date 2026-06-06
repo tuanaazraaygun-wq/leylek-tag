@@ -68,6 +68,7 @@ import {
 } from '../lib/passengerRouteHistory';
 import {
   getSavedAddresses,
+  saveSavedAddress,
   type SavedAddress,
 } from '../lib/passengerSavedAddresses';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
@@ -7815,6 +7816,17 @@ function routeHistoryCoordKey(latitude: number, longitude: number): string {
   return `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
 }
 
+function pickupCoordsMatchSaved(
+  pickup: { latitude: number; longitude: number },
+  saved: SavedAddress | null,
+): boolean {
+  if (!saved) return false;
+  return (
+    routeHistoryCoordKey(pickup.latitude, pickup.longitude) ===
+    routeHistoryCoordKey(saved.latitude, saved.longitude)
+  );
+}
+
 function bumpRouteHistoryPoint(
   items: RouteHistoryPoint[],
   point: RouteHistoryPoint,
@@ -12058,6 +12070,24 @@ function PassengerDashboard({
     });
   };
 
+  const handleSavePickupAsFavorite = async (label: 'home' | 'work') => {
+    const uid = String(user?.id ?? '').trim();
+    if (!uid || !passengerPickup || !hasValidPassengerPickupCoords(passengerPickup)) return;
+    void tapButtonHaptic();
+    await saveSavedAddress(uid, {
+      label,
+      address: passengerPickup.address,
+      latitude: passengerPickup.latitude,
+      longitude: passengerPickup.longitude,
+    });
+    const saved = await getSavedAddresses(uid);
+    setSavedHomeAddress(saved.home);
+    setSavedWorkAddress(saved.work);
+    setToastMessage(label === 'home' ? '🏠 Ev adresi kaydedildi' : '🏢 İş adresi kaydedildi');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2500);
+  };
+
   const closeDestinationPickerModal = () => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
@@ -13986,6 +14016,40 @@ function PassengerDashboard({
                           Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
                           kaydedilir.
                         </Text>
+                      ) : null}
+
+                      {routePickerStep === 'destination' &&
+                      destinationPickerPhase === 'search' &&
+                      hasValidPassengerPickupCoords(passengerPickup) &&
+                      !(
+                        pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) &&
+                        pickupCoordsMatchSaved(passengerPickup, savedWorkAddress)
+                      ) ? (
+                        <View style={styles.pickupSaveSection}>
+                          <Text style={styles.pickupSaveTitle}>Bu adresi kaydet</Text>
+                          <View style={styles.pickupSaveBtnRow}>
+                            {!pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) ? (
+                              <TouchableOpacity
+                                style={styles.pickupSaveBtn}
+                                activeOpacity={0.88}
+                                onPress={() => void handleSavePickupAsFavorite('home')}
+                              >
+                                <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                <Text style={styles.pickupSaveBtnText}>Ev olarak kaydet</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            {!pickupCoordsMatchSaved(passengerPickup, savedWorkAddress) ? (
+                              <TouchableOpacity
+                                style={styles.pickupSaveBtn}
+                                activeOpacity={0.88}
+                                onPress={() => void handleSavePickupAsFavorite('work')}
+                              >
+                                <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                <Text style={styles.pickupSaveBtnText}>İş olarak kaydet</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        </View>
                       ) : null}
 
                       <View style={styles.destinationSearchShellModern}>
@@ -26046,6 +26110,38 @@ const styles = StyleSheet.create({
   },
   savedQuickSection: {
     marginTop: 14,
+  },
+  pickupSaveSection: {
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  pickupSaveTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(34, 211, 238, 0.88)',
+    letterSpacing: 0.35,
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  pickupSaveBtnRow: {
+    gap: 8,
+  },
+  pickupSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+    backgroundColor: 'rgba(8, 17, 31, 0.74)',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  pickupSaveBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E2E8F0',
+    flex: 1,
   },
   savedQuickRow: {
     flexDirection: 'row',
