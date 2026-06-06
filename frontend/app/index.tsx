@@ -13802,6 +13802,12 @@ function PassengerDashboard({
                 >
                   {routePickerStep === 'pickup' ? (
                     <View style={[styles.destinationFloatingPanel, styles.pickupRouteFloatingPanel]} pointerEvents="auto">
+                      <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        nestedScrollEnabled={Platform.OS === 'android'}
+                        contentContainerStyle={styles.routePickerPanelScrollContent}
+                      >
                       <Animated.View
                         style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 10 }}
                       >
@@ -13981,9 +13987,16 @@ function PassengerDashboard({
                           </LinearGradient>
                         </TouchableOpacity>
                       ) : null}
+                      </ScrollView>
                     </View>
                   ) : (
                     <View style={styles.destinationFloatingPanel} pointerEvents="auto">
+                      <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        nestedScrollEnabled={Platform.OS === 'android'}
+                        contentContainerStyle={styles.routePickerPanelScrollContent}
+                      >
                       <Animated.View
                         style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
                       >
@@ -14175,6 +14188,7 @@ function PassengerDashboard({
                           </View>
                         </View>
                       ) : null}
+                      </ScrollView>
                     </View>
                   )}
                 </KeyboardAvoidingView>
@@ -25950,6 +25964,9 @@ const styles = StyleSheet.create({
   pickupRouteFloatingPanel: {
     borderTopColor: 'rgba(34, 211, 238, 0.18)',
     maxHeight: '60%',
+  },
+  routePickerPanelScrollContent: {
+    paddingBottom: 8,
   },
   pickupRouteSubtitle: {
     fontSize: 14,
