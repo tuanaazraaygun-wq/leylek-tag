@@ -13856,6 +13856,31 @@ function PassengerDashboard({
                         </Text>
                       ) : null}
 
+                      <View style={styles.destinationSearchShellModern}>
+                        <PlacesAutocomplete
+                          key={destinationPickerAutocompleteMountKey}
+                          placeholder="Mahalle, sokak veya mekan ara"
+                          city={passengerAddressSearchCityScope}
+                          hidePopularChips
+                          visualVariant="tech"
+                          suggestionsFirst
+                          strictCityBounds={!!passengerAddressSearchCityScope.trim()}
+                          biasLatitude={userLocation?.latitude}
+                          biasLongitude={userLocation?.longitude}
+                          biasDeltaDeg={0.22}
+                          inputSize="large"
+                          predictionMaxHeightBonus={56}
+                          forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
+                          replayOnBiasChange
+                          onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
+                        />
+                      </View>
+                      {isNativeGoogleMapsSupported() ? (
+                        <Text style={styles.destinationSearchFlowHint}>
+                          Hedefinizi yazın, ardından haritada konumu doğrulayın.
+                        </Text>
+                      ) : null}
+
                       {recentDestinations.length > 0 ? (
                         <View style={styles.routeRecentSection}>
                           <Text style={styles.routeRecentSectionTitle}>Son gidilen yerler</Text>
@@ -13913,31 +13938,6 @@ function PassengerDashboard({
                             <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
                           </LinearGradient>
                         </TouchableOpacity>
-                      ) : null}
-
-                      <View style={styles.destinationSearchShellModern}>
-                        <PlacesAutocomplete
-                          key={destinationPickerAutocompleteMountKey}
-                          placeholder="Mahalle, sokak veya mekan ara"
-                          city={passengerAddressSearchCityScope}
-                          hidePopularChips
-                          visualVariant="tech"
-                          suggestionsFirst
-                          strictCityBounds={!!passengerAddressSearchCityScope.trim()}
-                          biasLatitude={userLocation?.latitude}
-                          biasLongitude={userLocation?.longitude}
-                          biasDeltaDeg={0.22}
-                          inputSize="large"
-                          predictionMaxHeightBonus={56}
-                          forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
-                          replayOnBiasChange
-                          onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
-                        />
-                      </View>
-                      {isNativeGoogleMapsSupported() ? (
-                        <Text style={styles.destinationSearchFlowHint}>
-                          Hedefinizi yazın, ardından haritada konumu doğrulayın.
-                        </Text>
                       ) : null}
                     </View>
                   )}
