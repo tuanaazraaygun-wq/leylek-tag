@@ -5548,12 +5548,19 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
         # 1) Google Directions (tek kaynak)
         road_info = await get_road_distance(ola, olo, dla, dlo)
         if road_info:
+            dur_traffic = road_info.get("duration_min")
+            dur_free = road_info.get("duration_min_no_traffic")
+            used_traffic = bool(road_info.get("used_traffic"))
+            traffic_ratio = _tag_pricing.compute_traffic_ratio(dur_traffic, dur_free)
             out = {
                 "distance_km": road_info["distance_km"],
                 "duration_min": road_info["duration_min"],
                 "distance_text": f"{road_info['distance_km']} km",
                 "duration_text": f"{road_info['duration_min']} dk",
                 "source": "google",
+                "used_traffic": used_traffic,
+                "duration_min_no_traffic": dur_free if dur_free is not None else None,
+                "traffic_ratio": round(traffic_ratio, 3),
             }
             op = road_info.get("overview_polyline")
             if isinstance(op, str) and len(op) > 2:
@@ -5579,12 +5586,16 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                     f"⚠️ Google başarısız, OSRM fallback kullanıldı: "
                     f"{distance_km:.1f} km, {duration_min:.0f} dk"
                 )
+                dur_osrm = int(round(duration_min, 0))
                 out = {
                     "distance_km": round(distance_km, 1),
-                    "duration_min": round(duration_min, 0),
+                    "duration_min": dur_osrm,
                     "distance_text": f"{round(distance_km, 1)} km",
-                    "duration_text": f"{int(duration_min)} dk",
+                    "duration_text": f"{dur_osrm} dk",
                     "source": "osrm",
+                    "used_traffic": False,
+                    "duration_min_no_traffic": None,
+                    "traffic_ratio": 1.0,
                 }
                 geom = route.get("geometry")
                 if isinstance(geom, str) and len(geom) > 2:
@@ -5610,6 +5621,9 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
         "distance_text": f"{round(road_km, 1)} km",
         "duration_text": f"{duration_min} dk",
         "source": "haversine_fallback",
+        "used_traffic": False,
+        "duration_min_no_traffic": None,
+        "traffic_ratio": 1.0,
     }
     _route_info_cache_set(ck, out)
     return out
@@ -18527,11 +18541,15 @@ async def calculate_price(request: CalculatePriceRequest):
         
         # Yoğun saat kontrolü
         peak = is_peak_hour()
-        multiplier = 1.15 if peak else 1.0
+        multiplier = 1.10 if peak else 1.0
 
         vk = _canonical_vehicle_kind(request.passenger_vehicle_kind) or "car"
 
         leylek_minimum_price_applied = False
+        tag_traffic_ratio: Optional[float] = None
+        tag_traffic_multiplier: Optional[float] = None
+        tag_duration_min_no_traffic: Optional[int] = None
+        tag_used_traffic: Optional[bool] = None
         if bool(request.muhabbet_listing):
             if vk == "motorcycle":
                 base = 25
@@ -18565,17 +18583,33 @@ async def calculate_price(request: CalculatePriceRequest):
             max_price = int(round(price_int * 1.1))
             suggested_price = price_int
         else:
+            traffic_ratio = float(route_info.get("traffic_ratio") or 1.0)
+            traffic_multiplier = _tag_pricing.traffic_multiplier_from_ratio(traffic_ratio)
+            used_traffic = bool(route_info.get("used_traffic"))
+            dur_no_traffic_raw = route_info.get("duration_min_no_traffic")
+            duration_min_no_traffic: Optional[int] = None
+            if dur_no_traffic_raw is not None:
+                try:
+                    duration_min_no_traffic = int(dur_no_traffic_raw)
+                except (TypeError, ValueError):
+                    duration_min_no_traffic = None
+
             suggested_price, min_price, max_price, _tag_cfg = _tag_pricing.compute_tag_ride_price(
                 city_key=_tag_pricing.DEFAULT_TAG_PRICING_CITY,
                 vehicle_kind=vk,
                 distance_km=float(trip_distance_km),
                 estimated_minutes=int(estimated_minutes),
                 peak_multiplier=multiplier,
+                traffic_multiplier=traffic_multiplier,
             )
             base = int(_tag_cfg.base)
             per_km = int(_tag_cfg.per_km)
             minimum = int(_tag_cfg.minimum)
             price_int = suggested_price
+            tag_traffic_ratio = round(traffic_ratio, 3)
+            tag_traffic_multiplier = traffic_multiplier
+            tag_duration_min_no_traffic = duration_min_no_traffic
+            tag_used_traffic = used_traffic
             try:
                 logger.info(
                     "[TAG_PRICE_CALCULATE] %s",
@@ -18585,6 +18619,10 @@ async def calculate_price(request: CalculatePriceRequest):
                             "vehicle_kind": vk,
                             "distance_km": round(float(trip_distance_km), 3),
                             "estimated_minutes": estimated_minutes,
+                            "duration_min_no_traffic": duration_min_no_traffic,
+                            "used_traffic": used_traffic,
+                            "traffic_ratio": tag_traffic_ratio,
+                            "traffic_multiplier": traffic_multiplier,
                             "suggested_price": suggested_price,
                             "min_price": min_price,
                             "max_price": max_price,
@@ -18624,6 +18662,11 @@ async def calculate_price(request: CalculatePriceRequest):
             out["route_distance_km"] = round(route_distance_km, 1)
             out["pricing_distance_km"] = round(trip_distance_km, 1)
             out["leylek_minimum_price_applied"] = leylek_minimum_price_applied
+        elif tag_traffic_ratio is not None:
+            out["traffic_ratio"] = tag_traffic_ratio
+            out["traffic_multiplier"] = tag_traffic_multiplier
+            out["duration_min_no_traffic"] = tag_duration_min_no_traffic
+            out["used_traffic"] = tag_used_traffic
         return out
     except Exception as e:
         logger.error(f"❌ Price calculation error: {e}")
