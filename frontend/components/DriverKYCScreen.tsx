@@ -54,8 +54,69 @@ const CAR_BRANDS: { [key: string]: string[] } = {
   'Toyota': ['Yaris', 'Yaris Cross', 'Corolla', 'Camry', 'C-HR', 'RAV4', 'Land Cruiser', 'Hilux'],
   'Volkswagen': ['Polo', 'Golf', 'Passat', 'Arteon', 'T-Cross', 'T-Roc', 'Tiguan', 'Touareg'],
   'Volvo': ['XC40', 'XC60', 'XC90', 'S60', 'S90', 'V60', 'V90'],
-  'Diğer': ['Belirtilmemiş'],
+  'Diğer': [],
 };
+
+const CAR_BRAND_OTHER = 'Diğer';
+
+const MOTOR_BRANDS: string[] = [
+  'Honda',
+  'Yamaha',
+  'Kuba',
+  'Mondial',
+  'RKS',
+  'Bajaj',
+  'TVS',
+  'CF Moto',
+  'Benelli',
+  'BMW',
+  'Vespa',
+  'Piaggio',
+  'Suzuki',
+  'Kawasaki',
+  CAR_BRAND_OTHER,
+];
+
+type PhotoGuideVariant = 'vehicle' | 'license' | 'motorcycle' | 'selfie';
+
+const PHOTO_GUIDE_BULLETS: Record<PhotoGuideVariant, string[]> = {
+  vehicle: [
+    'Plaka okunaklı ve net görünsün',
+    'Aracın tamamı kadrajda olsun',
+    'Tek araç görünsün; gölge ve uzak çekimden kaçının',
+    'Gündüz veya iyi aydınlatmada çekin',
+  ],
+  license: [
+    'Ehliyetin dört köşesi kadrajda görünsün',
+    'Parlama ve gölge olmasın',
+    'Tüm yazılar okunaklı olsun',
+    'Belgeyi düz tutarak çekin',
+  ],
+  motorcycle: [
+    'Motor tamamı kadrajda görünsün',
+    'Plaka varsa net ve okunaklı olsun',
+    'Tek motor görünsün; arka plan sade olsun',
+    'İyi aydınlatmada çekin',
+  ],
+  selfie: [
+    'Yüzünüz net ve tam görünsün',
+    'Maske veya güneş gözlüğü olmasın',
+    'Aydınlık ortamda çekin',
+    'Ehliyetinizdeki fotoğrafla aynı kişi olduğunuz anlaşılsın',
+  ],
+};
+
+function resolveKycBrandModel(
+  vehicleBrand: string,
+  vehicleModel: string,
+  customBrandName: string,
+  customModelName: string,
+): { brand: string; model: string } {
+  if (vehicleBrand === CAR_BRAND_OTHER) {
+    return { brand: customBrandName.trim(), model: customModelName.trim() };
+  }
+  return { brand: vehicleBrand.trim(), model: vehicleModel.trim() };
+}
 
 // Araç Renkleri
 const CAR_COLORS = [
@@ -214,14 +275,14 @@ function PhotoCropHintAndPreview({ uri, onReplacePhoto }: { uri: string; onRepla
           end={{ x: 1, y: 0.5 }}
           style={photoHeroStyles.cropBarGradient}
         >
-          <Ionicons name="images-outline" size={22} color="#FFFFFF" />
-          <Text style={photoHeroStyles.cropBarTitle}>Fotoğrafı değiştir</Text>
+          <Ionicons name="camera-outline" size={22} color="#FFFFFF" />
+          <Text style={photoHeroStyles.cropBarTitle}>Kamera ile yeniden çek</Text>
         </LinearGradient>
       </TouchableOpacity>
       <Text style={photoHeroStyles.cropBarHint}>
         {Platform.OS === 'web'
           ? 'Dosyayı yeniden seçerek güncelleyebilirsiniz.'
-          : 'Başka bir fotoğraf için galeri açılır; isterseniz üstteki Yeniden çek ile kamerayı kullanın.'}
+          : 'Yeniden çekmek için kamerayı kullanın; galeri için alttaki Değiştir (galeri) seçeneğini kullanın.'}
       </Text>
     </View>
   );
@@ -245,7 +306,7 @@ function PhotoHeroActions({
         </TouchableOpacity>
         <TouchableOpacity style={photoHeroStyles.pill} onPress={onReplace} activeOpacity={0.88}>
           <Ionicons name="images-outline" size={18} color={KYC_P.cyan} />
-          <Text style={photoHeroStyles.pillText}>Değiştir</Text>
+          <Text style={photoHeroStyles.pillText}>Galeriden seç</Text>
         </TouchableOpacity>
         <TouchableOpacity style={photoHeroStyles.pillGhost} onPress={onClear} activeOpacity={0.88}>
           <Text style={photoHeroStyles.pillGhostText}>Kaldır</Text>
@@ -345,6 +406,39 @@ const photoHeroStyles = StyleSheet.create({
     backgroundColor: 'rgba(16,26,43,0.45)',
   },
   pillGhostText: { color: KYC_P.textMd, fontSize: 13, fontWeight: '700' },
+});
+
+const photoGuideStyles = StyleSheet.create({
+  wrap: {
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+    backgroundColor: 'rgba(16, 26, 43, 0.55)',
+  },
+  title: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: KYC_P.cyan,
+    marginBottom: 10,
+    letterSpacing: 0.3,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 6,
+  },
+  icon: {
+    marginTop: 2,
+  },
+  text: {
+    flex: 1,
+    fontSize: 13,
+    color: KYC_P.textMd,
+    lineHeight: 18,
+  },
 });
 
 const emptyPhotoStyles = StyleSheet.create({
@@ -524,6 +618,21 @@ const emptyPhotoStyles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 });
+
+function PhotoCaptureGuide({ variant }: { variant: PhotoGuideVariant }) {
+  const bullets = PHOTO_GUIDE_BULLETS[variant];
+  return (
+    <View style={photoGuideStyles.wrap}>
+      <Text style={photoGuideStyles.title}>Çekim rehberi</Text>
+      {bullets.map((line) => (
+        <View key={line} style={photoGuideStyles.row}>
+          <Ionicons name="checkmark-circle-outline" size={16} color={KYC_P.cyan} style={photoGuideStyles.icon} />
+          <Text style={photoGuideStyles.text}>{line}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function EmptyPhotoAddCard({
   hint,
@@ -784,6 +893,8 @@ export default function DriverKYCScreen({
   const [loading, setLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [customBrandName, setCustomBrandName] = useState('');
+  const [customModelName, setCustomModelName] = useState('');
   
   // Marka arama
   const [brandSearch, setBrandSearch] = useState('');
@@ -797,13 +908,25 @@ export default function DriverKYCScreen({
   const [analyzingLicense, setAnalyzingLicense] = useState(false);
 
   const stepTitles = isMotorKyc ? MOTOR_STEP_TITLES : CAR_STEP_TITLES;
+  const carBrandIsOther = !isMotorKyc && vehicleBrand === CAR_BRAND_OTHER;
+  const motorBrandIsOther = isMotorKyc && vehicleBrand === CAR_BRAND_OTHER;
+  const resolvedCar = resolveKycBrandModel(vehicleBrand, vehicleModel, customBrandName, customModelName);
+  const resolvedMotor = resolveKycBrandModel(vehicleBrand, vehicleModel, customBrandName, customModelName);
 
-  // Filtrelenmiş markalar
-  const filteredBrands = useMemo(() => {
-    const brands = Object.keys(CAR_BRANDS).sort();
+  const sortBrandOtherLast = (a: string, b: string) => {
+    if (a === CAR_BRAND_OTHER) return 1;
+    if (b === CAR_BRAND_OTHER) return -1;
+    return a.localeCompare(b, 'tr');
+  };
+
+  // Filtrelenmiş markalar (araç veya motor listesi)
+  const filteredBrandList = useMemo(() => {
+    const brands = isMotorKyc
+      ? [...MOTOR_BRANDS].sort(sortBrandOtherLast)
+      : Object.keys(CAR_BRANDS).sort(sortBrandOtherLast);
     if (!brandSearch) return brands;
-    return brands.filter(b => b.toLowerCase().includes(brandSearch.toLowerCase()));
-  }, [brandSearch]);
+    return brands.filter((b) => b.toLowerCase().includes(brandSearch.toLowerCase()));
+  }, [brandSearch, isMotorKyc]);
 
   // Seçili markanın modelleri
   const availableModels = useMemo(() => {
@@ -1015,13 +1138,25 @@ export default function DriverKYCScreen({
 
   const canGoNext = (): boolean => {
     if (isMotorKyc) {
-      if (step === 0) return !!(vehicleBrand.trim() && vehicleModel.trim());
+      if (step === 0) {
+        if (!vehicleBrand) return false;
+        if (motorBrandIsOther) {
+          return customBrandName.trim().length >= 2 && customModelName.trim().length >= 1;
+        }
+        return !!vehicleModel.trim();
+      }
       if (step === 1) return vehicleDocReady;
       if (step === 2) return licenseDocReady;
       if (step === 3) return !!selfiePhoto;
       return false;
     }
-    if (step === 0) return !!(plateNumber.trim() && vehicleBrand && vehicleModel);
+    if (step === 0) {
+      if (!plateNumber.trim()) return false;
+      if (carBrandIsOther) {
+        return customBrandName.trim().length >= 2 && customModelName.trim().length >= 1;
+      }
+      return !!(vehicleBrand && vehicleModel);
+    }
     if (step === 1) return vehicleDocReady;
     if (step === 2) return licenseDocReady;
     if (step === 3) return true;
@@ -1032,8 +1167,8 @@ export default function DriverKYCScreen({
     if (!termsAccepted) return false;
     if (isMotorKyc) {
       return (
-        vehicleBrand.trim() &&
-        vehicleModel.trim() &&
+        !!resolvedMotor.brand &&
+        !!resolvedMotor.model &&
         !!motorcyclePhoto &&
         !!licensePhoto &&
         !!selfiePhoto &&
@@ -1043,8 +1178,8 @@ export default function DriverKYCScreen({
     }
     return (
       !!plateNumber.trim() &&
-      !!vehicleBrand &&
-      !!vehicleModel &&
+      !!resolvedCar.brand &&
+      !!resolvedCar.model &&
       !!vehiclePhoto &&
       !!licensePhoto &&
       !!vehicleAi &&
@@ -1066,13 +1201,24 @@ export default function DriverKYCScreen({
     console.log('========== KYC SUBMIT BAŞLADI ==========');
 
     if (isMotorKyc) {
-      if (!vehicleBrand.trim()) {
-        Platform.OS === 'web' ? alert('Motor markası girin') : appAlert('Hata', 'Motor markası girin');
-        return;
-      }
-      if (!vehicleModel.trim()) {
-        Platform.OS === 'web' ? alert('Motor modeli girin') : appAlert('Hata', 'Motor modeli girin');
-        return;
+      if (motorBrandIsOther) {
+        if (customBrandName.trim().length < 2) {
+          Platform.OS === 'web' ? alert('Motor markası girin (en az 2 karakter)') : appAlert('Hata', 'Motor markası girin (en az 2 karakter)');
+          return;
+        }
+        if (!customModelName.trim()) {
+          Platform.OS === 'web' ? alert('Motor modeli girin') : appAlert('Hata', 'Motor modeli girin');
+          return;
+        }
+      } else {
+        if (!vehicleBrand) {
+          Platform.OS === 'web' ? alert('Motor markası seçin') : appAlert('Hata', 'Motor markası seçin');
+          return;
+        }
+        if (!vehicleModel.trim()) {
+          Platform.OS === 'web' ? alert('Motor modeli girin') : appAlert('Hata', 'Motor modeli girin');
+          return;
+        }
       }
       if (!licensePhoto) {
         Platform.OS === 'web' ? alert('Ehliyet fotoğrafı gerekli') : appAlert('Hata', 'Ehliyet fotoğrafı gerekli');
@@ -1095,21 +1241,40 @@ export default function DriverKYCScreen({
         }
         return;
       }
-      if (!vehicleBrand) {
-        if (Platform.OS === 'web') {
-          alert('Lütfen araç markası seçin');
-        } else {
-          appAlert('Hata', 'Lütfen araç markası seçin');
+      if (carBrandIsOther) {
+        if (customBrandName.trim().length < 2) {
+          if (Platform.OS === 'web') {
+            alert('Lütfen marka adını yazın (en az 2 karakter)');
+          } else {
+            appAlert('Hata', 'Lütfen marka adını yazın (en az 2 karakter)');
+          }
+          return;
         }
-        return;
-      }
-      if (!vehicleModel) {
-        if (Platform.OS === 'web') {
-          alert('Lütfen araç modeli seçin');
-        } else {
-          appAlert('Hata', 'Lütfen araç modeli seçin');
+        if (!customModelName.trim()) {
+          if (Platform.OS === 'web') {
+            alert('Lütfen model adını yazın');
+          } else {
+            appAlert('Hata', 'Lütfen model adını yazın');
+          }
+          return;
         }
-        return;
+      } else {
+        if (!vehicleBrand) {
+          if (Platform.OS === 'web') {
+            alert('Lütfen araç markası seçin');
+          } else {
+            appAlert('Hata', 'Lütfen araç markası seçin');
+          }
+          return;
+        }
+        if (!vehicleModel) {
+          if (Platform.OS === 'web') {
+            alert('Lütfen araç modeli seçin');
+          } else {
+            appAlert('Hata', 'Lütfen araç modeli seçin');
+          }
+          return;
+        }
       }
       if (!vehiclePhoto) {
         if (Platform.OS === 'web') {
@@ -1159,8 +1324,8 @@ export default function DriverKYCScreen({
             user_id: userId,
             vehicle_kind: 'motorcycle',
             plate_number: plateNumber.trim() ? plateNumber.toLocaleUpperCase('tr-TR').trim() : null,
-            vehicle_brand: vehicleBrand.trim(),
-            vehicle_model: vehicleModel.trim(),
+            vehicle_brand: resolvedMotor.brand,
+            vehicle_model: resolvedMotor.model,
             license_photo_base64: licensePhoto,
             motorcycle_photo_base64: motorcyclePhoto,
             selfie_photo_base64: selfiePhoto,
@@ -1172,8 +1337,8 @@ export default function DriverKYCScreen({
             user_id: userId,
             vehicle_kind: 'car',
             plate_number: plateNumber.toLocaleUpperCase('tr-TR').trim(),
-            vehicle_brand: vehicleBrand,
-            vehicle_model: vehicleModel,
+            vehicle_brand: resolvedCar.brand,
+            vehicle_model: resolvedCar.model,
             vehicle_year: vehicleYear || null,
             vehicle_color: vehicleColor || null,
             vehicle_photo_base64: vehiclePhoto,
@@ -1317,18 +1482,43 @@ export default function DriverKYCScreen({
                     </Text>
                     <Ionicons name="chevron-down" size={20} color="rgba(186,201,222,0.55)" />
                   </TouchableOpacity>
-                  <Text style={styles.label}>Araç Modeli *</Text>
-                  <TouchableOpacity
-                    style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
-                    onPress={() => vehicleBrand && setShowModelModal(true)}
-                    disabled={!vehicleBrand}
-                  >
-                    <Ionicons name="construct" size={20} color={vehicleModel ? KYC_P.cyan : 'rgba(186,201,222,0.45)'} />
-                    <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
-                      {vehicleModel || 'Model seçin...'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={20} color="rgba(186,201,222,0.55)" />
-                  </TouchableOpacity>
+                  {carBrandIsOther ? (
+                    <>
+                      <Text style={styles.label}>Marka Adını Yazın *</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Örn: Chery"
+                        placeholderTextColor="rgba(186,201,222,0.42)"
+                        value={customBrandName}
+                        onChangeText={setCustomBrandName}
+                        autoCorrect={false}
+                      />
+                      <Text style={styles.label}>Model Adını Yazın *</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Örn: Tiggo 7"
+                        placeholderTextColor="rgba(186,201,222,0.42)"
+                        value={customModelName}
+                        onChangeText={setCustomModelName}
+                        autoCorrect={false}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.label}>Araç Modeli *</Text>
+                      <TouchableOpacity
+                        style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
+                        onPress={() => vehicleBrand && setShowModelModal(true)}
+                        disabled={!vehicleBrand}
+                      >
+                        <Ionicons name="construct" size={20} color={vehicleModel ? KYC_P.cyan : 'rgba(186,201,222,0.45)'} />
+                        <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
+                          {vehicleModel || 'Model seçin...'}
+                        </Text>
+                        <Ionicons name="chevron-down" size={20} color="rgba(186,201,222,0.55)" />
+                      </TouchableOpacity>
+                    </>
+                  )}
                   <Text style={styles.label}>Araç Yılı</Text>
                   <TextInput
                     style={styles.input}
@@ -1358,9 +1548,7 @@ export default function DriverKYCScreen({
               )}
               {step === 1 && (
                 <>
-                  <Text style={styles.stepHelp}>
-                    Plaka ve aracın tamamı görünsün; gölgede veya çok uzaktan çekmeyin.
-                  </Text>
+                  <PhotoCaptureGuide variant="vehicle" />
                   <Text style={styles.sectionLabel}>Araç fotoğrafı</Text>
                   <Text style={styles.sectionHint}>Plaka ve gövde net görünmeli; gölge ve uzak çekimden kaçının.</Text>
                   {vehiclePhoto ? (
@@ -1371,7 +1559,7 @@ export default function DriverKYCScreen({
                         onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('vehicle')
-                            : void pickImageMobile('vehicle', 'gallery')
+                            : void pickImageMobile('vehicle', 'camera')
                         }
                       />
                       <PhotoHeroActions
@@ -1421,9 +1609,7 @@ export default function DriverKYCScreen({
               )}
               {step === 2 && (
                 <>
-                  <Text style={styles.stepHelp}>
-                    Ehliyetin dört köşesi ve tüm yazılar okunaklı görünmeli.
-                  </Text>
+                  <PhotoCaptureGuide variant="license" />
                   <Text style={styles.sectionLabel}>Ehliyet fotoğrafı</Text>
                   <Text style={styles.sectionHint}>Belge düz tutulmuş ve kadrajda tam görünmeli.</Text>
                   {licensePhoto ? (
@@ -1434,7 +1620,7 @@ export default function DriverKYCScreen({
                         onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('license')
-                            : void pickImageMobile('license', 'gallery')
+                            : void pickImageMobile('license', 'camera')
                         }
                       />
                       <PhotoHeroActions
@@ -1487,7 +1673,7 @@ export default function DriverKYCScreen({
                   <Text style={styles.summaryTitle}>Özet</Text>
                   <Text style={styles.summaryLine}>Plaka: {plateNumber.toUpperCase().trim() || '—'}</Text>
                   <Text style={styles.summaryLine}>
-                    Araç: {vehicleBrand} {vehicleModel}
+                    Araç: {resolvedCar.brand} {resolvedCar.model}
                     {vehicleYear ? ` (${vehicleYear})` : ''}
                     {vehicleColor ? ` · ${vehicleColor}` : ''}
                   </Text>
@@ -1514,21 +1700,48 @@ export default function DriverKYCScreen({
               {step === 0 && (
                 <>
                   <Text style={styles.label}>Motor Markası *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Örn: Honda"
-                    placeholderTextColor="rgba(186,201,222,0.42)"
-                    value={vehicleBrand}
-                    onChangeText={setVehicleBrand}
-                  />
-                  <Text style={styles.label}>Motor Modeli *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Örn: PCX 125"
-                    placeholderTextColor="rgba(186,201,222,0.42)"
-                    value={vehicleModel}
-                    onChangeText={setVehicleModel}
-                  />
+                  <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
+                    <Ionicons name="bicycle" size={20} color={vehicleBrand ? KYC_P.cyan : 'rgba(186,201,222,0.45)'} />
+                    <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
+                      {vehicleBrand || 'Marka seçin...'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="rgba(186,201,222,0.55)" />
+                  </TouchableOpacity>
+                  {motorBrandIsOther ? (
+                    <>
+                      <Text style={styles.label}>Marka Adını Yazın *</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Örn: Sym"
+                        placeholderTextColor="rgba(186,201,222,0.42)"
+                        value={customBrandName}
+                        onChangeText={setCustomBrandName}
+                        autoCorrect={false}
+                      />
+                      <Text style={styles.label}>Model Adını Yazın *</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Örn: Joymax 250"
+                        placeholderTextColor="rgba(186,201,222,0.42)"
+                        value={customModelName}
+                        onChangeText={setCustomModelName}
+                        autoCorrect={false}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.label}>Motor Modeli *</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Örn: PCX 125"
+                        placeholderTextColor="rgba(186,201,222,0.42)"
+                        value={vehicleModel}
+                        onChangeText={setVehicleModel}
+                        editable={!!vehicleBrand}
+                        autoCorrect={false}
+                      />
+                    </>
+                  )}
                   <Text style={styles.label}>Plaka (isteğe bağlı)</Text>
                   <TextInput
                     style={styles.input}
@@ -1543,7 +1756,7 @@ export default function DriverKYCScreen({
               )}
               {step === 1 && (
                 <>
-                  <Text style={styles.stepHelp}>Motorunuz ve varsa plaka net görünsün.</Text>
+                  <PhotoCaptureGuide variant="motorcycle" />
                   <Text style={styles.sectionLabel}>Motor fotoğrafı</Text>
                   <Text style={styles.sectionHint}>Motor ve varsa plaka net görünsün.</Text>
                   {motorcyclePhoto ? (
@@ -1554,7 +1767,7 @@ export default function DriverKYCScreen({
                         onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('motorcycle')
-                            : void pickImageMobile('motorcycle', 'gallery')
+                            : void pickImageMobile('motorcycle', 'camera')
                         }
                       />
                       <PhotoHeroActions
@@ -1602,7 +1815,7 @@ export default function DriverKYCScreen({
               )}
               {step === 2 && (
                 <>
-                  <Text style={styles.stepHelp}>Ehliyetin tüm köşeleri görünmeli.</Text>
+                  <PhotoCaptureGuide variant="license" />
                   <Text style={styles.sectionLabel}>Ehliyet fotoğrafı</Text>
                   <Text style={styles.sectionHint}>Belge düz ve tam kadrajda olsun.</Text>
                   {licensePhoto ? (
@@ -1613,7 +1826,7 @@ export default function DriverKYCScreen({
                         onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('license')
-                            : void pickImageMobile('license', 'gallery')
+                            : void pickImageMobile('license', 'camera')
                         }
                       />
                       <PhotoHeroActions
@@ -1661,6 +1874,7 @@ export default function DriverKYCScreen({
               )}
               {step === 3 && (
                 <>
+                  <PhotoCaptureGuide variant="selfie" />
                   <Text style={styles.sectionLabel}>Selfie</Text>
                   <Text style={styles.sectionHint}>Yüzünüz net görünsün; admin incelemesi için gereklidir.</Text>
                   {selfiePhoto ? (
@@ -1671,7 +1885,7 @@ export default function DriverKYCScreen({
                         onReplacePhoto={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('selfie')
-                            : void pickImageMobile('selfie', 'gallery')
+                            : void pickImageMobile('selfie', 'camera')
                         }
                       />
                       <PhotoHeroActions
@@ -1699,7 +1913,7 @@ export default function DriverKYCScreen({
                 <>
                   <Text style={styles.summaryTitle}>Özet ve gönderim</Text>
                   <Text style={styles.summaryLine}>
-                    {vehicleBrand} {vehicleModel}
+                    {resolvedMotor.brand} {resolvedMotor.model}
                     {plateNumber.trim() ? ` · ${plateNumber.toUpperCase().trim()}` : ''}
                   </Text>
                   {vehicleAi ? <AiResultCard result={vehicleAi} subtitle="Motor görüntüsü analizi" /> : null}
@@ -1765,7 +1979,7 @@ export default function DriverKYCScreen({
       <Modal visible={showBrandModal} animationType="slide">
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Marka Seçin</Text>
+            <Text style={styles.modalTitle}>{isMotorKyc ? 'Motor Markası Seçin' : 'Marka Seçin'}</Text>
             <TouchableOpacity onPress={() => setShowBrandModal(false)}>
               <Ionicons name="close" size={28} color={KYC_P.textHi} />
             </TouchableOpacity>
@@ -1774,14 +1988,14 @@ export default function DriverKYCScreen({
             <Ionicons name="search" size={20} color="rgba(186,201,222,0.55)" />
             <TextInput
               style={styles.searchInput}
-              placeholder="Marka ara..."
+              placeholder={isMotorKyc ? 'Motor markası ara...' : 'Marka ara...'}
               placeholderTextColor="rgba(186,201,222,0.42)"
               value={brandSearch}
               onChangeText={setBrandSearch}
             />
           </View>
           <FlatList
-            data={filteredBrands}
+            data={filteredBrandList}
             keyExtractor={item => item}
             renderItem={({ item }) => (
               <TouchableOpacity
@@ -1789,6 +2003,8 @@ export default function DriverKYCScreen({
                 onPress={() => {
                   setVehicleBrand(item);
                   setVehicleModel('');
+                  setCustomBrandName('');
+                  setCustomModelName('');
                   setShowBrandModal(false);
                   setBrandSearch('');
                 }}
