@@ -12008,23 +12008,23 @@ function PassengerDashboard({
     setShowDestinationPicker(false);
   };
 
+  /** Map fazından arama ekranına dön — modal açık kalır */
+  const returnRoutePickerMapToSearch = () => {
+    setDestinationPickerPhase('search');
+    setDestinationPickerGeocoding(false);
+    setDestinationAwaitingMapTap(false);
+    if (routePickerStep === 'destination') {
+      setDestination(null);
+    }
+  };
+
   /** Destination picker geri — map fazı korunur; destination search → pickup; pickup → kapat/rol */
   const handleDestinationPickerBackPress = () => {
     void tapButtonHaptic();
     Keyboard.dismiss();
 
     if (destinationPickerPhase === 'map') {
-      if (Platform.OS === 'ios') {
-        if (destinationAwaitingMapTap) {
-          setDestination(destinationSnapshotOnPickerOpenRef.current);
-        }
-        setDestinationAwaitingMapTap(false);
-        setDestinationPickerPhase('search');
-        setShowDestinationPicker(false);
-        setScreen('role-select');
-        return;
-      }
-      closeDestinationPickerModal();
+      returnRoutePickerMapToSearch();
       return;
     }
 
@@ -13689,17 +13689,13 @@ function PassengerDashboard({
                     <TouchableOpacity
                       onPress={() => {
                         void tapButtonHaptic();
-                        setDestinationPickerPhase('search');
-                        if (routePickerStep === 'destination') {
-                          setDestinationAwaitingMapTap(false);
-                          setDestination(null);
-                        }
+                        returnRoutePickerMapToSearch();
                       }}
                       style={styles.destinationChangeAreaBtn}
                       activeOpacity={0.85}
                     >
                       <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
-                        {routePickerStep === 'pickup' ? 'Adres ara' : 'Mahalle / sokak değiştir'}
+                        Adres ara
                       </Text>
                     </TouchableOpacity>
                   ) : null}
@@ -13956,16 +13952,21 @@ function PassengerDashboard({
               {routePickerStep === 'pickup' ? (
                 <>
                   <Text style={styles.destinationMapHintTitle}>
-                    Alınış noktasını haritada doğrulayın
+                    Alınış noktasını doğrulayın
                   </Text>
                   <Text style={styles.destinationMapHintMinimal}>
                     Haritayı sürücünün geleceği noktanın üzerine getirin.
                   </Text>
                 </>
               ) : (
-                <Text style={styles.destinationMapHintMinimal}>
-                  Haritayı hedefin üzerine getirin ve konumu onaylayın.
-                </Text>
+                <>
+                  <Text style={styles.destinationMapHintTitle}>
+                    Varış noktasını doğrulayın
+                  </Text>
+                  <Text style={styles.destinationMapHintMinimal}>
+                    Haritayı gitmek istediğiniz noktanın üzerine getirin.
+                  </Text>
+                </>
               )}
               <TouchableOpacity
                 style={styles.destinationMapConfirmBtnWrap}
