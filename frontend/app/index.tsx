@@ -66,6 +66,10 @@ import {
   type RouteHistoryPoint,
   type RouteHistorySource,
 } from '../lib/passengerRouteHistory';
+import {
+  getSavedAddresses,
+  type SavedAddress,
+} from '../lib/passengerSavedAddresses';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { callAlertPrompt, isAlertPromptCallable } from '../lib/alertPrompt';
 import { callCheck } from '../lib/callCheck';
@@ -8516,6 +8520,8 @@ function PassengerDashboard({
   const [pickupConfirmBusy, setPickupConfirmBusy] = useState(false);
   const [recentPickups, setRecentPickups] = useState<RouteHistoryPoint[]>([]);
   const [recentDestinations, setRecentDestinations] = useState<RouteHistoryPoint[]>([]);
+  const [savedHomeAddress, setSavedHomeAddress] = useState<SavedAddress | null>(null);
+  const [savedWorkAddress, setSavedWorkAddress] = useState<SavedAddress | null>(null);
 
   useEffect(() => {
     if (
@@ -8770,22 +8776,29 @@ function PassengerDashboard({
     if (!uid) {
       setRecentPickups([]);
       setRecentDestinations([]);
+      setSavedHomeAddress(null);
+      setSavedWorkAddress(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const [pickups, destinations] = await Promise.all([
+        const [pickups, destinations, saved] = await Promise.all([
           getRecentPickups(uid),
           getRecentDestinations(uid),
+          getSavedAddresses(uid),
         ]);
         if (cancelled) return;
         setRecentPickups(pickups);
         setRecentDestinations(destinations);
+        setSavedHomeAddress(saved.home);
+        setSavedWorkAddress(saved.work);
       } catch {
         if (!cancelled) {
           setRecentPickups([]);
           setRecentDestinations([]);
+          setSavedHomeAddress(null);
+          setSavedWorkAddress(null);
         }
       }
     })();
@@ -12019,6 +12032,32 @@ function PassengerDashboard({
     });
   };
 
+  const selectSavedPickup = (saved: SavedAddress) => {
+    void tapButtonHaptic();
+    setPassengerPickup({
+      address: saved.address,
+      latitude: saved.latitude,
+      longitude: saved.longitude,
+    });
+    setRoutePickerStep('destination');
+    setDestinationPickerPhase('search');
+    setDestinationPickerAutocompleteMountKey((k) => k + 1);
+    void pushRecentPickup(String(user?.id ?? ''), {
+      address: saved.address,
+      latitude: saved.latitude,
+      longitude: saved.longitude,
+      source: 'saved',
+    });
+  };
+
+  const selectSavedDestination = (saved: SavedAddress) => {
+    void tapButtonHaptic();
+    void commitDestinationFromMap(saved.address, saved.latitude, saved.longitude, {
+      autoOpenTagPriceFlow: true,
+      historySource: 'saved',
+    });
+  };
+
   const closeDestinationPickerModal = () => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
@@ -13762,6 +13801,117 @@ function PassengerDashboard({
                           onPlaceSelected={(place) => handlePickupAreaFromSearch(place)}
                         />
                       </View>
+                      {savedHomeAddress || savedWorkAddress ? (
+                        <View style={styles.savedQuickSection}>
+                          <View style={styles.savedQuickRow}>
+                            {savedHomeAddress ? (
+                              <TouchableOpacity
+                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                activeOpacity={0.88}
+                                onPress={() => selectSavedPickup(savedHomeAddress)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                      Ev
+                                    </Text>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {savedHomeAddress.address}
+                                    </Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel('saved', 'pickup')}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ) : null}
+                            {savedWorkAddress ? (
+                              <TouchableOpacity
+                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                activeOpacity={0.88}
+                                onPress={() => selectSavedPickup(savedWorkAddress)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                      İş
+                                    </Text>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {savedWorkAddress.address}
+                                    </Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel('saved', 'pickup')}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        </View>
+                      ) : null}
+                      {recentPickups.length > 0 ? (
+                        <View style={styles.routeRecentSection}>
+                          <Text style={styles.routeRecentSectionTitle}>
+                            Son kullanılan alınış noktaları
+                          </Text>
+                          <Text style={styles.routeRecentSectionSubtitle}>
+                            Daha önce çağırdığınız noktaları tek dokunuşla seçin.
+                          </Text>
+                          <View style={styles.routeRecentList}>
+                            {recentPickups.map((point, index) => (
+                              <TouchableOpacity
+                                key={`pickup-${routeHistoryCoordKey(point.latitude, point.longitude)}-${point.usedAt}-${index}`}
+                                style={styles.routeRecentCard}
+                                activeOpacity={0.88}
+                                onPress={() => selectRecentPickup(point)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="time-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {point.address}
+                                    </Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel(
+                                            resolveRouteHistoryDisplaySource(point, 'pickup'),
+                                            'pickup',
+                                          )}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
+                                    </View>
+                                  </View>
+                                  <Ionicons
+                                    name="chevron-forward"
+                                    size={18}
+                                    color="rgba(34, 211, 238, 0.72)"
+                                  />
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      ) : null}
                       {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
                         <TouchableOpacity
                           style={styles.destinationMapPickBtnWrap}
@@ -13817,53 +13967,6 @@ function PassengerDashboard({
                           )}
                         </LinearGradient>
                       </TouchableOpacity>
-                      {recentPickups.length > 0 ? (
-                        <View style={styles.routeRecentSection}>
-                          <Text style={styles.routeRecentSectionTitle}>
-                            Son kullanılan alınış noktaları
-                          </Text>
-                          <Text style={styles.routeRecentSectionSubtitle}>
-                            Daha önce çağırdığınız noktaları tek dokunuşla seçin.
-                          </Text>
-                          <View style={styles.routeRecentList}>
-                            {recentPickups.map((point, index) => (
-                              <TouchableOpacity
-                                key={`pickup-${routeHistoryCoordKey(point.latitude, point.longitude)}-${point.usedAt}-${index}`}
-                                style={styles.routeRecentCard}
-                                activeOpacity={0.88}
-                                onPress={() => selectRecentPickup(point)}
-                              >
-                                <View style={styles.routeRecentCardRow}>
-                                  <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="time-outline" size={18} color="#22D3EE" />
-                                  </View>
-                                  <View style={styles.routeRecentCardTextCol}>
-                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
-                                      {point.address}
-                                    </Text>
-                                    <View style={styles.routeRecentCardMetaRow}>
-                                      <View style={styles.routeRecentSourceBadge}>
-                                        <Text style={styles.routeRecentSourceBadgeText}>
-                                          {routeHistorySourceLabel(
-                                            resolveRouteHistoryDisplaySource(point, 'pickup'),
-                                            'pickup',
-                                          )}
-                                        </Text>
-                                      </View>
-                                      <Text style={styles.routeRecentCardMeta}>Alınış noktası</Text>
-                                    </View>
-                                  </View>
-                                  <Ionicons
-                                    name="chevron-forward"
-                                    size={18}
-                                    color="rgba(34, 211, 238, 0.72)"
-                                  />
-                                </View>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
-                      ) : null}
                       <View style={styles.pickupRouteAccentLine} />
                       <Text style={styles.pickupRouteFooterHint}>
                         LeylekTAG — alınış noktanız teklif ve eşleşme için güvenle kullanılır.
@@ -13908,6 +14011,71 @@ function PassengerDashboard({
                         <Text style={styles.destinationSearchFlowHint}>
                           Hedefinizi yazın, ardından haritada konumu doğrulayın.
                         </Text>
+                      ) : null}
+
+                      {savedHomeAddress || savedWorkAddress ? (
+                        <View style={styles.savedQuickSection}>
+                          <View style={styles.savedQuickRow}>
+                            {savedHomeAddress ? (
+                              <TouchableOpacity
+                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                activeOpacity={0.88}
+                                onPress={() => selectSavedDestination(savedHomeAddress)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                      Ev
+                                    </Text>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {savedHomeAddress.address}
+                                    </Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel('saved', 'destination')}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Varış noktası</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ) : null}
+                            {savedWorkAddress ? (
+                              <TouchableOpacity
+                                style={[styles.savedQuickCard, styles.routeRecentCard]}
+                                activeOpacity={0.88}
+                                onPress={() => selectSavedDestination(savedWorkAddress)}
+                              >
+                                <View style={styles.routeRecentCardRow}>
+                                  <View style={styles.routeRecentIconRing}>
+                                    <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                  </View>
+                                  <View style={styles.routeRecentCardTextCol}>
+                                    <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
+                                      İş
+                                    </Text>
+                                    <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
+                                      {savedWorkAddress.address}
+                                    </Text>
+                                    <View style={styles.routeRecentCardMetaRow}>
+                                      <View style={styles.routeRecentSourceBadge}>
+                                        <Text style={styles.routeRecentSourceBadgeText}>
+                                          {routeHistorySourceLabel('saved', 'destination')}
+                                        </Text>
+                                      </View>
+                                      <Text style={styles.routeRecentCardMeta}>Varış noktası</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        </View>
                       ) : null}
 
                       {recentDestinations.length > 0 ? (
@@ -25875,6 +26043,24 @@ const styles = StyleSheet.create({
   },
   routeRecentSection: {
     marginTop: 16,
+  },
+  savedQuickSection: {
+    marginTop: 14,
+  },
+  savedQuickRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  savedQuickCard: {
+    flex: 1,
+    minWidth: 0,
+  },
+  savedQuickCardTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(34, 211, 238, 0.92)',
+    letterSpacing: 0.25,
+    marginBottom: 2,
   },
   routeRecentSectionTitle: {
     fontSize: 12,
