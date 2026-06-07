@@ -13595,9 +13595,10 @@ function PassengerDashboard({
       >
         <View style={styles.destinationModalRoot}>
           {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+            <View style={styles.destinationPickerMapSlot} pointerEvents="box-none">
             <DestinationPickerMapView
               ref={destinationPickerMapRef}
-              style={StyleSheet.absoluteFillObject}
+              style={styles.destinationPickerMapFill}
               provider={DestinationPickerMapProvider}
               mapType="standard"
               showsUserLocation={!!userLocation}
@@ -13605,8 +13606,8 @@ function PassengerDashboard({
               pointerEvents={destinationPickerPhase === 'search' ? 'none' : 'auto'}
               scrollEnabled={destinationPickerPhase === 'map'}
               zoomEnabled={destinationPickerPhase === 'map'}
-              pitchEnabled={Platform.OS !== 'android' && destinationPickerPhase === 'map'}
-              rotateEnabled={Platform.OS !== 'android' && destinationPickerPhase === 'map'}
+              pitchEnabled={destinationPickerPhase === 'map'}
+              rotateEnabled={destinationPickerPhase === 'map'}
               initialRegion={{
                 latitude: destinationPickerMapLatResolved,
                 longitude: destinationPickerMapLngResolved,
@@ -13628,6 +13629,7 @@ function PassengerDashboard({
                 }
               }}
             />
+            </View>
           ) : null}
           {DestinationPickerMapView &&
           isNativeGoogleMapsSupported() &&
@@ -13686,19 +13688,38 @@ function PassengerDashboard({
             />
           )}
 
-          <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
-            <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
+          <View
+            style={
+              destinationPickerPhase === 'map'
+                ? styles.destinationModalHeaderMapLayer
+                : styles.destinationModalTouchLayer
+            }
+            pointerEvents="box-none"
+          >
+            <SafeAreaView
+              style={
+                destinationPickerPhase === 'map'
+                  ? styles.destinationModalHeaderMapSafe
+                  : styles.destinationModalSafeOverlay
+              }
+              pointerEvents="box-none"
+            >
               <View
                 style={[
                   styles.destinationModalHeaderBlue,
                   destinationPickerPhase === 'map' && styles.destinationModalHeaderBlueDim,
+                  destinationPickerPhase === 'map' && styles.destinationModalHeaderBlueMap,
                 ]}
                 pointerEvents="auto"
+                collapsable={false}
               >
                 <TouchableOpacity
                   onPress={handleDestinationPickerBackPress}
-                  style={styles.destinationModalBackBtn}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={[
+                    styles.destinationModalBackBtn,
+                    destinationPickerPhase === 'map' && styles.destinationModalBackBtnMap,
+                  ]}
+                  hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
                   accessibilityRole="button"
                   accessibilityLabel="Geri dön"
                 >
@@ -14209,16 +14230,16 @@ function PassengerDashboard({
             >
               {routePickerStep === 'pickup' ? (
                 <>
-                  <Text style={styles.destinationMapHintTitle}>
+                  <Text style={styles.destinationMapHintTitle} pointerEvents="none">
                     Alınış noktasını doğrulayın
                   </Text>
-                  <Text style={styles.destinationMapHintMinimal}>
+                  <Text style={styles.destinationMapHintMinimal} pointerEvents="none">
                     Haritayı sürücünün geleceği noktanın üzerine getirin.
                   </Text>
                 </>
               ) : (
                 <>
-                  <View style={styles.destinationMapVerifyHintCard}>
+                  <View style={styles.destinationMapVerifyHintCard} pointerEvents="none">
                     <Text style={styles.destinationMapVerifyHintTitle}>
                       Tam ineceğiniz yeri seçin
                     </Text>
@@ -14232,6 +14253,7 @@ function PassengerDashboard({
                 style={styles.destinationMapConfirmBtnWrap}
                 activeOpacity={0.88}
                 onPress={() => void confirmDestinationPickerCenter()}
+                pointerEvents="auto"
               >
                 <LinearGradient
                   colors={['#22D3EE', '#0EA5E9', '#2563EB']}
@@ -25838,6 +25860,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(8, 17, 31, 0.28)',
   },
+  destinationPickerMapSlot: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  destinationPickerMapFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
   destinationModalTopFade: {
     position: 'absolute',
     top: 0,
@@ -25861,6 +25890,19 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  /** Map fazı: yalnızca üst header şeridi — orta alan MapView pan/zoom için serbest */
+  destinationModalHeaderMapLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    ...Platform.select({
+      ios: { zIndex: 52 },
+      android: { zIndex: 22, elevation: 22 },
+      default: { zIndex: 20 },
+    }),
+  },
+  destinationModalHeaderMapSafe: {},
   destinationModalSafeOverlay: {
     flex: 1,
   },
@@ -25899,8 +25941,8 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     alignItems: 'center',
     ...Platform.select({
-      ios: { zIndex: 40 },
-      android: { elevation: 18 },
+      ios: { zIndex: 58 },
+      android: { elevation: 24 },
       default: {},
     }),
   },
@@ -26466,12 +26508,26 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  destinationModalHeaderBlueMap: {
+    ...Platform.select({
+      ios: { zIndex: 54 },
+      android: { elevation: 26 },
+      default: {},
+    }),
+  },
   destinationModalBackBtn: {
     minWidth: 44,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 8,
+  },
+  destinationModalBackBtnMap: {
+    ...Platform.select({
+      ios: { zIndex: 56 },
+      android: { elevation: 28 },
+      default: {},
+    }),
   },
   destinationModalTitleBlue: {
     fontSize: 16,
