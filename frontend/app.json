@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.leylektag.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "40",
+      "buildNumber": "46",
       "config": {
         "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
       },
