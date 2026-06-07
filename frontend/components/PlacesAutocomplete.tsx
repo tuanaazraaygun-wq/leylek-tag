@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   getGoogleMapsApiKey,
+  getGoogleMapsApiKeyDebugMeta,
   googleGeocodeText,
   googlePlacesAutocompleteMerged,
   googlePlaceDetailsLatLng,
@@ -2657,7 +2658,16 @@ export default function PlacesAutocomplete({
       }
 
       const key = getGoogleMapsApiKey();
+      const keyDebug = getGoogleMapsApiKeyDebugMeta();
       if (!key) {
+        try {
+          console.log(
+            'GOOGLE_MAPS_API_KEY_DEBUG',
+            JSON.stringify({ context: 'non_google_selection', ...keyDebug }),
+          );
+        } catch {
+          /* noop */
+        }
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
         return;
       }
@@ -2665,6 +2675,23 @@ export default function PlacesAutocomplete({
       const cityKeyHome = resolveCityDataKey(city);
       const cityLabel = cityKeyHome || city.trim();
       const geocodeQuery = buildNonGoogleSelectionGeocodeQuery(item, formatted, cityLabel);
+
+      try {
+        console.log(
+          'ROUTE_PICKER_NON_GOOGLE_GEOCODE_START',
+          JSON.stringify({
+            title: item.structured_main ?? formatted.main,
+            subtitle: item.structured_secondary ?? formatted.secondary,
+            display_name: item.display_name,
+            geocode_query: geocodeQuery,
+            key_present: keyDebug.keyPresent,
+            key_suffix: keyDebug.keySuffix,
+            key_source: keyDebug.keySource,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
 
       setLoading(true);
       try {

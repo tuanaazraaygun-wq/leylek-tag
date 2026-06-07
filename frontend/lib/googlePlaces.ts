@@ -16,6 +16,24 @@ export function getGoogleMapsApiKey(): string {
   return (ios?.googleMapsApiKey || android?.googleMaps?.apiKey || '').trim();
 }
 
+export function getGoogleMapsApiKeyDebugMeta(): {
+  keyPresent: boolean;
+  keySuffix: string | null;
+  keySource: 'env' | 'expoConfig' | 'none';
+} {
+  const fromEnv = typeof process !== 'undefined' ? process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() : '';
+  if (fromEnv) {
+    return { keyPresent: true, keySuffix: fromEnv.slice(-6), keySource: 'env' };
+  }
+  const ios = Constants.expoConfig?.ios?.config as { googleMapsApiKey?: string } | undefined;
+  const android = Constants.expoConfig?.android?.config as { googleMaps?: { apiKey?: string } } | undefined;
+  const key = (ios?.googleMapsApiKey || android?.googleMaps?.apiKey || '').trim();
+  if (key) {
+    return { keyPresent: true, keySuffix: key.slice(-6), keySource: 'expoConfig' };
+  }
+  return { keyPresent: false, keySuffix: null, keySource: 'none' };
+}
+
 export interface GoogleAutocompletePrediction {
   description: string;
   place_id: string;
@@ -216,6 +234,20 @@ export async function googleGeocodeText(
   }
   const res = await fetch(`${GEOCODE_URL}?${params.toString()}`, { signal });
   const data = (await res.json()) as GoogleGeocodeResponse;
+  const rawResultCount = (data.results || []).length;
+  try {
+    console.log(
+      'ROUTE_PICKER_GEOCODE_RESPONSE',
+      JSON.stringify({
+        query: address.trim(),
+        status: data.status,
+        error_message: data.error_message ?? null,
+        result_count: rawResultCount,
+      }),
+    );
+  } catch {
+    /* noop */
+  }
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
     throw new Error(data.error_message || data.status || 'geocode_failed');
   }
