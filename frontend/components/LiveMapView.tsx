@@ -41,6 +41,10 @@ import * as Speech from 'expo-speech';
 import InRideSaferForceEndModal from './InRideSaferForceEndModal';
 import { BOARDING_COMMS_CLOSED_USER_MSG } from '../lib/boardingCommsClosed';
 import { appAlert } from '../contexts/AppAlertContext';
+import {
+  openExternalMapsNavigation,
+  type ExternalMapsProvider,
+} from '../lib/openExternalMapsNavigation';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -5723,6 +5727,88 @@ export default function LiveMapView({
   const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
   const driverMatrixNavChipGradientColors = ['#08111F', '#0B1220', '#101A2B', '#22D3EE'] as const;
   const driverMatrixNavChipIconColor = 'rgba(243,248,255,0.94)';
+
+  /** Dış harita hedefi — iç navigasyondan bağımsız; tag yedekleri offline senaryo için. */
+  const driverExternalNavTarget = useMemo((): MapLatLng | null => {
+    if (!isDriver) return null;
+    const st = String(tagStatus || '').trim().toLowerCase();
+    const dropoffPhase = boardingConfirmed || st === 'in_progress';
+    const activeTag = (driverYolcuyaGitCoordContext?.activeTag ?? null) as
+      | Record<string, unknown>
+      | null;
+
+    if (dropoffPhase) {
+      const fromDest = parseRouteEndpoint(destinationLocation);
+      if (fromDest) return fromDest;
+      const dLat = pickCoordNumber(activeTag?.dropoff_lat);
+      const dLng = pickCoordNumber(activeTag?.dropoff_lng);
+      return parseRouteEndpoint({ latitude: dLat, longitude: dLng });
+    }
+
+    const tagPickup = pickDriverPickupDestFromActiveTag(activeTag);
+    if (tagPickup) return tagPickup;
+    return parseRouteEndpoint(otherLocation);
+  }, [
+    isDriver,
+    boardingConfirmed,
+    tagStatus,
+    destinationLocation,
+    otherLocation,
+    driverYolcuyaGitCoordContext?.activeTag,
+  ]);
+
+  const handleDriverExternalMapsPress = useCallback(
+    async (provider: ExternalMapsProvider) => {
+      void tapButtonHaptic();
+      if (!driverExternalNavTarget) {
+        appAlert('Konum', 'Konum hazır değil.', [{ text: 'Tamam' }], {
+          variant: 'info',
+          autoDismissMs: 2800,
+          cancelable: true,
+        });
+        return;
+      }
+      const ok = await openExternalMapsNavigation(
+        provider,
+        driverExternalNavTarget.latitude,
+        driverExternalNavTarget.longitude,
+      );
+      if (!ok) {
+        appAlert('Harita', 'Harita uygulaması açılamadı.', [{ text: 'Tamam' }], {
+          variant: 'warning',
+          autoDismissMs: 2800,
+          cancelable: true,
+        });
+      }
+    },
+    [driverExternalNavTarget],
+  );
+
+  const driverExternalMapsIconRow =
+    isDriver && !driverNavImmersive ? (
+      <View style={styles.driverExternalMapsRow} pointerEvents="box-none">
+        {Platform.OS === 'ios' ? (
+          <TouchableOpacity
+            style={styles.driverExternalMapsBtn}
+            activeOpacity={0.82}
+            onPress={() => void handleDriverExternalMapsPress('apple')}
+            accessibilityRole="button"
+            accessibilityLabel="Apple Maps ile aç"
+          >
+            <Ionicons name="map-outline" size={17} color="rgba(243,248,255,0.92)" />
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          style={styles.driverExternalMapsBtn}
+          activeOpacity={0.82}
+          onPress={() => void handleDriverExternalMapsPress('google')}
+          accessibilityRole="button"
+          accessibilityLabel="Google Maps ile aç"
+        >
+          <MaterialCommunityIcons name="google-maps" size={18} color="rgba(34,211,238,0.95)" />
+        </TouchableOpacity>
+      </View>
+    ) : null;
   const meetingHasUiMetrics =
     meetingDistance != null &&
     meetingDuration != null &&
@@ -6603,6 +6689,7 @@ export default function LiveMapView({
                   </LinearGradient>
                 </Animated.View>
               </TouchableOpacity>
+              {!driverRideUiModern ? driverExternalMapsIconRow : null}
             </View>
           </View>
         ) : null}
@@ -6741,6 +6828,8 @@ export default function LiveMapView({
                   {driverMatrixNavChipLabel}
                 </Text>
               </Pressable>
+
+              {driverRideUiModern ? driverExternalMapsIconRow : null}
 
               {boardingConfirmed ? (
                 <>
@@ -7741,6 +7830,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
+  },
+  driverExternalMapsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  driverExternalMapsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(30, 58, 95, 0.78)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 3,
   },
   driverMatchYgitGlowAura: {
     position: 'absolute',
