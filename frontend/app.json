@@ -17,7 +17,7 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "buildNumber": "46",
       "config": {
-        "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
+        "googleMapsApiKey": "AIzaSyAUwOL1mLrOW_6qXmDZHiCeq552QJiSItw"
       },
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Uygulama içi sesli görüşme, sesli komut ve bas-konuş özellikleri için mikrofon izni gereklidir.",
@@ -65,7 +65,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
+          "apiKey": "AIzaSyAUwOL1mLrOW_6qXmDZHiCeq552QJiSItw"
         }
       }
     },
