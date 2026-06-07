@@ -11352,7 +11352,7 @@ function PassengerDashboard({
       );
       const tReq = Date.now();
       const accessToken = (await getPersistedAccessToken())?.trim();
-      const response = await fetch(`${API_URL}/voice/start-call`, {
+      const response = await fetchWithTimeout(`${API_URL}/voice/start-call`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -11365,11 +11365,32 @@ function PassengerDashboard({
           tag_id: activeTag.id,
           caller_name: user.name,
         }),
+        timeoutMs: 18000,
       });
-      const data = await response.json();
+      if (!response) {
+        appAlert(
+          'Hata',
+          'Arama başlatılamadı. Bağlantı zaman aşımına uğradı.',
+          [{ text: 'Tamam' }],
+          { variant: 'warning' },
+        );
+        return;
+      }
+      let data: {
+        success?: boolean;
+        call_id?: string;
+        channel_name?: string;
+        agora_token?: string;
+        detail?: unknown;
+      };
+      try {
+        data = (await response.json()) as typeof data;
+      } catch {
+        appAlert('Hata', 'Arama başlatılamadı');
+        return;
+      }
       if (!data.success) {
-        setCalling(false);
-        const detail = String((data as { detail?: unknown }).detail ?? '');
+        const detail = String(data.detail ?? '');
         if (detail === 'busy') {
           appAlert(
             'Meşgul',
@@ -11390,6 +11411,10 @@ function PassengerDashboard({
         appAlert('Hata', detail || 'Arama başlatılamadı');
         return;
       }
+      if (!data.call_id || !data.channel_name) {
+        appAlert('Hata', 'Arama başlatılamadı');
+        return;
+      }
       console.log(
         'TAG_CALL_START_DONE',
         JSON.stringify({
@@ -11406,7 +11431,6 @@ function PassengerDashboard({
         String(user.id)
       );
       if (!agoraOk) {
-        setCalling(false);
         return;
       }
       setCallAccepted(false);
@@ -11432,11 +11456,11 @@ function PassengerDashboard({
           tag_id: _tagPress,
         }),
       );
-      setCalling(false);
     } catch (e) {
       console.error('Agora arama (yolcu):', e);
-      setCalling(false);
       appAlert('Hata', 'Arama başlatılamadı');
+    } finally {
+      setCalling(false);
     }
   };
 
@@ -16192,7 +16216,7 @@ function DriverDashboard({
       );
       const tReqD = Date.now();
       const accessTokenD = (await getPersistedAccessToken())?.trim();
-      const response = await fetch(`${API_URL}/voice/start-call`, {
+      const response = await fetchWithTimeout(`${API_URL}/voice/start-call`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16205,11 +16229,32 @@ function DriverDashboard({
           tag_id: activeTag.id,
           caller_name: user.name,
         }),
+        timeoutMs: 18000,
       });
-      const data = await response.json();
+      if (!response) {
+        appAlert(
+          'Hata',
+          'Arama başlatılamadı. Bağlantı zaman aşımına uğradı.',
+          [{ text: 'Tamam' }],
+          { variant: 'warning' },
+        );
+        return;
+      }
+      let data: {
+        success?: boolean;
+        call_id?: string;
+        channel_name?: string;
+        agora_token?: string;
+        detail?: unknown;
+      };
+      try {
+        data = (await response.json()) as typeof data;
+      } catch {
+        appAlert('Hata', 'Arama başlatılamadı');
+        return;
+      }
       if (!data.success) {
-        setCalling(false);
-        const detail = String((data as { detail?: unknown }).detail ?? '');
+        const detail = String(data.detail ?? '');
         if (detail === 'busy') {
           appAlert(
             'Meşgul',
@@ -16230,6 +16275,10 @@ function DriverDashboard({
         appAlert('Hata', detail || 'Arama başlatılamadı');
         return;
       }
+      if (!data.call_id || !data.channel_name) {
+        appAlert('Hata', 'Arama başlatılamadı');
+        return;
+      }
       console.log(
         'TAG_CALL_START_DONE',
         JSON.stringify({
@@ -16246,7 +16295,6 @@ function DriverDashboard({
         String(user.id)
       );
       if (!agoraOk) {
-        setCalling(false);
         return;
       }
       setCallAccepted(false);
@@ -16272,11 +16320,11 @@ function DriverDashboard({
           tag_id: _tagPressD,
         }),
       );
-      setCalling(false);
     } catch (e) {
       console.error('Agora arama (sürücü):', e);
-      setCalling(false);
       appAlert('Hata', 'Arama başlatılamadı');
+    } finally {
+      setCalling(false);
     }
   };
 

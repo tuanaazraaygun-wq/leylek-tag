@@ -766,20 +766,92 @@ export function useTrustSessionController({
       if (!trustOutgoingPendingRef.current) return;
       if (trustVideoSessionRef.current) return;
       if (Date.now() - t0 > REQUESTER_TRUST_POLL_MAX_MS) {
+        outboundTrustIdRef.current = null;
+        setTrustOutgoingPending(false);
         console.log(
           '[TRUST]',
           JSON.stringify({
             evt: 'TRUST_REQUESTER_POLL_MAX_MS',
             tag_id: tid,
             role,
+            action: 'clear_outgoing_pending',
           }),
         );
+        appAlert('Güven', 'Yanıt alınamadı. Tekrar deneyebilirsiniz.', [{ text: 'Tamam' }], {
+          variant: 'info',
+          autoDismissMs: 3200,
+          cancelable: true,
+        });
         return;
       }
       const bs = blockStateRef.current;
       if (bs.showCallScreen || bs.incomingCallBlocked) return;
 
-      await recoverTrustVideoByTagIdRef.current(tid, 'requester_outgoing_poll');
+      const tagLo = tid.toLowerCase();
+      if (String(activeTagIdRef.current ?? '').trim().toLowerCase() !== tagLo) return;
+
+      try {
+        const r = await getTrustActive(tid);
+        if (cancelled || !trustOutgoingPendingRef.current || trustVideoSessionRef.current) return;
+        if (String(activeTagIdRef.current ?? '').trim().toLowerCase() !== tagLo) return;
+        if (!r) return;
+
+        if (!r.success || !r.session) {
+          if (outboundTrustIdRef.current || trustOutgoingPendingRef.current) {
+            outboundTrustIdRef.current = null;
+            setTrustOutgoingPending(false);
+            console.log(
+              '[TRUST]',
+              JSON.stringify({
+                evt: 'TRUST_OUTGOING_PENDING_CLEAR',
+                source: 'requester_outgoing_poll',
+                reason: 'no_session',
+                tag_id: tid,
+                role,
+              }),
+            );
+          }
+          return;
+        }
+
+        const s = r.session as TrustActiveSessionRow;
+        const rowTagLo = normTrustId(s.tag_id ?? '');
+        if (rowTagLo && rowTagLo !== tagLo) return;
+
+        const st = String(s.status ?? '').trim().toLowerCase();
+        if (st === 'accepted') {
+          await recoverTrustVideoByTagIdRef.current(tid, 'requester_outgoing_poll');
+          return;
+        }
+        if (st === 'pending') return;
+
+        outboundTrustIdRef.current = null;
+        setTrustOutgoingPending(false);
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_OUTGOING_PENDING_CLEAR',
+            source: 'requester_outgoing_poll',
+            reason: st || 'terminal_status',
+            tag_id: tid,
+            role,
+          }),
+        );
+        if (st === 'rejected') {
+          appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
+            variant: 'info',
+            autoDismissMs: 2600,
+            cancelable: true,
+          });
+          if (!activeTagRef.current?.boarding_confirmed_at) {
+            setTimeout(() => {
+              openChatRef.current?.();
+            }, 150);
+          }
+        }
+      } catch {
+        /* noop — sonraki tick tekrar dener */
+      }
     };
 
     const id = setInterval(() => void tick(), REQUESTER_TRUST_POLL_INTERVAL_MS);
@@ -1362,14 +1434,38 @@ export function useTrustSessionController({
 
         if (reason === 'rejected') {
           if (!trustIdApplies) {
-            console.log(
-              '[TRUST]',
-              JSON.stringify({
-                evt: 'TRUST_SESSION_ENDED_SKIP',
-                reason: 'rejected_not_applicable',
-                end_trust_id: endTrustId,
-              }),
-            );
+            if (tagOk && trustOutgoingPendingRef.current) {
+              outboundTrustIdRef.current = null;
+              setTrustOutgoingPending(false);
+              appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
+                variant: 'info',
+                autoDismissMs: 2600,
+                cancelable: true,
+              });
+              if (!activeTagRef.current?.boarding_confirmed_at) {
+                setTimeout(() => {
+                  openChatRef.current?.();
+                }, 150);
+              }
+              console.log(
+                '[TRUST]',
+                JSON.stringify({
+                  evt: 'TRUST_OUTGOING_PENDING_CLEAR',
+                  source: 'trust_session_ended_rejected',
+                  reason: 'outgoing_pending_tag_match',
+                  end_trust_id: endTrustId,
+                }),
+              );
+            } else {
+              console.log(
+                '[TRUST]',
+                JSON.stringify({
+                  evt: 'TRUST_SESSION_ENDED_SKIP',
+                  reason: 'rejected_not_applicable',
+                  end_trust_id: endTrustId,
+                }),
+              );
+            }
             return;
           }
 
