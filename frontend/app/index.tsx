@@ -144,7 +144,7 @@ import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers'
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
-import { playMatchChimeSound, playDriverNewOfferLuxuryTone, unloadDriverNewOfferLuxuryTone } from '../utils/sound';
+import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, notifyDriverNewOfferSoundIfNeeded, finalizeDriverOfferPollSound } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -14788,67 +14788,10 @@ function DriverDashboard({
     };
   }, []);
 
-  const driverNewOfferSoundHydratedRef = useRef(false);
-  const driverNewOfferSoundSeenIdsRef = useRef<Set<string>>(new Set());
-  /** İlk poll öncesi gelen socket/dispatch id'leri — hidrasyon sonrası tek chime ile kapatılır */
-  const driverNewOfferSoundPendingIdsRef = useRef<Set<string>>(new Set());
   const driverPollOrderedIdsForSoundRef = useRef<string[]>([]);
-
-  const notifyDriverNewOfferSoundIfNeeded = useCallback((tagKey: string | null | undefined) => {
-    const id = String(tagKey || '').trim();
-    if (!id) return;
-    if (driverNewOfferSoundSeenIdsRef.current.has(id)) return;
-    if (!driverNewOfferSoundHydratedRef.current) {
-      driverNewOfferSoundPendingIdsRef.current.add(id);
-      return;
-    }
-    driverNewOfferSoundSeenIdsRef.current.add(id);
-    void playDriverNewOfferLuxuryTone();
-  }, []);
-
-  const finalizeDriverOfferPollSound = useCallback((orderedTagIds: string[]) => {
-    const uniq = [
-      ...new Set(
-        orderedTagIds
-          .map((x) => String(x ?? '').trim())
-          .filter((tid) => Boolean(tid)),
-      ),
-    ];
-    if (!driverNewOfferSoundHydratedRef.current) {
-      const initialIds = new Set(uniq);
-      for (const tid of initialIds) {
-        driverNewOfferSoundSeenIdsRef.current.add(tid);
-      }
-      for (const tid of initialIds) {
-        driverNewOfferSoundPendingIdsRef.current.delete(tid);
-      }
-      driverNewOfferSoundHydratedRef.current = true;
-
-      if (driverNewOfferSoundPendingIdsRef.current.size > 0) {
-        void playDriverNewOfferLuxuryTone();
-        for (const pid of driverNewOfferSoundPendingIdsRef.current) {
-          driverNewOfferSoundSeenIdsRef.current.add(pid);
-        }
-        driverNewOfferSoundPendingIdsRef.current.clear();
-      }
-      return;
-    }
-    let anyNew = false;
-    for (const tid of uniq) {
-      if (!tid || driverNewOfferSoundSeenIdsRef.current.has(tid)) continue;
-      driverNewOfferSoundSeenIdsRef.current.add(tid);
-      anyNew = true;
-    }
-    if (anyNew) {
-      void playDriverNewOfferLuxuryTone();
-    }
-  }, []);
 
   useEffect(() => {
     return () => {
-      driverNewOfferSoundSeenIdsRef.current.clear();
-      driverNewOfferSoundPendingIdsRef.current.clear();
-      driverNewOfferSoundHydratedRef.current = false;
       void unloadDriverNewOfferLuxuryTone();
     };
   }, []);
@@ -15129,7 +15072,7 @@ function DriverDashboard({
       console.warn('Teklif trip yüklenemedi:', e);
       return false;
     }
-  }, [driverVehicleKind, notifyDriverNewOfferSoundIfNeeded]);
+  }, [driverVehicleKind]);
   
   const playMatchSound = () => {
     void playMatchChimeSound();

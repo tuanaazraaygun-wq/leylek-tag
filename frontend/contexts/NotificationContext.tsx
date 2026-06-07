@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { router, type Href } from 'expo-router';
 import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import { upsertMuhabbetMessageFromPushData } from '../lib/muhabbetMessagesStorage';
+import { tryPlayDriverOfferSoundFromPushData } from '../utils/sound';
 import { refreshSessionFromServerForPush } from '../lib/muhabbetTripPushSessionPrefetch';
 
 /** Bildirim → AsyncStorage (await) → global UI event; navigate öncesi tamamlanmalı */
@@ -143,6 +144,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const notificationListener = useRef<any>();
   const responseListener = useRef<any>();
   const fcmOpenedUnsubRef = useRef<(() => void) | null>(null);
+  const fcmForegroundOfferUnsubRef = useRef<(() => void) | null>(null);
   const lastRoutingTapDedupeRef = useRef<string>('');
   const navigateCancelledRef = useRef(false);
 
@@ -172,7 +174,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     let cancelled = false;
 
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
-      void persistMuhabbetMessageFromNotificationData(notification?.request?.content?.data);
+      const pushData = notification?.request?.content?.data;
+      void persistMuhabbetMessageFromNotificationData(pushData);
+      void tryPlayDriverOfferSoundFromPushData(pushData);
       setNotification(notification);
     });
 
@@ -200,6 +204,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         fcmOpenedUnsubRef.current = messaging().onNotificationOpenedApp((remoteMessage) => {
           void applyRoutingNotificationTap(remoteMessage?.data);
         });
+        fcmForegroundOfferUnsubRef.current = messaging().onMessage((remoteMessage) => {
+          void tryPlayDriverOfferSoundFromPushData(remoteMessage?.data);
+        });
       } catch {
         /* RN Firebase messaging yok (Expo Go vb.) */
       }
@@ -216,6 +223,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (fcmOpenedUnsubRef.current) {
         fcmOpenedUnsubRef.current();
         fcmOpenedUnsubRef.current = null;
+      }
+      if (fcmForegroundOfferUnsubRef.current) {
+        fcmForegroundOfferUnsubRef.current();
+        fcmForegroundOfferUnsubRef.current = null;
       }
     };
   }, [applyRoutingNotificationTap]);

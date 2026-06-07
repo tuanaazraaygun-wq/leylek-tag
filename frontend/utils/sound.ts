@@ -302,8 +302,126 @@ export async function invalidateDriverOfferSoundCache(): Promise<void> {
   await unloadDriverNewOfferLuxuryTone();
 }
 
-/** DriverDashboard unmount — ses nesnesini boşalt */
+/** DriverDashboard unmount — ses nesnesini boşalt (seenIds korunur) */
 export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
   lastDriverOfferLuxuryAt = 0;
   await unloadDriverOfferSoundInternal();
+}
+
+// ── Sürücü teklif sesi — modül seviyesi dedupe (socket / push / poll) ──
+
+const driverOfferSoundSeenIds = new Set<string>();
+/** İlk poll öncesi socket/dispatch — hidrasyon sonrası tek chime */
+const driverOfferSoundPendingIds = new Set<string>();
+let driverOfferSoundHydrated = false;
+
+export function parseDriverOfferTagFromPushData(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const d = data as Record<string, unknown>;
+  const tagId = String(d.tag_id ?? '').trim();
+  if (!tagId) return null;
+  const t = String(d.type ?? '')
+    .trim()
+    .toLowerCase();
+  const detail = String(d.detail_type ?? '')
+    .trim()
+    .toLowerCase();
+  const offerTypes = new Set(['offer', 'new_offer', 'new_ride_request']);
+  if (offerTypes.has(t) || offerTypes.has(detail)) return tagId;
+  return null;
+}
+
+async function isPersistedDriverUser(): Promise<boolean> {
+  try {
+    const raw = await getPersistedUserRaw();
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { role?: string };
+    return String(parsed?.role ?? '')
+      .trim()
+      .toLowerCase() === 'driver';
+  } catch {
+    return false;
+  }
+}
+
+/** Socket / dispatch — poll hidrasyonu bitene kadar bekler (mevcut DriverDashboard davranışı) */
+export function notifyDriverNewOfferSoundIfNeeded(tagKey: string | null | undefined): void {
+  const id = String(tagKey || '').trim();
+  if (!id) return;
+  if (driverOfferSoundSeenIds.has(id)) return;
+  if (!driverOfferSoundHydrated) {
+    driverOfferSoundPendingIds.add(id);
+    return;
+  }
+  driverOfferSoundSeenIds.add(id);
+  void playDriverNewOfferLuxuryTone();
+}
+
+/**
+ * Foreground FCM / Expo push — hidrasyon beklemeden çalar (dashboard mount değilken de).
+ * App background/inactive ise playDriverNewOfferLuxuryTone zaten no-op.
+ */
+export function notifyDriverNewOfferSoundFromForegroundPush(tagKey: string | null | undefined): void {
+  const id = String(tagKey || '').trim();
+  if (!id) return;
+  if (driverOfferSoundSeenIds.has(id)) return;
+  driverOfferSoundSeenIds.add(id);
+  driverOfferSoundPendingIds.delete(id);
+  void playDriverNewOfferLuxuryTone();
+}
+
+/** driver/requests poll sonrası — ilk poll mevcut teklifleri sessiz işaretler */
+export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
+  const uniq = [
+    ...new Set(
+      orderedTagIds
+        .map((x) => String(x ?? '').trim())
+        .filter((tid) => Boolean(tid)),
+    ),
+  ];
+  if (!driverOfferSoundHydrated) {
+    const initialIds = new Set(uniq);
+    for (const tid of initialIds) {
+      driverOfferSoundSeenIds.add(tid);
+    }
+    for (const tid of initialIds) {
+      driverOfferSoundPendingIds.delete(tid);
+    }
+    driverOfferSoundHydrated = true;
+
+    if (driverOfferSoundPendingIds.size > 0) {
+      void playDriverNewOfferLuxuryTone();
+      for (const pid of driverOfferSoundPendingIds) {
+        driverOfferSoundSeenIds.add(pid);
+      }
+      driverOfferSoundPendingIds.clear();
+    }
+    return;
+  }
+  let anyNew = false;
+  for (const tid of uniq) {
+    if (!tid || driverOfferSoundSeenIds.has(tid)) continue;
+    driverOfferSoundSeenIds.add(tid);
+    anyNew = true;
+  }
+  if (anyNew) {
+    void playDriverNewOfferLuxuryTone();
+  }
+}
+
+/** Oturum kapanışı / logout (opsiyonel) */
+export function resetDriverOfferSoundGate(): void {
+  driverOfferSoundSeenIds.clear();
+  driverOfferSoundPendingIds.clear();
+  driverOfferSoundHydrated = false;
+}
+
+/** NotificationContext — foreground teklif push */
+export async function tryPlayDriverOfferSoundFromPushData(data: unknown): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  const tagId = parseDriverOfferTagFromPushData(data);
+  if (!tagId) return;
+  if (!(await isPersistedDriverUser())) return;
+  notifyDriverNewOfferSoundFromForegroundPush(tagId);
 }
