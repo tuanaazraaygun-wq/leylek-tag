@@ -13644,20 +13644,19 @@ function PassengerDashboard({
           {destinationPickerPhase === 'map' ? (
             <>
               {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
-                <View style={styles.destinationPickerMapSlot} pointerEvents="box-none">
+                <View style={styles.destinationPickerMapSlotInteractive}>
                   <DestinationPickerMapView
                     key="dest-map-interactive"
                     ref={destinationPickerMapRef}
-                    style={styles.destinationPickerMapFill}
+                    style={styles.destinationPickerMapFillInteractive}
                     provider={DestinationPickerMapProvider}
                     mapType="standard"
                     showsUserLocation={!!userLocation}
                     showsMyLocationButton={false}
-                    pointerEvents="auto"
-                    scrollEnabled
-                    zoomEnabled
-                    pitchEnabled
-                    rotateEnabled
+                    scrollEnabled={true}
+                    zoomEnabled={true}
+                    pitchEnabled={true}
+                    rotateEnabled={true}
                     initialRegion={
                       destinationPickerMapBootRegionRef.current ?? {
                         latitude: destinationPickerMapLatResolved,
@@ -13672,9 +13671,14 @@ function PassengerDashboard({
               ) : null}
               {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
                 <View style={styles.destinationCrosshairOverlay} pointerEvents="none">
-                  <View style={styles.destinationCrosshairPinShift}>
-                    <View style={styles.destinationPinMarkerWrap} collapsable={false}>
+                  <View style={styles.destinationCrosshairPinShift} pointerEvents="none">
+                    <View
+                      style={styles.destinationPinMarkerWrap}
+                      collapsable={false}
+                      pointerEvents="none"
+                    >
                       <Animated.View
+                        pointerEvents="none"
                         style={[
                           styles.destinationPinRing,
                           {
@@ -13684,6 +13688,7 @@ function PassengerDashboard({
                         ]}
                       />
                       <Animated.View
+                        pointerEvents="none"
                         style={[
                           styles.destinationPinRing,
                           styles.destinationPinRingOuter,
@@ -13693,7 +13698,7 @@ function PassengerDashboard({
                           },
                         ]}
                       />
-                      <View style={styles.destinationPinCore}>
+                      <View style={styles.destinationPinCore} pointerEvents="none">
                         <Ionicons name="location" size={36} color="#FFF" />
                       </View>
                     </View>
@@ -25906,6 +25911,15 @@ const styles = StyleSheet.create({
   destinationPickerMapFill: {
     ...StyleSheet.absoluteFillObject,
   },
+  destinationPickerMapSlotInteractive: {
+    flex: 1,
+    minHeight: 0,
+    position: 'relative',
+    zIndex: 0,
+  },
+  destinationPickerMapFillInteractive: {
+    flex: 1,
+  },
   destinationModalTopFade: {
     position: 'absolute',
     top: 0,
@@ -25964,14 +25978,19 @@ const styles = StyleSheet.create({
     textShadowRadius: 8,
   },
   destinationCrosshairOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 118,
+    height: 118,
+    marginLeft: -59,
+    marginTop: -59,
     zIndex: 4,
     pointerEvents: 'none',
   },
   destinationCrosshairPinShift: {
     marginTop: -52,
+    pointerEvents: 'none',
   },
   destinationMapConfirmWrap: {
     position: 'absolute',
