@@ -833,6 +833,17 @@ function normalizeLocationCoords(
   return { latitude, longitude };
 }
 
+/** Route picker map verify — geçersiz / 0,0 / TR dışı koordinatları reddet */
+function isUsableRoutePickerCoord(latitude: number, longitude: number): boolean {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  if (Math.abs(latitude) < 1e-6 && Math.abs(longitude) < 1e-6) return false;
+  if (latitude < 35 || latitude > 43 || longitude < 25 || longitude > 46) return false;
+  return true;
+}
+
+const ROUTE_PICKER_COORD_INVALID_MSG =
+  'Bu adresin konumu net bulunamadı. Lütfen listeden başka bir sonuç seçin veya daha detaylı yazın.';
+
 /** `trip_force_ended` sonrası active-tag / check-end polling eski eşleşmeyi geri getirmesin */
 const forceEndLockRef = { current: false };
 let forceEndUnlockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -11807,7 +11818,10 @@ function PassengerDashboard({
   ) => {
     void tapButtonHaptic();
     Keyboard.dismiss();
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    if (!isUsableRoutePickerCoord(latitude, longitude)) {
+      appAlert('Adres', ROUTE_PICKER_COORD_INVALID_MSG, [{ text: 'Tamam' }]);
+      return;
+    }
     if (!DestinationPickerMapView || !isNativeGoogleMapsSupported()) {
       appAlert(
         'Harita',
@@ -11838,8 +11852,21 @@ function PassengerDashboard({
     longitude: number;
   }) => {
     void tapButtonHaptic();
-    if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
-    openDestinationMapToVerify(place.address, place.latitude, place.longitude);
+    const lat = place.latitude;
+    const lng = place.longitude;
+    if (!isUsableRoutePickerCoord(lat, lng)) {
+      appAlert('Adres', ROUTE_PICKER_COORD_INVALID_MSG, [{ text: 'Tamam' }]);
+      return;
+    }
+    try {
+      console.log(
+        'ROUTE_PICKER_DEST_VERIFY_FROM_SEARCH',
+        JSON.stringify({ address: place.address, lat, lng }),
+      );
+    } catch {
+      /* noop */
+    }
+    openDestinationMapToVerify(place.address, lat, lng);
   };
 
   /** Faz 1D-A: arama ile alınış bölgesi — haritada doğrulama */
