@@ -63,6 +63,30 @@ function mapPlacesBackendJsonToPlaceResult(r: PlacesBackendHit): PlaceResult {
   };
 }
 
+const NON_GOOGLE_SELECTION_GEOCODE_FAIL =
+  'Bu adresin konumu net bulunamadı. Daha detaylı yazın veya başka sonuç seçin.';
+
+/** Non-Google seçim geocode sonucu — 0,0 / TR dışı reddedilir */
+function isUsableGeocodedSelectionCoord(latitude: number, longitude: number): boolean {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  if (Math.abs(latitude) < 1e-6 && Math.abs(longitude) < 1e-6) return false;
+  if (latitude < 35 || latitude > 43 || longitude < 25 || longitude > 46) return false;
+  return true;
+}
+
+function buildNonGoogleSelectionGeocodeQuery(
+  item: PlaceResult,
+  formatted: { main: string; secondary: string },
+  cityScope: string,
+): string {
+  const display = String(item.display_name ?? '').trim();
+  if (display.length >= 3) return display;
+  const ct = cityScope.trim();
+  const parts = [formatted.main, formatted.secondary, ct, 'Türkiye'].filter(Boolean);
+  const joined = parts.join(', ').replace(/,\s*,/g, ',').trim();
+  return joined.length >= 3 ? joined : formatted.main || ct || 'Türkiye';
+}
+
 // Türkiye şehirlerinin koordinatları ve bounding box'ları
 const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } = {
   'İstanbul': { lat: 41.0082, lng: 28.9784, bbox: '28.5,40.8,29.9,41.7' },
@@ -2618,24 +2642,46 @@ export default function PlacesAutocomplete({
         return;
       }
 
-      const latitude = parseFloat(item.lat);
-      const longitude = parseFloat(item.lon);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        setPredictionActionError('Bu konum seçilemedi. Başka bir sonuç deneyin.');
+      const key = getGoogleMapsApiKey();
+      if (!key) {
+        setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
         return;
       }
 
-      setQuery(formatted.main);
-      setShowPredictions(false);
-      setShowPopular(false);
-      setPredictions([]);
+      const cityKeyHome = resolveCityDataKey(city);
+      const cityLabel = cityKeyHome || city.trim();
+      const geocodeQuery = buildNonGoogleSelectionGeocodeQuery(item, formatted, cityLabel);
 
-      onPlaceSelected({
-        address: item.display_name,
-        latitude,
-        longitude,
-      });
-      dismissKeyboardAfterSelection();
+      setLoading(true);
+      try {
+        const gBias = buildGooglePlacesBias(
+          cityKeyHome,
+          null,
+          biasLatitude,
+          biasLongitude,
+          strictCityBounds,
+        );
+        const geocoded = await googleGeocodeText(geocodeQuery, key, gBias);
+        const hit = geocoded[0];
+        if (!hit || !isUsableGeocodedSelectionCoord(hit.lat, hit.lng)) {
+          setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
+          return;
+        }
+        setQuery(formatted.main);
+        setShowPredictions(false);
+        setShowPopular(false);
+        setPredictions([]);
+        onPlaceSelected({
+          address: hit.formattedAddress || item.display_name,
+          latitude: hit.lat,
+          longitude: hit.lng,
+        });
+        dismissKeyboardAfterSelection();
+      } catch {
+        setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
+      } finally {
+        setLoading(false);
+      }
     } finally {
       selectionInFlightRef.current = false;
       setSelectingPlaceId(null);
