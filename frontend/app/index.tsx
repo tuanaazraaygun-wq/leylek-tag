@@ -8429,6 +8429,13 @@ function PassengerDashboard({
   const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
 
   const destinationPickerMapRef = useRef<any>(null);
+  /** Map phase: mount başına tek seferlik initialRegion — canlı state re-render ile iOS kilitlenmesin */
+  const destinationPickerMapBootRegionRef = useRef<{
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null>(null);
   /** Arama/map seçimi sonrası GPS tick'lerinin destinationPickerPin'i ezmesini engeller */
   const destinationPickerPinUserLockRef = useRef(false);
   const destinationSnapshotOnPickerOpenRef = useRef<{
@@ -11769,6 +11776,30 @@ function PassengerDashboard({
   };
 
   /** Arama: öneri → haritada doğrulama (crosshair + Tam burası); doğrudan commit yok */
+  const setDestinationPickerMapBootRegion = (latitude: number, longitude: number) => {
+    destinationPickerMapBootRegionRef.current = {
+      latitude,
+      longitude,
+      latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+      longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+    };
+  };
+
+  /** Map mount sonrası boot region'a tek animasyon — ref hazır değilse kısa fallback */
+  const animateDestinationPickerMapToBootRegionOnce = () => {
+    const region = destinationPickerMapBootRegionRef.current;
+    if (!region) return;
+    const run = () => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(region, 420);
+      } catch (_) {}
+    };
+    requestAnimationFrame(() => {
+      requestAnimationFrame(run);
+    });
+    setTimeout(run, 120);
+  };
+
   const openDestinationMapToVerify = (
     _address: string,
     latitude: number,
@@ -11789,27 +11820,15 @@ function PassengerDashboard({
     setDestination(null);
     setRoutePickerStep('destination');
     setDestinationAwaitingMapTap(true);
-    setDestinationPickerPhase('map');
     destinationPickerPinUserLockRef.current = true;
 
     const lat = latitude;
     const lng = longitude;
+    setDestinationPickerMapBootRegion(lat, lng);
     setDestinationPickerPin({ latitude: lat, longitude: lng });
     destinationPickerMapCenterRef.current = { latitude: lat, longitude: lng };
-
-    requestAnimationFrame(() => {
-      try {
-        destinationPickerMapRef.current?.animateToRegion?.(
-          {
-            latitude: lat,
-            longitude: lng,
-            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-          },
-          420,
-        );
-      } catch (_) {}
-    });
+    setDestinationPickerPhase('map');
+    animateDestinationPickerMapToBootRegionOnce();
   };
 
   /** Arama: seçilen öneri → harita doğrulama fazı; fiyat akışı Tam burası sonrası */
@@ -11848,9 +11867,6 @@ function PassengerDashboard({
       return;
     }
 
-    setDestinationPickerPhase('map');
-    destinationPickerPinUserLockRef.current = true;
-
     const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
     const lat =
       userLocation?.latitude ??
@@ -11861,20 +11877,12 @@ function PassengerDashboard({
       cityLL?.longitude ??
       DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
 
+    destinationPickerPinUserLockRef.current = true;
+    setDestinationPickerMapBootRegion(lat, lng);
     setDestinationPickerPin({ latitude: lat, longitude: lng });
-    requestAnimationFrame(() => {
-      try {
-        destinationPickerMapRef.current?.animateToRegion?.(
-          {
-            latitude: lat,
-            longitude: lng,
-            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-          },
-          420,
-        );
-      } catch (_) {}
-    });
+    destinationPickerMapCenterRef.current = { latitude: lat, longitude: lng };
+    setDestinationPickerPhase('map');
+    animateDestinationPickerMapToBootRegionOnce();
   };
 
   /** Destination adımı: arama/öneri olmadan GPS/pickup merkezine harita açma */
@@ -12094,6 +12102,7 @@ function PassengerDashboard({
   useEffect(() => {
     if (!showDestinationPicker) {
       destinationPickerPinUserLockRef.current = false;
+      destinationPickerMapBootRegionRef.current = null;
       setDestinationPickerPin(null);
       return;
     }
@@ -13649,12 +13658,14 @@ function PassengerDashboard({
                     zoomEnabled
                     pitchEnabled
                     rotateEnabled
-                    initialRegion={{
-                      latitude: destinationPickerMapLatResolved,
-                      longitude: destinationPickerMapLngResolved,
-                      latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-                      longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-                    }}
+                    initialRegion={
+                      destinationPickerMapBootRegionRef.current ?? {
+                        latitude: destinationPickerMapLatResolved,
+                        longitude: destinationPickerMapLngResolved,
+                        latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+                        longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+                      }
+                    }
                     onRegionChangeComplete={handleDestinationPickerRegionComplete}
                   />
                 </View>
