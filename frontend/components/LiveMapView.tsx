@@ -5838,7 +5838,7 @@ export default function LiveMapView({
 
       {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF + sol üst Ara (48x48) */}
       {MapView ? (
-        <View style={styles.mapSlot}>
+        <View style={styles.mapSlot} pointerEvents="box-none">
         <MapView
           key={isDriver ? `driver-map-${String(tagId ?? 'active')}` : 'map-default'}
           ref={mapRef}
@@ -6671,12 +6671,13 @@ export default function LiveMapView({
       ) : null}
 
       {/* ALT BUTONLAR */}
-      <View style={styles.bottomPanel}>
+      <View style={styles.bottomPanel} pointerEvents="box-none">
         <View
           style={[
             styles.bottomGradient,
             !driverRideUiModern ? { paddingBottom: 18 + Math.max(insets.bottom, 0) } : null,
           ]}
+          pointerEvents="auto"
         >
           {driverRideUiModern ? (
             <View
@@ -6684,6 +6685,7 @@ export default function LiveMapView({
                 styles.driverRideBottomSheet,
                 { paddingBottom: 14 + Math.max(insets.bottom, 10) },
               ]}
+              pointerEvents="auto"
             >
               {onCall ? (
                 <TouchableOpacity
@@ -6945,7 +6947,7 @@ export default function LiveMapView({
           {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — yolcu / klasik sürücü */}
           {driverRideUiModern ? null : MapView && onCall && !driverNavImmersive ? (
             <View style={styles.tripActionBar} pointerEvents="box-none">
-              <View style={styles.tripActionBarCol}>
+              <View style={styles.tripActionBarCol} pointerEvents="auto">
                 {isDriver ? (
                   <Text style={styles.driverTripCallTitle} numberOfLines={1}>
                     Yolcuyu Ara
@@ -7093,7 +7095,7 @@ export default function LiveMapView({
 
           {/* AI / QR / Zorla — yolcu ve klasik sürücü */}
           {driverRideUiModern ? null : !driverNavImmersive ? (
-          <View style={styles.actionButtons}>
+          <View style={styles.actionButtons} pointerEvents="auto">
             {onOpenLeylekZekaSupport ? (
               <Pressable
                 style={({ pressed }) => [styles.tripAiFabWrap, pressed && { opacity: 0.92 }]}
@@ -7572,6 +7574,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     position: 'relative',
+    zIndex: 1,
   },
   map: { flex: 1 },
   navManeuverBanner: {
@@ -7861,6 +7864,11 @@ const styles = StyleSheet.create({
   tripActionBar: {
     width: '100%',
     marginBottom: 10,
+    ...Platform.select({
+      ios: { zIndex: 56 },
+      android: { elevation: 34 },
+      default: {},
+    }),
   },
   tripActionBarCol: {
     width: '100%',
@@ -8558,8 +8566,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 30,
-    elevation: 28,
+    ...Platform.select({
+      ios: { zIndex: 55 },
+      android: { zIndex: 30, elevation: 32 },
+      default: { zIndex: 30 },
+    }),
   },
   bottomGradient: {
     paddingHorizontal: 16,
@@ -8768,6 +8779,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     alignItems: 'flex-end',
+    ...Platform.select({
+      ios: { zIndex: 56 },
+      android: { elevation: 34 },
+      default: {},
+    }),
   },
   tripAiFabWrap: {
     alignItems: 'center',

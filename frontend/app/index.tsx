@@ -229,6 +229,17 @@ const DRIVER_RESUME_STATUSES = [
 
 const MATCH_RESUME_UI_RESET_KEY = 'leylek_match_resume_ui_reset_v1';
 
+/** QR modal kapanışı ile rating açılışını ayır — iOS çift Modal aynı frame'de dokunmayı yutmasın */
+function scheduleRatingModalAfterQrDismiss(openRating: () => void): void {
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(openRating);
+    });
+    return;
+  }
+  setTimeout(openRating, 300);
+}
+
 function _normTagStatus(st: unknown): string {
   return String(st ?? '')
     .trim()
@@ -8338,11 +8349,17 @@ function PassengerDashboard({
     (showRating: boolean, rateUserId: string, rateUserName: string) => {
       setShowQRModal(false);
       if (showRating) {
-        setRatingModalData({
-          visible: true,
-          tagId: activeTag?.id || '',
-          rateUserId: activeTag?.driver_id || rateUserId || '',
-          rateUserName: rateUserName || displayFirstName(activeTag?.driver_name, 'Sürücü'),
+        const tagId = activeTag?.id || '';
+        const resolvedRateUserId = activeTag?.driver_id || rateUserId || '';
+        const resolvedRateUserName =
+          rateUserName || displayFirstName(activeTag?.driver_name, 'Sürücü');
+        scheduleRatingModalAfterQrDismiss(() => {
+          setRatingModalData({
+            visible: true,
+            tagId,
+            rateUserId: resolvedRateUserId,
+            rateUserName: resolvedRateUserName,
+          });
         });
       }
       setActiveTag(null);
@@ -9564,16 +9581,15 @@ function PassengerDashboard({
     onShowRatingModal: (data) => {
       console.log('⭐ YOLCU - PUANLAMA MODALI AÇ (Socket):', data);
       if ((data as { should_rate?: boolean }).should_rate !== true) return;
-      // QR modal'ı kapat
       setShowQRModal(false);
-      // Puanlama modalını aç
-      setRatingModalData({
-        visible: true,
-        tagId: data.tag_id,
-        rateUserId: data.rate_user_id,
-        rateUserName: data.rate_user_name
+      scheduleRatingModalAfterQrDismiss(() => {
+        setRatingModalData({
+          visible: true,
+          tagId: data.tag_id,
+          rateUserId: data.rate_user_id,
+          rateUserName: data.rate_user_name,
+        });
       });
-      // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
     onBoardingConfirmed: (data) => {
       const tid = data?.tag_id;
@@ -15992,16 +16008,15 @@ function DriverDashboard({
     onShowRatingModal: (data) => {
       console.log('⭐ ŞOFÖR - PUANLAMA MODALI AÇ (Socket):', data);
       if ((data as { should_rate?: boolean }).should_rate !== true) return;
-      // QR modal'ı kapat
       setShowQRModal(false);
-      // Puanlama modalını aç
-      setRatingModalData({
-        visible: true,
-        tagId: data.tag_id,
-        rateUserId: data.rate_user_id,
-        rateUserName: data.rate_user_name
+      scheduleRatingModalAfterQrDismiss(() => {
+        setRatingModalData({
+          visible: true,
+          tagId: data.tag_id,
+          rateUserId: data.rate_user_id,
+          rateUserName: data.rate_user_name,
+        });
       });
-      // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
     onBoardingConfirmed: (data) => {
       const tid = data?.tag_id;
@@ -19275,18 +19290,21 @@ function DriverDashboard({
         otherLatitude={activeTag?.passenger_latitude}
         otherLongitude={activeTag?.passenger_longitude}
         onComplete={(showRating, rateUserId, rateUserName) => {
-          // Yolculuk tamamlandı
           setShowQRModal(false);
           if (showRating) {
-            // Puanlama modalını aç
-            setRatingModalData({
-              visible: true,
-              tagId: activeTag?.id || '',
-              rateUserId: activeTag?.passenger_id || '',
-              rateUserName: rateUserName || displayFirstName(activeTag?.passenger_name, 'Yolcu')
+            const tagId = activeTag?.id || '';
+            const resolvedRateUserId = activeTag?.passenger_id || rateUserId || '';
+            const resolvedRateUserName =
+              rateUserName || displayFirstName(activeTag?.passenger_name, 'Yolcu');
+            scheduleRatingModalAfterQrDismiss(() => {
+              setRatingModalData({
+                visible: true,
+                tagId,
+                rateUserId: resolvedRateUserId,
+                rateUserName: resolvedRateUserName,
+              });
             });
           }
-          // Sayfayı yenile
           setActiveTag(null);
         }}
       />

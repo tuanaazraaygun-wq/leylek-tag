@@ -130,6 +130,8 @@ export default function RatingModal({
             key={star}
             onPress={() => setRating(star)}
             style={styles.starBtn}
+            hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
+            activeOpacity={0.75}
           >
             <Text style={[styles.star, star <= rating && styles.starActive]}>
               ★
@@ -141,7 +143,12 @@ export default function RatingModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      {...(Platform.OS === 'ios' ? { presentationStyle: 'overFullScreen' as const } : {})}
+    >
       <View style={styles.overlay}>
         <View style={styles.container}>
           {submitted ? (
@@ -168,6 +175,8 @@ export default function RatingModal({
                 style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
                 onPress={handleSubmitRating}
                 disabled={loading}
+                hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                activeOpacity={0.85}
               >
                 {loading ? (
                   <ActivityIndicator color="#22D3EE" />
