@@ -11714,20 +11714,59 @@ function PassengerDashboard({
     }
   };
 
-  /** Arama: seçilen önerinin lat/lng doğrudan hedef olarak kesinleşir; modal kapanır */
+  /** Arama: öneri → haritada doğrulama (crosshair + Tam burası); doğrudan commit yok */
+  const openDestinationMapToVerify = (
+    _address: string,
+    latitude: number,
+    longitude: number,
+  ) => {
+    void tapButtonHaptic();
+    Keyboard.dismiss();
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    if (!DestinationPickerMapView || !isNativeGoogleMapsSupported()) {
+      appAlert(
+        'Harita',
+        'Bu cihazda harita doğrulaması kullanılamıyor. Lütfen listeden adres seçmeye devam edin.',
+        [{ text: 'Tamam' }],
+      );
+      return;
+    }
+
+    setDestination(null);
+    setRoutePickerStep('destination');
+    setDestinationAwaitingMapTap(true);
+    setDestinationPickerPhase('map');
+    destinationPickerPinUserLockRef.current = true;
+
+    const lat = latitude;
+    const lng = longitude;
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
+    destinationPickerMapCenterRef.current = { latitude: lat, longitude: lng };
+
+    requestAnimationFrame(() => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+          },
+          420,
+        );
+      } catch (_) {}
+    });
+  };
+
+  /** Arama: seçilen öneri → harita doğrulama fazı; fiyat akışı Tam burası sonrası */
   const handleDestinationAreaFromSearch = (place: {
     address: string;
     latitude: number;
     longitude: number;
   }) => {
-    __paxFn('tapButtonHaptic', tapButtonHaptic);
-    __paxFn('commitDestinationFromMap', commitDestinationFromMap);
     void tapButtonHaptic();
     if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
-    void commitDestinationFromMap(place.address, place.latitude, place.longitude, {
-      autoOpenTagPriceFlow: true,
-      historySource: 'search',
-    });
+    openDestinationMapToVerify(place.address, place.latitude, place.longitude);
   };
 
   /** Faz 1D-A: arama ile alınış bölgesi — haritada doğrulama */
@@ -11784,43 +11823,14 @@ function PassengerDashboard({
     });
   };
 
-  /** Faz 1B-3: arama beklemeden doğrudan harita ile hedef seçimi */
+  /** Destination adımı: arama/öneri olmadan GPS/pickup merkezine harita açma */
   const openDestinationMapPickerDirect = () => {
     void tapButtonHaptic();
-    if (!DestinationPickerMapView || !isNativeGoogleMapsSupported()) return;
-
-    setDestination(null);
-    setDestinationAwaitingMapTap(true);
-    setDestinationPickerPhase('map');
-    destinationPickerPinUserLockRef.current = true;
-
-    const pickupResolved = resolvePassengerPickupCoords(passengerPickup, userLocation);
-    const cityLL = getRegisteredCityCenter(passengerAddressSearchCityScope);
-    const lat =
-      pickupResolved?.latitude ??
-      userLocation?.latitude ??
-      cityLL?.latitude ??
-      DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
-    const lng =
-      pickupResolved?.longitude ??
-      userLocation?.longitude ??
-      cityLL?.longitude ??
-      DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
-
-    setDestinationPickerPin({ latitude: lat, longitude: lng });
-    requestAnimationFrame(() => {
-      try {
-        destinationPickerMapRef.current?.animateToRegion?.(
-          {
-            latitude: lat,
-            longitude: lng,
-            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
-          },
-          420,
-        );
-      } catch (_) {}
-    });
+    appAlert(
+      'Önce adres seçin',
+      'Önce cadde, sokak veya mekan adı yazın; ardından haritada tam ineceğiniz noktayı seçin.',
+      [{ text: 'Tamam' }],
+    );
   };
 
   const confirmPassengerPickupFromGps = async () => {
@@ -11910,10 +11920,7 @@ function PassengerDashboard({
 
   const selectRecentDestination = (point: RouteHistoryPoint) => {
     void tapButtonHaptic();
-    void commitDestinationFromMap(point.address, point.latitude, point.longitude, {
-      autoOpenTagPriceFlow: true,
-      historySource: 'recent',
-    });
+    openDestinationMapToVerify(point.address, point.latitude, point.longitude);
   };
 
   const selectSavedPickup = (saved: SavedAddress) => {
@@ -11936,10 +11943,7 @@ function PassengerDashboard({
 
   const selectSavedDestination = (saved: SavedAddress) => {
     void tapButtonHaptic();
-    void commitDestinationFromMap(saved.address, saved.latitude, saved.longitude, {
-      autoOpenTagPriceFlow: true,
-      historySource: 'saved',
-    });
+    openDestinationMapToVerify(saved.address, saved.latitude, saved.longitude);
   };
 
   const handleSavePickupAsFavorite = async (label: 'home' | 'work') => {
@@ -13582,10 +13586,11 @@ function PassengerDashboard({
               mapType="standard"
               showsUserLocation={!!userLocation}
               showsMyLocationButton={false}
-              scrollEnabled
-              zoomEnabled
-              pitchEnabled={Platform.OS !== 'android'}
-              rotateEnabled={Platform.OS !== 'android'}
+              pointerEvents={destinationPickerPhase === 'search' ? 'none' : 'auto'}
+              scrollEnabled={destinationPickerPhase === 'map'}
+              zoomEnabled={destinationPickerPhase === 'map'}
+              pitchEnabled={Platform.OS !== 'android' && destinationPickerPhase === 'map'}
+              rotateEnabled={Platform.OS !== 'android' && destinationPickerPhase === 'map'}
               initialRegion={{
                 latitude: destinationPickerMapLatResolved,
                 longitude: destinationPickerMapLngResolved,
@@ -14197,12 +14202,14 @@ function PassengerDashboard({
                 </>
               ) : (
                 <>
-                  <Text style={styles.destinationMapHintTitle}>
-                    Varış noktasını doğrulayın
-                  </Text>
-                  <Text style={styles.destinationMapHintMinimal}>
-                    Haritayı gitmek istediğiniz noktanın üzerine getirin.
-                  </Text>
+                  <View style={styles.destinationMapVerifyHintCard}>
+                    <Text style={styles.destinationMapVerifyHintTitle}>
+                      Tam ineceğiniz yeri seçin
+                    </Text>
+                    <Text style={styles.destinationMapVerifyHintBody}>
+                      Haritayı tam inmek istediğiniz noktaya getirin ve Tam burası'na basın.
+                    </Text>
+                  </View>
                 </>
               )}
               <TouchableOpacity
@@ -25873,6 +25880,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 10,
     alignItems: 'center',
+    ...Platform.select({
+      ios: { zIndex: 40 },
+      android: { elevation: 18 },
+      default: {},
+    }),
+  },
+  destinationMapVerifyHintCard: {
+    alignSelf: 'stretch',
+    marginBottom: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    borderTopColor: 'rgba(34, 211, 238, 0.55)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  destinationMapVerifyHintTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#22D3EE',
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  destinationMapVerifyHintBody: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(186, 201, 222, 0.92)',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   destinationMapHintMinimal: {
     fontSize: 13,
@@ -26400,8 +26443,8 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(30, 58, 95, 0.5)',
     zIndex: 11,
     ...Platform.select({
-      ios: { zIndex: 31 },
-      android: { elevation: 11 },
+      ios: { zIndex: 42 },
+      android: { elevation: 14 },
       default: {},
     }),
   },
