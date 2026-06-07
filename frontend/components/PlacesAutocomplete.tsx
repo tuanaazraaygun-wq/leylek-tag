@@ -64,7 +64,7 @@ function mapPlacesBackendJsonToPlaceResult(r: PlacesBackendHit): PlaceResult {
 }
 
 const NON_GOOGLE_SELECTION_GEOCODE_FAIL =
-  'Bu adresin konumu net bulunamadı. Daha detaylı yazın veya başka sonuç seçin.';
+  'Bu sokak konumu net bulunamadı. Lütfen mahalle/ilçe ile daha detaylı yazın veya Haritadan seç\'i kullanın.';
 
 /** Non-Google seçim geocode sonucu — 0,0 / TR dışı reddedilir */
 function isUsableGeocodedSelectionCoord(latitude: number, longitude: number): boolean {
@@ -85,23 +85,6 @@ function buildNonGoogleSelectionGeocodeQuery(
   const parts = [formatted.main, formatted.secondary, ct, 'Türkiye'].filter(Boolean);
   const joined = parts.join(', ').replace(/,\s*,/g, ',').trim();
   return joined.length >= 3 ? joined : formatted.main || ct || 'Türkiye';
-}
-
-function buildNonGoogleSelectionAddress(
-  item: PlaceResult,
-  formatted: { main: string; secondary: string },
-): string {
-  const display = String(item.display_name ?? '').trim();
-  if (display.length >= 2) return display;
-  const fromParts = [formatted.main, formatted.secondary].filter((p) => p && p.trim()).join(', ');
-  return fromParts || formatted.main || 'Seçilen konum';
-}
-
-function parseNonGoogleListCoords(item: PlaceResult): { lat: number; lng: number } | null {
-  const lat = parseFloat(item.lat);
-  const lng = parseFloat(item.lon);
-  if (!isUsableGeocodedSelectionCoord(lat, lng)) return null;
-  return { lat, lng };
 }
 
 // Türkiye şehirlerinin koordinatları ve bounding box'ları
@@ -2646,22 +2629,6 @@ export default function PlacesAutocomplete({
         dismissKeyboardAfterSelection();
       };
 
-      const tryNonGoogleListCoordFallback = (): boolean => {
-        const coords = parseNonGoogleListCoords(item);
-        if (!coords) return false;
-        const address = buildNonGoogleSelectionAddress(item, formatted);
-        try {
-          console.log(
-            'ROUTE_PICKER_SUGGESTION_GEOCODE_FALLBACK_LIST_COORD',
-            JSON.stringify({ address, lat: coords.lat, lng: coords.lng }),
-          );
-        } catch {
-          /* noop */
-        }
-        finishNonGoogleSelection(address, coords.lat, coords.lng);
-        return true;
-      };
-
       if (item.source === 'google' && item.google_place_id) {
         const key = getGoogleMapsApiKey();
         if (!key) {
@@ -2691,8 +2658,7 @@ export default function PlacesAutocomplete({
 
       const key = getGoogleMapsApiKey();
       if (!key) {
-        if (tryNonGoogleListCoordFallback()) return;
-        setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
+        setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
         return;
       }
 
@@ -2715,10 +2681,8 @@ export default function PlacesAutocomplete({
           finishNonGoogleSelection(hit.formattedAddress || item.display_name, hit.lat, hit.lng);
           return;
         }
-        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
       } catch {
-        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
       } finally {
         setLoading(false);
