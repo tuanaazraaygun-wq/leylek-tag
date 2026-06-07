@@ -240,6 +240,19 @@ function scheduleRatingModalAfterQrDismiss(openRating: () => void): void {
   setTimeout(openRating, 300);
 }
 
+/** Biniş scan: socket/state commit sonrası kamera teardown — verify in-flight ile yarışmayı azaltır */
+function schedulePassengerBoardingScanClose(setVisible: (v: boolean) => void): void {
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setVisible(false);
+      });
+    });
+    return;
+  }
+  setTimeout(() => setVisible(false), 300);
+}
+
 function _normTagStatus(st: unknown): string {
   return String(st ?? '')
     .trim()
@@ -9611,6 +9624,7 @@ function PassengerDashboard({
       });
       setPassengerBoardingPromptVisible(false);
       setPassengerBoardingReminderBannerVisible(false);
+      schedulePassengerBoardingScanClose(setPassengerBoardingScanVisible);
     },
     onPassengerDestinationNavHint: (data) => {
       const tid = data?.tag_id ? String(data.tag_id) : '';

@@ -53,6 +53,8 @@ export default function BoardingScanModal({
   const verifiedClosingRef = useRef(false);
   const verifyInFlightRef = useRef(false);
   const scannedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -67,10 +69,13 @@ export default function BoardingScanModal({
 
   useEffect(() => {
     if (!visible) {
-      setCameraReady(false);
-      closingRef.current = false;
-      verifiedClosingRef.current = false;
-      verifyInFlightRef.current = false;
+      closingRef.current = true;
+      if (mountedRef.current) {
+        setCameraReady(false);
+      }
+      if (!verifyInFlightRef.current) {
+        verifiedClosingRef.current = false;
+      }
       return;
     }
     setCameraSessionKey((k) => k + 1);
@@ -88,7 +93,11 @@ export default function BoardingScanModal({
   }, [visible, hasPermission?.granted, requestPermission]);
 
   const canMutateScanState = useCallback(
-    () => mountedRef.current && !closingRef.current && !verifiedClosingRef.current,
+    () =>
+      mountedRef.current &&
+      visibleRef.current &&
+      !closingRef.current &&
+      !verifiedClosingRef.current,
     [],
   );
 
@@ -118,7 +127,9 @@ export default function BoardingScanModal({
       try {
         const tok = await waitForPersistedAccessToken();
         if (!tok?.trim()) {
-          appAlert('Oturum', 'Biniş doğrulamak için yeniden giriş yapın.');
+          if (!closingRef.current) {
+            appAlert('Oturum', 'Biniş doğrulamak için yeniden giriş yapın.');
+          }
           return;
         }
         const res = await fetch(`${API_BASE_URL}/qr/verify-boarding`, {
@@ -139,11 +150,15 @@ export default function BoardingScanModal({
         try {
           json = raw ? JSON.parse(raw) : {};
         } catch {
-          appAlert('Hata', 'Sunucu yanıtı okunamadı');
+          if (!closingRef.current) {
+            appAlert('Hata', 'Sunucu yanıtı okunamadı');
+          }
           return;
         }
         if (res.status === 401) {
-          appAlert('Oturum', json.detail || 'Oturum süresi dolmuş olabilir; yeniden giriş yapın.');
+          if (!closingRef.current) {
+            appAlert('Oturum', json.detail || 'Oturum süresi dolmuş olabilir; yeniden giriş yapın.');
+          }
           return;
         }
         if (json.success) {
@@ -154,7 +169,9 @@ export default function BoardingScanModal({
           console.log('BOARDING_SCAN_SUCCESS', { tag_id, used_prop_fallback: !rawTag && !!propTag });
           verifiedClosingRef.current = true;
           closingRef.current = true;
-          setCameraReady(false);
+          if (canMutateScanState()) {
+            setCameraReady(false);
+          }
           const closeModal = await Promise.resolve(
             onVerified({
               tag_id,
@@ -170,6 +187,9 @@ export default function BoardingScanModal({
             closingRef.current = false;
           }
         } else {
+          if (closingRef.current) {
+            return;
+          }
           const detail = (json.detail || '').toLowerCase();
           const expiredOrInvalid =
             detail.includes('süresi dolmuş') ||
@@ -183,7 +203,9 @@ export default function BoardingScanModal({
           }
         }
       } catch {
-        appAlert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
+        if (!closingRef.current) {
+          appAlert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
+        }
       } finally {
         verifyInFlightRef.current = false;
         if (!canMutateScanState()) {
@@ -214,6 +236,7 @@ export default function BoardingScanModal({
   const onBarcodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
       if (
+        !visibleRef.current ||
         !cameraReady ||
         scanned ||
         processing ||
@@ -268,7 +291,12 @@ export default function BoardingScanModal({
                 facing="back"
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onCameraReady={() => {
-                  if (!mountedRef.current || closingRef.current || verifiedClosingRef.current) {
+                  if (
+                    !mountedRef.current ||
+                    !visibleRef.current ||
+                    closingRef.current ||
+                    verifiedClosingRef.current
+                  ) {
                     return;
                   }
                   setCameraReady(true);
