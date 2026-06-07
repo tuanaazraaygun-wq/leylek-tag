@@ -87,6 +87,23 @@ function buildNonGoogleSelectionGeocodeQuery(
   return joined.length >= 3 ? joined : formatted.main || ct || 'Türkiye';
 }
 
+function buildNonGoogleSelectionAddress(
+  item: PlaceResult,
+  formatted: { main: string; secondary: string },
+): string {
+  const display = String(item.display_name ?? '').trim();
+  if (display.length >= 2) return display;
+  const fromParts = [formatted.main, formatted.secondary].filter((p) => p && p.trim()).join(', ');
+  return fromParts || formatted.main || 'Seçilen konum';
+}
+
+function parseNonGoogleListCoords(item: PlaceResult): { lat: number; lng: number } | null {
+  const lat = parseFloat(item.lat);
+  const lng = parseFloat(item.lon);
+  if (!isUsableGeocodedSelectionCoord(lat, lng)) return null;
+  return { lat, lng };
+}
+
 // Türkiye şehirlerinin koordinatları ve bounding box'ları
 const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } = {
   'İstanbul': { lat: 41.0082, lng: 28.9784, bbox: '28.5,40.8,29.9,41.7' },
@@ -2610,10 +2627,40 @@ export default function PlacesAutocomplete({
     if (selectionInFlightRef.current) return;
     selectionInFlightRef.current = true;
     setSelectingPlaceId(item.place_id);
+    Keyboard.dismiss();
 
     try {
       setPredictionActionError(null);
       const formatted = formatAddress(item);
+
+      const finishNonGoogleSelection = (address: string, lat: number, lng: number) => {
+        setQuery(formatted.main);
+        setShowPredictions(false);
+        setShowPopular(false);
+        setPredictions([]);
+        onPlaceSelected({
+          address,
+          latitude: lat,
+          longitude: lng,
+        });
+        dismissKeyboardAfterSelection();
+      };
+
+      const tryNonGoogleListCoordFallback = (): boolean => {
+        const coords = parseNonGoogleListCoords(item);
+        if (!coords) return false;
+        const address = buildNonGoogleSelectionAddress(item, formatted);
+        try {
+          console.log(
+            'ROUTE_PICKER_SUGGESTION_GEOCODE_FALLBACK_LIST_COORD',
+            JSON.stringify({ address, lat: coords.lat, lng: coords.lng }),
+          );
+        } catch {
+          /* noop */
+        }
+        finishNonGoogleSelection(address, coords.lat, coords.lng);
+        return true;
+      };
 
       if (item.source === 'google' && item.google_place_id) {
         const key = getGoogleMapsApiKey();
@@ -2644,6 +2691,7 @@ export default function PlacesAutocomplete({
 
       const key = getGoogleMapsApiKey();
       if (!key) {
+        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
         return;
       }
@@ -2663,21 +2711,14 @@ export default function PlacesAutocomplete({
         );
         const geocoded = await googleGeocodeText(geocodeQuery, key, gBias);
         const hit = geocoded[0];
-        if (!hit || !isUsableGeocodedSelectionCoord(hit.lat, hit.lng)) {
-          setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
+        if (hit && isUsableGeocodedSelectionCoord(hit.lat, hit.lng)) {
+          finishNonGoogleSelection(hit.formattedAddress || item.display_name, hit.lat, hit.lng);
           return;
         }
-        setQuery(formatted.main);
-        setShowPredictions(false);
-        setShowPopular(false);
-        setPredictions([]);
-        onPlaceSelected({
-          address: hit.formattedAddress || item.display_name,
-          latitude: hit.lat,
-          longitude: hit.lng,
-        });
-        dismissKeyboardAfterSelection();
+        if (tryNonGoogleListCoordFallback()) return;
+        setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
       } catch {
+        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
       } finally {
         setLoading(false);
@@ -2923,6 +2964,30 @@ export default function PlacesAutocomplete({
                   <View style={[styles.separator, tech && styles.separatorTech]} />
                 )}
               />
+              {predictionActionError ? (
+                <View
+                  style={[
+                    styles.predictionActionErrorBanner,
+                    tech && styles.predictionActionErrorBannerTech,
+                  ]}
+                >
+                  <Ionicons
+                    name="alert-circle"
+                    size={18}
+                    color={tech ? '#FCA5A5' : '#DC2626'}
+                    style={styles.predictionActionErrorBannerIcon}
+                  />
+                  <Text
+                    style={[
+                      styles.predictionActionErrorBannerText,
+                      tech && styles.predictionActionErrorBannerTextTech,
+                    ]}
+                    numberOfLines={3}
+                  >
+                    {predictionActionError}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           )
         : null}
@@ -2977,7 +3042,7 @@ export default function PlacesAutocomplete({
         </Text>
       ) : null}
 
-      {predictionActionError ? (
+      {predictionActionError && !(tech && suggestionsFirst) ? (
         <Text
           style={[styles.geocodeInlineError, tech && styles.geocodeInlineErrorTech]}
           numberOfLines={2}
@@ -3579,6 +3644,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   geocodeInlineErrorTech: {
+    color: '#FCA5A5',
+  },
+  predictionActionErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 8,
+    marginHorizontal: 6,
+    marginBottom: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(254, 226, 226, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.35)',
+  },
+  predictionActionErrorBannerTech: {
+    backgroundColor: 'rgba(127, 29, 29, 0.55)',
+    borderColor: 'rgba(248, 113, 113, 0.45)',
+  },
+  predictionActionErrorBannerIcon: {
+    marginTop: 1,
+    marginRight: 8,
+  },
+  predictionActionErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#991B1B',
+  },
+  predictionActionErrorBannerTextTech: {
     color: '#FCA5A5',
   },
 });
