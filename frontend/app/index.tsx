@@ -13872,22 +13872,27 @@ function PassengerDashboard({
                 locations={[0, 0.32, 1]}
                 style={styles.destinationModalTopFade}
               />
+              <Pressable
+                onPress={handleDestinationPickerBackPress}
+                style={[
+                  styles.destinationMapBackOverlayBtn,
+                  { top: insets.top + 6 },
+                ]}
+                hitSlop={{ top: 24, bottom: 24, left: 24, right: 24 }}
+                pointerEvents="auto"
+                accessibilityRole="button"
+                accessibilityLabel="Geri dön"
+              >
+                <Ionicons name="arrow-back" size={26} color="#22D3EE" />
+              </Pressable>
             <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
               <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
                 <View
                   style={styles.destinationModalHeaderBlue}
-                  pointerEvents="auto"
+                  pointerEvents="box-none"
                   collapsable={false}
                 >
-                  <TouchableOpacity
-                    onPress={handleDestinationPickerBackPress}
-                    style={styles.destinationModalBackBtn}
-                    hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Geri dön"
-                  >
-                    <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
-                  </TouchableOpacity>
+                  <View style={styles.destinationModalHeaderMapBackSpacer} pointerEvents="none" />
                   <View style={styles.destinationModalHeaderCenter} />
                   <View style={{ width: 40 }} />
                 </View>
