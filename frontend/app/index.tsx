@@ -13635,6 +13635,9 @@ function PassengerDashboard({
           {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
             <View style={styles.destinationPickerMapSlot} pointerEvents="box-none">
             <DestinationPickerMapView
+              key={
+                destinationPickerPhase === 'map' ? 'dest-map-interactive' : 'dest-map-preview'
+              }
               ref={destinationPickerMapRef}
               style={styles.destinationPickerMapFill}
               provider={DestinationPickerMapProvider}
@@ -13726,45 +13729,39 @@ function PassengerDashboard({
             />
           )}
 
-          <View
-            style={
-              destinationPickerPhase === 'map'
-                ? styles.destinationModalHeaderMapLayer
-                : styles.destinationModalTouchLayer
-            }
-            pointerEvents="box-none"
-          >
-            <SafeAreaView
-              style={
-                destinationPickerPhase === 'map'
-                  ? styles.destinationModalHeaderMapSafe
-                  : styles.destinationModalSafeOverlay
-              }
+          {destinationPickerPhase === 'map' ? (
+            <View
+              style={[
+                styles.destinationModalHeaderMapLayer,
+                { maxHeight: insets.top + 68 },
+              ]}
               pointerEvents="box-none"
             >
-              <View
-                style={[
-                  styles.destinationModalHeaderBlue,
-                  destinationPickerPhase === 'map' && styles.destinationModalHeaderBlueDim,
-                  destinationPickerPhase === 'map' && styles.destinationModalHeaderBlueMap,
-                ]}
-                pointerEvents="auto"
-                collapsable={false}
+              <SafeAreaView
+                edges={['top']}
+                style={styles.destinationModalHeaderMapSafe}
+                pointerEvents="box-none"
               >
-                <TouchableOpacity
-                  onPress={handleDestinationPickerBackPress}
+                <View
                   style={[
-                    styles.destinationModalBackBtn,
-                    destinationPickerPhase === 'map' && styles.destinationModalBackBtnMap,
+                    styles.destinationModalHeaderBlue,
+                    styles.destinationModalHeaderBlueDim,
+                    styles.destinationModalHeaderBlueMap,
                   ]}
-                  hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Geri dön"
+                  pointerEvents="box-none"
+                  collapsable={false}
                 >
-                  <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
-                </TouchableOpacity>
-                <View style={styles.destinationModalHeaderCenter}>
-                  {destinationPickerPhase === 'map' ? (
+                  <TouchableOpacity
+                    onPress={handleDestinationPickerBackPress}
+                    style={[styles.destinationModalBackBtn, styles.destinationModalBackBtnMap]}
+                    hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                    pointerEvents="auto"
+                    accessibilityRole="button"
+                    accessibilityLabel="Geri dön"
+                  >
+                    <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
+                  </TouchableOpacity>
+                  <View style={styles.destinationModalHeaderCenter} pointerEvents="box-none">
                     <TouchableOpacity
                       onPress={() => {
                         void tapButtonHaptic();
@@ -13772,15 +13769,37 @@ function PassengerDashboard({
                       }}
                       style={styles.destinationChangeAreaBtn}
                       activeOpacity={0.85}
+                      pointerEvents="auto"
                     >
                       <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
                         Adres ara
                       </Text>
                     </TouchableOpacity>
-                  ) : null}
+                  </View>
+                  <View style={styles.destinationModalHeaderMapSpacer} pointerEvents="none" />
                 </View>
-                <View style={{ width: 40 }} />
-              </View>
+              </SafeAreaView>
+            </View>
+          ) : (
+            <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
+              <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
+                <View
+                  style={styles.destinationModalHeaderBlue}
+                  pointerEvents="auto"
+                  collapsable={false}
+                >
+                  <TouchableOpacity
+                    onPress={handleDestinationPickerBackPress}
+                    style={styles.destinationModalBackBtn}
+                    hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Geri dön"
+                  >
+                    <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
+                  </TouchableOpacity>
+                  <View style={styles.destinationModalHeaderCenter} />
+                  <View style={{ width: 40 }} />
+                </View>
 
               {destinationPickerPhase === 'search' ? (
                 <KeyboardAvoidingView
@@ -14256,8 +14275,9 @@ function PassengerDashboard({
                   )}
                 </KeyboardAvoidingView>
               ) : null}
-            </SafeAreaView>
-          </View>
+              </SafeAreaView>
+            </View>
+          )}
 
           {destinationPickerPhase === 'map' &&
           DestinationPickerMapView &&
@@ -25901,13 +25921,16 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    alignSelf: 'flex-start',
     ...Platform.select({
       ios: { zIndex: 52 },
       android: { zIndex: 22, elevation: 22 },
       default: { zIndex: 20 },
     }),
   },
-  destinationModalHeaderMapSafe: {},
+  destinationModalHeaderMapSafe: {
+    alignSelf: 'stretch',
+  },
   destinationModalSafeOverlay: {
     flex: 1,
   },
@@ -25941,6 +25964,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    alignSelf: 'stretch',
     zIndex: 8,
     paddingHorizontal: 18,
     paddingTop: 10,
@@ -26528,11 +26552,17 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   destinationModalBackBtnMap: {
+    minWidth: 52,
+    minHeight: 52,
+    padding: 10,
     ...Platform.select({
-      ios: { zIndex: 56 },
-      android: { elevation: 28 },
+      ios: { zIndex: 60 },
+      android: { elevation: 30 },
       default: {},
     }),
+  },
+  destinationModalHeaderMapSpacer: {
+    width: 52,
   },
   destinationModalTitleBlue: {
     fontSize: 16,
