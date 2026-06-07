@@ -13632,155 +13632,203 @@ function PassengerDashboard({
         onRequestClose={handleDestinationPickerBackPress}
       >
         <View style={styles.destinationModalRoot}>
-          {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
-            <View style={styles.destinationPickerMapSlot} pointerEvents="box-none">
-            <DestinationPickerMapView
-              key={
-                destinationPickerPhase === 'map' ? 'dest-map-interactive' : 'dest-map-preview'
-              }
-              ref={destinationPickerMapRef}
-              style={styles.destinationPickerMapFill}
-              provider={DestinationPickerMapProvider}
-              mapType="standard"
-              showsUserLocation={!!userLocation}
-              showsMyLocationButton={false}
-              pointerEvents={destinationPickerPhase === 'search' ? 'none' : 'auto'}
-              scrollEnabled={destinationPickerPhase === 'map'}
-              zoomEnabled={destinationPickerPhase === 'map'}
-              pitchEnabled={destinationPickerPhase === 'map'}
-              rotateEnabled={destinationPickerPhase === 'map'}
-              initialRegion={{
-                latitude: destinationPickerMapLatResolved,
-                longitude: destinationPickerMapLngResolved,
-                latitudeDelta:
-                  destinationPickerPhase === 'search'
-                    ? DESTINATION_PICKER_SEARCH_DELTA
-                    : DESTINATION_PICKER_PIN_DELTA,
-                longitudeDelta:
-                  destinationPickerPhase === 'search'
-                    ? DESTINATION_PICKER_SEARCH_DELTA
-                    : DESTINATION_PICKER_PIN_DELTA,
-              }}
-              onRegionChangeComplete={(region: {
-                latitude: number;
-                longitude: number;
-              }) => {
-                if (destinationPickerPhase === 'map') {
-                  handleDestinationPickerRegionComplete(region);
-                }
-              }}
-            />
-            </View>
-          ) : null}
-          {DestinationPickerMapView &&
-          isNativeGoogleMapsSupported() &&
-          destinationPickerPhase === 'map' ? (
-            <View style={styles.destinationCrosshairOverlay} pointerEvents="none">
-              <View style={styles.destinationCrosshairPinShift}>
-                <View style={styles.destinationPinMarkerWrap} collapsable={false}>
-                  <Animated.View
-                    style={[
-                      styles.destinationPinRing,
-                      {
-                        transform: [{ scale: destPinPulse1 }],
-                        opacity: destPinOpacity1,
-                      },
-                    ]}
+          {destinationPickerPhase === 'map' ? (
+            <>
+              {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+                <View style={styles.destinationPickerMapSlot} pointerEvents="box-none">
+                  <DestinationPickerMapView
+                    key="dest-map-interactive"
+                    ref={destinationPickerMapRef}
+                    style={styles.destinationPickerMapFill}
+                    provider={DestinationPickerMapProvider}
+                    mapType="standard"
+                    showsUserLocation={!!userLocation}
+                    showsMyLocationButton={false}
+                    pointerEvents="auto"
+                    scrollEnabled
+                    zoomEnabled
+                    pitchEnabled
+                    rotateEnabled
+                    initialRegion={{
+                      latitude: destinationPickerMapLatResolved,
+                      longitude: destinationPickerMapLngResolved,
+                      latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+                      longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+                    }}
+                    onRegionChangeComplete={handleDestinationPickerRegionComplete}
                   />
-                  <Animated.View
-                    style={[
-                      styles.destinationPinRing,
-                      styles.destinationPinRingOuter,
-                      {
-                        transform: [{ scale: destPinPulse2 }],
-                        opacity: destPinOpacity2,
-                      },
-                    ]}
-                  />
-                  <View style={styles.destinationPinCore}>
-                    <Ionicons name="location" size={36} color="#FFF" />
+                </View>
+              ) : null}
+              {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+                <View style={styles.destinationCrosshairOverlay} pointerEvents="none">
+                  <View style={styles.destinationCrosshairPinShift}>
+                    <View style={styles.destinationPinMarkerWrap} collapsable={false}>
+                      <Animated.View
+                        style={[
+                          styles.destinationPinRing,
+                          {
+                            transform: [{ scale: destPinPulse1 }],
+                            opacity: destPinOpacity1,
+                          },
+                        ]}
+                      />
+                      <Animated.View
+                        style={[
+                          styles.destinationPinRing,
+                          styles.destinationPinRingOuter,
+                          {
+                            transform: [{ scale: destPinPulse2 }],
+                            opacity: destPinOpacity2,
+                          },
+                        ]}
+                      />
+                      <View style={styles.destinationPinCore}>
+                        <Ionicons name="location" size={36} color="#FFF" />
+                      </View>
+                    </View>
                   </View>
                 </View>
-              </View>
-            </View>
-          ) : null}
-          {(!DestinationPickerMapView || !isNativeGoogleMapsSupported()) ? (
-            <LinearGradient
-              colors={['#08111F', '#0B1220', '#101A2B', '#0F172A']}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.9, y: 1 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-          ) : null}
-
-          {destinationPickerPhase === 'search' ? (
-            <LinearGradient
-              pointerEvents="none"
-              colors={['rgba(8, 17, 31, 0.38)', 'rgba(8, 17, 31, 0.12)', 'transparent']}
-              locations={[0, 0.32, 1]}
-              style={styles.destinationModalTopFade}
-            />
-          ) : (
-            <LinearGradient
-              pointerEvents="none"
-              colors={['rgba(8, 17, 31, 0.22)', 'rgba(8, 17, 31, 0.06)', 'transparent']}
-              locations={[0, 0.22, 1]}
-              style={styles.destinationModalTopFadeLight}
-            />
-          )}
-
-          {destinationPickerPhase === 'map' ? (
-            <View
-              style={[
-                styles.destinationModalHeaderMapLayer,
-                { maxHeight: insets.top + 68 },
-              ]}
-              pointerEvents="box-none"
-            >
-              <SafeAreaView
-                edges={['top']}
-                style={styles.destinationModalHeaderMapSafe}
-                pointerEvents="box-none"
+              ) : null}
+              {(!DestinationPickerMapView || !isNativeGoogleMapsSupported()) ? (
+                <LinearGradient
+                  colors={['#08111F', '#0B1220', '#101A2B', '#0F172A']}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 0.9, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              ) : null}
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(8, 17, 31, 0.22)', 'rgba(8, 17, 31, 0.06)', 'transparent']}
+                locations={[0, 0.22, 1]}
+                style={styles.destinationModalTopFadeLight}
+              />
+              <Pressable
+                onPress={handleDestinationPickerBackPress}
+                style={[
+                  styles.destinationMapBackOverlayBtn,
+                  { top: insets.top + 6 },
+                ]}
+                hitSlop={{ top: 24, bottom: 24, left: 24, right: 24 }}
+                pointerEvents="auto"
+                accessibilityRole="button"
+                accessibilityLabel="Geri dön"
               >
+                <Ionicons name="arrow-back" size={26} color="#22D3EE" />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  void tapButtonHaptic();
+                  returnRoutePickerMapToSearch();
+                }}
+                style={[
+                  styles.destinationMapSearchChipOverlay,
+                  { top: insets.top + 14 },
+                ]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                pointerEvents="auto"
+                accessibilityRole="button"
+                accessibilityLabel="Adres ara"
+              >
+                <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
+                  Adres ara
+                </Text>
+              </Pressable>
+              {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
                 <View
                   style={[
-                    styles.destinationModalHeaderBlue,
-                    styles.destinationModalHeaderBlueDim,
-                    styles.destinationModalHeaderBlueMap,
+                    styles.destinationMapConfirmWrap,
+                    { paddingBottom: Math.max(insets.bottom, 14) + 8 },
                   ]}
                   pointerEvents="box-none"
-                  collapsable={false}
                 >
-                  <TouchableOpacity
-                    onPress={handleDestinationPickerBackPress}
-                    style={[styles.destinationModalBackBtn, styles.destinationModalBackBtnMap]}
-                    hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                    pointerEvents="auto"
-                    accessibilityRole="button"
-                    accessibilityLabel="Geri dön"
-                  >
-                    <Ionicons name="arrow-back" size={24} color="#E2E8F0" />
-                  </TouchableOpacity>
-                  <View style={styles.destinationModalHeaderCenter} pointerEvents="box-none">
-                    <TouchableOpacity
-                      onPress={() => {
-                        void tapButtonHaptic();
-                        returnRoutePickerMapToSearch();
-                      }}
-                      style={styles.destinationChangeAreaBtn}
-                      activeOpacity={0.85}
-                      pointerEvents="auto"
-                    >
-                      <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
-                        Adres ara
+                  {routePickerStep === 'pickup' ? (
+                    <>
+                      <Text style={styles.destinationMapHintTitle} pointerEvents="none">
+                        Alınış noktasını doğrulayın
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.destinationModalHeaderMapSpacer} pointerEvents="none" />
+                      <Text style={styles.destinationMapHintMinimal} pointerEvents="none">
+                        Haritayı sürücünün geleceği noktanın üzerine getirin.
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.destinationMapVerifyHintCard} pointerEvents="none">
+                        <Text style={styles.destinationMapVerifyHintTitle}>
+                          Tam ineceğiniz yeri seçin
+                        </Text>
+                        <Text style={styles.destinationMapVerifyHintBody}>
+                          Haritayı tam inmek istediğiniz noktaya getirin ve Tam burası'na basın.
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                  <TouchableOpacity
+                    style={styles.destinationMapConfirmBtnWrap}
+                    activeOpacity={0.88}
+                    onPress={() => void confirmDestinationPickerCenter()}
+                    pointerEvents="auto"
+                  >
+                    <LinearGradient
+                      colors={['#22D3EE', '#0EA5E9', '#2563EB']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.destinationMapConfirmBtnGrad}
+                    >
+                      <Text style={styles.destinationMapConfirmBtnText}>Tam burası</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
-              </SafeAreaView>
-            </View>
+              ) : null}
+            </>
           ) : (
+            <>
+              {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+                <View style={styles.destinationPickerMapSlot} pointerEvents="box-none">
+                  <DestinationPickerMapView
+                    key="dest-map-preview"
+                    ref={destinationPickerMapRef}
+                    style={styles.destinationPickerMapFill}
+                    provider={DestinationPickerMapProvider}
+                    mapType="standard"
+                    showsUserLocation={!!userLocation}
+                    showsMyLocationButton={false}
+                    pointerEvents="none"
+                    scrollEnabled={false}
+                    zoomEnabled={false}
+                    pitchEnabled={false}
+                    rotateEnabled={false}
+                    initialRegion={{
+                      latitude: destinationPickerMapLatResolved,
+                      longitude: destinationPickerMapLngResolved,
+                      latitudeDelta: DESTINATION_PICKER_SEARCH_DELTA,
+                      longitudeDelta: DESTINATION_PICKER_SEARCH_DELTA,
+                    }}
+                    onRegionChangeComplete={(region: {
+                      latitude: number;
+                      longitude: number;
+                    }) => {
+                      if (destinationPickerPhase === 'map') {
+                        handleDestinationPickerRegionComplete(region);
+                      }
+                    }}
+                  />
+                </View>
+              ) : null}
+              {(!DestinationPickerMapView || !isNativeGoogleMapsSupported()) ? (
+                <LinearGradient
+                  colors={['#08111F', '#0B1220', '#101A2B', '#0F172A']}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 0.9, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              ) : null}
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(8, 17, 31, 0.38)', 'rgba(8, 17, 31, 0.12)', 'transparent']}
+                locations={[0, 0.32, 1]}
+                style={styles.destinationModalTopFade}
+              />
             <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
               <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
                 <View
@@ -14277,53 +14325,8 @@ function PassengerDashboard({
               ) : null}
               </SafeAreaView>
             </View>
+            </>
           )}
-
-          {destinationPickerPhase === 'map' &&
-          DestinationPickerMapView &&
-          isNativeGoogleMapsSupported() ? (
-            <View
-              style={[styles.destinationMapConfirmWrap, { paddingBottom: Math.max(insets.bottom, 14) + 8 }]}
-              pointerEvents="box-none"
-            >
-              {routePickerStep === 'pickup' ? (
-                <>
-                  <Text style={styles.destinationMapHintTitle} pointerEvents="none">
-                    Alınış noktasını doğrulayın
-                  </Text>
-                  <Text style={styles.destinationMapHintMinimal} pointerEvents="none">
-                    Haritayı sürücünün geleceği noktanın üzerine getirin.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <View style={styles.destinationMapVerifyHintCard} pointerEvents="none">
-                    <Text style={styles.destinationMapVerifyHintTitle}>
-                      Tam ineceğiniz yeri seçin
-                    </Text>
-                    <Text style={styles.destinationMapVerifyHintBody}>
-                      Haritayı tam inmek istediğiniz noktaya getirin ve Tam burası'na basın.
-                    </Text>
-                  </View>
-                </>
-              )}
-              <TouchableOpacity
-                style={styles.destinationMapConfirmBtnWrap}
-                activeOpacity={0.88}
-                onPress={() => void confirmDestinationPickerCenter()}
-                pointerEvents="auto"
-              >
-                <LinearGradient
-                  colors={['#22D3EE', '#0EA5E9', '#2563EB']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.destinationMapConfirmBtnGrad}
-                >
-                  <Text style={styles.destinationMapConfirmBtnText}>Tam burası</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          ) : null}
 
           {destinationPickerGeocoding ? (
             <View style={styles.destinationGeocodeOverlay}>
@@ -26563,6 +26566,46 @@ const styles = StyleSheet.create({
   },
   destinationModalHeaderMapSpacer: {
     width: 52,
+  },
+  destinationModalHeaderMapBackSpacer: {
+    width: 56,
+    height: 56,
+  },
+  destinationMapBackOverlayBtn: {
+    position: 'absolute',
+    left: 18,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 17, 31, 0.84)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(34, 211, 238, 0.58)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    ...Platform.select({
+      ios: { zIndex: 9999 },
+      android: { elevation: 32 },
+      default: {},
+    }),
+  },
+  destinationMapSearchChipOverlay: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+    backgroundColor: 'rgba(16, 26, 43, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    ...Platform.select({
+      ios: { zIndex: 9998 },
+      android: { elevation: 31 },
+      default: {},
+    }),
   },
   destinationModalTitleBlue: {
     fontSize: 16,
