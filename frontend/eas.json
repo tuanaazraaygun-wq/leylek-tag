@@ -23,7 +23,8 @@
         "gradleCommand": ":app:assembleDebug"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUwOL1mLrOW_6qXmDZHiCeq552QJiSItw"
       }
     },
     "preview": {
@@ -35,6 +36,7 @@
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1",
         "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUwOL1mLrOW_6qXmDZHiCeq552QJiSItw",
         "EXPO_PUBLIC_ENABLE_TESTFLIGHT_DEBUG_PANEL": "1",
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujvploftywsxprlzejgc.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k",
@@ -48,6 +50,7 @@
       },
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAUwOL1mLrOW_6qXmDZHiCeq552QJiSItw",
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujvploftywsxprlzejgc.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k"
       }
