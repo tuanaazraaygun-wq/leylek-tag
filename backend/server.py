@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import AliasChoices, BaseModel, Field, ValidationError, field_validator
+from dataclasses import dataclass
 from typing import Annotated, Any, List, Literal, Optional, Tuple
 
 try:
@@ -1530,6 +1531,35 @@ def _tag_dispatch_obs_log(
         logger.info("[tag_dispatch] event=%s log_error=%s", event, _obs_e)
 
 
+@dataclass
+class OfferEmitResult:
+    success: bool
+    delivery_id: Optional[str] = None
+
+    def __bool__(self) -> bool:
+        return self.success
+
+
+def _offer_delivery_obs_log(event: str, **fields: Any) -> None:
+    """
+    Teklif teslim zinciri — structured log (JSON tek satır). PII: driver_id maskeli.
+    Socket/FCM payload'a yazılmaz; yalnızca sunucu log korelasyonu.
+    """
+    try:
+        payload: dict[str, Any] = {
+            "event": event,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        for key, val in fields.items():
+            if key == "driver_id":
+                payload["driver_id"] = _mask_log_id(val) if val is not None else None
+            else:
+                payload[key] = val
+        logger.info("[offer_delivery] %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as _od_e:
+        logger.info("[offer_delivery] event=%s log_error=%s", event, _od_e)
+
+
 # Sürücüye aynı tag teklif FCM: socket register + set-ride-vehicle-kind + reconnect kısa aralıkta aynı push'u tetikleyebilir.
 _offer_push_dedupe_lock = asyncio.Lock()
 _offer_push_last_sent_mono: dict[tuple[str, str], float] = {}
@@ -2058,7 +2088,12 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
         return False
 
 
-async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, offer_data: dict) -> None:
+async def _driver_offer_push_fcm_deduped(
+    resolved_driver_id: str,
+    offer_tag_id,
+    offer_data: dict,
+    delivery_id: Optional[str] = None,
+) -> None:
     """
     Tek FCM / log satırı; (driver_id, tag_id) için OFFER_PUSH_DEDUPE_WINDOW_SEC içinde tekrar gönderilmez.
     Socket emit her seferinde çalışır; yalnız push dedupe (reconnect / çift register).
@@ -2079,6 +2114,16 @@ async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, 
                     key[1],
                     now - prev,
                     OFFER_PUSH_DEDUPE_WINDOW_SEC,
+                )
+                _offer_delivery_obs_log(
+                    "offer_delivery_push",
+                    delivery_id=delivery_id,
+                    tag_id=str(offer_tag_id).strip(),
+                    driver_id=resolved_driver_id,
+                    push_attempted=False,
+                    push_deduped=True,
+                    push_sent=False,
+                    dedupe_window_s=OFFER_PUSH_DEDUPE_WINDOW_SEC,
                 )
                 return
             _offer_push_last_sent_mono[key] = now
@@ -2101,11 +2146,30 @@ async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, 
                 key[0][:13] + ("…" if len(key[0]) > 13 else ""),
                 offer_tag_id,
             )
+            _offer_delivery_obs_log(
+                "offer_delivery_push",
+                delivery_id=delivery_id,
+                tag_id=str(offer_tag_id).strip(),
+                driver_id=resolved_driver_id,
+                push_attempted=True,
+                push_deduped=False,
+                push_sent=True,
+            )
         else:
             logger.warning(
                 "Push FCM failed driver=%s tag=%s",
                 key[0][:13] + ("…" if len(key[0]) > 13 else ""),
                 offer_tag_id,
+            )
+            _offer_delivery_obs_log(
+                "offer_delivery_push",
+                delivery_id=delivery_id,
+                tag_id=str(offer_tag_id).strip(),
+                driver_id=resolved_driver_id,
+                push_attempted=True,
+                push_deduped=False,
+                push_sent=False,
+                push_error_reason="send_failed",
             )
     except Exception as e:
         logger.warning(
@@ -2113,6 +2177,16 @@ async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, 
             key[0][:13] + ("…" if len(key[0]) > 13 else ""),
             offer_tag_id,
             e,
+        )
+        _offer_delivery_obs_log(
+            "offer_delivery_push",
+            delivery_id=delivery_id,
+            tag_id=str(offer_tag_id).strip(),
+            driver_id=resolved_driver_id,
+            push_attempted=True,
+            push_deduped=False,
+            push_sent=False,
+            push_error_reason="exception",
         )
     finally:
         if reserved and not ok:
@@ -2123,7 +2197,7 @@ async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, 
                 pass
 
 
-async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> bool:
+async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> OfferEmitResult:
     """
     Teklif socket event'i: önce doğrudan sid (connected_users), yoksa user room.
     Pasif / çevrimdışı / paketsiz / konumsuz sürücüye gönderilmez (True=socket gönderildi).
@@ -2132,7 +2206,14 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
         raw = str(driver_id).strip().lower() if driver_id is not None else ""
         if not raw:
             logger.warning("emit_new_passenger_offer_to_driver: boş driver_id")
-            return False
+            _offer_delivery_obs_log(
+                "offer_delivery_skipped",
+                tag_id=offer_data.get("tag_id"),
+                driver_id=None,
+                reason="empty_driver_id",
+                delivery_id=None,
+            )
+            return OfferEmitResult(False)
         try:
             resolved = await resolve_user_id(raw)
             if resolved:
@@ -2145,7 +2226,15 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
                 raw[:13] + "…" if len(raw) > 13 else raw,
                 offer_data.get("tag_id"),
             )
-            return False
+            _offer_delivery_obs_log(
+                "offer_delivery_skipped",
+                tag_id=offer_data.get("tag_id"),
+                driver_id=raw,
+                reason="ineligible",
+                delivery_id=None,
+            )
+            return OfferEmitResult(False)
+        delivery_id = str(uuid.uuid4())
         logger.info(
             "[normal_ride_emit_offer] tag_id=%s driver_id=%s is_rolling_batch=%s is_broadcast=%s is_dispatch=%s",
             offer_data.get("tag_id"),
@@ -2155,20 +2244,52 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
             offer_data.get("is_dispatch"),
         )
         # Çoklu sekme / reconnect: tüm sid'ler + user odası (tek sid map anahtarı kaçırmasın).
-        await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
+        sock_stats = await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
+        socket_sid_count = 0
+        socket_room_member_count = 0
+        if sock_stats:
+            socket_sid_count = int(sock_stats.get("sid_count") or 0)
+            socket_room_member_count = int(sock_stats.get("room_member_count") or 0)
 
         # FCM: yalnız send_trip_push_and_log → send_push_notification (Expo token kullanılmaz).
         offer_tag_id = offer_data.get("tag_id")
         resolved_driver_id = raw
 
+        push_scheduled = False
         try:
-            asyncio.create_task(_driver_offer_push_fcm_deduped(resolved_driver_id, offer_tag_id, offer_data))
+            asyncio.create_task(
+                _driver_offer_push_fcm_deduped(
+                    resolved_driver_id, offer_tag_id, offer_data, delivery_id=delivery_id
+                )
+            )
+            push_scheduled = True
         except Exception as e:
             logger.warning("Push create_task failed: %s", e)
-        return True
+        _offer_delivery_obs_log(
+            "offer_delivery_emit",
+            delivery_id=delivery_id,
+            tag_id=offer_data.get("tag_id"),
+            driver_id=raw,
+            socket_attempted=True,
+            socket_sid_count=socket_sid_count,
+            socket_room_member_count=socket_room_member_count,
+            push_scheduled=push_scheduled,
+            queue_insert_attempted=False,
+            is_rolling_batch=bool(offer_data.get("is_rolling_batch")),
+            is_broadcast=bool(offer_data.get("is_broadcast")),
+            is_dispatch=bool(offer_data.get("is_dispatch")),
+        )
+        return OfferEmitResult(True, delivery_id)
     except Exception as e:
         logger.error(f"new_passenger_offer emit hatası: {e}")
-        return False
+        _offer_delivery_obs_log(
+            "offer_delivery_skipped",
+            tag_id=offer_data.get("tag_id") if isinstance(offer_data, dict) else None,
+            driver_id=driver_id,
+            reason="emit_exception",
+            delivery_id=None,
+        )
+        return OfferEmitResult(False)
 
 
 async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
@@ -2506,14 +2627,15 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
         logger.warning("driver_on_the_way / ride_matched emit failed driver_id=%s err=%s", did[:96], ex)
 
 
-async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> None:
+async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> Optional[dict]:
     """Kullanıcıya socket event: connected_users’daki tüm sid’lere to=emit; yoksa user_<uuid> odası."""
+    _empty_stats = {"sid_count": 0, "room_member_count": 0}
     try:
         if user_id is None:
-            return
+            return _empty_stats
         raw_in = str(user_id).strip()
         if not raw_in:
-            return
+            return _empty_stats
         canonical_lo = raw_in.lower()
         keys_to_try: set[str] = set()
         keys_to_try.add(raw_in)
@@ -2639,8 +2761,10 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 logger.warning("%s emit room_fallback_failed room=%s err=%s", event_name, room, em)
             if event_name == "message_ack":
                 logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", canonical_lo, room)
+        return {"sid_count": sid_count, "room_member_count": room_member_count}
     except Exception as e:
         logger.warning("%s emit hatası: %s", event_name, e)
+        return _empty_stats
 
 
 async def notify_conversation_updated(
@@ -3622,6 +3746,7 @@ async def _dispatch_queue_insert_after_emit(
     tag_id: str,
     driver_id: str,
     priority: int,
+    delivery_id: Optional[str] = None,
 ) -> bool:
     """
     Socket emit sonrası tek sürücü satırı — /driver/dispatch-pending-offer ile uyum.
@@ -3630,6 +3755,17 @@ async def _dispatch_queue_insert_after_emit(
     did = str(driver_id).strip().lower() if driver_id else ""
     if not did:
         logger.warning("dispatch_queue rolling sync tag=%s driver=(boş) ok=0", tag_id)
+        _offer_delivery_obs_log(
+            "offer_delivery_queue",
+            delivery_id=delivery_id,
+            tag_id=tag_id,
+            driver_id=None,
+            queue_insert_attempted=True,
+            queue_insert_ok=0,
+            queue_row_id=None,
+            priority=int(priority),
+            queue_error_reason="empty_driver_id",
+        )
         return False
     now = datetime.utcnow().isoformat()
     row = {
@@ -3650,6 +3786,16 @@ async def _dispatch_queue_insert_after_emit(
             did,
             priority,
         )
+        _offer_delivery_obs_log(
+            "offer_delivery_queue",
+            delivery_id=delivery_id,
+            tag_id=tag_id,
+            driver_id=did,
+            queue_insert_attempted=True,
+            queue_insert_ok=1,
+            queue_row_id=row["id"],
+            priority=int(priority),
+        )
         return True
     except Exception as e:
         logger.warning(
@@ -3658,6 +3804,17 @@ async def _dispatch_queue_insert_after_emit(
             did,
             priority,
             e,
+        )
+        _offer_delivery_obs_log(
+            "offer_delivery_queue",
+            delivery_id=delivery_id,
+            tag_id=tag_id,
+            driver_id=did,
+            queue_insert_attempted=True,
+            queue_insert_ok=0,
+            queue_row_id=row["id"],
+            priority=int(priority),
+            queue_error_reason="insert_failed",
         )
         return False
 
@@ -4145,7 +4302,8 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             "pickup_eta_min": int(pk_min) if pk_min is not None else None,
             "time_to_passenger_min": int(pk_min) if pk_min is not None else None,
         }
-        if not await emit_new_passenger_offer_to_driver(d_id, offer_data):
+        emit_res = await emit_new_passenger_offer_to_driver(d_id, offer_data)
+        if not emit_res:
             continue
         logger.info(
             "new_passenger_offer emitted tag=%s driver=%s (socket veya room)",
@@ -4154,7 +4312,9 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         )
         slot_i += 1
         # Push: emit_new_passenger_offer_to_driver içinde FCM (send_trip_push_and_log).
-        if await _dispatch_queue_insert_after_emit(tag_id, d_id, slot_i):
+        if await _dispatch_queue_insert_after_emit(
+            tag_id, d_id, slot_i, delivery_id=emit_res.delivery_id
+        ):
             n_queue_ok += 1
 
     logger.info(
