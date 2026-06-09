@@ -53,13 +53,13 @@ def expo_android_channel_id_for_type(notification_type: Optional[Any]) -> str:
     if s == "chat":
         return "default"
     if s in ("match", "offer"):
-        return "offers"
+        return "offers_v2"
     if s in EXPO_CALLS_CHANNEL_TYPES:
         return "calls"
     if s in EXPO_MUHABBET_CHANNEL_TYPES:
         return "match"
     if s in EXPO_OFFERS_CHANNEL_TYPES:
-        return "offers"
+        return "offers_v2"
     return "default"
 
 
