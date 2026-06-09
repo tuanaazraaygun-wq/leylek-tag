@@ -302,7 +302,7 @@ export async function invalidateDriverOfferSoundCache(): Promise<void> {
   await unloadDriverNewOfferLuxuryTone();
 }
 
-/** DriverDashboard unmount — ses nesnesini boşalt (seenIds korunur) */
+/** DriverDashboard unmount — ses nesnesini boşalt (chimed/baseline korunur) */
 export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
   lastDriverOfferLuxuryAt = 0;
   await unloadDriverOfferSoundInternal();
@@ -310,10 +310,21 @@ export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
 
 // ── Sürücü teklif sesi — modül seviyesi dedupe (socket / push / poll) ──
 
-const driverOfferSoundSeenIds = new Set<string>();
-/** İlk poll öncesi socket/dispatch — hidrasyon sonrası tek chime */
-const driverOfferSoundPendingIds = new Set<string>();
+/** Bu oturumda ses çalındı — tüm kaynaklar için tek chime/tag */
+const driverOfferSoundChimedIds = new Set<string>();
+/** İlk poll snapshot — resume teklifleri sessiz (chimed değil) */
+const driverOfferSoundBaselineIds = new Set<string>();
+/** Hidrasyon öncesi realtime (nadir; çoğu anında çalar) */
+const driverOfferSoundPendingRealtimeIds = new Set<string>();
 let driverOfferSoundHydrated = false;
+
+function markDriverOfferChimedAndPlay(tagKey: string): void {
+  const id = String(tagKey || '').trim();
+  if (!id || driverOfferSoundChimedIds.has(id)) return;
+  driverOfferSoundChimedIds.add(id);
+  driverOfferSoundPendingRealtimeIds.delete(id);
+  void playDriverNewOfferLuxuryTone();
+}
 
 export function parseDriverOfferTagFromPushData(data: unknown): string | null {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
@@ -344,33 +355,27 @@ async function isPersistedDriverUser(): Promise<boolean> {
   }
 }
 
-/** Socket / dispatch — poll hidrasyonu bitene kadar bekler (mevcut DriverDashboard davranışı) */
-export function notifyDriverNewOfferSoundIfNeeded(tagKey: string | null | undefined): void {
+/**
+ * Socket, dispatch-pending, foreground push — poll baseline ile bloklanmaz.
+ * App background/inactive ise playDriverNewOfferLuxuryTone no-op.
+ */
+export function notifyDriverNewOfferSoundFromRealtimeOffer(
+  tagKey: string | null | undefined,
+): void {
   const id = String(tagKey || '').trim();
   if (!id) return;
-  if (driverOfferSoundSeenIds.has(id)) return;
-  if (!driverOfferSoundHydrated) {
-    driverOfferSoundPendingIds.add(id);
-    return;
-  }
-  driverOfferSoundSeenIds.add(id);
-  void playDriverNewOfferLuxuryTone();
+  if (driverOfferSoundChimedIds.has(id)) return;
+  markDriverOfferChimedAndPlay(id);
 }
 
 /**
- * Foreground FCM / Expo push — hidrasyon beklemeden çalar (dashboard mount değilken de).
- * App background/inactive ise playDriverNewOfferLuxuryTone zaten no-op.
+ * Foreground FCM / Expo push — realtime path ile aynı.
  */
 export function notifyDriverNewOfferSoundFromForegroundPush(tagKey: string | null | undefined): void {
-  const id = String(tagKey || '').trim();
-  if (!id) return;
-  if (driverOfferSoundSeenIds.has(id)) return;
-  driverOfferSoundSeenIds.add(id);
-  driverOfferSoundPendingIds.delete(id);
-  void playDriverNewOfferLuxuryTone();
+  notifyDriverNewOfferSoundFromRealtimeOffer(tagKey);
 }
 
-/** driver/requests poll sonrası — ilk poll mevcut teklifleri sessiz işaretler */
+/** driver/requests poll sonrası — ilk poll resume baseline; sonraki poll yeni tag */
 export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
   const uniq = [
     ...new Set(
@@ -382,26 +387,20 @@ export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
   if (!driverOfferSoundHydrated) {
     const initialIds = new Set(uniq);
     for (const tid of initialIds) {
-      driverOfferSoundSeenIds.add(tid);
-    }
-    for (const tid of initialIds) {
-      driverOfferSoundPendingIds.delete(tid);
+      driverOfferSoundBaselineIds.add(tid);
     }
     driverOfferSoundHydrated = true;
 
-    if (driverOfferSoundPendingIds.size > 0) {
-      void playDriverNewOfferLuxuryTone();
-      for (const pid of driverOfferSoundPendingIds) {
-        driverOfferSoundSeenIds.add(pid);
-      }
-      driverOfferSoundPendingIds.clear();
+    for (const pid of driverOfferSoundPendingRealtimeIds) {
+      markDriverOfferChimedAndPlay(pid);
     }
+    driverOfferSoundPendingRealtimeIds.clear();
     return;
   }
   let anyNew = false;
   for (const tid of uniq) {
-    if (!tid || driverOfferSoundSeenIds.has(tid)) continue;
-    driverOfferSoundSeenIds.add(tid);
+    if (!tid || driverOfferSoundChimedIds.has(tid)) continue;
+    driverOfferSoundChimedIds.add(tid);
     anyNew = true;
   }
   if (anyNew) {
@@ -411,8 +410,9 @@ export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
 
 /** Oturum kapanışı / logout (opsiyonel) */
 export function resetDriverOfferSoundGate(): void {
-  driverOfferSoundSeenIds.clear();
-  driverOfferSoundPendingIds.clear();
+  driverOfferSoundChimedIds.clear();
+  driverOfferSoundBaselineIds.clear();
+  driverOfferSoundPendingRealtimeIds.clear();
   driverOfferSoundHydrated = false;
 }
 

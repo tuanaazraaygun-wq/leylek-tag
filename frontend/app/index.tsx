@@ -144,7 +144,7 @@ import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers'
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
-import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, notifyDriverNewOfferSoundIfNeeded, finalizeDriverOfferPollSound } from '../utils/sound';
+import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -15147,7 +15147,7 @@ function DriverDashboard({
             : 'Hedef (haritada işaretli)');
         const tkm = Number(tag.distance_km);
         const tripK = Number.isFinite(tkm) && tkm > 0 ? tkm : null;
-        queueMicrotask(() => notifyDriverNewOfferSoundIfNeeded(tag.id));
+        queueMicrotask(() => notifyDriverNewOfferSoundFromRealtimeOffer(tag.id));
         return [...prev, {
           id: tag.id,
           tag_id: tag.id,
@@ -15776,7 +15776,7 @@ function DriverDashboard({
             /* noop */
           }
         }
-        queueMicrotask(() => notifyDriverNewOfferSoundIfNeeded(data.tag_id));
+        queueMicrotask(() => notifyDriverNewOfferSoundFromRealtimeOffer(data.tag_id));
         return nextList;
       });
       
@@ -17082,7 +17082,7 @@ function DriverDashboard({
         /* noop */
       }
       driverDispatchProtectedTagIdsRef.current.add(String(data.tag_id || '').trim());
-      queueMicrotask(() => notifyDriverNewOfferSoundIfNeeded(data.tag_id));
+      queueMicrotask(() => notifyDriverNewOfferSoundFromRealtimeOffer(data.tag_id));
       return merged;
       });
     } catch (e) {
