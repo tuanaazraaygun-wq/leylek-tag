@@ -17102,6 +17102,8 @@ async def api_public_live_intercity():
 
 # ==================== CORS & ROUTER ====================
 
+from services.slow_request_middleware import SlowRequestLoggingMiddleware
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOW_ORIGINS,
@@ -17109,6 +17111,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SlowRequestLoggingMiddleware)
 
 # NOT: app.include_router en sonda olmalı - tüm route'lar tanımlandıktan sonra
 
