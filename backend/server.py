@@ -1157,7 +1157,10 @@ async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
         now_iso = datetime.utcnow().isoformat()
         r = (
             supabase.table("users")
-            .select("id, driver_online, driver_active_until, latitude, longitude")
+            .select(
+                "id, driver_online, driver_active_until, latitude, longitude, "
+                "is_active, is_deleted, deleted_at, is_banned"
+            )
             .eq("id", uid)
             .limit(1)
             .execute()
@@ -1165,6 +1168,8 @@ async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
         if not r.data:
             return False
         row = r.data[0]
+        if not user_account_is_eligible(row):
+            return False
         if row.get("driver_online") is not True:
             return False
         if not _has_active_package_for_dispatch(row.get("driver_active_until"), now_iso):
@@ -1836,8 +1841,9 @@ async def find_eligible_drivers(
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
         query = supabase.table("users").select(
-            "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details"
-        ).eq("driver_online", True)
+            "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
+            "is_active, is_deleted, deleted_at, is_banned"
+        ).eq("driver_online", True).eq("is_active", True)
         query = _apply_driver_active_until_filter(query, now)
 
         result = query.execute()
@@ -1868,6 +1874,10 @@ async def find_eligible_drivers(
         driver_by_id: dict[str, dict] = {}
         for driver in result.data:
             if str(driver["id"]).strip().lower() in exclude_set:
+                excluded += 1
+                continue
+
+            if not user_account_is_eligible(driver):
                 excluded += 1
                 continue
 
@@ -5587,6 +5597,86 @@ async def resolve_user_id(user_id: str) -> str:
 
     logger.info("[resolve_user_id] raw=%s resolved= via=none", raw[:96])
     return None
+
+
+_ACCOUNT_ELIGIBILITY_SELECT = "id, is_active, is_deleted, deleted_at, is_banned"
+
+
+def user_account_is_eligible(row: Optional[dict]) -> bool:
+    """Silinmiş/pasif/banlı hesap matching ve mutasyonlara kapalı (null is_active → aktif)."""
+    if not row or not isinstance(row, dict):
+        return False
+    if row.get("is_active") is False:
+        return False
+    if row.get("is_deleted") is True:
+        return False
+    deleted_at = row.get("deleted_at")
+    if deleted_at is not None and str(deleted_at).strip() != "":
+        return False
+    if row.get("is_banned") is True:
+        return False
+    return True
+
+
+def _user_account_ineligible_reason(row: Optional[dict]) -> str:
+    if not row or not isinstance(row, dict):
+        return "not_found"
+    if row.get("is_active") is False:
+        return "inactive"
+    if row.get("is_deleted") is True:
+        return "deleted"
+    deleted_at = row.get("deleted_at")
+    if deleted_at is not None and str(deleted_at).strip() != "":
+        return "deleted_at"
+    if row.get("is_banned") is True:
+        return "banned"
+    return "ok"
+
+
+async def fetch_user_account_row(user_id) -> Optional[dict]:
+    """Kullanıcı hesap durumu satırı (kanonik id)."""
+    if user_id is None or not str(user_id).strip() or not supabase:
+        return None
+    try:
+        resolved = await resolve_user_id(str(user_id).strip())
+        canonical = str((resolved or user_id) or "").strip().lower()
+        if not canonical:
+            return None
+        for sel in (_ACCOUNT_ELIGIBILITY_SELECT, "id, is_active, is_deleted, deleted_at"):
+            try:
+                r = (
+                    supabase.table("users")
+                    .select(sel)
+                    .eq("id", canonical)
+                    .limit(1)
+                    .execute()
+                )
+                if r.data:
+                    return r.data[0]
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(
+            "fetch_user_account_row user_id=%s err=%s",
+            _mask_log_id(user_id),
+            e,
+        )
+    return None
+
+
+async def require_eligible_user(user_id, *, action: str) -> str:
+    """Aktif hesap zorunlu; değilse 403."""
+    row = await fetch_user_account_row(user_id)
+    if not user_account_is_eligible(row):
+        reason = _user_account_ineligible_reason(row)
+        logger.info(
+            "ACCOUNT_GUARD_BLOCK action=%s user_id=%s reason=%s",
+            action,
+            _mask_log_id(user_id),
+            reason,
+        )
+        raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
+    return str(row["id"]).strip().lower()
 
 
 async def passenger_location_for_driver_socket(
@@ -9393,6 +9483,7 @@ async def create_tag(request: CreateTagRequest, user_id: str = None):
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(pid)
+        await require_eligible_user(resolved_id, action="passenger_create_tag")
         
         # Kullanıcı bilgisi
         user_result = supabase.table("users").select("name, city").eq("id", resolved_id).execute()
@@ -10035,6 +10126,11 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         # TAG'i çek (passenger_id, pickup_lat/lng vs. için gerekli - önceden yoktu, bildirim hataya düşüyordu)
         tag_result = supabase.table("tags").select("*").eq("id", tag_id_final).limit(1).execute()
         tag = tag_result.data[0] if tag_result.data else {}
+        
+        pax_actor_raw = passenger_id or user_id or tag.get("passenger_id")
+        if pax_actor_raw:
+            await require_eligible_user(pax_actor_raw, action="passenger_accept_offer")
+        await require_eligible_user(driver_id_final, action="passenger_accept_offer_driver")
         
         pu_row_accept = None
         if tag.get("passenger_id"):
@@ -10990,6 +11086,7 @@ async def send_offer(
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
+        await require_eligible_user(resolved_id, action="driver_send_offer")
         
         # COOLDOWN KALDIRILDI - Şoför istediği kadar teklif verebilir
         
@@ -11010,6 +11107,9 @@ async def send_offer(
             raise HTTPException(status_code=404, detail="TAG bulunamadı")
         
         tag = tag_result.data[0]
+
+        if tag.get("passenger_id"):
+            await require_eligible_user(tag["passenger_id"], action="driver_send_offer_passenger")
 
         trip_pref = _canonical_vehicle_kind(tag.get("passenger_preferred_vehicle"))
         if trip_pref is None and tag.get("passenger_id"):
@@ -11249,6 +11349,8 @@ async def driver_accept_offer_http(
             logger.error("[driver/accept] resolve failed reason=%s", resolve_reason)
             raise HTTPException(status_code=400, detail="Geçersiz sürücü")
 
+        await require_eligible_user(resolved_driver_id, action="driver_accept_offer")
+
         tid = str(tid).strip()
         if len(tid) == 36 and tid.count("-") == 4:
             tid = tid.lower()
@@ -11258,6 +11360,11 @@ async def driver_accept_offer_http(
             raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
         tag_row_pre = tag_result.data[0]
+        if tag_row_pre.get("passenger_id"):
+            await require_eligible_user(
+                tag_row_pre["passenger_id"],
+                action="driver_accept_offer_passenger",
+            )
         drv_chk = (
             supabase.table("users")
             .select("name, driver_details")
@@ -18269,6 +18376,14 @@ async def send_chat_message(msg: ChatMessageCreate):
     Log önekleri: CHAT_FIRST_PUSH_CLAIM_OK | CHAT_FIRST_PUSH_SKIP | CHAT_FIRST_PUSH_SCHEDULED
     """
     try:
+        try:
+            await require_eligible_user(msg.sender_id, action="chat_send_message")
+        except HTTPException:
+            return {
+                "success": False,
+                "detail": "account_disabled",
+                "error": "account_disabled",
+            }
         _tid_send = str(msg.tag_id or "").strip()
         if _tid_send:
             try:
@@ -19017,6 +19132,10 @@ async def _create_ride_offer_execute(
         if not passenger_id:
             logger.error("[ride/create] resolve failed reason=%s", reason)
             return {"success": False, "error": "Geçersiz yolcu kimliği"}
+        try:
+            await require_eligible_user(passenger_id, action="ride_create")
+        except HTTPException:
+            return {"success": False, "error": "Hesabınız devre dışı bırakılmıştır."}
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = (payload.tag_id and str(payload.tag_id).strip()) or str(uuid.uuid4())
         logger.info(
@@ -19378,6 +19497,10 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
         if not resolved_driver_id:
             logger.error("[driver/accept] resolve failed reason=%s", resolve_reason)
             return {"success": False, "error": "Geçersiz sürücü"}
+        try:
+            await require_eligible_user(resolved_driver_id, action="ride_accept")
+        except HTTPException:
+            return {"success": False, "error": "Hesabınız devre dışı bırakılmıştır."}
         # Önce tag'in durumunu kontrol et (race condition önleme)
         tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
         
@@ -19385,6 +19508,11 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
             return {"success": False, "error": "Teklif bulunamadı"}
         
         tag = tag_result.data[0]
+        if tag.get("passenger_id"):
+            try:
+                await require_eligible_user(tag["passenger_id"], action="ride_accept_passenger")
+            except HTTPException:
+                return {"success": False, "error": "Yolcu hesabı devre dışı"}
         st0 = str(tag.get("status") or "").strip().lower()
         if st0 not in {s.lower() for s in MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST}:
             _match_accept_log(
@@ -36618,6 +36746,11 @@ async def driver_go_online(user_id: str, request: Request = None):
             request=request,
             claimed_user_id_raw=user_id,
         )
+        try:
+            resolved_go = await resolve_user_id(user_id)
+            await require_eligible_user(resolved_go or user_id, action="driver_go_online")
+        except HTTPException as guard_exc:
+            return {"success": False, "detail": guard_exc.detail}
         result = supabase.table("users").select("phone, driver_active_until, driver_details").eq("id", user_id).execute()
         if not result.data:
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
