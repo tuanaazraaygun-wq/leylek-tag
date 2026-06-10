@@ -87,6 +87,23 @@ function buildNonGoogleSelectionGeocodeQuery(
   return joined.length >= 3 ? joined : formatted.main || ct || 'Türkiye';
 }
 
+function buildNonGoogleSelectionAddress(
+  item: PlaceResult,
+  formatted: { main: string; secondary: string },
+): string {
+  const display = String(item.display_name ?? '').trim();
+  if (display.length >= 2) return display;
+  const fromParts = [formatted.main, formatted.secondary].filter((p) => p && p.trim()).join(', ');
+  return fromParts || formatted.main || 'Seçilen konum';
+}
+
+function parseNonGoogleListCoords(item: PlaceResult): { lat: number; lng: number } | null {
+  const lat = parseFloat(item.lat);
+  const lng = parseFloat(item.lon);
+  if (!isUsableGeocodedSelectionCoord(lat, lng)) return null;
+  return { lat, lng };
+}
+
 // Türkiye şehirlerinin koordinatları ve bounding box'ları
 const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } = {
   'İstanbul': { lat: 41.0082, lng: 28.9784, bbox: '28.5,40.8,29.9,41.7' },
@@ -2629,6 +2646,22 @@ export default function PlacesAutocomplete({
         dismissKeyboardAfterSelection();
       };
 
+      const tryNonGoogleListCoordFallback = (): boolean => {
+        const coords = parseNonGoogleListCoords(item);
+        if (!coords) return false;
+        const address = buildNonGoogleSelectionAddress(item, formatted);
+        try {
+          console.log(
+            'ROUTE_PICKER_SUGGESTION_GEOCODE_FALLBACK_LIST_COORD',
+            JSON.stringify({ address, lat: coords.lat, lng: coords.lng }),
+          );
+        } catch {
+          /* noop */
+        }
+        finishNonGoogleSelection(address, coords.lat, coords.lng);
+        return true;
+      };
+
       if (item.source === 'google' && item.google_place_id) {
         const key = getGoogleMapsApiKey();
         if (!key) {
@@ -2658,6 +2691,7 @@ export default function PlacesAutocomplete({
 
       const key = getGoogleMapsApiKey();
       if (!key) {
+        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
         return;
       }
@@ -2681,8 +2715,10 @@ export default function PlacesAutocomplete({
           finishNonGoogleSelection(hit.formattedAddress || item.display_name, hit.lat, hit.lng);
           return;
         }
+        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
       } catch {
+        if (tryNonGoogleListCoordFallback()) return;
         setPredictionActionError(NON_GOOGLE_SELECTION_GEOCODE_FAIL);
       } finally {
         setLoading(false);
