@@ -11,6 +11,8 @@ import {
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
+import { useTrustedSummary } from '../../hooks/useTrustedSummary';
+import { formatPassengerTrustedCardSubtitle } from '../../lib/trustedSummaryCopy';
 
 export type PassengerMatchModeCardsProps = {
   /** Mevcut rota seçimi — yalnızca setShowDestinationPicker(true) */
@@ -50,10 +52,19 @@ const CARDS: CardDef[] = [
 ];
 
 function PassengerMatchModeCards({ onNormalPress }: PassengerMatchModeCardsProps) {
+  const { status, summary } = useTrustedSummary();
+
   return (
     <View style={styles.stack} accessibilityRole="list">
       {CARDS.map((card) => {
         const isNormal = card.id === 'normal';
+        const isTrusted = card.id === 'trusted';
+        const trustedReady = isTrusted && status === 'ready' && summary != null;
+        const trustedSubtitle =
+          trustedReady && summary
+            ? formatPassengerTrustedCardSubtitle(summary)
+            : null;
+        const showSoonPill = !card.enabled && !trustedReady;
         const onPress = isNormal ? onNormalPress : undefined;
 
         return (
@@ -66,7 +77,9 @@ function PassengerMatchModeCards({ onNormalPress }: PassengerMatchModeCardsProps
             accessibilityLabel={
               card.enabled
                 ? `${card.title}. ${card.subtitle}`
-                : `${card.title}. Yakında`
+                : trustedSubtitle
+                  ? `${card.title}. ${trustedSubtitle}`
+                  : `${card.title}. Yakında`
             }
             style={({ pressed }) => [
               styles.cardOuter,
@@ -97,10 +110,14 @@ function PassengerMatchModeCards({ onNormalPress }: PassengerMatchModeCardsProps
                 >
                   {card.title}
                 </Text>
-                {!card.enabled ? (
+                {showSoonPill ? (
                   <View style={styles.soonPill}>
                     <Text style={styles.soonPillText}>Yakında</Text>
                   </View>
+                ) : trustedSubtitle ? (
+                  <Text style={styles.subtitle} numberOfLines={2}>
+                    {trustedSubtitle}
+                  </Text>
                 ) : (
                   <Text style={styles.subtitle} numberOfLines={1}>
                     {card.subtitle}

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -10,6 +10,9 @@ import {
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
+import { useTrustedSummary } from '../../hooks/useTrustedSummary';
+import { formatDriverTrustedHeaderSubtitle } from '../../lib/trustedSummaryCopy';
+import type { TrustedSummaryResponse } from '../../lib/trustedNetworkApi';
 
 const CHIPS = [
   'Aktif yolcular',
@@ -18,8 +21,40 @@ const CHIPS = [
   'Direkt istek',
 ] as const;
 
-/** Sürücü idle kokpit — trusted network görsel kabuğu (backend/stub). */
+type ChipLabel = (typeof CHIPS)[number];
+
+const STUB_HEADER_SUBTITLE = 'Güven ağı ve direkt eşleşme yakında';
+
+function chipMetaForLabel(
+  label: ChipLabel,
+  summary: TrustedSummaryResponse,
+): string | null {
+  const active = Math.max(0, Number(summary.active_count) || 0);
+  const incoming = Math.max(0, Number(summary.incoming_pending_count) || 0);
+  if (label === 'Aktif yolcular') {
+    return ` · ${active}`;
+  }
+  if (label === 'Bekleyen davetler') {
+    return ` · ${incoming}`;
+  }
+  if (label === 'Güven ağı') {
+    return ` · ${active}`;
+  }
+  return null;
+}
+
+/** Sürücü idle kokpit — trusted network özet sayıları (read-only). */
 function DriverCockpitQuickStrip() {
+  const { status, summary } = useTrustedSummary();
+  const summaryReady = status === 'ready' && summary != null;
+
+  const headerSubtitle = useMemo(() => {
+    if (summaryReady && summary) {
+      return formatDriverTrustedHeaderSubtitle(summary);
+    }
+    return STUB_HEADER_SUBTITLE;
+  }, [summaryReady, summary]);
+
   return (
     <View style={styles.wrap} accessibilityRole="summary">
       <LinearGradient
@@ -34,12 +69,14 @@ function DriverCockpitQuickStrip() {
               Yolcularım
             </Text>
             <Text style={styles.subtitle} numberOfLines={2}>
-              Güven ağı ve direkt eşleşme yakında
+              {headerSubtitle}
             </Text>
           </View>
-          <View style={styles.headerSoonPill}>
-            <Text style={styles.headerSoonText}>Yakında</Text>
-          </View>
+          {!summaryReady ? (
+            <View style={styles.headerSoonPill}>
+              <Text style={styles.headerSoonText}>Yakında</Text>
+            </View>
+          ) : null}
         </View>
 
         <ScrollView
@@ -48,21 +85,35 @@ function DriverCockpitQuickStrip() {
           contentContainerStyle={styles.chipRow}
           keyboardShouldPersistTaps="handled"
         >
-          {CHIPS.map((label) => (
-            <Pressable
-              key={label}
-              disabled
-              accessibilityRole="button"
-              accessibilityState={{ disabled: true }}
-              accessibilityLabel={`${label}. Yakında`}
-              style={styles.chip}
-            >
-              <Text style={styles.chipLabel} numberOfLines={1}>
-                {label}
-              </Text>
-              <Text style={styles.chipSoon}>Yakında</Text>
-            </Pressable>
-          ))}
+          {CHIPS.map((label) => {
+            const isDirect = label === 'Direkt istek';
+            const chipMeta =
+              summaryReady && summary && !isDirect
+                ? chipMetaForLabel(label, summary)
+                : null;
+            const showSoon = isDirect || !chipMeta;
+            const a11ySuffix = showSoon ? 'Yakında' : chipMeta?.trim() ?? '';
+
+            return (
+              <Pressable
+                key={label}
+                disabled
+                accessibilityRole="button"
+                accessibilityState={{ disabled: true }}
+                accessibilityLabel={`${label}. ${a11ySuffix}`}
+                style={styles.chip}
+              >
+                <Text style={styles.chipLabel} numberOfLines={1}>
+                  {label}
+                </Text>
+                {showSoon ? (
+                  <Text style={styles.chipSoon}>Yakında</Text>
+                ) : (
+                  <Text style={styles.chipMeta}>{chipMeta}</Text>
+                )}
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </LinearGradient>
     </View>
@@ -152,5 +203,12 @@ const styles = StyleSheet.create({
     opacity: 0.65,
     letterSpacing: 0.25,
     textTransform: 'uppercase',
+  },
+  chipMeta: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+    opacity: 0.85,
+    letterSpacing: 0.1,
   },
 });
