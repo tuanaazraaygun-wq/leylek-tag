@@ -5938,6 +5938,143 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
     return {"success": True, "connections": connections}
 
 
+_TRUSTED_PENDING_LIST_LIMIT = 50
+
+
+def _trusted_pending_invited_at_sort_key(row: dict) -> float:
+    val = row.get("invited_at")
+    if val is None or str(val).strip() == "":
+        return 0.0
+    try:
+        dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return 0.0
+
+
+def _trusted_pending_item(
+    row: dict,
+    peer_projection: dict,
+    *,
+    peer_key: str,
+) -> dict:
+    return {
+        "invite_id": str(row.get("id") or ""),
+        "status": "pending",
+        "invited_at": row.get("invited_at"),
+        "expires_at": row.get("expires_at"),
+        "source_tag_id": row.get("source_tag_id"),
+        peer_key: peer_projection,
+        "_sort": _trusted_pending_invited_at_sort_key(row),
+    }
+
+
+def _trusted_pending_for_actor(actor_id: str) -> dict:
+    """Pending trusted davetler (read-only; block + eligibility + expiry filtreli)."""
+    actor_norm = str(actor_id or "").strip().lower()
+    blocked = _get_bilateral_blocked_user_ids(actor_norm)
+
+    incoming_res = (
+        supabase.table("trusted_connections")
+        .select(
+            "id, initiator_id, initiator_role, invited_at, expires_at, source_tag_id, status"
+        )
+        .eq("status", "pending")
+        .eq("counterparty_id", actor_norm)
+        .order("invited_at", desc=True)
+        .limit(_TRUSTED_PENDING_LIST_LIMIT)
+        .execute()
+    )
+
+    outgoing_res = (
+        supabase.table("trusted_connections")
+        .select(
+            "id, counterparty_id, counterparty_role, invited_at, expires_at, source_tag_id, status"
+        )
+        .eq("status", "pending")
+        .eq("initiator_id", actor_norm)
+        .order("invited_at", desc=True)
+        .limit(_TRUSTED_PENDING_LIST_LIMIT)
+        .execute()
+    )
+
+    incoming_staged: list[tuple[dict, str, Optional[str]]] = []
+    outgoing_staged: list[tuple[dict, str, Optional[str]]] = []
+    peer_ids: set[str] = set()
+
+    for row in incoming_res.data or []:
+        if not _is_pending_not_expired(row):
+            continue
+        ini = str(row.get("initiator_id") or "").strip().lower()
+        if not ini or ini in blocked:
+            continue
+        incoming_staged.append((row, ini, row.get("initiator_role")))
+        peer_ids.add(ini)
+
+    for row in outgoing_res.data or []:
+        if not _is_pending_not_expired(row):
+            continue
+        cp = str(row.get("counterparty_id") or "").strip().lower()
+        if not cp or cp in blocked:
+            continue
+        outgoing_staged.append((row, cp, row.get("counterparty_role")))
+        peer_ids.add(cp)
+
+    eligibility = _user_eligibility_map_for_ids(peer_ids)
+
+    users_by_id: dict[str, dict] = {}
+    eligible_ids = [uid for uid in peer_ids if eligibility.get(uid, False)]
+    if eligible_ids:
+        user_res = (
+            supabase.table("users")
+            .select(
+                "id, name, first_name, profile_photo, rating, total_trips, driver_details"
+            )
+            .in_("id", eligible_ids)
+            .execute()
+        )
+        for u in user_res.data or []:
+            uid = str(u.get("id") or "").strip().lower()
+            if uid and user_account_is_eligible(u):
+                users_by_id[uid] = u
+
+    incoming: list[dict] = []
+    for row, peer_id, peer_role in incoming_staged:
+        if not eligibility.get(peer_id, False):
+            continue
+        user_row = users_by_id.get(peer_id)
+        if not user_row:
+            continue
+        incoming.append(
+            _trusted_pending_item(
+                row,
+                _trusted_counterparty_projection(user_row, peer_role),
+                peer_key="from",
+            )
+        )
+
+    outgoing: list[dict] = []
+    for row, peer_id, peer_role in outgoing_staged:
+        if not eligibility.get(peer_id, False):
+            continue
+        user_row = users_by_id.get(peer_id)
+        if not user_row:
+            continue
+        outgoing.append(
+            _trusted_pending_item(
+                row,
+                _trusted_counterparty_projection(user_row, peer_role),
+                peer_key="to",
+            )
+        )
+
+    incoming.sort(key=lambda item: item.pop("_sort"), reverse=True)
+    outgoing.sort(key=lambda item: item.pop("_sort"), reverse=True)
+    return {"success": True, "incoming": incoming, "outgoing": outgoing}
+
+
 async def _active_tag_disabled_response_if_ineligible(
     user_id, *, action: str
 ) -> Optional[dict]:
@@ -9615,6 +9752,25 @@ async def get_trusted_connections(
             e,
         )
         raise HTTPException(status_code=500, detail="Trusted bağlantılar alınamadı") from e
+
+
+@api_router.get("/trusted/pending")
+async def get_trusted_pending(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Pending trusted davetler (read-only). Davet oluştur/accept yok — P5.4-A2.3."""
+    await require_eligible_user(actor_id, action="trusted_pending")
+    try:
+        return _trusted_pending_for_actor(actor_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_pending actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Trusted bekleyen davetler alınamadı") from e
 
 
 @api_router.get("/admin/reports")
