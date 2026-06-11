@@ -94,7 +94,13 @@ function formatDistanceKm(km: number | null | undefined): string | null {
   return `${n.toFixed(1)} km`;
 }
 
-function FlowHeader({ onClose }: { onClose: () => void }) {
+function FlowHeader({
+  onClose,
+  closeDisabled,
+}: {
+  onClose: () => void | Promise<void>;
+  closeDisabled?: boolean;
+}) {
   return (
     <View style={styles.headerRow}>
       <View style={styles.headerIconOrb}>
@@ -105,13 +111,23 @@ function FlowHeader({ onClose }: { onClose: () => void }) {
         <Text style={styles.headerSubtitle}>Yakın sürücülerle hızlı bağlantı</Text>
       </View>
       <Pressable
-        onPress={onClose}
+        onPress={() => void onClose()}
+        disabled={closeDisabled}
         accessibilityRole="button"
         accessibilityLabel="Kapat"
+        accessibilityState={{ disabled: Boolean(closeDisabled) }}
         hitSlop={12}
-        style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
+        style={({ pressed }) => [
+          styles.closeBtn,
+          closeDisabled && styles.closeBtnDisabled,
+          pressed && !closeDisabled && styles.closeBtnPressed,
+        ]}
       >
-        <Ionicons name="close" size={24} color={PREMIUM_AUTH_CYAN} />
+        <Ionicons
+          name="close"
+          size={24}
+          color={closeDisabled ? PREMIUM_TEXT_MUTED : PREMIUM_AUTH_CYAN}
+        />
       </Pressable>
     </View>
   );
@@ -247,8 +263,11 @@ export function QuickMatchPassengerFlow({
   const [minContributionTl, setMinContributionTl] = useState(DEFAULT_MIN_CONTRIBUTION_TL);
 
   const distanceTooFar = useMemo(
-    () => isDistanceTooFarForQuickMatch(route?.distance_km),
-    [route?.distance_km],
+    () =>
+      isDistanceTooFarForQuickMatch(
+        session.request?.distance_km ?? route?.distance_km,
+      ),
+    [session.request?.distance_km, route?.distance_km],
   );
 
   useEffect(() => {
@@ -271,7 +290,16 @@ export function QuickMatchPassengerFlow({
     }
   }, [session.request?.suggested_contribution_tl]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback(async () => {
+    if (session.isCancelling) {
+      return;
+    }
+    if (session.status === 'sequencing' || session.isCreating) {
+      const cancelled = await session.cancel();
+      if (!cancelled) {
+        return;
+      }
+    }
     session.clear();
     onClose();
   }, [session, onClose]);
@@ -336,18 +364,6 @@ export function QuickMatchPassengerFlow({
     session.request?.offered_contribution_tl ?? contributionTl;
 
   const renderBody = () => {
-    if (!route) {
-      return (
-        <View style={styles.centerCard}>
-          <Text style={styles.title}>Rota bilgisi gerekli</Text>
-          <Text style={styles.bodyMuted}>
-            Hızlı Eşleşme için alış ve varış noktası seçilmelidir.
-          </Text>
-          <SecondaryButton label="Kapat" onPress={handleClose} />
-        </View>
-      );
-    }
-
     if (session.status === 'restoring') {
       return (
         <View style={styles.centerCard}>
@@ -500,6 +516,18 @@ export function QuickMatchPassengerFlow({
       );
     }
 
+    if (!route) {
+      return (
+        <View style={styles.centerCard}>
+          <Text style={styles.title}>Rota bilgisi gerekli</Text>
+          <Text style={styles.bodyMuted}>
+            Hızlı Eşleşme için alış ve varış noktası seçilmelidir.
+          </Text>
+          <SecondaryButton label="Kapat" onPress={handleClose} />
+        </View>
+      );
+    }
+
     const canDecrease = contributionTl > minContributionTl;
     const canIncrease = contributionTl < MAX_CONTRIBUTION_TL;
 
@@ -572,13 +600,17 @@ export function QuickMatchPassengerFlow({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={() => void handleClose()}
+    >
       <LinearGradient
         colors={[PREMIUM_NAVY_DEEP, '#0B1220', PREMIUM_NAVY_CARD]}
         style={styles.modalRoot}
       >
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-          <FlowHeader onClose={handleClose} />
+          <FlowHeader onClose={handleClose} closeDisabled={session.isCancelling} />
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
@@ -648,6 +680,9 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
     borderRadius: 12,
+  },
+  closeBtnDisabled: {
+    opacity: 0.45,
   },
   closeBtnPressed: {
     opacity: 0.85,
