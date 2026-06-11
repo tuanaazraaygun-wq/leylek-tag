@@ -5679,6 +5679,134 @@ async def require_eligible_user(user_id, *, action: str) -> str:
     return str(row["id"]).strip().lower()
 
 
+def _get_bilateral_blocked_user_ids(actor_id: str) -> set[str]:
+    """Actor için çift yönlü blocked_users id kümesi."""
+    actor_norm = str(actor_id or "").strip().lower()
+    if not actor_norm:
+        return set()
+    blocked: set[str] = set()
+    blocked_result = (
+        supabase.table("blocked_users")
+        .select("blocked_user_id")
+        .eq("user_id", actor_norm)
+        .execute()
+    )
+    for row in blocked_result.data or []:
+        bid = str(row.get("blocked_user_id") or "").strip().lower()
+        if bid:
+            blocked.add(bid)
+    blocked_by_result = (
+        supabase.table("blocked_users")
+        .select("user_id")
+        .eq("blocked_user_id", actor_norm)
+        .execute()
+    )
+    for row in blocked_by_result.data or []:
+        uid = str(row.get("user_id") or "").strip().lower()
+        if uid:
+            blocked.add(uid)
+    return blocked
+
+
+def _is_pending_not_expired(row: dict) -> bool:
+    if not row or not isinstance(row, dict):
+        return False
+    exp = row.get("expires_at")
+    if exp is None or str(exp).strip() == "":
+        return True
+    try:
+        exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        return exp_dt > datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def _user_eligibility_map_for_ids(user_ids: set[str]) -> dict[str, bool]:
+    if not user_ids:
+        return {}
+    ids = list(user_ids)
+    result = (
+        supabase.table("users")
+        .select(_ACCOUNT_ELIGIBILITY_SELECT)
+        .in_("id", ids)
+        .execute()
+    )
+    out: dict[str, bool] = {uid: False for uid in user_ids}
+    for row in result.data or []:
+        uid = str(row.get("id") or "").strip().lower()
+        if uid:
+            out[uid] = user_account_is_eligible(row)
+    return out
+
+
+def _trusted_summary_for_actor(actor_id: str) -> dict:
+    """Trusted Network read-only özet sayaçları (liste/PII yok)."""
+    actor_norm = str(actor_id or "").strip().lower()
+    blocked = _get_bilateral_blocked_user_ids(actor_norm)
+
+    active_res = (
+        supabase.table("trusted_connections")
+        .select("id, initiator_id, counterparty_id")
+        .eq("status", "active")
+        .or_(f"initiator_id.eq.{actor_norm},counterparty_id.eq.{actor_norm}")
+        .execute()
+    )
+    active_counterparties: set[str] = set()
+    for row in active_res.data or []:
+        ini = str(row.get("initiator_id") or "").strip().lower()
+        cp = str(row.get("counterparty_id") or "").strip().lower()
+        other = cp if ini == actor_norm else ini
+        if other and other not in blocked:
+            active_counterparties.add(other)
+
+    incoming_res = (
+        supabase.table("trusted_connections")
+        .select("id, initiator_id, expires_at")
+        .eq("status", "pending")
+        .eq("counterparty_id", actor_norm)
+        .execute()
+    )
+    incoming_initiators: set[str] = set()
+    for row in incoming_res.data or []:
+        if not _is_pending_not_expired(row):
+            continue
+        ini = str(row.get("initiator_id") or "").strip().lower()
+        if ini and ini not in blocked:
+            incoming_initiators.add(ini)
+
+    outgoing_res = (
+        supabase.table("trusted_connections")
+        .select("id, counterparty_id, expires_at")
+        .eq("status", "pending")
+        .eq("initiator_id", actor_norm)
+        .execute()
+    )
+    outgoing_counterparties: set[str] = set()
+    for row in outgoing_res.data or []:
+        if not _is_pending_not_expired(row):
+            continue
+        cp = str(row.get("counterparty_id") or "").strip().lower()
+        if cp and cp not in blocked:
+            outgoing_counterparties.add(cp)
+
+    all_peer_ids = active_counterparties | incoming_initiators | outgoing_counterparties
+    eligibility = _user_eligibility_map_for_ids(all_peer_ids)
+
+    active_count = sum(1 for uid in active_counterparties if eligibility.get(uid, False))
+    incoming_pending_count = sum(1 for uid in incoming_initiators if eligibility.get(uid, False))
+    outgoing_pending_count = sum(1 for uid in outgoing_counterparties if eligibility.get(uid, False))
+
+    return {
+        "success": True,
+        "active_count": active_count,
+        "incoming_pending_count": incoming_pending_count,
+        "outgoing_pending_count": outgoing_pending_count,
+        "online_trusted_count": 0,
+    }
+
+
 async def _active_tag_disabled_response_if_ineligible(
     user_id, *, action: str
 ) -> Optional[dict]:
@@ -9318,6 +9446,25 @@ async def get_report_counterpart_candidate(
     """Leylek Zeka için son normal TAG karşı taraf adayını döndürür; kayıt oluşturmaz."""
     candidate = _fetch_normal_tag_counterpart_candidate(reporter_id, category)
     return {"ok": True, "candidate": candidate}
+
+
+@api_router.get("/trusted/summary")
+async def get_trusted_summary(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Network özet sayaçları (read-only). Liste/davet yok — P5.4-A2.1."""
+    await require_eligible_user(actor_id, action="trusted_summary")
+    try:
+        return _trusted_summary_for_actor(actor_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_summary actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Trusted özet alınamadı") from e
 
 
 @api_router.get("/admin/reports")
