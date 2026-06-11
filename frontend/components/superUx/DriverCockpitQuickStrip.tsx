@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   PREMIUM_AUTH_CYAN,
@@ -43,10 +44,16 @@ function chipMetaForLabel(
   return null;
 }
 
+export type DriverCockpitQuickStripProps = {
+  /** Güvenilir yolcular hub — /trusted-network?role=driver */
+  onTrustedPress?: () => void;
+};
+
 /** Sürücü idle kokpit — trusted network özet sayıları (read-only). */
-function DriverCockpitQuickStrip() {
+function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProps) {
   const { status, summary } = useTrustedSummary();
   const summaryReady = status === 'ready' && summary != null;
+  const headerWired = typeof onTrustedPress === 'function';
 
   const headerSubtitle = useMemo(() => {
     if (summaryReady && summary) {
@@ -54,6 +61,26 @@ function DriverCockpitQuickStrip() {
     }
     return STUB_HEADER_SUBTITLE;
   }, [summaryReady, summary]);
+
+  const headerContent = (
+    <>
+      <View style={styles.titleCol}>
+        <Text style={styles.title} numberOfLines={1}>
+          Yolcularım
+        </Text>
+        <Text style={styles.subtitle} numberOfLines={2}>
+          {headerSubtitle}
+        </Text>
+      </View>
+      {headerWired ? (
+        <Ionicons name="chevron-forward" size={18} color={PREMIUM_AUTH_CYAN} />
+      ) : !summaryReady ? (
+        <View style={styles.headerSoonPill}>
+          <Text style={styles.headerSoonText}>Yakında</Text>
+        </View>
+      ) : null}
+    </>
+  );
 
   return (
     <View style={styles.wrap} accessibilityRole="summary">
@@ -63,21 +90,22 @@ function DriverCockpitQuickStrip() {
         end={{ x: 1, y: 1 }}
         style={styles.card}
       >
-        <View style={styles.headerRow}>
-          <View style={styles.titleCol}>
-            <Text style={styles.title} numberOfLines={1}>
-              Yolcularım
-            </Text>
-            <Text style={styles.subtitle} numberOfLines={2}>
-              {headerSubtitle}
-            </Text>
-          </View>
-          {!summaryReady ? (
-            <View style={styles.headerSoonPill}>
-              <Text style={styles.headerSoonText}>Yakında</Text>
-            </View>
-          ) : null}
-        </View>
+        {headerWired ? (
+          <Pressable
+            onPress={onTrustedPress}
+            accessibilityRole="button"
+            accessibilityLabel={`Yolcularım. ${headerSubtitle}`}
+            style={({ pressed }) => [
+              styles.headerRow,
+              styles.headerRowPressable,
+              pressed && styles.headerRowPressed,
+            ]}
+          >
+            {headerContent}
+          </Pressable>
+        ) : (
+          <View style={styles.headerRow}>{headerContent}</View>
+        )}
 
         <ScrollView
           horizontal
@@ -140,6 +168,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
     marginBottom: 10,
+  },
+  headerRowPressable: {
+    borderRadius: 12,
+    marginHorizontal: -4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  headerRowPressed: {
+    opacity: 0.88,
   },
   titleCol: {
     flex: 1,

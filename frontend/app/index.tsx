@@ -7968,6 +7968,7 @@ function PassengerDashboard({
       console.warn(`[PAX_UNDEFINED_FN] ${label} typeof=${typeof fn}`);
     }
   };
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: paxWindowHeight } = useWindowDimensions();
   const priceModalSheetMaxHeight = Math.min(
@@ -13275,6 +13276,10 @@ function PassengerDashboard({
                 playTapSound();
                 setShowDestinationPicker(true);
               }}
+              onTrustedPress={() => {
+                playTapSound();
+                router.push('/trusted-network?role=passenger' as never);
+              }}
             />
 
             <TouchableOpacity
@@ -14862,6 +14867,7 @@ function DriverDashboard({
   onDriverOfferOpenProfile,
   onDriverOfferGoToRoleSelect,
 }: DriverDashboardProps) {
+  const router = useRouter();
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
@@ -18240,7 +18246,12 @@ function DriverDashboard({
                 </TouchableOpacity>
               </View>
             </View>
-            <DriverCockpitQuickStrip />
+            <DriverCockpitQuickStrip
+              onTrustedPress={() => {
+                playTapSound();
+                router.push('/trusted-network?role=driver' as never);
+              }}
+            />
             <View style={dws.cockpitPanelPad}>
               <DriverDashboardPanel
                 userId={user.id}

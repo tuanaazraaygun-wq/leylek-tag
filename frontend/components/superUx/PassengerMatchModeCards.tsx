@@ -17,6 +17,8 @@ import { formatPassengerTrustedCardSubtitle } from '../../lib/trustedSummaryCopy
 export type PassengerMatchModeCardsProps = {
   /** Mevcut rota seçimi — yalnızca setShowDestinationPicker(true) */
   onNormalPress: () => void;
+  /** Güvenilir sürücüler hub — /trusted-network?role=passenger */
+  onTrustedPress?: () => void;
 };
 
 type CardDef = {
@@ -51,45 +53,54 @@ const CARDS: CardDef[] = [
   },
 ];
 
-function PassengerMatchModeCards({ onNormalPress }: PassengerMatchModeCardsProps) {
+function PassengerMatchModeCards({ onNormalPress, onTrustedPress }: PassengerMatchModeCardsProps) {
   const { status, summary } = useTrustedSummary();
+  const trustedWired = typeof onTrustedPress === 'function';
 
   return (
     <View style={styles.stack} accessibilityRole="list">
       {CARDS.map((card) => {
         const isNormal = card.id === 'normal';
         const isTrusted = card.id === 'trusted';
+        const isQuick = card.id === 'quick';
+        const isEnabled = card.enabled || (isTrusted && trustedWired);
         const trustedReady = isTrusted && status === 'ready' && summary != null;
         const trustedSubtitle =
           trustedReady && summary
             ? formatPassengerTrustedCardSubtitle(summary)
             : null;
-        const showSoonPill = !card.enabled && !trustedReady;
-        const onPress = isNormal ? onNormalPress : undefined;
+        const showSoonPill = isQuick || (isTrusted && !trustedWired && !trustedReady);
+        const onPress = isNormal
+          ? onNormalPress
+          : isTrusted && trustedWired
+            ? onTrustedPress
+            : undefined;
 
         return (
           <Pressable
             key={card.id}
-            disabled={!card.enabled}
+            disabled={!isEnabled}
             onPress={onPress}
             accessibilityRole="button"
-            accessibilityState={{ disabled: !card.enabled }}
+            accessibilityState={{ disabled: !isEnabled }}
             accessibilityLabel={
-              card.enabled
+              isEnabled && isNormal
                 ? `${card.title}. ${card.subtitle}`
-                : trustedSubtitle
+                : isTrusted && trustedSubtitle
                   ? `${card.title}. ${trustedSubtitle}`
-                  : `${card.title}. Yakında`
+                  : isTrusted && trustedWired
+                    ? `${card.title}. Güven ağınız`
+                    : `${card.title}. Yakında`
             }
             style={({ pressed }) => [
               styles.cardOuter,
-              !card.enabled && styles.cardOuterDisabled,
-              card.enabled && pressed && styles.cardOuterPressed,
+              !isEnabled && styles.cardOuterDisabled,
+              isEnabled && pressed && styles.cardOuterPressed,
             ]}
           >
             <LinearGradient
               colors={
-                card.enabled
+                isEnabled
                   ? [PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(16, 26, 43, 0.92)']
                   : ['rgba(8, 17, 31, 0.72)', 'rgba(16, 26, 43, 0.58)', 'rgba(8, 17, 31, 0.68)']
               }
@@ -97,15 +108,15 @@ function PassengerMatchModeCards({ onNormalPress }: PassengerMatchModeCardsProps
               end={{ x: 1, y: 1 }}
               style={[
                 styles.cardGradient,
-                card.enabled ? styles.cardGradientActive : styles.cardGradientDisabled,
+                isEnabled ? styles.cardGradientActive : styles.cardGradientDisabled,
               ]}
             >
-              <View style={[styles.iconOrb, card.enabled && styles.iconOrbActive]}>
+              <View style={[styles.iconOrb, isEnabled && styles.iconOrbActive]}>
                 <Text style={styles.emoji}>{card.emoji}</Text>
               </View>
               <View style={styles.textCol}>
                 <Text
-                  style={[styles.title, !card.enabled && styles.titleDisabled]}
+                  style={[styles.title, !isEnabled && styles.titleDisabled]}
                   numberOfLines={1}
                 >
                   {card.title}
@@ -118,13 +129,17 @@ function PassengerMatchModeCards({ onNormalPress }: PassengerMatchModeCardsProps
                   <Text style={styles.subtitle} numberOfLines={2}>
                     {trustedSubtitle}
                   </Text>
+                ) : isTrusted && trustedWired ? (
+                  <Text style={styles.subtitle} numberOfLines={1}>
+                    Güven ağınız
+                  </Text>
                 ) : (
                   <Text style={styles.subtitle} numberOfLines={1}>
                     {card.subtitle}
                   </Text>
                 )}
               </View>
-              {card.enabled ? (
+              {isEnabled ? (
                 <Ionicons name="chevron-forward" size={20} color={PREMIUM_AUTH_CYAN} />
               ) : (
                 <View style={styles.chevronPlaceholder} />
