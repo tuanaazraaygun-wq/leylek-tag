@@ -5679,6 +5679,28 @@ async def require_eligible_user(user_id, *, action: str) -> str:
     return str(row["id"]).strip().lower()
 
 
+async def _active_tag_disabled_response_if_ineligible(
+    user_id, *, action: str
+) -> Optional[dict]:
+    """P1 resume guard: pasif/silinmiş actor active-tag/trip alamaz (403 değil — frontend stale-match uyumu)."""
+    row = await fetch_user_account_row(user_id)
+    if user_account_is_eligible(row):
+        return None
+    reason = _user_account_ineligible_reason(row)
+    logger.info(
+        "ACCOUNT_GUARD_BLOCK action=%s user_id=%s reason=%s",
+        action,
+        _mask_log_id(user_id),
+        reason,
+    )
+    return {
+        "success": True,
+        "tag": None,
+        "trip": None,
+        "code": "account_disabled",
+    }
+
+
 async def passenger_location_for_driver_socket(
     passenger_id: Optional[str], tag: dict
 ) -> Optional[dict]:
@@ -9928,6 +9950,13 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
+
+        disabled_resp = await _active_tag_disabled_response_if_ineligible(
+            resolved_id or uid,
+            action="passenger_active_tag",
+        )
+        if disabled_resp:
+            return disabled_resp
         
         # ÖNCELİK 1: Aktif tag'leri ara (waiting, matched, in_progress)
         result = (
@@ -11746,6 +11775,13 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
 
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
+
+        disabled_resp = await _active_tag_disabled_response_if_ineligible(
+            resolved_id or did,
+            action="driver_active_tag",
+        )
+        if disabled_resp:
+            return disabled_resp
         
         # ÖNCELİK 1: Aktif tag'leri ara (matched veya in_progress)
         result = (
