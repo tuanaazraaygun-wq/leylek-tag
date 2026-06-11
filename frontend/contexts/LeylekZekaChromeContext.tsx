@@ -58,6 +58,13 @@ const TRIP_FLOW_HINTS_HIDE_PREMIUM_ORB = new Set<LeylekZekaFlowHint>([
   'driver_trip',
 ]);
 
+/** Sürücü kokpit — header Leylek Gözü ana giriş; alt global premium orb kapalı (P5.3-B3.2) */
+const DRIVER_COCKPIT_FLOW_HINTS_HIDE_PREMIUM_ORB = new Set<LeylekZekaFlowHint>([
+  'driver_idle',
+  'driver_offer_list',
+  'driver_offer_compose',
+]);
+
 /** Aktif yolculuk — flowHint gecikse bile premium orb gizlensin (matched / in_progress). */
 export function isActiveTripTagStatus(status: string | null | undefined): boolean {
   const st = String(status ?? '').trim().toLowerCase();
@@ -205,6 +212,7 @@ export function isMainIndexShell(pathname: string | null | undefined, segments: 
  * - `login` / OTP / PIN vb.: kapalı.
  * - `dashboard`: `flowHint` ∈ `DASHBOARD_LEYLEK_FLOW_HINTS` iken açık (harita idle dahil).
  * - `passenger_trip` / `driver_trip`: kapalı (LiveMapView sparkles FAB).
+ * - `driver_idle` / `driver_offer_list` / `driver_offer_compose`: kapalı (header Leylek Gözü).
  * - `activeTripSuppressPremiumOrb`: matched / in_progress (flowHint gecikmesine karşı).
  */
 export function shouldShowLeylekZekaFab(params: {
@@ -224,6 +232,7 @@ export function shouldShowLeylekZekaFab(params: {
     const h = params.flowHint;
     if (h == null) return false;
     if (TRIP_FLOW_HINTS_HIDE_PREMIUM_ORB.has(h)) return false;
+    if (DRIVER_COCKPIT_FLOW_HINTS_HIDE_PREMIUM_ORB.has(h)) return false;
     return DASHBOARD_LEYLEK_FLOW_HINTS.has(h);
   }
   return false;
