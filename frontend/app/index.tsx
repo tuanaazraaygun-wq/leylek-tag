@@ -50,6 +50,7 @@ import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Te
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
+import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCards';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
@@ -13266,6 +13267,13 @@ function PassengerDashboard({
                 Alınış ve hedef noktanızı seçin; teklifinizi gönderin.
               </Text>
             </View>
+
+            <PassengerMatchModeCards
+              onNormalPress={() => {
+                playTapSound();
+                setShowDestinationPicker(true);
+              }}
+            />
 
             <TouchableOpacity
               style={styles.destinationBoxBig}
