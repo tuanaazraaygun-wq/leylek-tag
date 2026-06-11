@@ -1,0 +1,332 @@
+import React, { memo } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_NAVY_CARD,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_TEXT_SOFT,
+} from '../auth/premiumAuthStyles';
+import { useTrustedNetworkHub } from '../../hooks/useTrustedNetworkHub';
+import {
+  globalEmptyBody,
+  globalEmptyTitle,
+  hubHeaderSubtitle,
+  hubTitle,
+  HUB_ERROR_BODY,
+  HUB_ERROR_TITLE,
+  SECTION_INCOMING_TITLE,
+  SECTION_OUTGOING_TITLE,
+  sectionConnectionsTitle,
+  type TrustedHubRole,
+} from '../../lib/trustedHubCopy';
+import TrustedConnectionRow from './TrustedConnectionRow';
+import TrustedPendingRow from './TrustedPendingRow';
+
+export type TrustedNetworkHubProps = {
+  role: TrustedHubRole;
+};
+
+function HubSkeletonRows() {
+  return (
+    <View style={styles.skeletonWrap}>
+      {[0, 1, 2].map((key) => (
+        <View key={key} style={styles.skeletonRow}>
+          <View style={styles.skeletonAvatar} />
+          <View style={styles.skeletonTextCol}>
+            <View style={styles.skeletonLineMain} />
+            <View style={styles.skeletonLineSub} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function HubSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionList}>{children}</View>
+    </View>
+  );
+}
+
+function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
+  const router = useRouter();
+  const { status, connections, incoming, outgoing } = useTrustedNetworkHub();
+
+  const title = hubTitle(role);
+  const isReady = status === 'ready';
+  const isLoading = status === 'loading' || status === 'idle';
+  const isError = status === 'error';
+
+  const hasConnections = connections.length > 0;
+  const hasIncoming = incoming.length > 0;
+  const hasOutgoing = outgoing.length > 0;
+  const hasAnyData = hasConnections || hasIncoming || hasOutgoing;
+
+  const subtitle =
+    isReady && hasAnyData
+      ? hubHeaderSubtitle(role, connections.length, incoming.length, outgoing.length)
+      : isReady
+        ? hubHeaderSubtitle(role, 0, 0, 0)
+        : isLoading
+          ? 'Yükleniyor…'
+          : '';
+
+  return (
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
+      <LinearGradient
+        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(11, 18, 32, 0.98)']}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View style={styles.header}>
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Geri"
+        >
+          <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+        </Pressable>
+        <View style={styles.headerBody}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text style={styles.subtitle} numberOfLines={2}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      {isLoading ? (
+        <HubSkeletonRows />
+      ) : isError ? (
+        <View style={styles.errorPanel}>
+          <View style={styles.errorIconWrap}>
+            <Ionicons name="cloud-offline-outline" size={28} color={PREMIUM_AUTH_CYAN} />
+          </View>
+          <Text style={styles.errorTitle}>{HUB_ERROR_TITLE}</Text>
+          <Text style={styles.errorBody}>{HUB_ERROR_BODY}</Text>
+        </View>
+      ) : isReady && !hasAnyData ? (
+        <View style={styles.emptyPanel}>
+          <Text style={styles.emptyEmoji}>🦢</Text>
+          <Text style={styles.emptyTitle}>{globalEmptyTitle(role)}</Text>
+          <Text style={styles.emptyBody}>{globalEmptyBody(role)}</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {hasConnections ? (
+            <HubSection title={sectionConnectionsTitle(role)}>
+              {connections.map((item) => (
+                <TrustedConnectionRow key={item.connection_id} item={item} />
+              ))}
+            </HubSection>
+          ) : null}
+
+          {hasIncoming ? (
+            <HubSection title={SECTION_INCOMING_TITLE}>
+              {incoming.map((item) => (
+                <TrustedPendingRow key={item.invite_id} item={item} direction="incoming" />
+              ))}
+            </HubSection>
+          ) : null}
+
+          {hasOutgoing ? (
+            <HubSection title={SECTION_OUTGOING_TITLE}>
+              {outgoing.map((item) => (
+                <TrustedPendingRow key={item.invite_id} item={item} direction="outgoing" />
+              ))}
+            </HubSection>
+          ) : null}
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+
+export default memo(TrustedNetworkHub);
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: PREMIUM_NAVY_DEEP,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 14,
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  headerBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 18,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+    gap: 18,
+  },
+  section: {
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(148, 163, 184, 0.95)',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  sectionList: {
+    gap: 8,
+  },
+  skeletonWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16, 26, 43, 0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  skeletonAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30, 58, 95, 0.45)',
+  },
+  skeletonTextCol: {
+    flex: 1,
+    gap: 8,
+  },
+  skeletonLineMain: {
+    height: 12,
+    width: '58%',
+    borderRadius: 6,
+    backgroundColor: 'rgba(30, 58, 95, 0.5)',
+  },
+  skeletonLineSub: {
+    height: 10,
+    width: '36%',
+    borderRadius: 5,
+    backgroundColor: 'rgba(30, 58, 95, 0.38)',
+  },
+  errorPanel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingBottom: 48,
+    gap: 10,
+  },
+  errorIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+    marginBottom: 4,
+  },
+  errorTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: PREMIUM_TEXT_SOFT,
+    textAlign: 'center',
+  },
+  errorBody: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyPanel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingBottom: 48,
+    gap: 10,
+  },
+  emptyEmoji: {
+    fontSize: 36,
+    lineHeight: 42,
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: PREMIUM_TEXT_SOFT,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+});
