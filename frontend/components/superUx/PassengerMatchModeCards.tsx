@@ -17,6 +17,8 @@ import { formatPassengerTrustedCardSubtitle } from '../../lib/trustedSummaryCopy
 export type PassengerMatchModeCardsProps = {
   /** Mevcut rota seçimi — yalnızca setShowDestinationPicker(true) */
   onNormalPress: () => void;
+  /** Hızlı Eşleşme — route picker + Quick Match flow */
+  onQuickPress?: () => void;
   /** Güvenilir sürücüler hub — /trusted-network?role=passenger */
   onTrustedPress?: () => void;
 };
@@ -53,9 +55,14 @@ const CARDS: CardDef[] = [
   },
 ];
 
-function PassengerMatchModeCards({ onNormalPress, onTrustedPress }: PassengerMatchModeCardsProps) {
+function PassengerMatchModeCards({
+  onNormalPress,
+  onQuickPress,
+  onTrustedPress,
+}: PassengerMatchModeCardsProps) {
   const { status, summary } = useTrustedSummary();
   const trustedWired = typeof onTrustedPress === 'function';
+  const quickWired = typeof onQuickPress === 'function';
 
   return (
     <View style={styles.stack} accessibilityRole="list">
@@ -63,18 +70,22 @@ function PassengerMatchModeCards({ onNormalPress, onTrustedPress }: PassengerMat
         const isNormal = card.id === 'normal';
         const isTrusted = card.id === 'trusted';
         const isQuick = card.id === 'quick';
-        const isEnabled = card.enabled || (isTrusted && trustedWired);
+        const isEnabled =
+          card.enabled || (isQuick && quickWired) || (isTrusted && trustedWired);
         const trustedReady = isTrusted && status === 'ready' && summary != null;
         const trustedSubtitle =
           trustedReady && summary
             ? formatPassengerTrustedCardSubtitle(summary)
             : null;
-        const showSoonPill = isQuick || (isTrusted && !trustedWired && !trustedReady);
+        const showSoonPill =
+          (isQuick && !quickWired) || (isTrusted && !trustedWired && !trustedReady);
         const onPress = isNormal
           ? onNormalPress
-          : isTrusted && trustedWired
-            ? onTrustedPress
-            : undefined;
+          : isQuick && quickWired
+            ? onQuickPress
+            : isTrusted && trustedWired
+              ? onTrustedPress
+              : undefined;
 
         return (
           <Pressable
@@ -86,11 +97,13 @@ function PassengerMatchModeCards({ onNormalPress, onTrustedPress }: PassengerMat
             accessibilityLabel={
               isEnabled && isNormal
                 ? `${card.title}. ${card.subtitle}`
-                : isTrusted && trustedSubtitle
-                  ? `${card.title}. ${trustedSubtitle}`
-                  : isTrusted && trustedWired
-                    ? `${card.title}. Güven ağınız`
-                    : `${card.title}. Yakında`
+                : isQuick && quickWired
+                  ? `${card.title}. Rota seç, hızlı eşleş`
+                  : isTrusted && trustedSubtitle
+                    ? `${card.title}. ${trustedSubtitle}`
+                    : isTrusted && trustedWired
+                      ? `${card.title}. Güven ağınız`
+                      : `${card.title}. Yakında`
             }
             style={({ pressed }) => [
               styles.cardOuter,
@@ -128,6 +141,10 @@ function PassengerMatchModeCards({ onNormalPress, onTrustedPress }: PassengerMat
                 ) : trustedSubtitle ? (
                   <Text style={styles.subtitle} numberOfLines={2}>
                     {trustedSubtitle}
+                  </Text>
+                ) : isQuick && quickWired ? (
+                  <Text style={styles.subtitle} numberOfLines={1}>
+                    Rota seç, hızlı eşleş
                   </Text>
                 ) : isTrusted && trustedWired ? (
                   <Text style={styles.subtitle} numberOfLines={1}>

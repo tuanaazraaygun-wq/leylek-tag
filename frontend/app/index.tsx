@@ -51,6 +51,10 @@ import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü K
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCards';
+import QuickMatchPassengerFlow, {
+  type QuickMatchRouteContext,
+} from '../components/superUx/QuickMatchPassengerFlow';
+import { useQuickMatchPassengerSession } from '../hooks/useQuickMatchPassengerSession';
 import DriverCockpitQuickStrip from '../components/superUx/DriverCockpitQuickStrip';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
@@ -8468,6 +8472,11 @@ function PassengerDashboard({
   const [pickupPickerAutocompleteMountKey, setPickupPickerAutocompleteMountKey] = useState(0);
   /** Faz 1A: pickup → destination iki adımlı rota seçimi */
   const [routePickerStep, setRoutePickerStep] = useState<'pickup' | 'destination'>('pickup');
+  type RoutePickerIntent = 'normal' | 'quick_match';
+  const [routePickerIntent, setRoutePickerIntent] = useState<RoutePickerIntent>('normal');
+  const [quickMatchRouteContext, setQuickMatchRouteContext] =
+    useState<QuickMatchRouteContext | null>(null);
+  const [quickMatchFlowVisible, setQuickMatchFlowVisible] = useState(false);
   const [passengerPickup, setPassengerPickup] = useState<PassengerRoutePoint | null>(null);
   const [pickupConfirmBusy, setPickupConfirmBusy] = useState(false);
   const [recentPickups, setRecentPickups] = useState<RouteHistoryPoint[]>([]);
@@ -8622,6 +8631,7 @@ function PassengerDashboard({
     if (passengerDestinationAutoOpenedRef.current) return;
     /** İlk çizim sonrası: pickup adımıyla modal açılsın */
     const id = requestAnimationFrame(() => {
+      setRoutePickerIntent('normal');
       setShowDestinationPicker(true);
       setRoutePickerStep('pickup');
       setDestinationPickerPhase('search');
@@ -10047,6 +10057,30 @@ function PassengerDashboard({
     }
   };
 
+  const handleQuickMatchMatched = useCallback(
+    async (_tagId: string) => {
+      setQuickMatchFlowVisible(false);
+      setQuickMatchRouteContext(null);
+      await loadActiveTag();
+    },
+    [loadActiveTag],
+  );
+
+  const quickMatchSession = useQuickMatchPassengerSession({
+    enabled: !postLoginTagResumePending,
+    hasActiveTag: Boolean(activeTag),
+    onMatched: handleQuickMatchMatched,
+  });
+
+  useEffect(() => {
+    if (activeTag) {
+      return;
+    }
+    if (quickMatchSession.status !== 'idle') {
+      setQuickMatchFlowVisible(true);
+    }
+  }, [activeTag, quickMatchSession.status]);
+
   const confirmBoardingViaActiveTagApi = useCallback(async (expectedTagId: string): Promise<boolean> => {
     const exp = normalizeTripTagIdForCompare(expectedTagId);
     if (!exp || !user?.id) return false;
@@ -10893,6 +10927,29 @@ function PassengerDashboard({
       source: 'call_button',
     });
   };
+
+  const buildQuickMatchRouteContext = useCallback((): QuickMatchRouteContext | null => {
+    const pickup = resolvePassengerPickupCoords(passengerPickup, userLocation);
+    const dropLat = Number(destination?.latitude);
+    const dropLng = Number(destination?.longitude);
+    if (!pickup || !Number.isFinite(dropLat) || !Number.isFinite(dropLng)) {
+      return null;
+    }
+    const meters = haversineMetersLatLng(pickup, {
+      latitude: dropLat,
+      longitude: dropLng,
+    });
+    return {
+      pickup_lat: pickup.latitude,
+      pickup_lng: pickup.longitude,
+      pickup_label: passengerPickup?.address?.trim() || 'Alış noktası',
+      dropoff_lat: dropLat,
+      dropoff_lng: dropLng,
+      dropoff_label: destination?.address || 'Varış noktası',
+      distance_km: Math.round((meters / 1000) * 10) / 10,
+      vehicle_preference: rideVehiclePreference,
+    };
+  }, [passengerPickup, userLocation, destination, rideVehiclePreference]);
 
   // 🆕 Araç/Motor seçimi değişince fiyatı tekrar hesapla
   const recalcPrice = async (nextVehicleKind: 'car' | 'motorcycle') => {
@@ -11767,7 +11824,22 @@ function PassengerDashboard({
       }
     }
 
-    const shouldAutoPrice = !!opts?.autoOpenTagPriceFlow && !activeTag;
+    if (routePickerIntent === 'quick_match' && !activeTag) {
+      const ctx = buildQuickMatchRouteContext();
+      if (!ctx) {
+        appAlert('Rota', 'Alış ve varış noktası seçilmelidir.');
+        return;
+      }
+      setQuickMatchRouteContext(ctx);
+      setQuickMatchFlowVisible(true);
+      setRoutePickerIntent('normal');
+      return;
+    }
+
+    const shouldAutoPrice =
+      routePickerIntent === 'normal' &&
+      !!opts?.autoOpenTagPriceFlow &&
+      !activeTag;
     if (shouldAutoPrice) {
       try {
         console.log(
@@ -13274,6 +13346,12 @@ function PassengerDashboard({
             <PassengerMatchModeCards
               onNormalPress={() => {
                 playTapSound();
+                setRoutePickerIntent('normal');
+                setShowDestinationPicker(true);
+              }}
+              onQuickPress={() => {
+                playTapSound();
+                setRoutePickerIntent('quick_match');
                 setShowDestinationPicker(true);
               }}
               onTrustedPress={() => {
@@ -13286,6 +13364,7 @@ function PassengerDashboard({
               style={styles.destinationBoxBig}
               onPress={() => {
                 playTapSound();
+                setRoutePickerIntent('normal');
                 setShowDestinationPicker(true);
               }}
               activeOpacity={0.88}
@@ -14638,6 +14717,43 @@ function PassengerDashboard({
           rateUserName={ratingModalData.rateUserName}
         />
       )}
+
+      <QuickMatchPassengerFlow
+        visible={
+          quickMatchFlowVisible || quickMatchSession.status !== 'idle'
+        }
+        route={quickMatchRouteContext}
+        session={quickMatchSession}
+        onClose={() => {
+          setQuickMatchFlowVisible(false);
+          setQuickMatchRouteContext(null);
+          setRoutePickerIntent('normal');
+        }}
+        onRetry={() => {
+          const ctx = buildQuickMatchRouteContext();
+          if (ctx) {
+            setQuickMatchRouteContext(ctx);
+            setQuickMatchFlowVisible(true);
+          } else {
+            setRoutePickerIntent('quick_match');
+            setShowDestinationPicker(true);
+          }
+        }}
+        onGoNormalMatch={() => {
+          setRoutePickerIntent('normal');
+          setQuickMatchFlowVisible(false);
+          if (destination && resolvePassengerPickupCoords(passengerPickup, userLocation)) {
+            void runTagPassengerPriceFlow({
+              dropLat: Number(destination.latitude),
+              dropLng: Number(destination.longitude),
+              playTapSound: true,
+              source: 'call_button',
+            });
+          } else {
+            setShowDestinationPicker(true);
+          }
+        }}
+      />
     </SafeAreaView>
     </ImageBackground>
   );
