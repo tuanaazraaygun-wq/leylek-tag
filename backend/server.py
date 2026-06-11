@@ -5807,6 +5807,137 @@ def _trusted_summary_for_actor(actor_id: str) -> dict:
     }
 
 
+_TRUSTED_CONNECTIONS_LIST_LIMIT = 50
+
+
+def _trusted_counterparty_user_id(
+    actor_norm: str, row: dict
+) -> tuple[Optional[str], Optional[str]]:
+    """Aktif bağlantı satırında karşı taraf user_id ve trusted rolü; actor yoksa (None, None)."""
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    if ini == actor_norm:
+        return (cp or None, row.get("counterparty_role"))
+    if cp == actor_norm:
+        return (ini or None, row.get("initiator_role"))
+    return (None, None)
+
+
+def _trusted_connection_sort_key(row: dict) -> float:
+    for key in ("last_trip_at", "responded_at", "invited_at"):
+        val = row.get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        try:
+            dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            continue
+    return 0.0
+
+
+def _trusted_counterparty_projection(
+    user_row: dict, counterparty_role: Optional[str]
+) -> dict:
+    """Trusted list — PII allowlist; ham driver_details yok."""
+    uid = str(user_row.get("id") or "").strip().lower()
+    first = str(user_row.get("first_name") or "").strip()
+    name = str(user_row.get("name") or "").strip()
+    display = first or _push_first_name(name, max_len=32) or name or "Kullanıcı"
+    rating_raw = user_row.get("rating")
+    try:
+        rating = float(rating_raw) if rating_raw is not None else None
+    except (TypeError, ValueError):
+        rating = None
+    total_raw = user_row.get("total_trips")
+    try:
+        total_trips = int(total_raw) if total_raw is not None else None
+    except (TypeError, ValueError):
+        total_trips = None
+    role = str(counterparty_role or "").strip().lower()
+    vehicle_kind = (
+        _effective_driver_vehicle_kind(user_row) if role == "driver" else None
+    )
+    return {
+        "user_id": uid,
+        "display_name": display,
+        "profile_photo": user_row.get("profile_photo"),
+        "rating": rating,
+        "total_trips": total_trips,
+        "vehicle_kind": vehicle_kind,
+    }
+
+
+def _trusted_connections_for_actor(actor_id: str) -> dict:
+    """Aktif trusted bağlantılar (read-only liste; block + eligibility filtreli)."""
+    actor_norm = str(actor_id or "").strip().lower()
+    blocked = _get_bilateral_blocked_user_ids(actor_norm)
+
+    active_res = (
+        supabase.table("trusted_connections")
+        .select(
+            "id, initiator_id, counterparty_id, initiator_role, counterparty_role, "
+            "status, invited_at, responded_at, last_trip_at"
+        )
+        .eq("status", "active")
+        .or_(f"initiator_id.eq.{actor_norm},counterparty_id.eq.{actor_norm}")
+        .limit(_TRUSTED_CONNECTIONS_LIST_LIMIT)
+        .execute()
+    )
+
+    staged: list[tuple[dict, str, Optional[str]]] = []
+    peer_ids: set[str] = set()
+    for row in active_res.data or []:
+        other_id, cp_role = _trusted_counterparty_user_id(actor_norm, row)
+        if not other_id or other_id in blocked:
+            continue
+        staged.append((row, other_id, cp_role))
+        peer_ids.add(other_id)
+
+    eligibility = _user_eligibility_map_for_ids(peer_ids)
+    eligible_ids = [uid for uid in peer_ids if eligibility.get(uid, False)]
+
+    users_by_id: dict[str, dict] = {}
+    if eligible_ids:
+        user_res = (
+            supabase.table("users")
+            .select(
+                "id, name, first_name, profile_photo, rating, total_trips, driver_details"
+            )
+            .in_("id", eligible_ids)
+            .execute()
+        )
+        for u in user_res.data or []:
+            uid = str(u.get("id") or "").strip().lower()
+            if uid and user_account_is_eligible(u):
+                users_by_id[uid] = u
+
+    connections: list[dict] = []
+    for row, other_id, cp_role in staged:
+        if not eligibility.get(other_id, False):
+            continue
+        user_row = users_by_id.get(other_id)
+        if not user_row:
+            continue
+        since = row.get("responded_at") or row.get("invited_at")
+        connections.append(
+            {
+                "connection_id": str(row.get("id") or ""),
+                "role": str(cp_role or "").strip().lower(),
+                "status": "active",
+                "since": since,
+                "last_trip_at": row.get("last_trip_at"),
+                "counterparty": _trusted_counterparty_projection(user_row, cp_role),
+                "_sort": _trusted_connection_sort_key(row),
+            }
+        )
+
+    connections.sort(key=lambda item: item.pop("_sort"), reverse=True)
+    return {"success": True, "connections": connections}
+
+
 async def _active_tag_disabled_response_if_ineligible(
     user_id, *, action: str
 ) -> Optional[dict]:
@@ -9465,6 +9596,25 @@ async def get_trusted_summary(
             e,
         )
         raise HTTPException(status_code=500, detail="Trusted özet alınamadı") from e
+
+
+@api_router.get("/trusted/connections")
+async def get_trusted_connections(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Aktif trusted bağlantılar (read-only). Davet/match yok — P5.4-A2.2."""
+    await require_eligible_user(actor_id, action="trusted_connections")
+    try:
+        return _trusted_connections_for_actor(actor_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_connections actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Trusted bağlantılar alınamadı") from e
 
 
 @api_router.get("/admin/reports")
