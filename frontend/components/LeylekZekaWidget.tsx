@@ -40,6 +40,7 @@ import {
   shouldTriggerPassengerProactiveInsight,
   wasProactiveShownForTag,
 } from '../lib/leylekZekaProactiveInsight';
+import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
@@ -53,18 +54,18 @@ const PASSENGER_WAIT_ORB_TOP_WIN_RATIO = 0.2;
 const PASSENGER_WAIT_ORB_TOP_MAX_WIN_RATIO = 0.42;
 const PASSENGER_WAIT_ORB_LEFT_PX = 22;
 const PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX = 96;
-/** Rol seçimi: Devam Et + footer üstünde (~20–28px CTA üstü boşluk). */
-const ROLE_SELECT_BOTTOM_EXTRA_MIN = 188;
-const ROLE_SELECT_BOTTOM_EXTRA_MID = 198;
-const ROLE_SELECT_BOTTOM_EXTRA_MAX = 208;
+/** Rol seçimi compact göz — başlık bandının altı (safe area + cockpit yüksekliği). */
 const ROLE_SELECT_HEIGHT_SMALL_MAX = 700;
 const ROLE_SELECT_HEIGHT_LARGE_MIN = 820;
+const ROLE_SELECT_EYE_TOP_EXTRA_MIN = 72;
+const ROLE_SELECT_EYE_TOP_EXTRA_MID = 84;
+const ROLE_SELECT_EYE_TOP_EXTRA_MAX = 96;
 
-function roleSelectFabBottomExtra(winHeight: number): number {
-  if (!Number.isFinite(winHeight) || winHeight <= 0) return ROLE_SELECT_BOTTOM_EXTRA_MID;
-  if (winHeight < ROLE_SELECT_HEIGHT_SMALL_MAX) return ROLE_SELECT_BOTTOM_EXTRA_MIN;
-  if (winHeight >= ROLE_SELECT_HEIGHT_LARGE_MIN) return ROLE_SELECT_BOTTOM_EXTRA_MAX;
-  return ROLE_SELECT_BOTTOM_EXTRA_MID;
+function roleSelectEyeTopExtra(winHeight: number): number {
+  if (!Number.isFinite(winHeight) || winHeight <= 0) return ROLE_SELECT_EYE_TOP_EXTRA_MID;
+  if (winHeight < ROLE_SELECT_HEIGHT_SMALL_MAX) return ROLE_SELECT_EYE_TOP_EXTRA_MAX;
+  if (winHeight >= ROLE_SELECT_HEIGHT_LARGE_MIN) return ROLE_SELECT_EYE_TOP_EXTRA_MIN;
+  return ROLE_SELECT_EYE_TOP_EXTRA_MID;
 }
 const BOUNCE_DIP_PX = -6;
 const HINT_FADE_IN_MS = 280;
@@ -254,11 +255,14 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const bottomInset = useMemo(() => {
     const safe = Math.max(insets.bottom, Spacing.sm);
-    if (homeFlowScreen === 'role-select') {
-      return safe + roleSelectFabBottomExtra(winH);
-    }
     return safe + FAB_BOTTOM_EXTRA_PX;
-  }, [homeFlowScreen, insets.bottom, winH]);
+  }, [insets.bottom]);
+
+  const isRoleSelectScreen = homeFlowScreen === 'role-select';
+
+  const roleSelectEyeTop = useMemo(() => {
+    return insets.top + roleSelectEyeTopExtra(winH);
+  }, [insets.top, winH]);
 
   const isPassengerPreMatchWaitOrb =
     flowHint === 'passenger_matching' ||
@@ -590,7 +594,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, []);
 
   useEffect(() => {
-    if (!showFab) {
+    if (!showFab || homeFlowScreen === 'role-select') {
       clearTypingTimeouts();
       typingRunIdRef.current += 1;
       setEphemeralFullLine(null);
@@ -632,7 +636,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   ]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab) {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
       breathe.setValue(0);
       tilt.setValue(0);
       flutter.setValue(0);
@@ -675,10 +679,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     loop.start();
     return () => loop.stop();
-  }, [breathe, flutter, reduceMotion, showFab, tilt]);
+  }, [breathe, flutter, homeFlowScreen, reduceMotion, showFab, tilt]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab) {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
       flutter.setValue(0);
       return;
     }
@@ -701,7 +705,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     wingLoop.start();
     return () => wingLoop.stop();
-  }, [flutter, reduceMotion, showFab]);
+  }, [flutter, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
     if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
@@ -848,8 +852,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const contextualForA11y = getContextualPillLine(homeFlowScreen ?? null, flowHint);
 
-  const isRoleSelectScreen = homeFlowScreen === 'role-select';
-
   const showBubbleCursor =
     !reduceMotion &&
     (bubbleTypingActive || bubbleHoldCursor) &&
@@ -887,97 +889,106 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     <>
       {showFab ? (
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-          <View
-            pointerEvents="box-none"
-            style={[
-              isPassengerWaitMatchingOrb ? styles.passengerWaitMapAnchor : styles.centerAnchor,
-              isPassengerWaitMatchingOrb
-                ? { top: passengerWaitOrbOnMap.top, left: passengerWaitOrbOnMap.left }
-                : { bottom: bottomInset },
-            ]}
-          >
-            <Animated.View
+          {isRoleSelectScreen ? (
+            <View
+              pointerEvents="box-none"
+              style={[styles.centerAnchor, { top: roleSelectEyeTop }]}
+            >
+              <LeylekEyeTrigger onPress={onOpen} />
+            </View>
+          ) : (
+            <View
               pointerEvents="box-none"
               style={[
-                styles.fabColumn,
-                isPassengerPreMatchWaitOrb ? styles.fabColumnWaitMap : null,
-                { transform: [{ translateY: floatY }] },
+                isPassengerWaitMatchingOrb ? styles.passengerWaitMapAnchor : styles.centerAnchor,
+                isPassengerWaitMatchingOrb
+                  ? { top: passengerWaitOrbOnMap.top, left: passengerWaitOrbOnMap.left }
+                  : { bottom: bottomInset },
               ]}
             >
-              {speechFull ? (
-                isRoleSelectScreen || reduceMotion ? (
-                  <View
-                    pointerEvents="none"
-                    style={[
-                      styles.orbHintGlowWrap,
-                      isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
-                    ]}
-                  >
-                    {bubbleInner}
-                  </View>
-                ) : (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[
-                      styles.orbHintGlowWrap,
-                      isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
-                      Platform.OS === 'ios' ? { shadowOpacity: bubbleShadowOpacity } : null,
-                    ]}
-                  >
-                    {bubbleInner}
-                  </Animated.View>
-                )
-              ) : null}
-
-              <View style={styles.fabOrbWrap} pointerEvents="box-none">
-                <Pressable
-                  onPress={onOpen}
-                  onPressIn={markInteraction}
-                  style={({ pressed }) => [styles.fabOuter, fabGlowStyle, pressed && styles.fabPressed]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Leylek Zeka"
-                  accessibilityHint={
-                    contextualForA11y
-                      ? `${contextualForA11y} Sohbeti açmak için dokunun.`
-                      : 'Uygulama içi yardım için dokunun.'
-                  }
-                >
-                  <LinearGradient
-                    colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
-                    locations={[0, 0.35, 0.72, 1]}
-                    start={{ x: 0.15, y: 0.1 }}
-                    end={{ x: 0.9, y: 1 }}
-                    style={styles.fabGrad}
-                  >
-                    <Animated.View
+              <Animated.View
+                pointerEvents="box-none"
+                style={[
+                  styles.fabColumn,
+                  isPassengerPreMatchWaitOrb ? styles.fabColumnWaitMap : null,
+                  { transform: [{ translateY: floatY }] },
+                ]}
+              >
+                {speechFull ? (
+                  reduceMotion ? (
+                    <View
+                      pointerEvents="none"
                       style={[
-                        styles.logoStage,
-                        reduceMotion
-                          ? undefined
-                          : {
-                              transform: [
-                                { translateY: logoLift },
-                                { scale: logoScaleCombined },
-                                { rotate: logoTilt },
-                              ],
-                            },
+                        styles.orbHintGlowWrap,
+                        isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
                       ]}
                     >
-                      <Image
-                        source={require('../assets/images/leylek-logo-premium.png')}
-                        style={styles.logoImage}
-                        resizeMode="contain"
-                        accessibilityIgnoresInvertColors
-                      />
+                      {bubbleInner}
+                    </View>
+                  ) : (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.orbHintGlowWrap,
+                        isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
+                        Platform.OS === 'ios' ? { shadowOpacity: bubbleShadowOpacity } : null,
+                      ]}
+                    >
+                      {bubbleInner}
                     </Animated.View>
-                  </LinearGradient>
-                </Pressable>
-                <View style={styles.orbAiBadge} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                  <Text style={styles.orbAiBadgeText}>AI</Text>
+                  )
+                ) : null}
+
+                <View style={styles.fabOrbWrap} pointerEvents="box-none">
+                  <Pressable
+                    onPress={onOpen}
+                    onPressIn={markInteraction}
+                    style={({ pressed }) => [styles.fabOuter, fabGlowStyle, pressed && styles.fabPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Leylek Zeka"
+                    accessibilityHint={
+                      contextualForA11y
+                        ? `${contextualForA11y} Sohbeti açmak için dokunun.`
+                        : 'Uygulama içi yardım için dokunun.'
+                    }
+                  >
+                    <LinearGradient
+                      colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
+                      locations={[0, 0.35, 0.72, 1]}
+                      start={{ x: 0.15, y: 0.1 }}
+                      end={{ x: 0.9, y: 1 }}
+                      style={styles.fabGrad}
+                    >
+                      <Animated.View
+                        style={[
+                          styles.logoStage,
+                          reduceMotion
+                            ? undefined
+                            : {
+                                transform: [
+                                  { translateY: logoLift },
+                                  { scale: logoScaleCombined },
+                                  { rotate: logoTilt },
+                                ],
+                              },
+                        ]}
+                      >
+                        <Image
+                          source={require('../assets/images/leylek-logo-premium.png')}
+                          style={styles.logoImage}
+                          resizeMode="contain"
+                          accessibilityIgnoresInvertColors
+                        />
+                      </Animated.View>
+                    </LinearGradient>
+                  </Pressable>
+                  <View style={styles.orbAiBadge} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                    <Text style={styles.orbAiBadgeText}>AI</Text>
+                  </View>
                 </View>
-              </View>
-            </Animated.View>
-          </View>
+              </Animated.View>
+            </View>
+          )}
         </View>
       ) : null}
 
