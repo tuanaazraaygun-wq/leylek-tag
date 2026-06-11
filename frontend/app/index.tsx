@@ -52,6 +52,7 @@ import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern 
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCards';
 import DriverCockpitQuickStrip from '../components/superUx/DriverCockpitQuickStrip';
+import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
@@ -18226,6 +18227,7 @@ function DriverDashboard({
                 <Text style={dws.cockpitHeaderTitle} numberOfLines={1}>
                   Sürücü paneli
                 </Text>
+                <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
                 <TouchableOpacity
                   style={dws.cockpitHeaderBtn}
                   onPress={() => onDriverOfferOpenProfile?.()}
