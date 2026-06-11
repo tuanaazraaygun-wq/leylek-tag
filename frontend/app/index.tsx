@@ -55,6 +55,8 @@ import QuickMatchPassengerFlow, {
   type QuickMatchRouteContext,
 } from '../components/superUx/QuickMatchPassengerFlow';
 import { useQuickMatchPassengerSession } from '../hooks/useQuickMatchPassengerSession';
+import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
+import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession';
 import DriverCockpitQuickStrip from '../components/superUx/DriverCockpitQuickStrip';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
@@ -17406,6 +17408,40 @@ function DriverDashboard({
     }
   };
 
+  const driverHasActiveTripForQuickMatch = Boolean(
+    activeTag &&
+      (activeTag.status === 'matched' || activeTag.status === 'in_progress'),
+  );
+  const quickMatchDriverEnabled =
+    !driverHasActiveTripForQuickMatch &&
+    !activeTag &&
+    kycStatus?.status !== 'pending';
+
+  const handleQuickMatchDriverMatched = useCallback(async (_tagId?: string) => {
+    try {
+      await loadActiveTag();
+    } catch (error) {
+      console.warn('[QuickMatchDriver] loadActiveTag after match failed', error);
+    }
+  }, [loadActiveTag]);
+
+  const quickMatchDriverSession = useQuickMatchDriverSession({
+    enabled: quickMatchDriverEnabled,
+    hasActiveTag: Boolean(activeTag),
+    onMatched: handleQuickMatchDriverMatched,
+  });
+
+  useEffect(() => {
+    if (!quickMatchDriverEnabled) return;
+    if (quickMatchDriverSession.status !== 'idle') return;
+
+    const timer = setInterval(() => {
+      void quickMatchDriverSession.refresh();
+    }, 3500);
+
+    return () => clearInterval(timer);
+  }, [quickMatchDriverEnabled, quickMatchDriverSession.status, quickMatchDriverSession.refresh]);
+
   useEffect(() => {
     driverBoardingStableSinceRef.current = null;
   }, [activeTag?.id]);
@@ -18533,6 +18569,22 @@ function DriverDashboard({
           userId={user.id}
           onPackagePurchased={() => {
             setShowDriverPackagesModal(false);
+          }}
+        />
+        <DriverQuickMatchInviteCard
+          visible={
+            quickMatchDriverEnabled &&
+            quickMatchDriverSession.status !== 'idle'
+          }
+          session={quickMatchDriverSession}
+          onAccept={() => {
+            void quickMatchDriverSession.accept();
+          }}
+          onDecline={() => {
+            void quickMatchDriverSession.decline();
+          }}
+          onClose={() => {
+            quickMatchDriverSession.clear();
           }}
         />
       </>
