@@ -107,6 +107,13 @@ from services.driver_iban_service import (
     update_driver_bank_account,
 )
 from services.quick_match import (
+    QuickMatchConflictError,
+    QuickMatchNotFoundError,
+    QuickMatchValidationError,
+    accept_quick_match_invite,
+    cancel_quick_match_request,
+    create_quick_match_request,
+    decline_quick_match_invite,
     get_active_quick_match_request,
     get_current_quick_match_invite,
     get_quick_match_request_status,
@@ -9778,6 +9785,205 @@ async def get_trusted_pending(
         raise HTTPException(status_code=500, detail="Trusted bekleyen davetler alınamadı") from e
 
 
+_PASSENGER_BLOCKING_TAG_STATUSES_FOR_QUICK_MATCH = [
+    "waiting",
+    "pending",
+    "offers_received",
+    "matched",
+    "driver_arriving",
+    "passenger_onboard",
+    "in_progress",
+    "accepted",
+]
+
+
+def _passenger_blocking_tag_for_quick_match(passenger_id: str) -> bool:
+    """Quick Match create — aktif normal tag varsa True (geniş status listesi)."""
+    uid = str(passenger_id or "").strip().lower()
+    if not uid:
+        return False
+    try:
+        res = (
+            supabase.table("tags")
+            .select("id")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("passenger_id", uid)
+            .in_("status", _PASSENGER_BLOCKING_TAG_STATUSES_FOR_QUICK_MATCH)
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+    except Exception as exc:
+        logger.warning("quick_match passenger_blocking_tag check err=%s", exc)
+        return False
+
+
+def _driver_busy_for_quick_match(driver_id: str) -> bool:
+    did = str(driver_id or "").strip()
+    if not did:
+        return True
+    return (
+        _other_active_tag_id_sync(
+            supabase,
+            column="driver_id",
+            user_id=did,
+            exclude_tag_id="",
+        )
+        is not None
+    )
+
+
+async def _quick_match_route_distance_km(
+    pickup_lat: float,
+    pickup_lng: float,
+    dropoff_lat: float,
+    dropoff_lng: float,
+) -> float:
+    try:
+        ri = await get_route_info(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+        if ri and ri.get("distance_km") is not None:
+            return float(ri["distance_km"])
+    except Exception as exc:
+        logger.warning("quick_match route_distance get_route_info: %s", exc)
+    return haversine_distance(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+
+
+class QuickMatchCreateRequest(BaseModel):
+    pickup_lat: float
+    pickup_lng: float
+    pickup_label: str
+    dropoff_lat: float
+    dropoff_lng: float
+    dropoff_label: str
+    offered_contribution_tl: int
+    vehicle_preference: Optional[str] = None
+
+
+@api_router.post("/quick-match/request")
+async def post_quick_match_request_http(
+    body: QuickMatchCreateRequest,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — yolcu request oluştur + ilk invite (P6-C2)."""
+    await require_eligible_user(actor_id, action="quick_match_request_create")
+    try:
+        result = await create_quick_match_request(
+            supabase,
+            actor_id,
+            body.model_dump(),
+            find_eligible_drivers_fn=find_eligible_drivers,
+            passenger_blocking_tag_fn=_passenger_blocking_tag_for_quick_match,
+            driver_busy_fn=_driver_busy_for_quick_match,
+            route_distance_fn=_quick_match_route_distance_km,
+        )
+        return {"success": True, **result}
+    except QuickMatchValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except QuickMatchConflictError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_request_create actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match isteği oluşturulamadı") from e
+
+
+@api_router.post("/quick-match/invites/{invite_id}/decline")
+async def post_quick_match_invite_decline_http(
+    invite_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — sürücü red + re-advance (P6-C3)."""
+    await require_eligible_user(actor_id, action="quick_match_decline")
+    try:
+        result = await decline_quick_match_invite(
+            supabase,
+            actor_id,
+            invite_id,
+            find_eligible_drivers_fn=find_eligible_drivers,
+            driver_busy_fn=_driver_busy_for_quick_match,
+        )
+        return {"success": True, **result}
+    except QuickMatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.detail) from exc
+    except QuickMatchConflictError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_decline actor=%s invite_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(invite_id or "")[:36],
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match davet reddedilemedi") from e
+
+
+@api_router.post("/quick-match/invites/{invite_id}/accept")
+async def post_quick_match_invite_accept_http(
+    invite_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — sürücü kabul + matched tag oluştur (P6-C4)."""
+    await require_eligible_user(actor_id, action="quick_match_accept")
+    try:
+        result = accept_quick_match_invite(
+            supabase,
+            actor_id,
+            invite_id,
+            tags_insert_fn=tags_insert_with_type_required,
+            driver_busy_checker_fn=_driver_busy_for_quick_match,
+            passenger_busy_checker_fn=_passenger_blocking_tag_for_quick_match,
+            build_snapshot_fn=build_snapshot_fields_for_tag_update,
+        )
+        return {"success": True, **result}
+    except QuickMatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.detail) from exc
+    except QuickMatchConflictError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_accept actor=%s invite_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(invite_id or "")[:36],
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match davet kabul edilemedi") from e
+
+
+@api_router.post("/quick-match/request/{request_id}/cancel")
+async def post_quick_match_request_cancel_http(
+    request_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — yolcu iptal (P6-C3)."""
+    await require_eligible_user(actor_id, action="quick_match_cancel")
+    try:
+        result = await cancel_quick_match_request(supabase, actor_id, request_id)
+        return {"success": True, **result}
+    except QuickMatchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=exc.detail) from exc
+    except QuickMatchConflictError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_cancel actor=%s request_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(request_id or "")[:36],
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match isteği iptal edilemedi") from e
+
+
 @api_router.get("/quick-match/request/active")
 async def get_quick_match_request_active_http(
     actor_id: str = Depends(get_authenticated_user_id_from_authorization),
@@ -9785,7 +9991,12 @@ async def get_quick_match_request_active_http(
     """Sequential Quick Match — yolcunun aktif sequencing request'i (read-only, P6-C1)."""
     await require_eligible_user(actor_id, action="quick_match_request_active")
     try:
-        request = get_active_quick_match_request(supabase, actor_id)
+        request = await get_active_quick_match_request(
+            supabase,
+            actor_id,
+            find_eligible_drivers_fn=find_eligible_drivers,
+            driver_busy_fn=_driver_busy_for_quick_match,
+        )
         return {"success": True, "request": request}
     except HTTPException:
         raise
@@ -9806,7 +10017,13 @@ async def get_quick_match_request_status_http(
     """Sequential Quick Match — yolcu request durumu (read-only, P6-C1)."""
     await require_eligible_user(actor_id, action="quick_match_request_status")
     try:
-        request = get_quick_match_request_status(supabase, actor_id, request_id)
+        request = await get_quick_match_request_status(
+            supabase,
+            actor_id,
+            request_id,
+            find_eligible_drivers_fn=find_eligible_drivers,
+            driver_busy_fn=_driver_busy_for_quick_match,
+        )
         if request is None:
             raise HTTPException(status_code=404, detail="Quick Match isteği bulunamadı")
         return {"success": True, "request": request}
@@ -9829,7 +10046,12 @@ async def get_quick_match_invite_current_http(
     """Sequential Quick Match — sürücünün aktif invite'ı (read-only, P6-C1)."""
     await require_eligible_user(actor_id, action="quick_match_invite_current")
     try:
-        invite = get_current_quick_match_invite(supabase, actor_id)
+        invite = await get_current_quick_match_invite(
+            supabase,
+            actor_id,
+            find_eligible_drivers_fn=find_eligible_drivers,
+            driver_busy_fn=_driver_busy_for_quick_match,
+        )
         return {"success": True, "invite": invite}
     except HTTPException:
         raise
