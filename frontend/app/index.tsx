@@ -13339,9 +13339,9 @@ function PassengerDashboard({
             </View>
 
             <View style={styles.passengerIdleIntroCard}>
-              <Text style={styles.passengerIdleIntroTitle}>Yolculuğunuzu planlayın</Text>
+              <Text style={styles.passengerIdleIntroTitle}>Nasıl eşleşmek istersiniz?</Text>
               <Text style={styles.passengerIdleIntroCaption}>
-                Alınış ve hedef noktanızı seçin; teklifinizi gönderin.
+                Önce eşleşme tipini seçin, ardından rotanızı belirleyin.
               </Text>
             </View>
 
@@ -13362,34 +13362,34 @@ function PassengerDashboard({
               }}
             />
 
-            <TouchableOpacity
-              style={styles.destinationBoxBig}
-              onPress={() => {
-                playTapSound();
-                setRoutePickerIntent('normal');
-                setShowDestinationPicker(true);
-              }}
-              activeOpacity={0.88}
-            >
-              <View style={styles.destinationIconBig}>
-                <Ionicons name="navigate" size={28} color="#22D3EE" />
-              </View>
-              <View style={styles.passengerRouteCtaTextCol}>
-                <Text style={styles.passengerRouteCtaLabel}>
-                  {destination ? 'Rotayı düzenle' : 'Yol paylaşımı başlat'}
-                </Text>
-                <Text
-                  style={styles.destinationTextBig}
-                  numberOfLines={2}
-                  ellipsizeMode="tail"
-                >
-                  {destination ? destination.address : 'Alınış ve hedef noktanızı seçin'}
-                </Text>
-              </View>
-              <View style={styles.destinationArrowBig}>
-                <Ionicons name="chevron-forward" size={22} color="#22D3EE" />
-              </View>
-            </TouchableOpacity>
+            {destination ? (
+              <TouchableOpacity
+                style={styles.destinationBoxBig}
+                onPress={() => {
+                  playTapSound();
+                  setRoutePickerIntent('normal');
+                  setShowDestinationPicker(true);
+                }}
+                activeOpacity={0.88}
+              >
+                <View style={styles.destinationIconBig}>
+                  <Ionicons name="navigate" size={28} color="#22D3EE" />
+                </View>
+                <View style={styles.passengerRouteCtaTextCol}>
+                  <Text style={styles.passengerRouteCtaLabel}>Rotayı düzenle</Text>
+                  <Text
+                    style={styles.destinationTextBig}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {destination.address}
+                  </Text>
+                </View>
+                <View style={styles.destinationArrowBig}>
+                  <Ionicons name="chevron-forward" size={22} color="#22D3EE" />
+                </View>
+              </TouchableOpacity>
+            ) : null}
 
             {destination ? (
               <TouchableOpacity
