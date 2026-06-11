@@ -51,6 +51,7 @@ import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü K
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCards';
+import DriverCockpitQuickStrip from '../components/superUx/DriverCockpitQuickStrip';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
@@ -18237,6 +18238,7 @@ function DriverDashboard({
                 </TouchableOpacity>
               </View>
             </View>
+            <DriverCockpitQuickStrip />
             <View style={dws.cockpitPanelPad}>
               <DriverDashboardPanel
                 userId={user.id}
