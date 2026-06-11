@@ -106,6 +106,11 @@ from services.driver_iban_service import (
     soft_delete_driver_bank_account,
     update_driver_bank_account,
 )
+from services.quick_match import (
+    get_active_quick_match_request,
+    get_current_quick_match_invite,
+    get_quick_match_request_status,
+)
 from services.transfer_payment_service import (
     TransferPaymentDisabledError,
     TransferPaymentForbiddenError,
@@ -9771,6 +9776,70 @@ async def get_trusted_pending(
             e,
         )
         raise HTTPException(status_code=500, detail="Trusted bekleyen davetler alınamadı") from e
+
+
+@api_router.get("/quick-match/request/active")
+async def get_quick_match_request_active_http(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — yolcunun aktif sequencing request'i (read-only, P6-C1)."""
+    await require_eligible_user(actor_id, action="quick_match_request_active")
+    try:
+        request = get_active_quick_match_request(supabase, actor_id)
+        return {"success": True, "request": request}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_request_active actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match aktif istek alınamadı") from e
+
+
+@api_router.get("/quick-match/request/{request_id}")
+async def get_quick_match_request_status_http(
+    request_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — yolcu request durumu (read-only, P6-C1)."""
+    await require_eligible_user(actor_id, action="quick_match_request_status")
+    try:
+        request = get_quick_match_request_status(supabase, actor_id, request_id)
+        if request is None:
+            raise HTTPException(status_code=404, detail="Quick Match isteği bulunamadı")
+        return {"success": True, "request": request}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_request_status actor=%s request_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(request_id or "")[:36],
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match istek durumu alınamadı") from e
+
+
+@api_router.get("/quick-match/invites/current")
+async def get_quick_match_invite_current_http(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sequential Quick Match — sürücünün aktif invite'ı (read-only, P6-C1)."""
+    await require_eligible_user(actor_id, action="quick_match_invite_current")
+    try:
+        invite = get_current_quick_match_invite(supabase, actor_id)
+        return {"success": True, "invite": invite}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_match_invite_current actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Quick Match davet alınamadı") from e
 
 
 @api_router.get("/admin/reports")
