@@ -2684,6 +2684,7 @@ export default function PlacesAutocomplete({
           });
           dismissKeyboardAfterSelection();
         } catch {
+          if (tryNonGoogleListCoordFallback()) return;
           setPredictionActionError('Adres doğrulanamadı. Başka bir sonuç seçin veya tekrar arayın.');
         } finally {
           setLoading(false);
