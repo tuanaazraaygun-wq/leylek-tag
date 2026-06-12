@@ -26,7 +26,7 @@ _PLACES_CACHE_NS = "places"
 
 GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 GEOAPIFY_API_KEY = (os.getenv("GEOAPIFY_API_KEY") or "").strip()
-_GEOAPIFY_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("GEOAPIFY_HTTP_TIMEOUT_SEC", "8") or "8"))
+_GEOAPIFY_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("GEOAPIFY_HTTP_TIMEOUT_SEC", "4") or "4"))
 
 # Önbellek bellek fallback: anahtar -> (monotonic_expire, gövde_dict)
 # Faz 1: birincil TTL Redis'te; Redis yoksa veya REDIS_CACHE=0 ise yalnız bu dict kullanılır
@@ -34,7 +34,7 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski cache girdilerini deploy sonrası baypas; ilçe → il kapsamı (Ankara + Muğla)
-_CACHE_KEY_VER = "v12_geoapify_fallback"
+_CACHE_KEY_VER = "v13_google_fast_path"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -154,7 +154,7 @@ _BOX_POI_QUERY_TERMS: frozenset[str] = frozenset(
 
 # Overpass (httpx ile; anahtar yok)
 OVERPASS_INTERPRETER_URL = (os.getenv("OVERPASS_INTERPRETER_URL") or "https://overpass-api.de/api/interpreter").strip()
-_OVERPASS_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("OVERPASS_HTTP_TIMEOUT_SEC", "8") or "8"))
+_OVERPASS_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("OVERPASS_HTTP_TIMEOUT_SEC", "4") or "4"))
 
 
 def _looks_like_box_poi_query(trimmed: str) -> bool:
@@ -1775,7 +1775,7 @@ async def api_places_search(
             except Exception:
                 over_primary = []
 
-            geocode_budget: list[int] = [6]
+            geocode_budget: list[int] = [3]
             geo_primary = _scoped_geocode_address(trimmed, city_trim, dr, cr)
             try:
                 if GOOGLE_MAPS_API_KEY:
@@ -1787,7 +1787,7 @@ async def api_places_search(
                         lng,
                         district=dr,
                         city_raw=cr,
-                        max_http=5,
+                        max_http=3,
                         max_predictions=20,
                     )
                     if preds_merged:
@@ -1813,6 +1813,40 @@ async def api_places_search(
                 pass
             except Exception:
                 pass
+
+            collected_coord_n = sum(
+                1 for it in collected if _result_lon_lat(it)[0] is not None
+            )
+            if len(collected) >= 3 and collected_coord_n >= 1:
+                fast_combined: list[dict[str, Any]] = list(over_primary) + list(collected)
+                ng_fast = _numeric_street_prefix_token(trimmed)
+                if ng_fast:
+                    fast_combined = [
+                        x for x in fast_combined if _numeric_street_gate_keeps_item(x, ng_fast)
+                    ]
+                fr_fast = _filter_results_city_safe(fast_combined, city, district=dr)
+                fr_fast = _dedupe_merged_city_results(fr_fast)
+                if not fr_fast and fast_combined:
+                    google_raw_fast = [
+                        x
+                        for x in fast_combined
+                        if str(x.get("provider") or "") == "google"
+                        or "turkiye" in _norm_key(_result_full_address_text(x))
+                    ]
+                    if google_raw_fast:
+                        fr_fast = _dedupe_merged_city_results(google_raw_fast)[:20]
+                if fr_fast:
+                    fr_fast = _rank_city_scoped_results(
+                        fr_fast, trimmed, city_trim, lat, lng, district=dr
+                    )
+                    payload_fast: dict[str, Any] = {
+                        "success": True,
+                        "cached": False,
+                        "provider_used": "google_fast_path",
+                        "results": fr_fast[:20],
+                    }
+                    _cache_set(cache_key_raw, payload_fast)
+                    return payload_fast
 
             if GEOAPIFY_API_KEY and not _has_google_provider_rows(collected):
                 try:
