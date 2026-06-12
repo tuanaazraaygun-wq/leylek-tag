@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -261,6 +261,7 @@ export function QuickMatchPassengerFlow({
 }: QuickMatchPassengerFlowProps) {
   const [contributionTl, setContributionTl] = useState(DEFAULT_MIN_CONTRIBUTION_TL);
   const [minContributionTl, setMinContributionTl] = useState(DEFAULT_MIN_CONTRIBUTION_TL);
+  const awaitingCreateResultRef = useRef(false);
 
   const distanceTooFar = useMemo(
     () =>
@@ -319,11 +320,20 @@ export function QuickMatchPassengerFlow({
     onGoNormalMatch?.();
   }, [session, onGoNormalMatch]);
 
-  const handleCreate = useCallback(() => {
+  const handleCreate = useCallback(async () => {
     if (!route || session.isCreating || distanceTooFar) {
       return;
     }
-    void session.create({
+    console.log(
+      '[QM] CREATE_TAP',
+      JSON.stringify({
+        distance_km: route.distance_km ?? null,
+        offered_contribution_tl: contributionTl,
+        vehicle_preference: route.vehicle_preference ?? null,
+      }),
+    );
+    awaitingCreateResultRef.current = true;
+    await session.create({
       pickup_lat: route.pickup_lat,
       pickup_lng: route.pickup_lng,
       pickup_label: route.pickup_label,
@@ -334,6 +344,61 @@ export function QuickMatchPassengerFlow({
       vehicle_preference: route.vehicle_preference ?? undefined,
     });
   }, [route, session, contributionTl, distanceTooFar]);
+
+  useEffect(() => {
+    if (!awaitingCreateResultRef.current) {
+      return;
+    }
+    if (session.status === 'sequencing' && session.request?.request_id) {
+      console.log(
+        '[QM] CREATE_SUCCESS',
+        JSON.stringify({
+          request_id: session.request.request_id,
+          status: session.request.status,
+        }),
+      );
+      awaitingCreateResultRef.current = false;
+      return;
+    }
+    if (session.status === 'matched' && session.request?.request_id) {
+      console.log(
+        '[QM] CREATE_SUCCESS',
+        JSON.stringify({
+          request_id: session.request.request_id,
+          status: session.request?.status ?? 'matched',
+        }),
+      );
+      awaitingCreateResultRef.current = false;
+      return;
+    }
+    if (
+      session.status === 'exhausted' ||
+      session.status === 'expired' ||
+      session.status === 'cancelled'
+    ) {
+      console.log(
+        '[QM] CREATE_TERMINAL',
+        JSON.stringify({
+          terminal_status: session.status,
+          request_id: session.request?.request_id ?? null,
+        }),
+      );
+      awaitingCreateResultRef.current = false;
+      return;
+    }
+    if (session.status === 'error' && session.errorMessage) {
+      console.log(
+        '[QM] CREATE_ERROR',
+        JSON.stringify({ message: session.errorMessage }),
+      );
+      awaitingCreateResultRef.current = false;
+    }
+  }, [
+    session.status,
+    session.request?.request_id,
+    session.request?.status,
+    session.errorMessage,
+  ]);
 
   const handleCancelRequest = useCallback(() => {
     if (session.isCancelling) {
@@ -588,9 +653,12 @@ export function QuickMatchPassengerFlow({
         {session.errorMessage ? (
           <Text style={styles.inlineError}>{session.errorMessage}</Text>
         ) : null}
+        <Text style={styles.ctaPreface}>
+          Rota hazır. Sürücülere hızlı eşleşme isteği göndermek için aşağıdaki butona basın.
+        </Text>
         <PrimaryButton
-          label="Hızlı Eşleşme isteği gönder"
-          onPress={handleCreate}
+          label="Hızlı eşleşme isteği gönder"
+          onPress={() => void handleCreate()}
           disabled={session.isCreating}
           loading={session.isCreating}
         />
@@ -749,6 +817,16 @@ const styles = StyleSheet.create({
     color: PREMIUM_TEXT_MUTED,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  ctaPreface: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   statusHint: {
     fontSize: 13,

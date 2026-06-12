@@ -11890,6 +11890,15 @@ function PassengerDashboard({
       setQuickMatchFlowVisible(true);
       setPassengerIdleOfferChannel('quick_match');
       setRoutePickerIntent('normal');
+      console.log(
+        '[QM] FLOW_OPEN route_ready',
+        JSON.stringify({
+          source: 'destination_confirm',
+          distance_km: ctx.distance_km ?? null,
+          pickup_label: ctx.pickup_label,
+          dropoff_label: ctx.dropoff_label,
+        }),
+      );
       return;
     }
 
@@ -14829,6 +14838,15 @@ function PassengerDashboard({
           if (ctx) {
             setQuickMatchRouteContext(ctx);
             setQuickMatchFlowVisible(true);
+            console.log(
+              '[QM] FLOW_OPEN route_ready',
+              JSON.stringify({
+                source: 'retry',
+                distance_km: ctx.distance_km ?? null,
+                pickup_label: ctx.pickup_label,
+                dropoff_label: ctx.dropoff_label,
+              }),
+            );
           } else {
             setRoutePickerIntent('quick_match');
             setShowDestinationPicker(true);
