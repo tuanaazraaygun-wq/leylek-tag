@@ -8632,6 +8632,7 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (postLoginTagResumePending) return;
+    if (showDestinationPicker) return;
     if (activeTag || destination) return;
     if (passengerDestinationAutoOpenedRef.current) return;
     /** İlk çizim sonrası: pickup adımıyla modal açılsın */
@@ -8643,7 +8644,7 @@ function PassengerDashboard({
       passengerDestinationAutoOpenedRef.current = true;
     });
     return () => cancelAnimationFrame(id);
-  }, [activeTag, destination, postLoginTagResumePending, setShowDestinationPicker]);
+  }, [activeTag, destination, postLoginTagResumePending, setShowDestinationPicker, showDestinationPicker]);
 
   /** Aktif TAG varken hedef/fiyat modalı açık kalmasın (resume sonrası activeTag geç dolunca auto-open yarışı) */
   useEffect(() => {
@@ -8755,12 +8756,18 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (!showDestinationPicker) return;
+    if (destinationPickerPhase === 'map' || destinationAwaitingMapTap) return;
     setDestinationPickerAutocompleteMountKey((k) => k + 1);
     destinationSnapshotOnPickerOpenRef.current = destination;
     setDestinationAwaitingMapTap(false);
     setDestinationPickerPhase('search');
     setRoutePickerStep(passengerPickup ? 'destination' : 'pickup');
-  }, [showDestinationPicker, passengerPickup]);
+  }, [
+    showDestinationPicker,
+    passengerPickup,
+    destinationPickerPhase,
+    destinationAwaitingMapTap,
+  ]);
 
   useEffect(() => {
     if (!showDestinationPicker) return;
