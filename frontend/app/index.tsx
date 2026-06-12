@@ -10083,6 +10083,9 @@ function PassengerDashboard({
     }
   }, [activeTag, quickMatchSession.status]);
 
+  const isQuickMatchPassengerUiActive =
+    quickMatchFlowVisible || quickMatchSession.status !== 'idle';
+
   const confirmBoardingViaActiveTagApi = useCallback(async (expectedTagId: string): Promise<boolean> => {
     const exp = normalizeTripTagIdForCompare(expectedTagId);
     if (!exp || !user?.id) return false;
@@ -13391,7 +13394,7 @@ function PassengerDashboard({
               </TouchableOpacity>
             ) : null}
 
-            {destination ? (
+            {destination && !isQuickMatchPassengerUiActive ? (
               <TouchableOpacity
                 style={[
                   styles.passengerIdleSendOfferBtn,
