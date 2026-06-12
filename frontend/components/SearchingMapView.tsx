@@ -4,7 +4,7 @@
  * SEARCHING phase'de kullanılır:
  * - Yolcu konumu (mavi)
  * - Hedef konum (kırmızı)
- * - Teklif veren TÜM sürücüler (yeşil araç ikonları)
+ * - Teklif veren sürücüler (gerçek konumlar; sahte pin yok)
  * - driver_location_update ile canlı güncellenir
  */
 
@@ -84,39 +84,8 @@ export default function SearchingMapView({
     const t = setTimeout(() => setSearchingMapTracks(false), 2200);
     return () => clearTimeout(t);
   }, []);
-  
-  // 🎭 Hayali sürücüler - Gerçek sürücü yoksa göster
-  const [fakeDrivers, setFakeDrivers] = useState<DriverLocation[]>([]);
-  
-  useEffect(() => {
-    // Gerçek sürücü yoksa hayali sürücüler oluştur
-    if (driverLocations.length === 0 && userLocation) {
-      const names = ['Mehmet', 'Ali', 'Ahmet', 'Mustafa', 'Emre'];
-      const fakes: DriverLocation[] = [];
-      
-      for (let i = 0; i < 5; i++) {
-        // Kullanıcının etrafında rastgele konumlar (2-8 km arası)
-        const angle = (Math.PI * 2 * i) / 5 + Math.random() * 0.5;
-        const distance = 0.02 + Math.random() * 0.05; // ~2-8 km
-        
-        fakes.push({
-          driver_id: `fake_${i}`,
-          driver_name: names[i],
-          latitude: userLocation.latitude + Math.sin(angle) * distance,
-          longitude: userLocation.longitude + Math.cos(angle) * distance,
-          vehicle_model: ['Toyota Corolla', 'Honda Civic', 'Hyundai i20', 'Fiat Egea', 'Renault Clio'][i],
-        });
-      }
-      
-      setFakeDrivers(fakes);
-    } else {
-      setFakeDrivers([]);
-    }
-  }, [driverLocations.length, userLocation]);
-  
-  // Gösterilecek sürücüler (gerçek veya hayali)
-  const displayDrivers = driverLocations.length > 0 ? driverLocations : fakeDrivers;
-  const displayDriverCount = nearbyDriverCount > 0 ? nearbyDriverCount : Math.floor(Math.random() * 3) + 5; // 5-7 arası
+
+  const offerDriverCount = driverLocations.length;
 
   // Harita sınırlarını hesapla ve fit et
   useEffect(() => {
@@ -128,7 +97,7 @@ export default function SearchingMapView({
       coordinates.push(destinationLocation);
     }
     
-    displayDrivers.forEach(driver => {
+    driverLocations.forEach((driver) => {
       coordinates.push({ latitude: driver.latitude, longitude: driver.longitude });
     });
 
@@ -150,7 +119,7 @@ export default function SearchingMapView({
         }
       }, 300);
     }
-  }, [mapReady, userLocation, destinationLocation, displayDrivers.length]);
+  }, [mapReady, userLocation, destinationLocation, driverLocations.length]);
 
   // Web fallback
   if (Platform.OS === 'web' || !MapView) {
@@ -158,7 +127,11 @@ export default function SearchingMapView({
       <View style={[styles.container, { height }]}>
         <View style={styles.webFallback}>
           <Ionicons name="map" size={40} color="#22D3EE" />
-          <Text style={styles.webFallbackText}>Harita - {driverLocations.length} sürücü</Text>
+          <Text style={styles.webFallbackText}>
+            {driverLocations.length > 0
+              ? `Harita - ${driverLocations.length} teklif`
+              : 'Teklifiniz değerlendiriliyor'}
+          </Text>
           {driverLocations.map((driver, i) => (
             <Text key={driver.driver_id} style={styles.driverItem}>
               🚗 {displayFirstName(driver.driver_name, 'Sürücü')} {driver.price ? `- ₺${driver.price}` : ''}
@@ -229,8 +202,8 @@ export default function SearchingMapView({
           </Marker>
         )}
 
-        {/* Sürücüler - Profesyonel Araç Görünümü */}
-        {displayDrivers.map((driver, index) => {
+        {/* Teklif veren sürücüler — yalnızca gerçek konumlar */}
+        {driverLocations.map((driver, index) => {
           const isM = driver.vehicle_kind === 'motorcycle';
           const src = getDriverMarkerImage(isM ? 'motorcycle' : 'car');
           const px = isM ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar;
@@ -260,18 +233,17 @@ export default function SearchingMapView({
         })}
       </MapView>
 
-      {/* Sürücü Sayısı Badge */}
-      <View style={styles.driverCountBadge}>
-        <Ionicons name="car" size={16} color="#22D3EE" />
-        <Text style={styles.driverCountText}>
-          {displayDriverCount} sürücü yakında
-        </Text>
-      </View>
-      
-      {/* Bilgi Banner */}
+      {offerDriverCount > 0 ? (
+        <View style={styles.driverCountBadge}>
+          <Ionicons name="car" size={16} color="#22D3EE" />
+          <Text style={styles.driverCountText}>{offerDriverCount} teklif</Text>
+        </View>
+      ) : null}
+
       <View style={styles.infoBanner}>
-        <Text style={styles.infoBannerText}>
-          🔄 Teklifiniz değerlendiriliyor...
+        <Text style={styles.infoBannerText}>Teklifiniz değerlendiriliyor</Text>
+        <Text style={styles.infoBannerSubtext}>
+          Uygun sürücülerden yanıt bekleniyor
         </Text>
       </View>
     </View>
@@ -535,5 +507,12 @@ const styles = StyleSheet.create({
     color: 'rgba(243, 248, 255, 0.93)',
     fontSize: 14,
     fontWeight: '600',
+  },
+  infoBannerSubtext: {
+    color: 'rgba(186, 201, 222, 0.82)',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

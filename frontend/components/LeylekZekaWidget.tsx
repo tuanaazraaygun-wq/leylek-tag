@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, BorderRadius, Spacing } from '../constants/Colors';
@@ -81,6 +82,7 @@ const TYPING_CHAR_MS_MIN = 24;
 const TYPING_CHAR_MS_MAX = 38;
 const TYPING_START_DELAY_MS = 180;
 const BUBBLE_MAX_W = 220;
+const PASSENGER_WATCH_CHIP_LABEL = 'Leylek Gözü izliyor';
 
 const ORB_ACCENT_CYAN = 'rgba(34, 211, 238, 0.96)';
 const ORB_TEXT_SOFT = 'rgba(224, 246, 255, 0.94)';
@@ -238,6 +240,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const bubbleTranslateY = useRef(new Animated.Value(0)).current;
   const bubbleBreath = useRef(new Animated.Value(0)).current;
   const cursorBlink = useRef(new Animated.Value(1)).current;
+  const chipPulse = useRef(new Animated.Value(1)).current;
 
   const showChrome = shouldShowLeylekZekaFab({
     pathname,
@@ -264,8 +267,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     return insets.top + roleSelectEyeTopExtra(winH);
   }, [insets.top, winH]);
 
+  const isPassengerMatchingChipMode = flowHint === 'passenger_matching';
+
   const isPassengerPreMatchWaitOrb =
-    flowHint === 'passenger_matching' ||
+    isPassengerMatchingChipMode ||
     (!!passengerWaitInsight?.tagId && flowHint !== 'passenger_offer_waiting');
 
   const isPassengerWaitMatchingOrb = isPassengerPreMatchWaitOrb;
@@ -594,7 +599,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, []);
 
   useEffect(() => {
-    if (!showFab || homeFlowScreen === 'role-select') {
+    if (!showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
       clearTypingTimeouts();
       typingRunIdRef.current += 1;
       setEphemeralFullLine(null);
@@ -636,7 +641,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   ]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
       breathe.setValue(0);
       tilt.setValue(0);
       flutter.setValue(0);
@@ -679,10 +684,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     loop.start();
     return () => loop.stop();
-  }, [breathe, flutter, homeFlowScreen, reduceMotion, showFab, tilt]);
+  }, [breathe, flutter, flowHint, homeFlowScreen, reduceMotion, showFab, tilt]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
       flutter.setValue(0);
       return;
     }
@@ -705,10 +710,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     wingLoop.start();
     return () => wingLoop.stop();
-  }, [flutter, homeFlowScreen, reduceMotion, showFab]);
+  }, [flutter, flowHint, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
       bubbleBreath.setValue(0);
       return;
     }
@@ -731,10 +736,36 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     breathLoop.start();
     return () => breathLoop.stop();
-  }, [bubbleBreath, homeFlowScreen, reduceMotion, showFab]);
+  }, [bubbleBreath, flowHint, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select') {
+    if (reduceMotion || !showFab || flowHint !== 'passenger_matching') {
+      chipPulse.setValue(1);
+      return;
+    }
+    chipPulse.setValue(1);
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(chipPulse, {
+          toValue: 0.7,
+          duration: 2200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(chipPulse, {
+          toValue: 1,
+          duration: 2200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [chipPulse, flowHint, reduceMotion, showFab]);
+
+  useEffect(() => {
+    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
       cursorBlink.setValue(1);
       return;
     }
@@ -761,7 +792,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     );
     blinkLoop.start();
     return () => blinkLoop.stop();
-  }, [bubbleHoldCursor, bubbleTypingActive, cursorBlink, homeFlowScreen, reduceMotion, showFab]);
+  }, [bubbleHoldCursor, bubbleTypingActive, cursorBlink, flowHint, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
     if (!isProactiveOrbEnabled()) return;
@@ -895,6 +926,45 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[styles.centerAnchor, { top: roleSelectEyeTop }]}
             >
               <LeylekEyeTrigger onPress={onOpen} />
+            </View>
+          ) : isPassengerMatchingChipMode ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.passengerWaitMapAnchor,
+                { top: passengerWaitOrbOnMap.top, left: passengerWaitOrbOnMap.left },
+              ]}
+            >
+              <Pressable
+                onPress={onOpen}
+                onPressIn={markInteraction}
+                style={({ pressed }) => [
+                  styles.passengerWatchChipRow,
+                  pressed && styles.passengerWatchChipPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={PASSENGER_WATCH_CHIP_LABEL}
+                accessibilityHint="Yardım sohbetini açmak için dokunun."
+              >
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.passengerWatchEyeSlot, { opacity: chipPulse }]}
+                >
+                  <LinearGradient
+                    colors={['#08111F', '#101A2B', 'rgba(16, 26, 43, 0.94)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.passengerWatchEyeGrad}
+                  >
+                    <View style={styles.passengerWatchEyeRing}>
+                      <Ionicons name="eye-outline" size={18} color={ORB_ACCENT_CYAN} />
+                    </View>
+                  </LinearGradient>
+                </Animated.View>
+                <Text style={styles.passengerWatchChipText} pointerEvents="none">
+                  {PASSENGER_WATCH_CHIP_LABEL}
+                </Text>
+              </Pressable>
             </View>
           ) : (
             <View
@@ -1160,5 +1230,59 @@ const styles = StyleSheet.create({
   logoImage: {
     width: LOGO_SIZE - 6,
     height: LOGO_SIZE - 6,
+  },
+  passengerWatchChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    paddingRight: 12,
+    paddingLeft: 6,
+    borderRadius: 22,
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    maxWidth: 240,
+    ...Platform.select({
+      ios: {
+        shadowColor: ORB_ACCENT_CYAN,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.22,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  passengerWatchChipPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  passengerWatchEyeSlot: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    overflow: 'hidden',
+  },
+  passengerWatchEyeGrad: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passengerWatchEyeRing: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30, 58, 95, 0.85)',
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+  },
+  passengerWatchChipText: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: ORB_TEXT_SOFT,
+    letterSpacing: 0.15,
   },
 });
