@@ -8476,6 +8476,9 @@ function PassengerDashboard({
   const [routePickerStep, setRoutePickerStep] = useState<'pickup' | 'destination'>('pickup');
   type RoutePickerIntent = 'normal' | 'quick_match';
   const [routePickerIntent, setRoutePickerIntent] = useState<RoutePickerIntent>('normal');
+  const [passengerIdleOfferChannel, setPassengerIdleOfferChannel] = useState<
+    'normal' | 'quick_match' | null
+  >(null);
   const [quickMatchRouteContext, setQuickMatchRouteContext] =
     useState<QuickMatchRouteContext | null>(null);
   const [quickMatchFlowVisible, setQuickMatchFlowVisible] = useState(false);
@@ -11837,6 +11840,7 @@ function PassengerDashboard({
       }
       setQuickMatchRouteContext(ctx);
       setQuickMatchFlowVisible(true);
+      setPassengerIdleOfferChannel('quick_match');
       setRoutePickerIntent('normal');
       return;
     }
@@ -11846,6 +11850,7 @@ function PassengerDashboard({
       !!opts?.autoOpenTagPriceFlow &&
       !activeTag;
     if (shouldAutoPrice) {
+      setPassengerIdleOfferChannel('normal');
       try {
         console.log(
           'TAG_DESTINATION_CONFIRMED',
@@ -13351,11 +13356,13 @@ function PassengerDashboard({
             <PassengerMatchModeCards
               onNormalPress={() => {
                 playTapSound();
+                setPassengerIdleOfferChannel('normal');
                 setRoutePickerIntent('normal');
                 setShowDestinationPicker(true);
               }}
               onQuickPress={() => {
                 playTapSound();
+                setPassengerIdleOfferChannel('quick_match');
                 setRoutePickerIntent('quick_match');
                 setShowDestinationPicker(true);
               }}
@@ -13394,7 +13401,9 @@ function PassengerDashboard({
               </TouchableOpacity>
             ) : null}
 
-            {destination && !isQuickMatchPassengerUiActive ? (
+            {destination &&
+            !isQuickMatchPassengerUiActive &&
+            passengerIdleOfferChannel !== 'quick_match' ? (
               <TouchableOpacity
                 style={[
                   styles.passengerIdleSendOfferBtn,
@@ -14745,6 +14754,7 @@ function PassengerDashboard({
           }
         }}
         onGoNormalMatch={() => {
+          setPassengerIdleOfferChannel('normal');
           setRoutePickerIntent('normal');
           setQuickMatchFlowVisible(false);
           if (destination && resolvePassengerPickupCoords(passengerPickup, userLocation)) {
