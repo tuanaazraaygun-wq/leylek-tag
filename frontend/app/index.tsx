@@ -8457,6 +8457,9 @@ function PassengerDashboard({
     latitudeDelta: number;
     longitudeDelta: number;
   } | null>(null);
+  /** Destination verify: interactive map onMapReady sonrası boot animasyonu */
+  const destinationPickerPendingInteractiveBootAnimateRef = useRef(false);
+  const destinationPickerInteractiveBootAnimateGenRef = useRef(0);
   /** Arama/map seçimi sonrası GPS tick'lerinin destinationPickerPin'i ezmesini engeller */
   const destinationPickerPinUserLockRef = useRef(false);
   const destinationSnapshotOnPickerOpenRef = useRef<{
@@ -11889,7 +11892,12 @@ function PassengerDashboard({
     };
   };
 
-  /** Map mount sonrası boot region'a tek animasyon — ref hazır değilse kısa fallback */
+  const cancelDestinationPickerInteractiveBootAnimate = () => {
+    destinationPickerPendingInteractiveBootAnimateRef.current = false;
+    destinationPickerInteractiveBootAnimateGenRef.current += 1;
+  };
+
+  /** Pickup harita doğrudan açılış — mevcut erken animasyon (destination verify ayrı) */
   const animateDestinationPickerMapToBootRegionOnce = () => {
     const region = destinationPickerMapBootRegionRef.current;
     if (!region) return;
@@ -11902,6 +11910,27 @@ function PassengerDashboard({
       requestAnimationFrame(run);
     });
     setTimeout(run, 120);
+  };
+
+  /** Interactive map hazır — destination verify boot region (Android gecikmeli) */
+  const runDestinationPickerInteractiveBootRegionOnce = () => {
+    const region = destinationPickerMapBootRegionRef.current;
+    if (!region) return;
+    const gen = ++destinationPickerInteractiveBootAnimateGenRef.current;
+    const run = () => {
+      if (gen !== destinationPickerInteractiveBootAnimateGenRef.current) return;
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(region, 420);
+      } catch (_) {}
+    };
+    const delayMs = Platform.OS === 'android' ? 420 : 150;
+    setTimeout(run, delayMs);
+  };
+
+  const handleDestinationPickerInteractiveMapReady = () => {
+    if (!destinationPickerPendingInteractiveBootAnimateRef.current) return;
+    destinationPickerPendingInteractiveBootAnimateRef.current = false;
+    runDestinationPickerInteractiveBootRegionOnce();
   };
 
   const openDestinationMapToVerify = (
@@ -11934,8 +11963,8 @@ function PassengerDashboard({
     setDestinationPickerMapBootRegion(lat, lng);
     setDestinationPickerPin({ latitude: lat, longitude: lng });
     destinationPickerMapCenterRef.current = { latitude: lat, longitude: lng };
+    destinationPickerPendingInteractiveBootAnimateRef.current = true;
     setDestinationPickerPhase('map');
-    animateDestinationPickerMapToBootRegionOnce();
   };
 
   /** Arama: seçilen öneri → harita doğrulama fazı; fiyat akışı Tam burası sonrası */
@@ -12173,6 +12202,7 @@ function PassengerDashboard({
   const closeDestinationPickerModal = () => {
     __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
+    cancelDestinationPickerInteractiveBootAnimate();
     if (destinationAwaitingMapTap) {
       setDestination(destinationSnapshotOnPickerOpenRef.current);
     }
@@ -12183,6 +12213,7 @@ function PassengerDashboard({
 
   /** Map fazından arama ekranına dön — modal açık kalır */
   const returnRoutePickerMapToSearch = () => {
+    cancelDestinationPickerInteractiveBootAnimate();
     setDestinationPickerPhase('search');
     setDestinationPickerGeocoding(false);
     setDestinationAwaitingMapTap(false);
@@ -12221,6 +12252,7 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (!showDestinationPicker) {
+      cancelDestinationPickerInteractiveBootAnimate();
       destinationPickerPinUserLockRef.current = false;
       destinationPickerMapBootRegionRef.current = null;
       setDestinationPickerPin(null);
@@ -13806,6 +13838,12 @@ function PassengerDashboard({
                         latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
                         longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
                       }
+                    }
+                    onMapReady={handleDestinationPickerInteractiveMapReady}
+                    onMapLoaded={
+                      Platform.OS === 'android'
+                        ? handleDestinationPickerInteractiveMapReady
+                        : undefined
                     }
                     onRegionChangeComplete={handleDestinationPickerRegionComplete}
                   />
