@@ -2,8 +2,8 @@
  * PassengerWaitingScreen - Premium Yolcu Bekleme Ekranı
  * 
  * Özellikler:
- * - 20 km çevredeki sürücüleri haritada gösterir
- * - Zonklama/sinyal efekti ile 20 km yarıçap
+ * - 10 km çevredeki çevrimiçi sürücüleri haritada gösterir (dekoratif; rozet dispatch kuyruğundan)
+ * - Zonklama/sinyal efekti ile 10 km yarıçap
  * - Sakin bilgilendirme metni (gerçek dispatch süresi sunucuda)
  * - Dispatch durumu (kaç kişiye teklif gösterildi)
  * - Premium tasarım
@@ -79,11 +79,16 @@ function parseMarkerCoord(
   return { latitude, longitude };
 }
 
+/** Bekleme haritası — yolcu ekranı fetch yarıçapı (backend dispatch radius ayrı). */
+const WAIT_MAP_RADIUS_KM = 10;
+const WAIT_MAP_MAX_DRIVER_MARKERS = 15;
+const WAIT_MAP_DRIVER_MARKER_OPACITY = 0.55;
+
 /** Bekleme haritası: MARKER_PIXEL ile aynı hedef boyutlar (harita ölçeği). */
 const WAIT_MAP_PIN = {
   passenger: 30,
-  car: 32,
-  motor: 28,
+  car: 22,
+  motor: 20,
 } as const;
 
 export interface NearbyDriver {
@@ -136,7 +141,6 @@ export default function PassengerWaitingScreen({
   const insets = useSafeAreaInsets();
 
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
-  const [nearbyDriverCount, setNearbyDriverCount] = useState(0);
   const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>({
     current_driver_index: 0,
     total_drivers: 0,
@@ -193,30 +197,20 @@ export default function PassengerWaitingScreen({
     const loadNearbyDrivers = async () => {
       try {
         const vk = encodeURIComponent(passengerVehicleKind);
-        const response = await fetch(
-          `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20&passenger_vehicle_kind=${vk}`
+        const driversResponse = await fetch(
+          `${API_URL}/drivers/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=${WAIT_MAP_RADIUS_KM}&passenger_vehicle_kind=${vk}`
         );
-        const data = await response.json();
-        
-        if (data.success) {
-          setNearbyDriverCount(data.nearby_driver_count || 0);
-          
-          // Sürücü konumlarını al
-          const driversResponse = await fetch(
-            `${API_URL}/drivers/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20&passenger_vehicle_kind=${vk}`
+        const driversData = await driversResponse.json();
+
+        if (driversData.drivers) {
+          const wantM = passengerVehicleKind === 'motorcycle';
+          setNearbyDrivers(
+            driversData.drivers.filter((driver: NearbyDriver) => {
+              const kind = String(driver.vehicle_kind ?? 'car').trim().toLowerCase();
+              const isM = kind === 'motorcycle' || kind === 'motor';
+              return wantM ? isM : !isM;
+            }),
           );
-          const driversData = await driversResponse.json();
-          
-          if (driversData.drivers) {
-            const wantM = passengerVehicleKind === 'motorcycle';
-            setNearbyDrivers(
-              driversData.drivers.filter((driver: NearbyDriver) => {
-                const vk = String(driver.vehicle_kind ?? 'car').trim().toLowerCase();
-                const isM = vk === 'motorcycle' || vk === 'motor';
-                return wantM ? isM : !isM;
-              }),
-            );
-          }
         }
       } catch (error) {
         console.log('Nearby drivers error:', error);
@@ -275,18 +269,20 @@ export default function PassengerWaitingScreen({
     setShowDriverProfile(true);
   };
   
+  const dispatchEligibleCount = dispatchStatus.total_drivers;
+  const isDispatchEligibleSearching =
+    dispatchEligibleCount === 0 || dispatchStatus.status === 'no_drivers';
+  const mapDriverMarkers = nearbyDrivers.slice(0, WAIT_MAP_MAX_DRIVER_MARKERS);
+
   // Durum mesajı
   const getStatusMessage = () => {
     if (dispatchStatus.status === 'matched') {
       return 'Eşleşme sağlandı!';
     }
-    if (dispatchStatus.total_drivers === 0) {
-      return 'Yakındaki sürücüler aranıyor...';
+    if (dispatchEligibleCount > 0) {
+      return `Kuyrukta ${dispatchEligibleCount} uygun sürücü var. Teklifiniz sırayla iletiliyor.`;
     }
-    if (dispatchStatus.current_driver_index > 0) {
-      return `${dispatchStatus.current_driver_index}. sürücüye teklif gösterildi`;
-    }
-    return 'Eşleşme sağlanıyor, lütfen bekleyin...';
+    return 'Uygun sürücü aranıyor. Çevredeki sürücüler mesafe ve uygunluk durumuna göre değerlendiriliyor.';
   };
   
   // Alt durum mesajı
@@ -294,13 +290,13 @@ export default function PassengerWaitingScreen({
     if (dispatchStatus.status === 'matched') {
       return 'Sürücünüz yola çıkıyor';
     }
-    if (dispatchStatus.total_drivers === 0 && nearbyDriverCount > 0) {
-      return `${nearbyDriverCount} sürücü yakında; talep türünüze uygun sıra oluşunca teklif gidecek`;
+    if (dispatchStatus.current_driver_index > 0 && dispatchEligibleCount > 0) {
+      return `${dispatchStatus.current_driver_index}. sürücüye teklif gösterildi`;
     }
-    if (dispatchStatus.total_drivers > 0) {
-      return `Kuyrukta ${dispatchStatus.total_drivers} uygun sürücü`;
+    if (isDispatchEligibleSearching) {
+      return 'Bölgedeki çevrimiçi sürücüler mesafe ve uygunluk durumuna göre değerlendiriliyor.';
     }
-    return `${nearbyDriverCount} sürücü 20 km içinde`;
+    return 'Teklifiniz uygun sürücülere sırayla iletiliyor.';
   };
 
   const destinationMarkerCoord = destinationLocation
@@ -355,8 +351,8 @@ export default function PassengerWaitingScreen({
             initialRegion={{
               latitude: userLocation.latitude,
               longitude: userLocation.longitude,
-              latitudeDelta: 0.22,
-              longitudeDelta: 0.22,
+              latitudeDelta: 0.12,
+              longitudeDelta: 0.12,
             }}
             showsUserLocation={false}
             showsCompass={false}
@@ -364,22 +360,13 @@ export default function PassengerWaitingScreen({
             pitchEnabled={true}
             rotateEnabled={true}
           >
-            {/* 20 km Yarıçap - Dış çember */}
+            {/* 10 km yarıçap — harita fetch ile uyumlu */}
             <Circle
               center={userLocation}
-              radius={20000}
-              strokeColor="rgba(34, 211, 238, 0.35)"
-              fillColor="rgba(34, 211, 238, 0.06)"
-              strokeWidth={2}
-            />
-            
-            {/* 10 km Yarıçap - İç çember */}
-            <Circle
-              center={userLocation}
-              radius={10000}
-              strokeColor="rgba(34, 211, 238, 0.5)"
-              fillColor="rgba(34, 211, 238, 0.1)"
-              strokeWidth={1}
+              radius={WAIT_MAP_RADIUS_KM * 1000}
+              strokeColor="rgba(34, 211, 238, 0.45)"
+              fillColor="rgba(34, 211, 238, 0.08)"
+              strokeWidth={1.5}
             />
             
             {/* Yolcu konumu */}
@@ -412,8 +399,8 @@ export default function PassengerWaitingScreen({
               </Marker>
             ) : null}
             
-            {/* Yakındaki sürücüler — araç/motor PNG (repo’da car+motor seti; cinsiyet ayrı asset yok) */}
-            {nearbyDrivers.map((driver, index) => {
+            {/* Çevrimiçi sürücüler (dekoratif; dispatch uygunluk rozette gösterilir) */}
+            {mapDriverMarkers.map((driver, index) => {
               const coord = parseMarkerCoord(driver.latitude, driver.longitude);
               if (!coord) return null;
               const isM = driver.vehicle_kind === 'motorcycle';
@@ -429,9 +416,11 @@ export default function PassengerWaitingScreen({
                   tracksViewChanges={waitingMapTracks}
                   zIndex={4000 + (index % 40)}
                 >
-                  <MarkerPinWrap>
-                    <MapEntityMarkerImage source={src} size={px} />
-                  </MarkerPinWrap>
+                  <View style={{ opacity: WAIT_MAP_DRIVER_MARKER_OPACITY }}>
+                    <MarkerPinWrap>
+                      <MapEntityMarkerImage source={src} size={px} />
+                    </MarkerPinWrap>
+                  </View>
                 </Marker>
               );
             })}
@@ -444,20 +433,26 @@ export default function PassengerWaitingScreen({
                 ? 'Bu cihazda harita kapalı; eşleşme ve sürücü listesi normal çalışır.'
                 : 'Harita yükleniyor...'}
             </Text>
-            {userLocation && !isNativeGoogleMapsSupported() && nearbyDrivers.length > 0 ? (
+            {userLocation && !isNativeGoogleMapsSupported() ? (
               <Text style={styles.mapPlaceholderSub}>
-                {nearbyDrivers.length} sürücü yakınınızda
+                Uygun sürücüler mesafe ve uygunluk durumuna göre değerlendiriliyor.
               </Text>
             ) : null}
           </View>
         )}
         {/* AI: tek merkezi alt-orta LeylekZekaWidget (global) */}
         
-        {/* Sürücü Sayısı Badge */}
+        {/* Dispatch uygun sürücü rozeti (nearby sayısı değil) */}
         <View style={styles.driverCountBadge}>
           <Ionicons name="car" size={20} color="#22D3EE" />
-          <Text style={styles.driverCountText}>{nearbyDriverCount}</Text>
-          <Text style={styles.driverCountLabel}>sürücü</Text>
+          {dispatchEligibleCount > 0 ? (
+            <>
+              <Text style={styles.driverCountText}>{dispatchEligibleCount}</Text>
+              <Text style={styles.driverCountLabel}>uygun sürücü</Text>
+            </>
+          ) : (
+            <Text style={styles.driverCountSearching}>Uygun sürücü aranıyor</Text>
+          )}
         </View>
       </View>
       
@@ -819,6 +814,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(186,201,222,0.82)',
     opacity: 0.95,
+  },
+  driverCountSearching: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(243, 248, 255, 0.94)',
+    flexShrink: 1,
   },
   
   // Konum Kartı
