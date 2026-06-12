@@ -6230,6 +6230,397 @@ def _trusted_status_for_actor_counterparty(actor_norm: str, counterparty_norm: s
     return empty
 
 
+_TRUSTED_INVITE_TAG_STATUSES = frozenset({"matched", "in_progress", "completed"})
+_TRUSTED_COMPLETED_MAX_AGE_DAYS = 30
+_TRUSTED_INVITE_TTL_DAYS = 14
+_TRUSTED_DECLINED_COOLDOWN_HOURS = 24
+_TRUSTED_INVITE_DAILY_LIMIT = 10
+_TRUSTED_INVITE_PAIR_DAILY_LIMIT = 2
+
+
+class _TrustedInviteReject(Exception):
+    """POST /trusted/invites — yapılandırılmış hata (JSONResponse)."""
+
+    def __init__(self, status: int, code: str, detail: str) -> None:
+        self.status = status
+        self.code = code
+        self.detail = detail
+        super().__init__(detail)
+
+
+def _trusted_utc_iso_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _trusted_parse_iso_ts(value: Any) -> Optional[datetime]:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _trusted_invite_reject(status: int, code: str, detail: str) -> None:
+    raise _TrustedInviteReject(status, code, detail)
+
+
+def _is_trusted_pg_unique_violation(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    if "23505" in msg:
+        return True
+    if "duplicate key" in msg:
+        return True
+    if "unique constraint" in msg and "trusted_connections" in msg:
+        return True
+    return False
+
+
+def _trusted_invite_success_payload(
+    row: dict,
+    *,
+    counterparty_user_id: str,
+    source_tag_id: str,
+) -> dict:
+    return {
+        "success": True,
+        "invite_id": str(row.get("id") or ""),
+        "status": "pending",
+        "counterparty_user_id": counterparty_user_id,
+        "source_tag_id": source_tag_id or row.get("source_tag_id"),
+        "invited_at": row.get("invited_at"),
+        "expires_at": row.get("expires_at"),
+    }
+
+
+def _trusted_invite_validate_tag_eligibility(
+    actor_norm: str, counterparty_norm: str, tag_id: str
+) -> dict:
+    """source_tag_id membership + status/type/completed window."""
+    try:
+        tag_res = (
+            supabase.table("tags")
+            .select("id, status, type, passenger_id, driver_id, completed_at, updated_at")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(
+            "trusted_invite tag_query tag=%s err=%s",
+            _mask_log_id(tag_id),
+            e,
+        )
+        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
+
+    if not tag_res.data:
+        _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    tag = tag_res.data[0]
+    typ = str(tag.get("type") or "").strip().lower()
+    if typ != TAG_TYPE_NORMAL:
+        _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    st = str(tag.get("status") or "").strip().lower()
+    if st not in _TRUSTED_INVITE_TAG_STATUSES:
+        _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    if st == "completed":
+        ref_ts = _trusted_parse_iso_ts(tag.get("completed_at")) or _trusted_parse_iso_ts(
+            tag.get("updated_at")
+        )
+        if ref_ts is None:
+            _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+        if datetime.now(timezone.utc) - ref_ts > timedelta(days=_TRUSTED_COMPLETED_MAX_AGE_DAYS):
+            _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    pid = str(tag.get("passenger_id") or "").strip().lower()
+    did = str(tag.get("driver_id") or "").strip().lower()
+    if not pid or not did:
+        _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    actor = str(actor_norm or "").strip().lower()
+    cp = str(counterparty_norm or "").strip().lower()
+    if actor not in (pid, did):
+        _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    expected_cp = did if actor == pid else pid
+    if cp != expected_cp:
+        _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
+
+    return tag
+
+
+def _trusted_lazy_expire_stale_pending_for_pair(pair_key: str) -> None:
+    """Süresi dolmuş pending → expired (A1'de izinli tek UPDATE)."""
+    now_s = _trusted_utc_iso_now()
+    try:
+        res = (
+            supabase.table("trusted_connections")
+            .select("id, expires_at, status")
+            .eq("pair_key", pair_key)
+            .eq("status", "pending")
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(
+            "trusted_invite lazy_expire pair_key=%s err=%s",
+            pair_key[:8] + "…" if pair_key else "",
+            e,
+        )
+        raise
+
+    for row in res.data or []:
+        if _is_pending_not_expired(row):
+            continue
+        row_id = row.get("id")
+        if not row_id:
+            continue
+        supabase.table("trusted_connections").update(
+            {
+                "status": "expired",
+                "revoke_reason": "expired_system",
+                "updated_at": now_s,
+            }
+        ).eq("id", row_id).execute()
+
+
+def _trusted_invite_fetch_open_pair_rows(pair_key: str) -> list[dict]:
+    res = (
+        supabase.table("trusted_connections")
+        .select(
+            "id, initiator_id, counterparty_id, status, source_tag_id, "
+            "invited_at, expires_at, updated_at"
+        )
+        .eq("pair_key", pair_key)
+        .in_("status", ["pending", "active"])
+        .execute()
+    )
+    return list(res.data or [])
+
+
+def _trusted_invite_check_declined_cooldown(pair_key: str) -> None:
+    try:
+        res = (
+            supabase.table("trusted_connections")
+            .select("id, responded_at, invited_at")
+            .eq("pair_key", pair_key)
+            .eq("status", "declined")
+            .order("responded_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("trusted_invite declined_cooldown pair err=%s", e)
+        return
+
+    if not res.data:
+        return
+
+    row = res.data[0]
+    ref_ts = _trusted_parse_iso_ts(row.get("responded_at")) or _trusted_parse_iso_ts(
+        row.get("invited_at")
+    )
+    if ref_ts is None:
+        return
+    if datetime.now(timezone.utc) - ref_ts < timedelta(hours=_TRUSTED_DECLINED_COOLDOWN_HOURS):
+        _trusted_invite_reject(
+            409,
+            "declined_cooldown",
+            "Davet kısa süre önce reddedildi. Lütfen daha sonra tekrar deneyin.",
+        )
+
+
+def _trusted_invite_resolve_open_rows(
+    actor_norm: str,
+    counterparty_norm: str,
+    source_tag_id: str,
+    open_rows: list[dict],
+) -> Optional[dict]:
+    """Active/pending duplicate ve idempotent 200 payload; yoksa None."""
+    actor = str(actor_norm or "").strip().lower()
+    cp = str(counterparty_norm or "").strip().lower()
+    tag_lo = str(source_tag_id or "").strip().lower()
+
+    for row in open_rows:
+        if str(row.get("status") or "").strip().lower() == "active":
+            _trusted_invite_reject(
+                409,
+                "already_active",
+                "Bu kişi zaten güven ağınızda.",
+            )
+
+    for row in open_rows:
+        st = str(row.get("status") or "").strip().lower()
+        if st != "pending" or not _is_pending_not_expired(row):
+            continue
+        ini = str(row.get("initiator_id") or "").strip().lower()
+        row_cp = str(row.get("counterparty_id") or "").strip().lower()
+        row_tag = str(row.get("source_tag_id") or "").strip().lower()
+        if ini == actor and row_cp == cp and row_tag == tag_lo:
+            return _trusted_invite_success_payload(
+                row,
+                counterparty_user_id=cp,
+                source_tag_id=source_tag_id,
+            )
+        _trusted_invite_reject(
+            409,
+            "already_pending",
+            "Bu kişi için bekleyen davet zaten var.",
+        )
+
+    return None
+
+
+def _trusted_invite_check_rate_limits(actor_norm: str, counterparty_norm: str) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).replace(microsecond=0)
+    cutoff_s = cutoff.isoformat().replace("+00:00", "Z")
+    actor = str(actor_norm or "").strip().lower()
+    cp = str(counterparty_norm or "").strip().lower()
+
+    try:
+        total_res = (
+            supabase.table("trusted_connections")
+            .select("id", count="exact")
+            .eq("initiator_id", actor)
+            .gte("invited_at", cutoff_s)
+            .execute()
+        )
+        total_count = int(total_res.count or 0)
+        if total_count >= _TRUSTED_INVITE_DAILY_LIMIT:
+            _trusted_invite_reject(
+                429,
+                "rate_limited",
+                "Çok fazla davet gönderdiniz. Lütfen daha sonra tekrar deneyin.",
+            )
+
+        pair_res = (
+            supabase.table("trusted_connections")
+            .select("id", count="exact")
+            .eq("initiator_id", actor)
+            .eq("counterparty_id", cp)
+            .gte("invited_at", cutoff_s)
+            .execute()
+        )
+        pair_count = int(pair_res.count or 0)
+        if pair_count >= _TRUSTED_INVITE_PAIR_DAILY_LIMIT:
+            _trusted_invite_reject(
+                429,
+                "rate_limited",
+                "Bu kişiye çok sık davet gönderdiniz. Lütfen daha sonra tekrar deneyin.",
+            )
+    except _TrustedInviteReject:
+        raise
+    except Exception as e:
+        logger.warning(
+            "trusted_invite rate_limit actor=%s err=%s",
+            _mask_log_id(actor),
+            e,
+        )
+        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
+
+
+def _trusted_invite_create_for_actor(
+    actor_norm: str, counterparty_norm: str, source_tag_id: str
+) -> tuple[dict, int]:
+    """POST /trusted/invites iş mantığı — (body, http_status)."""
+    actor = str(actor_norm or "").strip().lower()
+    cp = str(counterparty_norm or "").strip().lower()
+
+    blocked = _get_bilateral_blocked_user_ids(actor)
+    if cp in blocked:
+        _trusted_invite_reject(403, "blocked", "Bu kullanıcı güven ağına eklenemez.")
+
+    eligibility = _user_eligibility_map_for_ids({cp})
+    if not eligibility.get(cp, False):
+        _trusted_invite_reject(
+            403,
+            "counterparty_not_eligible",
+            "Karşı taraf şu an kullanılamıyor.",
+        )
+
+    _trusted_invite_validate_tag_eligibility(actor, cp, source_tag_id)
+
+    pair_key = _trusted_pair_key(actor, cp)
+    _trusted_lazy_expire_stale_pending_for_pair(pair_key)
+
+    open_rows = _trusted_invite_fetch_open_pair_rows(pair_key)
+    idempotent = _trusted_invite_resolve_open_rows(actor, cp, source_tag_id, open_rows)
+    if idempotent is not None:
+        return idempotent, 200
+
+    _trusted_invite_check_declined_cooldown(pair_key)
+    _trusted_invite_check_rate_limits(actor, cp)
+
+    tag_res = (
+        supabase.table("tags")
+        .select("passenger_id, driver_id")
+        .eq("id", source_tag_id)
+        .limit(1)
+        .execute()
+    )
+    tag_row = (tag_res.data or [{}])[0]
+    pid = str(tag_row.get("passenger_id") or "").strip().lower()
+    if actor == pid:
+        initiator_role, counterparty_role = "passenger", "driver"
+    else:
+        initiator_role, counterparty_role = "driver", "passenger"
+
+    now_s = _trusted_utc_iso_now()
+    expires_s = (
+        datetime.now(timezone.utc) + timedelta(days=_TRUSTED_INVITE_TTL_DAYS)
+    ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    insert_payload = {
+        "initiator_id": actor,
+        "counterparty_id": cp,
+        "initiator_role": initiator_role,
+        "counterparty_role": counterparty_role,
+        "status": "pending",
+        "source_tag_id": source_tag_id,
+        "invited_at": now_s,
+        "expires_at": expires_s,
+        "updated_at": now_s,
+    }
+
+    try:
+        ins = supabase.table("trusted_connections").insert(insert_payload).execute()
+    except Exception as ins_ex:
+        if _is_trusted_pg_unique_violation(ins_ex):
+            open_after = _trusted_invite_fetch_open_pair_rows(pair_key)
+            replay = _trusted_invite_resolve_open_rows(actor, cp, source_tag_id, open_after)
+            if replay is not None:
+                return replay, 200
+            _trusted_invite_reject(
+                409,
+                "already_pending",
+                "Bu kişi için bekleyen davet zaten var.",
+            )
+        logger.warning(
+            "trusted_invite insert actor=%s counterparty=%s err=%s",
+            _mask_log_id(actor),
+            _mask_log_id(cp),
+            ins_ex,
+        )
+        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
+
+    if not ins.data:
+        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
+
+    row = ins.data[0]
+    return (
+        _trusted_invite_success_payload(
+            row,
+            counterparty_user_id=cp,
+            source_tag_id=source_tag_id,
+        ),
+        201,
+    )
+
+
 async def _active_tag_disabled_response_if_ineligible(
     user_id, *, action: str
 ) -> Optional[dict]:
@@ -9952,6 +10343,79 @@ async def get_trusted_status(
             e,
         )
         raise HTTPException(status_code=500, detail="Trusted durum alınamadı") from e
+
+
+class TrustedInviteCreateBody(BaseModel):
+    counterparty_user_id: str
+    source_tag_id: str
+
+
+@api_router.post("/trusted/invites")
+async def post_trusted_invite(
+    body: TrustedInviteCreateBody,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Network — güven ağı daveti oluştur (TRUST-BE-A1)."""
+    try:
+        actor_norm = await require_eligible_user(actor_id, action="trusted_invite_create")
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "code": "account_not_eligible",
+                    "detail": str(exc.detail or "Hesabınız devre dışı bırakılmıştır."),
+                },
+            )
+        raise
+
+    cp_norm = _normalize_trusted_uuid(body.counterparty_user_id)
+    tag_norm = _normalize_trusted_uuid(body.source_tag_id)
+    if not cp_norm or not tag_norm:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "invalid_input",
+                "detail": "Geçersiz istek.",
+            },
+        )
+    if cp_norm == actor_norm:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "self_invite_not_allowed",
+                "detail": "Kendinizi ekleyemezsiniz.",
+            },
+        )
+
+    try:
+        payload, http_status = _trusted_invite_create_for_actor(actor_norm, cp_norm, tag_norm)
+        return JSONResponse(status_code=http_status, content=payload)
+    except _TrustedInviteReject as rej:
+        return JSONResponse(
+            status_code=rej.status,
+            content={"success": False, "code": rej.code, "detail": rej.detail},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_invite_create actor=%s counterparty=%s err=%s",
+            _mask_log_id(actor_id),
+            _mask_log_id(body.counterparty_user_id),
+            e,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "code": "trusted_invite_failed",
+                "detail": "Güven ağı daveti oluşturulamadı.",
+            },
+        )
 
 
 _PASSENGER_BLOCKING_TAG_STATUSES_FOR_QUICK_MATCH = [
