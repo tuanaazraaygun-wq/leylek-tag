@@ -13376,7 +13376,7 @@ function PassengerDashboard({
                 activeOpacity={0.88}
               >
                 <View style={styles.destinationIconBig}>
-                  <Ionicons name="navigate" size={28} color="#22D3EE" />
+                  <Ionicons name="navigate" size={20} color="rgba(34, 211, 238, 0.82)" />
                 </View>
                 <View style={styles.passengerRouteCtaTextCol}>
                   <Text style={styles.passengerRouteCtaLabel}>Rotayı düzenle</Text>
@@ -13389,7 +13389,7 @@ function PassengerDashboard({
                   </Text>
                 </View>
                 <View style={styles.destinationArrowBig}>
-                  <Ionicons name="chevron-forward" size={22} color="#22D3EE" />
+                  <Ionicons name="chevron-forward" size={18} color="rgba(34, 211, 238, 0.72)" />
                 </View>
               </TouchableOpacity>
             ) : null}
@@ -20182,39 +20182,41 @@ const styles = StyleSheet.create({
   destinationBoxBig: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.78)',
-    borderRadius: 22,
-    padding: 14,
-    marginVertical: 12,
+    backgroundColor: 'rgba(16, 26, 43, 0.58)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 8,
     marginHorizontal: 8,
     borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: '#1E3A5F',
-    shadowColor: 'rgba(34, 211, 238, 0.22)',
-    shadowOffset: { width: 0, height: 6 },
+    borderColor: 'rgba(30, 58, 95, 0.78)',
+    shadowColor: 'rgba(34, 211, 238, 0.08)',
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 1,
-    shadowRadius: 16,
-    elevation: 10,
-    gap: 12,
+    shadowRadius: 8,
+    elevation: 3,
+    gap: 10,
     maxWidth: '100%',
     overflow: 'hidden',
   },
   destinationIconBig: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: 'rgba(34, 211, 238, 0.18)',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
   },
   destinationTextBig: {
     flex: 1,
     minWidth: 0,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: 'rgba(224, 242, 254, 0.94)',
-    lineHeight: 21,
+    lineHeight: 19,
   },
   passengerIdleIntroCard: {
     alignSelf: 'stretch',
@@ -20248,11 +20250,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   passengerRouteCtaLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: PREMIUM_AUTH_CYAN,
-    letterSpacing: 0.2,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(186, 201, 222, 0.88)',
+    letterSpacing: 0,
+    textTransform: 'none',
   },
   passengerIdleSendOfferBtn: {
     flexDirection: 'row',
@@ -20283,19 +20285,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   destinationArrowBig: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(34, 211, 238, 0.22)',
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(30, 58, 95, 0.35)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.4)',
-    shadowColor: 'rgba(34, 211, 238, 0.25)',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(30, 58, 95, 0.72)',
   },
   welcomeQuestionTop: {
     fontSize: 28,
