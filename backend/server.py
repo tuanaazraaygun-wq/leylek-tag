@@ -6102,6 +6102,134 @@ def _trusted_pending_for_actor(actor_id: str) -> dict:
     return {"success": True, "incoming": incoming, "outgoing": outgoing}
 
 
+def _normalize_trusted_uuid(raw: Any) -> Optional[str]:
+    """Trusted status — counterparty user_id (lower UUID) veya None."""
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    try:
+        return str(uuid.UUID(s)).lower()
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _trusted_pair_key(user_a: str, user_b: str) -> str:
+    """trusted_connections.pair_key ile aynı: LEAST:uuid:GREATEST:uuid (lower text)."""
+    a = str(user_a or "").strip().lower()
+    b = str(user_b or "").strip().lower()
+    lo, hi = (a, b) if a < b else (b, a)
+    return f"{lo}:{hi}"
+
+
+def _trusted_status_empty_response() -> dict:
+    return {
+        "success": True,
+        "status": "none",
+        "connection_id": None,
+        "invite_id": None,
+        "source_tag_id": None,
+        "invited_at": None,
+        "expires_at": None,
+        "updated_at": None,
+    }
+
+
+def _trusted_status_for_actor_counterparty(actor_norm: str, counterparty_norm: str) -> dict:
+    """
+    GET /trusted/status — read-only pair durumu (TRUST-BE-A0).
+    Lazy expire yok; süresi dolmuş pending none gibi değerlendirilir.
+    """
+    empty = _trusted_status_empty_response()
+    actor = str(actor_norm or "").strip().lower()
+    cp = str(counterparty_norm or "").strip().lower()
+    if not actor or not cp:
+        return empty
+
+    blocked = _get_bilateral_blocked_user_ids(actor)
+    if cp in blocked:
+        return {**empty, "status": "blocked"}
+
+    eligibility = _user_eligibility_map_for_ids({cp})
+    if not eligibility.get(cp, False):
+        return {**empty, "status": "blocked"}
+
+    pair_key = _trusted_pair_key(actor, cp)
+    try:
+        res = (
+            supabase.table("trusted_connections")
+            .select(
+                "id, initiator_id, counterparty_id, status, source_tag_id, "
+                "invited_at, expires_at, updated_at, responded_at"
+            )
+            .eq("pair_key", pair_key)
+            .order("updated_at", desc=True)
+            .limit(25)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(
+            "trusted_status pair_query actor=%s counterparty=%s err=%s",
+            _mask_log_id(actor),
+            _mask_log_id(cp),
+            e,
+        )
+        raise
+
+    rows = res.data or []
+    active_row: Optional[dict] = None
+    pending_row: Optional[dict] = None
+    declined_row: Optional[dict] = None
+
+    for row in rows:
+        st = str(row.get("status") or "").strip().lower()
+        if st == "active" and active_row is None:
+            active_row = row
+        elif st == "pending" and pending_row is None and _is_pending_not_expired(row):
+            pending_row = row
+        elif st == "declined" and declined_row is None:
+            declined_row = row
+
+    if active_row:
+        return {
+            "success": True,
+            "status": "active",
+            "connection_id": str(active_row.get("id") or ""),
+            "invite_id": None,
+            "source_tag_id": active_row.get("source_tag_id"),
+            "invited_at": active_row.get("invited_at"),
+            "expires_at": active_row.get("expires_at"),
+            "updated_at": active_row.get("updated_at"),
+        }
+
+    if pending_row:
+        ini = str(pending_row.get("initiator_id") or "").strip().lower()
+        pending_status = "outgoing_pending" if ini == actor else "incoming_pending"
+        return {
+            "success": True,
+            "status": pending_status,
+            "connection_id": None,
+            "invite_id": str(pending_row.get("id") or ""),
+            "source_tag_id": pending_row.get("source_tag_id"),
+            "invited_at": pending_row.get("invited_at"),
+            "expires_at": pending_row.get("expires_at"),
+            "updated_at": pending_row.get("updated_at"),
+        }
+
+    if declined_row:
+        return {
+            "success": True,
+            "status": "declined",
+            "connection_id": None,
+            "invite_id": str(declined_row.get("id") or ""),
+            "source_tag_id": declined_row.get("source_tag_id"),
+            "invited_at": declined_row.get("invited_at"),
+            "expires_at": declined_row.get("expires_at"),
+            "updated_at": declined_row.get("updated_at"),
+        }
+
+    return empty
+
+
 async def _active_tag_disabled_response_if_ineligible(
     user_id, *, action: str
 ) -> Optional[dict]:
@@ -9798,6 +9926,32 @@ async def get_trusted_pending(
             e,
         )
         raise HTTPException(status_code=500, detail="Trusted bekleyen davetler alınamadı") from e
+
+
+@api_router.get("/trusted/status")
+async def get_trusted_status(
+    counterparty_user_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Network — actor/counterparty pair UI durumu (read-only). TRUST-BE-A0."""
+    actor_norm = await require_eligible_user(actor_id, action="trusted_status")
+    cp_norm = _normalize_trusted_uuid(counterparty_user_id)
+    if not cp_norm:
+        raise HTTPException(status_code=400, detail="invalid_input")
+    if cp_norm == actor_norm:
+        raise HTTPException(status_code=400, detail="self_invite_not_allowed")
+    try:
+        return _trusted_status_for_actor_counterparty(actor_norm, cp_norm)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_status actor=%s counterparty=%s err=%s",
+            _mask_log_id(actor_id),
+            _mask_log_id(counterparty_user_id),
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Trusted durum alınamadı") from e
 
 
 _PASSENGER_BLOCKING_TAG_STATUSES_FOR_QUICK_MATCH = [
