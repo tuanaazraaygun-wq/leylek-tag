@@ -45,6 +45,8 @@ import {
   openExternalMapsNavigation,
   type ExternalMapsProvider,
 } from '../lib/openExternalMapsNavigation';
+import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
+import TrustedAddButton from './trusted/TrustedAddButton';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -2318,6 +2320,22 @@ export default function LiveMapView({
   const logPax = useCallback((label: string, fn: unknown) => {
     if (!isDriver) callCheck(label, fn);
   }, [isDriver]);
+
+  const trustedCounterpartyId = String(otherUserId || '').trim();
+  const trustedSourceTagId = String(tagId || '').trim();
+  const trustedAddEnabled = !!trustedCounterpartyId && !!trustedSourceTagId;
+  const {
+    status: trustedAddStatus,
+    loading: trustedAddLoading,
+    creating: trustedAddCreating,
+    errorMessage: trustedAddErrorMessage,
+    refresh: refreshTrustedAddStatus,
+    sendInvite: sendTrustedAddInvite,
+  } = useTrustedCounterpartyStatus({
+    counterpartyUserId: trustedCounterpartyId || null,
+    sourceTagId: trustedSourceTagId || null,
+    enabled: trustedAddEnabled,
+  });
 
   const mapRef = useRef<any>(null);
   const pickupFallbackLoggedForTagRef = useRef<string | null>(null);
@@ -6538,6 +6556,24 @@ export default function LiveMapView({
                     {passengerPaymentMethod === 'card' ? 'Yolcu: Kart ile Öde · Yakında' : 'Yolcu: nakit'}
                   </Text>
                 </View>
+              ) : null}
+
+              {!driverRideUiModern && trustedAddEnabled ? (
+                <TrustedAddButton
+                  viewerRole={isDriver ? 'driver' : 'passenger'}
+                  status={trustedAddStatus}
+                  loading={trustedAddLoading}
+                  creating={trustedAddCreating}
+                  errorMessage={trustedAddErrorMessage}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    void sendTrustedAddInvite();
+                  }}
+                  onRefresh={() => {
+                    void tapButtonHaptic();
+                    void refreshTrustedAddStatus();
+                  }}
+                />
               ) : null}
             </View>
           </LinearGradient>
