@@ -54,7 +54,10 @@ import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCar
 import QuickMatchPassengerFlow, {
   type QuickMatchRouteContext,
 } from '../components/superUx/QuickMatchPassengerFlow';
-import { useQuickMatchPassengerSession } from '../hooks/useQuickMatchPassengerSession';
+import {
+  useQuickMatchPassengerSession,
+  type QuickMatchPassengerTerminalStatus,
+} from '../hooks/useQuickMatchPassengerSession';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
 import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession';
 import DriverCockpitQuickStrip from '../components/superUx/DriverCockpitQuickStrip';
@@ -10081,11 +10084,45 @@ function PassengerDashboard({
     [loadActiveTag],
   );
 
+  const quickMatchSessionApiRef = useRef<Pick<
+    ReturnType<typeof useQuickMatchPassengerSession>,
+    'clear'
+  > | null>(null);
+
+  const resetPassengerQuickMatchIdleState = useCallback(
+    (opts?: { clearSession?: boolean; force?: boolean }) => {
+      setPassengerIdleOfferChannel('normal');
+      setRoutePickerIntent('normal');
+      if (activeTag && !opts?.force) {
+        return;
+      }
+      setQuickMatchFlowVisible(false);
+      setQuickMatchRouteContext(null);
+      if (opts?.clearSession !== false) {
+        quickMatchSessionApiRef.current?.clear();
+      }
+    },
+    [activeTag],
+  );
+
+  const handleQuickMatchTerminal = useCallback(
+    (_status: QuickMatchPassengerTerminalStatus) => {
+      if (activeTag) {
+        return;
+      }
+      resetPassengerQuickMatchIdleState({ clearSession: false });
+    },
+    [activeTag, resetPassengerQuickMatchIdleState],
+  );
+
   const quickMatchSession = useQuickMatchPassengerSession({
     enabled: !postLoginTagResumePending,
     hasActiveTag: Boolean(activeTag),
     onMatched: handleQuickMatchMatched,
+    onTerminal: handleQuickMatchTerminal,
   });
+
+  quickMatchSessionApiRef.current = quickMatchSession;
 
   useEffect(() => {
     if (activeTag) {
@@ -11766,6 +11803,7 @@ function PassengerDashboard({
               if (data.success) {
                 setActiveTag(null);
                 setDestination(null);
+                resetPassengerQuickMatchIdleState({ force: true });
                 // offers artık useOffers hook'u tarafından yönetiliyor - otomatik temizlenecek
               } else {
                 appAlert('Hata', data.detail || 'İptal edilemedi');
@@ -14784,9 +14822,7 @@ function PassengerDashboard({
         route={quickMatchRouteContext}
         session={quickMatchSession}
         onClose={() => {
-          setQuickMatchFlowVisible(false);
-          setQuickMatchRouteContext(null);
-          setRoutePickerIntent('normal');
+          resetPassengerQuickMatchIdleState({ clearSession: false });
         }}
         onRetry={() => {
           const ctx = buildQuickMatchRouteContext();
@@ -14799,9 +14835,7 @@ function PassengerDashboard({
           }
         }}
         onGoNormalMatch={() => {
-          setPassengerIdleOfferChannel('normal');
-          setRoutePickerIntent('normal');
-          setQuickMatchFlowVisible(false);
+          resetPassengerQuickMatchIdleState({ clearSession: false });
           if (destination && resolvePassengerPickupCoords(passengerPickup, userLocation)) {
             void runTagPassengerPriceFlow({
               dropLat: Number(destination.latitude),
