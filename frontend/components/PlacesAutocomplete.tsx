@@ -2663,6 +2663,8 @@ export default function PlacesAutocomplete({
       };
 
       if (item.source === 'google' && item.google_place_id) {
+        if (tryNonGoogleListCoordFallback()) return;
+
         const key = getGoogleMapsApiKey();
         if (!key) {
           setPredictionActionError('Adres seçilemedi. Lütfen tekrar deneyin.');
