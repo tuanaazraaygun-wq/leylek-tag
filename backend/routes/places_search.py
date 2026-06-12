@@ -34,7 +34,7 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski cache girdilerini deploy sonrası baypas; ilçe → il kapsamı (Ankara + Muğla)
-_CACHE_KEY_VER = "v13_google_fast_path"
+_CACHE_KEY_VER = "v14_selectable_coords"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -463,6 +463,18 @@ def _result_lon_lat(result: dict[str, Any]) -> tuple[Optional[float], Optional[f
         return lonf, latf
     except (TypeError, ValueError):
         return None, None
+
+
+def _filter_selectable_places_for_client(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Coordsuz Google autocomplete istemcide seçilemez — route picker listesinden çıkar."""
+    out: list[dict[str, Any]] = []
+    for it in results:
+        if str(it.get("provider") or "").lower() == "google":
+            lo, la = _result_lon_lat(it)
+            if lo is None or la is None:
+                continue
+        out.append(it)
+    return out
 
 
 def _point_in_city_bbox(lon: float, lat: float, bbox: tuple[float, float, float, float]) -> bool:
@@ -1839,14 +1851,16 @@ async def api_places_search(
                     fr_fast = _rank_city_scoped_results(
                         fr_fast, trimmed, city_trim, lat, lng, district=dr
                     )
-                    payload_fast: dict[str, Any] = {
-                        "success": True,
-                        "cached": False,
-                        "provider_used": "google_fast_path",
-                        "results": fr_fast[:20],
-                    }
-                    _cache_set(cache_key_raw, payload_fast)
-                    return payload_fast
+                    fr_fast_sel = _filter_selectable_places_for_client(fr_fast[:20])
+                    if fr_fast_sel:
+                        payload_fast: dict[str, Any] = {
+                            "success": True,
+                            "cached": False,
+                            "provider_used": "google_fast_path",
+                            "results": fr_fast_sel,
+                        }
+                        _cache_set(cache_key_raw, payload_fast)
+                        return payload_fast
 
             if GEOAPIFY_API_KEY and not _has_google_provider_rows(collected):
                 try:
@@ -1917,14 +1931,16 @@ async def api_places_search(
                 fr_box = _rank_city_scoped_results(
                     fr_box, trimmed, city_trim, lat, lng, district=dr
                 )
-                payload_box: dict[str, Any] = {
-                    "success": True,
-                    "cached": False,
-                    "provider_used": "merged_citywide",
-                    "results": fr_box[:20],
-                }
-                _cache_set(cache_key_raw, payload_box)
-                return payload_box
+                fr_box_sel = _filter_selectable_places_for_client(fr_box[:20])
+                if fr_box_sel:
+                    payload_box: dict[str, Any] = {
+                        "success": True,
+                        "cached": False,
+                        "provider_used": "merged_citywide",
+                        "results": fr_box_sel,
+                    }
+                    _cache_set(cache_key_raw, payload_box)
+                    return payload_box
 
             fb_raw = await _collect_turkey_wide_fallback(http, trimmed, lat, lng)
             fb_final = _finalize_fallback_results(
@@ -1934,7 +1950,7 @@ async def api_places_search(
                 "success": True,
                 "cached": False,
                 "provider_used": "merged_citywide",
-                "results": fb_final[:20],
+                "results": _filter_selectable_places_for_client(fb_final[:20]),
             }
             _cache_set(cache_key_raw, payload_fb)
             return payload_fb
@@ -1967,11 +1983,14 @@ async def api_places_search(
                             fr, trimmed, city_trim, lat, lng, district=dr
                         )
                     if fr:
-                        outbound["results"] = _dedupe_results(fr)
-                        _cache_set(cache_key_raw, outbound)
-                        return outbound
-                    if rows_raw:
-                        outbound["results"] = _dedupe_results(rows_raw)[:20]
+                        fr_sel = _filter_selectable_places_for_client(_dedupe_results(fr))
+                        if fr_sel:
+                            outbound["results"] = fr_sel
+                            _cache_set(cache_key_raw, outbound)
+                            return outbound
+                    rows_sel = _filter_selectable_places_for_client(_dedupe_results(rows_raw)[:20])
+                    if rows_sel:
+                        outbound["results"] = rows_sel
                         _cache_set(cache_key_raw, outbound)
                         return outbound
 
@@ -1995,13 +2014,19 @@ async def api_places_search(
                                 fr2, trimmed, city_trim, lat, lng, district=dr
                             )
                         if fr2:
-                            gb["results"] = _dedupe_results(fr2)
-                            _cache_set(cache_key_raw, gb)
-                            return gb
+                            fr2_sel = _filter_selectable_places_for_client(_dedupe_results(fr2))
+                            if fr2_sel:
+                                gb["results"] = fr2_sel
+                                _cache_set(cache_key_raw, gb)
+                                return gb
                         if raw_geo:
-                            gb["results"] = _dedupe_results(raw_geo)[:20]
-                            _cache_set(cache_key_raw, gb)
-                            return gb
+                            raw_geo_sel = _filter_selectable_places_for_client(
+                                _dedupe_results(raw_geo)[:20]
+                            )
+                            if raw_geo_sel:
+                                gb["results"] = raw_geo_sel
+                                _cache_set(cache_key_raw, gb)
+                                return gb
             except httpx.TimeoutException:
                 pass
             except Exception:
@@ -2029,14 +2054,18 @@ async def api_places_search(
                         if city_trim
                         else ga_filtered
                     )
-                    outbound = {
-                        "success": True,
-                        "cached": False,
-                        "provider_used": "geoapify",
-                        "results": _dedupe_results(ga_ranked)[:20],
-                    }
-                    _cache_set(cache_key_raw, outbound)
-                    return outbound
+                    ga_sel = _filter_selectable_places_for_client(
+                        _dedupe_results(ga_ranked)[:20]
+                    )
+                    if ga_sel:
+                        outbound = {
+                            "success": True,
+                            "cached": False,
+                            "provider_used": "geoapify",
+                            "results": ga_sel,
+                        }
+                        _cache_set(cache_key_raw, outbound)
+                        return outbound
             except (httpx.TimeoutException, httpx.RequestError):
                 pass
             except Exception:
@@ -2078,14 +2107,16 @@ async def api_places_search(
                 if city_trim
                 else acc_nom
             )
-            fin: dict[str, Any] = {
-                "success": True,
-                "cached": False,
-                "provider_used": "nominatim",
-                "results": _dedupe_results(fin_list)[:12],
-            }
-            _cache_set(cache_key_raw, fin)
-            return fin
+            fin_sel = _filter_selectable_places_for_client(_dedupe_results(fin_list)[:12])
+            if fin_sel:
+                fin: dict[str, Any] = {
+                    "success": True,
+                    "cached": False,
+                    "provider_used": "nominatim",
+                    "results": fin_sel,
+                }
+                _cache_set(cache_key_raw, fin)
+                return fin
 
         if city_trim:
             fb_raw = await _collect_turkey_wide_fallback(http, trimmed, lat, lng)
@@ -2093,14 +2124,16 @@ async def api_places_search(
                 fb_raw, trimmed, city_trim, lat, lng, district=dr
             )
             if fb_final:
-                payload_fb2: dict[str, Any] = {
-                    "success": True,
-                    "cached": False,
-                    "provider_used": "nominatim",
-                    "results": fb_final[:20],
-                }
-                _cache_set(cache_key_raw, payload_fb2)
-                return payload_fb2
+                fb2_sel = _filter_selectable_places_for_client(fb_final[:20])
+                if fb2_sel:
+                    payload_fb2: dict[str, Any] = {
+                        "success": True,
+                        "cached": False,
+                        "provider_used": "nominatim",
+                        "results": fb2_sel,
+                    }
+                    _cache_set(cache_key_raw, payload_fb2)
+                    return payload_fb2
 
     out_final = dict(EMPTY_OK)
     if nominatim_rate_blocked:
