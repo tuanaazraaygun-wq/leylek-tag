@@ -5615,7 +5615,11 @@ _ACCOUNT_ELIGIBILITY_SELECT = "id, is_active, is_deleted, deleted_at, is_banned"
 
 
 def user_account_is_eligible(row: Optional[dict]) -> bool:
-    """Silinmiş/pasif/banlı hesap matching ve mutasyonlara kapalı (null is_active → aktif)."""
+    """Silinmiş/pasif/banlı hesap matching ve mutasyonlara kapalı (null is_active → aktif).
+
+    Şemada olmayan is_deleted / deleted_at / is_banned kolonları yanıtta yoksa bloklanmaz
+    (yalnızca açık False/True veya dolu deleted_at değerleri sayılır).
+    """
     if not row or not isinstance(row, dict):
         return False
     if row.get("is_active") is False:
@@ -5654,7 +5658,12 @@ async def fetch_user_account_row(user_id) -> Optional[dict]:
         canonical = str((resolved or user_id) or "").strip().lower()
         if not canonical:
             return None
-        for sel in (_ACCOUNT_ELIGIBILITY_SELECT, "id, is_active, is_deleted, deleted_at"):
+        for sel in (
+            _ACCOUNT_ELIGIBILITY_SELECT,
+            "id, is_active, is_deleted, deleted_at",
+            "id, is_active",
+            "id",
+        ):
             try:
                 r = (
                     supabase.table("users")
@@ -5665,7 +5674,13 @@ async def fetch_user_account_row(user_id) -> Optional[dict]:
                 )
                 if r.data:
                     return r.data[0]
-            except Exception:
+            except Exception as sel_err:
+                logger.warning(
+                    "fetch_user_account_row select_fallback user_id=%s select=%s err=%s",
+                    _mask_log_id(user_id),
+                    sel,
+                    sel_err,
+                )
                 continue
     except Exception as e:
         logger.warning(
