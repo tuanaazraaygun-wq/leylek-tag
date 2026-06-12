@@ -376,6 +376,13 @@ export function DriverQuickMatchInviteCard({
     return null;
   }
 
+  if (
+    (session.status === 'restoring' || session.isRestoring) &&
+    !session.invite
+  ) {
+    return null;
+  }
+
   const renderPollWarning = () =>
     session.pollErrorMessage ? <PollWarningBanner /> : null;
 

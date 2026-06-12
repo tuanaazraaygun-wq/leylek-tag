@@ -18684,7 +18684,11 @@ function DriverDashboard({
         <DriverQuickMatchInviteCard
           visible={
             quickMatchDriverEnabled &&
-            quickMatchDriverSession.status !== 'idle'
+            (quickMatchDriverSession.status === 'pending' ||
+              quickMatchDriverSession.status === 'accepting' ||
+              quickMatchDriverSession.status === 'matched' ||
+              (quickMatchDriverSession.status === 'error' &&
+                !!quickMatchDriverSession.invite))
           }
           session={quickMatchDriverSession}
           onAccept={() => {
