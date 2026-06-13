@@ -56,7 +56,8 @@ _REQUEST_ADVANCE_SELECT_COLS = (
 
 _REQUEST_ACCEPT_SELECT_COLS = (
     "id, status, expires_at, passenger_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, "
-    "pickup_label, dropoff_label, vehicle_preference, distance_km, matched_tag_id, matched_at"
+    "pickup_label, dropoff_label, vehicle_preference, distance_km, matched_tag_id, matched_at, "
+    "offered_contribution_tl, suggested_contribution_tl"
 )
 
 _INVITE_SELECT_COLS = "id, request_id, sequence_no, status, expires_at, driver_id"
@@ -216,6 +217,37 @@ def _quick_match_suggested_contribution_tl(distance_band: str) -> int:
     if suggested is None:
         raise QuickMatchValidationError("Mesafe bandı geçersiz")
     return suggested
+
+
+def _parse_positive_contribution_tl(raw: Any) -> Optional[int]:
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        if isinstance(raw, float):
+            if not math.isfinite(raw) or not raw.is_integer():
+                return None
+            val = int(raw)
+        else:
+            val = int(raw)
+    except (TypeError, ValueError):
+        try:
+            f = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(f) or f != int(f):
+            return None
+        val = int(f)
+    if val <= 0:
+        return None
+    return val
+
+
+def _matched_tag_contribution_tl(request_row: dict) -> Optional[int]:
+    """QM accept tag price — offered first, then suggested fallback."""
+    offered = _parse_positive_contribution_tl(request_row.get("offered_contribution_tl"))
+    if offered is not None:
+        return offered
+    return _parse_positive_contribution_tl(request_row.get("suggested_contribution_tl"))
 
 
 async def _quick_match_distance_km(
@@ -1097,6 +1129,18 @@ def accept_quick_match_invite(
 
     if tag_row.get("match_channel") != MATCH_CHANNEL_QUICK:
         raise RuntimeError("quick_match tag insert: match_channel must be 'quick'")
+
+    matched_contribution_tl = _matched_tag_contribution_tl(request_row)
+    if matched_contribution_tl is not None:
+        tag_row["final_price"] = matched_contribution_tl
+        tag_row["offered_price"] = matched_contribution_tl
+    else:
+        logger.warning(
+            "quick_match accept missing valid contribution request_id=%s offered=%r suggested=%r",
+            request_id[:36],
+            request_row.get("offered_contribution_tl"),
+            request_row.get("suggested_contribution_tl"),
+        )
 
     if driver_profile_loader_fn:
         profile = driver_profile_loader_fn(supabase, actor) or {}
