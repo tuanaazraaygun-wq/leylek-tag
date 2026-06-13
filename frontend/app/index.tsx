@@ -12045,6 +12045,46 @@ function PassengerDashboard({
     setDestinationPickerPhase('map');
   };
 
+  const openPickupMapToVerify = (
+    _address: string,
+    latitude: number,
+    longitude: number,
+  ) => {
+    void tapButtonHaptic();
+    Keyboard.dismiss();
+    if (!isUsableRoutePickerCoord(latitude, longitude)) {
+      appAlert('Adres', ROUTE_PICKER_COORD_INVALID_MSG, [{ text: 'Tamam' }]);
+      return;
+    }
+    if (!DestinationPickerMapView || !isNativeGoogleMapsSupported()) {
+      appAlert(
+        'Harita',
+        'Bu cihazda harita seçimi kullanılamıyor. Lütfen adres arayın veya konumunuzu kullanın.',
+        [{ text: 'Tamam' }],
+      );
+      return;
+    }
+
+    setRoutePickerStep('pickup');
+    destinationPickerPinUserLockRef.current = true;
+
+    const lat = latitude;
+    const lng = longitude;
+    setDestinationPickerMapBootRegion(lat, lng);
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
+    destinationPickerMapCenterRef.current = { latitude: lat, longitude: lng };
+    destinationPickerPendingInteractiveBootAnimateRef.current = true;
+    setDestinationPickerPhase('map');
+    try {
+      console.log(
+        '[ROUTE_PICKER] PICKUP_VERIFY_FROM_SEARCH',
+        JSON.stringify({ address: _address, lat, lng }),
+      );
+    } catch {
+      /* noop */
+    }
+  };
+
   /** Arama: seçilen öneri → harita doğrulama fazı; fiyat akışı Tam burası sonrası */
   const handleDestinationAreaFromSearch = (place: {
     address: string;
@@ -12069,17 +12109,14 @@ function PassengerDashboard({
     openDestinationMapToVerify(place.address, lat, lng);
   };
 
-  /** Faz 1D-A: arama ile alınış bölgesi — haritada doğrulama */
+  /** Faz 1D-A: arama ile alınış bölgesi — haritada doğrulama (Tam burası sonrası commit) */
   const handlePickupAreaFromSearch = (place: {
     address: string;
     latitude: number;
     longitude: number;
   }) => {
     void tapButtonHaptic();
-    if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) return;
-    commitPickupFromMap(place.address, place.latitude, place.longitude, {
-      historySource: 'search',
-    });
+    openPickupMapToVerify(place.address, place.latitude, place.longitude);
   };
 
   /** Faz 1D-A: arama beklemeden doğrudan harita ile alınış seçimi */
