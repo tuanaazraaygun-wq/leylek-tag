@@ -10138,6 +10138,10 @@ function PassengerDashboard({
   const isQuickMatchPassengerUiActive =
     quickMatchFlowVisible || quickMatchSession.status !== 'idle';
 
+  const shouldShowQuickMatchFlow =
+    (quickMatchFlowVisible || quickMatchSession.status !== 'idle') &&
+    !(quickMatchSession.status === 'idle' && !quickMatchRouteContext);
+
   const confirmBoardingViaActiveTagApi = useCallback(async (expectedTagId: string): Promise<boolean> => {
     const exp = normalizeTripTagIdForCompare(expectedTagId);
     if (!exp || !user?.id) return false;
@@ -11915,7 +11919,7 @@ function PassengerDashboard({
       }
       setQuickMatchRouteContext(ctx);
       setQuickMatchFlowVisible(true);
-      setPassengerIdleOfferChannel('quick_match');
+      setPassengerIdleOfferChannel('normal');
       setRoutePickerIntent('normal');
       console.log(
         '[QM] FLOW_OPEN route_ready',
@@ -14852,10 +14856,7 @@ function PassengerDashboard({
       )}
 
       <QuickMatchPassengerFlow
-        visible={
-          (quickMatchFlowVisible || quickMatchSession.status !== 'idle') &&
-          !(quickMatchSession.status === 'idle' && !quickMatchRouteContext)
-        }
+        visible={shouldShowQuickMatchFlow}
         route={quickMatchRouteContext}
         session={quickMatchSession}
         onClose={() => {
@@ -14876,6 +14877,7 @@ function PassengerDashboard({
               }),
             );
           } else {
+            setQuickMatchFlowVisible(false);
             reopenQuickMatchRoutePickerForMissingRoute();
           }
         }}
