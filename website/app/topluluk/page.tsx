@@ -7,6 +7,7 @@ import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 import { SectionHeading } from "@/components/section-heading";
 import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
+import { getCommunityCityHrefForChannel } from "@/lib/community-city-content";
 
 const PAGE_TITLE = "Leylek Topluluk | Leylek TAG";
 const PAGE_DESCRIPTION =
@@ -153,26 +154,43 @@ export default function ToplulukPage() {
             description="Aşağıdaki kanallar bilgilendirme amaçlıdır. Kullanılabilirlik bölgeye göre değişebilir; açılış sırası pilot topluluk geri bildirimine göre netleşir."
           />
           <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {PLANNED_CHANNELS.map((channel) => (
-              <li
-                key={`${channel.city}-${channel.name}`}
-                className="glass-panel rounded-2xl border border-white/[0.08] p-5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{channel.city}</p>
-                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[0.08] px-2.5 py-0.5 text-[10px] font-semibold text-cyan-100/90">
-                    {channel.status}
-                  </span>
-                </div>
-                <h2 className="mt-3 text-lg font-black text-white">{channel.name}</h2>
-                <p className="mt-1.5 text-[12px] font-medium uppercase tracking-[0.12em] text-slate-500">
-                  {channel.scope}
-                </p>
-                <p className="mt-3 text-[13px] leading-relaxed text-slate-400">
-                  Kanal akışı uygulamada açıldığında buradan duyurulacaktır.
-                </p>
-              </li>
-            ))}
+            {PLANNED_CHANNELS.map((channel) => {
+              const href = getCommunityCityHrefForChannel(channel.name, channel.scope);
+              const card = (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{channel.city}</p>
+                    <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[0.08] px-2.5 py-0.5 text-[10px] font-semibold text-cyan-100/90">
+                      {channel.status}
+                    </span>
+                  </div>
+                  <h2 className="mt-3 text-lg font-black text-white">{channel.name}</h2>
+                  <p className="mt-1.5 text-[12px] font-medium uppercase tracking-[0.12em] text-slate-500">
+                    {channel.scope}
+                  </p>
+                  <p className="mt-3 text-[13px] leading-relaxed text-slate-400">
+                    {href
+                      ? "Kanal planı ve kurallar için detay sayfasına göz at."
+                      : "Kanal akışı uygulamada açıldığında buradan duyurulacaktır."}
+                  </p>
+                </>
+              );
+
+              return (
+                <li key={`${channel.city}-${channel.name}`}>
+                  {href ? (
+                    <Link
+                      href={href}
+                      className="glass-panel block rounded-2xl border border-white/[0.08] p-5 transition hover:border-cyan-400/28 hover:bg-cyan-400/[0.03]"
+                    >
+                      {card}
+                    </Link>
+                  ) : (
+                    <div className="glass-panel rounded-2xl border border-white/[0.08] p-5">{card}</div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           <p className="mt-6 text-[12px] leading-relaxed text-slate-500">
             Şehir landing sayfaları:{" "}
