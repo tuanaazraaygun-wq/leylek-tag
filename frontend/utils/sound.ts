@@ -302,10 +302,15 @@ export async function invalidateDriverOfferSoundCache(): Promise<void> {
   await unloadDriverNewOfferLuxuryTone();
 }
 
-/** DriverDashboard unmount — ses nesnesini boşalt (chimed/baseline korunur) */
-export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
+/** Kabul / eşleşme — teklif alarm playback'ini durdur (chimed/baseline korunur) */
+export async function stopDriverOfferAlarmPlayback(): Promise<void> {
   lastDriverOfferLuxuryAt = 0;
   await unloadDriverOfferSoundInternal();
+}
+
+/** DriverDashboard unmount — ses nesnesini boşalt (chimed/baseline korunur) */
+export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
+  await stopDriverOfferAlarmPlayback();
 }
 
 // ── Sürücü teklif sesi — modül seviyesi dedupe (socket / push / poll) ──

@@ -156,7 +156,7 @@ import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers'
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
-import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound } from '../utils/sound';
+import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -15236,6 +15236,7 @@ function DriverDashboard({
   }
 
   const handleDriverAcceptFlowStart = useCallback((tagId: string) => {
+    void stopDriverOfferAlarmPlayback();
     const t = String(tagId || '').trim();
     if (t) driverPendingAcceptTagIdsRef.current.add(t);
   }, []);
@@ -15701,6 +15702,7 @@ function DriverDashboard({
       return;
     }
     const { m: d, tag_id, route_info } = norm;
+    void stopDriverOfferAlarmPlayback();
     const now = Date.now();
     const g = driverMatchSoundGuardRef.current;
     if (!g || g.id !== tag_id || now - g.at > 1800) {
@@ -16111,6 +16113,7 @@ function DriverDashboard({
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
       console.log('OFFER_EVENT_RECEIVED', { kind: 'tag_matched', tag_id: data?.tag_id ?? null });
+      void stopDriverOfferAlarmPlayback();
       // 🔊 EŞLEŞME SESİ - Ding ding ding
       playMatchSound();
       clearAllDriverOfferRemovalState();
@@ -18613,6 +18616,7 @@ function DriverDashboard({
               onOfferUnavailable={handleDriverOfferUnavailable}
               onDriverAcceptMatch={(match) => {
                 const data = match as Record<string, unknown>;
+                void stopDriverOfferAlarmPlayback();
                 clearAllDriverOfferRemovalState();
                 setRequests([]);
                 playMatchSound();
