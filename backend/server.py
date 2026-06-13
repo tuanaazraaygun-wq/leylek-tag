@@ -2047,6 +2047,49 @@ async def find_eligible_drivers(
         return []
 
 
+_QM_ONLINE_DRIVER_SELECT_FULL = (
+    "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
+    "is_active, is_deleted, deleted_at, is_banned"
+)
+_QM_ONLINE_DRIVER_SELECT_FALLBACK = (
+    "id, name, rating, latitude, longitude, driver_online, is_active, driver_details"
+)
+
+
+def _fetch_online_users_for_quick_match(now_iso: str) -> list:
+    """QM-only: canlı şemada eksik kolonlarda 42703 olursa dar select ile yeniden dene."""
+    if not supabase:
+        return []
+    last_err: Optional[Exception] = None
+    for sel in (_QM_ONLINE_DRIVER_SELECT_FULL, _QM_ONLINE_DRIVER_SELECT_FALLBACK):
+        try:
+            query = (
+                supabase.table("users")
+                .select(sel)
+                .eq("driver_online", True)
+                .eq("is_active", True)
+            )
+            query = _apply_driver_active_until_filter(query, now_iso)
+            result = query.execute()
+            if sel != _QM_ONLINE_DRIVER_SELECT_FULL:
+                logger.warning(
+                    "find_eligible_drivers_qm select_fallback select=%s",
+                    sel,
+                )
+            return result.data or []
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "find_eligible_drivers_qm select_fallback select=%s err=%s",
+                sel,
+                e,
+            )
+            continue
+    if last_err is not None:
+        raise last_err
+    return []
+
+
 async def _find_eligible_drivers_for_quick_match(
     pickup_lat: float,
     pickup_lng: float,
@@ -2073,20 +2116,15 @@ async def _find_eligible_drivers_for_quick_match(
     try:
         pref = _canonical_vehicle_kind(passenger_vehicle_kind) or "car"
         now = datetime.utcnow().isoformat()
-        query = supabase.table("users").select(
-            "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
-            "is_active, is_deleted, deleted_at, is_banned"
-        ).eq("driver_online", True).eq("is_active", True)
-        query = _apply_driver_active_until_filter(query, now)
-        result = query.execute()
-        if not result.data:
+        result_data = _fetch_online_users_for_quick_match(now)
+        if not result_data:
             logger.warning(
                 "find_eligible_drivers_qm: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
             )
             return []
 
         exclude_set = {str(x).strip().lower() for x in (exclude_ids or []) if x is not None}
-        online_count = len(result.data)
+        online_count = len(result_data)
         plat_f, plng_f = float(pickup_lat), float(pickup_lng)
         logger.info(
             "find_eligible_drivers_qm debug: online_rows=%s pickup=(%.5f,%.5f) max_eta_min=%s pref=%s vehicle_filter=%s top_n=%s use_traffic=%s",
@@ -2103,7 +2141,7 @@ async def _find_eligible_drivers_for_quick_match(
         _match_t0 = time.time()
         origin_points: list[tuple[str, float, float]] = []
         driver_by_id: dict[str, dict] = {}
-        for driver in result.data:
+        for driver in result_data:
             if str(driver["id"]).strip().lower() in exclude_set:
                 excluded += 1
                 continue
