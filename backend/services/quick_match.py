@@ -147,6 +147,10 @@ def get_quick_match_max_attempts() -> int:
     return _env_int("QUICK_MATCH_MAX_ATTEMPTS", 8)
 
 
+def get_quick_match_max_eta_min() -> int:
+    return _env_int("QUICK_MATCH_MAX_ETA_MIN", 10)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -671,12 +675,12 @@ async def _quick_match_pick_next_driver(
         pickup_lng,
         exclude_ids=exclude_ids,
         passenger_vehicle_kind=vehicle_pref,
-        radius_km=get_quick_match_radius_km(),
         vehicle_filter=True,
         tag_id=None,
     )
     eligible_count = len(eligible)
     busy_skipped_count = 0
+    max_eta_min = get_quick_match_max_eta_min()
     for candidate in eligible:
         driver_id = _norm_actor_id(candidate.get("driver_id"))
         if not driver_id:
@@ -684,9 +688,11 @@ async def _quick_match_pick_next_driver(
         if driver_busy_fn(driver_id):
             busy_skipped_count += 1
             continue
+        pickup_eta_min = candidate.get("duration_min")
         logger.info(
             "quick_match_pick_driver request_id=%s pickup=(%.5f,%.5f) vehicle_pref=%s "
-            "exclude_count=%d eligible=%d busy_skipped=%d selected_driver=%s",
+            "exclude_count=%d eligible=%d busy_skipped=%d selected_driver=%s "
+            "pickup_eta_min=%s duration_min=%s max_eta_min=%d",
             _short_id(request_id),
             pickup_lat,
             pickup_lng,
@@ -695,11 +701,15 @@ async def _quick_match_pick_next_driver(
             eligible_count,
             busy_skipped_count,
             _short_id(driver_id),
+            pickup_eta_min,
+            pickup_eta_min,
+            max_eta_min,
         )
         return candidate
     logger.warning(
         "quick_match_pick_driver_none request_id=%s pickup=(%.5f,%.5f) vehicle_pref=%s "
-        "exclude_count=%d eligible=%d busy_skipped=%d reason=no_eligible_or_all_busy",
+        "exclude_count=%d eligible=%d busy_skipped=%d max_eta_min=%d "
+        "reason=no_eligible_or_all_busy",
         _short_id(request_id),
         pickup_lat,
         pickup_lng,
@@ -707,6 +717,7 @@ async def _quick_match_pick_next_driver(
         exclude_count,
         eligible_count,
         busy_skipped_count,
+        max_eta_min,
     )
     return None
 

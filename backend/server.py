@@ -116,6 +116,7 @@ from services.quick_match import (
     decline_quick_match_invite,
     get_active_quick_match_request,
     get_current_quick_match_invite,
+    get_quick_match_max_eta_min,
     get_quick_match_request_status,
 )
 from services.transfer_payment_service import (
@@ -2044,6 +2045,195 @@ async def find_eligible_drivers(
     except Exception as e:
         logger.error(f"❌ Find eligible drivers error: {e}")
         return []
+
+
+async def _find_eligible_drivers_for_quick_match(
+    pickup_lat: float,
+    pickup_lng: float,
+    exclude_ids: list = None,
+    passenger_vehicle_kind: Optional[str] = None,
+    radius_km: Optional[float] = None,
+    *,
+    vehicle_filter: bool = True,
+    tag_id: Optional[str] = None,
+) -> list:
+    """
+    Quick Match only — ETA gate (duration_min <= QUICK_MATCH_MAX_ETA_MIN), no road_km radius filter.
+    Normal find_eligible_drivers unchanged; bbox prefilter + route top_n=25 for QM.
+    """
+    del radius_km, tag_id  # QM ETA mode; signature matches FindEligibleDriversFn for wiring
+    max_eta_min = get_quick_match_max_eta_min()
+    qm_route_top_n = 25
+    qm_use_traffic = os.getenv("QUICK_MATCH_TRAFFIC_ETA", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    try:
+        pref = _canonical_vehicle_kind(passenger_vehicle_kind) or "car"
+        now = datetime.utcnow().isoformat()
+        query = supabase.table("users").select(
+            "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
+            "is_active, is_deleted, deleted_at, is_banned"
+        ).eq("driver_online", True).eq("is_active", True)
+        query = _apply_driver_active_until_filter(query, now)
+        result = query.execute()
+        if not result.data:
+            logger.warning(
+                "find_eligible_drivers_qm: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
+            )
+            return []
+
+        exclude_set = {str(x).strip().lower() for x in (exclude_ids or []) if x is not None}
+        online_count = len(result.data)
+        plat_f, plng_f = float(pickup_lat), float(pickup_lng)
+        logger.info(
+            "find_eligible_drivers_qm debug: online_rows=%s pickup=(%.5f,%.5f) max_eta_min=%s pref=%s vehicle_filter=%s top_n=%s use_traffic=%s",
+            online_count,
+            plat_f,
+            plng_f,
+            max_eta_min,
+            pref,
+            vehicle_filter,
+            qm_route_top_n,
+            qm_use_traffic,
+        )
+        no_loc = excluded = vehicle_mismatch = too_far = 0
+        _match_t0 = time.time()
+        origin_points: list[tuple[str, float, float]] = []
+        driver_by_id: dict[str, dict] = {}
+        for driver in result.data:
+            if str(driver["id"]).strip().lower() in exclude_set:
+                excluded += 1
+                continue
+            if not user_account_is_eligible(driver):
+                excluded += 1
+                continue
+            if driver.get("latitude") is None or driver.get("longitude") is None:
+                no_loc += 1
+                continue
+            if (
+                str(driver.get("latitude", "")).strip() == ""
+                or str(driver.get("longitude", "")).strip() == ""
+            ):
+                no_loc += 1
+                continue
+            if vehicle_filter:
+                if not _driver_is_allowed_for_trip_vehicle(driver, pref):
+                    vehicle_mismatch += 1
+                    continue
+            try:
+                d_la = float(driver["latitude"])
+                d_lo = float(driver["longitude"])
+            except (TypeError, ValueError):
+                no_loc += 1
+                continue
+            if not _match_bbox_prefilter_deg(plat_f, plng_f, d_la, d_lo):
+                too_far += 1
+                continue
+            did = str(driver["id"]).strip().lower()
+            origin_points.append((did, d_la, d_lo))
+            driver_by_id[did] = driver
+
+        try:
+            meta = await get_real_route_meta_batch_origins_to_dest(
+                plat_f,
+                plng_f,
+                origin_points,
+                top_n=qm_route_top_n,
+                use_traffic=qm_use_traffic,
+            )
+        except Exception as e:
+            logger.error("[MATCH] find_eligible_drivers_qm batch failed: %s", e, exc_info=True)
+            meta = {}
+        logger.info("[MATCH] MATCH_TIME find_eligible_drivers_qm_batch_s: %.4f", time.time() - _match_t0)
+
+        routed_count = len(meta)
+        eligible_drivers: list[dict] = []
+        eta_rejected = 0
+        for did, row in meta.items():
+            duration_min = int(max(1, round(float(row.get("duration_min", 1)))))
+            if duration_min > max_eta_min:
+                eta_rejected += 1
+                continue
+            road_km = float(row.get("distance_km", 0))
+            drv = driver_by_id.get(did)
+            if not drv:
+                continue
+            eligible_drivers.append(
+                {
+                    "driver_id": did,
+                    "driver_name": drv.get("name", "Sürücü"),
+                    "distance_km": round(road_km, 2),
+                    "duration_min": duration_min,
+                    "rating": drv.get("rating", 4.0) or 4.0,
+                }
+            )
+        logger.info(
+            "quick_match_eta_filter pickup=(%.5f,%.5f) routed=%d before=%d after=%d max_eta_min=%d eta_rejected=%d use_traffic=%s",
+            plat_f,
+            plng_f,
+            routed_count,
+            routed_count,
+            len(eligible_drivers),
+            max_eta_min,
+            eta_rejected,
+            qm_use_traffic,
+        )
+        eligible_drivers.sort(key=lambda x: (x["duration_min"], x["distance_km"]))
+        logger.info(
+            "[MATCH] final_included_qm driver_ids=%s count=%d pickup=(%.5f,%.5f) sort=duration_min_asc",
+            [e["driver_id"] for e in eligible_drivers],
+            len(eligible_drivers),
+            plat_f,
+            plng_f,
+        )
+        if not eligible_drivers:
+            if not origin_points:
+                logger.info(
+                    "[MATCH] find_eligible_qm empty reason=no_origin_points online_rows=%s",
+                    online_count,
+                )
+            elif not meta:
+                logger.info(
+                    "[MATCH] find_eligible_qm empty reason=no_routing_results origins=%d",
+                    len(origin_points),
+                )
+            elif eta_rejected >= routed_count and routed_count > 0:
+                logger.info(
+                    "[MATCH] find_eligible_qm empty reason=all_gt_max_eta_min=%s meta_keys=%d",
+                    max_eta_min,
+                    routed_count,
+                )
+            logger.warning(
+                "find_eligible_drivers_qm: 0 uygun — online=%s no_latlng=%s excluded=%s vehicle_mismatch=%s "
+                "too_far=%s pref=%s max_eta_min=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
+                online_count,
+                no_loc,
+                excluded,
+                vehicle_mismatch,
+                too_far,
+                pref,
+                max_eta_min,
+                plat_f,
+                plng_f,
+                vehicle_filter,
+            )
+        else:
+            logger.info(
+                "find_eligible_drivers_qm: eligible=%s / online=%s pref=%s max_eta_min=%s vehicle_filter=%s",
+                len(eligible_drivers),
+                online_count,
+                pref,
+                max_eta_min,
+                vehicle_filter,
+            )
+        return eligible_drivers
+    except Exception as e:
+        logger.error("find_eligible_drivers_qm error: %s", e)
+        return []
+
 
 async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
     """
@@ -6890,8 +7080,11 @@ _MATCH_ROUTE_CACHE_MAX = 4096
 _MATCH_ROUTE_CACHE: dict[str, tuple[float, float, float]] = {}
 
 
-def _match_route_cache_key(ola: float, olo: float, dla: float, dlo: float) -> str:
-    return f"{round(float(ola), 5)},{round(float(olo), 5)}:{round(float(dla), 5)},{round(float(dlo), 5)}"
+def _match_route_cache_key(
+    ola: float, olo: float, dla: float, dlo: float, *, traffic: bool = False
+) -> str:
+    base = f"{round(float(ola), 5)},{round(float(olo), 5)}:{round(float(dla), 5)},{round(float(dlo), 5)}"
+    return f"traffic:{base}" if traffic else base
 
 
 def _match_bbox_prefilter_deg(ala: float, alo: float, bla: float, blo: float) -> bool:
@@ -6904,8 +7097,10 @@ def _match_approx_sort_metric(ala: float, alo: float, bla: float, blo: float) ->
     return dx * dx + dy * dy
 
 
-def _match_route_cache_get(ola: float, olo: float, dla: float, dlo: float) -> Optional[Tuple[float, float]]:
-    key = _match_route_cache_key(ola, olo, dla, dlo)
+def _match_route_cache_get(
+    ola: float, olo: float, dla: float, dlo: float, *, traffic: bool = False
+) -> Optional[Tuple[float, float]]:
+    key = _match_route_cache_key(ola, olo, dla, dlo, traffic=traffic)
     ent = _MATCH_ROUTE_CACHE.get(key)
     if not ent:
         return None
@@ -6919,14 +7114,23 @@ def _match_route_cache_get(ola: float, olo: float, dla: float, dlo: float) -> Op
     return (float(km), float(dur))
 
 
-def _match_route_cache_set(ola: float, olo: float, dla: float, dlo: float, km: float, dur_min: float) -> None:
+def _match_route_cache_set(
+    ola: float,
+    olo: float,
+    dla: float,
+    dlo: float,
+    km: float,
+    dur_min: float,
+    *,
+    traffic: bool = False,
+) -> None:
     if len(_MATCH_ROUTE_CACHE) > _MATCH_ROUTE_CACHE_MAX:
         for k in list(_MATCH_ROUTE_CACHE.keys())[:512]:
             try:
                 del _MATCH_ROUTE_CACHE[k]
             except KeyError:
                 pass
-    key = _match_route_cache_key(ola, olo, dla, dlo)
+    key = _match_route_cache_key(ola, olo, dla, dlo, traffic=traffic)
     _MATCH_ROUTE_CACHE[key] = (
         float(km),
         float(dur_min),
@@ -7047,6 +7251,8 @@ async def _google_dm_many_origins_one_dest(
     origins: list[tuple[str, float, float]],
     dest_lat: float,
     dest_lng: float,
+    *,
+    use_traffic: bool = False,
 ) -> dict[str, tuple[float, int]]:
     api_key = (os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
     if not api_key or not origins:
@@ -7060,6 +7266,9 @@ async def _google_dm_many_origins_one_dest(
             "mode": "driving",
             "key": api_key,
         }
+        if use_traffic:
+            params["departure_time"] = "now"
+            params["traffic_model"] = "best_guess"
         try:
             async with httpx.AsyncClient(http2=False, timeout=12.0) as client:
                 r = await client.get(url, params=params)
@@ -7068,7 +7277,11 @@ async def _google_dm_many_origins_one_dest(
             logger.error("[MATCH] Distance Matrix (N→1) HTTP error: %s", e, exc_info=True)
             return {}
         if data.get("status") != "OK":
-            logger.warning("Distance Matrix (N→1): status=%s", data.get("status"))
+            logger.warning(
+                "Distance Matrix (N→1): status=%s use_traffic=%s",
+                data.get("status"),
+                use_traffic,
+            )
             return {}
         rows = data.get("rows") or []
         out: dict[str, tuple[float, int]] = {}
@@ -7082,7 +7295,9 @@ async def _google_dm_many_origins_one_dest(
                 if el.get("status") != "OK":
                     continue
                 dist = el.get("distance") or {}
-                dur = el.get("duration") or {}
+                dur = el.get("duration_in_traffic") if use_traffic else None
+                if not dur:
+                    dur = el.get("duration") or {}
                 meters = float(dist.get("value", 0))
                 sec = float(dur.get("value", 0))
                 km = round(meters / 1000.0, 3)
@@ -7152,6 +7367,8 @@ async def _resolve_road_legs_many_origins_one_dest(
     dest_lat: float,
     dest_lng: float,
     origins: list[tuple[str, float, float]],
+    *,
+    use_traffic: bool = False,
 ) -> dict[str, tuple[float, int]]:
     if not origins:
         return {}
@@ -7159,7 +7376,7 @@ async def _resolve_road_legs_many_origins_one_dest(
     pending: list[tuple[str, float, float]] = []
     for oid, ola, olo in origins:
         try:
-            hit = _match_route_cache_get(ola, olo, dest_lat, dest_lng)
+            hit = _match_route_cache_get(ola, olo, dest_lat, dest_lng, traffic=use_traffic)
             if hit is not None:
                 resolved[str(oid)] = (hit[0], int(hit[1]))
             else:
@@ -7170,7 +7387,9 @@ async def _resolve_road_legs_many_origins_one_dest(
 
     if pending:
         try:
-            dm = await _google_dm_many_origins_one_dest(pending, dest_lat, dest_lng)
+            dm = await _google_dm_many_origins_one_dest(
+                pending, dest_lat, dest_lng, use_traffic=use_traffic
+            )
         except Exception as e:
             logger.error("[MATCH] DM N→1 invoke error: %s", e, exc_info=True)
             dm = {}
@@ -7179,7 +7398,9 @@ async def _resolve_road_legs_many_origins_one_dest(
                 if oid in dm:
                     km, dmin = dm[oid]
                     resolved[oid] = (km, dmin)
-                    _match_route_cache_set(ola, olo, dest_lat, dest_lng, km, float(dmin))
+                    _match_route_cache_set(
+                        ola, olo, dest_lat, dest_lng, km, float(dmin), traffic=use_traffic
+                    )
                 else:
                     try:
                         osr = await _osrm_road_leg_km_min(ola, olo, dest_lat, dest_lng)
@@ -7189,12 +7410,19 @@ async def _resolve_road_legs_many_origins_one_dest(
                     if osr:
                         km, dmin = osr
                         resolved[oid] = (km, dmin)
-                        _match_route_cache_set(ola, olo, dest_lat, dest_lng, km, float(dmin))
+                        _match_route_cache_set(
+                            ola, olo, dest_lat, dest_lng, km, float(dmin), traffic=use_traffic
+                        )
             except Exception as e:
                 logger.error("[MATCH] leg resolve error origin=%s: %s", oid, e, exc_info=True)
                 continue
     dist_log = {k: round(float(v[0]), 3) for k, v in resolved.items()}
-    logger.info("[MATCH] after_distance_api (N→1) legs=%d distances_km=%s", len(dist_log), dist_log)
+    logger.info(
+        "[MATCH] after_distance_api (N→1) legs=%d use_traffic=%s distances_km=%s",
+        len(dist_log),
+        use_traffic,
+        dist_log,
+    )
     return resolved
 
 
@@ -7289,6 +7517,9 @@ async def get_real_route_meta_batch_origins_to_dest(
     dest_lat: float,
     dest_lng: float,
     origins: list[tuple[str, float, float]],
+    *,
+    top_n: int = _MATCH_ROUTE_TOP_N,
+    use_traffic: bool = False,
 ) -> dict[str, dict]:
     """{driver_id: {distance_km, duration_min}} — sürücü→pickup."""
     t0 = time.time()
@@ -7299,7 +7530,7 @@ async def get_real_route_meta_batch_origins_to_dest(
         logger.info("[MATCH] empty_route_batch_origins reason=invalid_dest")
         logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
         return {}
-    narrowed = _match_narrow_top_candidates(dla, dlo, origins, _MATCH_ROUTE_TOP_N)
+    narrowed = _match_narrow_top_candidates(dla, dlo, origins, top_n)
     if not narrowed:
         if origins:
             logger.info(
@@ -7311,17 +7542,24 @@ async def get_real_route_meta_batch_origins_to_dest(
         logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
         return {}
     try:
-        legs = await _resolve_road_legs_many_origins_one_dest(dla, dlo, narrowed)
+        legs = await _resolve_road_legs_many_origins_one_dest(
+            dla, dlo, narrowed, use_traffic=use_traffic
+        )
     except Exception as e:
         logger.error("[MATCH] resolve_road_legs_many_origins_one_dest failed: %s", e, exc_info=True)
         logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
         return {}
     if not legs:
         logger.info(
-            "[MATCH] empty_route_batch_origins reason=routing_failed narrowed=%d",
+            "[MATCH] empty_route_batch_origins reason=routing_failed narrowed=%d use_traffic=%s",
             len(narrowed),
+            use_traffic,
         )
-    logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
+    logger.info(
+        "[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f use_traffic=%s",
+        time.time() - t0,
+        use_traffic,
+    )
     return {oid: {"distance_km": float(km), "duration_min": int(dur)} for oid, (km, dur) in legs.items()}
 
 
@@ -10583,7 +10821,7 @@ async def post_quick_match_request_http(
             supabase,
             actor_id,
             body.model_dump(),
-            find_eligible_drivers_fn=find_eligible_drivers,
+            find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             passenger_blocking_tag_fn=_passenger_blocking_tag_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
             route_trip_metrics_fn=_quick_match_route_trip_metrics,
@@ -10616,7 +10854,7 @@ async def post_quick_match_invite_decline_http(
             supabase,
             actor_id,
             invite_id,
-            find_eligible_drivers_fn=find_eligible_drivers,
+            find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
         )
         return {"success": True, **result}
@@ -10706,7 +10944,7 @@ async def get_quick_match_request_active_http(
         request = await get_active_quick_match_request(
             supabase,
             actor_id,
-            find_eligible_drivers_fn=find_eligible_drivers,
+            find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
         )
         return {"success": True, "request": request}
@@ -10733,7 +10971,7 @@ async def get_quick_match_request_status_http(
             supabase,
             actor_id,
             request_id,
-            find_eligible_drivers_fn=find_eligible_drivers,
+            find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
         )
         if request is None:
@@ -10761,7 +10999,7 @@ async def get_quick_match_invite_current_http(
         invite = await get_current_quick_match_invite(
             supabase,
             actor_id,
-            find_eligible_drivers_fn=find_eligible_drivers,
+            find_eligible_drivers_fn=_find_eligible_drivers_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
         )
         return {"success": True, "invite": invite}
