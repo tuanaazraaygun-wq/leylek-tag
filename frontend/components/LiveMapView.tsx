@@ -7403,10 +7403,21 @@ export default function LiveMapView({
             )}
 
             {/* Biniş QR (amber) · yol sonu QR (mor) — `handlePrimaryTripQrPress` */}
-            <Animated.View style={{ 
-              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.98, 1.02] }) }],
-              ...(compactMatchedLayout ? { width: '100%' as const } : null),
-            }}>
+            <Animated.View
+              style={[
+                {
+                  transform: [
+                    {
+                      scale: pulseAnim.interpolate({
+                        inputRange: [0.6, 1],
+                        outputRange: [0.98, 1.02],
+                      }),
+                    },
+                  ],
+                },
+                compactMatchedLayout ? styles.qrEndButtonWrapCompact : null,
+              ]}
+            >
               <TouchableOpacity 
                 style={[
                   styles.qrEndButton,
@@ -7825,6 +7836,19 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 1,
   },
+  mapLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 17, 31, 0.42)',
+    zIndex: 2,
+    gap: 8,
+  },
+  mapLoadingOverlayText: {
+    color: 'rgba(186, 201, 222, 0.88)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   map: { flex: 1 },
   navManeuverBanner: {
     position: 'absolute',
@@ -8140,6 +8164,9 @@ const styles = StyleSheet.create({
       android: { elevation: 34 },
       default: {},
     }),
+  },
+  tripActionBarCompact: {
+    marginBottom: 6,
   },
   tripActionBarCol: {
     width: '100%',
@@ -8559,6 +8586,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 4,
   },
+  topInfoBorderCompact: {
+    marginTop: 28,
+    marginBottom: 4,
+    maxHeight: 118,
+  },
   infoGradient: { paddingVertical: 0, paddingHorizontal: 0, borderRadius: 19, overflow: 'hidden' },
   topCardPatternRoot: {
     ...StyleSheet.absoluteFillObject,
@@ -8583,6 +8615,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
   },
+  topCardContentCompact: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+  },
   routeInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -8590,6 +8626,9 @@ const styles = StyleSheet.create({
   },
   routeInfoRowNav: {
     marginBottom: 2,
+  },
+  routeInfoRowCompact: {
+    marginBottom: 3,
   },
   routeDot: {
     width: 8,
@@ -8849,6 +8888,10 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     backgroundColor: 'rgba(8, 17, 31, 0.38)',
   },
+  bottomGradientCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
   
   // 🆕 Ortalı Navigasyon Butonu (Alt Panelde)
   centeredNavButton: {
@@ -9056,6 +9099,15 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  actionButtonsCompact: {
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
+  },
+  qrEndButtonWrapCompact: {
+    width: '100%',
+  },
   tripAiFabWrap: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -9151,6 +9203,12 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 5,
   },
+  endButtonCompact: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+  },
   endButtonText: { 
     fontSize: 12, 
     fontWeight: '600', 
@@ -9172,6 +9230,10 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 10,
   },
+  qrEndButtonCompact: {
+    flex: undefined,
+    width: '100%',
+  },
   qrEndButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -9179,11 +9241,72 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
+  qrEndButtonGradientCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
   qrEndButtonText: {
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 6,
     color: 'rgba(243,248,255,0.94)',
+  },
+
+  trustedAddCompactWrap: {
+    position: 'absolute',
+    right: 10,
+    zIndex: 96,
+    alignItems: 'flex-end',
+    maxWidth: 112,
+  },
+  trustedAddCompactChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,26,43,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.38)',
+  },
+  trustedAddCompactChipText: {
+    color: 'rgba(34,211,238,0.95)',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  trustedAddCompactChipError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,26,43,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.38)',
+  },
+  trustedAddCompactChipErrorText: {
+    color: 'rgba(252,165,165,0.95)',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  trustedAddCompactChipMuted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,26,43,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.55)',
+  },
+  trustedAddCompactChipMutedText: {
+    color: 'rgba(186,201,222,0.78)',
+    fontSize: 10,
+    fontWeight: '600',
+    maxWidth: 88,
   },
 
   // 🆕 Kullanıcı Bilgi Kartı Stilleri
