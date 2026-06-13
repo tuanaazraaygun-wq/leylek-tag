@@ -38207,7 +38207,13 @@ async def driver_go_online(user_id: str, request: Request = None):
             "driver_online": True,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
-        
+
+        resolved_driver_id = str(resolved_go or user_id).strip()
+        try:
+            asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_driver_id))
+        except Exception:
+            pass
+
         logger.info(f"🟢 Sürücü online oldu: {user_id}")
         return {"success": True, "message": "Online oldunuz"}
     except Exception as e:
