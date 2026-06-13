@@ -46,9 +46,11 @@ import {
   type ExternalMapsProvider,
 } from '../lib/openExternalMapsNavigation';
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
-import TrustedAddButton from './trusted/TrustedAddButton';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/** Matched/in_progress klasik layout — küçük telefon (SE / dar Android). */
+const IS_COMPACT_MATCHED_SCREEN = SCREEN_HEIGHT < 700 || SCREEN_WIDTH < 360;
 
 /**
  * Immersive nav alt boşluğu (dp): Marker araç haritada; padding “araç alt bandı + güvenli alan” için kalibrasyon.
@@ -2379,6 +2381,11 @@ export default function LiveMapView({
     const id = setTimeout(() => setPinTracks(false), 2400);
     return () => clearTimeout(id);
   }, []);
+
+  const [mapTilesReady, setMapTilesReady] = useState(false);
+  useEffect(() => {
+    setMapTilesReady(false);
+  }, [tagId]);
 
   /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu) */
   const guvenShieldPulse = useRef(new Animated.Value(1)).current;
@@ -5517,6 +5524,11 @@ export default function LiveMapView({
     applyDriverActiveFollowViewport,
   ]);
 
+  const handleMapReady = useCallback(() => {
+    setMapTilesReady(true);
+    onDriverNavMapReady();
+  }, [onDriverNavMapReady]);
+
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
     if (
@@ -5872,6 +5884,27 @@ export default function LiveMapView({
     destHasUiMetrics &&
     !destinationPolylineRoadReady;
 
+  const compactMatchedLayout =
+    IS_COMPACT_MATCHED_SCREEN && !driverNavImmersive && !driverRideUiModern;
+
+  const classicMatchedMapPadding = useMemo(() => {
+    const topBase = compactMatchedLayout ? 132 : 168;
+    const bottomBase = compactMatchedLayout ? 196 : 232;
+    return {
+      top: topBase,
+      right: compactMatchedLayout ? 10 : 14,
+      bottom: bottomBase + (!isDriver ? Math.max(insets.bottom, 0) : 0),
+      left: compactMatchedLayout ? 10 : 14,
+    };
+  }, [compactMatchedLayout, insets.bottom, isDriver]);
+
+  const showMapLoadingOverlay =
+    !driverRideUiModern &&
+    !driverNavImmersive &&
+    (!mapTilesReady ||
+      showMeetingRouteCalculating ||
+      showMeetingRoutePolylineLoadingHint);
+
   const routeValueStyle = [
     styles.routeValueModern,
     driverNavImmersive ? styles.routeValueModernNav : null,
@@ -5954,7 +5987,7 @@ export default function LiveMapView({
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           }}
-          onMapReady={onDriverNavMapReady}
+          onMapReady={handleMapReady}
           mapPadding={
             driverNavImmersive
               ? {
@@ -5972,13 +6005,7 @@ export default function LiveMapView({
                   }
                 : driverNavActive
                 ? { top: 270, right: 12, bottom: 300, left: 12 }
-                : {
-                    top: 200,
-                    right: 14,
-                    bottom:
-                      268 + (!isDriver ? Math.max(insets.bottom, 0) : 0),
-                    left: 14,
-                  }
+                : classicMatchedMapPadding
           }
           followsUserLocation={false}
           showsUserLocation={false}
@@ -6218,6 +6245,12 @@ export default function LiveMapView({
             </Marker>
           )}
         </MapView>
+        {showMapLoadingOverlay ? (
+          <View style={styles.mapLoadingOverlay} pointerEvents="none">
+            <ActivityIndicator size="small" color="#22D3EE" />
+            <Text style={styles.mapLoadingOverlayText}>Harita yükleniyor…</Text>
+          </View>
+        ) : null}
         </View>
       ) : (
         // Web fallback - harita yok
@@ -6357,6 +6390,7 @@ export default function LiveMapView({
           style={[
             styles.topInfoBorder,
             driverNavImmersive ? styles.topInfoBorderNav : null,
+            compactMatchedLayout ? styles.topInfoBorderCompact : null,
           ]}
         >
           <LinearGradient
@@ -6375,12 +6409,14 @@ export default function LiveMapView({
               style={[
                 styles.topCardContent,
                 driverNavImmersive ? styles.topCardContentNav : null,
+                compactMatchedLayout ? styles.topCardContentCompact : null,
               ]}
             >
               <View
                 style={[
                   styles.routeInfoRow,
                   driverNavImmersive ? styles.routeInfoRowNav : null,
+                  compactMatchedLayout ? styles.routeInfoRowCompact : null,
                   isDriver && navigationMode
                     ? { opacity: navigationStage === 'pickup' ? 1 : 0.42 }
                     : null,
@@ -6427,6 +6463,7 @@ export default function LiveMapView({
                   style={[
                     styles.routeInfoRow,
                     driverNavImmersive ? styles.routeInfoRowNav : null,
+                    compactMatchedLayout ? styles.routeInfoRowCompact : null,
                     isDriver && navigationMode
                       ? { opacity: navigationStage === 'destination' ? 1 : 0.42 }
                       : null,
@@ -6558,26 +6595,90 @@ export default function LiveMapView({
                 </View>
               ) : null}
 
-              {!driverRideUiModern && trustedAddEnabled ? (
-                <TrustedAddButton
-                  viewerRole={isDriver ? 'driver' : 'passenger'}
-                  status={trustedAddStatus}
-                  loading={trustedAddLoading}
-                  creating={trustedAddCreating}
-                  errorMessage={trustedAddErrorMessage}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    void sendTrustedAddInvite();
-                  }}
-                  onRefresh={() => {
-                    void tapButtonHaptic();
-                    void refreshTrustedAddStatus();
-                  }}
-                />
-              ) : null}
             </View>
           </LinearGradient>
         </View>
+
+        {!driverRideUiModern && trustedAddEnabled && !driverNavImmersive ? (
+          <View
+            style={[
+              styles.trustedAddCompactWrap,
+              { top: Math.max(insets.top, 8) + (compactMatchedLayout ? 2 : 4) },
+            ]}
+            pointerEvents="box-none"
+          >
+            {trustedAddLoading ||
+            trustedAddCreating ||
+            trustedAddStatus === 'loading' ? (
+              <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+                <ActivityIndicator size="small" color="#22D3EE" />
+              </View>
+            ) : trustedAddStatus === 'error' ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.trustedAddCompactChipError,
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  void refreshTrustedAddStatus();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  trustedAddErrorMessage || 'Güven ağı durumu yeniden yüklensin'
+                }
+              >
+                <Ionicons name="refresh-outline" size={14} color="rgba(252,165,165,0.95)" />
+                <Text style={styles.trustedAddCompactChipErrorText} numberOfLines={1}>
+                  Tekrar dene
+                </Text>
+              </Pressable>
+            ) : trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.trustedAddCompactChip,
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  void sendTrustedAddInvite();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isDriver ? 'Yolcuyu güven ağına ekle' : 'Sürücüyü güven ağına ekle'
+                }
+              >
+                <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
+                <Text style={styles.trustedAddCompactChipText} numberOfLines={1}>
+                  Güven ağı
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+                <Ionicons
+                  name={
+                    trustedAddStatus === 'active'
+                      ? 'checkmark-circle-outline'
+                      : 'time-outline'
+                  }
+                  size={14}
+                  color="rgba(186,201,222,0.78)"
+                />
+                <Text style={styles.trustedAddCompactChipMutedText} numberOfLines={1}>
+                  {trustedAddStatus === 'active'
+                    ? 'Güven ağında'
+                    : trustedAddStatus === 'incoming_pending'
+                      ? 'Davet var'
+                      : trustedAddStatus === 'outgoing_pending'
+                        ? 'Davet gönderildi'
+                        : trustedAddStatus === 'blocked'
+                          ? 'Eklenemez'
+                          : 'Güven ağı'}
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : null}
 
         {driverNavImmersive && MapView && (onCall || onTrustRequest) ? (
           <View style={styles.navImmersiveBelowCard} pointerEvents="box-none">
@@ -6799,6 +6900,7 @@ export default function LiveMapView({
           style={[
             styles.bottomGradient,
             !driverRideUiModern ? { paddingBottom: 18 + Math.max(insets.bottom, 0) } : null,
+            compactMatchedLayout ? styles.bottomGradientCompact : null,
           ]}
           pointerEvents="auto"
         >
@@ -7071,7 +7173,13 @@ export default function LiveMapView({
 
           {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — yolcu / klasik sürücü */}
           {driverRideUiModern ? null : MapView && onCall && !driverNavImmersive ? (
-            <View style={styles.tripActionBar} pointerEvents="box-none">
+            <View
+              style={[
+                styles.tripActionBar,
+                compactMatchedLayout ? styles.tripActionBarCompact : null,
+              ]}
+              pointerEvents="box-none"
+            >
               <View style={styles.tripActionBarCol} pointerEvents="auto">
                 {isDriver ? (
                   <Text style={styles.driverTripCallTitle} numberOfLines={1}>
@@ -7220,7 +7328,13 @@ export default function LiveMapView({
 
           {/* AI / QR / Zorla — yolcu ve klasik sürücü */}
           {driverRideUiModern ? null : !driverNavImmersive ? (
-          <View style={styles.actionButtons} pointerEvents="auto">
+          <View
+            style={[
+              styles.actionButtons,
+              compactMatchedLayout ? styles.actionButtonsCompact : null,
+            ]}
+            pointerEvents="auto"
+          >
             {onOpenLeylekZekaSupport ? (
               <Pressable
                 style={({ pressed }) => [styles.tripAiFabWrap, pressed && { opacity: 0.92 }]}
@@ -7290,10 +7404,14 @@ export default function LiveMapView({
 
             {/* Biniş QR (amber) · yol sonu QR (mor) — `handlePrimaryTripQrPress` */}
             <Animated.View style={{ 
-              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.98, 1.02] }) }]
+              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.98, 1.02] }) }],
+              ...(compactMatchedLayout ? { width: '100%' as const } : null),
             }}>
               <TouchableOpacity 
-                style={styles.qrEndButton} 
+                style={[
+                  styles.qrEndButton,
+                  compactMatchedLayout ? styles.qrEndButtonCompact : null,
+                ]} 
                 onPress={() => {
                   void tapButtonHaptic();
                   handlePrimaryTripQrPress();
@@ -7311,7 +7429,10 @@ export default function LiveMapView({
                           'rgba(34,211,238,0.4)',
                         ]
                   }
-                  style={styles.qrEndButtonGradient}
+                  style={[
+                    styles.qrEndButtonGradient,
+                    compactMatchedLayout ? styles.qrEndButtonGradientCompact : null,
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
@@ -7329,7 +7450,10 @@ export default function LiveMapView({
 
             {/* 🆕 BİTİR BUTONU - Donuk Kırmızı, Sadece Zorla Bitir */}
             <TouchableOpacity 
-              style={styles.endButton} 
+              style={[
+                styles.endButton,
+                compactMatchedLayout ? styles.endButtonCompact : null,
+              ]} 
               onPress={() => {
                 void tapButtonHaptic();
                 if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
