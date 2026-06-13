@@ -192,3 +192,28 @@ export function getCommunityCityHrefForChannel(name: string, scope: string): str
   const match = COMMUNITY_CITY_SLUGS.find((slug) => COMMUNITY_CITY_CONTENT[slug].cityName === name);
   return match ? `/topluluk/${match}` : null;
 }
+
+/** Pilot topluluk şehirleri için /sehir cross-link (ankara, istanbul, izmir). */
+export function getCommunityHrefForCityLandingSlug(slug: string): string | null {
+  if (!(COMMUNITY_CITY_SLUGS as readonly string[]).includes(slug)) return null;
+  return `/topluluk/${slug}`;
+}
+
+export type PilotCityDualLink = {
+  cityName: string;
+  communityHref: string;
+  rideShareHref: string;
+  pilotStatus: string;
+};
+
+export function getPilotCommunityCityDualLinks(): PilotCityDualLink[] {
+  return COMMUNITY_CITY_SLUGS.map((slug) => {
+    const content = COMMUNITY_CITY_CONTENT[slug];
+    return {
+      cityName: content.cityName,
+      communityHref: `/topluluk/${slug}`,
+      rideShareHref: content.rideShareHref,
+      pilotStatus: content.pilotStatus,
+    };
+  });
+}

@@ -10,6 +10,7 @@ import {
   getOtherCityLandingLinks,
   type CityLandingContent,
 } from "@/lib/city-landing-content";
+import { getCommunityHrefForCityLandingSlug } from "@/lib/community-city-content";
 import { getGuideNavLinks } from "@/lib/guide-content";
 
 function CityFaqList({ faq }: { faq: CityLandingContent["faq"] }) {
@@ -46,6 +47,7 @@ type CityLandingPageProps = {
 export function CityLandingPage({ content }: CityLandingPageProps) {
   const otherCities = getOtherCityLandingLinks(content.slug);
   const guideLinks = getGuideNavLinks();
+  const communityHref = getCommunityHrefForCityLandingSlug(content.slug);
 
   return (
     <>
@@ -124,6 +126,26 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
           </div>
         </Container>
       </section>
+
+      {communityHref ? (
+        <section className="border-t border-white/[0.06] py-10 sm:py-12">
+          <Container>
+            <div className="glass-panel rounded-2xl border border-white/[0.08] p-5 sm:p-6">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-200/80">
+                leylek topluluk
+              </p>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                {content.cityName} için planlanan metin odaklı topluluk kanalı; rota niyet paylaşımı pilot kapsamda
+                uygulamada kontrollü biçimde açılacaktır. Web sitesinde canlı kanal akışı yoktur — teklif ve eşleşme
+                adımları uygulama akışına köprü olarak anlatılır.{" "}
+                <Link href={communityHref} className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
+                  {content.cityName} topluluk kanalı (pilot)
+                </Link>
+              </p>
+            </div>
+          </Container>
+        </section>
+      ) : null}
 
       <section className="py-12">
         <Container>

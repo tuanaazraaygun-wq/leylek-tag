@@ -7,7 +7,7 @@ import { FeatureCard } from "@/components/feature-card";
 import { PageHero } from "@/components/page-hero";
 import { SectionHeading } from "@/components/section-heading";
 import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
-import { getCommunityCityHrefForChannel } from "@/lib/community-city-content";
+import { getCommunityCityHrefForChannel, getPilotCommunityCityDualLinks } from "@/lib/community-city-content";
 
 const PAGE_TITLE = "Leylek Topluluk | Leylek TAG";
 const PAGE_DESCRIPTION =
@@ -192,20 +192,38 @@ export default function ToplulukPage() {
               );
             })}
           </ul>
-          <p className="mt-6 text-[12px] leading-relaxed text-slate-500">
-            Şehir landing sayfaları:{" "}
-            <Link href="/sehir/ankara" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
-              Ankara
-            </Link>
-            {" · "}
-            <Link href="/sehir/istanbul" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
-              İstanbul
-            </Link>
-            {" · "}
-            <Link href="/sehir/izmir" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
-              İzmir
-            </Link>
-          </p>
+          <div className="mt-8 space-y-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              pilot şehirler — sayfa türleri
+            </p>
+            <ul className="space-y-3">
+              {getPilotCommunityCityDualLinks().map((city) => (
+                <li
+                  key={city.communityHref}
+                  className="glass-panel rounded-xl border border-white/[0.08] px-4 py-3.5 text-[12px] leading-relaxed text-slate-400 sm:text-[13px]"
+                >
+                  <span className="font-bold text-slate-200">{city.cityName}</span>
+                  <span className="ml-2 rounded-full border border-cyan-400/20 bg-cyan-400/[0.08] px-2 py-0.5 text-[10px] font-semibold text-cyan-100/90">
+                    {city.pilotStatus}
+                  </span>
+                  <div className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-x-4">
+                    <Link
+                      href={city.rideShareHref}
+                      className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline"
+                    >
+                      Yolculuk paylaşımı sayfası
+                    </Link>
+                    <Link
+                      href={city.communityHref}
+                      className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline"
+                    >
+                      Topluluk kanalı (pilot)
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         </Container>
       </section>
 

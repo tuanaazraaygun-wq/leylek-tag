@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
 import { Container } from "@/components/container";
 import { CtaBand } from "@/components/cta-band";
@@ -53,7 +54,12 @@ export default function MuhabbetPage() {
           <p className="max-w-3xl text-sm leading-relaxed text-slate-400">
             Leylek Teklifi, Leylek TAG içindeki karşılıklı teklif ve onay akışıdır. Topluluk odaklı yolculuk ve masraf
             paylaşımı için tasarlanmıştır; taksi veya ticari taşımacılık hizmeti sunmaz. Web sayfası bilgilendirme
-            amaçlıdır; teklif, eşleşme ve doğrulama mobil uygulamada yürütülür.
+            amaçlıdır; teklif, eşleşme ve doğrulama mobil uygulamada yürütülür. Şehir bazlı topluluk kanalları (pilot
+            planı) için{" "}
+            <Link href="/topluluk" className="font-semibold text-cyan-200/90 underline-offset-2 hover:underline">
+              Leylek Topluluk
+            </Link>{" "}
+            sayfasına göz atabilirsin; kanallar uygulamada kontrollü biçimde açılacaktır.
           </p>
         </Container>
       </section>
