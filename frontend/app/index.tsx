@@ -10130,6 +10130,8 @@ function PassengerDashboard({
     }
     if (quickMatchSession.status !== 'idle') {
       setQuickMatchFlowVisible(true);
+    } else {
+      setQuickMatchFlowVisible(false);
     }
   }, [activeTag, quickMatchSession.status]);
 
@@ -11019,6 +11021,18 @@ function PassengerDashboard({
     [passengerPickup, userLocation, destination, rideVehiclePreference],
   );
 
+  const reopenQuickMatchRoutePickerForMissingRoute = useCallback(() => {
+    setQuickMatchFlowVisible(false);
+    setPassengerIdleOfferChannel('quick_match');
+    setRoutePickerIntent('quick_match');
+    if (!resolvePassengerPickupCoords(passengerPickup, userLocation)) {
+      setRoutePickerStep('pickup');
+    } else {
+      setRoutePickerStep('destination');
+    }
+    setShowDestinationPicker(true);
+  }, [passengerPickup, userLocation]);
+
   // 🆕 Araç/Motor seçimi değişince fiyatı tekrar hesapla
   const recalcPrice = async (nextVehicleKind: 'car' | 'motorcycle') => {
     const pickupResolved = resolvePassengerPickupCoords(passengerPickup, userLocation);
@@ -11896,7 +11910,7 @@ function PassengerDashboard({
     if (routePickerIntent === 'quick_match' && !activeTag) {
       const ctx = buildQuickMatchRouteContext(newDestination);
       if (!ctx) {
-        appAlert('Rota', 'Alış ve varış noktası seçilmelidir.');
+        reopenQuickMatchRoutePickerForMissingRoute();
         return;
       }
       setQuickMatchRouteContext(ctx);
@@ -14839,7 +14853,8 @@ function PassengerDashboard({
 
       <QuickMatchPassengerFlow
         visible={
-          quickMatchFlowVisible || quickMatchSession.status !== 'idle'
+          (quickMatchFlowVisible || quickMatchSession.status !== 'idle') &&
+          !(quickMatchSession.status === 'idle' && !quickMatchRouteContext)
         }
         route={quickMatchRouteContext}
         session={quickMatchSession}
@@ -14861,8 +14876,7 @@ function PassengerDashboard({
               }),
             );
           } else {
-            setRoutePickerIntent('quick_match');
-            setShowDestinationPicker(true);
+            reopenQuickMatchRoutePickerForMissingRoute();
           }
         }}
         onGoNormalMatch={() => {
