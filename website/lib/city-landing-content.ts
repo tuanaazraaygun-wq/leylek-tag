@@ -81,7 +81,7 @@ export const CITY_LANDING_CONTENT: Record<CityLandingSlug, CityLandingContent> =
       {
         question: "Ankara içi hangi rotalar destekleniyor?",
         answer:
-          "Şehir içi eşleşme pilot kapsamda genişletilmektedir. Günlük güzergâhlar teklif görüşmesinde netleştirilir; platform belirli hat garantisi vermez.",
+          "Şehir içi eşleşme kullanılabilirliği bölgeye göre değişebilir. Günlük güzergâhlar teklif görüşmesinde netleştirilir; platform belirli hat garantisi vermez.",
       },
       {
         question: "Ankara'da ödeme nasıl işler?",
@@ -159,7 +159,7 @@ export const CITY_LANDING_CONTENT: Record<CityLandingSlug, CityLandingContent> =
       {
         question: "İzmir içi hangi bölgeler kapsanıyor?",
         answer:
-          "Şehir içi eşleşme pilot kapsamda genişletilmektedir. Günlük güzergâhlar teklif görüşmesinde netleştirilir; platform belirli hat garantisi vermez.",
+          "Şehir içi eşleşme kullanılabilirliği bölgeye göre değişebilir. Günlük güzergâhlar teklif görüşmesinde netleştirilir; platform belirli hat garantisi vermez.",
       },
       {
         question: "İzmir'de ödeme nasıl işler?",
@@ -233,7 +233,7 @@ export const CITY_LANDING_CONTENT: Record<CityLandingSlug, CityLandingContent> =
       {
         question: "Antalya'da hangi bölgeler kapsanıyor?",
         answer:
-          "Şehir içi eşleşme pilot kapsamda genişletilmektedir. Güzergâh uyumu teklif görüşmesinde belirlenir; platform rota garantisi vermez.",
+          "Şehir içi eşleşme kullanılabilirliği bölgeye göre değişebilir. Güzergâh uyumu teklif görüşmesinde belirlenir; platform rota garantisi vermez.",
       },
       {
         question: "Antalya'da güvenlik nasıl sağlanır?",
@@ -418,7 +418,7 @@ export const CITY_LANDING_CONTENT: Record<CityLandingSlug, CityLandingContent> =
       {
         question: "Kayseri içi hangi bölgeler kapsanıyor?",
         answer:
-          "Şehir içi eşleşme pilot kapsamda genişletilmektedir. Güzergâh uyumu teklif görüşmesinde belirlenir; uygunluk kullanıcı sorumluluğundadır.",
+          "Şehir içi eşleşme kullanılabilirliği bölgeye göre değişebilir. Güzergâh uyumu teklif görüşmesinde belirlenir; uygunluk kullanıcı sorumluluğundadır.",
       },
       {
         question: "Kayseri'de ödeme nasıl işler?",

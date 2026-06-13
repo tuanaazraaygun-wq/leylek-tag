@@ -7,6 +7,17 @@ import { PageHero } from "@/components/page-hero";
 
 export const metadata: Metadata = {
   title: "Leylek Teklifi",
+  description:
+    "Yolculuk paylaşımı ve masraf paylaşımı için teklif akışı. Teklif, karşılıklı onay ve QR doğrulama adımları mobil uygulamada tamamlanır; ticari taşımacılık hizmeti sunulmaz.",
+  alternates: {
+    canonical: "/muhabbet",
+  },
+  openGraph: {
+    title: "Leylek Teklifi | Leylek TAG",
+    description:
+      "Leylek Teklifi ile yolculuk tekliflerini karşılıklı onayla netleştirin. Uygulama içi işlemler mobil uygulamada tamamlanır; platform taksi veya ticari taşımacılık hizmeti değildir.",
+    url: "/muhabbet",
+  },
 };
 
 const features = [
@@ -35,8 +46,17 @@ export default function MuhabbetPage() {
         title="Yolculuk tekliflerini güvenli eşleşmeye dönüştür."
         description="Leylek Teklifi, Leylek TAG içinde yolcu ve sürücülerin yolculuk tekliflerini netleştirdiği, karşılıklı onayla eşleştiği güvenli teklif akışıdır."
         primaryLabel="Teklif Akışını Keşfet"
-        ctaHint="Ücretsiz • Birkaç adımda teklif oluştur"
+        ctaHint="Teklif adımları mobil uygulamada tamamlanır. Platform uygulama içinde ödeme tahsilatı yapmaz."
       />
+      <section className="border-b border-white/[0.06] bg-white/[0.02] py-6 sm:py-8">
+        <Container>
+          <p className="max-w-3xl text-sm leading-relaxed text-slate-400">
+            Leylek Teklifi, Leylek TAG içindeki karşılıklı teklif ve onay akışıdır. Topluluk odaklı yolculuk ve masraf
+            paylaşımı için tasarlanmıştır; taksi veya ticari taşımacılık hizmeti sunmaz. Web sayfası bilgilendirme
+            amaçlıdır; teklif, eşleşme ve doğrulama mobil uygulamada yürütülür.
+          </p>
+        </Container>
+      </section>
       <section className="border-t border-white/10 bg-white/[0.02] py-10 sm:py-12">
         <Container>
           <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-start lg:gap-12">

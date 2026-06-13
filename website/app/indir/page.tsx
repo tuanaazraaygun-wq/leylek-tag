@@ -10,14 +10,14 @@ import { APP_STORE_URL, GOOGLE_PLAY_URL } from "@/lib/store-links";
 export const metadata: Metadata = {
   title: "İndir",
   description:
-    "Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları Leylek TAG mobil uygulamasında tamamlanır.",
+    "Leylek TAG mobil uygulamasını resmi mağazalardan indirin. Teklif, eşleşme ve doğrulama adımları uygulamada tamamlanır; kullanılabilirlik bölgeye göre değişebilir.",
   alternates: {
     canonical: "/indir",
   },
   openGraph: {
     title: "Leylek TAG'i İndir | Yolculuk Paylaşımı",
     description:
-      "Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları Leylek TAG mobil uygulamasında tamamlanır.",
+      "Leylek TAG mobil uygulamasını resmi mağazalardan indirin. Teklif, eşleşme ve doğrulama adımları uygulamada tamamlanır; kullanılabilirlik bölgeye göre değişebilir.",
     url: "/indir",
   },
 };

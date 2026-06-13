@@ -30,7 +30,7 @@ export function ComparisonSection() {
             Özellik
           </div>
           <div className="comparison-header-cell border-t border-white/[0.06] px-5 py-[1.135rem] text-[13px] font-semibold uppercase tracking-[0.15em] text-slate-300/88 sm:border-l sm:border-t-0 sm:text-sm">
-            Klasik yolculuk uygulamaları
+            Genel yaklaşım
           </div>
           <div className="comparison-leylek-header relative px-5 py-[1.135rem] text-[13px] font-black uppercase tracking-[0.08em] text-cyan-50 sm:border-l sm:border-white/[0.06] sm:text-sm md:tracking-normal">
             <span className="relative z-[1]">Leylek TAG yaklaşımı</span>

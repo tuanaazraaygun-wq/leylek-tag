@@ -121,9 +121,10 @@ export const legalDocuments: Record<LegalDocument["slug"], LegalDocument> = {
         ],
       },
       {
-        heading: "Ücretlendirme",
+        heading: "Masraf paylaşımı ve ücretlendirme",
         paragraphs: [
-          "Yolculuk ücretleri uygulama içi hesaplama veya teklif sistemiyle belirlenir. Şirket komisyon veya üyelik modeli uygulayabilir.",
+          "Masraf paylaşımı ve yolculuk giderleri, tarafların karşılıklı anlaşmasıyla yolculuk öncesinde netleştirilir. Leylek TAG uygulama içinde ödeme tahsilatı yapmaz; platform bir ödeme kuruluşu veya finansal hizmet sağlayıcısı değildir.",
+          "Ürün kapsamındaki değişiklikler kullanım şartları ve ilgili sayfalarda ayrıca duyurulur.",
         ],
       },
       {

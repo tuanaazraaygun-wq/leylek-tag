@@ -59,10 +59,11 @@ export function ScrollCtaPopup() {
           ✕
         </button>
         <p id="scroll-cta-title" className="pr-8 text-base font-bold leading-snug text-white">
-          Yolunu gerçekten bulmak ister misin?
+          Mobil uygulamada süreci tamamla
         </p>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">
-          Teklif, karşılıklı onay ve QR ile yolculuk doğrulaması adımları uygulamada tamamlanır.
+          Teklif, karşılıklı onay ve QR doğrulama adımları mobil uygulamada yürütülür. Web sitesi bilgilendirme
+          vitrinidir.
         </p>
         <Link
           href={DOWNLOAD_PAGE_URL}

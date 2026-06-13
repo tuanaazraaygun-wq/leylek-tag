@@ -183,7 +183,7 @@ function SupportQuickTopicChips({
 function SupportThreadMinimalFooter() {
   return (
     <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-white/[0.05] pt-2 text-[10px] text-slate-500">
-      <span>Canlı destek gerektiğinde devreye girer.</span>
+      <span>Destek ekibi müsait olduğunda devreye girer.</span>
       <a
         href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Leylek TAG · Destek")}`}
         className="shrink-0 font-medium text-slate-400 underline-offset-2 transition hover:text-cyan-200/90 hover:underline"

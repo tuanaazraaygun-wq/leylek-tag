@@ -8,7 +8,7 @@ import { PageHero } from "@/components/page-hero";
 
 const PAGE_TITLE = "Güvenlik | Leylek TAG";
 const PAGE_DESCRIPTION =
-  "Doğrulama, karşılıklı onay, QR kontrolü, canlı destek ve KVKK odaklı kullanıcı kontrolü. Leylek TAG yolculuk paylaşımı için topluluk odaklı bir platformdur.";
+  "Doğrulama, karşılıklı onay, QR kontrolü, destek kanalı ve KVKK odaklı kullanıcı kontrolü. Leylek TAG yolculuk paylaşımı için topluluk odaklı bir platformdur.";
 
 export const metadata: Metadata = {
   title: "Güvenlik",
@@ -44,9 +44,9 @@ const trustStoryline = [
   },
   {
     eyebrow: "destek",
-    title: "Canlı destek",
+    title: "Destek kanalı",
     description:
-      "Süreç veya hesap sorularında destek kanallarına ulaşabilirsin. Canlı destek, uygulama ve destek sayfası üzerinden yönlendirilir.",
+      "Süreç veya hesap sorularında destek kanallarına ulaşabilirsin. Leylek Zeka bilgilendirme sağlar; yanıtlar müsaitlik durumuna göre destek ekibinden gelir.",
   },
   {
     eyebrow: "uyum",

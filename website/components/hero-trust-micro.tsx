@@ -1,7 +1,7 @@
 const items = [
   "Karşılıklı onay",
   "Doğrulama",
-  "Canlı destek",
+  "Destek kanalı",
   "KVKK ve kullanıcı kontrolü",
 ] as const;
 

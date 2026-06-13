@@ -255,7 +255,7 @@ export default function Home() {
             <div className="mb-7 md:mb-8">
               <SectionHeading
                 eyebrow="neden farklı?"
-                title="Klasik yolculuk deneyiminden daha topluluk odaklı."
+                title="Tek yönlü akıştan daha topluluk odaklı."
                 description="Leylek TAG teklif görüşmesiyle karar vermeyi, masraf paylaşımını şeffaf şekilde konuşmayı ve güvenli eşleşme yaklaşımını aynı deneyimde bir araya getirir."
               />
             </div>

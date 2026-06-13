@@ -121,7 +121,7 @@ export function SupportPhoneModalHeader({
             opacity="0.55"
           />
         </svg>
-        Canlı destek müsaitlik durumunda devreye girer.
+        Destek ekibi müsaitlik durumunda yanıt verir.
       </p>
     </div>
   );
@@ -139,7 +139,7 @@ export function SupportEntryGateway({ onSelectLeylek, onSelectLive }: SupportEnt
         Nasıl yardım almak istersin?
       </p>
       <p className="mx-auto mt-2 max-w-[18rem] text-center text-[13px] leading-relaxed text-slate-400">
-        Tek görüşme kaydı altında Leylek Zeka ve canlı destek birlikte kullanılabilir.
+        Tek görüşme kaydı altında Leylek Zeka ve destek ekibi birlikte kullanılabilir.
       </p>
       <div className="mt-5 flex flex-col gap-2">
         <button

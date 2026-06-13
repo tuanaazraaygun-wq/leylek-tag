@@ -57,7 +57,7 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
         primaryLabel="Uygulamayı indir"
         secondaryHref="/nasil-calisir"
         secondaryLabel="Nasıl çalışır?"
-        ctaHint="Yolculuk paylaşımını şehirde dene. Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır."
+        ctaHint="Teklif, eşleşme ve doğrulama adımları mobil uygulamada tamamlanır. Kullanılabilirlik bölgeye göre değişebilir."
         citySlug={content.slug}
       />
 
@@ -199,7 +199,7 @@ export function CityLandingPage({ content }: CityLandingPageProps) {
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200/82">yolculuk paylaşımı</p>
                 <h2 className="mt-4 text-3xl font-black tracking-tight text-white">
-                  Yolculuk paylaşımını şehirde dene
+                  {content.cityName} için yolculuk paylaşımı
                 </h2>
                 <p className="mt-4 max-w-2xl text-[15px] leading-[1.75] text-slate-300/95">
                   {content.cityName} içinde aynı yöne giden yolcu ve sürücüler için karşılıklı teklif, onay ve QR

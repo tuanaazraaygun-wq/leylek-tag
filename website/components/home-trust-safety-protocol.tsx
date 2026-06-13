@@ -92,8 +92,8 @@ export function HomeTrustSafetyProtocol() {
               </span>
             </div>
             <p className="mt-4 max-w-sm text-[13px] leading-relaxed text-slate-500">
-              Uber Safety ve fintech uyumluluk panellerindeki gibi: sistematik, şeffaf ve adım adım izlenebilir bir
-              güven çerçevesi.
+              Sistematik, şeffaf ve adım adım izlenebilir bir güven çerçevesi; her adım tamamlanmadan süreç kontrolsüz
+              ilerlemez.
             </p>
           </div>
 
