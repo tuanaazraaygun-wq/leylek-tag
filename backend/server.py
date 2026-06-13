@@ -10828,6 +10828,11 @@ async def post_quick_match_request_http(
         )
         return {"success": True, **result}
     except QuickMatchValidationError as exc:
+        logger.warning(
+            "quick_match_request_validation actor=%s detail=%s",
+            _mask_log_id(actor_id),
+            exc.as_http_detail(),
+        )
         raise HTTPException(status_code=422, detail=exc.as_http_detail()) from exc
     except QuickMatchConflictError as exc:
         raise HTTPException(status_code=409, detail=exc.detail) from exc

@@ -58,7 +58,7 @@ export type QuickMatchPassengerSessionView = Pick<
 
 async function fetchNormalMatchSuggestedContribution(
   route: QuickMatchRouteContext,
-): Promise<{ suggested: number; max: number } | null> {
+): Promise<{ suggested: number; max: number; roadDistanceKm: number | null } | null> {
   try {
     const response = await fetch(`${API_BASE_URL}/price/calculate`, {
       method: 'POST',
@@ -77,6 +77,9 @@ async function fetchNormalMatchSuggestedContribution(
     const data = (await response.json()) as {
       success?: boolean;
       suggested_price?: number;
+      trip_distance_km?: number;
+      distance_km?: number;
+      route_distance_km?: number;
     };
     if (!data.success || data.suggested_price == null) {
       return null;
@@ -85,10 +88,26 @@ async function fetchNormalMatchSuggestedContribution(
     if (!Number.isFinite(suggested) || suggested <= 0) {
       return null;
     }
-    return { suggested, max: suggested * 2 };
+    const roadDistanceKm = parsePricingRoadDistanceKm(data);
+    return { suggested, max: suggested * 2, roadDistanceKm };
   } catch {
     return null;
   }
+}
+
+/** /price/calculate yol mesafesi — QM 20 km guard backend ile aynı kaynak. */
+function parsePricingRoadDistanceKm(data: {
+  trip_distance_km?: number;
+  distance_km?: number;
+  route_distance_km?: number;
+}): number | null {
+  for (const key of ['trip_distance_km', 'distance_km', 'route_distance_km'] as const) {
+    const n = Number(data[key]);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
+    }
+  }
+  return null;
 }
 
 export type QuickMatchPassengerFlowProps = {
@@ -283,14 +302,26 @@ export function QuickMatchPassengerFlow({
   const [maxContributionTl, setMaxContributionTl] = useState(0);
   const [priceLoading, setPriceLoading] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [pricingRoadDistanceKm, setPricingRoadDistanceKm] = useState<number | null>(null);
   const awaitingCreateResultRef = useRef(false);
 
+  const guardDistanceKm = useMemo(() => {
+    if (pricingRoadDistanceKm != null && Number.isFinite(pricingRoadDistanceKm)) {
+      return pricingRoadDistanceKm;
+    }
+    if (
+      typeof session.request?.distance_km === 'number' &&
+      Number.isFinite(session.request.distance_km) &&
+      session.request.distance_km > 0
+    ) {
+      return session.request.distance_km;
+    }
+    return route?.distance_km ?? null;
+  }, [pricingRoadDistanceKm, session.request?.distance_km, route?.distance_km]);
+
   const distanceTooFar = useMemo(
-    () =>
-      isDistanceTooFarForQuickMatch(
-        session.request?.distance_km ?? route?.distance_km,
-      ),
-    [session.request?.distance_km, route?.distance_km],
+    () => isDistanceTooFarForQuickMatch(guardDistanceKm),
+    [guardDistanceKm],
   );
 
   useEffect(() => {
@@ -300,6 +331,7 @@ export function QuickMatchPassengerFlow({
     let cancelled = false;
     setPriceLoading(true);
     setPriceError(null);
+    setPricingRoadDistanceKm(null);
     void fetchNormalMatchSuggestedContribution(route).then((pricing) => {
       if (cancelled) {
         return;
@@ -309,6 +341,7 @@ export function QuickMatchPassengerFlow({
         setPriceError('Önerilen katkı payı hesaplanamadı. Lütfen tekrar deneyin.');
         return;
       }
+      setPricingRoadDistanceKm(pricing.roadDistanceKm);
       setMinContributionTl(pricing.suggested);
       setMaxContributionTl(pricing.max);
       setContributionTl((prev) => {
@@ -483,7 +516,10 @@ export function QuickMatchPassengerFlow({
   const dropoffLabel =
     session.request?.dropoff_label || route?.dropoff_label || 'Varış noktası';
   const displayDistanceKm =
-    session.request?.distance_km ?? route?.distance_km ?? null;
+    pricingRoadDistanceKm ??
+    session.request?.distance_km ??
+    route?.distance_km ??
+    null;
   const displayContribution =
     session.request?.offered_contribution_tl ?? contributionTl;
 
