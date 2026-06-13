@@ -12,6 +12,7 @@ import { DOWNLOAD_PAGE_URL } from "@/lib/store-links";
 
 const navItems = [
   { href: "/nasil-calisir", label: "Nasıl Çalışır" },
+  { href: "/topluluk", label: "Topluluk" },
   { href: "/sehir-ici", label: "Şehir İçi" },
   { href: "/sehirler-arasi", label: "Şehirler Arası" },
   { href: "/guvenlik", label: "Güvenlik" },

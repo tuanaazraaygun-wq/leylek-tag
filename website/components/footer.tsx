@@ -10,6 +10,7 @@ const feedbackMailHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("
 const productLinks = [
   { href: "/sehir-ici", label: "Şehir İçi" },
   { href: "/sehirler-arasi", label: "Şehirler arası" },
+  { href: "/topluluk", label: "Leylek Topluluğu" },
   { href: "/muhabbet", label: "Leylek Teklifi" },
   { href: "/indir", label: "Mobil vitrin" },
   { href: "/guvenlik", label: "Güvenlik" },
