@@ -10983,28 +10983,41 @@ function PassengerDashboard({
     });
   };
 
-  const buildQuickMatchRouteContext = useCallback((): QuickMatchRouteContext | null => {
-    const pickup = resolvePassengerPickupCoords(passengerPickup, userLocation);
-    const dropLat = Number(destination?.latitude);
-    const dropLng = Number(destination?.longitude);
-    if (!pickup || !Number.isFinite(dropLat) || !Number.isFinite(dropLng)) {
-      return null;
-    }
-    const meters = haversineMetersLatLng(pickup, {
-      latitude: dropLat,
-      longitude: dropLng,
-    });
-    return {
-      pickup_lat: pickup.latitude,
-      pickup_lng: pickup.longitude,
-      pickup_label: passengerPickup?.address?.trim() || 'Alış noktası',
-      dropoff_lat: dropLat,
-      dropoff_lng: dropLng,
-      dropoff_label: destination?.address || 'Varış noktası',
-      distance_km: Math.round((meters / 1000) * 10) / 10,
-      vehicle_preference: rideVehiclePreference,
-    };
-  }, [passengerPickup, userLocation, destination, rideVehiclePreference]);
+  const buildQuickMatchRouteContext = useCallback(
+    (
+      dropoffOverride?: { address: string; latitude: number; longitude: number } | null,
+    ): QuickMatchRouteContext | null => {
+      const pickup = resolvePassengerPickupCoords(passengerPickup, userLocation);
+      const dropLat = Number(
+        dropoffOverride != null ? dropoffOverride.latitude : destination?.latitude,
+      );
+      const dropLng = Number(
+        dropoffOverride != null ? dropoffOverride.longitude : destination?.longitude,
+      );
+      if (!pickup || !Number.isFinite(dropLat) || !Number.isFinite(dropLng)) {
+        return null;
+      }
+      const dropoffLabel =
+        (dropoffOverride?.address && String(dropoffOverride.address).trim()) ||
+        destination?.address ||
+        'Varış noktası';
+      const meters = haversineMetersLatLng(pickup, {
+        latitude: dropLat,
+        longitude: dropLng,
+      });
+      return {
+        pickup_lat: pickup.latitude,
+        pickup_lng: pickup.longitude,
+        pickup_label: passengerPickup?.address?.trim() || 'Alış noktası',
+        dropoff_lat: dropLat,
+        dropoff_lng: dropLng,
+        dropoff_label: dropoffLabel,
+        distance_km: Math.round((meters / 1000) * 10) / 10,
+        vehicle_preference: rideVehiclePreference,
+      };
+    },
+    [passengerPickup, userLocation, destination, rideVehiclePreference],
+  );
 
   // 🆕 Araç/Motor seçimi değişince fiyatı tekrar hesapla
   const recalcPrice = async (nextVehicleKind: 'car' | 'motorcycle') => {
@@ -11881,7 +11894,7 @@ function PassengerDashboard({
     }
 
     if (routePickerIntent === 'quick_match' && !activeTag) {
-      const ctx = buildQuickMatchRouteContext();
+      const ctx = buildQuickMatchRouteContext(newDestination);
       if (!ctx) {
         appAlert('Rota', 'Alış ve varış noktası seçilmelidir.');
         return;
