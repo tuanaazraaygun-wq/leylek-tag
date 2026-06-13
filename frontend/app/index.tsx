@@ -3913,19 +3913,13 @@ export default function App() {
     const roleContinueMinHeight = Math.round(Math.max(52, Math.min(72, rs.usableHeight * 0.086)));
     const roleContinuePadV = Math.round(Math.max(13, Math.min(23, roleContinueMinHeight * 0.32)));
     const roleContinueTextSize = Math.round(Math.max(18, Math.min(24, 23.8 * roleScale)));
-    const roleFooterGap = Math.round(Math.max(2, Math.min(8, rs.usableHeight * 0.006)));
-    const roleFooterBottomPad = Math.round(Math.max(10, Math.min(22, Math.max(insets.bottom, 8) + 8)));
+    const roleFooterBottomPad = Math.round(
+      Math.max(16, Math.min(28, Math.max(insets.bottom, 12) + 12)),
+    );
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
     const roleStep1Done = !!selectedRole;
     const roleStep2Done = !!rideVehicleKind;
     const roleStepPulseStyle = { transform: [{ scale: roleStepPulse }] };
-    const isCommunityComingSoon = true;
-    const communityCardColors = isCommunityComingSoon
-      ? (['#08111F', '#0B1220', '#101A2B'] as const)
-      : (['#1e1b4b', '#312e81', '#1e3a8a', '#172554'] as const);
-    const communityArrowColors = isCommunityComingSoon
-      ? (['rgba(16,26,43,0.98)', PREMIUM_ROLE_CARD_BORDER] as const)
-      : (['#6366F1', '#4F46E5', '#2563EB'] as const);
     const passengerIconSize = rs.isVeryCompact ? 30 : rs.isCompact ? 34 : 40;
     const driverCarIconSize = rs.isVeryCompact ? 28 : rs.isCompact ? 31 : 34;
     const driverBikeIconSize = rs.isVeryCompact ? 24 : rs.isCompact ? 28 : 30;
@@ -3974,8 +3968,6 @@ export default function App() {
       Math.round(vchLabelFontSize * 1.1),
     );
     const continueArrowIconSize = rs.isVeryCompact ? 27 : rs.isCompact ? 30 : 32;
-    const communityRoutesIconSize = rs.isVeryCompact ? 16 : rs.isCompact ? 18 : 20;
-    const communityChevronSize = rs.isVeryCompact ? 13 : rs.isCompact ? 14 : 16;
     const cockpitTitleInnerRadius = Math.round(Math.max(17, Math.min(21, 21 * roleScale)));
 
     return (
@@ -4795,9 +4787,8 @@ export default function App() {
               roleSelectContentWide && styles.roleBottomFooterColumnWide,
               {
                 paddingHorizontal: roleHorizontalPad,
-                paddingTop: 0,
+                paddingTop: Math.round(Math.max(8, Math.min(14, rs.usableHeight * 0.012))),
                 paddingBottom: roleFooterBottomPad,
-                gap: roleFooterGap,
               },
             ]}
           >
@@ -4834,102 +4825,6 @@ export default function App() {
                 <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color={PREMIUM_TEXT_SOFT} />
               }
             />
-
-            <View
-              style={[
-                styles.roleSeparatorCompact,
-                rs.isVeryCompact && styles.roleSeparatorCompactVery,
-              ]}
-            >
-              <View style={styles.roleSeparatorLine} />
-              <Text style={styles.roleSeparatorText}>veya</Text>
-              <View style={styles.roleSeparatorLine} />
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.communityBtnOuter,
-                isCommunityComingSoon && styles.communityBtnOuterDisabled,
-              ]}
-              onPress={async () => {
-                if (isCommunityComingSoon) return;
-                roleScreenHaptic();
-                setScreen('community');
-              }}
-              disabled={isCommunityComingSoon}
-              activeOpacity={isCommunityComingSoon ? 1 : 0.88}
-            >
-              <LinearGradient
-                colors={communityCardColors}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[
-                  styles.communityBtnGradient,
-                  rs.isVeryCompact && styles.communityBtnGradientVery,
-                  rs.isCompact && !rs.isVeryCompact && styles.communityBtnGradientCompact,
-                ]}
-              >
-                <View
-                  style={[styles.communityBadgeYeni, rs.isVeryCompact && styles.communityBadgeYeniVery]}
-                  pointerEvents="none"
-                >
-                  <Text style={styles.communityBadgeYeniText}>YAKINDA</Text>
-                </View>
-                <View
-                  style={[
-                    styles.communityBtnRow,
-                    rs.isVeryCompact && styles.communityBtnRowVery,
-                    rs.isCompact && !rs.isVeryCompact && styles.communityBtnRowCompact,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.communityIconRouteBox,
-                      rs.isVeryCompact && styles.communityIconRouteBoxVery,
-                      rs.isCompact && !rs.isVeryCompact && styles.communityIconRouteBoxCompact,
-                    ]}
-                  >
-                    <MaterialCommunityIcons name="routes" size={communityRoutesIconSize} color="rgba(148,196,218,0.75)" />
-                  </View>
-                  <View style={styles.communityTextBox}>
-                    <Text
-                      style={[
-                        styles.communityBtnTitleProminent,
-                        rs.isVeryCompact && styles.communityBtnTitleProminentVery,
-                        rs.isCompact && !rs.isVeryCompact && styles.communityBtnTitleProminentCompact,
-                      ]}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      Leylek Teklif Sende
-                    </Text>
-                    <Text
-                      style={[
-                        styles.communityBtnSubProminent,
-                        rs.isVeryCompact && styles.communityBtnSubProminentVery,
-                        rs.isCompact && !rs.isVeryCompact && styles.communityBtnSubProminentCompact,
-                      ]}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      Şehirler arası yolculuk
-                    </Text>
-                  </View>
-                  <LinearGradient
-                    colors={communityArrowColors}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={[
-                      styles.communityArrowPremium,
-                      rs.isVeryCompact && styles.communityArrowPremiumVery,
-                      rs.isCompact && !rs.isVeryCompact && styles.communityArrowPremiumCompact,
-                    ]}
-                  >
-                    <Ionicons name="lock-closed" size={communityChevronSize} color="rgba(186,201,222,0.82)" />
-                  </LinearGradient>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
           </View>
         </SafeAreaView>
         

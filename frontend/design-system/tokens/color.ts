@@ -1,0 +1,36 @@
+/**
+ * LDS design tokens — color (canonical premium palette).
+ * Source of truth remains premiumAuthStyles until components migrate.
+ */
+export {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_NAVY_MID,
+  PREMIUM_NAVY_CARD,
+  PREMIUM_GLASS_FILL,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_TEXT_SOFT,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_SHELL_OVERLAY,
+  PREMIUM_SHELL_VIGNETTE_TOP,
+  PREMIUM_ROLE_OVERLAY,
+  PREMIUM_ROLE_CARD_BG,
+  PREMIUM_ROLE_CARD_BORDER,
+  PREMIUM_ROLE_PANEL_GLASS,
+  PREMIUM_ROLE_COCKPIT_FILL,
+  PREMIUM_AUTH_CTA_GRADIENT,
+  PREMIUM_AUTH_CTA_DISABLED_GRADIENT,
+  PREMIUM_ROLE_AMBIENT_SHADOW,
+  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+  PREMIUM_ROLE_FOREGROUND_AMBIENT,
+  PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE,
+  PREMIUM_DRIVER_OFFER_LIST_AMBIENT,
+} from '../../components/auth/premiumAuthStyles';
+
+/** Semantic status — existing app usage, no new hues */
+export const LDS_COLOR_URGENT = '#FBBF24';
+export const LDS_COLOR_ERROR = '#F87171';
+export const LDS_COLOR_DESTRUCTIVE = '#EF4444';
+
+/** CTA border / rim light (focus states) */
+export const LDS_COLOR_CTA_RIM = 'rgba(34,211,238,0.28)';
