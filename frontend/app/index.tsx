@@ -17093,8 +17093,8 @@ function DriverDashboard({
       if (cancelled || !user?.id) return;
       const acc = location.coords.accuracy;
       const maxAcc =
-        isIosDriverGps && opts?.fromLastKnown === true
-          ? 200 /* only first iOS seed — lastKnown may exceed 100m indoors */
+        opts?.fromLastKnown === true
+          ? 200 /* lastKnown seed — iOS/Android first paint; accuracy may exceed 30m indoors */
           : isIosDriverGps && !lastApplyRef.current
             ? 100
             : MAX_LOC_ACCURACY_M;
@@ -17150,7 +17150,7 @@ function DriverDashboard({
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted' || cancelled) return;
 
-      if (isIosDriverGps) {
+      {
         let hasLastKnownPosition = false;
         let seededFromLastKnown = false;
         try {

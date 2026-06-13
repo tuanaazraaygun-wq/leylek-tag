@@ -789,6 +789,8 @@ export default function DriverOfferScreen({
   const [mapDriverCity, setMapDriverCity] = useState('');
   const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: 20 });
   const [mapExpanded, setMapExpanded] = useState(false);
+  const [mapPinsLoadError, setMapPinsLoadError] = useState<string | null>(null);
+  const mapMountedRef = useRef(false);
   const driverPulseScale = useRef(new Animated.Value(1)).current;
   const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
   const driverPulse2Scale = useRef(new Animated.Value(1)).current;
@@ -845,12 +847,14 @@ export default function DriverOfferScreen({
   }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
 
   useEffect(() => {
-    if (!mapExpanded) {
-      setMapReady(false);
+    if (mapExpanded) {
+      mapMountedRef.current = true;
     }
   }, [mapExpanded]);
 
-  /** Genişletilmiş harita yüksekliği — canlı harita yalnızca mapExpanded iken mount edilir */
+  const showMapHost = mapExpanded || mapMountedRef.current;
+
+  /** Genişletilmiş harita yüksekliği — ilk expand sonrası MapView mount kalır (collapse'ta gizlenir) */
   const mapExpandedHeight = Math.min(SCREEN_HEIGHT * 0.42, 360);
 
   /** Normal TAG: teklifleri gizleme; araç uyumsuzluğu yalnızca tanılama logu (sunucu hedefli socket teklifi kartta kalsın). */
@@ -898,6 +902,7 @@ export default function DriverOfferScreen({
       setMapLightPins([]);
       setMapCityGrid([]);
       setMapDriverCity('');
+      setMapPinsLoadError(null);
       return;
     }
     let cancelled = false;
@@ -910,7 +915,13 @@ export default function DriverOfferScreen({
         });
         const res = await fetch(`${API_BASE_URL}/driver/nearby-passengers-map?${q.toString()}`);
         const j = await res.json();
-        if (cancelled || !j?.success) return;
+        if (cancelled) return;
+        if (!j?.success) {
+          console.warn('[driver_map] nearby-passengers-map not success', j);
+          setMapPinsLoadError('Yakındaki talepler yüklenemedi, tekrar deneniyor.');
+          return;
+        }
+        setMapPinsLoadError(null);
         setMapSeekingPins(Array.isArray(j.seeking) ? j.seeking : []);
         setMapLightPins(Array.isArray(j.nearby_app_users) ? j.nearby_app_users : []);
         setMapCityGrid(Array.isArray(j.city_grid) ? j.city_grid : []);
@@ -920,8 +931,10 @@ export default function DriverOfferScreen({
           nearby: Number(j.nearby_light_count) || 0,
           radius: Math.round(Number(j.radius_km) || 20),
         });
-      } catch {
-        /* sessiz */
+      } catch (e) {
+        if (cancelled) return;
+        console.warn('[driver_map] nearby-passengers-map fetch failed', e);
+        setMapPinsLoadError('Yakındaki talepler yüklenemedi, tekrar deneniyor.');
       }
     };
     void load();
@@ -1136,13 +1149,34 @@ export default function DriverOfferScreen({
           </Text>
         </TouchableOpacity>
 
-        {mapExpanded ? (
+        {showMapHost ? (
           <View
-            style={[styles.mapExpandedMapHost, { height: mapExpandedHeight }]}
+            style={[
+              styles.mapExpandedMapHost,
+              mapExpanded
+                ? { height: mapExpandedHeight }
+                : styles.mapExpandedMapHostCollapsed,
+            ]}
+            pointerEvents={mapExpanded ? 'box-none' : 'none'}
+            accessibilityElementsHidden={!mapExpanded}
+            importantForAccessibility={mapExpanded ? 'auto' : 'no-hide-descendants'}
           >
             <View style={[styles.mapViewportFixed, styles.mapContainerSolidExpanded]}>
               {renderMap()}
               <View style={styles.mapDimOverlay} pointerEvents="none" />
+              {mapExpanded && (!driverLocation || !mapReady) ? (
+                <View style={styles.mapLoadingOverlay} pointerEvents="none">
+                  <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                  <Text style={styles.mapLoadingOverlayText}>
+                    {!driverLocation ? 'Konum alınıyor…' : 'Harita yükleniyor…'}
+                  </Text>
+                </View>
+              ) : null}
+              {mapExpanded && mapPinsLoadError ? (
+                <View style={styles.mapPinsErrorBanner} pointerEvents="none">
+                  <Text style={styles.mapPinsErrorText}>{mapPinsLoadError}</Text>
+                </View>
+              ) : null}
               <View style={styles.mapTopOverlay} pointerEvents="box-none">
                 <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
                   <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
@@ -1327,6 +1361,45 @@ const styles = StyleSheet.create({
       android: { elevation: 12 },
       default: {},
     }),
+  },
+  mapExpandedMapHostCollapsed: {
+    height: 0,
+    overflow: 'hidden',
+    opacity: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  mapLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
+  mapLoadingOverlayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+  },
+  mapPinsErrorBanner: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    zIndex: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(8,17,31,0.88)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.35)',
+  },
+  mapPinsErrorText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(148,163,184,0.92)',
+    textAlign: 'center',
   },
   mapViewportFixed: {
     flex: 1,
