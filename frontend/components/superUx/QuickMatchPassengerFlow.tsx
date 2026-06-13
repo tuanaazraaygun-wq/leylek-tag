@@ -27,6 +27,7 @@ import { API_BASE_URL } from '../../lib/backendConfig';
 
 const CONTRIBUTION_STEP_TL = 10;
 const QUICK_MATCH_MAX_DISTANCE_KM = 20;
+const CONTRIBUTION_GUARD_MESSAGE = 'Önerilen katkı payının altına inilemez.';
 
 export type QuickMatchRouteContext = {
   pickup_lat: number;
@@ -130,6 +131,22 @@ function formatDistanceKm(km: number | null | undefined): string | null {
     return null;
   }
   return `${n.toFixed(1)} km`;
+}
+
+function resetQuickMatchPricingLocalState(setters: {
+  setContributionTl: (v: number) => void;
+  setMinContributionTl: (v: number) => void;
+  setMaxContributionTl: (v: number) => void;
+  setPricingRoadDistanceKm: (v: number | null) => void;
+  setPriceError: (v: string | null) => void;
+  setCreateGuardMessage: (v: string | null) => void;
+}) {
+  setters.setContributionTl(0);
+  setters.setMinContributionTl(0);
+  setters.setMaxContributionTl(0);
+  setters.setPricingRoadDistanceKm(null);
+  setters.setPriceError(null);
+  setters.setCreateGuardMessage(null);
 }
 
 function FlowHeader({
@@ -303,6 +320,7 @@ export function QuickMatchPassengerFlow({
   const [priceLoading, setPriceLoading] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [pricingRoadDistanceKm, setPricingRoadDistanceKm] = useState<number | null>(null);
+  const [createGuardMessage, setCreateGuardMessage] = useState<string | null>(null);
   const awaitingCreateResultRef = useRef(false);
 
   const guardDistanceKm = useMemo(() => {
@@ -328,10 +346,16 @@ export function QuickMatchPassengerFlow({
     if (!route || !visible) {
       return;
     }
+    resetQuickMatchPricingLocalState({
+      setContributionTl,
+      setMinContributionTl,
+      setMaxContributionTl,
+      setPricingRoadDistanceKm,
+      setPriceError,
+      setCreateGuardMessage,
+    });
     let cancelled = false;
     setPriceLoading(true);
-    setPriceError(null);
-    setPricingRoadDistanceKm(null);
     void fetchNormalMatchSuggestedContribution(route).then((pricing) => {
       if (cancelled) {
         return;
@@ -344,15 +368,7 @@ export function QuickMatchPassengerFlow({
       setPricingRoadDistanceKm(pricing.roadDistanceKm);
       setMinContributionTl(pricing.suggested);
       setMaxContributionTl(pricing.max);
-      setContributionTl((prev) => {
-        if (prev < pricing.suggested) {
-          return pricing.suggested;
-        }
-        if (prev > pricing.max) {
-          return pricing.max;
-        }
-        return prev || pricing.suggested;
-      });
+      setContributionTl(pricing.suggested);
     });
     return () => {
       cancelled = true;
@@ -385,6 +401,7 @@ export function QuickMatchPassengerFlow({
           : suggested * 2,
       );
       setContributionTl(suggested);
+      setCreateGuardMessage(null);
     }
   }, [session.validationHint, minContributionTl]);
 
@@ -413,7 +430,18 @@ export function QuickMatchPassengerFlow({
   }, [session, onGoNormalMatch]);
 
   const handleCreate = useCallback(async () => {
-    if (!route || session.isCreating || distanceTooFar || priceLoading || minContributionTl <= 0) {
+    setCreateGuardMessage(null);
+    if (!route || session.isCreating || distanceTooFar) {
+      return;
+    }
+    if (priceLoading) {
+      return;
+    }
+    if (minContributionTl <= 0) {
+      return;
+    }
+    if (contributionTl < minContributionTl || contributionTl > maxContributionTl) {
+      setCreateGuardMessage(CONTRIBUTION_GUARD_MESSAGE);
       return;
     }
     console.log(
@@ -435,7 +463,15 @@ export function QuickMatchPassengerFlow({
       offered_contribution_tl: contributionTl,
       vehicle_preference: route.vehicle_preference ?? undefined,
     });
-  }, [route, session, contributionTl, distanceTooFar, priceLoading, minContributionTl]);
+  }, [
+    route,
+    session,
+    contributionTl,
+    distanceTooFar,
+    priceLoading,
+    minContributionTl,
+    maxContributionTl,
+  ]);
 
   useEffect(() => {
     if (!awaitingCreateResultRef.current) {
@@ -522,6 +558,13 @@ export function QuickMatchPassengerFlow({
     null;
   const displayContribution =
     session.request?.offered_contribution_tl ?? contributionTl;
+
+  const isContributionTooLowRecovery =
+    session.validationHint?.code === 'contribution_too_low';
+
+  const contributionOutOfBounds =
+    minContributionTl > 0 &&
+    (contributionTl < minContributionTl || contributionTl > maxContributionTl);
 
   const renderBody = () => {
     if (session.status === 'restoring') {
@@ -638,7 +681,10 @@ export function QuickMatchPassengerFlow({
       );
     }
 
-    if (session.status === 'error' || session.errorMessage) {
+    if (
+      (session.status === 'error' || session.errorMessage) &&
+      !isContributionTooLowRecovery
+    ) {
       return (
         <View style={styles.section}>
           <View style={styles.errorCard}>
@@ -758,7 +804,10 @@ export function QuickMatchPassengerFlow({
           )}
         </View>
         {priceError ? <Text style={styles.inlineError}>{priceError}</Text> : null}
-        {session.errorMessage ? (
+        {createGuardMessage ? (
+          <Text style={styles.inlineError}>{createGuardMessage}</Text>
+        ) : null}
+        {isContributionTooLowRecovery && session.errorMessage ? (
           <Text style={styles.inlineError}>{session.errorMessage}</Text>
         ) : null}
         <Text style={styles.ctaPreface}>
@@ -768,7 +817,11 @@ export function QuickMatchPassengerFlow({
           label="Hızlı eşleşme isteği gönder"
           onPress={() => void handleCreate()}
           disabled={
-            session.isCreating || distanceTooFar || priceLoading || minContributionTl <= 0
+            session.isCreating ||
+            distanceTooFar ||
+            priceLoading ||
+            minContributionTl <= 0 ||
+            contributionOutOfBounds
           }
           loading={session.isCreating}
         />
