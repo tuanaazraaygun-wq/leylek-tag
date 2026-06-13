@@ -1582,6 +1582,27 @@ _offer_push_dedupe_lock = asyncio.Lock()
 _offer_push_last_sent_mono: dict[tuple[str, str], float] = {}
 OFFER_PUSH_DEDUPE_WINDOW_SEC = 120.0
 
+# OFFER-A2: first GPS → emit_existing recovery debounce (in-memory; push dedupe ile hizalı)
+_emit_existing_recovery_last_mono: dict[str, float] = {}
+EMIT_EXISTING_GPS_RECOVERY_DEBOUNCE_SEC = 120.0
+
+
+def _user_coords_missing(lat, lng) -> bool:
+    if lat is None or lng is None:
+        return True
+    if str(lat).strip() == "" or str(lng).strip() == "":
+        return True
+    try:
+        la = float(lat)
+        lo = float(lng)
+        return not (math.isfinite(la) and math.isfinite(lo))
+    except (TypeError, ValueError):
+        return True
+
+
+def _user_coords_valid(lat, lng) -> bool:
+    return not _user_coords_missing(lat, lng)
+
 # dispatch_queue tablosu (sql_migrations/schema_updates.sql) — bilinmeyen kolonla insert tüm kaydı düşürürdü
 DISPATCH_QUEUE_DB_KEYS = frozenset(
     {
@@ -9111,13 +9132,44 @@ async def update_location(
         )
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(user_id)
-        
+
+        before_row = None
+        try:
+            br = (
+                supabase.table("users")
+                .select("driver_online, latitude, longitude")
+                .eq("id", resolved_id)
+                .limit(1)
+                .execute()
+            )
+            if br.data:
+                before_row = br.data[0]
+        except Exception:
+            before_row = None
+
         supabase.table("users").update({
             "latitude": latitude,
             "longitude": longitude,
             "last_location_update": datetime.utcnow().isoformat()
         }).eq("id", resolved_id).execute()
-        
+
+        if (
+            resolved_id
+            and before_row
+            and before_row.get("driver_online") is True
+            and _user_coords_missing(before_row.get("latitude"), before_row.get("longitude"))
+            and _user_coords_valid(latitude, longitude)
+        ):
+            key = str(resolved_id).strip().lower()
+            now_mono = time.monotonic()
+            prev_mono = _emit_existing_recovery_last_mono.get(key)
+            if prev_mono is None or (now_mono - prev_mono) >= EMIT_EXISTING_GPS_RECOVERY_DEBOUNCE_SEC:
+                _emit_existing_recovery_last_mono[key] = now_mono
+                try:
+                    asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_id))
+                except Exception:
+                    pass
+
         return {"success": True}
     except Exception as e:
         logger.error(f"Update location error: {e}")
