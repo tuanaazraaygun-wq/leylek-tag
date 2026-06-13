@@ -140,6 +140,11 @@ def _norm_actor_id(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _short_id(value: Any) -> str:
+    s = str(value or "").strip()
+    return s[:8] if s else "-"
+
+
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     r_earth = 6371.0
     dlat = math.radians(lat2 - lat1)
@@ -589,6 +594,7 @@ async def _quick_match_pick_next_driver(
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
 ) -> Optional[dict]:
+    request_id = str(request_row.get("id") or "").strip()
     passenger_id = _norm_actor_id(request_row.get("passenger_id"))
     exclude_ids = list(attempted_driver_ids)
     if passenger_id and passenger_id not in exclude_ids:
@@ -597,6 +603,7 @@ async def _quick_match_pick_next_driver(
     vehicle_pref = request_row.get("vehicle_preference") or "car"
     pickup_lat = float(request_row.get("pickup_lat") or 0)
     pickup_lng = float(request_row.get("pickup_lng") or 0)
+    exclude_count = len(exclude_ids)
 
     eligible = await find_eligible_drivers_fn(
         pickup_lat,
@@ -607,13 +614,39 @@ async def _quick_match_pick_next_driver(
         vehicle_filter=True,
         tag_id=None,
     )
+    eligible_count = len(eligible)
+    busy_skipped_count = 0
     for candidate in eligible:
         driver_id = _norm_actor_id(candidate.get("driver_id"))
         if not driver_id:
             continue
         if driver_busy_fn(driver_id):
+            busy_skipped_count += 1
             continue
+        logger.info(
+            "quick_match_pick_driver request_id=%s pickup=(%.5f,%.5f) vehicle_pref=%s "
+            "exclude_count=%d eligible=%d busy_skipped=%d selected_driver=%s",
+            _short_id(request_id),
+            pickup_lat,
+            pickup_lng,
+            vehicle_pref,
+            exclude_count,
+            eligible_count,
+            busy_skipped_count,
+            _short_id(driver_id),
+        )
         return candidate
+    logger.warning(
+        "quick_match_pick_driver_none request_id=%s pickup=(%.5f,%.5f) vehicle_pref=%s "
+        "exclude_count=%d eligible=%d busy_skipped=%d reason=no_eligible_or_all_busy",
+        _short_id(request_id),
+        pickup_lat,
+        pickup_lng,
+        vehicle_pref,
+        exclude_count,
+        eligible_count,
+        busy_skipped_count,
+    )
     return None
 
 
@@ -737,7 +770,19 @@ async def _advance_quick_match_request(
         return pending
 
     attempt_count = int(request_row.get("attempt_count") or 0)
+    vehicle_pref = request_row.get("vehicle_preference") or "car"
+    pickup_lat = float(request_row.get("pickup_lat") or 0)
+    pickup_lng = float(request_row.get("pickup_lng") or 0)
     if attempt_count >= get_quick_match_max_attempts():
+        logger.warning(
+            "quick_match_exhausted request_id=%s reason=max_attempts attempt_count=%d "
+            "pickup=(%.5f,%.5f) vehicle_pref=%s",
+            _short_id(rid),
+            attempt_count,
+            pickup_lat,
+            pickup_lng,
+            vehicle_pref,
+        )
         now_iso = _utcnow_iso()
         supabase.table(TABLE_QUICK_MATCH_REQUESTS).update(
             {
@@ -756,6 +801,15 @@ async def _advance_quick_match_request(
         driver_busy_fn=driver_busy_fn,
     )
     if not candidate:
+        logger.warning(
+            "quick_match_exhausted request_id=%s reason=no_candidate attempt_count=%d "
+            "pickup=(%.5f,%.5f) vehicle_pref=%s",
+            _short_id(rid),
+            attempt_count,
+            pickup_lat,
+            pickup_lng,
+            vehicle_pref,
+        )
         now_iso = _utcnow_iso()
         supabase.table(TABLE_QUICK_MATCH_REQUESTS).update(
             {
@@ -881,6 +935,20 @@ async def create_quick_match_request(
         raise RuntimeError("quick_match request insert returned empty data")
 
     request_id = str(ins.data[0].get("id") or "")
+    logger.info(
+        "quick_match_create request_id=%s passenger=%s pickup=(%.5f,%.5f) dropoff=(%.5f,%.5f) "
+        "vehicle_pref=%s distance_km=%s offered=%s suggested=%s",
+        _short_id(request_id),
+        _short_id(actor),
+        validated["pickup_lat"],
+        validated["pickup_lng"],
+        validated["dropoff_lat"],
+        validated["dropoff_lng"],
+        validated.get("vehicle_preference") or "car",
+        validated["distance_km"],
+        validated["offered_contribution_tl"],
+        suggested,
+    )
     invite_row = await _advance_quick_match_request(
         supabase,
         request_id,
