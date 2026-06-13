@@ -13,6 +13,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
+import tag_pricing as _tag_pricing
+
 logger = logging.getLogger(__name__)
 
 TABLE_QUICK_MATCH_REQUESTS = "quick_match_requests"
@@ -36,12 +38,6 @@ QUICK_MATCH_MIN_TRIP_KM = 0.8
 QUICK_MATCH_MAX_TRIP_KM = 20.0
 QUICK_MATCH_MIN_AIR_KM_SAME_POINT = 0.8
 
-_SUGGESTED_CONTRIBUTION_BY_BAND: Dict[str, int] = {
-    "0_5": 90,
-    "5_10": 130,
-    "10_20": 170,
-}
-
 _REQUEST_SELECT_COLS = (
     "id, status, attempt_count, expires_at, matched_tag_id, matched_at, "
     "cancelled_at, exhausted_at, expired_at, distance_km, distance_band, "
@@ -64,7 +60,7 @@ _INVITE_SELECT_COLS = "id, request_id, sequence_no, status, expires_at, driver_i
 
 _REQUEST_JOIN_COLS = "id, distance_band, offered_contribution_tl, pickup_label"
 
-RouteDistanceFn = Callable[[float, float, float, float], Awaitable[float]]
+RouteTripMetricsFn = Callable[[float, float, float, float], Awaitable[Dict[str, Any]]]
 FindEligibleDriversFn = Callable[..., Awaitable[List[dict]]]
 PassengerBlockingTagFn = Callable[[str], bool]
 DriverBusyFn = Callable[[str], bool]
@@ -76,9 +72,32 @@ DriverProfileLoaderFn = Callable[[Any, str], Dict[str, Any]]
 class QuickMatchValidationError(ValueError):
     """Payload / distance / contribution validation failed (HTTP 422)."""
 
-    def __init__(self, detail: str) -> None:
+    def __init__(
+        self,
+        detail: str,
+        *,
+        code: Optional[str] = None,
+        suggested_contribution_tl: Optional[int] = None,
+        max_contribution_tl: Optional[int] = None,
+    ) -> None:
         self.detail = detail
+        self.code = code
+        self.suggested_contribution_tl = suggested_contribution_tl
+        self.max_contribution_tl = max_contribution_tl
         super().__init__(detail)
+
+    def as_http_detail(self) -> Any:
+        if self.code:
+            payload: Dict[str, Any] = {
+                "code": self.code,
+                "message": self.detail,
+            }
+            if self.suggested_contribution_tl is not None:
+                payload["suggested_contribution_tl"] = self.suggested_contribution_tl
+            if self.max_contribution_tl is not None:
+                payload["max_contribution_tl"] = self.max_contribution_tl
+            return payload
+        return self.detail
 
 
 class QuickMatchConflictError(Exception):
@@ -216,12 +235,34 @@ def _quick_match_distance_band(distance_km: float) -> str:
     return "10_20"
 
 
-def _quick_match_suggested_contribution_tl(distance_band: str) -> int:
-    band = str(distance_band or "").strip()
-    suggested = _SUGGESTED_CONTRIBUTION_BY_BAND.get(band)
-    if suggested is None:
-        raise QuickMatchValidationError("Mesafe bandı geçersiz")
-    return suggested
+def _quick_match_vehicle_kind(raw: Any) -> str:
+    v = _canonical_vehicle_preference(raw)
+    return v if v is not None else "car"
+
+
+def _compute_unified_contribution_bounds(
+    *,
+    distance_km: float,
+    duration_min: int,
+    traffic_ratio: float,
+    vehicle_kind: str,
+    peak: bool,
+) -> Tuple[int, int]:
+    """Normal Match /price/calculate suggested_price; QM max = suggested * 2."""
+    trip_distance_km = max(1.0, float(distance_km))
+    estimated_minutes = max(5, int(duration_min))
+    peak_multiplier = 1.10 if peak else 1.0
+    vk = _quick_match_vehicle_kind(vehicle_kind)
+    traffic_multiplier = _tag_pricing.traffic_multiplier_from_ratio(float(traffic_ratio or 1.0))
+    suggested, _, _, _ = _tag_pricing.compute_tag_ride_price(
+        city_key=_tag_pricing.DEFAULT_TAG_PRICING_CITY,
+        vehicle_kind=vk,
+        distance_km=trip_distance_km,
+        estimated_minutes=estimated_minutes,
+        peak_multiplier=peak_multiplier,
+        traffic_multiplier=traffic_multiplier,
+    )
+    return suggested, suggested * 2
 
 
 def _parse_positive_contribution_tl(raw: Any) -> Optional[int]:
@@ -255,16 +296,45 @@ def _matched_tag_contribution_tl(request_row: dict) -> Optional[int]:
     return _parse_positive_contribution_tl(request_row.get("suggested_contribution_tl"))
 
 
-async def _quick_match_distance_km(
-    route_distance_fn: RouteDistanceFn,
+async def _quick_match_trip_metrics(
+    route_trip_metrics_fn: RouteTripMetricsFn,
     pickup_lat: float,
     pickup_lng: float,
     dropoff_lat: float,
     dropoff_lng: float,
-) -> float:
-    return float(
-        await route_distance_fn(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
-    )
+) -> Dict[str, Any]:
+    return await route_trip_metrics_fn(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+
+
+def _validate_offered_contribution_tl(
+    raw: Any,
+    *,
+    suggested_contribution_tl: int,
+    max_contribution_tl: int,
+) -> int:
+    offered = _parse_positive_contribution_tl(raw)
+    if offered is None:
+        raise QuickMatchValidationError(
+            "Geçersiz katkı payı",
+            code="invalid_contribution",
+            suggested_contribution_tl=suggested_contribution_tl,
+            max_contribution_tl=max_contribution_tl,
+        )
+    if offered < suggested_contribution_tl:
+        raise QuickMatchValidationError(
+            f"Önerilen katkı payı ₺{suggested_contribution_tl}. Daha düşük teklif gönderilemez.",
+            code="contribution_too_low",
+            suggested_contribution_tl=suggested_contribution_tl,
+            max_contribution_tl=max_contribution_tl,
+        )
+    if offered > max_contribution_tl:
+        raise QuickMatchValidationError(
+            f"Katkı payı en fazla ₺{max_contribution_tl} olabilir",
+            code="contribution_too_high",
+            suggested_contribution_tl=suggested_contribution_tl,
+            max_contribution_tl=max_contribution_tl,
+        )
+    return offered
 
 
 def _quick_match_validate_request_payload(
@@ -272,6 +342,7 @@ def _quick_match_validate_request_payload(
     *,
     distance_km: float,
     suggested_contribution_tl: int,
+    max_contribution_tl: int,
 ) -> Dict[str, Any]:
     pickup_lat, pickup_lng = _validate_lat_lng(
         payload.get("pickup_lat"), payload.get("pickup_lng"), label="Alış"
@@ -296,21 +367,11 @@ def _quick_match_validate_request_payload(
     if trip_km > QUICK_MATCH_MAX_TRIP_KM:
         raise QuickMatchValidationError("Quick Match en fazla 20 km mesafede kullanılabilir")
 
-    offered_raw = payload.get("offered_contribution_tl")
-    if isinstance(offered_raw, bool) or offered_raw is None:
-        raise QuickMatchValidationError("offered_contribution_tl gerekli")
-    if isinstance(offered_raw, float) and not offered_raw.is_integer():
-        raise QuickMatchValidationError("offered_contribution_tl tam sayı olmalı")
-    try:
-        offered = int(offered_raw)
-    except (TypeError, ValueError):
-        raise QuickMatchValidationError("offered_contribution_tl tam sayı olmalı") from None
-    if offered <= 0:
-        raise QuickMatchValidationError("offered_contribution_tl pozitif olmalı")
-    if offered < suggested_contribution_tl:
-        raise QuickMatchValidationError(
-            f"Katkı en az {suggested_contribution_tl} TL olmalı"
-        )
+    offered = _validate_offered_contribution_tl(
+        payload.get("offered_contribution_tl"),
+        suggested_contribution_tl=suggested_contribution_tl,
+        max_contribution_tl=max_contribution_tl,
+    )
 
     vehicle_preference = _canonical_vehicle_preference(payload.get("vehicle_preference"))
 
@@ -866,7 +927,7 @@ async def create_quick_match_request(
     find_eligible_drivers_fn: FindEligibleDriversFn,
     passenger_blocking_tag_fn: PassengerBlockingTagFn,
     driver_busy_fn: DriverBusyFn,
-    route_distance_fn: RouteDistanceFn,
+    route_trip_metrics_fn: RouteTripMetricsFn,
 ) -> Dict[str, Any]:
     """Create quick match request and run first sequential advance. PII-safe response."""
     actor = _norm_actor_id(actor_id)
@@ -888,15 +949,24 @@ async def create_quick_match_request(
     dropoff_lat, dropoff_lng = _validate_lat_lng(
         payload.get("dropoff_lat"), payload.get("dropoff_lng"), label="Varış"
     )
-    distance_km = await _quick_match_distance_km(
-        route_distance_fn, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
+    trip_metrics = await _quick_match_trip_metrics(
+        route_trip_metrics_fn, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
+    )
+    distance_km = float(trip_metrics.get("distance_km") or 0.0)
+    vehicle_kind = _quick_match_vehicle_kind(payload.get("vehicle_preference"))
+    suggested, max_contribution = _compute_unified_contribution_bounds(
+        distance_km=distance_km,
+        duration_min=int(trip_metrics.get("duration_min") or 5),
+        traffic_ratio=float(trip_metrics.get("traffic_ratio") or 1.0),
+        vehicle_kind=vehicle_kind,
+        peak=bool(trip_metrics.get("peak")),
     )
     distance_band = _quick_match_distance_band(distance_km)
-    suggested = _quick_match_suggested_contribution_tl(distance_band)
     validated = _quick_match_validate_request_payload(
         payload,
         distance_km=distance_km,
         suggested_contribution_tl=suggested,
+        max_contribution_tl=max_contribution,
     )
 
     request_expires = (

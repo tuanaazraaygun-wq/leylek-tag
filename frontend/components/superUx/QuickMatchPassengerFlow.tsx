@@ -23,9 +23,9 @@ import {
 } from '../auth/premiumAuthStyles';
 import type { useQuickMatchPassengerSession } from '../../hooks/useQuickMatchPassengerSession';
 
+import { API_BASE_URL } from '../../lib/backendConfig';
+
 const CONTRIBUTION_STEP_TL = 10;
-const DEFAULT_MIN_CONTRIBUTION_TL = 90;
-const MAX_CONTRIBUTION_TL = 500;
 const QUICK_MATCH_MAX_DISTANCE_KM = 20;
 
 export type QuickMatchRouteContext = {
@@ -44,6 +44,7 @@ export type QuickMatchPassengerSessionView = Pick<
   | 'status'
   | 'request'
   | 'errorMessage'
+  | 'validationHint'
   | 'pollErrorMessage'
   | 'isCreating'
   | 'isCancelling'
@@ -55,6 +56,41 @@ export type QuickMatchPassengerSessionView = Pick<
   | 'clear'
 >;
 
+async function fetchNormalMatchSuggestedContribution(
+  route: QuickMatchRouteContext,
+): Promise<{ suggested: number; max: number } | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/price/calculate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        pickup_lat: route.pickup_lat,
+        pickup_lng: route.pickup_lng,
+        dropoff_lat: route.dropoff_lat,
+        dropoff_lng: route.dropoff_lng,
+        passenger_vehicle_kind: route.vehicle_preference ?? 'car',
+      }),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json()) as {
+      success?: boolean;
+      suggested_price?: number;
+    };
+    if (!data.success || data.suggested_price == null) {
+      return null;
+    }
+    const suggested = Math.round(Number(data.suggested_price));
+    if (!Number.isFinite(suggested) || suggested <= 0) {
+      return null;
+    }
+    return { suggested, max: suggested * 2 };
+  } catch {
+    return null;
+  }
+}
+
 export type QuickMatchPassengerFlowProps = {
   visible: boolean;
   route: QuickMatchRouteContext | null;
@@ -63,23 +99,6 @@ export type QuickMatchPassengerFlowProps = {
   onRetry?: () => void;
   onGoNormalMatch?: () => void;
 };
-
-function minContributionFromDistanceKm(distanceKm: number | null | undefined): number {
-  const km = Number(distanceKm);
-  if (!Number.isFinite(km) || km <= 0) {
-    return DEFAULT_MIN_CONTRIBUTION_TL;
-  }
-  if (km <= 5) {
-    return 90;
-  }
-  if (km <= 10) {
-    return 130;
-  }
-  if (km <= 20) {
-    return 170;
-  }
-  return DEFAULT_MIN_CONTRIBUTION_TL;
-}
 
 function isDistanceTooFarForQuickMatch(distanceKm: number | null | undefined): boolean {
   const km = Number(distanceKm);
@@ -164,7 +183,7 @@ function RouteSummaryCard({
         <View style={styles.routeMetaRow}>
           {distanceText ? <Text style={styles.routeMetaText}>{distanceText}</Text> : null}
           {contributionTl != null ? (
-            <Text style={styles.routeMetaText}>{contributionTl} TL katkı</Text>
+            <Text style={styles.routeMetaText}>{contributionTl} TL katkı payı</Text>
           ) : null}
         </View>
       ) : null}
@@ -259,8 +278,11 @@ export function QuickMatchPassengerFlow({
   onRetry,
   onGoNormalMatch,
 }: QuickMatchPassengerFlowProps) {
-  const [contributionTl, setContributionTl] = useState(DEFAULT_MIN_CONTRIBUTION_TL);
-  const [minContributionTl, setMinContributionTl] = useState(DEFAULT_MIN_CONTRIBUTION_TL);
+  const [contributionTl, setContributionTl] = useState(0);
+  const [minContributionTl, setMinContributionTl] = useState(0);
+  const [maxContributionTl, setMaxContributionTl] = useState(0);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const awaitingCreateResultRef = useRef(false);
 
   const distanceTooFar = useMemo(
@@ -272,24 +294,66 @@ export function QuickMatchPassengerFlow({
   );
 
   useEffect(() => {
-    if (!route) {
+    if (!route || !visible) {
       return;
     }
-    const min = minContributionFromDistanceKm(route.distance_km);
-    setMinContributionTl(min);
-    setContributionTl((prev) => {
-      const next = prev < min ? min : prev;
-      return Math.min(next, MAX_CONTRIBUTION_TL);
+    let cancelled = false;
+    setPriceLoading(true);
+    setPriceError(null);
+    void fetchNormalMatchSuggestedContribution(route).then((pricing) => {
+      if (cancelled) {
+        return;
+      }
+      setPriceLoading(false);
+      if (!pricing) {
+        setPriceError('Önerilen katkı payı hesaplanamadı. Lütfen tekrar deneyin.');
+        return;
+      }
+      setMinContributionTl(pricing.suggested);
+      setMaxContributionTl(pricing.max);
+      setContributionTl((prev) => {
+        if (prev < pricing.suggested) {
+          return pricing.suggested;
+        }
+        if (prev > pricing.max) {
+          return pricing.max;
+        }
+        return prev || pricing.suggested;
+      });
     });
-  }, [route]);
+    return () => {
+      cancelled = true;
+    };
+  }, [route, visible]);
 
   useEffect(() => {
     const suggested = session.request?.suggested_contribution_tl;
     if (typeof suggested === 'number' && suggested > 0) {
       setMinContributionTl(suggested);
+      setMaxContributionTl(suggested * 2);
       setContributionTl((prev) => Math.max(suggested, prev));
     }
   }, [session.request?.suggested_contribution_tl]);
+
+  useEffect(() => {
+    const hint = session.validationHint;
+    if (hint?.code !== 'contribution_too_low') {
+      return;
+    }
+    const suggested =
+      typeof hint.suggestedContributionTl === 'number' && hint.suggestedContributionTl > 0
+        ? hint.suggestedContributionTl
+        : minContributionTl;
+    if (suggested > 0) {
+      setMinContributionTl(suggested);
+      setMaxContributionTl(
+        typeof hint.maxContributionTl === 'number' && hint.maxContributionTl > 0
+          ? hint.maxContributionTl
+          : suggested * 2,
+      );
+      setContributionTl(suggested);
+    }
+  }, [session.validationHint, minContributionTl]);
 
   const handleClose = useCallback(async () => {
     if (session.isCancelling) {
@@ -308,12 +372,7 @@ export function QuickMatchPassengerFlow({
   const handleRetry = useCallback(() => {
     session.clear();
     onRetry?.();
-    if (route) {
-      const min = minContributionFromDistanceKm(route.distance_km);
-      setMinContributionTl(min);
-      setContributionTl(min);
-    }
-  }, [session, onRetry, route]);
+  }, [session, onRetry]);
 
   const handleGoNormal = useCallback(() => {
     session.clear();
@@ -321,7 +380,7 @@ export function QuickMatchPassengerFlow({
   }, [session, onGoNormalMatch]);
 
   const handleCreate = useCallback(async () => {
-    if (!route || session.isCreating || distanceTooFar) {
+    if (!route || session.isCreating || distanceTooFar || priceLoading || minContributionTl <= 0) {
       return;
     }
     console.log(
@@ -343,7 +402,7 @@ export function QuickMatchPassengerFlow({
       offered_contribution_tl: contributionTl,
       vehicle_preference: route.vehicle_preference ?? undefined,
     });
-  }, [route, session, contributionTl, distanceTooFar]);
+  }, [route, session, contributionTl, distanceTooFar, priceLoading, minContributionTl]);
 
   useEffect(() => {
     if (!awaitingCreateResultRef.current) {
@@ -412,8 +471,8 @@ export function QuickMatchPassengerFlow({
   }, [minContributionTl]);
 
   const increaseContribution = useCallback(() => {
-    setContributionTl((prev) => Math.min(MAX_CONTRIBUTION_TL, prev + CONTRIBUTION_STEP_TL));
-  }, []);
+    setContributionTl((prev) => Math.min(maxContributionTl, prev + CONTRIBUTION_STEP_TL));
+  }, [maxContributionTl]);
 
   if (!visible) {
     return null;
@@ -594,7 +653,7 @@ export function QuickMatchPassengerFlow({
     }
 
     const canDecrease = contributionTl > minContributionTl;
-    const canIncrease = contributionTl < MAX_CONTRIBUTION_TL;
+    const canIncrease = maxContributionTl > 0 && contributionTl < maxContributionTl;
 
     return (
       <View style={styles.section}>
@@ -604,8 +663,16 @@ export function QuickMatchPassengerFlow({
           distanceKm={displayDistanceKm}
         />
         <View style={styles.glassCard}>
-          <Text style={styles.contributionLabel}>Önerilen katkı</Text>
-          <View style={styles.stepperRow}>
+          <Text style={styles.contributionLabel}>Hızlı eşleşme katkı payı</Text>
+          {priceLoading ? (
+            <View style={styles.priceLoadingRow}>
+              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+              <Text style={styles.bodyMuted}>Önerilen katkı hesaplanıyor…</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.contributionSubLabel}>Önerilen katkı</Text>
+              <View style={styles.stepperRow}>
             <Pressable
               onPress={decreaseContribution}
               disabled={!canDecrease}
@@ -644,12 +711,17 @@ export function QuickMatchPassengerFlow({
               />
             </Pressable>
           </View>
-          <Text style={styles.bodyMuted}>İsterseniz artırabilirsiniz</Text>
-          <Text style={styles.disclaimer}>
-            LeylekTAG katkıyı tahsil etmez.{'\n'}
-            Katkı yolculuk sonrası sürücüyle aranızda.
+          <Text style={styles.bodyMuted}>
+            Önerilen katkı payının 2 katına kadar artırabilirsiniz
           </Text>
+          <Text style={styles.disclaimer}>
+            LeylekTAG katkı payını tahsil etmez.{'\n'}
+            Katkı payı yolculuk sonrası sürücüyle aranızda.
+          </Text>
+            </>
+          )}
         </View>
+        {priceError ? <Text style={styles.inlineError}>{priceError}</Text> : null}
         {session.errorMessage ? (
           <Text style={styles.inlineError}>{session.errorMessage}</Text>
         ) : null}
@@ -659,7 +731,9 @@ export function QuickMatchPassengerFlow({
         <PrimaryButton
           label="Hızlı eşleşme isteği gönder"
           onPress={() => void handleCreate()}
-          disabled={session.isCreating}
+          disabled={
+            session.isCreating || distanceTooFar || priceLoading || minContributionTl <= 0
+          }
           loading={session.isCreating}
         />
         <SecondaryButton label="Kapat" onPress={handleClose} />
@@ -848,6 +922,21 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  contributionSubLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_MUTED,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  priceLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 12,
   },
   stepperRow: {
     flexDirection: 'row',

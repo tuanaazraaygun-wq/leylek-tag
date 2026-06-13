@@ -10,6 +10,7 @@ import {
   type QuickMatchApiResult,
   type QuickMatchRequestPublic,
   type QuickMatchRequestStatus,
+  type QuickMatchValidationCode,
 } from '../lib/quickMatchApi';
 
 const DEFAULT_POLL_INTERVAL_MS = 2500;
@@ -63,6 +64,12 @@ function isHardPollStopCode(code: QuickMatchApiErrorCode): boolean {
   );
 }
 
+export type QuickMatchPassengerValidationHint = {
+  code?: QuickMatchValidationCode;
+  suggestedContributionTl?: number;
+  maxContributionTl?: number;
+};
+
 export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSessionOptions) {
   const {
     enabled,
@@ -75,6 +82,9 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
   const [status, setStatus] = useState<QuickMatchPassengerSessionStatus>('idle');
   const [request, setRequest] = useState<QuickMatchRequestPublic | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [validationHint, setValidationHint] = useState<QuickMatchPassengerValidationHint | null>(
+    null,
+  );
   const [pollErrorMessage, setPollErrorMessage] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -378,6 +388,7 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
     stopPolling();
     setIsCreating(true);
     setErrorMessage(null);
+    setValidationHint(null);
     setPollErrorMessage(null);
     setStatus('creating');
 
@@ -393,9 +404,23 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
     if (result.ok === false) {
       setStatus('error');
       setErrorMessage(result.message);
+      if (
+        result.validationCode ||
+        result.suggestedContributionTl != null ||
+        result.maxContributionTl != null
+      ) {
+        setValidationHint({
+          code: result.validationCode,
+          suggestedContributionTl: result.suggestedContributionTl,
+          maxContributionTl: result.maxContributionTl,
+        });
+      } else {
+        setValidationHint(null);
+      }
       return;
     }
 
+    setValidationHint(null);
     applyRequest(result.data.request, generation);
   }, [applyRequest, stopPolling]);
 
@@ -445,6 +470,7 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
     stopPolling();
     setRequest(null);
     setErrorMessage(null);
+    setValidationHint(null);
     setPollErrorMessage(null);
     setStatus('idle');
     setIsCreating(false);
@@ -546,6 +572,7 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
     status,
     request,
     errorMessage,
+    validationHint,
     pollErrorMessage,
     isCreating,
     isCancelling,

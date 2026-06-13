@@ -7,7 +7,20 @@ const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/
 export const QUICK_MATCH_GET_TIMEOUT_MS = 8000;
 export const QUICK_MATCH_MUTATION_TIMEOUT_MS = 12000;
 
-type ErrorBody = { detail?: string; message?: string };
+type ErrorBody = {
+  detail?: string | {
+    code?: string;
+    message?: string;
+    suggested_contribution_tl?: number;
+    max_contribution_tl?: number;
+  };
+  message?: string;
+};
+
+export type QuickMatchValidationCode =
+  | 'invalid_contribution'
+  | 'contribution_too_low'
+  | 'contribution_too_high';
 
 export type QuickMatchApiErrorCode =
   | 'UNAUTH'
@@ -22,7 +35,15 @@ export type QuickMatchApiErrorCode =
 
 export type QuickMatchApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; code: QuickMatchApiErrorCode; message: string; detail?: string };
+  | {
+      ok: false;
+      code: QuickMatchApiErrorCode;
+      message: string;
+      detail?: string;
+      validationCode?: QuickMatchValidationCode;
+      suggestedContributionTl?: number;
+      maxContributionTl?: number;
+    };
 
 export type QuickMatchRequestStatus =
   | 'sequencing'
@@ -134,12 +155,35 @@ function fail(
   code: QuickMatchApiErrorCode,
   message: string,
   detail?: string,
+  extras?: {
+    validationCode?: QuickMatchValidationCode;
+    suggestedContributionTl?: number;
+    maxContributionTl?: number;
+  },
 ): QuickMatchApiResult<never> {
-  return detail ? { ok: false, code, message, detail } : { ok: false, code, message };
+  return {
+    ok: false,
+    code,
+    message,
+    ...(detail ? { detail } : {}),
+    ...(extras?.validationCode ? { validationCode: extras.validationCode } : {}),
+    ...(extras?.suggestedContributionTl != null
+      ? { suggestedContributionTl: extras.suggestedContributionTl }
+      : {}),
+    ...(extras?.maxContributionTl != null ? { maxContributionTl: extras.maxContributionTl } : {}),
+  };
 }
 
 function propagateError<T>(err: Extract<QuickMatchApiResult<unknown>, { ok: false }>): QuickMatchApiResult<T> {
-  return { ok: false, code: err.code, message: err.message, detail: err.detail };
+  return {
+    ok: false,
+    code: err.code,
+    message: err.message,
+    detail: err.detail,
+    validationCode: err.validationCode,
+    suggestedContributionTl: err.suggestedContributionTl,
+    maxContributionTl: err.maxContributionTl,
+  };
 }
 
 async function quickMatchAuthHeaders(): Promise<QuickMatchApiResult<Record<string, string>>> {
@@ -153,19 +197,52 @@ async function quickMatchAuthHeaders(): Promise<QuickMatchApiResult<Record<strin
   });
 }
 
-async function readQuickMatchErrorDetail(response: Response): Promise<string> {
+type ParsedQuickMatchError = {
+  message: string;
+  validationCode?: QuickMatchValidationCode;
+  suggestedContributionTl?: number;
+  maxContributionTl?: number;
+};
+
+function isValidationCode(value: string): value is QuickMatchValidationCode {
+  return (
+    value === 'invalid_contribution' ||
+    value === 'contribution_too_low' ||
+    value === 'contribution_too_high'
+  );
+}
+
+async function readQuickMatchErrorDetail(response: Response): Promise<ParsedQuickMatchError> {
   try {
     const body = (await response.json()) as ErrorBody;
+    if (body.detail != null && typeof body.detail === 'object') {
+      const d = body.detail;
+      const code = typeof d.code === 'string' && isValidationCode(d.code) ? d.code : undefined;
+      const message =
+        (typeof d.message === 'string' && d.message.trim()) ||
+        (typeof body.message === 'string' && body.message.trim()) ||
+        '';
+      return {
+        message,
+        validationCode: code,
+        suggestedContributionTl:
+          typeof d.suggested_contribution_tl === 'number'
+            ? d.suggested_contribution_tl
+            : undefined,
+        maxContributionTl:
+          typeof d.max_contribution_tl === 'number' ? d.max_contribution_tl : undefined,
+      };
+    }
     if (typeof body.detail === 'string') {
-      return body.detail;
+      return { message: body.detail };
     }
     if (typeof body.message === 'string') {
-      return body.message;
+      return { message: body.message };
     }
   } catch {
     // ignore parse errors
   }
-  return '';
+  return { message: '' };
 }
 
 function isQuickMatchRouteUnavailable(status: number, detail: string, path: string): boolean {
@@ -182,41 +259,51 @@ function isQuickMatchRouteUnavailable(status: number, detail: string, path: stri
 
 function mapQuickMatchHttpError(
   status: number,
-  detail: string,
+  parsed: ParsedQuickMatchError,
   path: string,
 ): QuickMatchApiResult<never> {
-  const raw = detail.trim();
+  const raw = parsed.message.trim();
+  const validationExtras =
+    parsed.validationCode != null
+      ? {
+          validationCode: parsed.validationCode,
+          suggestedContributionTl: parsed.suggestedContributionTl,
+          maxContributionTl: parsed.maxContributionTl,
+        }
+      : undefined;
 
   if (status === 401) {
-    return fail('UNAUTH', raw || 'Oturum bulunamadı', raw || undefined);
+    return fail('UNAUTH', raw || 'Oturum bulunamadı', raw || undefined, validationExtras);
   }
   if (status === 403) {
-    return fail('FORBIDDEN', raw || 'Bu işlem için uygun değilsiniz', raw || undefined);
+    return fail('FORBIDDEN', raw || 'Bu işlem için uygun değilsiniz', raw || undefined, validationExtras);
   }
   if (status === 404) {
-    if (isQuickMatchRouteUnavailable(status, detail, path)) {
+    if (isQuickMatchRouteUnavailable(status, raw, path)) {
       return fail('UNAVAILABLE', 'Hızlı eşleşme şu an kullanılamıyor');
     }
-    return fail('NOT_FOUND', raw || 'Hızlı eşleşme isteği bulunamadı', raw || undefined);
+    return fail('NOT_FOUND', raw || 'Hızlı eşleşme isteği bulunamadı', raw || undefined, validationExtras);
   }
   if (status === 409) {
     return fail(
       'CONFLICT',
       raw || 'Aktif bir eşleşmeniz var veya istek artık geçerli değil',
       raw || undefined,
+      validationExtras,
     );
   }
   if (status === 422) {
     return fail(
       'VALIDATION',
-      raw || 'Bilgiler eksik veya katkı tutarı uygun değil',
+      raw || 'Bilgiler eksik veya katkı payı uygun değil',
       raw || undefined,
+      validationExtras,
     );
   }
   if (status >= 500) {
-    return fail('SERVER', raw || 'Hızlı eşleşme şu an kullanılamıyor', raw || undefined);
+    return fail('SERVER', raw || 'Hızlı eşleşme şu an kullanılamıyor', raw || undefined, validationExtras);
   }
-  return fail('SERVER', raw || 'Hızlı eşleşme şu an kullanılamıyor', raw || undefined);
+  return fail('SERVER', raw || 'Hızlı eşleşme şu an kullanılamıyor', raw || undefined, validationExtras);
 }
 
 async function quickMatchGet<T>(

@@ -10518,6 +10518,33 @@ def _driver_busy_for_quick_match(driver_id: str) -> bool:
     )
 
 
+async def _quick_match_route_trip_metrics(
+    pickup_lat: float,
+    pickup_lng: float,
+    dropoff_lat: float,
+    dropoff_lng: float,
+) -> dict:
+    """Quick Match trip metrics — same route engine as /price/calculate."""
+    try:
+        ri = await get_route_info(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+        if ri and ri.get("distance_km") is not None:
+            return {
+                "distance_km": float(ri["distance_km"]),
+                "duration_min": int(ri["duration_min"]),
+                "traffic_ratio": float(ri.get("traffic_ratio") or 1.0),
+                "peak": is_peak_hour(),
+            }
+    except Exception as exc:
+        logger.warning("quick_match route_trip_metrics get_route_info: %s", exc)
+    dist = haversine_distance(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    return {
+        "distance_km": float(dist),
+        "duration_min": max(5, int(dist * 3)),
+        "traffic_ratio": 1.0,
+        "peak": is_peak_hour(),
+    }
+
+
 async def _quick_match_route_distance_km(
     pickup_lat: float,
     pickup_lng: float,
@@ -10559,11 +10586,11 @@ async def post_quick_match_request_http(
             find_eligible_drivers_fn=find_eligible_drivers,
             passenger_blocking_tag_fn=_passenger_blocking_tag_for_quick_match,
             driver_busy_fn=_driver_busy_for_quick_match,
-            route_distance_fn=_quick_match_route_distance_km,
+            route_trip_metrics_fn=_quick_match_route_trip_metrics,
         )
         return {"success": True, **result}
     except QuickMatchValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.detail) from exc
+        raise HTTPException(status_code=422, detail=exc.as_http_detail()) from exc
     except QuickMatchConflictError as exc:
         raise HTTPException(status_code=409, detail=exc.detail) from exc
     except HTTPException:
