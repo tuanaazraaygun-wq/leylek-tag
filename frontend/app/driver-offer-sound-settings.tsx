@@ -5,12 +5,25 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_CARD_BG,
+  PREMIUM_ROLE_CARD_BORDER,
+  PREMIUM_TEXT_MUTED,
+} from '../components/auth/premiumAuthStyles';
+import {
+  CockpitBackground,
+  GlassSurface,
+  PremiumText,
+} from '../design-system/primitives';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { getPersistedUserRaw } from '../lib/sessionToken';
 import {
   DEFAULT_DRIVER_OFFER_SOUND,
@@ -36,6 +49,24 @@ const SOUND_OPTIONS: { id: DriverOfferSoundType; label: string; subtitle: string
 function volumeFromLocationX(locationX: number, trackWidth: number): number {
   if (trackWidth <= 0) return DEFAULT_DRIVER_OFFER_VOLUME;
   return Math.max(0, Math.min(1, locationX / trackWidth));
+}
+
+type SettingsHubCardProps = {
+  title: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+};
+
+function SettingsHubCard({ title, children, footer }: SettingsHubCardProps) {
+  return (
+    <GlassSurface variant="plain" style={styles.card}>
+      <PremiumText variant="title" style={styles.cardTitle}>
+        {title}
+      </PremiumText>
+      {footer}
+      {children}
+    </GlassSurface>
+  );
 }
 
 export default function DriverOfferSoundSettingsScreen() {
@@ -126,197 +157,294 @@ export default function DriverOfferSoundSettingsScreen() {
     }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.root}>
-        <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color="#22D3EE" />
-          </Pressable>
-          <Text style={styles.title}>Teklif Sesi</Text>
+  const renderHeader = (subtitle?: string) => (
+    <GlassSurface variant="header" style={styles.headerGlass}>
+      <View style={styles.header}>
+        <Pressable
+          style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+        </Pressable>
+        <View style={styles.headerBody}>
+          <PremiumText variant="headline" style={styles.title}>
+            Teklif Sesi
+          </PremiumText>
+          {subtitle ? (
+            <PremiumText variant="caption" muted style={styles.subtitle}>
+              {subtitle}
+            </PremiumText>
+          ) : null}
         </View>
-        <View style={styles.centerState}>
-          <Text style={styles.centerStateText}>Yükleniyor…</Text>
-        </View>
+      </View>
+    </GlassSurface>
+  );
+
+  const renderShell = (body: React.ReactNode) => (
+    <View style={styles.screen}>
+      <CockpitBackground />
+      <SafeAreaView style={styles.safe}>
+        {renderHeader(
+          loading || !userId ? undefined : 'Yeni teklif geldiğinde çalacak sesi özelleştirin.',
+        )}
+        {body}
       </SafeAreaView>
+    </View>
+  );
+
+  if (loading) {
+    return renderShell(
+      <View style={styles.centerState}>
+        <PremiumText variant="caption" muted style={styles.centerStateText}>
+          Yükleniyor…
+        </PremiumText>
+      </View>,
     );
   }
 
   if (!userId) {
-    return (
-      <SafeAreaView style={styles.root}>
-        <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color="#22D3EE" />
-          </Pressable>
-          <Text style={styles.title}>Teklif Sesi</Text>
-        </View>
-        <View style={styles.centerState}>
-          <Text style={styles.centerStateText}>Bu ekran yalnızca sürücü hesapları içindir.</Text>
-        </View>
-      </SafeAreaView>
+    return renderShell(
+      <View style={styles.centerState}>
+        <PremiumText variant="caption" muted style={styles.centerStateText}>
+          Bu ekran yalnızca sürücü hesapları içindir.
+        </PremiumText>
+      </View>,
     );
   }
 
-  return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#22D3EE" />
-        </Pressable>
-        <View style={styles.headerBody}>
-          <Text style={styles.title}>Teklif Sesi</Text>
-          <Text style={styles.subtitle}>Yeni teklif geldiğinde çalacak sesi özelleştirin.</Text>
-        </View>
-      </View>
-
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Ses Türü</Text>
-          {SOUND_OPTIONS.map((option, index) => {
-            const selected = soundType === option.id;
-            return (
-              <Pressable
-                key={option.id}
-                style={[styles.optionRow, index > 0 ? styles.optionRowBorder : null]}
-                onPress={() => setSoundType(option.id)}
-              >
-                <View style={styles.optionLeft}>
-                  <View style={[styles.radioOuter, selected ? styles.radioOuterSelected : null]}>
-                    {selected ? <View style={styles.radioInner} /> : null}
-                  </View>
-                  <View style={styles.optionTextCol}>
-                    <Text style={styles.optionLabel}>{option.label}</Text>
-                    <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-                  </View>
-                </View>
-                {selected ? <Ionicons name="checkmark-circle" size={20} color="#22D3EE" /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.volumeHeader}>
-            <Text style={styles.cardTitle}>Ses Seviyesi</Text>
-            <Text style={styles.volumeValue}>{volumePercent}%</Text>
-          </View>
-          <View
-            style={styles.sliderTrack}
-            onLayout={handleTrackLayout}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => true}
-            onResponderGrant={(event) => applyVolumeAtX(event.nativeEvent.locationX)}
-            onResponderMove={(event) => applyVolumeAtX(event.nativeEvent.locationX)}
-          >
-            <View style={[styles.sliderFill, { width: `${volume * 100}%` }]} />
-            <View
-              style={[
-                styles.sliderThumb,
-                { left: Math.max(0, Math.min(trackWidth - 18, volume * trackWidth - 9)) },
+  return renderShell(
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <SettingsHubCard title="Ses Türü">
+        {SOUND_OPTIONS.map((option, index) => {
+          const selected = soundType === option.id;
+          return (
+            <Pressable
+              key={option.id}
+              style={({ pressed }) => [
+                styles.row,
+                index === 0 && styles.rowFirst,
+                pressed && styles.rowPressed,
               ]}
-            />
-          </View>
-          <Text style={styles.volumeHint}>Varsayılan: %65</Text>
+              onPress={() => setSoundType(option.id)}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.radioOuter, selected ? styles.radioOuterSelected : null]}>
+                  {selected ? <View style={styles.radioInner} /> : null}
+                </View>
+                <View style={styles.optionTextCol}>
+                  <PremiumText variant="body" style={styles.rowText}>
+                    {option.label}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted>
+                    {option.subtitle}
+                  </PremiumText>
+                </View>
+              </View>
+              {selected ? <Ionicons name="checkmark-circle" size={20} color={PREMIUM_AUTH_CYAN} /> : null}
+            </Pressable>
+          );
+        })}
+      </SettingsHubCard>
+
+      <GlassSurface variant="plain" style={styles.card}>
+        <View style={styles.volumeHeader}>
+          <PremiumText variant="title" style={styles.volumeCardTitle}>
+            Ses Seviyesi
+          </PremiumText>
+          <PremiumText variant="body" style={styles.volumeValue}>
+            {volumePercent}%
+          </PremiumText>
         </View>
-
-        <Pressable
-          style={[styles.secondaryBtn, testing ? styles.btnDisabled : null]}
-          onPress={() => void handleTestSound()}
-          disabled={testing}
+        <View
+          style={styles.sliderTrack}
+          onLayout={handleTrackLayout}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={(event) => applyVolumeAtX(event.nativeEvent.locationX)}
+          onResponderMove={(event) => applyVolumeAtX(event.nativeEvent.locationX)}
         >
-          <Ionicons name="volume-high-outline" size={18} color="#22D3EE" />
-          <Text style={styles.secondaryBtnText}>{testing ? 'Çalınıyor…' : 'Sesi Test Et'}</Text>
-        </Pressable>
+          <View style={[styles.sliderFill, { width: `${volume * 100}%` }]} />
+          <View
+            style={[
+              styles.sliderThumb,
+              { left: Math.max(0, Math.min(trackWidth - 18, volume * trackWidth - 9)) },
+            ]}
+          />
+        </View>
+        <PremiumText variant="caption" muted style={styles.volumeHint}>
+          Varsayılan: %65
+        </PremiumText>
+      </GlassSurface>
 
-        <Pressable
-          style={[styles.primaryBtn, saving ? styles.btnDisabled : null]}
-          onPress={() => void handleSave()}
-          disabled={saving}
-        >
-          <Text style={styles.primaryBtnText}>{saving ? 'Kaydediliyor…' : 'Kaydet'}</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
+      <Pressable
+        style={({ pressed }) => [
+          styles.secondaryBtn,
+          testing && styles.btnDisabled,
+          pressed && !testing && styles.backBtnPressed,
+        ]}
+        onPress={() => void handleTestSound()}
+        disabled={testing}
+      >
+        <Ionicons name="volume-high-outline" size={18} color={PREMIUM_AUTH_CYAN} />
+        <PremiumText variant="body" style={styles.secondaryBtnText}>
+          {testing ? 'Çalınıyor…' : 'Sesi Test Et'}
+        </PremiumText>
+      </Pressable>
+
+      <PremiumGradientCtaButton
+        label={saving ? 'Kaydediliyor…' : 'Kaydet'}
+        disabled={saving}
+        busy={saving}
+        onPress={() => void handleSave()}
+      />
+    </ScrollView>,
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08111F' },
+  screen: {
+    flex: 1,
+    backgroundColor: PREMIUM_NAVY_DEEP,
+  },
+  safe: {
+    flex: 1,
+  },
+  headerGlass: {
+    marginHorizontal: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+  },
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.85)',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
-  headerBody: { marginLeft: 10, flex: 1 },
-  title: { fontSize: 26, fontWeight: '800', color: 'rgba(243, 248, 255, 0.96)' },
-  subtitle: { marginTop: 4, fontSize: 13, color: 'rgba(172, 188, 212, 0.92)' },
-  scroll: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingBottom: 28, gap: 12 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  centerStateText: { color: 'rgba(172, 188, 212, 0.92)', fontSize: 14, textAlign: 'center' },
+  backBtnPressed: {
+    opacity: 0.92,
+  },
+  headerBody: {
+    marginLeft: LDS_SPACING.sm,
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.35,
+  },
+  subtitle: {
+    marginTop: LDS_SPACING.xxs,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xxl,
+    gap: LDS_SPACING.sm,
+  },
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: LDS_SPACING.xl,
+  },
+  centerStateText: {
+    textAlign: 'center',
+  },
   card: {
-    backgroundColor: 'rgba(16, 26, 43, 0.78)',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.14)',
+    paddingHorizontal: LDS_SPACING.sm + 2,
+    paddingVertical: LDS_SPACING.sm,
   },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: 'rgba(243, 248, 255, 0.94)' },
-  optionRow: {
-    minHeight: 56,
+  cardTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    marginBottom: LDS_SPACING.xs,
+    letterSpacing: -0.2,
+  },
+  row: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 10,
-  },
-  optionRowBorder: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(30, 58, 95, 0.55)',
-    marginTop: 4,
+    paddingVertical: LDS_SPACING.xxs,
   },
-  optionLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, paddingRight: 8 },
+  rowFirst: {
+    borderTopWidth: 0,
+    paddingTop: 0,
+  },
+  rowPressed: {
+    opacity: 0.88,
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    flex: 1,
+    paddingRight: LDS_SPACING.xs,
+  },
+  rowText: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  optionTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
   radioOuter: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: 'rgba(148, 163, 184, 0.65)',
+    borderColor: PREMIUM_TEXT_MUTED,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioOuterSelected: { borderColor: '#22D3EE' },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#22D3EE' },
-  optionTextCol: { flex: 1 },
-  optionLabel: { color: 'rgba(243, 248, 255, 0.93)', fontSize: 15, fontWeight: '700' },
-  optionSubtitle: { marginTop: 2, color: 'rgba(172, 188, 212, 0.88)', fontSize: 12 },
+  radioOuterSelected: {
+    borderColor: PREMIUM_AUTH_CYAN,
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+  },
   volumeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: LDS_SPACING.xs,
   },
-  volumeValue: { color: '#22D3EE', fontSize: 15, fontWeight: '800' },
+  volumeCardTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
+  volumeValue: {
+    color: PREMIUM_AUTH_CYAN,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   sliderTrack: {
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(8, 17, 31, 0.95)',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.85)',
+    borderRadius: 14,
+    backgroundColor: PREMIUM_NAVY_DEEP,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
     justifyContent: 'center',
     overflow: 'visible',
   },
@@ -325,7 +453,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 18,
+    borderRadius: 14,
     backgroundColor: 'rgba(34, 211, 238, 0.35)',
   },
   sliderThumb: {
@@ -334,30 +462,30 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#22D3EE',
+    backgroundColor: PREMIUM_AUTH_CYAN,
     borderWidth: 2,
-    borderColor: '#08111F',
+    borderColor: PREMIUM_NAVY_DEEP,
   },
-  volumeHint: { marginTop: 8, fontSize: 12, color: 'rgba(148, 163, 184, 0.85)' },
+  volumeHint: {
+    marginTop: LDS_SPACING.xxs,
+  },
   secondaryBtn: {
-    minHeight: 48,
+    minHeight: 44,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
-    backgroundColor: 'rgba(16, 26, 43, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    gap: LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
-  secondaryBtnText: { color: '#22D3EE', fontSize: 15, fontWeight: '700' },
-  primaryBtn: {
-    minHeight: 50,
-    borderRadius: 14,
-    backgroundColor: '#0891B2',
-    alignItems: 'center',
-    justifyContent: 'center',
+  secondaryBtnText: {
+    color: PREMIUM_AUTH_CYAN,
+    fontSize: 14,
+    fontWeight: '600',
   },
-  primaryBtnText: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
-  btnDisabled: { opacity: 0.65 },
+  btnDisabled: {
+    opacity: 0.65,
+  },
 });
