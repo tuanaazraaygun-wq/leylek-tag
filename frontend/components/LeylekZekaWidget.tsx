@@ -59,13 +59,14 @@ const PASSENGER_WAIT_ORB_TOP_MIN_EXTRA_PX = 96;
 /** Rol seçimi compact göz — başlık bandının altı (safe area + cockpit yüksekliği). */
 const ROLE_SELECT_HEIGHT_SMALL_MAX = 700;
 const ROLE_SELECT_HEIGHT_LARGE_MIN = 820;
-const ROLE_SELECT_EYE_TOP_EXTRA_MIN = 72;
-const ROLE_SELECT_EYE_TOP_EXTRA_MID = 84;
-const ROLE_SELECT_EYE_TOP_EXTRA_MAX = 96;
+const ROLE_SELECT_EYE_TOP_EXTRA_MIN = 84;
+const ROLE_SELECT_EYE_TOP_EXTRA_MID = 88;
+const ROLE_SELECT_EYE_TOP_EXTRA_MAX = 92;
 
 function roleSelectEyeTopExtra(winHeight: number): number {
   if (!Number.isFinite(winHeight) || winHeight <= 0) return ROLE_SELECT_EYE_TOP_EXTRA_MID;
-  if (winHeight < ROLE_SELECT_HEIGHT_SMALL_MAX) return ROLE_SELECT_EYE_TOP_EXTRA_MAX;
+  /** Compact: en küçük offset — göz kartlara doğru inmesin. */
+  if (winHeight < ROLE_SELECT_HEIGHT_SMALL_MAX) return ROLE_SELECT_EYE_TOP_EXTRA_MIN;
   if (winHeight >= ROLE_SELECT_HEIGHT_LARGE_MIN) return ROLE_SELECT_EYE_TOP_EXTRA_MIN;
   return ROLE_SELECT_EYE_TOP_EXTRA_MID;
 }
@@ -924,11 +925,16 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
           {isRoleSelectScreen ? (
             <View
               pointerEvents="box-none"
-              style={[styles.centerAnchor, { top: roleSelectEyeTop }]}
+              style={[
+                styles.centerAnchor,
+                styles.roleSelectEyeAnchor,
+                { top: roleSelectEyeTop },
+              ]}
             >
               <LeylekEye
                 size={LEYLEK_EYE_ROLE_SELECT_SIZE}
                 chromeTone="subtle"
+                motionProfile="guardian"
                 onPress={onOpen}
                 reduceMotion={reduceMotion}
                 accessibilityLabel="Leylek Zeka"
@@ -1098,6 +1104,11 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     zIndex: 9999,
+  },
+  /** Role-select Guardian Eye — arka planda, kartların alt katmanında. */
+  roleSelectEyeAnchor: {
+    zIndex: 4,
+    opacity: 0.74,
   },
   passengerWaitMapAnchor: {
     position: 'absolute',

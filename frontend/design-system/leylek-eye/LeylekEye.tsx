@@ -6,12 +6,12 @@ import {
   PREMIUM_NAVY_CARD,
 } from '../../components/auth/premiumAuthStyles';
 import { LDS_COLOR_CTA_RIM } from '../tokens/color';
-import { useLeylekEyeMotion } from './useLeylekEyeMotion';
+import { useLeylekEyeMotion, type LeylekEyeMotionProfile } from './useLeylekEyeMotion';
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 export const LEYLEK_EYE_HERO_SIZE = 66;
-export const LEYLEK_EYE_ROLE_SELECT_SIZE = 57;
+export const LEYLEK_EYE_ROLE_SELECT_SIZE = 49;
 export const LEYLEK_EYE_VIEW_SIZE = 50;
 
 export type LeylekEyeChromeTone = 'default' | 'subtle';
@@ -27,6 +27,7 @@ export type LeylekEyeHandle = {
 export type LeylekEyeProps = {
   size?: number;
   chromeTone?: LeylekEyeChromeTone;
+  motionProfile?: LeylekEyeMotionProfile;
   onPress?: () => void;
   reduceMotion?: boolean;
   accessibilityLabel?: string;
@@ -135,13 +136,14 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
   {
     size = LEYLEK_EYE_HERO_SIZE,
     chromeTone = 'default',
+    motionProfile = 'fab',
     onPress,
     reduceMotion = false,
     accessibilityLabel = 'Leylek Zeka',
   },
   ref,
 ) {
-  const motion = useLeylekEyeMotion({ reduceMotion });
+  const motion = useLeylekEyeMotion({ reduceMotion, motionProfile });
   const capsuleRadius = Math.round(size * 0.26);
   const innerRimRadius = Math.max(10, Math.round(size * 0.21));
   const viewSize = resolveEyeViewSize(size);

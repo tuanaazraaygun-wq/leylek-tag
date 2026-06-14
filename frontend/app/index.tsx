@@ -3885,14 +3885,14 @@ export default function App() {
     const roleHorizontalPad = snap(Math.round(Math.max(14, Math.min(20, windowWidth * 0.048))));
     const roleTopButtonSize = snap(Math.round(Math.max(38, Math.min(46, 46 * roleScale))));
     const roleTopButtonRadius = snap(Math.round(Math.max(12, Math.min(14, 14 * roleScale))));
-    const roleTopPaddingV = snap(Math.round(Math.max(4, Math.min(8, 8 * roleScale))));
-    const roleTitleFontSize = Math.round(Math.max(14, Math.min(18, 18 * roleScale)));
-    const roleTitleLineHeight = Math.round(Math.max(18, Math.min(24, 24 * roleScale)));
-    const roleTitlePadV = snap(Math.round(Math.max(7, Math.min(12, 12 * roleScale))));
+    const roleTopPaddingV = snap(Math.round(Math.max(2, Math.min(6, 6 * roleScale))));
+    const roleTitleFontSize = Math.round(Math.max(14, Math.min(17, 17 * roleScale)));
+    const roleTitleLineHeight = Math.round(Math.max(17, Math.min(22, 22 * roleScale)));
+    const roleTitlePadV = snap(Math.round(Math.max(5, Math.min(9, 9 * roleScale))));
     const roleTitlePadH = snap(Math.round(Math.max(12, Math.min(22, 22 * roleScale))));
-    const roleMainPadTop = snap(Math.round(Math.max(4, Math.min(12, rs.usableHeight * 0.014))));
+    const roleMainPadTop = snap(Math.round(Math.max(56, Math.min(68, 50 + rs.usableHeight * 0.014))));
     const roleMainPadBottom = snap(Math.round(Math.max(3, Math.min(10, rs.usableHeight * 0.01))));
-    const roleStepMarginBottom = snap(Math.round(Math.max(4, Math.min(8, rs.usableHeight * 0.009))));
+    const roleStepMarginBottom = snap(Math.round(Math.max(12, Math.min(16, rs.usableHeight * 0.012))));
     const roleStepCircleSize = snap(Math.round(Math.max(22, Math.min(28, 28 * roleScale))));
     const roleStepCircleMarginBottom = snap(Math.round(Math.max(2, Math.min(4, 4 * roleScale))));
     const roleStepHelperMarginTop = snap(Math.round(Math.max(2, Math.min(6, 6 * roleScale))));
@@ -3923,7 +3923,7 @@ export default function App() {
     const roleContinuePadV = snap(Math.round(Math.max(13, Math.min(23, roleContinueMinHeight * 0.32))));
     const roleContinueTextSize = Math.round(Math.max(18, Math.min(24, 23.8 * roleScale)));
     const roleFooterBottomPad = snap(
-      Math.max(16, Math.min(28, Math.max(insets.bottom, 12) + 12)),
+      Math.max(12, Math.min(20, Math.max(insets.bottom, 10) + 6)),
     );
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
     const roleStep1Done = !!selectedRole;
@@ -23684,7 +23684,7 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumn: {
     paddingHorizontal: 20,
-    paddingTop: 2,
+    paddingTop: 0,
     paddingBottom: Platform.OS === 'ios' ? 22 : 18,
     gap: 6,
     alignItems: 'stretch',
@@ -23693,7 +23693,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginBottom: 16,
-    marginTop: 0,
+    marginTop: 22,
   },
   roleCardCompact: {
     flex: 1,

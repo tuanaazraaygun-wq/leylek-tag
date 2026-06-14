@@ -9,7 +9,7 @@ function DriverCockpitHero({ stageHeight, active = false, isVeryCompact = false 
       stageHeight={stageHeight}
       active={active}
       isVeryCompact={isVeryCompact}
-      preserveAspectRatio="slice"
+      preserveAspectRatio="meet"
     >
       {(p) => (
         <>

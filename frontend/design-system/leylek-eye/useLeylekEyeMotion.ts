@@ -2,13 +2,41 @@ import { useCallback, useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
 import { LDS_MOTION_DURATION } from '../tokens/motion';
 
-const BREATH_MS = 3400;
+export type LeylekEyeMotionProfile = 'fab' | 'guardian';
+
+type MotionProfileConfig = {
+  enableIdleGaze: boolean;
+  breathMs: number;
+  breathScaleMax: number;
+  blinkMinMs: number;
+  blinkMaxMs: number;
+  blinkCloseMs: number;
+  blinkOpenMs: number;
+};
+
+const MOTION_PROFILES: Record<LeylekEyeMotionProfile, MotionProfileConfig> = {
+  fab: {
+    enableIdleGaze: true,
+    breathMs: 3400,
+    breathScaleMax: 1.016,
+    blinkMinMs: 4000,
+    blinkMaxMs: 8000,
+    blinkCloseMs: 100,
+    blinkOpenMs: 200,
+  },
+  guardian: {
+    enableIdleGaze: false,
+    breathMs: 4600,
+    breathScaleMax: 1.008,
+    blinkMinMs: 6500,
+    blinkMaxMs: 12000,
+    blinkCloseMs: 100,
+    blinkOpenMs: 200,
+  },
+};
+
 const GAZE_HOLD_MS = 900;
 const GAZE_TRAVEL_MS = 780;
-const BLINK_CLOSE_MS = 100;
-const BLINK_OPEN_MS = 200;
-const BLINK_MIN_MS = 4000;
-const BLINK_MAX_MS = 8000;
 const FOCUS_MS = LDS_MOTION_DURATION.standard;
 const GAZE_OFFSET = 14;
 const PUPIL_EXTRA_OFFSET = 6;
@@ -19,6 +47,7 @@ const SVG_DRIVER = false;
 
 type UseLeylekEyeMotionOptions = {
   reduceMotion?: boolean;
+  motionProfile?: LeylekEyeMotionProfile;
 };
 
 export type LeylekEyeMotion = {
@@ -35,7 +64,10 @@ export type LeylekEyeMotion = {
 
 export function useLeylekEyeMotion({
   reduceMotion = false,
+  motionProfile = 'fab',
 }: UseLeylekEyeMotionOptions = {}): LeylekEyeMotion {
+  const profile = MOTION_PROFILES[motionProfile];
+
   const breath = useRef(new Animated.Value(0)).current;
   const look = useRef(new Animated.Value(0)).current;
   const blink = useRef(new Animated.Value(0)).current;
@@ -60,19 +92,20 @@ export function useLeylekEyeMotion({
 
   const scheduleBlink = useCallback(() => {
     if (!mountedRef.current || reduceMotion) return;
-    const delay = BLINK_MIN_MS + Math.random() * (BLINK_MAX_MS - BLINK_MIN_MS);
+    const delay =
+      profile.blinkMinMs + Math.random() * (profile.blinkMaxMs - profile.blinkMinMs);
     blinkTimerRef.current = setTimeout(() => {
       if (!mountedRef.current) return;
       Animated.sequence([
         Animated.timing(blink, {
           toValue: 1,
-          duration: BLINK_CLOSE_MS,
+          duration: profile.blinkCloseMs,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: SVG_DRIVER,
         }),
         Animated.timing(blink, {
           toValue: 0,
-          duration: BLINK_OPEN_MS,
+          duration: profile.blinkOpenMs,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: SVG_DRIVER,
         }),
@@ -80,7 +113,7 @@ export function useLeylekEyeMotion({
         scheduleBlink();
       });
     }, delay);
-  }, [blink, reduceMotion]);
+  }, [blink, profile, reduceMotion]);
 
   const startIdle = useCallback(() => {
     stopIdle();
@@ -96,13 +129,13 @@ export function useLeylekEyeMotion({
       Animated.sequence([
         Animated.timing(breath, {
           toValue: 1,
-          duration: BREATH_MS,
+          duration: profile.breathMs,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(breath, {
           toValue: 0,
-          duration: BREATH_MS,
+          duration: profile.breathMs,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -110,52 +143,56 @@ export function useLeylekEyeMotion({
     );
     idleLoopRef.current.start();
 
-    const gazeRight = Animated.timing(look, {
-      toValue: 1,
-      duration: GAZE_TRAVEL_MS,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: SVG_DRIVER,
-    });
-    const gazeCenterFromRight = Animated.timing(look, {
-      toValue: 0,
-      duration: GAZE_TRAVEL_MS,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: SVG_DRIVER,
-    });
-    const gazeLeft = Animated.timing(look, {
-      toValue: -1,
-      duration: GAZE_TRAVEL_MS,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: SVG_DRIVER,
-    });
-    const gazeCenterFromLeft = Animated.timing(look, {
-      toValue: 0,
-      duration: GAZE_TRAVEL_MS,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: SVG_DRIVER,
-    });
-    const hold = (ms: number) => Animated.delay(ms);
+    if (profile.enableIdleGaze) {
+      const gazeRight = Animated.timing(look, {
+        toValue: 1,
+        duration: GAZE_TRAVEL_MS,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: SVG_DRIVER,
+      });
+      const gazeCenterFromRight = Animated.timing(look, {
+        toValue: 0,
+        duration: GAZE_TRAVEL_MS,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: SVG_DRIVER,
+      });
+      const gazeLeft = Animated.timing(look, {
+        toValue: -1,
+        duration: GAZE_TRAVEL_MS,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: SVG_DRIVER,
+      });
+      const gazeCenterFromLeft = Animated.timing(look, {
+        toValue: 0,
+        duration: GAZE_TRAVEL_MS,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: SVG_DRIVER,
+      });
+      const hold = (ms: number) => Animated.delay(ms);
 
-    gazeLoopRef.current = Animated.loop(
-      Animated.sequence([
-        hold(GAZE_HOLD_MS),
-        gazeRight,
-        hold(GAZE_HOLD_MS * 0.85),
-        gazeCenterFromRight,
-        hold(GAZE_HOLD_MS * 0.7),
-        gazeLeft,
-        hold(GAZE_HOLD_MS * 0.8),
-        gazeCenterFromLeft,
-        hold(GAZE_HOLD_MS),
-      ]),
-    );
-    gazeLoopRef.current.start();
+      gazeLoopRef.current = Animated.loop(
+        Animated.sequence([
+          hold(GAZE_HOLD_MS),
+          gazeRight,
+          hold(GAZE_HOLD_MS * 0.85),
+          gazeCenterFromRight,
+          hold(GAZE_HOLD_MS * 0.7),
+          gazeLeft,
+          hold(GAZE_HOLD_MS * 0.8),
+          gazeCenterFromLeft,
+          hold(GAZE_HOLD_MS),
+        ]),
+      );
+      gazeLoopRef.current.start();
+    }
+
     scheduleBlink();
   }, [
     breath,
     blink,
     look,
     pressScale,
+    profile,
     reduceMotion,
     rim,
     scheduleBlink,
@@ -180,7 +217,7 @@ export function useLeylekEyeMotion({
       easing: Easing.out(Easing.cubic),
       useNativeDriver: SVG_DRIVER,
     }).start(({ finished }) => {
-      if (finished && !reduceMotion) {
+      if (finished && !reduceMotion && profile.enableIdleGaze) {
         gazeLoopRef.current?.start();
       }
     });
@@ -215,11 +252,11 @@ export function useLeylekEyeMotion({
         }),
       ]),
     ]).start();
-  }, [look, pressScale, reduceMotion, rim]);
+  }, [look, pressScale, profile.enableIdleGaze, reduceMotion, rim]);
 
   const breathScale = breath.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.016],
+    outputRange: [1, profile.breathScaleMax],
   });
 
   const lookTranslateX = look.interpolate({

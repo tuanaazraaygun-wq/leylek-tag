@@ -20,8 +20,8 @@ export const LDS_ILLUSTRATION = {
   stageFillRatioVeryCompact: 0.96,
   /** Very compact stage width clamp (LDS-4G-A) */
   stageWidthRatioVeryCompact: 1,
-  /** Role card hero — fill slot width, mild crop acceptable (LDS-4G-A) */
-  stagePreserveAspectRatioRoleCard: 'xMidYMid slice' as const,
+  /** Role card hero — full blueprint visible, horizontal letterbox OK (LDS-4G-A) */
+  stagePreserveAspectRatioRoleCard: 'xMidYMid meet' as const,
   /** Default viewBox aspect (width / height) */
   viewBoxAspect: 120 / 160,
   /** Blueprint stroke — idle */
