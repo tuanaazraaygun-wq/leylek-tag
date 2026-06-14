@@ -16,6 +16,9 @@ import {
   GlassSurface,
   PremiumText,
 } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { PREMIUM_BORDER_SLATE, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
@@ -23,20 +26,9 @@ import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect'
 const VEHICLE_PH = ['#0B1220', '#101A2B', 'rgba(8,17,31,0.95)'] as const;
 const TEXT_PRIMARY = 'rgba(243,248,255,0.94)';
 const TEXT_SECONDARY = 'rgba(186,201,222,0.82)';
-const CARD_BG = 'rgba(16,26,43,0.88)';
 const NAVY_DEEP = '#08111F';
 const CYAN_ACCENT = '#22D3EE';
 const BORDER_SLATE = '#1E3A5F';
-const CARD_SHADOW = Platform.select({
-  ios: {
-    shadowColor: 'rgba(34,211,238,0.18)',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 1,
-    shadowRadius: 20,
-  },
-  android: { elevation: 8 },
-  default: {},
-});
 
 const LEYLEK_NAME_BAD = new Set(
   ['leylek', 'leylek kullanıcısı', 'leylek kullanicisi'].map((s) => s.toLowerCase()),
@@ -437,31 +429,86 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                 <Image source={{ uri: photo }} style={styles.avatar} />
               ) : (
                 <LinearGradient colors={[...VEHICLE_PH]} style={styles.avatarFallback} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Text style={styles.avatarInitials}>{initialsFromName(displayName)}</Text>
+                  <PremiumText variant="display" style={styles.avatarInitials}>
+                    {initialsFromName(displayName)}
+                  </PremiumText>
                 </LinearGradient>
               )}
               {isSelf ? (
-                <View style={styles.avatarEditBadge}>{uploading ? <ActivityIndicator color={TEXT_PRIMARY} size="small" /> : <Ionicons name="camera" size={14} color={TEXT_PRIMARY} />}</View>
+                <View style={styles.avatarEditBadge}>
+                  {uploading ? (
+                    <ActivityIndicator color={PREMIUM_AUTH_CYAN} size="small" />
+                  ) : (
+                    <Ionicons name="camera" size={14} color={PREMIUM_AUTH_CYAN} />
+                  )}
+                </View>
               ) : null}
             </Pressable>
-            <Text style={styles.name}>{displayName}</Text>
+            <PremiumText variant="title" style={styles.name}>
+              {displayName}
+            </PremiumText>
             <View style={styles.badgesRow}>
-              <Text style={[styles.badgePill, roleLabel === 'Sürücü' ? styles.badgeDriver : styles.badgePassenger]}>{roleLabel}</Text>
-              {showDriverExtras ? <Text style={[styles.badgePill, styles.badgeKyc]}>KYC Onaylı</Text> : null}
+              <View style={[styles.badgePill, roleLabel === 'Sürücü' ? styles.badgeDriver : styles.badgePassenger]}>
+                <PremiumText
+                  variant="step"
+                  style={roleLabel === 'Sürücü' ? styles.badgeDriverText : undefined}
+                >
+                  {roleLabel}
+                </PremiumText>
+              </View>
+              {showDriverExtras ? (
+                <View style={[styles.badgePill, styles.badgeKyc]}>
+                  <PremiumText variant="step" style={styles.badgeKycText}>
+                    KYC Onaylı
+                  </PremiumText>
+                </View>
+              ) : null}
             </View>
             {isSelf ? (
-              <Pressable onPress={() => void pickPhoto()} style={styles.inlineLinkBtn}>
-                <Text style={styles.inlineLinkTxt}>Profil fotoğrafı değiştir</Text>
+              <Pressable
+                onPress={() => void pickPhoto()}
+                disabled={uploading}
+                style={({ pressed }) => [
+                  styles.secondaryBtn,
+                  styles.secondaryBtnHero,
+                  uploading && styles.btnDisabled,
+                  pressed && styles.backBtnPressed,
+                ]}
+              >
+                {uploading ? (
+                  <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                ) : (
+                  <>
+                    <Ionicons name="camera-outline" size={18} color={PREMIUM_AUTH_CYAN} />
+                    <PremiumText variant="body" style={styles.secondaryBtnText}>
+                      Profil fotoğrafı değiştir
+                    </PremiumText>
+                  </>
+                )}
               </Pressable>
             ) : null}
           </GlassSurface>
 
-          <View style={styles.statGrid}>
-            <View style={styles.statCard}><Text style={styles.statNum}>{completedTrips}</Text><Text style={styles.statLab}>Tamamlanan yolculuk</Text></View>
-            <View style={styles.statCard}><Text style={styles.statNum}>{rating}</Text><Text style={styles.statLab}>Puan</Text></View>
-            <View style={styles.statCard}><Text style={styles.statNum}>{completedMatches}</Text><Text style={styles.statLab}>Başarılı eşleşme</Text></View>
-            <View style={styles.statCard}><Text style={styles.statNum}>{activeListings}</Text><Text style={styles.statLab}>Aktif teklif</Text></View>
-          </View>
+          <GlassSurface variant="plain" style={styles.cardShell}>
+            <View style={styles.statGrid}>
+              <View style={styles.statCell}>
+                <PremiumText variant="title" style={styles.statNum}>{completedTrips}</PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLab}>Tamamlanan yolculuk</PremiumText>
+              </View>
+              <View style={styles.statCell}>
+                <PremiumText variant="title" style={styles.statNum}>{rating}</PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLab}>Puan</PremiumText>
+              </View>
+              <View style={styles.statCell}>
+                <PremiumText variant="title" style={styles.statNum}>{completedMatches}</PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLab}>Başarılı eşleşme</PremiumText>
+              </View>
+              <View style={styles.statCell}>
+                <PremiumText variant="title" style={styles.statNum}>{activeListings}</PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLab}>Aktif teklif</PremiumText>
+              </View>
+            </View>
+          </GlassSurface>
 
           {showDriverExtras ? (
             <GlassSurface variant="plain" style={styles.cardShell}>
@@ -478,17 +525,41 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   end={{ x: 1, y: 1 }}
                   style={styles.vehiclePh}
                 >
-                  <Ionicons name="car-sport" size={34} color={CYAN_ACCENT} />
-                  <Text style={styles.vehiclePhTxt}>Araç fotoğrafı eklenmemiş</Text>
+                  <Ionicons name="car-sport" size={34} color={PREMIUM_AUTH_CYAN} />
+                  <PremiumText variant="caption" muted style={styles.vehiclePhTxt}>
+                    Araç fotoğrafı eklenmemiş
+                  </PremiumText>
                 </LinearGradient>
               )}
               <View style={styles.vehicleMetaRow}>
-                <Text style={styles.vehicleMetaKey}>Araç türü</Text>
-                <Text style={styles.vehicleMetaVal}>{vehicleKind}</Text>
+                <PremiumText variant="body" muted style={styles.vehicleMetaKey}>
+                  Araç türü
+                </PremiumText>
+                <PremiumText variant="body" style={styles.vehicleMetaVal}>
+                  {vehicleKind}
+                </PremiumText>
               </View>
               {isSelf ? (
-                <Pressable onPress={() => void pickVehiclePhoto()} style={styles.inlineLinkBtn}>
-                  {uploadingVehicle ? <ActivityIndicator size="small" color={CYAN_ACCENT} /> : <Text style={styles.inlineLinkTxt}>Araç fotoğrafı değiştir</Text>}
+                <Pressable
+                  onPress={() => void pickVehiclePhoto()}
+                  disabled={uploadingVehicle}
+                  style={({ pressed }) => [
+                    styles.secondaryBtn,
+                    styles.secondaryBtnVehicle,
+                    uploadingVehicle && styles.btnDisabled,
+                    pressed && styles.backBtnPressed,
+                  ]}
+                >
+                  {uploadingVehicle ? (
+                    <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                  ) : (
+                    <>
+                      <Ionicons name="image-outline" size={18} color={PREMIUM_AUTH_CYAN} />
+                      <PremiumText variant="body" style={styles.secondaryBtnText}>
+                        Araç fotoğrafı değiştir
+                      </PremiumText>
+                    </>
+                  )}
                 </Pressable>
               ) : null}
             </GlassSurface>
@@ -603,9 +674,9 @@ const styles = StyleSheet.create({
     width: 118,
     height: 118,
     borderRadius: 59,
-    backgroundColor: 'rgba(8,17,31,0.75)',
-    borderWidth: 2,
-    borderColor: 'rgba(34,211,238,0.42)',
+    backgroundColor: PREMIUM_NAVY_DEEP,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   avatarFallback: {
     width: 118,
@@ -613,100 +684,141 @@ const styles = StyleSheet.create({
     borderRadius: 59,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(34,211,238,0.38)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitEdge,
   },
-  avatarInitials: { color: TEXT_PRIMARY, fontSize: 34, fontWeight: '800' },
+  avatarInitials: {
+    fontSize: 34,
+    lineHeight: 40,
+    textAlign: 'center',
+  },
   avatarEditBadge: {
     position: 'absolute',
     right: 1,
     bottom: 1,
-    backgroundColor: 'rgba(34,211,238,0.28)',
-    borderRadius: 16,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderRadius: LDS_RADIUS.orb,
     width: 32,
     height: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(34,211,238,0.5)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
   name: {
-    marginTop: 12,
-    fontSize: 25,
-    fontWeight: '800',
-    color: TEXT_PRIMARY,
+    marginTop: LDS_SPACING.sm,
     textAlign: 'center',
-    letterSpacing: 0.2,
+    letterSpacing: -0.2,
   },
   badgesRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
+    gap: LDS_SPACING.xxs,
+    marginTop: LDS_SPACING.xs,
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
   badgePill: {
-    paddingVertical: 6,
-    paddingHorizontal: 11,
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: '800',
-    borderWidth: StyleSheet.hairlineWidth + 1,
+    paddingVertical: LDS_SPACING.xxs - 2,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.standard,
   },
   badgeDriver: {
-    backgroundColor: 'rgba(16,26,43,0.92)',
-    color: CYAN_ACCENT,
-    borderColor: 'rgba(34,211,238,0.35)',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+  },
+  badgeDriverText: {
+    color: PREMIUM_AUTH_CYAN,
   },
   badgePassenger: {
-    backgroundColor: 'rgba(16,26,43,0.92)',
-    color: TEXT_PRIMARY,
-    borderColor: 'rgba(186,201,222,0.35)',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
   badgeKyc: {
     backgroundColor: 'rgba(16,185,129,0.16)',
-    color: 'rgba(243,248,255,0.94)',
     borderColor: 'rgba(110,231,183,0.32)',
   },
-  inlineLinkBtn: { marginTop: 11, paddingVertical: 6, paddingHorizontal: 10 },
-  inlineLinkTxt: { color: CYAN_ACCENT, fontSize: 14, fontWeight: '700' },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statCard: {
-    width: '48%',
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: BORDER_SLATE,
-    borderTopColor: 'rgba(34,211,238,0.2)',
-    ...CARD_SHADOW,
+  badgeKycText: {
+    color: PREMIUM_TEXT_SOFT,
   },
-  statNum: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
-  statLab: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, textAlign: 'center', fontWeight: '600' },
+  secondaryBtn: {
+    minHeight: 44,
+    borderRadius: LDS_RADIUS.orb,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+  },
+  secondaryBtnHero: {
+    marginTop: LDS_SPACING.sm,
+    alignSelf: 'stretch',
+  },
+  secondaryBtnVehicle: {
+    marginTop: LDS_SPACING.sm,
+  },
+  secondaryBtnText: {
+    color: PREMIUM_AUTH_CYAN,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  btnDisabled: {
+    opacity: 0.65,
+  },
+  statGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: LDS_SPACING.xs,
+  },
+  statCell: {
+    width: '48%',
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.xs,
+  },
+  statNum: {
+    fontSize: 20,
+    lineHeight: 26,
+    textAlign: 'center',
+  },
+  statLab: {
+    marginTop: LDS_SPACING.xxs,
+    textAlign: 'center',
+  },
   vehicleImg: {
     width: '100%',
     height: 180,
-    borderRadius: 14,
-    backgroundColor: 'rgba(8,17,31,0.65)',
-    borderWidth: 1,
-    borderColor: BORDER_SLATE,
+    borderRadius: LDS_RADIUS.orb,
+    backgroundColor: PREMIUM_NAVY_DEEP,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_BORDER_SLATE,
   },
   vehiclePh: {
     width: '100%',
     height: 160,
-    borderRadius: 14,
+    borderRadius: LDS_RADIUS.orb,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: BORDER_SLATE,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_BORDER_SLATE,
   },
-  vehiclePhTxt: { fontSize: 13, color: TEXT_SECONDARY, fontWeight: '600' },
-  vehicleMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  vehicleMetaKey: { color: TEXT_SECONDARY, fontSize: 13, fontWeight: '700' },
-  vehicleMetaVal: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '800' },
+  vehiclePhTxt: {
+    textAlign: 'center',
+  },
+  vehicleMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: LDS_SPACING.xs,
+    alignItems: 'center',
+  },
+  vehicleMetaKey: {
+    fontWeight: '600',
+  },
+  vehicleMetaVal: {
+    fontWeight: '700',
+  },
   bioInput: {
     minHeight: 84,
     borderWidth: StyleSheet.hairlineWidth + 1,
@@ -718,6 +830,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     backgroundColor: 'rgba(8,17,31,0.55)',
   },
-  saveBtn: { marginTop: 8, alignSelf: 'flex-end' },
+  saveBtn: { marginTop: LDS_SPACING.xxs, alignSelf: 'flex-end' },
+  inlineLinkTxt: { color: CYAN_ACCENT, fontSize: 14, fontWeight: '700' },
   aboutText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
 });
