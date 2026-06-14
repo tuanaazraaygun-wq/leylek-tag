@@ -5,11 +5,9 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  StatusBar,
+  Pressable,
   Alert,
   ActivityIndicator,
   Linking,
@@ -17,8 +15,83 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_CARD_BG,
+  PREMIUM_ROLE_CARD_BORDER,
+  PREMIUM_TEXT_MUTED,
+} from '../components/auth/premiumAuthStyles';
+import {
+  CockpitBackground,
+  GlassSurface,
+  PremiumText,
+} from '../design-system/primitives';
+import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { clearSessionStorage, getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { API_BASE_URL } from '../lib/backendConfig';
+
+const DATA_ITEMS: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
+  { icon: 'person', label: 'Profil bilgileriniz' },
+  { icon: 'car', label: 'Yolculuk geçmişiniz' },
+  { icon: 'chatbubbles', label: 'Mesajlarınız' },
+  { icon: 'star', label: 'Puanlarınız ve değerlendirmeleriniz' },
+  { icon: 'document-text', label: 'Ehliyet ve araç bilgileriniz (sürücüler için)' },
+];
+
+type SettingsHubRowProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  isFirst?: boolean;
+};
+
+function SettingsHubRow({ icon, label, onPress, danger = false, isFirst = false }: SettingsHubRowProps) {
+  const iconColor = danger ? LDS_COLOR_ERROR : PREMIUM_AUTH_CYAN;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        isFirst && styles.rowFirst,
+        pressed && styles.rowPressed,
+      ]}
+      onPress={onPress}
+    >
+      <View style={styles.rowLeft}>
+        <Ionicons name={icon} size={20} color={iconColor} />
+        <PremiumText
+          variant="body"
+          style={[styles.rowText, danger && styles.dangerText]}
+          numberOfLines={2}
+        >
+          {label}
+        </PremiumText>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={PREMIUM_TEXT_MUTED} />
+    </Pressable>
+  );
+}
+
+type SettingsHubCardProps = {
+  title: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+};
+
+function SettingsHubCard({ title, children, footer }: SettingsHubCardProps) {
+  return (
+    <GlassSurface variant="plain" style={styles.card}>
+      <PremiumText variant="title" style={styles.cardTitle}>
+        {title}
+      </PremiumText>
+      {footer}
+      {children}
+    </GlassSurface>
+  );
+}
 
 export default function DeleteAccountScreen() {
   const router = useRouter();
@@ -122,262 +195,269 @@ export default function DeleteAccountScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#08111F" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#22D3EE" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Hesap Silme</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <View style={styles.screen}>
+      <CockpitBackground />
+      <SafeAreaView style={styles.safe}>
+        <GlassSurface variant="header" style={styles.headerGlass}>
+          <View style={styles.header}>
+            <Pressable
+              style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+            </Pressable>
+            <View style={styles.headerBody}>
+              <PremiumText variant="headline" style={styles.title}>
+                Hesap Silme
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.subtitle}>
+                Bu işlem geri alınamaz.
+              </PremiumText>
+            </View>
+          </View>
+        </GlassSurface>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.warningBox}>
-          <Ionicons name="warning" size={48} color="#E74C3C" />
-          <Text style={styles.warningTitle}>Dikkat!</Text>
-          <Text style={styles.warningText}>
-            Hesabınızı sildiğinizde aşağıdaki verileriniz kalıcı olarak silinecektir.
-          </Text>
-        </View>
-
-        <Text style={styles.sectionTitle}>Silinecek Veriler:</Text>
-        <View style={styles.listItem}>
-          <Ionicons name="person" size={20} color="#E74C3C" />
-          <Text style={styles.listText}>Profil bilgileriniz</Text>
-        </View>
-        <View style={styles.listItem}>
-          <Ionicons name="car" size={20} color="#E74C3C" />
-          <Text style={styles.listText}>Yolculuk geçmişiniz</Text>
-        </View>
-        <View style={styles.listItem}>
-          <Ionicons name="chatbubbles" size={20} color="#E74C3C" />
-          <Text style={styles.listText}>Mesajlarınız</Text>
-        </View>
-        <View style={styles.listItem}>
-          <Ionicons name="star" size={20} color="#E74C3C" />
-          <Text style={styles.listText}>Puanlarınız ve değerlendirmeleriniz</Text>
-        </View>
-        <View style={styles.listItem}>
-          <Ionicons name="document-text" size={20} color="#E74C3C" />
-          <Text style={styles.listText}>Ehliyet ve araç bilgileriniz (sürücüler için)</Text>
-        </View>
-
-        <Text style={styles.infoTitle}>Silme Süreci:</Text>
-        <Text style={styles.infoText}>
-          • Hesabınız hemen devre dışı bırakılacaktır{"\n"}
-          • Kişisel verileriniz 30 gün içinde silinecektir{"\n"}
-          • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir{"\n"}
-          • Yasal zorunluluklar kapsamındaki veriler anonimleştirilecektir{"\n"}
-          • Bu işlem geri alınamaz
-        </Text>
-
-        <TouchableOpacity
-          style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
-          onPress={handleDeleteAccount}
-          disabled={isDeleting}
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
         >
-          {isDeleting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="trash" size={24} color="#fff" />
-              <Text style={styles.deleteButtonText}>Hesabımı Kalıcı Olarak Sil</Text>
-            </>
-          )}
-        </TouchableOpacity>
+          <SettingsHubCard title="Dikkat!">
+            <View style={styles.warningLead}>
+              <Ionicons name="warning-outline" size={22} color={LDS_COLOR_ERROR} />
+              <PremiumText variant="body" style={styles.warningText}>
+                Hesabınızı sildiğinizde aşağıdaki verileriniz kalıcı olarak silinecektir.
+              </PremiumText>
+            </View>
+          </SettingsHubCard>
 
-        <View style={styles.supportCard}>
-          <Text style={styles.supportTitle}>Destek</Text>
-          <Text style={styles.supportCompany}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <TouchableOpacity
-            onPress={() => {
-              void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
-            }}
+          <SettingsHubCard title="Silinecek Veriler">
+            {DATA_ITEMS.map((item, index) => (
+              <View key={item.label} style={[styles.row, index === 0 && styles.rowFirst]}>
+                <View style={styles.rowLeft}>
+                  <Ionicons name={item.icon} size={20} color={LDS_COLOR_ERROR} />
+                  <PremiumText variant="body" style={styles.rowText}>
+                    {item.label}
+                  </PremiumText>
+                </View>
+              </View>
+            ))}
+          </SettingsHubCard>
+
+          <SettingsHubCard title="Silme Süreci">
+            <PremiumText variant="caption" muted style={styles.infoText}>
+              • Hesabınız hemen devre dışı bırakılacaktır{'\n'}
+              • Kişisel verileriniz 30 gün içinde silinecektir{'\n'}
+              • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir{'\n'}
+              • Yasal zorunluluklar kapsamındaki veriler anonimleştirilecektir{'\n'}
+              • Bu işlem geri alınamaz
+            </PremiumText>
+          </SettingsHubCard>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.deleteButton,
+              isDeleting && styles.btnDisabled,
+              pressed && !isDeleting && styles.backBtnPressed,
+            ]}
+            onPress={handleDeleteAccount}
+            disabled={isDeleting}
           >
-            <Text style={styles.supportLink}>info@karekodteknoloji.com</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => {
-              void openExternalLink('tel:08503078029', 'Telefon açılamadı');
-            }}
+            {isDeleting ? (
+              <ActivityIndicator color={LDS_COLOR_ERROR} />
+            ) : (
+              <>
+                <Ionicons name="trash-outline" size={20} color={LDS_COLOR_ERROR} />
+                <PremiumText variant="body" style={styles.deleteButtonText}>
+                  Hesabımı Kalıcı Olarak Sil
+                </PremiumText>
+              </>
+            )}
+          </Pressable>
+
+          <SettingsHubCard
+            title="Destek"
+            footer={
+              <PremiumText variant="caption" muted style={styles.company}>
+                Karekod Teknoloji ve Yazılım A.Ş.
+              </PremiumText>
+            }
           >
-            <Text style={styles.supportLink}>0850 307 80 29</Text>
-          </TouchableOpacity>
-        </View>
+            <SettingsHubRow
+              isFirst
+              icon="mail-outline"
+              label="info@karekodteknoloji.com"
+              onPress={() => {
+                void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
+              }}
+            />
+            <SettingsHubRow
+              icon="call-outline"
+              label="0850 307 80 29"
+              onPress={() => {
+                void openExternalLink('tel:08503078029', 'Telefon açılamadı');
+              }}
+            />
+          </SettingsHubCard>
 
-        <View style={styles.legalCard}>
-          <Text style={styles.legalTitle}>Yasal Metinler</Text>
-          <TouchableOpacity onPress={() => router.push('/privacy' as any)}>
-            <Text style={styles.legalLink}>Gizlilik Politikası</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/terms' as any)}>
-            <Text style={styles.legalLink}>Hizmet Şartları</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/kvkk' as any)}>
-            <Text style={styles.legalLink}>KVKK Aydınlatma Metni</Text>
-          </TouchableOpacity>
-          <Text style={styles.supportCompany}>
-            KVKK başvuru hakları ve destek için: info@karekodteknoloji.com / 0850 307 80 29
-          </Text>
-        </View>
-
-        <View style={{ height: 50 }} />
-      </ScrollView>
-    </SafeAreaView>
+          <SettingsHubCard
+            title="Yasal Metinler"
+            footer={
+              <PremiumText variant="caption" muted style={styles.company}>
+                KVKK başvuru hakları ve destek için: info@karekodteknoloji.com / 0850 307 80 29
+              </PremiumText>
+            }
+          >
+            <SettingsHubRow
+              isFirst
+              icon="lock-closed-outline"
+              label="Gizlilik Politikası"
+              onPress={() => router.push('/privacy' as any)}
+            />
+            <SettingsHubRow
+              icon="document-text-outline"
+              label="Hizmet Şartları"
+              onPress={() => router.push('/terms' as any)}
+            />
+            <SettingsHubRow
+              icon="information-circle-outline"
+              label="KVKK Aydınlatma Metni"
+              onPress={() => router.push('/kvkk' as any)}
+            />
+          </SettingsHubCard>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: '#08111F',
+    backgroundColor: PREMIUM_NAVY_DEEP,
+  },
+  safe: {
+    flex: 1,
+  },
+  headerGlass: {
+    marginHorizontal: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(11, 18, 32, 0.95)',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1E3A5F',
+    alignItems: 'flex-start',
   },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'rgba(243, 248, 255, 0.96)',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  warningBox: {
-    backgroundColor: 'rgba(16, 26, 43, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.45)',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  warningTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: 'rgba(252, 165, 165, 0.98)',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  warningText: {
-    fontSize: 15,
-    color: 'rgba(203, 213, 225, 0.95)',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'rgba(243, 248, 255, 0.95)',
-    marginBottom: 16,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(30, 58, 95, 0.55)',
-  },
-  listText: {
-    fontSize: 15,
-    color: 'rgba(203, 213, 225, 0.92)',
-    marginLeft: 12,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'rgba(243, 248, 255, 0.95)',
-    marginTop: 24,
-    marginBottom: 12,
-  },
-  infoText: {
-    fontSize: 15,
-    color: 'rgba(172, 188, 212, 0.92)',
-    lineHeight: 24,
-  },
-  deleteButton: {
-    flexDirection: 'row',
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(220, 38, 38, 0.95)',
-    padding: 16,
-    borderRadius: 14,
-    marginTop: 32,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.35)',
-    shadowColor: '#7f1d1d',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    elevation: 6,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
-  deleteButtonDisabled: {
-    backgroundColor: 'rgba(51, 65, 85, 0.85)',
-    borderColor: 'rgba(30, 58, 95, 0.6)',
+  backBtnPressed: {
+    opacity: 0.92,
+  },
+  headerBody: {
+    marginLeft: LDS_SPACING.sm,
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.35,
+  },
+  subtitle: {
+    marginTop: LDS_SPACING.xxs,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xxl,
+    gap: LDS_SPACING.sm,
+  },
+  card: {
+    paddingHorizontal: LDS_SPACING.sm + 2,
+    paddingVertical: LDS_SPACING.sm,
+  },
+  cardTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    marginBottom: LDS_SPACING.xs,
+    letterSpacing: -0.2,
+  },
+  company: {
+    marginBottom: LDS_SPACING.xs,
+  },
+  warningLead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: LDS_SPACING.xs,
+  },
+  warningText: {
+    flex: 1,
+    flexShrink: 1,
+    lineHeight: 22,
+  },
+  infoText: {
+    lineHeight: 22,
+  },
+  row: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(30, 58, 95, 0.55)',
+    paddingVertical: LDS_SPACING.xxs,
+  },
+  rowFirst: {
+    borderTopWidth: 0,
+    paddingTop: 0,
+  },
+  rowPressed: {
+    opacity: 0.88,
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    flex: 1,
+    paddingRight: LDS_SPACING.xs,
+  },
+  rowText: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dangerText: {
+    color: LDS_COLOR_ERROR,
+  },
+  deleteButton: {
+    minHeight: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: LDS_COLOR_ERROR,
   },
   deleteButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  supportCard: {
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderRadius: 16,
-    padding: 16,
-    backgroundColor: 'rgba(16, 26, 43, 0.82)',
-  },
-  supportTitle: {
-    color: 'rgba(243, 248, 255, 0.96)',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  supportCompany: {
-    color: 'rgba(172, 188, 212, 0.9)',
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  supportLink: {
-    color: '#22D3EE',
+    color: LDS_COLOR_ERROR,
     fontSize: 14,
-    textDecorationLine: 'underline',
-    marginBottom: 6,
+    fontWeight: '600',
   },
-  legalCard: {
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderRadius: 16,
-    padding: 16,
-    backgroundColor: 'rgba(16, 26, 43, 0.82)',
-  },
-  legalTitle: {
-    color: 'rgba(243, 248, 255, 0.96)',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  legalLink: {
-    color: '#22D3EE',
-    fontSize: 14,
-    textDecorationLine: 'underline',
-    marginBottom: 6,
+  btnDisabled: {
+    opacity: 0.65,
   },
 });
