@@ -5,7 +5,18 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenHeaderGradient } from './ScreenHeaderGradient';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_CARD_BG,
+  PREMIUM_ROLE_CARD_BORDER,
+} from '../components/auth/premiumAuthStyles';
+import {
+  CockpitBackground,
+  GlassSurface,
+  PremiumText,
+} from '../design-system/primitives';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 
@@ -383,19 +394,44 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
-      <ScreenHeaderGradient title="Profil" onBack={onBack ?? (() => router.back())} />
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={CYAN_ACCENT} />
-        </View>
-      ) : !p ? (
-        <View style={styles.center}>
-          <Text style={styles.muted}>Profil yüklenemedi.</Text>
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.heroCard}>
+    <View style={styles.screen}>
+      <CockpitBackground />
+      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
+        <GlassSurface variant="header" style={styles.headerGlass}>
+          <View style={styles.header}>
+            <Pressable
+              style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+              onPress={onBack ?? (() => router.back())}
+            >
+              <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+            </Pressable>
+            <View style={styles.headerBody}>
+              <PremiumText variant="headline" style={styles.title}>
+                Profil
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.subtitle}>
+                Muhabbet profili
+              </PremiumText>
+            </View>
+          </View>
+        </GlassSurface>
+
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={CYAN_ACCENT} />
+          </View>
+        ) : !p ? (
+          <View style={styles.center}>
+            <Text style={styles.muted}>Profil yüklenemedi.</Text>
+          </View>
+        ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <GlassSurface variant="plain" style={[styles.cardShell, styles.heroCardShell]}>
             <Pressable onPress={() => (isSelf ? void pickPhoto() : null)} style={styles.avatarWrap}>
               {photo ? (
                 <Image source={{ uri: photo }} style={styles.avatar} />
@@ -418,7 +454,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                 <Text style={styles.inlineLinkTxt}>Profil fotoğrafı değiştir</Text>
               </Pressable>
             ) : null}
-          </View>
+          </GlassSurface>
 
           <View style={styles.statGrid}>
             <View style={styles.statCard}><Text style={styles.statNum}>{completedTrips}</Text><Text style={styles.statLab}>Tamamlanan yolculuk</Text></View>
@@ -428,8 +464,10 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
           </View>
 
           {showDriverExtras ? (
-            <View style={styles.card}>
-              <Text style={styles.section}>Araç kartı</Text>
+            <GlassSurface variant="plain" style={styles.cardShell}>
+              <PremiumText variant="title" style={styles.cardTitle}>
+                Araç kartı
+              </PremiumText>
               {vehiclePhoto ? (
                 <Image source={{ uri: vehiclePhoto }} style={styles.vehicleImg} />
               ) : (
@@ -453,11 +491,13 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   {uploadingVehicle ? <ActivityIndicator size="small" color={CYAN_ACCENT} /> : <Text style={styles.inlineLinkTxt}>Araç fotoğrafı değiştir</Text>}
                 </Pressable>
               ) : null}
-            </View>
+            </GlassSurface>
           ) : null}
 
-          <View style={styles.card}>
-            <Text style={styles.section}>Hakkımda</Text>
+          <GlassSurface variant="plain" style={styles.cardShell}>
+            <PremiumText variant="title" style={styles.cardTitle}>
+              Hakkımda
+            </PremiumText>
             {isSelf ? (
               <>
                 <TextInput
@@ -476,15 +516,80 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
             ) : (
               <Text style={styles.aboutText}>{aboutText || 'Henüz bir açıklama eklenmemiş.'}</Text>
             )}
-          </View>
+          </GlassSurface>
         </ScrollView>
-      )}
-    </SafeAreaView>
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: NAVY_DEEP },
+  screen: {
+    flex: 1,
+    backgroundColor: PREMIUM_NAVY_DEEP,
+  },
+  safe: {
+    flex: 1,
+  },
+  headerGlass: {
+    marginHorizontal: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
+  },
+  backBtnPressed: {
+    opacity: 0.92,
+  },
+  headerBody: {
+    marginLeft: LDS_SPACING.sm,
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.35,
+  },
+  subtitle: {
+    marginTop: LDS_SPACING.xxs,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xxl,
+    gap: LDS_SPACING.sm,
+  },
+  cardShell: {
+    paddingHorizontal: LDS_SPACING.sm + 2,
+    paddingVertical: LDS_SPACING.sm,
+  },
+  cardTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    marginBottom: LDS_SPACING.xs,
+    letterSpacing: -0.2,
+  },
+  heroCardShell: {
+    alignItems: 'center',
+  },
   center: {
     flex: 1,
     justifyContent: 'center',
@@ -493,19 +598,6 @@ const styles = StyleSheet.create({
     backgroundColor: NAVY_DEEP,
   },
   muted: { color: TEXT_SECONDARY, fontSize: 15, fontWeight: '600' },
-  scroll: { padding: 16, paddingBottom: 36 },
-  heroCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 22,
-    padding: 18,
-    alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: BORDER_SLATE,
-    borderTopColor: 'rgba(34,211,238,0.28)',
-    borderLeftColor: 'rgba(34,211,238,0.1)',
-    ...CARD_SHADOW,
-  },
   avatarWrap: { position: 'relative' },
   avatar: {
     width: 118,
@@ -578,7 +670,7 @@ const styles = StyleSheet.create({
   },
   inlineLinkBtn: { marginTop: 11, paddingVertical: 6, paddingHorizontal: 10 },
   inlineLinkTxt: { color: CYAN_ACCENT, fontSize: 14, fontWeight: '700' },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   statCard: {
     width: '48%',
     backgroundColor: CARD_BG,
@@ -593,18 +685,6 @@ const styles = StyleSheet.create({
   },
   statNum: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
   statLab: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, textAlign: 'center', fontWeight: '600' },
-  card: {
-    backgroundColor: CARD_BG,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: BORDER_SLATE,
-    borderTopColor: 'rgba(34,211,238,0.22)',
-    borderLeftColor: 'rgba(34,211,238,0.08)',
-    ...CARD_SHADOW,
-  },
-  section: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8, letterSpacing: 0.15 },
   vehicleImg: {
     width: '100%',
     height: 180,
