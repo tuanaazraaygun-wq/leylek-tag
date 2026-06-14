@@ -3907,6 +3907,13 @@ export default function App() {
     const roleCardMinHeight = snap(
       Math.round(Math.max(148, Math.min(212, rs.usableHeight * roleCardMinHeightCoeff))),
     );
+    const vehicleCardMinHeightCoeff = rs.isVeryCompact ? 0.24 : rs.isCompact ? 0.255 : 0.268;
+    const vehicleCardMinHeight = snap(
+      Math.round(Math.max(132, Math.min(198, rs.usableHeight * vehicleCardMinHeightCoeff))),
+    );
+    const vehicleCardMaxHeight = Math.round(
+      Math.max(176, Math.min(252, vehicleCardMinHeight * 1.22)),
+    );
     const roleIconCircleSize = snap(Math.round(Math.max(64, Math.min(94, 94 * roleScale))));
     const roleIconMarginBottom = snap(Math.round(Math.max(8, Math.min(14, 14 * roleScale))));
     const roleIllustrationSize = Math.round(roleIconCircleSize * LDS_ILLUSTRATION.stageFillRatio);
@@ -3962,6 +3969,10 @@ export default function App() {
     const vchIconSize = Math.min(
       rs.isVeryCompact ? 30 : rs.isCompact && !rs.isVeryCompact ? 40 : 44,
       Math.round(vehicleChipIconSize * vehicleDeckBoost * 1.08),
+    );
+    const vehicleHeroIconSize = Math.min(
+      rs.isVeryCompact ? 46 : rs.isCompact && !rs.isVeryCompact ? 54 : 60,
+      Math.round(vehicleChipIconSize * vehicleDeckBoost * 1.42),
     );
     const vchLabelFontSize = Math.min(
       rs.isVeryCompact ? 16 : rs.isCompact && !rs.isVeryCompact ? 18 : 20,
@@ -4040,6 +4051,9 @@ export default function App() {
         roleCardPadV={roleCardPadV}
         roleCardMaxHeight={roleCardMaxHeight}
         roleCardMinHeight={roleCardMinHeight}
+        vehicleCardMinHeight={vehicleCardMinHeight}
+        vehicleCardMaxHeight={vehicleCardMaxHeight}
+        vehicleHeroIconSize={vehicleHeroIconSize}
         roleIconCircleSize={roleIconCircleSize}
         roleIconMarginBottom={roleIconMarginBottom}
         roleCardLabelFontSize={roleCardLabelFontSize}
@@ -22949,6 +22963,103 @@ const styles = StyleSheet.create({
   },
   roleDeckVehicleStack: {
     width: '100%',
+  },
+  roleVehicleCardsRow: {
+    marginTop: 6,
+  },
+  roleStatusStripCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    width: '100%',
+    marginTop: 2,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(6,12,24,0.38)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(32,54,82,0.35)',
+    borderTopColor: 'rgba(34,211,238,0.1)',
+  },
+  roleStatusStripCompactVery: {
+    marginTop: 0,
+    marginBottom: 2,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    gap: 8,
+  },
+  roleStatusStripCompactTight: {
+    paddingVertical: 7,
+  },
+  roleStatusPillCompact: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    paddingVertical: Platform.OS === 'android' ? 5 : 6,
+    paddingHorizontal: 10,
+    gap: 7,
+  },
+  roleStatusPillCompactVery: {
+    paddingVertical: Platform.OS === 'android' ? 4 : 5,
+    paddingHorizontal: 9,
+    gap: 6,
+  },
+  roleStatusTitleCompactInline: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: -0.22,
+  },
+  roleStatusTitleCompactInlineVery: {
+    fontSize: 13,
+    letterSpacing: -0.18,
+  },
+  roleVehicleHeroStage: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  roleVehicleHeroStageSelected: {
+    backgroundColor: 'rgba(34,211,238,0.03)',
+  },
+  roleVehicleHeroOrb: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderWidth: StyleSheet.hairlineWidth + 1.5,
+    borderColor: 'rgba(34,211,238,0.24)',
+    borderTopColor: 'rgba(34,211,238,0.34)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.14,
+        shadowRadius: 12,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
+  },
+  roleVehicleHeroOrbSelected: {
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderColor: 'rgba(34,211,238,0.46)',
+    borderTopColor: 'rgba(34,211,238,0.52)',
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.22,
+        shadowRadius: 16,
+      },
+      android: { elevation: 6 },
+      default: {},
+    }),
+  },
+  roleVehicleHeroOrbVery: {
+    borderWidth: StyleSheet.hairlineWidth + 1,
   },
   /** Araç / Motor — segmented rail */
   roleVehicleSegmentRail: {
