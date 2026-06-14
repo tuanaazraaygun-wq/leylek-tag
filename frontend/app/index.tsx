@@ -12683,11 +12683,8 @@ function PassengerDashboard({
             <GlassSurface variant="panel" style={styles.passengerMatchCockpitPanel}>
               <View style={styles.passengerMatchGuardianSlot} pointerEvents="none" />
               <View style={styles.passengerMatchIntroBlock}>
-                <PremiumText variant="headline" style={styles.passengerMatchIntroTitle}>
+                <PremiumText variant="title" muted style={styles.passengerMatchIntroTitle}>
                   Nasıl eşleşmek istersiniz?
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.passengerMatchIntroCaption}>
-                  Önce eşleşme tipini seçin, ardından rotanızı belirleyin.
                 </PremiumText>
               </View>
 
@@ -19626,21 +19623,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: LDS_SPACING.sm,
   },
   passengerMatchGuardianSlot: {
-    minHeight: LDS_SPACING.xxxl + LDS_SPACING.sm,
-    marginBottom: LDS_SPACING.xs,
+    minHeight: LDS_SPACING.xxxl + LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xxs,
   },
   passengerMatchIntroBlock: {
     paddingHorizontal: LDS_SPACING.xxs,
-    marginBottom: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.xs,
   },
   passengerMatchIntroTitle: {
-    fontSize: 22,
-    lineHeight: 28,
-    letterSpacing: -0.35,
-    textAlign: 'center',
-  },
-  passengerMatchIntroCaption: {
-    marginTop: LDS_SPACING.xxs,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
+    letterSpacing: -0.3,
     textAlign: 'center',
   },
   passengerRouteCtaTextCol: {
