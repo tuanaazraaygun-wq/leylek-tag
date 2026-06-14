@@ -12,8 +12,8 @@ import { useLeylekEyeMotion } from './useLeylekEyeMotion';
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
-export const LEYLEK_EYE_HERO_SIZE = 60;
-export const LEYLEK_EYE_VIEW_SIZE = 44;
+export const LEYLEK_EYE_HERO_SIZE = 69;
+export const LEYLEK_EYE_VIEW_SIZE = 51;
 
 export type LeylekEyeHandle = {
   triggerFocus: () => void;
@@ -28,9 +28,11 @@ export type LeylekEyeProps = {
 
 const LeylekEyeSvg = memo(function LeylekEyeSvg({
   lookTranslateX,
+  pupilExtraTranslateX,
   eyelidTranslateY,
 }: {
   lookTranslateX: Animated.AnimatedInterpolation<number>;
+  pupilExtraTranslateX: Animated.AnimatedInterpolation<number>;
   eyelidTranslateY: Animated.AnimatedInterpolation<number>;
 }) {
   return (
@@ -52,11 +54,13 @@ const LeylekEyeSvg = memo(function LeylekEyeSvg({
       <Circle cx="50" cy="50" r="44" fill="none" stroke="rgba(148, 176, 204, 0.22)" strokeWidth="1.2" />
 
       <AnimatedG translateX={lookTranslateX}>
-        <Circle cx="50" cy="50" r="20" fill="url(#leylekIris)" />
-        <Circle cx="50" cy="50" r="20" fill="none" stroke="rgba(8, 145, 178, 0.35)" strokeWidth="0.8" />
-        <Circle cx="50" cy="50" r="8.5" fill="#0A1628" />
-        <Ellipse cx="43" cy="43" rx="4.2" ry="2.8" fill="rgba(255,255,255,0.82)" opacity={0.9} />
-        <Ellipse cx="56" cy="56" rx="2" ry="1.2" fill="rgba(255,255,255,0.18)" />
+        <Circle cx="50" cy="50" r="21" fill="url(#leylekIris)" />
+        <Circle cx="50" cy="50" r="21" fill="none" stroke="rgba(8, 145, 178, 0.42)" strokeWidth="0.9" />
+        <AnimatedG translateX={pupilExtraTranslateX}>
+          <Circle cx="50" cy="50" r="9.2" fill="#0A1628" />
+          <Ellipse cx="43" cy="43" rx="4.4" ry="2.9" fill="rgba(255,255,255,0.86)" opacity={0.92} />
+        </AnimatedG>
+        <Ellipse cx="56" cy="56" rx="2.1" ry="1.3" fill="rgba(255,255,255,0.2)" />
       </AnimatedG>
 
       <AnimatedG translateY={eyelidTranslateY}>
@@ -107,6 +111,7 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
     >
       <LeylekEyeSvg
         lookTranslateX={motion.lookTranslateX}
+        pupilExtraTranslateX={motion.pupilExtraTranslateX}
         eyelidTranslateY={motion.eyelidTranslateY}
       />
     </Animated.View>

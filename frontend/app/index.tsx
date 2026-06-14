@@ -3900,7 +3900,7 @@ export default function App() {
     const roleCardPadV = Math.round(Math.max(10, Math.min(22, 22 * roleScale)));
     const roleCardMaxHeight = Math.round(Math.max(156, Math.min(218, rs.usableHeight * 0.285)));
     const roleCardMinHeight = Math.round(Math.max(112, Math.min(150, rs.usableHeight * 0.185)));
-    const roleIconCircleSize = Math.round(Math.max(52, Math.min(78, 78 * roleScale)));
+    const roleIconCircleSize = Math.round(Math.max(58, Math.min(86, 86 * roleScale)));
     const roleIconMarginBottom = Math.round(Math.max(6, Math.min(12, 12 * roleScale)));
     const roleCardLabelFontSize = Math.round(Math.max(15, Math.min(19, 19 * roleScale)));
     const roleCardDescFontSize = Math.round(Math.max(11, Math.min(13, 12 * roleScale)));
@@ -3921,11 +3921,12 @@ export default function App() {
     const roleStep1Done = !!selectedRole;
     const roleStep2Done = !!rideVehicleKind;
     const roleStepPulseStyle = { transform: [{ scale: roleStepPulse }] };
-    const passengerIconSize = rs.isVeryCompact ? 30 : rs.isCompact ? 34 : 40;
-    const driverCarIconSize = rs.isVeryCompact ? 28 : rs.isCompact ? 31 : 34;
+    const passengerIconSize = rs.isVeryCompact ? 34 : rs.isCompact ? 40 : 46;
+    const driverSteeringIconSize = rs.isVeryCompact ? 32 : rs.isCompact ? 38 : 44;
+    const driverCarIconSize = driverSteeringIconSize;
     const driverBikeIconSize = rs.isVeryCompact ? 24 : rs.isCompact ? 28 : 30;
     const roleCheckIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
-    const vehicleChipIconSize = rs.isVeryCompact ? 22 : rs.isCompact ? 24 : 26;
+    const vehicleChipIconSize = rs.isVeryCompact ? 26 : rs.isCompact ? 28 : 30;
     /** Araba/Motor deck — ~1.5× görünüm; clamp ile taşma yok */
     const vehicleDeckBoost = rs.isVeryCompact
       ? 1.12
@@ -3951,8 +3952,8 @@ export default function App() {
         : Math.min(21, Math.round(18 * Math.min(vehicleDeckBoost, 1.36)));
     const vchRowGap = Math.min(11, Math.round(vchBaseRowGap * vehicleDeckBoost));
     const vchIconSize = Math.min(
-      rs.isVeryCompact ? 26 : rs.isCompact && !rs.isVeryCompact ? 34 : 38,
-      Math.round(vehicleChipIconSize * vehicleDeckBoost),
+      rs.isVeryCompact ? 30 : rs.isCompact && !rs.isVeryCompact ? 40 : 44,
+      Math.round(vehicleChipIconSize * vehicleDeckBoost * 1.08),
     );
     const vchLabelFontSize = Math.min(
       rs.isVeryCompact ? 16 : rs.isCompact && !rs.isVeryCompact ? 18 : 20,
@@ -22865,10 +22866,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roleBackgroundImage: {
-    resizeMode: 'stretch',
+    resizeMode: 'cover',
     width: '100%',
     height: '100%',
-    opacity: 0.805,
+    opacity: 0.14,
   },
   roleSelectionSafe: {
     flex: 1,
@@ -23677,12 +23678,16 @@ const styles = StyleSheet.create({
     color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
     lineHeight: 24,
-    letterSpacing: -0.35,
+    letterSpacing: 0.15,
   },
   roleTopTitleCompact: {
     fontSize: 16,
     lineHeight: 21,
     letterSpacing: -0.32,
+  },
+  roleTopTitleAccent: {
+    color: PREMIUM_AUTH_CYAN,
+    fontWeight: '900',
   },
   roleTopTitleVery: {
     fontSize: 14,
@@ -23742,7 +23747,7 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(34,211,238,0.2)',
     borderLeftColor: 'rgba(34,211,238,0.08)',
     position: 'relative',
-    overflow: 'visible',
+    overflow: 'hidden',
     transform: [{ translateY: -2 }],
     ...Platform.select({
       ios: {
@@ -23756,20 +23761,25 @@ const styles = StyleSheet.create({
     }),
   },
   roleCardSelected: {
-    borderColor: 'rgba(34, 211, 238, 0.45)',
+    borderColor: 'rgba(34, 211, 238, 0.58)',
     borderWidth: 2,
-    backgroundColor: 'rgba(11,21,37,0.96)',
+    borderTopColor: 'rgba(34,211,238,0.42)',
+    backgroundColor: 'rgba(12,24,42,0.98)',
     transform: [{ translateY: -2 }],
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_AUTH_CYAN,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.2,
-        shadowRadius: 16,
+        shadowOpacity: 0.28,
+        shadowRadius: 18,
       },
-      android: { elevation: 11 },
+      android: { elevation: 12 },
       default: {},
     }),
+  },
+  roleCardSelectedInnerGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 22,
   },
   roleIconCircle: {
     width: 78,
@@ -23781,10 +23791,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: 'rgba(30, 58, 95, 0.72)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(34,211,238,0.12)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
   },
   roleIconCircleActive: {
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    borderColor: 'rgba(34, 211, 238, 0.34)',
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
+    borderColor: 'rgba(34, 211, 238, 0.48)',
     borderWidth: 2,
   },
   roleDriverIconsRow: {
@@ -23801,9 +23821,10 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 10,
     borderRadius: 18,
-    backgroundColor: 'rgba(13,23,39,0.88)',
+    backgroundColor: 'rgba(8,16,30,0.92)',
     borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.72)',
+    borderColor: 'rgba(34,211,238,0.14)',
+    borderTopColor: 'rgba(34,211,238,0.22)',
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_NAVY_DEEP,
@@ -23816,9 +23837,10 @@ const styles = StyleSheet.create({
     }),
   },
   roleVehicleChipActive: {
-    backgroundColor: 'rgba(10,22,38,0.96)',
+    backgroundColor: 'rgba(10,24,42,0.98)',
     borderWidth: StyleSheet.hairlineWidth + 2,
-    borderColor: 'rgba(34,211,238,0.46)',
+    borderColor: 'rgba(34,211,238,0.52)',
+    borderTopColor: 'rgba(34,211,238,0.38)',
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_AUTH_CYAN,
@@ -23831,9 +23853,10 @@ const styles = StyleSheet.create({
     }),
   },
   roleVehicleChipActiveMotor: {
-    backgroundColor: 'rgba(10,22,38,0.96)',
+    backgroundColor: 'rgba(10,24,42,0.98)',
     borderWidth: StyleSheet.hairlineWidth + 2,
-    borderColor: 'rgba(34,211,238,0.42)',
+    borderColor: 'rgba(34,211,238,0.48)',
+    borderTopColor: 'rgba(34,211,238,0.34)',
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_AUTH_CYAN,
@@ -23844,6 +23867,16 @@ const styles = StyleSheet.create({
       android: { elevation: 9 },
       default: {},
     }),
+  },
+  roleVehicleIconOrb: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34,211,238,0.06)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(34,211,238,0.18)',
   },
   roleVehicleChipText: {
     fontSize: 15,

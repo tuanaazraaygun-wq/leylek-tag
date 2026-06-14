@@ -5,12 +5,13 @@ import { LDS_MOTION_DURATION } from '../tokens/motion';
 const BREATH_MS = 3200;
 const GAZE_HOLD_MS = 1400;
 const GAZE_TRAVEL_MS = 900;
-const BLINK_CLOSE_MS = 90;
-const BLINK_OPEN_MS = 140;
-const BLINK_MIN_MS = 4000;
-const BLINK_MAX_MS = 8000;
+const BLINK_CLOSE_MS = 110;
+const BLINK_OPEN_MS = 160;
+const BLINK_MIN_MS = 3800;
+const BLINK_MAX_MS = 7200;
 const FOCUS_MS = LDS_MOTION_DURATION.standard;
-const GAZE_OFFSET = 7;
+const GAZE_OFFSET = 11;
+const PUPIL_EXTRA_OFFSET = 4;
 
 type UseLeylekEyeMotionOptions = {
   reduceMotion?: boolean;
@@ -19,6 +20,7 @@ type UseLeylekEyeMotionOptions = {
 export type LeylekEyeMotion = {
   breathScale: Animated.AnimatedInterpolation<number>;
   lookTranslateX: Animated.AnimatedInterpolation<number>;
+  pupilExtraTranslateX: Animated.AnimatedInterpolation<number>;
   eyelidTranslateY: Animated.AnimatedInterpolation<number>;
   rimOpacity: Animated.AnimatedInterpolation<number>;
   containerScale: Animated.AnimatedInterpolation<number>;
@@ -220,9 +222,14 @@ export function useLeylekEyeMotion({
     outputRange: [-GAZE_OFFSET, 0, GAZE_OFFSET],
   });
 
+  const pupilExtraTranslateX = look.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [-PUPIL_EXTRA_OFFSET, 0, PUPIL_EXTRA_OFFSET],
+  });
+
   const eyelidTranslateY = blink.interpolate({
     inputRange: [0, 1],
-    outputRange: [-28, 14],
+    outputRange: [-30, 20],
   });
 
   const rimOpacity = rim.interpolate({
@@ -235,6 +242,7 @@ export function useLeylekEyeMotion({
   return {
     breathScale,
     lookTranslateX,
+    pupilExtraTranslateX,
     eyelidTranslateY,
     rimOpacity,
     containerScale,

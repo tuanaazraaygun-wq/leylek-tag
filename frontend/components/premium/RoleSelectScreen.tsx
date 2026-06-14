@@ -3,12 +3,14 @@ import {
   Animated,
   ImageBackground,
   Modal,
-  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,12 +20,14 @@ import AdminPanel from '../AdminPanel';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import {
   PREMIUM_AUTH_CYAN,
+  PREMIUM_NAVY_DEEP,
   PREMIUM_ROLE_FOREGROUND_AMBIENT,
   PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE,
   PREMIUM_ROLE_OVERLAY,
   PREMIUM_TEXT_SOFT,
   premiumAuthStyles as pap,
 } from '../auth/premiumAuthStyles';
+import { LDS_MOTION_TRANSFORM } from '../../design-system/tokens/motion';
 
 export type RoleSelectBreakpoints = {
   usableHeight: number;
@@ -113,6 +117,50 @@ export type RoleSelectScreenProps = {
   onCloseAdminPanel: () => void;
 };
 
+type RoleSelectPressableProps = {
+  style: StyleProp<ViewStyle>[];
+  selected?: boolean;
+  onPress: () => void;
+  children: React.ReactNode;
+  styles: Record<string, object>;
+};
+
+function RoleSelectPressable({
+  style,
+  selected,
+  onPress,
+  children,
+  styles: s,
+}: RoleSelectPressableProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        ...style.filter(Boolean),
+        selected ? s.roleCardSelected : null,
+        {
+          transform: [
+            { translateY: -2 },
+            { scale: pressed ? LDS_MOTION_TRANSFORM.pressScale : 1 },
+          ],
+        },
+      ]}
+    >
+      {selected ? (
+        <LinearGradient
+          colors={['rgba(34,211,238,0.16)', 'rgba(34,211,238,0.04)', 'rgba(8,17,31,0)']}
+          locations={[0, 0.45, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          pointerEvents="none"
+          style={s.roleCardSelectedInnerGlow}
+        />
+      ) : null}
+      {children}
+    </Pressable>
+  );
+}
+
 export function RoleSelectScreen({
   styles: stylesProp,
   selectedRole,
@@ -197,39 +245,56 @@ export function RoleSelectScreen({
   const styles = stylesProp as Record<string, object>;
 
   return (
-<ImageBackground 
-        source={require('../../assets/images/role-background.png')} 
-        style={styles.roleSelectionContainer}
+    <View style={styles.roleSelectionContainer}>
+      <ImageBackground
+        source={require('../../assets/images/role-background.png')}
+        style={StyleSheet.absoluteFillObject}
         imageStyle={styles.roleBackgroundImage}
-      >
-        <BlurView
-          intensity={Platform.OS === 'web' ? 22 : Platform.OS === 'ios' ? 28 : 32}
-          tint="dark"
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        <LinearGradient
-          colors={[...PREMIUM_ROLE_OVERLAY]}
-          locations={[0, 0.5, 1]}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        <LinearGradient
-          colors={[...PREMIUM_ROLE_FOREGROUND_AMBIENT]}
-          locations={[0, 0.45, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        <LinearGradient
-          colors={[...PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE]}
-          locations={[0, 0.5, 1]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
+      />
+      <LinearGradient
+        colors={['#040A14', PREMIUM_NAVY_DEEP, '#0B1524']}
+        locations={[0, 0.55, 1]}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={[...PREMIUM_ROLE_OVERLAY]}
+        locations={[0, 0.5, 1]}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={['rgba(34,211,238,0.07)', 'transparent', 'rgba(34,211,238,0.03)']}
+        locations={[0, 0.42, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={[...PREMIUM_ROLE_FOREGROUND_AMBIENT]}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={[...PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE]}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(34,211,238,0.045)', 'transparent']}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0, y: 0.35 }}
+        end={{ x: 1, y: 0.65 }}
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, polishStyles.cockpitScanline]}
+      />
         <SafeAreaView style={styles.roleSelectionSafe}>
           {roleSelectTripExitBanner ? (
             <Animated.View
@@ -297,7 +362,7 @@ export function RoleSelectScreen({
                     numberOfLines={2}
                     ellipsizeMode="tail"
                   >
-                    Bugün nasıl ilerlemek istersiniz?
+                    Bugün <Text style={styles.roleTopTitleAccent}>nasıl</Text> ilerlemek istersiniz?
                   </Text>
                 </View>
               </View>
@@ -533,20 +598,20 @@ export function RoleSelectScreen({
                         },
                       ]}
                     >
-                      <TouchableOpacity
+                      <RoleSelectPressable
                         style={[
                           styles.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
-                          selectedRole === 'passenger' && styles.roleCardSelected,
                           {
                             paddingVertical: roleCardPadV,
                             maxHeight: roleCardMaxHeight,
                             minHeight: roleCardMinHeight,
                           },
                         ]}
+                        selected={selectedRole === 'passenger'}
                         onPress={() => onSelectRole('passenger')}
-                        activeOpacity={0.88}
+                        styles={styles}
                       >
                         <View
                           style={[
@@ -563,9 +628,9 @@ export function RoleSelectScreen({
                           ]}
                         >
                           <MaterialCommunityIcons
-                            name="account-supervisor-circle"
+                            name="seat-passenger"
                             size={passengerIconSize}
-                            color={selectedRole === 'passenger' ? 'rgba(243,248,255,0.96)' : 'rgba(94,210,230,0.88)'}
+                            color={selectedRole === 'passenger' ? 'rgba(243,248,255,0.96)' : 'rgba(94,210,230,0.92)'}
                           />
                         </View>
                         <Text
@@ -606,7 +671,7 @@ export function RoleSelectScreen({
                             <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
                           </View>
                         )}
-                      </TouchableOpacity>
+                      </RoleSelectPressable>
                     </Animated.View>
 
                     <Animated.View
@@ -618,20 +683,20 @@ export function RoleSelectScreen({
                         },
                       ]}
                     >
-                      <TouchableOpacity
+                      <RoleSelectPressable
                         style={[
                           styles.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
-                          selectedRole === 'driver' && styles.roleCardSelected,
                           {
                             paddingVertical: roleCardPadV,
                             maxHeight: roleCardMaxHeight,
                             minHeight: roleCardMinHeight,
                           },
                         ]}
+                        selected={selectedRole === 'driver'}
                         onPress={() => onSelectRole('driver')}
-                        activeOpacity={0.88}
+                        styles={styles}
                       >
                         <View
                           style={[
@@ -647,18 +712,11 @@ export function RoleSelectScreen({
                             },
                           ]}
                         >
-                          <View style={styles.roleDriverIconsRow}>
-                            <MaterialCommunityIcons
-                              name="car-side"
-                              size={driverCarIconSize}
-                              color={selectedRole === 'driver' ? 'rgba(243,248,255,0.96)' : 'rgba(112,155,226,0.9)'}
-                            />
-                            <MaterialCommunityIcons
-                              name="motorbike"
-                              size={driverBikeIconSize}
-                              color={selectedRole === 'driver' ? 'rgba(210,215,238,0.95)' : 'rgba(148,164,226,0.85)'}
-                            />
-                          </View>
+                          <MaterialCommunityIcons
+                            name="steering"
+                            size={driverCarIconSize}
+                            color={selectedRole === 'driver' ? 'rgba(243,248,255,0.96)' : 'rgba(112,180,226,0.92)'}
+                          />
                         </View>
                         <Text
                           style={[
@@ -698,7 +756,7 @@ export function RoleSelectScreen({
                             <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
                           </View>
                         )}
-                      </TouchableOpacity>
+                      </RoleSelectPressable>
                     </Animated.View>
                   </View>
                 ) : (
@@ -813,8 +871,8 @@ export function RoleSelectScreen({
                           },
                         ]}
                       >
-                        <TouchableOpacity
-                          style={[
+                        <Pressable
+                          style={({ pressed }) => [
                             styles.roleVehicleChip,
                             rs.isVeryCompact && styles.roleVehicleChipVery,
                             rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
@@ -830,10 +888,10 @@ export function RoleSelectScreen({
                               gap: showPassengerVehicleCall
                                 ? Math.max(3, Math.round(4 * vehicleDeckBoost))
                                 : 0,
+                              transform: [{ scale: pressed ? LDS_MOTION_TRANSFORM.pressScale : 1 }],
                             },
                           ]}
                           onPress={() => onSelectVehicle('car')}
-                          activeOpacity={0.85}
                         >
                           <View
                             style={{
@@ -845,11 +903,22 @@ export function RoleSelectScreen({
                               minWidth: 0,
                             }}
                           >
-                            <MaterialCommunityIcons
-                              name="car-side"
-                              size={vchIconSize}
-                              color={rideVehicleKind === 'car' ? 'rgba(243,248,255,0.96)' : 'rgba(118,164,226,0.88)'}
-                            />
+                            <View
+                              style={[
+                                styles.roleVehicleIconOrb,
+                                {
+                                  width: Math.round(vchIconSize + 16),
+                                  height: Math.round(vchIconSize + 16),
+                                  borderRadius: Math.round((vchIconSize + 16) * 0.28),
+                                },
+                              ]}
+                            >
+                              <MaterialCommunityIcons
+                                name="car-side"
+                                size={vchIconSize}
+                                color={rideVehicleKind === 'car' ? 'rgba(243,248,255,0.96)' : 'rgba(118,180,238,0.92)'}
+                              />
+                            </View>
                             <Text
                               style={[
                                 styles.roleVehicleChipText,
@@ -882,7 +951,7 @@ export function RoleSelectScreen({
                             Eşleşmesi
                           </Animated.Text>
                           ) : null}
-                        </TouchableOpacity>
+                        </Pressable>
                       </Animated.View>
                       <Animated.View
                         style={[
@@ -893,8 +962,8 @@ export function RoleSelectScreen({
                           },
                         ]}
                       >
-                        <TouchableOpacity
-                          style={[
+                        <Pressable
+                          style={({ pressed }) => [
                             styles.roleVehicleChip,
                             rs.isVeryCompact && styles.roleVehicleChipVery,
                             rs.isCompact && !rs.isVeryCompact && styles.roleVehicleChipCompact,
@@ -910,10 +979,10 @@ export function RoleSelectScreen({
                               gap: showPassengerVehicleCall
                                 ? Math.max(3, Math.round(4 * vehicleDeckBoost))
                                 : 0,
+                              transform: [{ scale: pressed ? LDS_MOTION_TRANSFORM.pressScale : 1 }],
                             },
                           ]}
                           onPress={() => onSelectVehicle('motorcycle')}
-                          activeOpacity={0.85}
                         >
                           <View
                             style={{
@@ -925,11 +994,22 @@ export function RoleSelectScreen({
                               minWidth: 0,
                             }}
                           >
-                            <MaterialCommunityIcons
-                              name="motorbike"
-                              size={vchIconSize}
-                              color={rideVehicleKind === 'motorcycle' ? 'rgba(243,248,255,0.96)' : 'rgba(130,172,216,0.86)'}
-                            />
+                            <View
+                              style={[
+                                styles.roleVehicleIconOrb,
+                                {
+                                  width: Math.round(vchIconSize + 16),
+                                  height: Math.round(vchIconSize + 16),
+                                  borderRadius: Math.round((vchIconSize + 16) * 0.28),
+                                },
+                              ]}
+                            >
+                              <MaterialCommunityIcons
+                                name="motorbike"
+                                size={vchIconSize}
+                                color={rideVehicleKind === 'motorcycle' ? 'rgba(243,248,255,0.96)' : 'rgba(130,188,228,0.9)'}
+                              />
+                            </View>
                             <Text
                               style={[
                                 styles.roleVehicleChipText,
@@ -962,7 +1042,7 @@ export function RoleSelectScreen({
                             Eşleşmesi
                           </Animated.Text>
                           ) : null}
-                        </TouchableOpacity>
+                        </Pressable>
                       </Animated.View>
                     </View>
                       </View>
@@ -1035,6 +1115,12 @@ export function RoleSelectScreen({
             />
           </Modal>
         )}
-      </ImageBackground>
-  );
+      </View>
+    );
 }
+
+const polishStyles = StyleSheet.create({
+  cockpitScanline: {
+    opacity: 0.85,
+  },
+});

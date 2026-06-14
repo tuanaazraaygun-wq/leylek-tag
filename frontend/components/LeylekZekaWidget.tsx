@@ -927,7 +927,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[styles.centerAnchor, { top: roleSelectEyeTop }]}
             >
               <LeylekEye
-                size={60}
                 onPress={onOpen}
                 reduceMotion={reduceMotion}
                 accessibilityLabel="Leylek Zeka"
