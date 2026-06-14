@@ -42,6 +42,7 @@ import {
   wasProactiveShownForTag,
 } from '../lib/leylekZekaProactiveInsight';
 import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
+import LeylekEye from '../design-system/leylek-eye/LeylekEye';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
@@ -925,7 +926,12 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               pointerEvents="box-none"
               style={[styles.centerAnchor, { top: roleSelectEyeTop }]}
             >
-              <LeylekEyeTrigger onPress={onOpen} />
+              <LeylekEye
+                size={60}
+                onPress={onOpen}
+                reduceMotion={reduceMotion}
+                accessibilityLabel="Leylek Zeka"
+              />
             </View>
           ) : isPassengerMatchingChipMode ? (
             <View
