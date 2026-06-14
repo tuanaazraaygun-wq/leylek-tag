@@ -23,6 +23,7 @@ export const LDS_MOTION_SPRING = {
 
 export const LDS_MOTION_TRANSFORM = {
   pressScale: 0.98,
+  selectionScale: 1.015,
   enterTranslateY: 12,
   pressOpacity: 0.92,
   dimOpacity: 0.58,

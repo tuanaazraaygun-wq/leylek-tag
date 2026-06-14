@@ -3901,8 +3901,8 @@ export default function App() {
     const roleCardsGap = snap(Math.round(Math.max(7, Math.min(14, 14 * roleScale))));
     const roleCardsMarginBottom = snap(Math.round(Math.max(6, Math.min(24, rs.usableHeight * 0.024))));
     const roleCardPadV = snap(Math.round(Math.max(12, Math.min(24, 24 * roleScale))));
-    const roleCardMaxHeight = Math.round(Math.max(168, Math.min(232, rs.usableHeight * 0.295)));
-    const roleCardMinHeight = Math.round(Math.max(120, Math.min(162, rs.usableHeight * 0.195)));
+    const roleCardMaxHeight = Math.round(Math.max(200, Math.min(264, rs.usableHeight * 0.32)));
+    const roleCardMinHeight = snap(Math.round(Math.max(148, Math.min(200, rs.usableHeight * 0.22))));
     const roleIconCircleSize = snap(Math.round(Math.max(64, Math.min(94, 94 * roleScale))));
     const roleIconMarginBottom = snap(Math.round(Math.max(8, Math.min(14, 14 * roleScale))));
     const roleIllustrationSize = Math.round(roleIconCircleSize * LDS_ILLUSTRATION.stageFillRatio);
@@ -23435,15 +23435,11 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   roleCardCompactTight: {
-    paddingVertical: 16,
-    paddingHorizontal: 6,
-    maxHeight: 228,
+    maxHeight: 240,
   },
   roleCardCompactVery: {
-    paddingVertical: 11,
-    paddingHorizontal: 4,
-    maxHeight: 198,
-    minHeight: 118,
+    maxHeight: 208,
+    minHeight: 140,
   },
   roleIconCircleCompact: {
     width: 66,
@@ -23744,17 +23740,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: PREMIUM_ROLE_CARD_BG,
     borderRadius: 24,
-    paddingVertical: 24,
-    paddingHorizontal: 10,
-    paddingTop: 20,
-    alignItems: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    alignItems: 'stretch',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: PREMIUM_ROLE_CARD_BORDER,
     borderTopColor: 'rgba(34,211,238,0.2)',
     borderLeftColor: 'rgba(34,211,238,0.08)',
     position: 'relative',
     overflow: 'hidden',
-    transform: [{ translateY: -2 }],
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_NAVY_DEEP,
@@ -23964,12 +23958,9 @@ const styles = StyleSheet.create({
     color: 'rgba(156, 204, 188, 0.78)',
   },
   roleCheckBadge: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(26, 42, 64, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',

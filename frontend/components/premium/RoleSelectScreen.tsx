@@ -8,8 +8,6 @@ import {
   Text,
   TouchableOpacity,
   View,
-  type StyleProp,
-  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,13 +21,14 @@ import {
 } from '../auth/premiumAuthStyles';
 import RoleCardPassengerIllustration from '../../design-system/role-select/RoleCardPassengerIllustration';
 import RoleCardDriverIllustration from '../../design-system/role-select/RoleCardDriverIllustration';
-import { CockpitBackground, GlassSurface, PremiumText } from '../../design-system/primitives';
 import {
-  LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL,
-  LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL_LOCATIONS,
-  LDS_GRADIENT_SELECTION_GLOW_VERTICAL,
-  LDS_GRADIENT_SELECTION_GLOW_VERTICAL_LOCATIONS,
-} from '../../design-system/tokens/gradient';
+  CockpitBackground,
+  GlassSurface,
+  PremiumSelectionCard,
+  PremiumText,
+  computeRoleCardHeroHeight,
+  computeRoleIllustrationHeroSize,
+} from '../../design-system/primitives';
 import { LDS_MOTION_TRANSFORM } from '../../design-system/tokens/motion';
 
 export type RoleSelectBreakpoints = {
@@ -121,60 +120,6 @@ export type RoleSelectScreenProps = {
   onCloseAdminPanel: () => void;
 };
 
-type RoleSelectPressableProps = {
-  style: StyleProp<ViewStyle>[];
-  selected?: boolean;
-  onPress: () => void;
-  children: React.ReactNode;
-  styles: Record<string, object>;
-};
-
-function RoleSelectPressable({
-  style,
-  selected,
-  onPress,
-  children,
-  styles: s,
-}: RoleSelectPressableProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        ...style.filter(Boolean),
-        selected ? s.roleCardSelected : null,
-        {
-          transform: [
-            { translateY: -2 },
-            { scale: pressed ? LDS_MOTION_TRANSFORM.pressScale : 1 },
-          ],
-        },
-      ]}
-    >
-      {selected ? (
-        <>
-          <LinearGradient
-            colors={[...LDS_GRADIENT_SELECTION_GLOW_VERTICAL]}
-            locations={[...LDS_GRADIENT_SELECTION_GLOW_VERTICAL_LOCATIONS]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            pointerEvents="none"
-            style={s.roleCardSelectedInnerGlow}
-          />
-          <LinearGradient
-            colors={[...LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL]}
-            locations={[...LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL_LOCATIONS]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            pointerEvents="none"
-            style={s.roleCardSelectedInnerGlowSide}
-          />
-        </>
-      ) : null}
-      {children}
-    </Pressable>
-  );
-}
-
 export function RoleSelectScreen({
   styles: stylesProp,
   selectedRole,
@@ -256,6 +201,15 @@ export function RoleSelectScreen({
   onCloseAdminPanel,
 }: RoleSelectScreenProps) {
   const styles = stylesProp as Record<string, object>;
+  const roleCardHeroHeight = computeRoleCardHeroHeight(
+    roleCardMinHeight,
+    rs.isVeryCompact,
+    rs.isCompact && !rs.isVeryCompact,
+  );
+  const roleIllustrationHeroSize = computeRoleIllustrationHeroSize(
+    roleCardHeroHeight,
+    rs.isVeryCompact,
+  );
 
   return (
     <View style={styles.roleSelectionContainer}>
@@ -556,74 +510,49 @@ export function RoleSelectScreen({
                         },
                       ]}
                     >
-                      <RoleSelectPressable
+                      <PremiumSelectionCard
+                        selected={selectedRole === 'passenger'}
+                        onPress={() => onSelectRole('passenger')}
+                        heroHeight={roleCardHeroHeight}
                         style={[
                           styles.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                           {
-                            paddingVertical: roleCardPadV,
                             maxHeight: roleCardMaxHeight,
                             minHeight: roleCardMinHeight,
                           },
                         ]}
-                        selected={selectedRole === 'passenger'}
-                        onPress={() => onSelectRole('passenger')}
-                        styles={styles}
-                      >
-                        <View
-                          style={[
-                            styles.roleIllustrationStage,
-                            rs.isVeryCompact && styles.roleIllustrationStageVery,
-                            rs.isCompact && !rs.isVeryCompact && styles.roleIllustrationStageCompact,
-                            selectedRole === 'passenger' && styles.roleIllustrationStageActive,
-                            {
-                              width: roleIconCircleSize,
-                              height: roleIconCircleSize,
-                              borderRadius: Math.round(roleIconCircleSize * 0.26),
-                              marginBottom: roleIconMarginBottom,
-                            },
-                          ]}
-                        >
+                        illustration={
                           <RoleCardPassengerIllustration
-                            size={roleIllustrationSize}
+                            size={roleIllustrationHeroSize}
                             active={selectedRole === 'passenger'}
                           />
-                        </View>
-                        <Text
-                          style={[
-                            styles.roleCardLabel,
-                            { fontSize: roleCardLabelFontSize },
-                            selectedRole === 'passenger' && styles.roleCardLabelActive,
-                          ]}
-                        >
-                          Yolcu
-                        </Text>
-                        <Animated.Text
-                          style={[
-                            styles.roleCardDesc,
-                            rs.isVeryCompact && styles.roleCardDescVery,
-                            selectedRole === 'passenger' && styles.roleCardDescActivePassenger,
-                            {
-                              width: '100%',
-                              fontSize: roleCardSubtitleOneLineFont,
-                              lineHeight: roleCardSubtitleOneLineHeight,
-                              opacity: roleSelectCardSubtitlePulse,
-                            },
-                          ]}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.78}
-                        >
-                          Sürücülere teklif gönder
-                        </Animated.Text>
-                        {selectedRole === 'passenger' && (
-                          <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
-                          </View>
-                        )}
-                      </RoleSelectPressable>
+                        }
+                        title="Yolcu"
+                        subtitle="Sürücülere teklif gönder"
+                        titleStyle={[
+                          styles.roleCardLabel,
+                          { fontSize: roleCardLabelFontSize },
+                          selectedRole === 'passenger' && styles.roleCardLabelActive,
+                        ]}
+                        subtitleStyle={[
+                          styles.roleCardDesc,
+                          rs.isVeryCompact && styles.roleCardDescVery,
+                          selectedRole === 'passenger' && styles.roleCardDescActivePassenger,
+                          {
+                            fontSize: roleCardSubtitleOneLineFont,
+                            lineHeight: roleCardSubtitleOneLineHeight,
+                          },
+                        ]}
+                        checkmark={
+                          selectedRole === 'passenger' ? (
+                            <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
+                            </View>
+                          ) : undefined
+                        }
+                      />
                     </Animated.View>
 
                     <Animated.View
@@ -635,74 +564,49 @@ export function RoleSelectScreen({
                         },
                       ]}
                     >
-                      <RoleSelectPressable
+                      <PremiumSelectionCard
+                        selected={selectedRole === 'driver'}
+                        onPress={() => onSelectRole('driver')}
+                        heroHeight={roleCardHeroHeight}
                         style={[
                           styles.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                           {
-                            paddingVertical: roleCardPadV,
                             maxHeight: roleCardMaxHeight,
                             minHeight: roleCardMinHeight,
                           },
                         ]}
-                        selected={selectedRole === 'driver'}
-                        onPress={() => onSelectRole('driver')}
-                        styles={styles}
-                      >
-                        <View
-                          style={[
-                            styles.roleIllustrationStage,
-                            rs.isVeryCompact && styles.roleIllustrationStageVery,
-                            rs.isCompact && !rs.isVeryCompact && styles.roleIllustrationStageCompact,
-                            selectedRole === 'driver' && styles.roleIllustrationStageActive,
-                            {
-                              width: roleIconCircleSize,
-                              height: roleIconCircleSize,
-                              borderRadius: Math.round(roleIconCircleSize * 0.26),
-                              marginBottom: roleIconMarginBottom,
-                            },
-                          ]}
-                        >
+                        illustration={
                           <RoleCardDriverIllustration
-                            size={roleIllustrationSize}
+                            size={roleIllustrationHeroSize}
                             active={selectedRole === 'driver'}
                           />
-                        </View>
-                        <Text
-                          style={[
-                            styles.roleCardLabel,
-                            { fontSize: roleCardLabelFontSize },
-                            selectedRole === 'driver' && styles.roleCardLabelActive,
-                          ]}
-                        >
-                          Sürücü
-                        </Text>
-                        <Animated.Text
-                          style={[
-                            styles.roleCardDesc,
-                            rs.isVeryCompact && styles.roleCardDescVery,
-                            selectedRole === 'driver' && styles.roleCardDescActiveDriver,
-                            {
-                              width: '100%',
-                              fontSize: roleCardSubtitleOneLineFont,
-                              lineHeight: roleCardSubtitleOneLineHeight,
-                              opacity: roleSelectCardSubtitlePulse,
-                            },
-                          ]}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.78}
-                        >
-                          Yolculardan teklif al
-                        </Animated.Text>
-                        {selectedRole === 'driver' && (
-                          <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                            <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
-                          </View>
-                        )}
-                      </RoleSelectPressable>
+                        }
+                        title="Sürücü"
+                        subtitle="Yolculardan teklif al"
+                        titleStyle={[
+                          styles.roleCardLabel,
+                          { fontSize: roleCardLabelFontSize },
+                          selectedRole === 'driver' && styles.roleCardLabelActive,
+                        ]}
+                        subtitleStyle={[
+                          styles.roleCardDesc,
+                          rs.isVeryCompact && styles.roleCardDescVery,
+                          selectedRole === 'driver' && styles.roleCardDescActiveDriver,
+                          {
+                            fontSize: roleCardSubtitleOneLineFont,
+                            lineHeight: roleCardSubtitleOneLineHeight,
+                          },
+                        ]}
+                        checkmark={
+                          selectedRole === 'driver' ? (
+                            <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
+                            </View>
+                          ) : undefined
+                        }
+                      />
                     </Animated.View>
                   </View>
                 ) : (
