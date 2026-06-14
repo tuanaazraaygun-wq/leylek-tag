@@ -10,7 +10,12 @@ export type RoleHeroIllustrationProps = {
 
 function PassengerSeatHero({ stageHeight, active = false, isVeryCompact = false }: RoleHeroIllustrationProps) {
   return (
-    <BlueprintIllustration stageHeight={stageHeight} active={active} isVeryCompact={isVeryCompact}>
+    <BlueprintIllustration
+      stageHeight={stageHeight}
+      active={active}
+      isVeryCompact={isVeryCompact}
+      preserveAspectRatio="slice"
+    >
       {(p) => (
         <>
           {[48, 88, 128].map((y) => (

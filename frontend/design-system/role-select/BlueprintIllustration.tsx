@@ -20,6 +20,8 @@ export type BlueprintIllustrationProps = {
   isVeryCompact?: boolean;
   viewBoxWidth?: number;
   viewBoxHeight?: number;
+  /** LDS-4G-A — slice fills wide hero slots; meet preserves full illustration */
+  preserveAspectRatio?: 'meet' | 'slice';
   children: (palette: BlueprintPalette) => React.ReactNode;
 };
 
@@ -42,6 +44,7 @@ function BlueprintIllustration({
   isVeryCompact = false,
   viewBoxWidth = LDS_ILLUSTRATION.heroViewBoxWidth,
   viewBoxHeight = LDS_ILLUSTRATION.heroViewBoxHeight,
+  preserveAspectRatio = 'meet',
   children,
 }: BlueprintIllustrationProps) {
   const palette = useMemo(() => getBlueprintPalette(active), [active]);
@@ -53,22 +56,30 @@ function BlueprintIllustration({
     : LDS_ILLUSTRATION.stageWidthRatio;
   const stageRenderHeight = Math.round(stageHeight * fillRatio);
 
+  const svgPreserveAspectRatio =
+    preserveAspectRatio === 'slice'
+      ? LDS_ILLUSTRATION.stagePreserveAspectRatioRoleCard
+      : 'xMidYMid meet';
+  const fillSlotWidth = preserveAspectRatio === 'slice';
+
   return (
     <View style={[styles.wrapper, { height: stageRenderHeight }]}>
       <View
         style={[
           styles.frame,
-          {
-            aspectRatio: viewBoxWidth / viewBoxHeight,
-            maxWidth: `${Math.round(widthRatio * 100)}%`,
-          },
+          fillSlotWidth
+            ? styles.frameFillWidth
+            : {
+                aspectRatio: viewBoxWidth / viewBoxHeight,
+                maxWidth: `${Math.round(widthRatio * 100)}%`,
+              },
         ]}
       >
         <Svg
           width="100%"
           height="100%"
           viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio={svgPreserveAspectRatio}
         >
           {children(palette)}
         </Svg>
@@ -86,6 +97,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   frame: {
+    height: '100%',
+  },
+  frameFillWidth: {
+    width: '100%',
     height: '100%',
   },
 });

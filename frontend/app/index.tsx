@@ -1229,26 +1229,9 @@ export default function App() {
       roleStepPulse.setValue(1);
       return;
     }
+    /* LDS-4G-A — step pulse disabled; deck is hero */
+    roleStepPulse.stopAnimation();
     roleStepPulse.setValue(1);
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(roleStepPulse, {
-          toValue: 1.045,
-          duration: 820,
-          useNativeDriver: true,
-        }),
-        Animated.timing(roleStepPulse, {
-          toValue: 1,
-          duration: 820,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    pulse.start();
-    return () => {
-      pulse.stop();
-      roleStepPulse.setValue(1);
-    };
   }, [screen, selectedRole, rideVehicleKind, roleStepPulse]);
 
   useEffect(() => {
@@ -3907,17 +3890,23 @@ export default function App() {
     const roleTitleLineHeight = Math.round(Math.max(18, Math.min(24, 24 * roleScale)));
     const roleTitlePadV = snap(Math.round(Math.max(7, Math.min(12, 12 * roleScale))));
     const roleTitlePadH = snap(Math.round(Math.max(12, Math.min(22, 22 * roleScale))));
-    const roleMainPadTop = snap(Math.round(Math.max(5, Math.min(16, rs.usableHeight * 0.018))));
-    const roleMainPadBottom = snap(Math.round(Math.max(3, Math.min(12, rs.usableHeight * 0.011))));
-    const roleStepMarginBottom = snap(Math.round(Math.max(4, Math.min(16, rs.usableHeight * 0.017))));
-    const roleStepCircleSize = snap(Math.round(Math.max(24, Math.min(32, 32 * roleScale))));
-    const roleStepCircleMarginBottom = snap(Math.round(Math.max(4, Math.min(8, 8 * roleScale))));
-    const roleStepHelperMarginTop = snap(Math.round(Math.max(4, Math.min(12, 12 * roleScale))));
-    const roleCardsGap = snap(Math.round(Math.max(7, Math.min(14, 14 * roleScale))));
-    const roleCardsMarginBottom = snap(Math.round(Math.max(6, Math.min(24, rs.usableHeight * 0.024))));
+    const roleMainPadTop = snap(Math.round(Math.max(4, Math.min(12, rs.usableHeight * 0.014))));
+    const roleMainPadBottom = snap(Math.round(Math.max(3, Math.min(10, rs.usableHeight * 0.01))));
+    const roleStepMarginBottom = snap(Math.round(Math.max(4, Math.min(8, rs.usableHeight * 0.009))));
+    const roleStepCircleSize = snap(Math.round(Math.max(22, Math.min(28, 28 * roleScale))));
+    const roleStepCircleMarginBottom = snap(Math.round(Math.max(2, Math.min(4, 4 * roleScale))));
+    const roleStepHelperMarginTop = snap(Math.round(Math.max(2, Math.min(6, 6 * roleScale))));
+    const roleCardsGap = snap(Math.round(Math.max(7, Math.min(12, 12 * roleScale))));
+    const roleCardsMarginBottom = snap(Math.round(Math.max(4, Math.min(16, rs.usableHeight * 0.018))));
     const roleCardPadV = snap(Math.round(Math.max(12, Math.min(24, 24 * roleScale))));
-    const roleCardMaxHeight = Math.round(Math.max(200, Math.min(264, rs.usableHeight * 0.32)));
-    const roleCardMinHeight = snap(Math.round(Math.max(148, Math.min(200, rs.usableHeight * 0.22))));
+    const roleCardMinHeightCoeff = rs.isVeryCompact ? 0.26 : rs.isCompact ? 0.265 : 0.275;
+    const roleCardMaxHeightCoeff = rs.isVeryCompact ? 0.34 : 0.36;
+    const roleCardMaxHeight = Math.round(
+      Math.max(196, Math.min(280, rs.usableHeight * roleCardMaxHeightCoeff)),
+    );
+    const roleCardMinHeight = snap(
+      Math.round(Math.max(148, Math.min(212, rs.usableHeight * roleCardMinHeightCoeff))),
+    );
     const roleIconCircleSize = snap(Math.round(Math.max(64, Math.min(94, 94 * roleScale))));
     const roleIconMarginBottom = snap(Math.round(Math.max(8, Math.min(14, 14 * roleScale))));
     const roleIllustrationSize = Math.round(roleIconCircleSize * LDS_ILLUSTRATION.stageFillRatio);
@@ -22932,9 +22921,9 @@ const styles = StyleSheet.create({
   roleUnifiedCockpitShell: {
     width: '100%',
     borderRadius: 26,
-    paddingTop: 11,
-    paddingBottom: 13,
-    paddingHorizontal: 11,
+    paddingTop: 8,
+    paddingBottom: 12,
+    paddingHorizontal: 10,
     backgroundColor: 'rgba(5,11,24,0.44)',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: 'rgba(26,48,78,0.55)',
@@ -23242,35 +23231,22 @@ const styles = StyleSheet.create({
   roleStepIndicatorGlass: {
     width: '100%',
     alignSelf: 'stretch',
-    borderRadius: 18,
-    paddingTop: 11,
-    paddingBottom: 12,
-    paddingHorizontal: 11,
-    backgroundColor: 'rgba(5,11,22,0.38)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(24,46,74,0.5)',
-    borderTopColor: 'rgba(34,211,238,0.14)',
-    borderBottomColor: 'rgba(0,0,0,0.2)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-      },
-      android: { elevation: 4 },
-      default: {},
-    }),
+    borderRadius: 12,
+    paddingTop: 4,
+    paddingBottom: 4,
+    paddingHorizontal: 4,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   roleStepIndicatorWrap: {
     width: '100%',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   roleStepIndicatorWrapCompact: {
-    marginBottom: 12,
+    marginBottom: 6,
   },
   roleStepIndicatorWrapVery: {
-    marginBottom: 5,
+    marginBottom: 4,
   },
   roleStepIndicatorRow: {
     flexDirection: 'row',
@@ -23285,61 +23261,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   roleStepCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(16, 26, 43, 0.75)',
-    borderWidth: StyleSheet.hairlineWidth + 1.25,
-    borderColor: 'rgba(30, 58, 95, 0.75)',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16, 26, 43, 0.55)',
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: 'rgba(30, 58, 95, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   roleStepCircleActive: {
-    borderColor: 'rgba(34, 211, 238, 0.42)',
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_AUTH_CYAN,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.22,
-        shadowRadius: 10,
-      },
-      android: { elevation: 3 },
-      default: {},
-    }),
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
   },
   roleStepCircleActiveRole: {
-    borderColor: 'rgba(34, 211, 238, 0.5)',
-    backgroundColor: 'rgba(34, 211, 238, 0.11)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_AUTH_CYAN,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.24,
-        shadowRadius: 12,
-      },
-      android: { elevation: 3 },
-      default: {},
-    }),
-  },
-  roleStepCircleActiveVehicle: {
     borderColor: 'rgba(34, 211, 238, 0.38)',
     backgroundColor: 'rgba(34, 211, 238, 0.09)',
-    shadowColor: PREMIUM_AUTH_CYAN,
-    shadowOpacity: 0.16,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 3,
+  },
+  roleStepCircleActiveVehicle: {
+    borderColor: 'rgba(34, 211, 238, 0.3)',
+    backgroundColor: 'rgba(34, 211, 238, 0.07)',
   },
   roleStepCircleActiveContinue: {
-    borderColor: 'rgba(34, 211, 238, 0.36)',
-    backgroundColor: 'rgba(34, 211, 238, 0.08)',
-    shadowColor: PREMIUM_AUTH_CYAN,
-    shadowOpacity: 0.14,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 2,
+    borderColor: 'rgba(34, 211, 238, 0.28)',
+    backgroundColor: 'rgba(34, 211, 238, 0.06)',
   },
   roleStepCircleDone: {
     borderColor: 'rgba(34, 211, 238, 0.28)',
@@ -23350,9 +23296,9 @@ const styles = StyleSheet.create({
     opacity: 0.42,
   },
   roleStepCircleText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: 'rgba(172, 188, 212, 0.88)',
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(172, 188, 212, 0.78)',
   },
   roleStepCircleTextActive: {
     color: 'rgba(243,248,255,0.94)',
@@ -23361,17 +23307,17 @@ const styles = StyleSheet.create({
     color: 'rgba(120, 135, 160, 0.65)',
   },
   roleStepLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: 'rgba(186, 201, 222, 0.88)',
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(186, 201, 222, 0.72)',
     textAlign: 'center',
-    lineHeight: 15,
-    letterSpacing: -0.2,
+    lineHeight: 13,
+    letterSpacing: -0.12,
   },
   roleStepLabelVery: {
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: -0.15,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: -0.1,
   },
   roleStepLabelActive: {
     color: 'rgba(243,248,255,0.94)',
@@ -23396,30 +23342,30 @@ const styles = StyleSheet.create({
     color: 'rgba(130, 145, 170, 0.55)',
   },
   roleStepDash: {
-    width: 20,
+    width: 16,
     height: 1,
     borderRadius: 0.5,
-    backgroundColor: 'rgba(38,66,98,0.2)',
+    backgroundColor: 'rgba(38,66,98,0.16)',
     alignSelf: 'center',
-    marginTop: 15,
+    marginTop: 11,
   },
   roleStepDashVery: {
     width: 8,
-    marginTop: 13,
+    marginTop: 10,
   },
   roleStepHelper: {
-    marginTop: 12,
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(172, 188, 212, 0.82)',
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(172, 188, 212, 0.62)',
     textAlign: 'center',
-    lineHeight: 18,
-    letterSpacing: -0.1,
+    lineHeight: 15,
+    letterSpacing: -0.08,
   },
   roleStepHelperCompact: {
-    fontSize: 12,
-    marginTop: 10,
-    lineHeight: 16,
+    fontSize: 10,
+    marginTop: 4,
+    lineHeight: 14,
   },
   roleStepHelperVery: {
     fontSize: 10,
@@ -23632,21 +23578,19 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     alignSelf: 'center',
     overflow: 'hidden',
-    padding: StyleSheet.hairlineWidth + 2,
-    backgroundColor: 'rgba(4,10,22,0.78)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(26,52,82,0.72)',
-    borderTopColor: 'rgba(34,211,238,0.11)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 16 },
-        shadowOpacity: 0.52,
-        shadowRadius: 30,
-      },
-      android: { elevation: 18 },
-      default: {},
-    }),
+    padding: StyleSheet.hairlineWidth + 1,
+    backgroundColor: 'rgba(4,10,22,0.5)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(26,52,82,0.35)',
+    borderTopColor: 'rgba(34,211,238,0.06)',
+  },
+  roleTopTitlePlain: {
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   roleCockpitInner: {
     overflow: 'hidden',
@@ -23690,11 +23634,11 @@ const styles = StyleSheet.create({
   },
   roleTopTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '800',
     color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
     lineHeight: 24,
-    letterSpacing: 0.15,
+    letterSpacing: -0.08,
   },
   roleTopTitleCompact: {
     fontSize: 16,
@@ -23703,7 +23647,7 @@ const styles = StyleSheet.create({
   },
   roleTopTitleAccent: {
     color: PREMIUM_AUTH_CYAN,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   roleTopTitleVery: {
     fontSize: 14,
@@ -23747,9 +23691,9 @@ const styles = StyleSheet.create({
   },
   roleCardsRow: {
     flexDirection: 'row',
-    gap: 14,
-    marginBottom: 26,
-    marginTop: 2,
+    gap: 12,
+    marginBottom: 16,
+    marginTop: 0,
   },
   roleCardCompact: {
     flex: 1,

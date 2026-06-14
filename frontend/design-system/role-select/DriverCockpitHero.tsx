@@ -5,7 +5,12 @@ import type { RoleHeroIllustrationProps } from './PassengerSeatHero';
 
 function DriverCockpitHero({ stageHeight, active = false, isVeryCompact = false }: RoleHeroIllustrationProps) {
   return (
-    <BlueprintIllustration stageHeight={stageHeight} active={active} isVeryCompact={isVeryCompact}>
+    <BlueprintIllustration
+      stageHeight={stageHeight}
+      active={active}
+      isVeryCompact={isVeryCompact}
+      preserveAspectRatio="slice"
+    >
       {(p) => (
         <>
           {[40, 80, 120].map((y) => (
