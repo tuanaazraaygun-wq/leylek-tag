@@ -3897,16 +3897,17 @@ export default function App() {
     const roleStepHelperMarginTop = Math.round(Math.max(4, Math.min(12, 12 * roleScale)));
     const roleCardsGap = Math.round(Math.max(7, Math.min(14, 14 * roleScale)));
     const roleCardsMarginBottom = Math.round(Math.max(6, Math.min(24, rs.usableHeight * 0.024)));
-    const roleCardPadV = Math.round(Math.max(10, Math.min(22, 22 * roleScale)));
-    const roleCardMaxHeight = Math.round(Math.max(156, Math.min(218, rs.usableHeight * 0.285)));
-    const roleCardMinHeight = Math.round(Math.max(112, Math.min(150, rs.usableHeight * 0.185)));
-    const roleIconCircleSize = Math.round(Math.max(58, Math.min(86, 86 * roleScale)));
-    const roleIconMarginBottom = Math.round(Math.max(6, Math.min(12, 12 * roleScale)));
+    const roleCardPadV = Math.round(Math.max(12, Math.min(24, 24 * roleScale)));
+    const roleCardMaxHeight = Math.round(Math.max(168, Math.min(232, rs.usableHeight * 0.295)));
+    const roleCardMinHeight = Math.round(Math.max(120, Math.min(162, rs.usableHeight * 0.195)));
+    const roleIconCircleSize = Math.round(Math.max(64, Math.min(94, 94 * roleScale)));
+    const roleIconMarginBottom = Math.round(Math.max(8, Math.min(14, 14 * roleScale)));
+    const roleIllustrationSize = Math.round(roleIconCircleSize * 0.84);
     const roleCardLabelFontSize = Math.round(Math.max(15, Math.min(19, 19 * roleScale)));
     const roleCardDescFontSize = Math.round(Math.max(11, Math.min(13, 12 * roleScale)));
     /** Kart altı tek satır; uzun yolcu metni için simetrik taban + sığdırma */
     const roleCardSubtitleOneLineFont = Math.round(
-      Math.max(10, Math.min(12, roleCardDescFontSize * 0.94)),
+      Math.max(9, Math.min(11, roleCardDescFontSize * 0.88)),
     );
     const roleCardSubtitleOneLineHeight = Math.round(
       Math.max(12, Math.min(16, roleCardSubtitleOneLineFont * 1.22)),
@@ -4046,6 +4047,7 @@ export default function App() {
         roleStep1Done={roleStep1Done}
         roleStep2Done={roleStep2Done}
         roleStepPulseStyle={roleStepPulseStyle}
+        roleIllustrationSize={roleIllustrationSize}
         passengerIconSize={passengerIconSize}
         driverCarIconSize={driverCarIconSize}
         driverBikeIconSize={driverBikeIconSize}
@@ -23739,8 +23741,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: PREMIUM_ROLE_CARD_BG,
     borderRadius: 24,
-    paddingVertical: 22,
-    paddingHorizontal: 8,
+    paddingVertical: 24,
+    paddingHorizontal: 10,
+    paddingTop: 20,
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: PREMIUM_ROLE_CARD_BORDER,
@@ -23764,14 +23767,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(34, 211, 238, 0.58)',
     borderWidth: 2,
     borderTopColor: 'rgba(34,211,238,0.42)',
-    backgroundColor: 'rgba(12,24,42,0.98)',
+    backgroundColor: 'rgba(10,22,38,0.98)',
     transform: [{ translateY: -2 }],
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_AUTH_CYAN,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.28,
-        shadowRadius: 18,
+        shadowOpacity: 0.32,
+        shadowRadius: 20,
       },
       android: { elevation: 12 },
       default: {},
@@ -23781,31 +23784,50 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: 22,
   },
-  roleIconCircle: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    backgroundColor: PREMIUM_GLASS_FILL,
+  roleCardSelectedInnerGlowSide: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 22,
+    opacity: 0.65,
+  },
+  roleIllustrationStage: {
+    width: 84,
+    height: 84,
+    borderRadius: 22,
+    backgroundColor: 'rgba(6,14,26,0.72)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
     borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30, 58, 95, 0.72)',
+    borderColor: 'rgba(34,211,238,0.14)',
+    borderTopColor: 'rgba(34,211,238,0.22)',
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(34,211,238,0.12)',
-        shadowOffset: { width: 0, height: 2 },
+        shadowColor: 'rgba(34,211,238,0.1)',
+        shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 1,
-        shadowRadius: 8,
+        shadowRadius: 10,
       },
-      android: { elevation: 3 },
+      android: { elevation: 4 },
       default: {},
     }),
   },
-  roleIconCircleActive: {
-    backgroundColor: 'rgba(34, 211, 238, 0.16)',
-    borderColor: 'rgba(34, 211, 238, 0.48)',
-    borderWidth: 2,
+  roleIllustrationStageActive: {
+    backgroundColor: 'rgba(34,211,238,0.1)',
+    borderColor: 'rgba(34,211,238,0.42)',
+    borderWidth: 1.5,
+  },
+  roleIllustrationStageCompact: {
+    width: 72,
+    height: 72,
+    borderRadius: 19,
+    marginBottom: 10,
+  },
+  roleIllustrationStageVery: {
+    width: 62,
+    height: 62,
+    borderRadius: 16,
+    marginBottom: 8,
   },
   roleDriverIconsRow: {
     flexDirection: 'row',
@@ -23914,26 +23936,29 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: '800',
     color: PREMIUM_TEXT_SOFT,
-    marginBottom: 6,
-    letterSpacing: -0.3,
+    marginBottom: 4,
+    letterSpacing: -0.35,
   },
   roleCardLabelActive: {
     color: PREMIUM_TEXT_SOFT,
-    textShadowColor: 'rgba(34,211,238,0.35)',
+    textShadowColor: 'rgba(34,211,238,0.28)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    textShadowRadius: 8,
   },
   roleCardDesc: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: 'rgba(172, 188, 212, 0.85)',
+    fontSize: 11,
+    lineHeight: 15,
+    color: 'rgba(148, 168, 196, 0.72)',
     textAlign: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
     fontWeight: '500',
+    letterSpacing: 0.1,
   },
-  roleCardDescActive: {
-    color: '#0f172a',
-    fontWeight: '700',
+  roleCardDescActivePassenger: {
+    color: 'rgba(148, 196, 220, 0.82)',
+  },
+  roleCardDescActiveDriver: {
+    color: 'rgba(156, 204, 188, 0.78)',
   },
   roleCheckBadge: {
     position: 'absolute',

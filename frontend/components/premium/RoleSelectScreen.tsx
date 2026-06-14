@@ -24,6 +24,8 @@ import {
   premiumAuthStyles as pap,
 } from '../auth/premiumAuthStyles';
 import RoleSelectAmbienceBackground from '../../design-system/role-select/RoleSelectAmbienceBackground';
+import RoleCardPassengerIllustration from '../../design-system/role-select/RoleCardPassengerIllustration';
+import RoleCardDriverIllustration from '../../design-system/role-select/RoleCardDriverIllustration';
 import { LDS_MOTION_TRANSFORM } from '../../design-system/tokens/motion';
 
 export type RoleSelectBreakpoints = {
@@ -76,6 +78,7 @@ export type RoleSelectScreenProps = {
   roleStep1Done: boolean;
   roleStep2Done: boolean;
   roleStepPulseStyle: { transform: { scale: Animated.Value }[] };
+  roleIllustrationSize: number;
   passengerIconSize: number;
   driverCarIconSize: number;
   driverBikeIconSize: number;
@@ -144,14 +147,24 @@ function RoleSelectPressable({
       ]}
     >
       {selected ? (
-        <LinearGradient
-          colors={['rgba(34,211,238,0.16)', 'rgba(34,211,238,0.04)', 'rgba(8,17,31,0)']}
-          locations={[0, 0.45, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          pointerEvents="none"
-          style={s.roleCardSelectedInnerGlow}
-        />
+        <>
+          <LinearGradient
+            colors={['rgba(34,211,238,0.22)', 'rgba(34,211,238,0.08)', 'rgba(8,17,31,0)']}
+            locations={[0, 0.38, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            pointerEvents="none"
+            style={s.roleCardSelectedInnerGlow}
+          />
+          <LinearGradient
+            colors={['rgba(34,211,238,0.1)', 'transparent']}
+            locations={[0, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            pointerEvents="none"
+            style={s.roleCardSelectedInnerGlowSide}
+          />
+        </>
       ) : null}
       {children}
     </Pressable>
@@ -202,8 +215,7 @@ export function RoleSelectScreen({
   roleStep1Done,
   roleStep2Done,
   roleStepPulseStyle,
-  passengerIconSize,
-  driverCarIconSize,
+  roleIllustrationSize,
   driverBikeIconSize,
   roleCheckIconSize,
   vehicleChipIconSize,
@@ -586,22 +598,21 @@ export function RoleSelectScreen({
                       >
                         <View
                           style={[
-                            styles.roleIconCircle,
-                            rs.isVeryCompact && styles.roleIconCircleVery,
-                            rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
-                            selectedRole === 'passenger' && styles.roleIconCircleActive,
+                            styles.roleIllustrationStage,
+                            rs.isVeryCompact && styles.roleIllustrationStageVery,
+                            rs.isCompact && !rs.isVeryCompact && styles.roleIllustrationStageCompact,
+                            selectedRole === 'passenger' && styles.roleIllustrationStageActive,
                             {
                               width: roleIconCircleSize,
                               height: roleIconCircleSize,
-                              borderRadius: roleIconCircleSize / 2,
+                              borderRadius: Math.round(roleIconCircleSize * 0.26),
                               marginBottom: roleIconMarginBottom,
                             },
                           ]}
                         >
-                          <MaterialCommunityIcons
-                            name="seat-passenger"
-                            size={passengerIconSize}
-                            color={selectedRole === 'passenger' ? 'rgba(243,248,255,0.96)' : 'rgba(94,210,230,0.92)'}
+                          <RoleCardPassengerIllustration
+                            size={roleIllustrationSize}
+                            active={selectedRole === 'passenger'}
                           />
                         </View>
                         <Text
@@ -617,16 +628,11 @@ export function RoleSelectScreen({
                           style={[
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
+                            selectedRole === 'passenger' && styles.roleCardDescActivePassenger,
                             {
                               width: '100%',
-                              textAlign: 'center',
                               fontSize: roleCardSubtitleOneLineFont,
                               lineHeight: roleCardSubtitleOneLineHeight,
-                              color: 'rgba(120,205,228,0.95)',
-                              fontWeight: '800',
-                              textShadowColor: 'rgba(34, 211, 238, 0.14)',
-                              textShadowOffset: { width: 0, height: 0 },
-                              textShadowRadius: 8,
                               opacity: roleSelectCardSubtitlePulse,
                             },
                           ]}
@@ -671,22 +677,21 @@ export function RoleSelectScreen({
                       >
                         <View
                           style={[
-                            styles.roleIconCircle,
-                            rs.isVeryCompact && styles.roleIconCircleVery,
-                            rs.isCompact && !rs.isVeryCompact && styles.roleIconCircleCompact,
-                            selectedRole === 'driver' && styles.roleIconCircleActive,
+                            styles.roleIllustrationStage,
+                            rs.isVeryCompact && styles.roleIllustrationStageVery,
+                            rs.isCompact && !rs.isVeryCompact && styles.roleIllustrationStageCompact,
+                            selectedRole === 'driver' && styles.roleIllustrationStageActive,
                             {
                               width: roleIconCircleSize,
                               height: roleIconCircleSize,
-                              borderRadius: roleIconCircleSize / 2,
+                              borderRadius: Math.round(roleIconCircleSize * 0.26),
                               marginBottom: roleIconMarginBottom,
                             },
                           ]}
                         >
-                          <MaterialCommunityIcons
-                            name="steering"
-                            size={driverCarIconSize}
-                            color={selectedRole === 'driver' ? 'rgba(243,248,255,0.96)' : 'rgba(112,180,226,0.92)'}
+                          <RoleCardDriverIllustration
+                            size={roleIllustrationSize}
+                            active={selectedRole === 'driver'}
                           />
                         </View>
                         <Text
@@ -702,16 +707,11 @@ export function RoleSelectScreen({
                           style={[
                             styles.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
+                            selectedRole === 'driver' && styles.roleCardDescActiveDriver,
                             {
                               width: '100%',
-                              textAlign: 'center',
                               fontSize: roleCardSubtitleOneLineFont,
                               lineHeight: roleCardSubtitleOneLineHeight,
-                              color: 'rgba(150,218,206,0.92)',
-                              fontWeight: '800',
-                              textShadowColor: 'rgba(45, 180, 160, 0.16)',
-                              textShadowOffset: { width: 0, height: 0 },
-                              textShadowRadius: 8,
                               opacity: roleSelectCardSubtitlePulse,
                             },
                           ]}
