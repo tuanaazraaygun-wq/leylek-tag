@@ -18,14 +18,18 @@ import AdminPanel from '../AdminPanel';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import {
   PREMIUM_AUTH_CYAN,
-  PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE,
   PREMIUM_TEXT_SOFT,
   premiumAuthStyles as pap,
 } from '../auth/premiumAuthStyles';
-import RoleSelectAmbienceBackground from '../../design-system/role-select/RoleSelectAmbienceBackground';
 import RoleCardPassengerIllustration from '../../design-system/role-select/RoleCardPassengerIllustration';
 import RoleCardDriverIllustration from '../../design-system/role-select/RoleCardDriverIllustration';
+import { CockpitBackground, GlassSurface, PremiumText } from '../../design-system/primitives';
+import {
+  LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL,
+  LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL_LOCATIONS,
+  LDS_GRADIENT_SELECTION_GLOW_VERTICAL,
+  LDS_GRADIENT_SELECTION_GLOW_VERTICAL_LOCATIONS,
+} from '../../design-system/tokens/gradient';
 import { LDS_MOTION_TRANSFORM } from '../../design-system/tokens/motion';
 
 export type RoleSelectBreakpoints = {
@@ -149,16 +153,16 @@ function RoleSelectPressable({
       {selected ? (
         <>
           <LinearGradient
-            colors={['rgba(34,211,238,0.22)', 'rgba(34,211,238,0.08)', 'rgba(8,17,31,0)']}
-            locations={[0, 0.38, 1]}
+            colors={[...LDS_GRADIENT_SELECTION_GLOW_VERTICAL]}
+            locations={[...LDS_GRADIENT_SELECTION_GLOW_VERTICAL_LOCATIONS]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             pointerEvents="none"
             style={s.roleCardSelectedInnerGlow}
           />
           <LinearGradient
-            colors={['rgba(34,211,238,0.1)', 'transparent']}
-            locations={[0, 1]}
+            colors={[...LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL]}
+            locations={[...LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL_LOCATIONS]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             pointerEvents="none"
@@ -255,29 +259,7 @@ export function RoleSelectScreen({
 
   return (
     <View style={styles.roleSelectionContainer}>
-      <LinearGradient
-        colors={['#020608', PREMIUM_NAVY_DEEP, '#081018']}
-        locations={[0, 0.52, 1]}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
-      <RoleSelectAmbienceBackground />
-      <LinearGradient
-        colors={[...PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={['rgba(34,211,238,0.025)', 'transparent', 'rgba(0,0,0,0.32)']}
-        locations={[0, 0.32, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
+      <CockpitBackground />
         <SafeAreaView style={styles.roleSelectionSafe}>
           {roleSelectTripExitBanner ? (
             <Animated.View
@@ -402,19 +384,10 @@ export function RoleSelectScreen({
                 },
               ]}
             >
-            <View style={[styles.roleUnifiedCockpitShell, rs.isVeryCompact && styles.roleUnifiedCockpitShellVery]}>
-              <LinearGradient
-                colors={[
-                  'rgba(255,255,255,0.055)',
-                  'rgba(255,255,255,0)',
-                  'rgba(34,211,238,0.02)',
-                ]}
-                locations={[0, 0.22, 1]}
-                start={{ x: 0.08, y: 0 }}
-                end={{ x: 0.55, y: 0.95 }}
-                pointerEvents="none"
-                style={StyleSheet.absoluteFillObject}
-              />
+            <GlassSurface
+              variant="panel"
+              style={[styles.roleUnifiedCockpitShell, rs.isVeryCompact && styles.roleUnifiedCockpitShellVery]}
+            >
               <View style={[styles.roleStepIndicatorGlass, { marginBottom: roleStepMarginBottom }]}>
               <View
                 style={[
@@ -546,7 +519,9 @@ export function RoleSelectScreen({
                     </Text>
                   </View>
                 </View>
-                <Text
+                <PremiumText
+                  variant="caption"
+                  muted
                   style={[
                     styles.roleStepHelper,
                     rs.isVeryCompact && styles.roleStepHelperVery,
@@ -557,7 +532,7 @@ export function RoleSelectScreen({
                   ellipsizeMode="tail"
                 >
                   Önce rolünü, sonra araç tipini seç.
-                </Text>
+                </PremiumText>
               </View>
               </View>
 
@@ -1021,7 +996,7 @@ export function RoleSelectScreen({
                   </View>
                 )}
               </View>
-              </View>
+              </GlassSurface>
             </View>
           </ScrollView>
 

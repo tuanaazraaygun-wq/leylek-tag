@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
+import { LDS_OPACITY } from '../tokens/opacity';
 
 /**
  * Statik rol ekranı ambience — derin cockpit grid, animasyon yok.
@@ -8,6 +9,9 @@ import Svg, { Line } from 'react-native-svg';
  */
 function RoleSelectAmbienceBackground() {
   const { width, height } = useWindowDimensions();
+  const gridStroke = `rgba(34,211,238,${LDS_OPACITY.gridLine})`;
+  const perspectiveStroke = `rgba(34,211,238,${LDS_OPACITY.gridPerspective})`;
+  const horizonStroke = `rgba(34,211,238,${LDS_OPACITY.horizonLine})`;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -24,7 +28,7 @@ function RoleSelectAmbienceBackground() {
             y1={844 * yRatio}
             x2="390"
             y2={844 * yRatio}
-            stroke="rgba(34,211,238,0.028)"
+            stroke={gridStroke}
             strokeWidth="0.5"
           />
         ))}
@@ -34,7 +38,7 @@ function RoleSelectAmbienceBackground() {
           y1="140"
           x2="24"
           y2="844"
-          stroke="rgba(34,211,238,0.018)"
+          stroke={perspectiveStroke}
           strokeWidth="0.45"
         />
         <Line
@@ -42,7 +46,7 @@ function RoleSelectAmbienceBackground() {
           y1="140"
           x2="366"
           y2="844"
-          stroke="rgba(34,211,238,0.018)"
+          stroke={perspectiveStroke}
           strokeWidth="0.45"
         />
 
@@ -51,7 +55,7 @@ function RoleSelectAmbienceBackground() {
           y1="748"
           x2="390"
           y2="748"
-          stroke="rgba(34,211,238,0.045)"
+          stroke={horizonStroke}
           strokeWidth="0.55"
         />
       </Svg>

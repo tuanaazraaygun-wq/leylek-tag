@@ -94,6 +94,8 @@ import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
 import { OtpVerificationScreen } from '../components/auth/OtpVerificationScreen';
 import { RoleSelectScreen } from '../components/premium/RoleSelectScreen';
+import { ldsSnapSpacing } from '../design-system/tokens/spacing';
+import { LDS_ILLUSTRATION } from '../design-system/tokens/illustration';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
 import {
   PREMIUM_AUTH_CYAN,
@@ -3879,30 +3881,31 @@ export default function App() {
     };
 
     const rs = roleSelectBreakpoints;
+    const snap = ldsSnapSpacing;
     const roleSelectContentWide = windowWidth >= 428 && !rs.isVeryCompact;
     const roleScale = Math.max(0.78, Math.min(1, rs.usableHeight / 760, windowWidth / 390));
-    const roleHorizontalPad = Math.round(Math.max(14, Math.min(20, windowWidth * 0.048)));
-    const roleTopButtonSize = Math.round(Math.max(38, Math.min(46, 46 * roleScale)));
-    const roleTopButtonRadius = Math.round(Math.max(12, Math.min(14, 14 * roleScale)));
-    const roleTopPaddingV = Math.round(Math.max(4, Math.min(8, 8 * roleScale)));
+    const roleHorizontalPad = snap(Math.round(Math.max(14, Math.min(20, windowWidth * 0.048))));
+    const roleTopButtonSize = snap(Math.round(Math.max(38, Math.min(46, 46 * roleScale))));
+    const roleTopButtonRadius = snap(Math.round(Math.max(12, Math.min(14, 14 * roleScale))));
+    const roleTopPaddingV = snap(Math.round(Math.max(4, Math.min(8, 8 * roleScale))));
     const roleTitleFontSize = Math.round(Math.max(14, Math.min(18, 18 * roleScale)));
     const roleTitleLineHeight = Math.round(Math.max(18, Math.min(24, 24 * roleScale)));
-    const roleTitlePadV = Math.round(Math.max(7, Math.min(12, 12 * roleScale)));
-    const roleTitlePadH = Math.round(Math.max(12, Math.min(22, 22 * roleScale)));
-    const roleMainPadTop = Math.round(Math.max(5, Math.min(16, rs.usableHeight * 0.018)));
-    const roleMainPadBottom = Math.round(Math.max(3, Math.min(12, rs.usableHeight * 0.011)));
-    const roleStepMarginBottom = Math.round(Math.max(4, Math.min(16, rs.usableHeight * 0.017)));
-    const roleStepCircleSize = Math.round(Math.max(24, Math.min(32, 32 * roleScale)));
-    const roleStepCircleMarginBottom = Math.round(Math.max(4, Math.min(8, 8 * roleScale)));
-    const roleStepHelperMarginTop = Math.round(Math.max(4, Math.min(12, 12 * roleScale)));
-    const roleCardsGap = Math.round(Math.max(7, Math.min(14, 14 * roleScale)));
-    const roleCardsMarginBottom = Math.round(Math.max(6, Math.min(24, rs.usableHeight * 0.024)));
-    const roleCardPadV = Math.round(Math.max(12, Math.min(24, 24 * roleScale)));
+    const roleTitlePadV = snap(Math.round(Math.max(7, Math.min(12, 12 * roleScale))));
+    const roleTitlePadH = snap(Math.round(Math.max(12, Math.min(22, 22 * roleScale))));
+    const roleMainPadTop = snap(Math.round(Math.max(5, Math.min(16, rs.usableHeight * 0.018))));
+    const roleMainPadBottom = snap(Math.round(Math.max(3, Math.min(12, rs.usableHeight * 0.011))));
+    const roleStepMarginBottom = snap(Math.round(Math.max(4, Math.min(16, rs.usableHeight * 0.017))));
+    const roleStepCircleSize = snap(Math.round(Math.max(24, Math.min(32, 32 * roleScale))));
+    const roleStepCircleMarginBottom = snap(Math.round(Math.max(4, Math.min(8, 8 * roleScale))));
+    const roleStepHelperMarginTop = snap(Math.round(Math.max(4, Math.min(12, 12 * roleScale))));
+    const roleCardsGap = snap(Math.round(Math.max(7, Math.min(14, 14 * roleScale))));
+    const roleCardsMarginBottom = snap(Math.round(Math.max(6, Math.min(24, rs.usableHeight * 0.024))));
+    const roleCardPadV = snap(Math.round(Math.max(12, Math.min(24, 24 * roleScale))));
     const roleCardMaxHeight = Math.round(Math.max(168, Math.min(232, rs.usableHeight * 0.295)));
     const roleCardMinHeight = Math.round(Math.max(120, Math.min(162, rs.usableHeight * 0.195)));
-    const roleIconCircleSize = Math.round(Math.max(64, Math.min(94, 94 * roleScale)));
-    const roleIconMarginBottom = Math.round(Math.max(8, Math.min(14, 14 * roleScale)));
-    const roleIllustrationSize = Math.round(roleIconCircleSize * 0.84);
+    const roleIconCircleSize = snap(Math.round(Math.max(64, Math.min(94, 94 * roleScale))));
+    const roleIconMarginBottom = snap(Math.round(Math.max(8, Math.min(14, 14 * roleScale))));
+    const roleIllustrationSize = Math.round(roleIconCircleSize * LDS_ILLUSTRATION.stageFillRatio);
     const roleCardLabelFontSize = Math.round(Math.max(15, Math.min(19, 19 * roleScale)));
     const roleCardDescFontSize = Math.round(Math.max(11, Math.min(13, 12 * roleScale)));
     /** Kart altı tek satır; uzun yolcu metni için simetrik taban + sığdırma */
@@ -3912,10 +3915,10 @@ export default function App() {
     const roleCardSubtitleOneLineHeight = Math.round(
       Math.max(12, Math.min(16, roleCardSubtitleOneLineFont * 1.22)),
     );
-    const roleContinueMinHeight = Math.round(Math.max(52, Math.min(72, rs.usableHeight * 0.086)));
-    const roleContinuePadV = Math.round(Math.max(13, Math.min(23, roleContinueMinHeight * 0.32)));
+    const roleContinueMinHeight = snap(Math.round(Math.max(52, Math.min(72, rs.usableHeight * 0.086))));
+    const roleContinuePadV = snap(Math.round(Math.max(13, Math.min(23, roleContinueMinHeight * 0.32))));
     const roleContinueTextSize = Math.round(Math.max(18, Math.min(24, 23.8 * roleScale)));
-    const roleFooterBottomPad = Math.round(
+    const roleFooterBottomPad = snap(
       Math.max(16, Math.min(28, Math.max(insets.bottom, 12) + 12)),
     );
     const roleActiveStep = !selectedRole ? 1 : !rideVehicleKind ? 2 : 3;
@@ -3934,9 +3937,9 @@ export default function App() {
       : rs.isCompact && !rs.isVeryCompact
         ? 1.28
         : Math.min(1.46, Math.max(1.22, 1.42 * Math.min(1.08, Math.max(roleScale, 0.92))));
-    const vchBasePv = rs.isVeryCompact ? 9 : rs.isCompact && !rs.isVeryCompact ? 12 : 15;
-    const vchBasePh = rs.isVeryCompact ? 6 : rs.isCompact && !rs.isVeryCompact ? 8 : 10;
-    const vchBaseRowGap = rs.isVeryCompact ? 5 : rs.isCompact && !rs.isVeryCompact ? 6 : 8;
+    const vchBasePv = rs.isVeryCompact ? snap(8) : rs.isCompact && !rs.isVeryCompact ? 12 : 15;
+    const vchBasePh = rs.isVeryCompact ? snap(8) : rs.isCompact && !rs.isVeryCompact ? snap(8) : snap(12);
+    const vchBaseRowGap = rs.isVeryCompact ? snap(4) : rs.isCompact && !rs.isVeryCompact ? snap(8) : snap(8);
     const vchBaseLabel = rs.isVeryCompact ? 13 : 15;
     const vchPadV = Math.min(
       rs.isVeryCompact ? 12 : rs.isCompact && !rs.isVeryCompact ? 18 : 21,
