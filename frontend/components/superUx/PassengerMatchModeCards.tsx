@@ -6,25 +6,21 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import type { ComponentProps } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
+  PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
-  PREMIUM_NAVY_CARD,
-  PREMIUM_NAVY_DEEP,
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import {
-  GlassSurface,
   PremiumSelectionCard,
   PremiumText,
   computeRoleCardHeroHeight,
-  computeRoleIllustrationHeroSize,
 } from '../../design-system/primitives';
-import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
-import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import DriverCockpitHero from '../../design-system/role-select/DriverCockpitHero';
+import PassengerSeatHero from '../../design-system/role-select/PassengerSeatHero';
+import { LDS_BORDER_COLOR } from '../../design-system/tokens/border';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { LDS_TYPOGRAPHY } from '../../design-system/tokens/typography';
 import { useTrustedSummary } from '../../hooks/useTrustedSummary';
 import { formatPassengerTrustedCardSubtitle } from '../../lib/trustedSummaryCopy';
@@ -38,11 +34,8 @@ export type PassengerMatchModeCardsProps = {
   onTrustedPress?: () => void;
 };
 
-type IoniconName = ComponentProps<typeof Ionicons>['name'];
-
 type CardDef = {
   id: 'quick' | 'trusted' | 'normal';
-  icon: IoniconName;
   title: string;
   subtitle: string;
   enabled: boolean;
@@ -52,7 +45,6 @@ type CardDef = {
 const PRIMARY_CARDS: CardDef[] = [
   {
     id: 'quick',
-    icon: 'flash-outline',
     title: 'Hemen Eşleş',
     subtitle: 'Yakındaki uygun sürücüleri sırayla ara',
     enabled: false,
@@ -60,7 +52,6 @@ const PRIMARY_CARDS: CardDef[] = [
   },
   {
     id: 'normal',
-    icon: 'globe-outline',
     title: 'Normal Eşleşme',
     subtitle: 'Rota seç, teklif gönder',
     enabled: true,
@@ -70,64 +61,11 @@ const PRIMARY_CARDS: CardDef[] = [
 
 const SECONDARY_CARD: CardDef = {
   id: 'trusted',
-  icon: 'people-outline',
   title: 'Sürücülerim',
   subtitle: 'Güvendiğiniz sürücüler',
   enabled: false,
   tier: 'secondary',
 };
-
-const ICON_CYAN = 'rgba(34, 211, 238, 0.82)';
-const ICON_CYAN_MUTED = 'rgba(34, 211, 238, 0.52)';
-const CHEVRON_MUTED = 'rgba(148, 163, 184, 0.55)';
-
-type MatchHeroIllustrationProps = {
-  icon: IoniconName;
-  iconSize: number;
-  emphasis?: boolean;
-  enabled?: boolean;
-};
-
-function MatchHeroIllustration({
-  icon,
-  iconSize,
-  emphasis = false,
-  enabled = true,
-}: MatchHeroIllustrationProps) {
-  return (
-    <View
-      style={[
-        styles.heroIllustrationWrap,
-        emphasis ? styles.heroIllustrationQuick : styles.heroIllustrationCalm,
-        !enabled && styles.heroIllustrationDisabled,
-      ]}
-    >
-      <LinearGradient
-        colors={
-          emphasis
-            ? ['rgba(34,211,238,0.16)', 'rgba(8,17,31,0.62)', 'rgba(4,10,20,0.78)']
-            : ['rgba(30,58,95,0.42)', 'rgba(8,17,31,0.62)', 'rgba(4,10,20,0.78)']
-        }
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View
-        style={[
-          styles.heroIconOrb,
-          emphasis ? styles.heroIconOrbQuick : styles.heroIconOrbCalm,
-          !enabled && styles.heroIconOrbDisabled,
-        ]}
-      >
-        <Ionicons
-          name={icon}
-          size={iconSize}
-          color={enabled ? (emphasis ? ICON_CYAN : ICON_CYAN_MUTED) : PREMIUM_TEXT_MUTED}
-        />
-      </View>
-    </View>
-  );
-}
 
 function PassengerMatchModeCards({
   onNormalPress,
@@ -152,7 +90,14 @@ function PassengerMatchModeCards({
       isVeryCompact,
       isCompact && !isVeryCompact,
     );
-    const heroIconSize = computeRoleIllustrationHeroSize(primaryHeroHeight, isVeryCompact);
+    const trustCardMinHeight = Math.round(
+      Math.max(LDS_SPACING.xxxl + LDS_SPACING.xxl, primaryCardMinHeight * 0.56),
+    );
+    const trustHeroHeight = computeRoleCardHeroHeight(
+      trustCardMinHeight,
+      isVeryCompact,
+      isCompact && !isVeryCompact,
+    );
     const titleSize = isVeryCompact ? 15 : isCompact ? 16 : 17;
     const subtitleSize = isVeryCompact ? 10 : 11;
     return {
@@ -160,7 +105,8 @@ function PassengerMatchModeCards({
       isVeryCompact,
       primaryCardMinHeight,
       primaryHeroHeight,
-      heroIconSize,
+      trustCardMinHeight,
+      trustHeroHeight,
       titleSize,
       subtitleSize,
     };
@@ -198,6 +144,7 @@ function PassengerMatchModeCards({
       styles.heroSubtitle,
       { fontSize: layout.subtitleSize, lineHeight: layout.subtitleSize + 4 },
       isQuick && isEnabled && styles.quickSubtitle,
+      isNormal && isEnabled && styles.normalSubtitle,
     ];
 
     const heroCard = (
@@ -208,12 +155,19 @@ function PassengerMatchModeCards({
         compactCopy={layout.isCompact}
         style={cardShellStyle}
         illustration={
-          <MatchHeroIllustration
-            icon={card.icon}
-            iconSize={layout.heroIconSize}
-            emphasis={isQuick}
-            enabled={isEnabled}
-          />
+          isQuick ? (
+            <PassengerSeatHero
+              stageHeight={layout.primaryHeroHeight}
+              active={isEnabled}
+              isVeryCompact={layout.isVeryCompact}
+            />
+          ) : (
+            <DriverCockpitHero
+              stageHeight={layout.primaryHeroHeight}
+              active={false}
+              isVeryCompact={layout.isVeryCompact}
+            />
+          )
         }
         title={card.title}
         subtitle={showSoonPill ? ' ' : card.subtitle}
@@ -253,16 +207,14 @@ function PassengerMatchModeCards({
     );
   };
 
-  const renderTrustedCompact = (card: CardDef) => {
+  const renderTrustFooter = (card: CardDef) => {
     const isTrusted = card.id === 'trusted';
     const isEnabled = card.enabled || (isTrusted && trustedWired);
     const trustedReady = isTrusted && status === 'ready' && summary != null;
     const trustedSubtitle =
       trustedReady && summary ? formatPassengerTrustedCardSubtitle(summary) : null;
-    const showSoonPill =
-      (isTrusted && !trustedWired && !trustedReady);
-    const onPress =
-      isTrusted && trustedWired ? onTrustedPress : undefined;
+    const showSoonPill = isTrusted && !trustedWired && !trustedReady;
+    const onPress = isTrusted && trustedWired ? onTrustedPress : undefined;
 
     const displaySubtitle = showSoonPill
       ? null
@@ -272,82 +224,66 @@ function PassengerMatchModeCards({
           ? card.subtitle
           : card.subtitle;
 
-    return (
-      <GlassSurface variant="plain" style={styles.trustGlass}>
-        <Pressable
-          disabled={!isEnabled}
-          onPress={onPress}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !isEnabled }}
-          accessibilityLabel={
-            isTrusted && trustedSubtitle
-              ? `${card.title}. ${trustedSubtitle}`
-              : isTrusted && trustedWired
-                ? `${card.title}. ${card.subtitle}`
-                : `${card.title}. Yakında`
-          }
-          style={({ pressed }) => [
-            styles.trustRow,
-            !isEnabled && styles.trustRowDisabled,
-            isEnabled && pressed && styles.trustRowPressed,
-          ]}
-        >
-          <LinearGradient
-            colors={
-              isEnabled
-                ? [PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(16, 26, 43, 0.94)']
-                : ['rgba(8, 17, 31, 0.72)', 'rgba(16, 26, 43, 0.58)', 'rgba(8, 17, 31, 0.68)']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.trustGradient}
-          >
-            <View
-              style={[
-                styles.trustIconOrb,
-                isEnabled && styles.trustIconOrbActive,
-              ]}
-            >
-              <Ionicons
-                name={card.icon}
-                size={20}
-                color={isEnabled ? ICON_CYAN_MUTED : PREMIUM_TEXT_MUTED}
-              />
-            </View>
-            <View style={styles.trustTextCol}>
-              <PremiumText
-                variant="body"
-                style={[styles.trustTitle, !isEnabled && styles.titleDisabled]}
-                numberOfLines={1}
-              >
-                {card.title}
+    const trustCard = (
+      <PremiumSelectionCard
+        selected={false}
+        onPress={onPress ?? (() => {})}
+        heroHeight={layout.trustHeroHeight}
+        compactCopy
+        style={[
+          styles.trustFooterShell,
+          { minHeight: layout.trustCardMinHeight },
+          isEnabled ? styles.trustFooterShellActive : styles.trustFooterShellMuted,
+        ]}
+        illustration={
+          <DriverCockpitHero
+            stageHeight={layout.trustHeroHeight}
+            active={isEnabled}
+            isVeryCompact={layout.isVeryCompact}
+          />
+        }
+        title={card.title}
+        subtitle={showSoonPill ? ' ' : displaySubtitle ?? card.subtitle}
+        titleStyle={[
+          LDS_TYPOGRAPHY.body,
+          styles.trustFooterTitle,
+          !isEnabled && styles.titleDisabled,
+        ]}
+        subtitleStyle={[
+          LDS_TYPOGRAPHY.caption,
+          styles.trustFooterSubtitle,
+          !isEnabled && styles.trustFooterSubtitleMuted,
+        ]}
+        checkmark={
+          showSoonPill ? (
+            <View style={styles.soonPill}>
+              <PremiumText variant="step" style={styles.soonPillText}>
+                Yakında
               </PremiumText>
-              {showSoonPill ? (
-                <View style={styles.soonPill}>
-                  <PremiumText variant="step" style={styles.soonPillText}>
-                    Yakında
-                  </PremiumText>
-                </View>
-              ) : displaySubtitle ? (
-                <PremiumText
-                  variant="caption"
-                  muted
-                  style={styles.trustSubtitle}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {displaySubtitle}
-                </PremiumText>
-              ) : null}
             </View>
-            {isEnabled ? (
-              <Ionicons name="chevron-forward" size={18} color={CHEVRON_MUTED} />
-            ) : (
-              <View style={styles.chevronPlaceholder} />
-            )}
-          </LinearGradient>
+          ) : undefined
+        }
+      />
+    );
+
+    if (!isEnabled) {
+      return (
+        <Pressable
+          disabled
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
+          accessibilityLabel={`${card.title}. Yakında`}
+          style={styles.trustFooterCell}
+        >
+          <View pointerEvents="none">{trustCard}</View>
         </Pressable>
-      </GlassSurface>
+      );
+    }
+
+    return (
+      <View style={styles.trustFooterCell} accessibilityRole="button">
+        {trustCard}
+      </View>
     );
   };
 
@@ -356,7 +292,7 @@ function PassengerMatchModeCards({
       <View style={styles.heroRow}>
         {PRIMARY_CARDS.map(renderPrimaryHero)}
       </View>
-      <View style={styles.trustSlot}>{renderTrustedCompact(SECONDARY_CARD)}</View>
+      {renderTrustFooter(SECONDARY_CARD)}
     </View>
   );
 }
@@ -366,12 +302,12 @@ export default memo(PassengerMatchModeCards);
 const styles = StyleSheet.create({
   matchDeck: {
     alignSelf: 'stretch',
-    gap: 10,
+    gap: LDS_SPACING.sm,
   },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 10,
+    gap: LDS_SPACING.sm,
   },
   heroCell: {
     flex: 1,
@@ -381,24 +317,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   quickHeroCard: {
-    borderTopColor: 'rgba(34, 211, 238, 0.38)',
-    borderLeftColor: 'rgba(34, 211, 238, 0.16)',
-    borderColor: 'rgba(34, 211, 238, 0.26)',
+    borderTopColor: 'rgba(34, 211, 238, 0.42)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.2)',
+    borderColor: 'rgba(34, 211, 238, 0.3)',
+    backgroundColor: 'rgba(34, 211, 238, 0.04)',
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(34, 211, 238, 0.35)',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.42,
-        shadowRadius: 10,
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.38,
+        shadowRadius: LDS_SPACING.sm,
       },
-      android: { elevation: 5 },
+      android: { elevation: 6 },
     }),
   },
   normalHeroCard: {
     borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
     borderColor: LDS_BORDER_COLOR.card,
-    opacity: 0.96,
+    backgroundColor: 'rgba(4, 10, 20, 0.28)',
   },
   heroCardDisabledShell: {
     opacity: 0.58,
@@ -406,124 +343,69 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
-  heroIllustrationWrap: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  heroIllustrationQuick: {
-    backgroundColor: 'rgba(34, 211, 238, 0.04)',
-  },
-  heroIllustrationCalm: {
-    backgroundColor: 'rgba(4, 10, 20, 0.35)',
-  },
-  heroIllustrationDisabled: {
-    opacity: 0.72,
-  },
-  heroIconOrb: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderRadius: LDS_RADIUS.cardPrimary * 0.55,
-  },
-  heroIconOrbQuick: {
-    width: 72,
-    height: 72,
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    borderColor: 'rgba(34, 211, 238, 0.28)',
-  },
-  heroIconOrbCalm: {
-    width: 64,
-    height: 64,
-    backgroundColor: 'rgba(30, 58, 95, 0.42)',
-    borderColor: PREMIUM_BORDER_SLATE,
-  },
-  heroIconOrbDisabled: {
-    backgroundColor: 'rgba(30, 58, 95, 0.35)',
-    borderColor: PREMIUM_BORDER_SLATE,
-  },
   heroTitle: {
     textAlign: 'center',
     fontWeight: '800',
     color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.25,
+    letterSpacing: -0.3,
   },
   quickTitle: {
-    color: 'rgba(240, 252, 255, 0.98)',
+    color: PREMIUM_TEXT_SOFT,
+    textShadowColor: 'rgba(34, 211, 238, 0.28)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: LDS_SPACING.xs,
   },
   heroSubtitle: {
     textAlign: 'center',
-    fontWeight: '600',
-    opacity: 0.82,
+    fontWeight: '500',
+    color: 'rgba(148, 168, 196, 0.72)',
+    letterSpacing: 0.1,
   },
   quickSubtitle: {
-    color: 'rgba(186, 230, 245, 0.88)',
-    opacity: 0.9,
+    color: 'rgba(148, 196, 220, 0.82)',
+    fontWeight: '600',
+  },
+  normalSubtitle: {
+    color: 'rgba(148, 168, 196, 0.78)',
+    fontWeight: '500',
   },
   titleDisabled: {
     color: PREMIUM_TEXT_MUTED,
   },
-  trustSlot: {
-    marginTop: 2,
+  trustFooterCell: {
+    alignSelf: 'stretch',
+    width: '100%',
   },
-  trustGlass: {
-    borderRadius: LDS_RADIUS.cardPrimary - 4,
-    overflow: 'hidden',
+  trustFooterShell: {
+    width: '100%',
   },
-  trustRow: {
-    borderRadius: LDS_RADIUS.cardPrimary - 4,
-    overflow: 'hidden',
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: PREMIUM_BORDER_SLATE,
+  trustFooterShellActive: {
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
+    borderColor: LDS_BORDER_COLOR.card,
   },
-  trustRowDisabled: {
+  trustFooterShellMuted: {
     opacity: 0.58,
-  },
-  trustRowPressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.992 }],
-  },
-  trustGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    gap: 12,
-    minHeight: 56,
-  },
-  trustIconOrb: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(30, 58, 95, 0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
     borderColor: PREMIUM_BORDER_SLATE,
   },
-  trustIconOrbActive: {
-    backgroundColor: 'rgba(30, 58, 95, 0.45)',
-    borderColor: 'rgba(30, 58, 95, 0.72)',
-  },
-  trustTextCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
-  },
-  trustTitle: {
+  trustFooterTitle: {
+    textAlign: 'center',
     fontWeight: '700',
-    color: 'rgba(224, 236, 248, 0.9)',
-    letterSpacing: -0.1,
+    color: 'rgba(224, 236, 248, 0.92)',
+    letterSpacing: -0.15,
   },
-  trustSubtitle: {
-    fontWeight: '600',
+  trustFooterSubtitle: {
+    textAlign: 'center',
+    fontWeight: '500',
+    color: 'rgba(148, 168, 196, 0.72)',
+  },
+  trustFooterSubtitleMuted: {
+    color: PREMIUM_TEXT_MUTED,
   },
   soonPill: {
     alignSelf: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs - 1,
     borderRadius: 999,
     backgroundColor: 'rgba(30, 58, 95, 0.55)',
     borderWidth: StyleSheet.hairlineWidth,
@@ -535,9 +417,5 @@ const styles = StyleSheet.create({
     color: 'rgba(148, 163, 184, 0.92)',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
-  },
-  chevronPlaceholder: {
-    width: 18,
-    height: 18,
   },
 });

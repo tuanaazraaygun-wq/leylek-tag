@@ -98,7 +98,7 @@ import {
   LDS_MOTION_EASING,
   LDS_MOTION_ORIGIN_REVEAL,
 } from '../design-system/tokens/motion';
-import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_SPACING, ldsSnapSpacing } from '../design-system/tokens/spacing';
 import { LDS_ILLUSTRATION } from '../design-system/tokens/illustration';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
@@ -12637,12 +12637,7 @@ function PassengerDashboard({
         ]}
         pointerEvents={showDestinationPicker ? 'none' : 'auto'}
       >
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(8, 17, 31, 0.86)', 'rgba(11, 18, 32, 0.91)', 'rgba(15, 23, 42, 0.94)']}
-          locations={[0, 0.42, 1]}
-          style={StyleSheet.absoluteFillObject}
-        />
+        <CockpitBackground />
       <ScrollView 
         style={styles.contentFullScreen}
         contentContainerStyle={styles.passengerHomeScrollContent}
@@ -12650,8 +12645,11 @@ function PassengerDashboard({
       >
         {!activeTag ? (
           <View style={styles.emptyStateContainerFull}>
-            <GlassSurface variant="header" style={styles.passengerMatchHeaderGlass}>
-              <View style={styles.passengerMatchHeaderRow}>
+            <GlassSurface
+              variant="panel"
+              style={[styles.roleUnifiedCockpitShell, styles.passengerMatchDecisionCockpit]}
+            >
+              <View style={styles.passengerMatchTopBar}>
                 <Pressable
                   style={({ pressed }) => [
                     styles.passengerMatchBackBtn,
@@ -12678,13 +12676,15 @@ function PassengerDashboard({
                   <Ionicons name="log-out-outline" size={20} color={PREMIUM_TEXT_MUTED} />
                 </Pressable>
               </View>
-            </GlassSurface>
 
-            <GlassSurface variant="panel" style={styles.passengerMatchCockpitPanel}>
               <View style={styles.passengerMatchGuardianSlot} pointerEvents="none" />
-              <View style={styles.passengerMatchIntroBlock}>
-                <PremiumText variant="title" muted style={styles.passengerMatchIntroTitle}>
-                  Nasıl eşleşmek istersiniz?
+
+              <View style={styles.passengerMatchPhaseBlock}>
+                <PremiumText variant="step" style={styles.passengerMatchPhaseStep}>
+                  Eşleşme kararı
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.passengerMatchPhaseCaption}>
+                  Quick veya normal yolu seçin.
                 </PremiumText>
               </View>
 
@@ -19581,22 +19581,20 @@ const styles = StyleSheet.create({
     color: 'rgba(224, 242, 254, 0.94)',
     lineHeight: 19,
   },
-  passengerMatchHeaderGlass: {
+  passengerMatchDecisionCockpit: {
     marginHorizontal: LDS_SPACING.md,
     marginTop: LDS_SPACING.xs,
-    marginBottom: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.sm,
-    paddingVertical: LDS_SPACING.sm,
   },
-  passengerMatchHeaderRow: {
+  passengerMatchTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: LDS_SPACING.sm,
   },
   passengerMatchBackBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: LDS_SPACING.xxl + LDS_SPACING.xs,
+    height: LDS_SPACING.xxl + LDS_SPACING.xs,
+    borderRadius: LDS_SPACING.sm + LDS_SPACING.xxs,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: PREMIUM_ROLE_CARD_BG,
@@ -19604,9 +19602,9 @@ const styles = StyleSheet.create({
     borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
   passengerMatchLogoutBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: LDS_SPACING.xxl + LDS_SPACING.xs,
+    height: LDS_SPACING.xxl + LDS_SPACING.xs,
+    borderRadius: LDS_SPACING.sm + LDS_SPACING.xxs,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: PREMIUM_ROLE_CARD_BG,
@@ -19616,25 +19614,22 @@ const styles = StyleSheet.create({
   passengerMatchHeaderBtnPressed: {
     opacity: 0.92,
   },
-  passengerMatchCockpitPanel: {
-    marginHorizontal: LDS_SPACING.md,
-    paddingTop: LDS_SPACING.sm,
-    paddingBottom: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.sm,
-  },
   passengerMatchGuardianSlot: {
     minHeight: LDS_SPACING.xxxl + LDS_SPACING.xxs,
     marginBottom: LDS_SPACING.xxs,
   },
-  passengerMatchIntroBlock: {
+  passengerMatchPhaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.xxs,
-    marginBottom: LDS_SPACING.xs,
   },
-  passengerMatchIntroTitle: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
-    letterSpacing: -0.3,
+  passengerMatchPhaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  passengerMatchPhaseCaption: {
     textAlign: 'center',
   },
   passengerRouteCtaTextCol: {

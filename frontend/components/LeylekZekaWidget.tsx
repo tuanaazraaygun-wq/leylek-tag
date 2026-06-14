@@ -43,6 +43,7 @@ import {
 } from '../lib/leylekZekaProactiveInsight';
 import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
 import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
@@ -70,11 +71,8 @@ function roleSelectEyeTopExtra(winHeight: number): number {
   if (winHeight >= ROLE_SELECT_HEIGHT_LARGE_MIN) return ROLE_SELECT_EYE_TOP_EXTRA_MIN;
   return ROLE_SELECT_EYE_TOP_EXTRA_MID;
 }
-/** Passenger Match Mode guardian slot — index.tsx cockpit + slot hizası (P-PM-2A). */
-const PASSENGER_MATCH_HOME_CONTENT_PADDING_TOP = 8;
-const PASSENGER_MATCH_HEADER_BLOCK_PX = 82;
-const PASSENGER_MATCH_COCKPIT_PADDING_TOP = 12;
-const PASSENGER_MATCH_GUARDIAN_SLOT_MIN_H = 52;
+/** Passenger Match Decision Cockpit — index.tsx guardian slot hizası (P-PM-2G). */
+const PASSENGER_MATCH_TOP_BAR_ACTION_SIZE = LDS_SPACING.xxl + LDS_SPACING.xs;
 const BOUNCE_DIP_PX = -6;
 const HINT_FADE_IN_MS = 280;
 const HINT_HOLD_MS = 2800;
@@ -279,10 +277,12 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const passengerMatchHomeEyeTop = useMemo(() => {
     const slotCenter =
-      PASSENGER_MATCH_HOME_CONTENT_PADDING_TOP +
-      PASSENGER_MATCH_HEADER_BLOCK_PX +
-      PASSENGER_MATCH_COCKPIT_PADDING_TOP +
-      PASSENGER_MATCH_GUARDIAN_SLOT_MIN_H / 2;
+      LDS_SPACING.xs +
+      LDS_SPACING.xs +
+      LDS_SPACING.xs +
+      PASSENGER_MATCH_TOP_BAR_ACTION_SIZE +
+      LDS_SPACING.sm +
+      (LDS_SPACING.xxxl + LDS_SPACING.xxs) / 2;
     return insets.top + slotCenter - LEYLEK_EYE_ROLE_SELECT_SIZE / 2;
   }, [insets.top]);
 
@@ -1148,9 +1148,10 @@ const styles = StyleSheet.create({
     zIndex: 4,
     opacity: 0.74,
   },
-  /** Passenger Match Mode guardian slot — başlık bandının altı, cockpit slot hizası. */
+  /** Passenger Match Decision Cockpit guardian — slot hizası, kokpit parçası. */
   passengerMatchHomeEyeAnchor: {
-    opacity: 0.74,
+    zIndex: 4,
+    opacity: 0.88,
   },
   passengerWaitMapAnchor: {
     position: 'absolute',
