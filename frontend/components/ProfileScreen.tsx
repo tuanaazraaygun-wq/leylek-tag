@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_NAVY_DEEP,
@@ -17,18 +18,13 @@ import {
   PremiumText,
 } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
-import { PREMIUM_BORDER_SLATE, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
+import { PREMIUM_BORDER_SLATE, PREMIUM_TEXT_MUTED, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 
 const VEHICLE_PH = ['#0B1220', '#101A2B', 'rgba(8,17,31,0.95)'] as const;
-const TEXT_PRIMARY = 'rgba(243,248,255,0.94)';
-const TEXT_SECONDARY = 'rgba(186,201,222,0.82)';
-const NAVY_DEEP = '#08111F';
-const CYAN_ACCENT = '#22D3EE';
-const BORDER_SLATE = '#1E3A5F';
 
 const LEYLEK_NAME_BAD = new Set(
   ['leylek', 'leylek kullanıcısı', 'leylek kullanicisi'].map((s) => s.toLowerCase()),
@@ -409,12 +405,16 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         </GlassSurface>
 
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={CYAN_ACCENT} />
+          <View style={styles.centerState}>
+            <PremiumText variant="caption" muted style={styles.centerStateText}>
+              Yükleniyor…
+            </PremiumText>
           </View>
         ) : !p ? (
-          <View style={styles.center}>
-            <Text style={styles.muted}>Profil yüklenemedi.</Text>
+          <View style={styles.centerState}>
+            <PremiumText variant="caption" muted style={styles.centerStateText}>
+              Profil yüklenemedi.
+            </PremiumText>
           </View>
         ) : (
         <ScrollView
@@ -576,16 +576,26 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   value={bioDraft}
                   onChangeText={setBioDraft}
                   placeholder="Kısa açıklama ekleyin."
-                  placeholderTextColor={TEXT_SECONDARY}
+                  placeholderTextColor={PREMIUM_TEXT_MUTED}
+                  selectionColor={PREMIUM_AUTH_CYAN}
                   multiline
                   maxLength={500}
                 />
-                <Pressable onPress={() => void saveBio()} style={styles.saveBtn}>
-                  {savingBio ? <ActivityIndicator size="small" color={CYAN_ACCENT} /> : <Text style={styles.inlineLinkTxt}>Hakkımda düzenle</Text>}
-                </Pressable>
+                <View style={styles.saveCtaWrap}>
+                  <PremiumGradientCtaButton
+                    label={savingBio ? 'Kaydediliyor…' : 'Hakkımda düzenle'}
+                    disabled={savingBio}
+                    busy={savingBio}
+                    onPress={() => void saveBio()}
+                  />
+                </View>
               </>
+            ) : aboutText ? (
+              <PremiumText variant="body">{aboutText}</PremiumText>
             ) : (
-              <Text style={styles.aboutText}>{aboutText || 'Henüz bir açıklama eklenmemiş.'}</Text>
+              <PremiumText variant="body" muted>
+                Henüz bir açıklama eklenmemiş.
+              </PremiumText>
             )}
           </GlassSurface>
         </ScrollView>
@@ -661,14 +671,15 @@ const styles = StyleSheet.create({
   heroCardShell: {
     alignItems: 'center',
   },
-  center: {
+  centerState: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
-    backgroundColor: NAVY_DEEP,
+    justifyContent: 'center',
+    paddingHorizontal: LDS_SPACING.xl,
   },
-  muted: { color: TEXT_SECONDARY, fontSize: 15, fontWeight: '600' },
+  centerStateText: {
+    textAlign: 'center',
+  },
   avatarWrap: { position: 'relative' },
   avatar: {
     width: 118,
@@ -821,16 +832,17 @@ const styles = StyleSheet.create({
   },
   bioInput: {
     minHeight: 84,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: BORDER_SLATE,
-    borderRadius: 12,
-    padding: 12,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_BORDER_SLATE,
+    borderRadius: LDS_RADIUS.sm,
+    padding: LDS_SPACING.sm,
     fontSize: 15,
-    color: TEXT_PRIMARY,
+    lineHeight: 22,
+    color: PREMIUM_TEXT_SOFT,
     textAlignVertical: 'top',
-    backgroundColor: 'rgba(8,17,31,0.55)',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
   },
-  saveBtn: { marginTop: LDS_SPACING.xxs, alignSelf: 'flex-end' },
-  inlineLinkTxt: { color: CYAN_ACCENT, fontSize: 14, fontWeight: '700' },
-  aboutText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
+  saveCtaWrap: {
+    marginTop: LDS_SPACING.sm,
+  },
 });
