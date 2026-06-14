@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Animated,
-  ImageBackground,
   Modal,
   Pressable,
   ScrollView,
@@ -15,18 +14,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import AdminPanel from '../AdminPanel';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_FOREGROUND_AMBIENT,
   PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE,
-  PREMIUM_ROLE_OVERLAY,
   PREMIUM_TEXT_SOFT,
   premiumAuthStyles as pap,
 } from '../auth/premiumAuthStyles';
+import RoleSelectAmbienceBackground from '../../design-system/role-select/RoleSelectAmbienceBackground';
 import { LDS_MOTION_TRANSFORM } from '../../design-system/tokens/motion';
 
 export type RoleSelectBreakpoints = {
@@ -246,39 +243,13 @@ export function RoleSelectScreen({
 
   return (
     <View style={styles.roleSelectionContainer}>
-      <ImageBackground
-        source={require('../../assets/images/role-background.png')}
-        style={StyleSheet.absoluteFillObject}
-        imageStyle={styles.roleBackgroundImage}
-      />
       <LinearGradient
-        colors={['#040A14', PREMIUM_NAVY_DEEP, '#0B1524']}
-        locations={[0, 0.55, 1]}
+        colors={['#020608', PREMIUM_NAVY_DEEP, '#081018']}
+        locations={[0, 0.52, 1]}
         pointerEvents="none"
         style={StyleSheet.absoluteFillObject}
       />
-      <LinearGradient
-        colors={[...PREMIUM_ROLE_OVERLAY]}
-        locations={[0, 0.5, 1]}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={['rgba(34,211,238,0.07)', 'transparent', 'rgba(34,211,238,0.03)']}
-        locations={[0, 0.42, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={[...PREMIUM_ROLE_FOREGROUND_AMBIENT]}
-        locations={[0, 0.45, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
+      <RoleSelectAmbienceBackground />
       <LinearGradient
         colors={[...PREMIUM_ROLE_FOREGROUND_SIDE_VIGNETTE]}
         locations={[0, 0.5, 1]}
@@ -288,12 +259,12 @@ export function RoleSelectScreen({
         style={StyleSheet.absoluteFillObject}
       />
       <LinearGradient
-        colors={['transparent', 'rgba(34,211,238,0.045)', 'transparent']}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0, y: 0.35 }}
-        end={{ x: 1, y: 0.65 }}
+        colors={['rgba(34,211,238,0.025)', 'transparent', 'rgba(0,0,0,0.32)']}
+        locations={[0, 0.32, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
         pointerEvents="none"
-        style={[StyleSheet.absoluteFillObject, polishStyles.cockpitScanline]}
+        style={StyleSheet.absoluteFillObject}
       />
         <SafeAreaView style={styles.roleSelectionSafe}>
           {roleSelectTripExitBanner ? (
@@ -1118,9 +1089,3 @@ export function RoleSelectScreen({
       </View>
     );
 }
-
-const polishStyles = StyleSheet.create({
-  cockpitScanline: {
-    opacity: 0.85,
-  },
-});

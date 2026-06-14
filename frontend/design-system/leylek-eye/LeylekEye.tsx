@@ -3,7 +3,6 @@ import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  PREMIUM_BORDER_SLATE,
   PREMIUM_NAVY_CARD,
   PREMIUM_NAVY_DEEP,
 } from '../../components/auth/premiumAuthStyles';
@@ -12,8 +11,8 @@ import { useLeylekEyeMotion } from './useLeylekEyeMotion';
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
-export const LEYLEK_EYE_HERO_SIZE = 69;
-export const LEYLEK_EYE_VIEW_SIZE = 51;
+export const LEYLEK_EYE_HERO_SIZE = 66;
+export const LEYLEK_EYE_VIEW_SIZE = 50;
 
 export type LeylekEyeHandle = {
   triggerFocus: () => void;
@@ -26,59 +25,91 @@ export type LeylekEyeProps = {
   accessibilityLabel?: string;
 };
 
-const LeylekEyeSvg = memo(function LeylekEyeSvg({
+const LeylekEyeSvg = function LeylekEyeSvg({
   lookTranslateX,
+  lookTranslateY,
   pupilExtraTranslateX,
-  eyelidTranslateY,
+  eyelidUpperTranslateY,
+  eyelidLowerTranslateY,
 }: {
   lookTranslateX: Animated.AnimatedInterpolation<number>;
+  lookTranslateY: Animated.AnimatedInterpolation<number>;
   pupilExtraTranslateX: Animated.AnimatedInterpolation<number>;
-  eyelidTranslateY: Animated.AnimatedInterpolation<number>;
+  eyelidUpperTranslateY: Animated.AnimatedInterpolation<number>;
+  eyelidLowerTranslateY: Animated.AnimatedInterpolation<number>;
 }) {
   return (
     <Svg width={LEYLEK_EYE_VIEW_SIZE} height={LEYLEK_EYE_VIEW_SIZE} viewBox="0 0 100 100">
       <Defs>
-        <RadialGradient id="leylekSclera" cx="42%" cy="38%" rx="55%" ry="55%">
-          <Stop offset="0%" stopColor="#F4F8FC" />
-          <Stop offset="72%" stopColor="#D8E4EF" />
-          <Stop offset="100%" stopColor="#B8C9DA" />
+        <RadialGradient id="leylekSclera" cx="44%" cy="40%" rx="56%" ry="52%">
+          <Stop offset="0%" stopColor="#E4EDF5" />
+          <Stop offset="55%" stopColor="#C8D8E8" />
+          <Stop offset="100%" stopColor="#9EB4C8" />
         </RadialGradient>
-        <RadialGradient id="leylekIris" cx="38%" cy="36%" rx="60%" ry="60%">
-          <Stop offset="0%" stopColor="#5EEAD4" />
-          <Stop offset="45%" stopColor="#22D3EE" />
-          <Stop offset="100%" stopColor="#0891B2" />
+        <RadialGradient id="leylekIris" cx="40%" cy="38%" rx="58%" ry="58%">
+          <Stop offset="0%" stopColor="#67E8F9" />
+          <Stop offset="42%" stopColor="#22D3EE" />
+          <Stop offset="100%" stopColor="#0E7490" />
         </RadialGradient>
       </Defs>
 
-      <Circle cx="50" cy="50" r="44" fill="url(#leylekSclera)" />
-      <Circle cx="50" cy="50" r="44" fill="none" stroke="rgba(148, 176, 204, 0.22)" strokeWidth="1.2" />
+      {/* Soft eye socket on navy capsule */}
+      <Ellipse cx="50" cy="51" rx="44" ry="40" fill="url(#leylekSclera)" />
+      <Ellipse
+        cx="50"
+        cy="51"
+        rx="44"
+        ry="40"
+        fill="none"
+        stroke="rgba(34,211,238,0.18)"
+        strokeWidth="1"
+      />
 
-      <AnimatedG translateX={lookTranslateX}>
-        <Circle cx="50" cy="50" r="21" fill="url(#leylekIris)" />
-        <Circle cx="50" cy="50" r="21" fill="none" stroke="rgba(8, 145, 178, 0.42)" strokeWidth="0.9" />
-        <AnimatedG translateX={pupilExtraTranslateX}>
-          <Circle cx="50" cy="50" r="9.2" fill="#0A1628" />
-          <Ellipse cx="43" cy="43" rx="4.4" ry="2.9" fill="rgba(255,255,255,0.86)" opacity={0.92} />
+      <AnimatedG
+        transform={[
+          { translateX: lookTranslateX },
+          { translateY: lookTranslateY },
+        ]}
+      >
+        <Circle cx="50" cy="51" r="20" fill="url(#leylekIris)" />
+        <Circle cx="50" cy="51" r="20" fill="none" stroke="rgba(14,116,144,0.35)" strokeWidth="0.85" />
+        <AnimatedG transform={[{ translateX: pupilExtraTranslateX }]}>
+          <Circle cx="50" cy="51" r="8.8" fill="#071018" />
+          <Ellipse cx="43.5" cy="44.5" rx="4" ry="2.6" fill="rgba(255,255,255,0.78)" />
         </AnimatedG>
-        <Ellipse cx="56" cy="56" rx="2.1" ry="1.3" fill="rgba(255,255,255,0.2)" />
+        <Ellipse cx="57" cy="57" rx="2" ry="1.2" fill="rgba(255,255,255,0.22)" />
       </AnimatedG>
 
-      <AnimatedG translateY={eyelidTranslateY}>
+      {/* Static lower crease — warmth */}
+      <Path
+        d="M 18 58 Q 50 66 82 58"
+        fill="none"
+        stroke="rgba(34,211,238,0.08)"
+        strokeWidth="0.7"
+      />
+
+      <AnimatedG transform={[{ translateY: eyelidUpperTranslateY }]}>
         <Path
-          d="M 6 48 Q 50 8 94 48 Q 50 56 6 48 Z"
-          fill="#0B1524"
-          opacity={0.97}
+          d="M 8 50 Q 50 10 92 50 Q 50 58 8 50 Z"
+          fill="rgba(8,17,31,0.94)"
         />
         <Path
-          d="M 6 48 Q 50 14 94 48"
+          d="M 8 50 Q 50 16 92 50"
           fill="none"
-          stroke="rgba(34, 211, 238, 0.12)"
-          strokeWidth="0.6"
+          stroke="rgba(34,211,238,0.1)"
+          strokeWidth="0.55"
+        />
+      </AnimatedG>
+
+      <AnimatedG transform={[{ translateY: eyelidLowerTranslateY }]}>
+        <Path
+          d="M 12 62 Q 50 72 88 62 L 88 100 L 12 100 Z"
+          fill="rgba(8,17,31,0.88)"
         />
       </AnimatedG>
     </Svg>
   );
-});
+};
 
 const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye(
   {
@@ -100,8 +131,6 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
     onPress?.();
   }, [motion.triggerFocus, onPress]);
 
-  const innerRing = Math.round(size * 0.78);
-
   const eyeNode = (
     <Animated.View
       style={[
@@ -111,16 +140,18 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
     >
       <LeylekEyeSvg
         lookTranslateX={motion.lookTranslateX}
+        lookTranslateY={motion.lookTranslateY}
         pupilExtraTranslateX={motion.pupilExtraTranslateX}
-        eyelidTranslateY={motion.eyelidTranslateY}
+        eyelidUpperTranslateY={motion.eyelidUpperTranslateY}
+        eyelidLowerTranslateY={motion.eyelidLowerTranslateY}
       />
     </Animated.View>
   );
 
   const capsule = (
-    <View style={[styles.wrap, { width: size, height: size, borderRadius: Math.round(size * 0.24) }]}>
+    <View style={[styles.wrap, { width: size, height: size, borderRadius: Math.round(size * 0.26) }]}>
       <LinearGradient
-        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(16, 26, 43, 0.94)']}
+        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(14, 24, 40, 0.96)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.grad}
@@ -130,24 +161,13 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
           style={[
             styles.rimPulse,
             {
-              borderRadius: Math.round(size * 0.24),
+              borderRadius: Math.round(size * 0.26),
               opacity: motion.rimOpacity,
               borderColor: LDS_COLOR_CTA_RIM,
             },
           ]}
         />
-        <View
-          style={[
-            styles.ring,
-            {
-              width: innerRing,
-              height: innerRing,
-              borderRadius: Math.round(innerRing * 0.32),
-            },
-          ]}
-        >
-          {eyeNode}
-        </View>
+        <View style={styles.eyeWell}>{eyeNode}</View>
       </LinearGradient>
     </View>
   );
@@ -175,20 +195,20 @@ const styles = StyleSheet.create({
   wrap: {
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(34, 211, 238, 0.38)',
+    borderColor: 'rgba(34, 211, 238, 0.32)',
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(34, 211, 238, 0.18)',
+        shadowColor: 'rgba(34, 211, 238, 0.14)',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 1,
-        shadowRadius: 8,
+        shadowRadius: 7,
       },
-      android: { elevation: 4 },
+      android: { elevation: 3 },
       default: {},
     }),
   },
   wrapPressed: {
-    opacity: 0.92,
+    opacity: 0.94,
   },
   grad: {
     flex: 1,
@@ -199,13 +219,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderWidth: StyleSheet.hairlineWidth + 1,
   },
-  ring: {
+  eyeWell: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: PREMIUM_BORDER_SLATE,
-    backgroundColor: 'rgba(34, 211, 238, 0.06)',
-    overflow: 'hidden',
+    padding: 4,
   },
   eyeScaleWrap: {
     alignItems: 'center',

@@ -2,16 +2,20 @@ import { useCallback, useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
 import { LDS_MOTION_DURATION } from '../tokens/motion';
 
-const BREATH_MS = 3200;
-const GAZE_HOLD_MS = 1400;
-const GAZE_TRAVEL_MS = 900;
-const BLINK_CLOSE_MS = 110;
-const BLINK_OPEN_MS = 160;
-const BLINK_MIN_MS = 3800;
-const BLINK_MAX_MS = 7200;
+const BREATH_MS = 3400;
+const GAZE_HOLD_MS = 900;
+const GAZE_TRAVEL_MS = 780;
+const BLINK_CLOSE_MS = 100;
+const BLINK_OPEN_MS = 200;
+const BLINK_MIN_MS = 4000;
+const BLINK_MAX_MS = 8000;
 const FOCUS_MS = LDS_MOTION_DURATION.standard;
-const GAZE_OFFSET = 11;
-const PUPIL_EXTRA_OFFSET = 4;
+const GAZE_OFFSET = 14;
+const PUPIL_EXTRA_OFFSET = 6;
+const GAZE_Y_OFFSET = 2.5;
+
+/** SVG transform props — native driver unreliable on Android/Hermes */
+const SVG_DRIVER = false;
 
 type UseLeylekEyeMotionOptions = {
   reduceMotion?: boolean;
@@ -20,8 +24,10 @@ type UseLeylekEyeMotionOptions = {
 export type LeylekEyeMotion = {
   breathScale: Animated.AnimatedInterpolation<number>;
   lookTranslateX: Animated.AnimatedInterpolation<number>;
+  lookTranslateY: Animated.AnimatedInterpolation<number>;
   pupilExtraTranslateX: Animated.AnimatedInterpolation<number>;
-  eyelidTranslateY: Animated.AnimatedInterpolation<number>;
+  eyelidUpperTranslateY: Animated.AnimatedInterpolation<number>;
+  eyelidLowerTranslateY: Animated.AnimatedInterpolation<number>;
   rimOpacity: Animated.AnimatedInterpolation<number>;
   containerScale: Animated.AnimatedInterpolation<number>;
   triggerFocus: () => void;
@@ -54,22 +60,21 @@ export function useLeylekEyeMotion({
 
   const scheduleBlink = useCallback(() => {
     if (!mountedRef.current || reduceMotion) return;
-    const delay =
-      BLINK_MIN_MS + Math.random() * (BLINK_MAX_MS - BLINK_MIN_MS);
+    const delay = BLINK_MIN_MS + Math.random() * (BLINK_MAX_MS - BLINK_MIN_MS);
     blinkTimerRef.current = setTimeout(() => {
       if (!mountedRef.current) return;
       Animated.sequence([
         Animated.timing(blink, {
           toValue: 1,
           duration: BLINK_CLOSE_MS,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: SVG_DRIVER,
         }),
         Animated.timing(blink, {
           toValue: 0,
           duration: BLINK_OPEN_MS,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: SVG_DRIVER,
         }),
       ]).start(() => {
         scheduleBlink();
@@ -109,25 +114,25 @@ export function useLeylekEyeMotion({
       toValue: 1,
       duration: GAZE_TRAVEL_MS,
       easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: SVG_DRIVER,
     });
     const gazeCenterFromRight = Animated.timing(look, {
       toValue: 0,
       duration: GAZE_TRAVEL_MS,
       easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: SVG_DRIVER,
     });
     const gazeLeft = Animated.timing(look, {
       toValue: -1,
       duration: GAZE_TRAVEL_MS,
       easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: SVG_DRIVER,
     });
     const gazeCenterFromLeft = Animated.timing(look, {
       toValue: 0,
       duration: GAZE_TRAVEL_MS,
       easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: SVG_DRIVER,
     });
     const hold = (ms: number) => Animated.delay(ms);
 
@@ -135,11 +140,11 @@ export function useLeylekEyeMotion({
       Animated.sequence([
         hold(GAZE_HOLD_MS),
         gazeRight,
-        hold(GAZE_HOLD_MS),
-        gazeCenterFromRight,
         hold(GAZE_HOLD_MS * 0.85),
+        gazeCenterFromRight,
+        hold(GAZE_HOLD_MS * 0.7),
         gazeLeft,
-        hold(GAZE_HOLD_MS * 0.75),
+        hold(GAZE_HOLD_MS * 0.8),
         gazeCenterFromLeft,
         hold(GAZE_HOLD_MS),
       ]),
@@ -171,9 +176,9 @@ export function useLeylekEyeMotion({
     look.stopAnimation();
     Animated.timing(look, {
       toValue: 0,
-      duration: reduceMotion ? 0 : FOCUS_MS * 0.55,
+      duration: reduceMotion ? 0 : FOCUS_MS * 0.5,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: SVG_DRIVER,
     }).start(({ finished }) => {
       if (finished && !reduceMotion) {
         gazeLoopRef.current?.start();
@@ -183,8 +188,8 @@ export function useLeylekEyeMotion({
     Animated.parallel([
       Animated.sequence([
         Animated.timing(pressScale, {
-          toValue: 1.03,
-          duration: reduceMotion ? 0 : FOCUS_MS * 0.45,
+          toValue: 1.028,
+          duration: reduceMotion ? 0 : FOCUS_MS * 0.4,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
@@ -198,13 +203,13 @@ export function useLeylekEyeMotion({
       Animated.sequence([
         Animated.timing(rim, {
           toValue: 1,
-          duration: reduceMotion ? 0 : FOCUS_MS * 0.35,
+          duration: reduceMotion ? 0 : FOCUS_MS * 0.32,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(rim, {
           toValue: 0,
-          duration: reduceMotion ? 0 : FOCUS_MS * 0.65,
+          duration: reduceMotion ? 0 : FOCUS_MS * 0.6,
           easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
@@ -214,7 +219,7 @@ export function useLeylekEyeMotion({
 
   const breathScale = breath.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.018],
+    outputRange: [1, 1.016],
   });
 
   const lookTranslateX = look.interpolate({
@@ -222,19 +227,29 @@ export function useLeylekEyeMotion({
     outputRange: [-GAZE_OFFSET, 0, GAZE_OFFSET],
   });
 
+  const lookTranslateY = look.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [GAZE_Y_OFFSET * 0.35, 0, -GAZE_Y_OFFSET * 0.25],
+  });
+
   const pupilExtraTranslateX = look.interpolate({
     inputRange: [-1, 0, 1],
     outputRange: [-PUPIL_EXTRA_OFFSET, 0, PUPIL_EXTRA_OFFSET],
   });
 
-  const eyelidTranslateY = blink.interpolate({
+  const eyelidUpperTranslateY = blink.interpolate({
     inputRange: [0, 1],
-    outputRange: [-30, 20],
+    outputRange: [-32, 24],
+  });
+
+  const eyelidLowerTranslateY = blink.interpolate({
+    inputRange: [0, 1],
+    outputRange: [20, 8],
   });
 
   const rimOpacity = rim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 0.55],
+    outputRange: [0, 0.48],
   });
 
   const containerScale = Animated.multiply(breathScale, pressScale);
@@ -242,8 +257,10 @@ export function useLeylekEyeMotion({
   return {
     breathScale,
     lookTranslateX,
+    lookTranslateY,
     pupilExtraTranslateX,
-    eyelidTranslateY,
+    eyelidUpperTranslateY,
+    eyelidLowerTranslateY,
     rimOpacity,
     containerScale,
     triggerFocus,
