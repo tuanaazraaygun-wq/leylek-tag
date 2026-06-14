@@ -11,7 +11,14 @@ import { useLeylekEyeMotion } from './useLeylekEyeMotion';
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 export const LEYLEK_EYE_HERO_SIZE = 66;
+export const LEYLEK_EYE_ROLE_SELECT_SIZE = 57;
 export const LEYLEK_EYE_VIEW_SIZE = 50;
+
+export type LeylekEyeChromeTone = 'default' | 'subtle';
+
+function resolveEyeViewSize(capsuleSize: number): number {
+  return Math.round(capsuleSize * (LEYLEK_EYE_VIEW_SIZE / LEYLEK_EYE_HERO_SIZE));
+}
 
 export type LeylekEyeHandle = {
   triggerFocus: () => void;
@@ -19,18 +26,21 @@ export type LeylekEyeHandle = {
 
 export type LeylekEyeProps = {
   size?: number;
+  chromeTone?: LeylekEyeChromeTone;
   onPress?: () => void;
   reduceMotion?: boolean;
   accessibilityLabel?: string;
 };
 
 const LeylekEyeSvg = function LeylekEyeSvg({
+  viewSize,
   lookTranslateX,
   lookTranslateY,
   pupilExtraTranslateX,
   eyelidUpperTranslateY,
   eyelidLowerTranslateY,
 }: {
+  viewSize: number;
   lookTranslateX: Animated.AnimatedInterpolation<number>;
   lookTranslateY: Animated.AnimatedInterpolation<number>;
   pupilExtraTranslateX: Animated.AnimatedInterpolation<number>;
@@ -38,7 +48,7 @@ const LeylekEyeSvg = function LeylekEyeSvg({
   eyelidLowerTranslateY: Animated.AnimatedInterpolation<number>;
 }) {
   return (
-    <Svg width={LEYLEK_EYE_VIEW_SIZE} height={LEYLEK_EYE_VIEW_SIZE} viewBox="0 0 100 100">
+    <Svg width={viewSize} height={viewSize} viewBox="0 0 100 100">
       <Defs>
         <RadialGradient id="leylekSclera" cx="46%" cy="42%" rx="58%" ry="54%">
           <Stop offset="0%" stopColor="#A8BDD0" />
@@ -124,6 +134,7 @@ const LeylekEyeSvg = function LeylekEyeSvg({
 const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye(
   {
     size = LEYLEK_EYE_HERO_SIZE,
+    chromeTone = 'default',
     onPress,
     reduceMotion = false,
     accessibilityLabel = 'Leylek Zeka',
@@ -132,6 +143,9 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
 ) {
   const motion = useLeylekEyeMotion({ reduceMotion });
   const capsuleRadius = Math.round(size * 0.26);
+  const innerRimRadius = Math.max(10, Math.round(size * 0.21));
+  const viewSize = resolveEyeViewSize(size);
+  const isSubtleChrome = chromeTone === 'subtle';
 
   useImperativeHandle(ref, () => ({
     triggerFocus: motion.triggerFocus,
@@ -150,6 +164,7 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
       ]}
     >
       <LeylekEyeSvg
+        viewSize={viewSize}
         lookTranslateX={motion.lookTranslateX}
         lookTranslateY={motion.lookTranslateY}
         pupilExtraTranslateX={motion.pupilExtraTranslateX}
@@ -160,7 +175,13 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
   );
 
   const capsule = (
-    <View style={[styles.wrap, { width: size, height: size, borderRadius: capsuleRadius }]}>
+    <View
+      style={[
+        styles.wrap,
+        isSubtleChrome && styles.wrapSubtle,
+        { width: size, height: size, borderRadius: capsuleRadius },
+      ]}
+    >
       <LinearGradient
         colors={['rgba(18,32,52,0.98)', PREMIUM_NAVY_CARD, 'rgba(8,14,24,0.97)']}
         start={{ x: 0.1, y: 0 }}
@@ -186,7 +207,7 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
             },
           ]}
         />
-        <View style={styles.glassInnerRim} />
+        <View style={[styles.glassInnerRim, { borderRadius: innerRimRadius }]} />
         <View style={styles.eyeWell}>{eyeNode}</View>
       </LinearGradient>
     </View>
@@ -227,6 +248,20 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  wrapSubtle: {
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(34, 211, 238, 0.18)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(34, 211, 238, 0.08)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 4,
+      },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
   wrapPressed: {
     opacity: 0.94,
   },
@@ -241,7 +276,6 @@ const styles = StyleSheet.create({
   glassInnerRim: {
     ...StyleSheet.absoluteFillObject,
     margin: 2,
-    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.06)',
     borderTopColor: 'rgba(255,255,255,0.12)',

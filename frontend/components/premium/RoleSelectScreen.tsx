@@ -19,15 +19,14 @@ import {
   PREMIUM_TEXT_SOFT,
   premiumAuthStyles as pap,
 } from '../auth/premiumAuthStyles';
-import RoleCardPassengerIllustration from '../../design-system/role-select/RoleCardPassengerIllustration';
-import RoleCardDriverIllustration from '../../design-system/role-select/RoleCardDriverIllustration';
+import PassengerSeatHero from '../../design-system/role-select/PassengerSeatHero';
+import DriverCockpitHero from '../../design-system/role-select/DriverCockpitHero';
 import {
   CockpitBackground,
   GlassSurface,
   PremiumSelectionCard,
   PremiumText,
   computeRoleCardHeroHeight,
-  computeRoleIllustrationHeroSize,
 } from '../../design-system/primitives';
 import { LDS_MOTION_TRANSFORM } from '../../design-system/tokens/motion';
 
@@ -205,10 +204,6 @@ export function RoleSelectScreen({
     roleCardMinHeight,
     rs.isVeryCompact,
     rs.isCompact && !rs.isVeryCompact,
-  );
-  const roleIllustrationHeroSize = computeRoleIllustrationHeroSize(
-    roleCardHeroHeight,
-    rs.isVeryCompact,
   );
 
   return (
@@ -514,6 +509,7 @@ export function RoleSelectScreen({
                         selected={selectedRole === 'passenger'}
                         onPress={() => onSelectRole('passenger')}
                         heroHeight={roleCardHeroHeight}
+                        compactCopy={rs.isVeryCompact || rs.isCompact}
                         style={[
                           styles.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
@@ -524,9 +520,10 @@ export function RoleSelectScreen({
                           },
                         ]}
                         illustration={
-                          <RoleCardPassengerIllustration
-                            size={roleIllustrationHeroSize}
+                          <PassengerSeatHero
+                            stageHeight={roleCardHeroHeight}
                             active={selectedRole === 'passenger'}
+                            isVeryCompact={rs.isVeryCompact}
                           />
                         }
                         title="Yolcu"
@@ -568,6 +565,7 @@ export function RoleSelectScreen({
                         selected={selectedRole === 'driver'}
                         onPress={() => onSelectRole('driver')}
                         heroHeight={roleCardHeroHeight}
+                        compactCopy={rs.isVeryCompact || rs.isCompact}
                         style={[
                           styles.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
@@ -578,9 +576,10 @@ export function RoleSelectScreen({
                           },
                         ]}
                         illustration={
-                          <RoleCardDriverIllustration
-                            size={roleIllustrationHeroSize}
+                          <DriverCockpitHero
+                            stageHeight={roleCardHeroHeight}
                             active={selectedRole === 'driver'}
+                            isVeryCompact={rs.isVeryCompact}
                           />
                         }
                         title="Sürücü"

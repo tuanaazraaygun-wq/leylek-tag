@@ -42,7 +42,7 @@ import {
   wasProactiveShownForTag,
 } from '../lib/leylekZekaProactiveInsight';
 import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
-import LeylekEye from '../design-system/leylek-eye/LeylekEye';
+import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
@@ -927,6 +927,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[styles.centerAnchor, { top: roleSelectEyeTop }]}
             >
               <LeylekEye
+                size={LEYLEK_EYE_ROLE_SELECT_SIZE}
+                chromeTone="subtle"
                 onPress={onOpen}
                 reduceMotion={reduceMotion}
                 accessibilityLabel="Leylek Zeka"

@@ -35,6 +35,8 @@ export type PremiumSelectionCardProps = {
   subtitleStyle?: StyleProp<TextStyle>;
   checkmark?: React.ReactNode;
   testID?: string;
+  /** Tighter copy block on small role cards (LDS-4D-I4) */
+  compactCopy?: boolean;
 };
 
 function PremiumSelectionCard({
@@ -49,6 +51,7 @@ function PremiumSelectionCard({
   subtitleStyle,
   checkmark,
   testID,
+  compactCopy = false,
 }: PremiumSelectionCardProps) {
   const motion = useSelectionMotion({ selected });
   const borderRadius = LDS_RADIUS.cardPrimary;
@@ -140,7 +143,7 @@ function PremiumSelectionCard({
           {illustration}
         </View>
 
-        <View style={styles.copyBlock}>
+        <View style={[styles.copyBlock, compactCopy && styles.copyBlockCompact]}>
           <Text style={[styles.titleDefault, titleStyle]} numberOfLines={1}>
             {title}
           </Text>
@@ -169,9 +172,9 @@ export function computeRoleCardHeroHeight(
   isCompact: boolean,
 ): number {
   const ratio = isVeryCompact
-    ? 0.58
+    ? LDS_ILLUSTRATION.heroHeightRatioVeryCompact
     : isCompact
-      ? 0.6
+      ? LDS_ILLUSTRATION.heroHeightRatioCompact
       : LDS_ILLUSTRATION.heroHeightRatio;
   return Math.round(cardMinHeight * ratio);
 }
@@ -229,9 +232,14 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 11,
     gap: 4,
+  },
+  copyBlockCompact: {
+    paddingTop: 6,
+    paddingBottom: 8,
+    gap: 3,
   },
   titleDefault: {
     textAlign: 'center',
