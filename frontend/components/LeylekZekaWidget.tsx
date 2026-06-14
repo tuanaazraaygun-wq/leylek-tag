@@ -70,6 +70,11 @@ function roleSelectEyeTopExtra(winHeight: number): number {
   if (winHeight >= ROLE_SELECT_HEIGHT_LARGE_MIN) return ROLE_SELECT_EYE_TOP_EXTRA_MIN;
   return ROLE_SELECT_EYE_TOP_EXTRA_MID;
 }
+/** Passenger Match Mode guardian slot — index.tsx cockpit + slot hizası (P-PM-2A). */
+const PASSENGER_MATCH_HOME_CONTENT_PADDING_TOP = 8;
+const PASSENGER_MATCH_HEADER_BLOCK_PX = 82;
+const PASSENGER_MATCH_COCKPIT_PADDING_TOP = 12;
+const PASSENGER_MATCH_GUARDIAN_SLOT_MIN_H = 60;
 const BOUNCE_DIP_PX = -6;
 const HINT_FADE_IN_MS = 280;
 const HINT_HOLD_MS = 2800;
@@ -265,11 +270,26 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const isRoleSelectScreen = homeFlowScreen === 'role-select';
 
+  const isPassengerMatchHomeGuardianMode =
+    flowHint === 'passenger_home' && homeFlowScreen === 'dashboard';
+
   const roleSelectEyeTop = useMemo(() => {
     return insets.top + roleSelectEyeTopExtra(winH);
   }, [insets.top, winH]);
 
+  const passengerMatchHomeEyeTop = useMemo(() => {
+    const slotCenter =
+      PASSENGER_MATCH_HOME_CONTENT_PADDING_TOP +
+      PASSENGER_MATCH_HEADER_BLOCK_PX +
+      PASSENGER_MATCH_COCKPIT_PADDING_TOP +
+      PASSENGER_MATCH_GUARDIAN_SLOT_MIN_H / 2;
+    return insets.top + slotCenter - LEYLEK_EYE_ROLE_SELECT_SIZE / 2;
+  }, [insets.top]);
+
   const isPassengerMatchingChipMode = flowHint === 'passenger_matching';
+
+  const suppressAmbientOrbChrome =
+    isRoleSelectScreen || isPassengerMatchHomeGuardianMode || isPassengerMatchingChipMode;
 
   const isPassengerPreMatchWaitOrb =
     isPassengerMatchingChipMode ||
@@ -601,7 +621,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, []);
 
   useEffect(() => {
-    if (!showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
+    if (!showFab || suppressAmbientOrbChrome) {
       clearTypingTimeouts();
       typingRunIdRef.current += 1;
       setEphemeralFullLine(null);
@@ -643,7 +663,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   ]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
+    if (reduceMotion || !showFab || suppressAmbientOrbChrome) {
       breathe.setValue(0);
       tilt.setValue(0);
       flutter.setValue(0);
@@ -689,7 +709,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, [breathe, flutter, flowHint, homeFlowScreen, reduceMotion, showFab, tilt]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
+    if (reduceMotion || !showFab || suppressAmbientOrbChrome) {
       flutter.setValue(0);
       return;
     }
@@ -715,7 +735,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, [flutter, flowHint, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
+    if (reduceMotion || !showFab || suppressAmbientOrbChrome) {
       bubbleBreath.setValue(0);
       return;
     }
@@ -767,7 +787,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, [chipPulse, flowHint, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || homeFlowScreen === 'role-select' || flowHint === 'passenger_matching') {
+    if (reduceMotion || !showFab || suppressAmbientOrbChrome) {
       cursorBlink.setValue(1);
       return;
     }
@@ -929,6 +949,24 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 styles.centerAnchor,
                 styles.roleSelectEyeAnchor,
                 { top: roleSelectEyeTop },
+              ]}
+            >
+              <LeylekEye
+                size={LEYLEK_EYE_ROLE_SELECT_SIZE}
+                chromeTone="subtle"
+                motionProfile="guardian"
+                onPress={onOpen}
+                reduceMotion={reduceMotion}
+                accessibilityLabel="Leylek Zeka"
+              />
+            </View>
+          ) : isPassengerMatchHomeGuardianMode ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.centerAnchor,
+                styles.passengerMatchHomeEyeAnchor,
+                { top: passengerMatchHomeEyeTop },
               ]}
             >
               <LeylekEye
@@ -1108,6 +1146,10 @@ const styles = StyleSheet.create({
   /** Role-select Guardian Eye — arka planda, kartların alt katmanında. */
   roleSelectEyeAnchor: {
     zIndex: 4,
+    opacity: 0.74,
+  },
+  /** Passenger Match Mode guardian slot — başlık bandının altı, cockpit slot hizası. */
+  passengerMatchHomeEyeAnchor: {
     opacity: 0.74,
   },
   passengerWaitMapAnchor: {

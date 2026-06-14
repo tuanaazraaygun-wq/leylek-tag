@@ -98,7 +98,8 @@ import {
   LDS_MOTION_EASING,
   LDS_MOTION_ORIGIN_REVEAL,
 } from '../design-system/tokens/motion';
-import { ldsSnapSpacing } from '../design-system/tokens/spacing';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_SPACING, ldsSnapSpacing } from '../design-system/tokens/spacing';
 import { LDS_ILLUSTRATION } from '../design-system/tokens/illustration';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
 import {
@@ -12649,40 +12650,66 @@ function PassengerDashboard({
       >
         {!activeTag ? (
           <View style={styles.emptyStateContainerFull}>
-            <View style={styles.fullScreenTopBar}>
-              <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={styles.fullScreenBackBtn}>
-                <Ionicons name="chevron-back" size={26} color="#22D3EE" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { playTapSound(); logout(); }} style={styles.fullScreenLogoutBtn}>
-                <Ionicons name="log-out-outline" size={24} color="#F87171" />
-              </TouchableOpacity>
-            </View>
+            <GlassSurface variant="header" style={styles.passengerMatchHeaderGlass}>
+              <View style={styles.passengerMatchHeaderRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.passengerMatchBackBtn,
+                    pressed && styles.passengerMatchHeaderBtnPressed,
+                  ]}
+                  onPress={() => {
+                    playTapSound();
+                    setScreen('role-select');
+                  }}
+                >
+                  <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.passengerMatchLogoutBtn,
+                    pressed && styles.passengerMatchHeaderBtnPressed,
+                  ]}
+                  onPress={() => {
+                    playTapSound();
+                    logout();
+                  }}
+                  accessibilityLabel="Çıkış"
+                >
+                  <Ionicons name="log-out-outline" size={20} color={PREMIUM_TEXT_MUTED} />
+                </Pressable>
+              </View>
+            </GlassSurface>
 
-            <View style={styles.passengerIdleIntroCard}>
-              <Text style={styles.passengerIdleIntroTitle}>Nasıl eşleşmek istersiniz?</Text>
-              <Text style={styles.passengerIdleIntroCaption}>
-                Önce eşleşme tipini seçin, ardından rotanızı belirleyin.
-              </Text>
-            </View>
+            <GlassSurface variant="panel" style={styles.passengerMatchCockpitPanel}>
+              <View style={styles.passengerMatchGuardianSlot} pointerEvents="none" />
+              <View style={styles.passengerMatchIntroBlock}>
+                <PremiumText variant="headline" style={styles.passengerMatchIntroTitle}>
+                  Nasıl eşleşmek istersiniz?
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.passengerMatchIntroCaption}>
+                  Önce eşleşme tipini seçin, ardından rotanızı belirleyin.
+                </PremiumText>
+              </View>
 
-            <PassengerMatchModeCards
-              onNormalPress={() => {
-                playTapSound();
-                setPassengerIdleOfferChannel('normal');
-                setRoutePickerIntent('normal');
-                setShowDestinationPicker(true);
-              }}
-              onQuickPress={() => {
-                playTapSound();
-                setPassengerIdleOfferChannel('quick_match');
-                setRoutePickerIntent('quick_match');
-                setShowDestinationPicker(true);
-              }}
-              onTrustedPress={() => {
-                playTapSound();
-                router.push('/trusted-network?role=passenger' as never);
-              }}
-            />
+              <PassengerMatchModeCards
+                onNormalPress={() => {
+                  playTapSound();
+                  setPassengerIdleOfferChannel('normal');
+                  setRoutePickerIntent('normal');
+                  setShowDestinationPicker(true);
+                }}
+                onQuickPress={() => {
+                  playTapSound();
+                  setPassengerIdleOfferChannel('quick_match');
+                  setRoutePickerIntent('quick_match');
+                  setShowDestinationPicker(true);
+                }}
+                onTrustedPress={() => {
+                  playTapSound();
+                  router.push('/trusted-network?role=passenger' as never);
+                }}
+              />
+            </GlassSurface>
 
             {destination ? (
               <TouchableOpacity
@@ -19557,31 +19584,64 @@ const styles = StyleSheet.create({
     color: 'rgba(224, 242, 254, 0.94)',
     lineHeight: 19,
   },
-  passengerIdleIntroCard: {
-    alignSelf: 'stretch',
-    marginHorizontal: 12,
-    marginBottom: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    backgroundColor: 'rgba(16, 26, 43, 0.62)',
+  passengerMatchHeaderGlass: {
+    marginHorizontal: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+  },
+  passengerMatchHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  passengerMatchBackBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
     borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_BORDER_SLATE,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
-  passengerIdleIntroTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
-    textAlign: 'center',
-    letterSpacing: -0.2,
+  passengerMatchLogoutBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
-  passengerIdleIntroCaption: {
-    marginTop: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(186, 201, 222, 0.88)',
+  passengerMatchHeaderBtnPressed: {
+    opacity: 0.92,
+  },
+  passengerMatchCockpitPanel: {
+    marginHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+  },
+  passengerMatchGuardianSlot: {
+    minHeight: LDS_SPACING.xxxl + LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.xs,
+  },
+  passengerMatchIntroBlock: {
+    paddingHorizontal: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+  },
+  passengerMatchIntroTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.35,
     textAlign: 'center',
-    lineHeight: 20,
+  },
+  passengerMatchIntroCaption: {
+    marginTop: LDS_SPACING.xxs,
+    textAlign: 'center',
   },
   passengerRouteCtaTextCol: {
     flex: 1,
@@ -21542,8 +21602,7 @@ const styles = StyleSheet.create({
   },
   emptyStateContainerFull: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: LDS_SPACING.xs,
     minHeight: 0,
   },
   /** Yolcu ana (ara) içerik — hedef modal açıkken görünmez; kapatınca etkileşimli */
@@ -21553,32 +21612,6 @@ const styles = StyleSheet.create({
   },
   passengerHomeLayerBehindPickerOpen: {
     opacity: 0,
-  },
-  fullScreenTopBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  fullScreenBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(16, 26, 43, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.28)',
-  },
-  fullScreenLogoutBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(16, 26, 43, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.28)',
   },
   welcomeNameBig: {
     fontSize: 28,
