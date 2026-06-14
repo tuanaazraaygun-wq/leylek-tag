@@ -29,4 +29,12 @@ export const LDS_MOTION_TRANSFORM = {
   dimOpacity: 0.58,
 } as const;
 
+/** LDS-4E-A — vehicle deck origin reveal (center scale birth, no slide) */
+export const LDS_MOTION_ORIGIN_REVEAL = {
+  scaleStart: 0.86,
+  durationMs: 360,
+  staggerMs: 32,
+  reduceMotionFadeMs: 120,
+} as const;
+
 export type LdsMotionDurationToken = keyof typeof LDS_MOTION_DURATION;

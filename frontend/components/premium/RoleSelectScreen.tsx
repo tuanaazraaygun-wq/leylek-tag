@@ -104,9 +104,9 @@ export type RoleSelectScreenProps = {
   roleCardDriverOpacity: Animated.Value;
   roleCardDriverTranslateX: Animated.Value;
   vehicleCarOpacity: Animated.Value;
-  vehicleCarTranslateX: Animated.Value;
+  vehicleCarScale: Animated.Value;
   vehicleMotoOpacity: Animated.Value;
-  vehicleMotoTranslateX: Animated.Value;
+  vehicleMotoScale: Animated.Value;
   roleSelectCardSubtitlePulse: Animated.Value;
   roleSelectUiPulse: Animated.Value;
   onSelectRole: (role: 'passenger' | 'driver') => void;
@@ -185,9 +185,9 @@ export function RoleSelectScreen({
   roleCardDriverOpacity,
   roleCardDriverTranslateX,
   vehicleCarOpacity,
-  vehicleCarTranslateX,
+  vehicleCarScale,
   vehicleMotoOpacity,
-  vehicleMotoTranslateX,
+  vehicleMotoScale,
   roleSelectCardSubtitlePulse,
   roleSelectUiPulse,
   onSelectRole,
@@ -716,7 +716,7 @@ export function RoleSelectScreen({
                           styles.roleCardAnimatedWrap,
                           {
                             opacity: vehicleCarOpacity,
-                            transform: [{ translateX: vehicleCarTranslateX }],
+                            transform: [{ scale: vehicleCarScale }],
                           },
                         ]}
                       >
@@ -807,7 +807,7 @@ export function RoleSelectScreen({
                           styles.roleCardAnimatedWrap,
                           {
                             opacity: vehicleMotoOpacity,
-                            transform: [{ translateX: vehicleMotoTranslateX }],
+                            transform: [{ scale: vehicleMotoScale }],
                           },
                         ]}
                       >

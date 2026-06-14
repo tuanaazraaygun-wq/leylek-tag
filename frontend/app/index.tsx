@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, Keyboard, StatusBar, Vibration, DeviceEventEmitter } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, Keyboard, StatusBar, Vibration, DeviceEventEmitter, AccessibilityInfo } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -94,6 +94,10 @@ import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
 import { OtpVerificationScreen } from '../components/auth/OtpVerificationScreen';
 import { RoleSelectScreen } from '../components/premium/RoleSelectScreen';
+import {
+  LDS_MOTION_EASING,
+  LDS_MOTION_ORIGIN_REVEAL,
+} from '../design-system/tokens/motion';
 import { ldsSnapSpacing } from '../design-system/tokens/spacing';
 import { LDS_ILLUSTRATION } from '../design-system/tokens/illustration';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
@@ -1097,9 +1101,9 @@ export default function App() {
   const roleCardPassengerOpacity = useRef(new Animated.Value(0)).current;
   const roleCardDriverTranslateX = useRef(new Animated.Value(26)).current;
   const roleCardDriverOpacity = useRef(new Animated.Value(0)).current;
-  const vehicleCarTranslateX = useRef(new Animated.Value(-28)).current;
+  const vehicleCarScale = useRef(new Animated.Value(LDS_MOTION_ORIGIN_REVEAL.scaleStart)).current;
   const vehicleCarOpacity = useRef(new Animated.Value(0)).current;
-  const vehicleMotoTranslateX = useRef(new Animated.Value(28)).current;
+  const vehicleMotoScale = useRef(new Animated.Value(LDS_MOTION_ORIGIN_REVEAL.scaleStart)).current;
   const vehicleMotoOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -1108,9 +1112,9 @@ export default function App() {
       roleCardPassengerOpacity.setValue(0);
       roleCardDriverTranslateX.setValue(26);
       roleCardDriverOpacity.setValue(0);
-      vehicleCarTranslateX.setValue(-28);
+      vehicleCarScale.setValue(LDS_MOTION_ORIGIN_REVEAL.scaleStart);
       vehicleCarOpacity.setValue(0);
-      vehicleMotoTranslateX.setValue(28);
+      vehicleMotoScale.setValue(LDS_MOTION_ORIGIN_REVEAL.scaleStart);
       vehicleMotoOpacity.setValue(0);
       return;
     }
@@ -1156,57 +1160,68 @@ export default function App() {
   }, [screen, selectedRole]);
 
   useEffect(() => {
-    if (screen !== 'role-select') {
-      vehicleCarTranslateX.setValue(-28);
+    const resetVehicleReveal = () => {
+      vehicleCarScale.setValue(LDS_MOTION_ORIGIN_REVEAL.scaleStart);
       vehicleCarOpacity.setValue(0);
-      vehicleMotoTranslateX.setValue(28);
+      vehicleMotoScale.setValue(LDS_MOTION_ORIGIN_REVEAL.scaleStart);
       vehicleMotoOpacity.setValue(0);
+    };
+
+    if (screen !== 'role-select') {
+      resetVehicleReveal();
       return;
     }
     if (!selectedRole) {
-      vehicleCarTranslateX.setValue(-28);
-      vehicleCarOpacity.setValue(0);
-      vehicleMotoTranslateX.setValue(28);
-      vehicleMotoOpacity.setValue(0);
+      resetVehicleReveal();
       return;
     }
-    vehicleCarTranslateX.setValue(-28);
-    vehicleCarOpacity.setValue(0);
-    vehicleMotoTranslateX.setValue(28);
-    vehicleMotoOpacity.setValue(0);
+
+    resetVehicleReveal();
+
+    let cancelled = false;
     const raf = requestAnimationFrame(() => {
-      Animated.stagger(
-        88,
-        [
+      void AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+        if (cancelled) return;
+
+        if (reduceMotion) {
+          vehicleCarScale.setValue(1);
+          vehicleCarOpacity.setValue(1);
+          vehicleMotoScale.setValue(1);
+          vehicleMotoOpacity.setValue(1);
+          return;
+        }
+
+        const revealMs = LDS_MOTION_ORIGIN_REVEAL.durationMs;
+        const revealEase = LDS_MOTION_EASING.enter;
+
+        const originReveal = (scale: Animated.Value, opacity: Animated.Value) =>
           Animated.parallel([
-            Animated.timing(vehicleCarTranslateX, {
-              toValue: 0,
-              duration: 400,
-              useNativeDriver: true,
-            }),
-            Animated.timing(vehicleCarOpacity, {
+            Animated.timing(scale, {
               toValue: 1,
-              duration: 400,
+              duration: revealMs,
+              easing: revealEase,
               useNativeDriver: true,
             }),
-          ]),
-          Animated.parallel([
-            Animated.timing(vehicleMotoTranslateX, {
-              toValue: 0,
-              duration: 400,
-              useNativeDriver: true,
-            }),
-            Animated.timing(vehicleMotoOpacity, {
+            Animated.timing(opacity, {
               toValue: 1,
-              duration: 400,
+              duration: revealMs,
+              easing: revealEase,
               useNativeDriver: true,
             }),
-          ]),
-        ]
-      ).start();
+          ]);
+
+        Animated.stagger(LDS_MOTION_ORIGIN_REVEAL.staggerMs, [
+          originReveal(vehicleCarScale, vehicleCarOpacity),
+          originReveal(vehicleMotoScale, vehicleMotoOpacity),
+        ]).start();
+      });
     });
-    return () => cancelAnimationFrame(raf);
-  }, [screen, selectedRole]);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [screen, selectedRole, vehicleCarOpacity, vehicleCarScale, vehicleMotoOpacity, vehicleMotoScale]);
 
   useEffect(() => {
     if (screen !== 'role-select') {
@@ -4074,9 +4089,9 @@ export default function App() {
         roleCardDriverOpacity={roleCardDriverOpacity}
         roleCardDriverTranslateX={roleCardDriverTranslateX}
         vehicleCarOpacity={vehicleCarOpacity}
-        vehicleCarTranslateX={vehicleCarTranslateX}
+        vehicleCarScale={vehicleCarScale}
         vehicleMotoOpacity={vehicleMotoOpacity}
-        vehicleMotoTranslateX={vehicleMotoTranslateX}
+        vehicleMotoScale={vehicleMotoScale}
         roleSelectCardSubtitlePulse={roleSelectCardSubtitlePulse}
         roleSelectUiPulse={roleSelectUiPulse}
         onSelectRole={handleRoleSelect}
