@@ -112,8 +112,8 @@ export default function RatingModal({
         );
         appAlert(
           'Puan gönderilemedi',
-          result.detail || 'Değerlendirmen şu an kaydedilemedi. Biraz sonra tekrar dene.',
-          [{ text: 'Tamam' }],
+          result.detail || 'Değerlendirmen şu an kaydedilemedi. Kısa bir süre sonra tekrar dene.',
+          [{ text: 'Tamam', style: 'default' }],
           { tone: 'error' },
         );
       }
@@ -131,7 +131,7 @@ export default function RatingModal({
       appAlert(
         'Puan gönderilemedi',
         'Bağlantı kurulamadı. İnternetini kontrol edip tekrar dene.',
-        [{ text: 'Tamam' }],
+        [{ text: 'Tamam', style: 'default' }],
         { tone: 'error' },
       );
     } finally {
@@ -176,32 +176,41 @@ export default function RatingModal({
 
         <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
           {submitted ? (
-            <View style={styles.successContainer}>
-              <View style={styles.guardianOrb}>
-                <LeylekEye
-                  size={LEYLEK_EYE_ROLE_SELECT_SIZE}
-                  chromeTone="subtle"
-                  motionProfile="guardian"
-                  accessibilityLabel="Leylek guardian"
-                />
+            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.successPanel}>
+              <View style={styles.successContainer}>
+                <View style={styles.guardianOrb}>
+                  <LeylekEye
+                    size={LEYLEK_EYE_ROLE_SELECT_SIZE}
+                    chromeTone="subtle"
+                    motionProfile="guardian"
+                    accessibilityLabel="Leylek guardian"
+                  />
+                </View>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.successStatusChip}>
+                  <PremiumText variant="caption" style={styles.successStatusChipText}>
+                    Kapanış onayı
+                  </PremiumText>
+                </GlassSurface>
+                <PremiumText variant="step" style={styles.phaseStep}>
+                  Değerlendirmen kaydedildi.
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.successCaption}>
+                  Teşekkür ederiz.
+                </PremiumText>
               </View>
-              <PremiumText variant="step" style={styles.phaseStep}>
-                Değerlendirme kaydedildi
-              </PremiumText>
-              <PremiumText variant="caption" muted style={styles.successCaption}>
-                Yolculuk kapanışına katkın güven ağına eklendi
-              </PremiumText>
-            </View>
+            </GlassSurface>
           ) : (
             <>
-              <View style={styles.phaseBlock}>
-                <PremiumText variant="step" style={styles.phaseStep}>
-                  Yolculuk tamamlandı
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.phaseCaption}>
-                  Deneyimini puanlayarak yolculuk kaydını tamamla
-                </PremiumText>
-              </View>
+              <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.phasePanel}>
+                <View style={styles.phaseBlock}>
+                  <PremiumText variant="step" style={styles.phaseStep}>
+                    Yolculuk tamamlandı
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                    Yolculuğunu değerlendirerek güven ağını güçlendirebilirsin.
+                  </PremiumText>
+                </View>
+              </GlassSurface>
 
               <PremiumText variant="body" style={styles.nameCaption}>
                 {`${firstName} için puanın`}
@@ -221,7 +230,12 @@ export default function RatingModal({
                 activeOpacity={0.85}
               >
                 {loading ? (
-                  <ActivityIndicator color={PREMIUM_AUTH_CYAN} />
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator color={PREMIUM_AUTH_CYAN} />
+                    <PremiumText variant="caption" muted style={styles.loadingText}>
+                      Değerlendirmen kaydediliyor…
+                    </PremiumText>
+                  </View>
                 ) : (
                   <PremiumText variant="body" style={styles.submitBtnText}>
                     Puanla
@@ -229,13 +243,15 @@ export default function RatingModal({
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.skipBtn} onPress={onClose}>
-                <PremiumText variant="caption" muted style={styles.skipBtnText}>
-                  Şimdilik atla
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.skipSubtext}>
-                  Puanlamadan devam edebilirsin
-                </PremiumText>
+              <TouchableOpacity style={styles.skipBtn} onPress={onClose} activeOpacity={0.85}>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.skipPanel}>
+                  <PremiumText variant="caption" muted style={styles.skipBtnText}>
+                    Şimdilik atla
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.skipSubtext}>
+                    Puanlamadan devam edebilirsin.
+                  </PremiumText>
+                </GlassSurface>
               </TouchableOpacity>
             </>
           )}
@@ -268,13 +284,23 @@ const styles = StyleSheet.create({
   phaseBlock: {
     alignItems: 'center',
     gap: LDS_SPACING.xxs,
-    marginBottom: LDS_SPACING.md,
     paddingHorizontal: LDS_SPACING.xxs,
+  },
+  phasePanel: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.45)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   phaseStep: {
     textAlign: 'center',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+    fontWeight: '700',
   },
   phaseCaption: {
     textAlign: 'center',
@@ -320,13 +346,31 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   submitBtnText: {
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xs,
+  },
+  loadingText: {
+    fontWeight: '600',
   },
   skipBtn: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  skipPanel: {
+    width: '100%',
     alignItems: 'center',
     paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
     gap: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.35)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
   },
   skipBtnText: {
     fontWeight: '600',
@@ -335,13 +379,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
   },
+  successPanel: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.45)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.panel,
+  },
   successContainer: {
     alignItems: 'center',
-    paddingVertical: LDS_SPACING.sm,
     gap: LDS_SPACING.xs,
   },
   guardianOrb: {
-    marginBottom: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+  },
+  successStatusChip: {
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
+  },
+  successStatusChipText: {
+    fontWeight: '600',
+    letterSpacing: 0.04,
   },
   successCaption: {
     textAlign: 'center',
