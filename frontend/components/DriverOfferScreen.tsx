@@ -40,7 +40,6 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
-  PREMIUM_GLASS_FILL,
   PREMIUM_NAVY_DEEP,
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
@@ -533,62 +532,121 @@ function RequestCard({
       : `${tripDistanceKmText} km`;
 
   return (
-    <Animated.View style={[styles.reqCard, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-      <View style={styles.reqMainRow}>
-        <View style={styles.reqContentCol}>
-          <View style={styles.reqTopLine}>
-            <Text style={styles.reqPriceText}>{request.offered_price || 0} ₺</Text>
-            <Text style={styles.reqMetaText}>
-              {distanceToPassenger} km | {rideDurationText}
-            </Text>
+    <Animated.View
+      style={[styles.reqCardWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
+    >
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.reqCard}>
+        <View style={styles.reqCardTopStrip}>
+          <View style={styles.reqDispatchDotWrap} pointerEvents="none">
+            <View style={styles.reqDispatchDotOuter} />
+            <View style={styles.reqDispatchDot} />
           </View>
-
-          <View style={styles.reqSecondLine}>
-            <View style={styles.reqPassengerChip}>
-              <Ionicons name="person-circle-outline" size={14} color="#C8D3E0" />
-              <Text style={styles.reqPassengerName} numberOfLines={1} ellipsizeMode="tail">
-                {request.passenger_name?.split(' ')[0] || 'Yolcu'}
-              </Text>
-            </View>
-            <View style={styles.reqRatingChip}>
-              <Ionicons name="star" size={12} color="#FACC15" />
-              <Text style={styles.reqRatingText}>{passengerRatingText}</Text>
-            </View>
-            {request.passenger_payment_method === 'card' ? (
-              <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
-                <Text style={styles.reqPaymentPillText}>Kart ile Öde · Yakında</Text>
-              </View>
-            ) : request.passenger_payment_method === 'cash' ? (
-              <View style={[styles.reqPaymentPill, styles.reqPaymentPillCash]}>
-                <Text style={styles.reqPaymentPillText}>Nakit</Text>
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.reqRouteBlock}>
-            <View style={styles.reqRouteLine}>
-              <View style={[styles.reqDot, styles.reqDotPickup]} />
-              <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
-                {pickupLineFromRequest(request)}
-              </Text>
-            </View>
-            <View style={styles.reqRouteLine}>
-              <View style={[styles.reqDot, styles.reqDotDropoff]} />
-              <Text style={styles.reqRouteText} numberOfLines={1} ellipsizeMode="tail">
-                {dropoffLineFromRequest(request)}
-              </Text>
-            </View>
-          </View>
+          <PremiumText variant="caption" style={styles.reqDispatchLabel}>
+            DISPATCH TEKLİFİ
+          </PremiumText>
         </View>
 
-        <View style={styles.reqActionsCol}>
-          <TouchableOpacity style={styles.reqDismissBtn} onPress={onDismiss}>
-            <Text style={styles.reqDismissText}>Geç</Text>
-          </TouchableOpacity>
+        <View style={styles.reqMainRow}>
+          <View style={styles.reqContentCol}>
+            <View style={styles.reqRevenueHero}>
+              <PremiumText variant="step" muted style={styles.reqRevenueLabel}>
+                TEKLİF TUTARI
+              </PremiumText>
+              <PremiumText variant="headline" style={styles.reqPriceText}>
+                {request.offered_price || 0} ₺
+              </PremiumText>
+            </View>
 
-          <TouchableOpacity
-            style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
-            onPress={async () => {
+            <View style={styles.reqMetaRail}>
+              <View style={styles.reqMetaCell}>
+                <View style={styles.reqMetaIconWrap}>
+                  <Ionicons name="navigate-outline" size={13} color={PREMIUM_AUTH_CYAN} />
+                </View>
+                <View style={styles.reqMetaTextCol}>
+                  <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
+                    Pickup
+                  </PremiumText>
+                  <PremiumText variant="step" style={styles.reqMetaValue}>
+                    {distanceToPassenger} km
+                  </PremiumText>
+                </View>
+              </View>
+              <View style={styles.reqMetaDivider} />
+              <View style={styles.reqMetaCell}>
+                <View style={styles.reqMetaIconWrap}>
+                  <Ionicons name="time-outline" size={13} color={PREMIUM_AUTH_CYAN} />
+                </View>
+                <View style={styles.reqMetaTextCol}>
+                  <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
+                    Süre
+                  </PremiumText>
+                  <PremiumText variant="step" style={styles.reqMetaValue}>
+                    {rideDurationText}
+                  </PremiumText>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.reqSecondLine}>
+              <View style={styles.reqPassengerChip}>
+                <Ionicons name="person-circle-outline" size={14} color="rgba(148,163,184,0.92)" />
+                <PremiumText variant="caption" style={styles.reqPassengerName} numberOfLines={1}>
+                  {request.passenger_name?.split(' ')[0] || 'Yolcu'}
+                </PremiumText>
+              </View>
+              <View style={styles.reqRatingChip}>
+                <Ionicons name="star" size={12} color="#FACC15" />
+                <PremiumText variant="caption" style={styles.reqRatingText}>
+                  {passengerRatingText}
+                </PremiumText>
+              </View>
+              {request.passenger_payment_method === 'card' ? (
+                <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
+                  <PremiumText variant="caption" style={styles.reqPaymentPillText}>
+                    Kart · Yakında
+                  </PremiumText>
+                </View>
+              ) : request.passenger_payment_method === 'cash' ? (
+                <View style={[styles.reqPaymentPill, styles.reqPaymentPillCash]}>
+                  <PremiumText variant="caption" style={styles.reqPaymentPillText}>
+                    Nakit
+                  </PremiumText>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.reqRouteBlock}>
+              <View style={styles.reqRouteLine}>
+                <View style={[styles.reqDot, styles.reqDotPickup]} />
+                <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
+                  {pickupLineFromRequest(request)}
+                </PremiumText>
+              </View>
+              <View style={styles.reqRouteLine}>
+                <View style={[styles.reqDot, styles.reqDotDropoff]} />
+                <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
+                  {dropoffLineFromRequest(request)}
+                </PremiumText>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.reqActionsCol}>
+            <TouchableOpacity
+              style={styles.reqDismissBtn}
+              onPress={onDismiss}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="Geç"
+            >
+              <PremiumText variant="caption" muted style={styles.reqDismissText}>
+                Geç
+              </PremiumText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
+              onPress={async () => {
               if (accepting || globalAcceptFrozen) return;
 
               const tagIdForAccept = String(request.tag_id || request.id || '').trim();
@@ -668,26 +726,48 @@ function RequestCard({
                 onAcceptFlowEnd?.(tagIdForAccept);
               }
             }}
-            disabled={accepting || globalAcceptFrozen}
-          >
-            {accepting ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <Text style={styles.reqAcceptBtnText}>Kabul Et</Text>
-            )}
-          </TouchableOpacity>
+              disabled={accepting || globalAcceptFrozen}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="Kabul Et"
+            >
+              {accepting ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <PremiumText variant="step" style={styles.reqAcceptBtnText}>
+                  Kabul Et
+                </PremiumText>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-      <View style={styles.reqBottomMetaRow}>
-        {tripRoadShowLoading ? (
-          <TripRouteCalculatingInline compact />
-        ) : (
-          <Text style={styles.reqBottomMetaText}>Rota: {routeDistanceText}</Text>
-        )}
-        <Text style={styles.reqBottomMetaText}>
-          {typeof timeToPassengerDisplay === 'number' ? `${timeToPassengerDisplay} dk yolcuya` : '— yolcuya'}
-        </Text>
-      </View>
+
+        <View style={styles.reqBottomMetaRow}>
+          <View style={styles.reqBottomMetaCell}>
+            <PremiumText variant="caption" muted style={styles.reqBottomMetaLabel}>
+              Rota
+            </PremiumText>
+            {tripRoadShowLoading ? (
+              <TripRouteCalculatingInline compact />
+            ) : (
+              <PremiumText variant="caption" style={styles.reqBottomMetaValue}>
+                {routeDistanceText}
+              </PremiumText>
+            )}
+          </View>
+          <View style={styles.reqBottomMetaDivider} />
+          <View style={styles.reqBottomMetaCell}>
+            <PremiumText variant="caption" muted style={styles.reqBottomMetaLabel}>
+              Yolcuya
+            </PremiumText>
+            <PremiumText variant="caption" style={styles.reqBottomMetaValue}>
+              {typeof timeToPassengerDisplay === 'number'
+                ? `${timeToPassengerDisplay} dk`
+                : '—'}
+            </PremiumText>
+          </View>
+        </View>
+      </GlassSurface>
     </Animated.View>
   );
 }
@@ -2052,27 +2132,56 @@ const styles = StyleSheet.create({
     marginTop: LDS_SPACING.xs,
   },
 
-  // Normal TAG — gelen talep kartı (kompakt premium)
+  // Dispatch talep kartı — LHIS cockpit card
+  reqCardWrap: {
+    marginTop: LDS_SPACING.xs,
+  },
   reqCard: {
-    backgroundColor: PREMIUM_GLASS_FILL,
-    borderRadius: 22,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minHeight: 152,
-    marginTop: 8,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.65)',
-    borderTopColor: 'rgba(34,211,238,0.09)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.26,
-        shadowRadius: 16,
-      },
-      android: { elevation: 7 },
-      default: {},
-    }),
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.sm,
+    minHeight: 168,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  reqCardTopStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.xs,
+    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
+    borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  reqDispatchDotWrap: {
+    width: 12,
+    height: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reqDispatchDotOuter: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.2)',
+  },
+  reqDispatchDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    opacity: 0.92,
+  },
+  reqDispatchLabel: {
+    letterSpacing: 0.45,
+    textTransform: 'uppercase',
+    color: PREMIUM_AUTH_CYAN,
+    opacity: 0.82,
+    fontSize: 10,
+    fontWeight: '700',
   },
   reqMainRow: {
     flexDirection: 'row',
@@ -2081,30 +2190,76 @@ const styles = StyleSheet.create({
   reqContentCol: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 10,
+    paddingRight: LDS_SPACING.sm,
   },
-  reqTopLine: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
+  reqRevenueHero: {
+    gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xs,
+  },
+  reqRevenueLabel: {
+    letterSpacing: 0.55,
+    textTransform: 'uppercase',
   },
   reqPriceText: {
-    fontSize: 26,
-    lineHeight: 30,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: '800',
+    letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
     color: 'rgba(94,229,209,0.95)',
-    letterSpacing: -0.3,
   },
-  reqMetaText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
+  reqMetaRail: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: 'rgba(8,17,31,0.42)',
+    borderRadius: LDS_RADIUS.md,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xs,
+  },
+  reqMetaCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    minWidth: 0,
+  },
+  reqMetaIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: 'rgba(34,211,238,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reqMetaTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  reqMetaLabel: {
+    letterSpacing: 0.08,
+    fontSize: 10,
+  },
+  reqMetaValue: {
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.1,
+  },
+  reqMetaDivider: {
+    width: LDS_BORDER_WIDTH.hairline,
+    alignSelf: 'stretch',
+    backgroundColor: LDS_BORDER_COLOR.cockpitPanel,
+    marginHorizontal: LDS_SPACING.xxs,
   },
   reqSecondLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
     flexWrap: 'wrap',
   },
   reqPassengerChip: {
@@ -2114,54 +2269,57 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
   reqPassengerName: {
-    fontSize: 12,
     fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
+    flexShrink: 1,
   },
   reqRatingChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: 'rgba(251,211,141,0.1)',
-    paddingHorizontal: 6,
+    backgroundColor: 'rgba(251,211,141,0.08)',
+    paddingHorizontal: LDS_SPACING.xs,
     paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: 'rgba(251,211,141,0.18)',
   },
   reqRatingText: {
-    fontSize: 11,
     fontWeight: '700',
     color: '#F8FAFC',
+    fontVariant: ['tabular-nums'],
   },
   reqPaymentPill: {
-    paddingHorizontal: 7,
+    paddingHorizontal: LDS_SPACING.xs,
     paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
   },
   reqPaymentPillCard: {
-    backgroundColor: 'rgba(37, 99, 235, 0.18)',
-    borderColor: 'rgba(96, 165, 250, 0.45)',
+    backgroundColor: 'rgba(37, 99, 235, 0.14)',
+    borderColor: 'rgba(96, 165, 250, 0.35)',
   },
   reqPaymentPillCash: {
-    backgroundColor: 'rgba(22, 163, 74, 0.18)',
-    borderColor: 'rgba(74, 222, 128, 0.45)',
+    backgroundColor: 'rgba(22, 163, 74, 0.14)',
+    borderColor: 'rgba(74, 222, 128, 0.35)',
   },
   reqPaymentPillText: {
-    fontSize: 10,
     fontWeight: '700',
-    color: '#E2E8F0',
-    letterSpacing: 0.2,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.1,
+    fontSize: 10,
   },
   reqRouteBlock: {
-    marginTop: 8,
-    gap: 5,
+    marginTop: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
+    paddingTop: LDS_SPACING.xs,
+    borderTopWidth: LDS_BORDER_WIDTH.hairline,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanel,
   },
   reqRouteLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: LDS_SPACING.xs,
   },
   reqDot: {
     width: 7,
@@ -2177,75 +2335,84 @@ const styles = StyleSheet.create({
   reqRouteText: {
     flex: 1,
     minWidth: 0,
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#CBD5E1',
+    color: PREMIUM_TEXT_SOFT,
+    opacity: 0.92,
+    lineHeight: 16,
   },
   reqActionsCol: {
-    width: 84,
+    width: 88,
     justifyContent: 'space-between',
-    gap: 8,
+    gap: LDS_SPACING.xs,
   },
   reqDismissBtn: {
     flex: 1,
-    minHeight: 40,
-    backgroundColor: 'rgba(8,17,31,0.65)',
-    borderRadius: 12,
+    minHeight: 42,
+    backgroundColor: 'rgba(8,17,31,0.35)',
+    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.55)',
-    borderTopColor: 'rgba(148,206,226,0.08)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
   },
   reqDismissText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(186,206,226,0.88)',
+    fontWeight: '600',
+    letterSpacing: 0.12,
   },
   reqAcceptBtn: {
     flex: 1,
-    minHeight: 40,
-    backgroundColor: 'rgba(37,99,235,0.92)',
-    borderRadius: 12,
+    minHeight: 42,
+    backgroundColor: 'rgba(8,145,178,0.88)',
+    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34,211,238,0.18)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#010818',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.28,
-        shadowRadius: 8,
-      },
-      android: { elevation: 5 },
-      default: {},
-    }),
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(34,211,238,0.38)',
+    borderTopColor: 'rgba(34,211,238,0.55)',
+    ...LDS_ELEVATION.chip,
   },
   acceptButtonDisabled: {
     backgroundColor: 'rgba(30, 50, 72, 0.85)',
     borderColor: 'rgba(30, 58, 95, 0.5)',
+    borderTopColor: 'rgba(30, 58, 95, 0.5)',
   },
   reqAcceptBtnText: {
-    fontSize: 12,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#F8FAFC',
+    letterSpacing: 0.2,
   },
   reqBottomMetaRow: {
-    marginTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(148, 163, 184, 0.28)',
-    paddingTop: 6,
+    marginTop: LDS_SPACING.sm,
+    borderTopWidth: LDS_BORDER_WIDTH.hairline,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanel,
+    paddingTop: LDS_SPACING.xs,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    gap: LDS_SPACING.sm,
+    backgroundColor: 'rgba(8,17,31,0.28)',
+    borderRadius: LDS_RADIUS.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xxs,
   },
-  reqBottomMetaText: {
-    flexShrink: 1,
+  reqBottomMetaCell: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  reqBottomMetaDivider: {
+    width: LDS_BORDER_WIDTH.hairline,
+    height: 22,
+    backgroundColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  reqBottomMetaLabel: {
     fontSize: 10,
-    fontWeight: '500',
-    color: PREMIUM_TEXT_MUTED,
+    letterSpacing: 0.08,
+    textTransform: 'uppercase',
+  },
+  reqBottomMetaValue: {
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.05,
   },
   // Offer Section (Eski - artık kullanılmıyor)
   offerSection: {
