@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
@@ -11,10 +12,12 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CockpitBackground } from '../../design-system/primitives';
+import { CockpitBackground, GlassSurface } from '../../design-system/primitives';
+import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import {
   PREMIUM_AUTH_CTA_DISABLED_GRADIENT,
   PREMIUM_AUTH_CTA_GRADIENT,
@@ -75,21 +78,28 @@ export function PremiumAuthScreenShell({
   );
 }
 
-/** Cam kart kabuğu (iOS/Web blur, Android yarı saydam). */
+/** LHIS form kartı — login / OTP / register ortak cam kabuk. */
 export function PremiumGlassShell({ children, compactPadding }: { children: React.ReactNode; compactPadding: boolean }) {
-  const pd = compactPadding ? 12 : 16;
+  const padding = compactPadding ? LDS_SPACING.sm : LDS_SPACING.md;
 
-  if (Platform.OS === 'android') {
-    return <View style={[pa.androidGlass, { padding: pd }]}>{children}</View>;
-  }
-
-  const intensity = Platform.OS === 'web' ? 46 : 52;
   return (
-    <BlurView intensity={intensity} tint="dark" style={pa.blurFrame}>
-      <View style={[pa.blurTint, { padding: pd }]}>{children}</View>
-    </BlurView>
+    <GlassSurface
+      variant="plain"
+      borderRadius={LDS_RADIUS.xl}
+      style={[glassShellStyles.shell, { padding }]}
+    >
+      {children}
+    </GlassSurface>
   );
 }
+
+const glassShellStyles = StyleSheet.create({
+  shell: {
+    alignSelf: 'stretch',
+    marginBottom: LDS_SPACING.sm,
+    ...LDS_ELEVATION.flat,
+  },
+});
 
 export function PremiumGradientCtaButton({
   label,
