@@ -2652,9 +2652,15 @@ export default function App() {
         return true;
       } else {
         appAlert(
-          'Konum İzni Gerekli',
-          'LeylekTag\'ı kullanabilmek için konum izni vermeniz gerekmektedir. Ayarlardan konum iznini açabilirsiniz.',
-          [{ text: 'Tamam' }]
+          'Konum izni gerekli',
+          user?.role === 'driver' || selectedRole === 'driver'
+            ? 'Haritayı gösterebilmek, teklif alabilmek ve çevrimiçi olabilmek için konum izni gereklidir.'
+            : 'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+          [
+            { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+            { text: 'Şimdi değil', style: 'cancel' },
+          ],
+          { tone: 'warning' },
         );
         return false;
       }
@@ -9987,11 +9993,13 @@ function PassengerDashboard({
           });
           if (!coords) {
             appAlert(
-              'Konum İzni Gerekli',
-              permissionStatus === 'gps_error'
-                ? 'Konum alınamadı. GPS açık olduğundan emin olup tekrar deneyin.'
-                : 'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
-              [{ text: 'Tamam' }],
+              'Konum izni gerekli',
+              'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+              [
+                { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+                { text: 'Şimdi değil', style: 'cancel' },
+              ],
+              { tone: 'warning' },
             );
             return;
           }
@@ -10003,9 +10011,13 @@ function PassengerDashboard({
           if (!granted) {
             console.log('[PAX_LOC] requestLocationPermission → denied or false');
             appAlert(
-              'Konum İzni Gerekli',
-              'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
-              [{ text: 'Tamam' }],
+              'Konum izni gerekli',
+              'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+              [
+                { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+                { text: 'Şimdi değil', style: 'cancel' },
+              ],
+              { tone: 'warning' },
             );
             return;
           }
@@ -10303,10 +10315,13 @@ function PassengerDashboard({
             rideCreatePassengerUiState: 'blocked_pickup_location',
           });
           appAlert(
-            'Hata',
-            permissionStatus === 'gps_error'
-              ? 'Konum alınamadı. GPS açık olduğundan emin olup tekrar deneyin.'
-              : 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.',
+            'Konum izni gerekli',
+            'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+            [
+              { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+              { text: 'Şimdi değil', style: 'cancel' },
+            ],
+            { tone: 'warning' },
           );
           return;
         }
@@ -10317,7 +10332,15 @@ function PassengerDashboard({
           rideCreateLastError: 'pickup_location_missing',
           rideCreatePassengerUiState: 'blocked_pickup_location',
         });
-        appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+        appAlert(
+          'Konum izni gerekli',
+          'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+          [
+            { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+            { text: 'Şimdi değil', style: 'cancel' },
+          ],
+          { tone: 'warning' },
+        );
         return;
       }
     }
@@ -11351,11 +11374,13 @@ function PassengerDashboard({
           });
           if (!seeded) {
             appAlert(
-              'Konum İzni Gerekli',
-              permissionStatus === 'gps_error'
-                ? 'Konum alınamadı. GPS açık olduğundan emin olup tekrar deneyin.'
-                : 'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
-              [{ text: 'Tamam' }],
+              'Konum izni gerekli',
+              'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+              [
+                { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+                { text: 'Şimdi değil', style: 'cancel' },
+              ],
+              { tone: 'warning' },
             );
             return;
           }
@@ -11365,9 +11390,13 @@ function PassengerDashboard({
           const granted = await requestLocationPermission();
           if (!granted) {
             appAlert(
-              'Konum İzni Gerekli',
-              'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
-              [{ text: 'Tamam' }],
+              'Konum izni gerekli',
+              'Yakındaki sürücüleri gösterebilmek ve rotanızı hazırlayabilmek için konum izni gereklidir.',
+              [
+                { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+                { text: 'Şimdi değil', style: 'cancel' },
+              ],
+              { tone: 'warning' },
             );
             return;
           }
@@ -16192,11 +16221,12 @@ function DriverDashboard({
           driverLocationAlertShown.current = true;
           appAlert(
             'Konum izni gerekli',
-            'Haritayı görmek, teklif almak ve çevrimiçi olmak için konum izni vermelisiniz.',
+            'Haritayı gösterebilmek, teklif alabilmek ve çevrimiçi olabilmek için konum izni gereklidir.',
             [
               { text: 'Ayarlar', onPress: () => Linking.openSettings() },
-              { text: 'Tamam', style: 'cancel' },
-            ]
+              { text: 'Şimdi değil', style: 'cancel' },
+            ],
+            { tone: 'warning' },
           );
         }
       } catch (e) {
