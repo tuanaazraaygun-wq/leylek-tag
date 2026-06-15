@@ -2095,7 +2095,17 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         ? await Location.requestForegroundPermissionsAsync()
         : await Location.getForegroundPermissionsAsync();
       if (perm.status !== 'granted') {
-        if (opts?.showAlert) Alert.alert('Konum izni', 'Konum paylaşmak için izin gerekli.');
+        if (opts?.showAlert) {
+          appAlert(
+            'Konum izni gerekli',
+            'Yolculuk sırasında konumunuzu paylaşabilmek için konum izni gereklidir.',
+            [
+              { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+              { text: 'Şimdi değil', style: 'cancel' },
+            ],
+            { tone: 'warning' },
+          );
+        }
         return false;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -2144,7 +2154,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       );
       return false;
     } catch {
-      if (opts?.showAlert) Alert.alert('Konum', 'Konum alınamadı.');
+      if (opts?.showAlert) {
+        appAlert(
+          'Konum hazırlanıyor',
+          'Konumunuz şu an alınamadı. Kısa bir süre sonra tekrar deneyebilirsiniz.',
+          [{ text: 'Tamam' }],
+          { tone: 'info', variant: 'info', autoDismissMs: 3000, cancelable: true },
+        );
+      }
       return false;
     } finally {
       if (opts?.manual) setSendingLocation(false);
@@ -3015,7 +3032,12 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       status: String(session?.status || ''),
     });
     if (!navigationTarget) {
-      Alert.alert('Navigasyon', 'Navigasyon için gerekli konum henüz hazır değil.');
+      appAlert(
+        'Konum hazırlanıyor',
+        'Navigasyon için gerekli konum henüz hazır değil. Kısa bir süre sonra tekrar deneyin.',
+        [{ text: 'Tamam' }],
+        { tone: 'info', variant: 'info', autoDismissMs: 3000, cancelable: true },
+      );
       return;
     }
     const q = `${navigationTarget.latitude},${navigationTarget.longitude}`;
