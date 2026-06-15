@@ -4,6 +4,7 @@ import {
   Linking,
   Modal,
   Platform,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,6 +14,11 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { GlassSurface, PremiumText } from '../../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
+import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { LegalPage } from '../LegalPages';
 import { LoginBrandHeader } from './LoginBrandHeader';
 import { PREMIUM_AUTH_CYAN, premiumAuthStyles as pa } from './premiumAuthStyles';
@@ -58,6 +64,24 @@ export function LoginScreen({
   const columnW = Math.min(400, winW - padH * 2);
 
   const blocked = !kvkkAccepted || phone.replace(/\D/g, '').length < 10;
+
+  const trustItems = [
+    {
+      icon: 'shield-checkmark-outline' as const,
+      title: 'Güvenli',
+      subtitle: 'Korunan yolculuk',
+    },
+    {
+      icon: 'flash-outline' as const,
+      title: 'Hızlı',
+      subtitle: 'Anında eşleşme',
+    },
+    {
+      icon: 'body-outline' as const,
+      title: 'Konforlu',
+      subtitle: 'Rahat yolculuk',
+    },
+  ];
 
   const openExternalLink = async (url: string, errorTitle: string) => {
     try {
@@ -173,27 +197,33 @@ export function LoginScreen({
           <Text style={pa.supportLabel}>Destek</Text>
         </TouchableOpacity>
 
-        <PremiumGlassShell compactPadding={isShort}>
-          <View style={pa.trustRow}>
-            <View style={pa.trustCol}>
-              <Ionicons name="shield-checkmark-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-              <Text style={pa.trustTitle}>Güvenli</Text>
-              <Text style={pa.trustSub}>Korunan yolculuk</Text>
-            </View>
-            <View style={pa.trustDivider} />
-            <View style={pa.trustCol}>
-              <Ionicons name="flash-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-              <Text style={pa.trustTitle}>Hızlı</Text>
-              <Text style={pa.trustSub}>Anında eşleşme</Text>
-            </View>
-            <View style={pa.trustDivider} />
-            <View style={pa.trustCol}>
-              <Ionicons name="body-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-              <Text style={pa.trustTitle}>Konforlu</Text>
-              <Text style={pa.trustSub}>Premium deneyim</Text>
-            </View>
+        <View style={trustStyles.wrap} accessibilityRole="summary">
+          <PremiumText variant="caption" muted style={trustStyles.stripLabel}>
+            LeylekTAG güven katmanı
+          </PremiumText>
+          <View style={trustStyles.chipRow}>
+            {trustItems.map((item) => (
+              <GlassSurface
+                key={item.title}
+                variant="plain"
+                borderRadius={LDS_RADIUS.sm}
+                style={trustStyles.chip}
+              >
+                <View style={trustStyles.chipIconWrap}>
+                  <Ionicons name={item.icon} size={12} color="rgba(148,163,184,0.78)" />
+                </View>
+                <View style={trustStyles.chipTextCol}>
+                  <PremiumText variant="caption" muted style={trustStyles.chipTitle} numberOfLines={1}>
+                    {item.title}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={trustStyles.chipSubtitle} numberOfLines={1}>
+                    {item.subtitle}
+                  </PremiumText>
+                </View>
+              </GlassSurface>
+            ))}
           </View>
-        </PremiumGlassShell>
+        </View>
       </PremiumAuthScreenShell>
 
       <LegalPage
@@ -266,3 +296,62 @@ function SupportModalInner({
     </View>
   );
 }
+
+const trustStyles = StyleSheet.create({
+  wrap: {
+    alignSelf: 'stretch',
+    marginTop: LDS_SPACING.xs,
+    opacity: 0.92,
+  },
+  stripLabel: {
+    textAlign: 'center',
+    letterSpacing: 0.04,
+    fontSize: 10,
+    marginBottom: LDS_SPACING.xs,
+    opacity: 0.82,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: LDS_SPACING.xxs,
+  },
+  chip: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.xs,
+    backgroundColor: 'rgba(8,17,31,0.28)',
+    ...LDS_ELEVATION.flat,
+  },
+  chipIconWrap: {
+    width: LDS_SPACING.lg,
+    height: LDS_SPACING.lg,
+    borderRadius: LDS_RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,17,31,0.38)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    flexShrink: 0,
+  },
+  chipTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  chipTitle: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.03,
+    opacity: 0.9,
+  },
+  chipSubtitle: {
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 0.02,
+    opacity: 0.78,
+  },
+});
