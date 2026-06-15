@@ -11,7 +11,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
@@ -20,12 +19,12 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
-  Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { appAlert } from '../contexts/AppAlertContext';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -127,7 +126,8 @@ function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
   const routeUiDot = PREMIUM_AUTH_CYAN;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-      <Text
+      <PremiumText
+        variant="caption"
         style={{
           color: routeUiText,
           fontSize: fs,
@@ -135,8 +135,8 @@ function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
           letterSpacing: U.letterSpacing,
         }}
       >
-        Rota hesaplanıyor
-      </Text>
+        Rota hazırlanıyor
+      </PremiumText>
       <View
         style={{
           flexDirection: 'row',
@@ -564,7 +564,7 @@ function RequestCard({
                 </View>
                 <View style={styles.reqMetaTextCol}>
                   <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
-                    Pickup
+                    Alış
                   </PremiumText>
                   <PremiumText variant="step" style={styles.reqMetaValue}>
                     {distanceToPassenger} km
@@ -654,7 +654,12 @@ function RequestCard({
               const userId = String(driverId || '').trim();
 
               if (!tagIdForAccept || !userId) {
-                Alert.alert('Hata', 'Eksik bilgi');
+                appAlert(
+                  'Bilgi eksik',
+                  'Teklif kabul edilemedi. Kısa bir süre sonra tekrar deneyin.',
+                  [{ text: 'Tamam', style: 'default' }],
+                  { variant: 'info' },
+                );
                 return;
               }
 
@@ -705,7 +710,7 @@ function RequestCard({
                   errMsg =
                     res.status === 409
                       ? 'Bu çağrı artık müsait değil veya başka sürücüye düştü.'
-                      : `Sunucu yanıtı: ${res.status}`;
+                      : 'Teklif kabul edilemedi. Kısa bir süre sonra tekrar deneyin.';
                 }
                 const taken = isDriverOfferNoLongerAvailable(res, errMsg, rawText);
                 if (taken) {
@@ -713,13 +718,28 @@ function RequestCard({
                     tagId: tagIdForAccept,
                     requestId: requestIdForCb || undefined,
                   });
-                  Alert.alert('Eşleşme olmadı', 'Bu teklif başka sürücü tarafından alındı.');
+                  appAlert(
+                    'Eşleşme olmadı',
+                    'Bu teklif başka bir sürücü tarafından alındı.',
+                    [{ text: 'Tamam', style: 'default' }],
+                    { variant: 'warning' },
+                  );
                 } else {
-                  Alert.alert('Eşleşme olmadı', errMsg);
+                  appAlert(
+                    'Eşleşme olmadı',
+                    errMsg,
+                    [{ text: 'Tamam', style: 'default' }],
+                    { variant: 'warning' },
+                  );
                 }
               } catch (e) {
                 console.error('[driver/accept-offer] fetch', e);
-                Alert.alert('Hata', 'Bağlantı hatası. Lütfen tekrar deneyin.');
+                appAlert(
+                  'Bağlantı kurulamadı',
+                  'Kısa bir süre sonra tekrar deneyin.',
+                  [{ text: 'Tamam', style: 'default' }],
+                  { variant: 'info' },
+                );
               } finally {
                 setAccepting(false);
                 setGlobalAcceptFrozen(false);
@@ -729,13 +749,13 @@ function RequestCard({
               disabled={accepting || globalAcceptFrozen}
               activeOpacity={0.88}
               accessibilityRole="button"
-              accessibilityLabel="Kabul Et"
+              accessibilityLabel="Kabul et"
             >
               {accepting ? (
                 <ActivityIndicator size="small" color="#FFF" />
               ) : (
                 <PremiumText variant="step" style={styles.reqAcceptBtnText}>
-                  Kabul Et
+                  Kabul et
                 </PremiumText>
               )}
             </TouchableOpacity>
@@ -1006,7 +1026,7 @@ export default function DriverOfferScreen({
         if (cancelled) return;
         if (!j?.success) {
           console.warn('[driver_map] nearby-passengers-map not success', j);
-          setMapPinsLoadError('Yakındaki talepler yüklenemedi, tekrar deneniyor.');
+          setMapPinsLoadError('Harita güncellenemedi. Kısa bir süre sonra tekrar deneyin.');
           return;
         }
         setMapPinsLoadError(null);
@@ -1022,7 +1042,7 @@ export default function DriverOfferScreen({
       } catch (e) {
         if (cancelled) return;
         console.warn('[driver_map] nearby-passengers-map fetch failed', e);
-        setMapPinsLoadError('Yakındaki talepler yüklenemedi, tekrar deneniyor.');
+        setMapPinsLoadError('Harita güncellenemedi. Kısa bir süre sonra tekrar deneyin.');
       }
     };
     void load();
@@ -1084,9 +1104,9 @@ export default function DriverOfferScreen({
       return (
         <View style={styles.mapFallback}>
           <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.mapFallbackText}>
+          <PremiumText variant="caption" muted style={styles.mapFallbackText}>
             Talep {mapHud.seeking} · {mapHud.radius} km
-          </Text>
+          </PremiumText>
         </View>
       );
     }
@@ -1185,7 +1205,7 @@ export default function DriverOfferScreen({
               key={`seek-${pin.tag_id}`}
               coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
               title={pin.label || 'Talep'}
-              description={listed ? 'Listede — teklif verebilirsiniz' : 'Yolcu talebi'}
+              description={listed ? 'Listede — kabul edebilirsin' : 'Yolcu talebi'}
             >
               <View style={[styles.passengerMarkerSeeking, listed && styles.passengerMarkerSeekingListed]}>
                 <Ionicons name="navigate" size={15} color="#FFF" />
@@ -1261,7 +1281,7 @@ export default function DriverOfferScreen({
                   style={styles.mapMiniHudSubtitle}
                   numberOfLines={1}
                 >
-                  {mapExpanded ? 'Canlı izleme · Harita açık' : 'Canlı izleme · Harita hazır'}
+                  {mapExpanded ? 'Saha taraması · Harita açık' : 'Saha taraması · Hazır'}
                 </PremiumText>
               </View>
             </View>
@@ -1313,14 +1333,18 @@ export default function DriverOfferScreen({
               {mapExpanded && (!driverLocation || !mapReady) ? (
                 <View style={styles.mapLoadingOverlay} pointerEvents="none">
                   <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-                  <Text style={styles.mapLoadingOverlayText}>
-                    {!driverLocation ? 'Konum alınıyor…' : 'Harita yükleniyor…'}
-                  </Text>
+                  <PremiumText variant="caption" muted style={styles.mapLoadingOverlayText}>
+                    {!driverLocation ? 'Konum hazırlanıyor' : 'Harita hazırlanıyor'}
+                  </PremiumText>
                 </View>
               ) : null}
               {mapExpanded && mapPinsLoadError ? (
                 <View style={styles.mapPinsErrorBanner} pointerEvents="none">
-                  <Text style={styles.mapPinsErrorText}>{mapPinsLoadError}</Text>
+                  <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.mapPinsErrorGlass}>
+                    <PremiumText variant="caption" muted style={styles.mapPinsErrorText}>
+                      {mapPinsLoadError}
+                    </PremiumText>
+                  </GlassSurface>
                 </View>
               ) : null}
               <View style={styles.mapTopOverlay} pointerEvents="box-none">
@@ -1329,10 +1353,14 @@ export default function DriverOfferScreen({
                 </TouchableOpacity>
                 <View style={styles.mapNameCardWrap} pointerEvents="none">
                   <View style={styles.mapNameCard}>
-                    <Text style={styles.mapNameText}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
+                    <PremiumText variant="step" style={styles.mapNameText}>
+                      {driverName?.split(' ')[0] || 'Sürücü'}
+                    </PremiumText>
                     <View style={styles.mapRatingRow}>
                       <Ionicons name="star" size={14} color="#FBBF24" />
-                      <Text style={styles.mapRatingText}>{displayRating}</Text>
+                      <PremiumText variant="caption" style={styles.mapRatingText}>
+                        {displayRating}
+                      </PremiumText>
                     </View>
                   </View>
                 </View>
@@ -1340,9 +1368,9 @@ export default function DriverOfferScreen({
               </View>
               <View style={styles.mapHud} pointerEvents="none">
                 <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
-                <Text style={styles.mapHudText}>
+                <PremiumText variant="caption" muted style={styles.mapHudText}>
                   Talep {mapHud.seeking} · {mapHud.radius} km
-                </Text>
+                </PremiumText>
               </View>
             </View>
           </View>
@@ -1395,7 +1423,7 @@ export default function DriverOfferScreen({
                   Yakın talepler
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.listSectionSubtitle} numberOfLines={2}>
-                  Canlı dispatch kuyruğu · {mapHud.radius} km saha
+                  Yakın talepler · {mapHud.radius} km saha
                 </PremiumText>
               </View>
             </View>
@@ -1473,8 +1501,7 @@ export default function DriverOfferScreen({
                 muted
                 style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
               >
-                Operasyon merkezi açık. {mapHud.radius} km saha çevresinde canlı dispatch taraması
-                sürüyor; yakın talepler burada listelenir.
+                Yakın talepler burada listelenir. {mapHud.radius} km saha çevresinde tarama sürüyor.
               </PremiumText>
 
               <View style={styles.emptyChipRow}>
@@ -1596,31 +1623,28 @@ const styles = StyleSheet.create({
     zIndex: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: LDS_SPACING.sm,
     backgroundColor: 'rgba(8,17,31,0.72)',
   },
   mapLoadingOverlayText: {
-    fontSize: 13,
     fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
+    textAlign: 'center',
   },
   mapPinsErrorBanner: {
     position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 10,
+    left: LDS_SPACING.sm,
+    right: LDS_SPACING.sm,
+    bottom: LDS_SPACING.sm,
     zIndex: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+  },
+  mapPinsErrorGlass: {
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
     backgroundColor: 'rgba(8,17,31,0.88)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(148,163,184,0.35)',
+    ...LDS_ELEVATION.chip,
   },
   mapPinsErrorText: {
-    fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(148,163,184,0.92)',
     textAlign: 'center',
   },
   mapViewportFixed: {
@@ -2392,13 +2416,14 @@ const styles = StyleSheet.create({
   emptyChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: LDS_SPACING.xxs,
     paddingVertical: LDS_SPACING.xxs,
     paddingHorizontal: LDS_SPACING.sm,
     borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(8,17,31,0.55)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    ...LDS_ELEVATION.chip,
   },
   emptyChipText: {
     fontWeight: '700',
