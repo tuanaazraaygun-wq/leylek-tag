@@ -8,25 +8,20 @@ import {
   Alert,
   Modal,
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   Pressable,
   ScrollView,
   useWindowDimensions,
-  Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-/** Tasarım sözleşmesi — merkezi appAlert kokpit yüzü */
-const OVERLAY_BG = 'rgba(2,6,23,0.72)';
-const CARD_BG = 'rgba(16,26,43,0.92)';
-const BORDER_SLATE = '#1E3A5F';
-const ACCENT_CYAN = '#22D3EE';
-const TEXT_PRIMARY = 'rgba(243,248,255,0.94)';
-const TEXT_MUTED = 'rgba(186,201,222,0.82)';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 type RNAlertButton = {
   text: string;
@@ -68,6 +63,7 @@ function toneAccentMeta(tone: AlertTone): {
   iconName: keyof typeof Ionicons.glyphMap;
   subtleBorder: string;
   iconColor: string;
+  chipLabel: string;
 } {
   switch (tone) {
     case 'success':
@@ -75,24 +71,28 @@ function toneAccentMeta(tone: AlertTone): {
         iconName: 'checkmark-circle-outline',
         subtleBorder: 'rgba(52,211,153,0.38)',
         iconColor: 'rgba(52,211,153,0.92)',
+        chipLabel: 'İşlem tamam',
       };
     case 'warning':
       return {
         iconName: 'warning-outline',
         subtleBorder: 'rgba(251,191,36,0.42)',
         iconColor: 'rgba(253,224,71,0.92)',
+        chipLabel: 'Dikkat',
       };
     case 'error':
       return {
         iconName: 'close-circle-outline',
         subtleBorder: 'rgba(239,68,68,0.38)',
         iconColor: 'rgba(248,113,113,0.92)',
+        chipLabel: 'Hata',
       };
     default:
       return {
         iconName: 'information-circle-outline',
         subtleBorder: 'rgba(34,211,238,0.32)',
-        iconColor: ACCENT_CYAN,
+        iconColor: 'rgba(34,211,238,0.92)',
+        chipLabel: 'Bilgi',
       };
   }
 }
@@ -106,7 +106,7 @@ function titleColorForTone(tone: AlertTone): string {
     case 'error':
       return 'rgba(252,165,165,0.96)';
     default:
-      return TEXT_PRIMARY;
+      return 'rgba(243,248,255,0.94)';
   }
 }
 
@@ -141,7 +141,7 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<AlertQueueItem[]>([]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const cardMax = Math.min(360, width - 32);
+  const cardMax = Math.min(360, width - LDS_SPACING.xl);
 
   const enqueue = useCallback((item: AlertQueueItem) => {
     setQueue((q) => [...q, item]);
@@ -222,94 +222,87 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
         >
           <Pressable
             style={[
-              styles.card,
+              styles.cardWrap,
               {
                 maxWidth: cardMax,
-                marginTop: Math.max(insets.top, 12),
-                marginBottom: Math.max(insets.bottom, 12),
-                borderLeftColor: toneMeta.subtleBorder,
+                marginTop: Math.max(insets.top, LDS_SPACING.sm),
+                marginBottom: Math.max(insets.bottom, LDS_SPACING.sm),
               },
             ]}
             onPress={(e) => e.stopPropagation()}
           >
-            <LinearGradient
-              colors={[
-                'rgba(34,211,238,0.07)',
-                'rgba(34,211,238,0)',
-              ]}
-              start={{ x: 0.1, y: 0 }}
-              end={{ x: 0.6, y: 0.85 }}
-              pointerEvents="none"
-              style={StyleSheet.absoluteFillObject}
-            />
-
-            <View style={styles.toneRow}>
-              <View style={[styles.toneIconOrb, { borderColor: toneMeta.subtleBorder }]}>
-                <Ionicons name={toneMeta.iconName} size={22} color={toneMeta.iconColor} />
+            <GlassSurface
+              variant="panel"
+              borderRadius={LDS_RADIUS.xl}
+              style={[styles.card, { borderLeftColor: toneMeta.subtleBorder }]}
+            >
+              <View style={styles.toneRow}>
+                <View style={[styles.toneIconOrb, { borderColor: toneMeta.subtleBorder }]}>
+                  <Ionicons name={toneMeta.iconName} size={22} color={toneMeta.iconColor} />
+                </View>
+                <View style={styles.titleCol}>
+                  <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+                    <Ionicons name="shield-checkmark-outline" size={13} color="rgba(34,211,238,0.82)" />
+                    <PremiumText variant="caption" style={styles.guardianChipText}>
+                      {toneMeta.chipLabel}
+                    </PremiumText>
+                  </GlassSurface>
+                  <PremiumText variant="title" style={[styles.title, { color: titleColor }]}>
+                    {current.title}
+                  </PremiumText>
+                </View>
               </View>
-              <Text style={[styles.title, { color: titleColor }]}>{current.title}</Text>
-            </View>
 
-            {current.message ? (
-              <ScrollView style={styles.messageScroll} keyboardShouldPersistTaps="handled">
-                <Text style={styles.message}>{current.message}</Text>
-              </ScrollView>
-            ) : null}
+              {current.message ? (
+                <ScrollView style={styles.messageScroll} keyboardShouldPersistTaps="handled">
+                  <PremiumText variant="body" muted style={styles.message}>
+                    {current.message}
+                  </PremiumText>
+                </ScrollView>
+              ) : null}
 
-            {buttons.length > 0 ? (
-              <View style={styles.buttonColumn}>
-                {buttons.map((btn, idx) => {
-                  const isCancel = btn.style === 'cancel';
-                  const isDest = btn.style === 'destructive';
-                  const isPrimary = !isCancel && !isDest;
-                  return (
-                    <TouchableOpacity
-                      key={`${btn.text}-${idx}`}
-                      activeOpacity={0.88}
-                      style={[
-                        styles.btnTouchable,
-                        isPrimary && styles.btnPrimaryTouchable,
-                        isCancel && styles.btnCancelTouchable,
-                        isDest && styles.btnDestructiveTouchable,
-                      ]}
-                      onPress={async () => {
-                        try {
-                          await btn.onPress?.();
-                        } finally {
-                          closeCurrent();
-                        }
-                      }}
-                    >
-                      {isPrimary ? (
-                        <LinearGradient
-                          colors={[
-                            ACCENT_CYAN,
-                            '#0EA5E9',
-                            '#1D4ED8',
-                          ]}
-                          locations={[0, 0.45, 1]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={StyleSheet.absoluteFillObject}
-                          pointerEvents="none"
-                        />
-                      ) : null}
-                      <Text
+              {buttons.length > 0 ? (
+                <View style={styles.buttonColumn}>
+                  {buttons.map((btn, idx) => {
+                    const isCancel = btn.style === 'cancel';
+                    const isDest = btn.style === 'destructive';
+                    const isPrimary = !isCancel && !isDest;
+                    return (
+                      <TouchableOpacity
+                        key={`${btn.text}-${idx}`}
+                        activeOpacity={0.88}
                         style={[
-                          styles.btnTextBase,
-                          isPrimary && styles.btnPrimaryText,
-                          isCancel && styles.btnCancelText,
-                          isDest && styles.btnDestructiveText,
+                          styles.btnTouchable,
+                          isPrimary && styles.btnPrimaryTouchable,
+                          isCancel && styles.btnCancelTouchable,
+                          isDest && styles.btnDestructiveTouchable,
                         ]}
-                        numberOfLines={2}
+                        onPress={async () => {
+                          try {
+                            await btn.onPress?.();
+                          } finally {
+                            closeCurrent();
+                          }
+                        }}
                       >
-                        {btn.text}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : null}
+                        <PremiumText
+                          variant="body"
+                          muted={isCancel}
+                          style={[
+                            styles.btnTextBase,
+                            isPrimary && styles.btnPrimaryText,
+                            isDest && styles.btnDestructiveText,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {btn.text}
+                        </PremiumText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </GlassSurface>
           </Pressable>
         </Pressable>
       </Modal>
@@ -326,150 +319,114 @@ export function useAppAlert() {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: OVERLAY_BG,
+    backgroundColor: 'rgba(8,17,31,0.72)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: LDS_SPACING.md,
+  },
+  cardWrap: {
+    width: '100%',
+    alignSelf: 'center',
   },
   card: {
     width: '100%',
-    overflow: 'hidden',
-    borderRadius: 22,
-    paddingVertical: 22,
-    paddingHorizontal: 20,
-    backgroundColor: CARD_BG,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: BORDER_SLATE,
-    borderLeftWidth: StyleSheet.hairlineWidth + 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 16 },
-        shadowOpacity: 0.45,
-        shadowRadius: 28,
-      },
-      android: {
-        elevation: 16,
-      },
-      default: {},
-    }),
+    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
+    ...LDS_ELEVATION.cockpit,
   },
   toneRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 12,
+    gap: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.sm,
     zIndex: 1,
   },
   toneIconOrb: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: LDS_RADIUS.orb,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8,17,31,0.55)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    ...LDS_ELEVATION.flat,
   },
-  title: {
+  titleCol: {
     flex: 1,
     minWidth: 0,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-    lineHeight: 24,
-    paddingTop: 2,
+    gap: LDS_SPACING.xxs,
+  },
+  guardianChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
+  title: {
+    paddingTop: LDS_SPACING.xxs,
   },
   messageScroll: {
     maxHeight: 220,
-    marginBottom: 18,
+    marginBottom: LDS_SPACING.md,
     zIndex: 1,
   },
   message: {
-    fontSize: 15,
     lineHeight: 22,
-    color: TEXT_MUTED,
-    fontWeight: '500',
   },
   buttonColumn: {
-    gap: 11,
+    gap: LDS_SPACING.sm,
     zIndex: 1,
   },
   btnTouchable: {
     overflow: 'hidden',
-    borderRadius: 14,
+    borderRadius: LDS_RADIUS.md,
     minHeight: 50,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnPrimaryTouchable: {
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(34,211,238,0.35)',
-    ...Platform.select({
-      ios: {
-        shadowColor: ACCENT_CYAN,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.16,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 5,
-      },
-      default: {},
-    }),
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   btnCancelTouchable: {
-    backgroundColor: 'rgba(8,17,31,0.62)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.85)',
-    borderTopColor: 'rgba(148,163,184,0.22)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#020617',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-      },
-      android: { elevation: 2 },
-      default: {},
-    }),
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
   },
   btnDestructiveTouchable: {
     backgroundColor: 'rgba(55,10,22,0.55)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(248,113,113,0.38)',
     borderTopColor: 'rgba(239,68,68,0.22)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#450a0a',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.22,
-        shadowRadius: 8,
-      },
-      android: { elevation: 2 },
-      default: {},
-    }),
+    ...LDS_ELEVATION.flat,
   },
   btnTextBase: {
-    fontSize: 15,
-    fontWeight: '800',
     textAlign: 'center',
     zIndex: 1,
-    letterSpacing: 0.1,
   },
   btnPrimaryText: {
-    color: 'rgba(6,23,42,0.94)',
-    textShadowColor: 'rgba(243,248,255,0.35)',
-    textShadowOffset: { width: 0, height: 0.5 },
-    textShadowRadius: 4,
-  },
-  btnCancelText: {
-    color: 'rgba(198,216,226,0.92)',
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   btnDestructiveText: {
-    color: 'rgba(254,202,202,0.95)',
+    color: LDS_COLOR_ERROR,
     fontWeight: '800',
   },
 });
