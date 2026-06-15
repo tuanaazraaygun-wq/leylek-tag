@@ -9,13 +9,14 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Dimensions } from 'react-native';
+import { View, StyleSheet, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
 import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
 import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
-import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_MUTED, PREMIUM_TEXT_SOFT } from './auth/premiumAuthStyles';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { PREMIUM_AUTH_CYAN } from './auth/premiumAuthStyles';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
@@ -132,15 +133,16 @@ export default function SearchingMapView({
       <View style={[styles.container, { height }]}>
         <View style={styles.webFallback}>
           <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.webFallbackText}>
+          <PremiumText variant="body" muted style={styles.webFallbackText}>
             {driverLocations.length > 0
-              ? `Harita - ${driverLocations.length} teklif`
-              : 'Teklifiniz değerlendiriliyor'}
-          </Text>
-          {driverLocations.map((driver, i) => (
-            <Text key={driver.driver_id} style={styles.driverItem}>
-              🚗 {displayFirstName(driver.driver_name, 'Sürücü')} {driver.price ? `- ₺${driver.price}` : ''}
-            </Text>
+              ? `${driverLocations.length} sürücü teklifi`
+              : 'Eşleşme aranıyor'}
+          </PremiumText>
+          {driverLocations.map((driver) => (
+            <PremiumText key={driver.driver_id} variant="caption" style={styles.driverItem}>
+              {displayFirstName(driver.driver_name, 'Sürücü')}
+              {driver.price ? ` · ₺${driver.price}` : ''}
+            </PremiumText>
           ))}
         </View>
       </View>
@@ -228,9 +230,15 @@ export default function SearchingMapView({
                 <MapEntityMarkerImage source={src} size={px} />
               </MarkerPinWrap>
               {driver.price ? (
-                <View style={styles.carPriceTag} pointerEvents="none">
-                  <Text style={styles.carPriceText}>₺{driver.price}</Text>
-                </View>
+                <GlassSurface
+                  variant="plain"
+                  borderRadius={LDS_RADIUS.sm}
+                  style={styles.carPriceTag}
+                >
+                  <PremiumText variant="caption" style={styles.carPriceText}>
+                    ₺{driver.price}
+                  </PremiumText>
+                </GlassSurface>
               ) : null}
             </View>
             </Marker>
@@ -239,22 +247,24 @@ export default function SearchingMapView({
       </MapView>
 
       {offerDriverCount > 0 ? (
-        <View style={styles.driverCountBadge}>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.driverCountBadge}>
           <Ionicons name="car" size={16} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.driverCountText}>{offerDriverCount} teklif</Text>
-        </View>
+          <PremiumText variant="caption" style={styles.driverCountText}>
+            {offerDriverCount} teklif
+          </PremiumText>
+        </GlassSurface>
       ) : null}
 
-      <View style={styles.infoBanner}>
-        <Text style={styles.infoBannerText}>
-          {offerDriverCount > 0 ? 'Teklifler haritada' : 'Teklifiniz değerlendiriliyor'}
-        </Text>
-        <Text style={styles.infoBannerSubtext}>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.infoBanner}>
+        <PremiumText variant="body" style={styles.infoBannerText}>
+          {offerDriverCount > 0 ? 'Sürücü teklifleri hazır' : 'Eşleşme aranıyor'}
+        </PremiumText>
+        <PremiumText variant="caption" muted style={styles.infoBannerSubtext}>
           {offerDriverCount > 0
-            ? 'Canlı sürücü konumları'
-            : 'Uygun sürücülerden yanıt bekleniyor'}
-        </Text>
-      </View>
+            ? 'Haritada görüntüleniyor'
+            : 'Uygun sürücüler değerlendiriliyor'}
+        </PremiumText>
+      </GlassSurface>
     </View>
   );
 }
@@ -278,31 +288,24 @@ const styles = StyleSheet.create({
     borderColor: LDS_BORDER_COLOR.card,
   },
   webFallbackText: {
-    fontSize: 14,
-    color: PREMIUM_TEXT_MUTED,
     marginTop: LDS_SPACING.xs,
     fontWeight: '600',
     textAlign: 'center',
   },
   driverItem: {
-    fontSize: 12,
-    color: PREMIUM_TEXT_SOFT,
     marginTop: LDS_SPACING.xxs,
+    textAlign: 'center',
   },
   carPriceTag: {
     position: 'absolute',
     top: -22,
-    backgroundColor: 'rgba(5, 11, 24, 0.72)',
     paddingHorizontal: LDS_SPACING.xs,
     paddingVertical: LDS_SPACING.xxs,
-    borderRadius: LDS_RADIUS.sm,
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.card,
-    borderLeftColor: LDS_BORDER_COLOR.cardTopCyan,
+    backgroundColor: 'rgba(5, 11, 24, 0.72)',
+    ...LDS_ELEVATION.chip,
   },
   carPriceText: {
     color: PREMIUM_AUTH_CYAN,
-    fontSize: 11,
     fontWeight: '700',
   },
   driverCountBadge: {
@@ -311,19 +314,13 @@ const styles = StyleSheet.create({
     right: LDS_SPACING.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(5,11,24,0.72)',
     paddingHorizontal: LDS_SPACING.sm,
     paddingVertical: LDS_SPACING.xs,
-    borderRadius: LDS_RADIUS.full,
     gap: LDS_SPACING.xxs,
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.card,
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    backgroundColor: 'rgba(5,11,24,0.72)',
     ...LDS_ELEVATION.chip,
   },
   driverCountText: {
-    color: PREMIUM_TEXT_SOFT,
-    fontSize: 13,
     fontWeight: '700',
   },
   infoBanner: {
@@ -331,26 +328,17 @@ const styles = StyleSheet.create({
     bottom: LDS_SPACING.sm,
     left: LDS_SPACING.sm,
     right: LDS_SPACING.sm,
-    backgroundColor: 'rgba(5, 11, 24, 0.72)',
     paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.md,
-    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.card,
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    backgroundColor: 'rgba(5, 11, 24, 0.72)',
     ...LDS_ELEVATION.chip,
   },
   infoBannerText: {
-    color: PREMIUM_TEXT_SOFT,
-    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   infoBannerSubtext: {
-    color: PREMIUM_TEXT_MUTED,
-    fontSize: 12,
-    fontWeight: '500',
     marginTop: LDS_SPACING.xxs,
     textAlign: 'center',
   },
