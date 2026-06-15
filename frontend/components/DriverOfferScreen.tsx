@@ -21,19 +21,27 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
-  ImageBackground,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import {
+  LDS_GRADIENT_COCKPIT_BASE,
+  LDS_GRADIENT_COCKPIT_BASE_LOCATIONS,
+  LDS_GRADIENT_COCKPIT_TOP_HAZE,
+  LDS_GRADIENT_COCKPIT_TOP_HAZE_LOCATIONS,
+} from '../design-system/tokens/gradient';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
-  PREMIUM_DRIVER_OFFER_LIST_AMBIENT,
   PREMIUM_GLASS_FILL,
   PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from './auth/premiumAuthStyles';
@@ -1132,22 +1140,33 @@ export default function DriverOfferScreen({
           mapExpanded && styles.mapCardShellExpandedLayer,
         ]}
       >
-        <TouchableOpacity
-          style={[styles.mapExpandToggle, mapExpanded && styles.mapExpandToggleWithMapBelow]}
-          onPress={() => setMapExpanded((v) => !v)}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel={mapExpanded ? 'Haritayı gizle' : 'Haritayı göster'}
+        <GlassSurface
+          variant="plain"
+          borderRadius={LDS_RADIUS.full}
+          style={[styles.mapChromeShell, mapExpanded && styles.mapChromeShellExpanded]}
         >
-          <Ionicons
-            name={mapExpanded ? 'chevron-up' : 'chevron-down'}
-            size={18}
-            color="rgba(34,211,238,0.88)"
-          />
-          <Text style={styles.mapExpandToggleText}>
-            {mapExpanded ? 'Haritayı gizle' : 'Haritayı göster'}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.mapExpandToggle, mapExpanded && styles.mapExpandToggleWithMapBelow]}
+            onPress={() => setMapExpanded((v) => !v)}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel={mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
+          >
+            <Ionicons
+              name={mapExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color="rgba(34,211,238,0.88)"
+            />
+            <PremiumText variant="step" style={styles.mapExpandToggleText}>
+              {mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
+            </PremiumText>
+            <View style={styles.mapHudMini} pointerEvents="none">
+              <PremiumText variant="caption" muted style={styles.mapHudMiniText}>
+                {mapHud.seeking} talep · {mapHud.radius} km
+              </PremiumText>
+            </View>
+          </TouchableOpacity>
+        </GlassSurface>
 
         {showMapHost ? (
           <View
@@ -1203,45 +1222,65 @@ export default function DriverOfferScreen({
         ) : null}
       </View>
 
-      {/* Yolcu İstekleri — ImageBackground yalnızca liste / boş durum; haritayı sarmaz */}
-      <ImageBackground
-        source={require('../assets/images/offer-background.png')}
-        style={styles.listContainer}
-        imageStyle={styles.listBackgroundImage}
-      >
+      {/* Dispatch deck — cockpit zemin; haritayı sarmaz */}
+      <View style={styles.listContainer}>
         <LinearGradient
-          colors={[...PREMIUM_DRIVER_OFFER_LIST_AMBIENT]}
-          locations={[0, 0.45, 1]}
+          colors={[...LDS_GRADIENT_COCKPIT_BASE]}
+          locations={[...LDS_GRADIENT_COCKPIT_BASE_LOCATIONS]}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <LinearGradient
+          colors={[...LDS_GRADIENT_COCKPIT_TOP_HAZE]}
+          locations={[...LDS_GRADIENT_COCKPIT_TOP_HAZE_LOCATIONS]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
           pointerEvents="none"
           style={StyleSheet.absoluteFillObject}
         />
         {isMotor ? (
           <LinearGradient
-            colors={['rgba(22, 101, 52, 0.28)', 'rgba(8,17,31,0.52)']}
+            colors={['rgba(22, 101, 52, 0.12)', 'rgba(8,17,31,0.38)']}
             style={StyleSheet.absoluteFillObject}
             pointerEvents="none"
           />
         ) : null}
-        <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
-          <View style={styles.listHeaderTopRow}>
-            <View style={styles.listHeaderLiveDotWrap} pointerEvents="none">
-              <View style={styles.listHeaderAccentDotOuter} />
-              <View style={styles.listHeaderAccentDot} />
-            </View>
-            <View style={styles.listHeaderTitleCol}>
-              <Text style={[styles.listTitle, mapExpanded && styles.listTitleMapExpanded]}>
-                Yakındaki İstekler
-              </Text>
-              <Text style={styles.listSectionSubtitle} numberOfLines={2}>
-                Sana yakın aktif yolculuk talepleri
-              </Text>
+        <GlassSurface
+          variant="panel"
+          style={[styles.dispatchDeck, mapExpanded && styles.dispatchDeckMapExpanded]}
+          borderRadius={LDS_RADIUS.xl}
+        >
+          <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
+            <View style={styles.listHeaderTopRow}>
+              <View style={styles.listHeaderLiveDotWrap} pointerEvents="none">
+                <View style={styles.listHeaderAccentDotOuter} />
+                <View style={styles.listHeaderAccentDot} />
+              </View>
+              <View style={styles.listHeaderTitleCol}>
+                <PremiumText variant="step" style={styles.listPhaseLabel}>
+                  SAHA DISPATCH
+                </PremiumText>
+                <PremiumText
+                  variant="title"
+                  style={[styles.listTitle, mapExpanded && styles.listTitleMapExpanded]}
+                  numberOfLines={1}
+                >
+                  Yakın talepler
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.listSectionSubtitle} numberOfLines={2}>
+                  Canlı dispatch kuyruğu · {mapHud.radius} km saha
+                </PremiumText>
+              </View>
             </View>
           </View>
-        </View>
 
         {visibleRequests.length === 0 ? (
           <View style={[styles.emptyState, mapExpanded && styles.emptyStateMapExpanded]}>
-            <View style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}>
+            <GlassSurface
+              variant="plain"
+              style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}
+              borderRadius={LDS_RADIUS.lg}
+            >
               <View
                 style={[
                   styles.emptyIconRing,
@@ -1252,31 +1291,44 @@ export default function DriverOfferScreen({
                 {isMotor ? (
                   <MaterialCommunityIcons
                     name="motorbike"
-                    size={mapExpanded ? 48 : 56}
+                    size={mapExpanded ? 40 : 48}
                     color="rgba(134,239,172,0.92)"
                   />
                 ) : (
-                  <Ionicons name="car-outline" size={mapExpanded ? 44 : 52} color="rgba(34,211,238,0.9)" />
+                  <Ionicons name="car-outline" size={mapExpanded ? 38 : 46} color="rgba(34,211,238,0.9)" />
                 )}
               </View>
-              <Text style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}>
+              <PremiumText
+                variant="headline"
+                style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}
+              >
                 Teklif bekleniyor
-              </Text>
-              <Text style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}>
-                Çevrimiçi kaldığınızda yakındaki yolculuk talepleri burada görünür.
-              </Text>
+              </PremiumText>
+              <PremiumText
+                variant="caption"
+                muted
+                style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
+              >
+                Saha taraması aktif. Çevrimiçi kaldığınızda yakın talepler burada listelenir.
+              </PremiumText>
               <View style={styles.emptyChipRow}>
                 <View style={styles.emptyChip}>
-                  <Text style={styles.emptyChipText}>{mapHud.radius} km</Text>
+                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                    {mapHud.radius} km
+                  </PremiumText>
                 </View>
                 <View style={styles.emptyChip}>
-                  <Text style={styles.emptyChipText}>Canlı tarama</Text>
+                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                    Saha taraması aktif
+                  </PremiumText>
                 </View>
                 <View style={styles.emptyChip}>
-                  <Text style={styles.emptyChipText}>Leylek AI</Text>
+                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                    LeylekTAG saha
+                  </PremiumText>
                 </View>
               </View>
-            </View>
+            </GlassSurface>
           </View>
         ) : (
           <FlatList
@@ -1302,7 +1354,8 @@ export default function DriverOfferScreen({
             showsVerticalScrollIndicator={false}
           />
         )}
-      </ImageBackground>
+        </GlassSurface>
+      </View>
     </View>
   );
 
@@ -1324,7 +1377,7 @@ const styles = StyleSheet.create({
   },
   containerEmbedded: {
     minHeight: 0,
-    backgroundColor: PREMIUM_NAVY_DEEP,
+    backgroundColor: 'transparent',
   },
   /** Sütun: üstte harita alanı, altta yalnızca liste (ImageBackground haritayı örtmez) */
   driverOfferBody: {
@@ -1343,7 +1396,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     maxWidth: SCREEN_WIDTH,
-    paddingHorizontal: 12,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   /** Sabit yükseklikli canlı harita — üst katman (zIndex); içerik `mapViewportFixed`. __DEV__: kırmızı = host alanı doğrulama */
   mapExpandedMapHost: {
@@ -1406,22 +1459,13 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 0,
     overflow: 'hidden',
-    borderRadius: 22,
-    backgroundColor: '#0B1220',
+    borderRadius: LDS_RADIUS.lg,
+    backgroundColor: PREMIUM_NAVY_DEEP,
     position: 'relative',
-    borderWidth: StyleSheet.hairlineWidth + 1.25,
-    borderColor: PREMIUM_BORDER_SLATE,
-    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.4,
-        shadowRadius: 20,
-      },
-      android: { elevation: 14 },
-      default: {},
-    }),
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    ...LDS_ELEVATION.panel,
   },
   mapContainerSolidExpanded: {
     borderColor: 'rgba(34,211,238,0.26)',
@@ -1434,40 +1478,42 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  mapChromeShell: {
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+    overflow: 'hidden',
+  },
+  mapChromeShellExpanded: {
+    marginBottom: LDS_SPACING.xs,
+  },
   mapExpandToggle: {
-    marginTop: 8,
-    marginBottom: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: LDS_SPACING.xs,
     alignSelf: 'stretch',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 999,
-    backgroundColor: 'rgba(8,17,31,0.78)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.75)',
-    borderTopColor: 'rgba(34,211,238,0.14)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.28,
-        shadowRadius: 14,
-      },
-      android: { elevation: 7 },
-      default: {},
-    }),
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    backgroundColor: 'transparent',
   },
   mapExpandToggleText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.15,
+    flexShrink: 1,
+  },
+  mapHudMini: {
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(8,17,31,0.45)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  mapHudMiniText: {
+    fontSize: 10,
     letterSpacing: 0.05,
   },
   mapExpandToggleWithMapBelow: {
-    marginBottom: 8,
+    marginBottom: 0,
   },
   mapDimOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1822,48 +1868,33 @@ const styles = StyleSheet.create({
     backgroundColor: PREMIUM_AUTH_CYAN,
   },
 
-  // List
+  // List / dispatch deck
   listContainer: {
     flex: 1,
     minHeight: 0,
     zIndex: 1,
-    elevation: 2,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    elevation: 1,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 0,
-    borderColor: 'rgba(30,58,95,0.45)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: -8 },
-        shadowOpacity: 0.22,
-        shadowRadius: 16,
-      },
-      default: {},
-    }),
+    backgroundColor: 'transparent',
   },
-  listBackgroundImage: {
-    resizeMode: 'cover',
+  dispatchDeck: {
+    flex: 1,
+    minHeight: 0,
+    marginHorizontal: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xxs,
+    overflow: 'hidden',
+  },
+  dispatchDeckMapExpanded: {
+    marginTop: 0,
   },
   listHeader: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 14,
-    backgroundColor: 'rgba(8,17,31,0.72)',
-    borderBottomWidth: StyleSheet.hairlineWidth + 1,
-    borderBottomColor: 'rgba(30,58,95,0.55)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-      },
-      default: {},
-    }),
-    elevation: 4,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.sm,
+    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
+    borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
+    backgroundColor: 'transparent',
   },
   listHeaderTopRow: {
     flexDirection: 'row',
@@ -1896,81 +1927,65 @@ const styles = StyleSheet.create({
   listHeaderTitleCol: {
     flex: 1,
     minWidth: 0,
+    gap: LDS_SPACING.xxs,
+  },
+  listPhaseLabel: {
+    letterSpacing: 0.55,
+    textTransform: 'uppercase',
+    color: PREMIUM_AUTH_CYAN,
+    opacity: 0.88,
   },
   listTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.38,
+    letterSpacing: -0.32,
   },
   listSectionSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
-    marginTop: 4,
-    letterSpacing: -0.05,
-    lineHeight: 16,
+    lineHeight: 15,
     opacity: 0.92,
   },
   listHeaderMapExpanded: {
-    paddingTop: 10,
-    paddingBottom: 8,
-    paddingHorizontal: 14,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   listTitleMapExpanded: {
     fontSize: 17,
     letterSpacing: -0.25,
   },
   listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 28,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.xxs,
+    paddingBottom: LDS_SPACING.lg,
   },
   listContentMapExpanded: {
-    paddingTop: 2,
-    paddingBottom: 18,
-    paddingHorizontal: 14,
+    paddingTop: LDS_SPACING.xxs,
+    paddingBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 20,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.lg,
   },
   emptyStateMapExpanded: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
     justifyContent: 'flex-start',
-    paddingTop: 8,
+    paddingTop: LDS_SPACING.xs,
   },
   emptyStateCard: {
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
     alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 22,
-    borderRadius: 24,
-    backgroundColor: 'rgba(16,26,43,0.62)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.65)',
-    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01040a',
-        shadowOffset: { width: 0, height: 14 },
-        shadowOpacity: 0.38,
-        shadowRadius: 24,
-      },
-      android: { elevation: 12 },
-      default: {},
-    }),
+    paddingVertical: LDS_SPACING.xl,
+    paddingHorizontal: LDS_SPACING.lg,
+    backgroundColor: 'transparent',
   },
   emptyStateCardMapExpanded: {
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderRadius: 18,
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.md,
     maxWidth: 380,
   },
   emptyIconRing: {
@@ -1995,55 +2010,46 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: PREMIUM_TEXT_SOFT,
-    marginTop: 18,
+    marginTop: LDS_SPACING.md,
     textAlign: 'center',
-    letterSpacing: -0.45,
+    letterSpacing: -0.35,
   },
   emptySubtitle: {
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
     textAlign: 'center',
-    marginTop: 12,
-    letterSpacing: -0.05,
-    opacity: 0.95,
-    paddingHorizontal: 4,
+    marginTop: LDS_SPACING.sm,
+    lineHeight: 18,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   emptyChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 18,
-    paddingHorizontal: 4,
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   emptyChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 11,
-    borderRadius: 999,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(8,17,31,0.55)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34,211,238,0.14)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
   },
   emptyChipText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     color: 'rgba(186,218,226,0.88)',
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   emptyTitleMapExpanded: {
     fontSize: 19,
-    marginTop: 12,
+    marginTop: LDS_SPACING.sm,
   },
   emptySubtitleMapExpanded: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: LDS_SPACING.xs,
   },
 
   // Normal TAG — gelen talep kartı (kompakt premium)
