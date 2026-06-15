@@ -241,13 +241,8 @@ export default function QRTripEndModal({
         ? 'Teklifinizde kart seçmiştiniz. Ödemeyi kart ile tamamladığınızı onaylayın.'
         : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
 
-  const phaseStep = isDriver
-    ? 'Yolculuk sonu QR'
-    : passengerStep === 'choose'
-      ? 'Yolculuk sonu'
-      : passengerStep === 'payment'
-        ? 'Ödeme onayı'
-        : 'QR doğrulaması';
+  const phaseStep =
+    passengerStep === 'payment' && !isDriver ? 'Ödeme onayı' : 'Yolculuk doğrulaması';
 
   const phaseCaption = isDriver
     ? `${firstName} bu kodu tarasın`
@@ -255,7 +250,7 @@ export default function QRTripEndModal({
       ? 'Yolculuğu güvenli şekilde tamamlamak için yöntemi seç.'
       : passengerStep === 'payment'
         ? 'Ödeme bilgisini kontrol ederek tamamla.'
-        : 'Sürücünün yolculuk sonu QR kodunu okut.';
+        : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -266,7 +261,7 @@ export default function QRTripEndModal({
         <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
-              <PremiumText variant="step" style={styles.phaseStep}>
+              <PremiumText variant="caption" style={styles.phaseStep}>
                 {phaseStep}
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
@@ -284,10 +279,31 @@ export default function QRTripEndModal({
             </TouchableOpacity>
           </View>
 
+          <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+            <View style={styles.guardianLiveDot} />
+            <Ionicons name="checkmark-done-outline" size={14} color="rgba(34,211,238,0.88)" />
+            <PremiumText variant="caption" style={styles.guardianChipText}>
+              Yolculuk tamamlanıyor
+            </PremiumText>
+          </GlassSurface>
+
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             {isDriver ? (
               <View style={styles.qrContainer}>
                 <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+                  <View style={styles.qrCheckpointRow}>
+                    <View style={styles.qrIconRing}>
+                      <Ionicons name="flag-outline" size={22} color="rgba(34,211,238,0.92)" />
+                    </View>
+                    <View style={styles.qrCheckpointTextCol}>
+                      <PremiumText variant="body" style={styles.qrCheckpointTitle}>
+                        Yolculuk sonu kodu hazır
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
+                        Ekranı yolcuya doğrult
+                      </PremiumText>
+                    </View>
+                  </View>
                   <View style={styles.qrWrapper}>
                     <QRCode
                       value={qrValue}
@@ -298,7 +314,7 @@ export default function QRTripEndModal({
                     />
                   </View>
                   <PremiumText variant="caption" muted style={styles.hint}>
-                    Yolcu QR kodu taradığında yolculuk tamamlanır
+                    Yolcu kodu taradığında yolculuk güvenli şekilde tamamlanır.
                   </PremiumText>
                 </GlassSurface>
               </View>
@@ -320,7 +336,7 @@ export default function QRTripEndModal({
                     </View>
                     <View style={styles.chooseOptionTextCol}>
                       <PremiumText variant="body" style={styles.chooseOptionTitle}>
-                        Sürücü IBAN'ını gör
+                        {'Sürücü IBAN\'ını gör'}
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
                         Havale/EFT ile ödediyseniz
@@ -354,10 +370,6 @@ export default function QRTripEndModal({
               </View>
             ) : passengerStep === 'scan' ? (
               <View style={styles.cameraContainer}>
-                <PremiumText variant="body" style={styles.instruction}>
-                  {`${firstName}'ın QR kodunu tarayın`}
-                </PremiumText>
-
                 {hasPermission?.granted ? (
                   <GlassSurface variant="stage" style={styles.cameraStage} borderRadius={LDS_RADIUS.lg}>
                     <View style={styles.cameraWrapper}>
@@ -407,7 +419,7 @@ export default function QRTripEndModal({
                     </PremiumText>
                     <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission} activeOpacity={0.88}>
                       <PremiumText variant="body" style={styles.permissionBtnText}>
-                        Kamera İzni Ver
+                        İzin ver
                       </PremiumText>
                     </TouchableOpacity>
                   </View>
@@ -605,8 +617,9 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.xxs,
   },
   phaseStep: {
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    letterSpacing: 0.06,
+    fontWeight: '600',
+    color: 'rgba(186, 230, 253, 0.94)',
   },
   phaseCaption: {
     lineHeight: 18,
@@ -620,6 +633,31 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8,17,31,0.55)',
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
+  },
+  guardianChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.sm,
+    marginHorizontal: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(34,211,238,0.92)',
+  },
+  guardianChipText: {
+    fontWeight: '600',
+    letterSpacing: 0.04,
+    color: 'rgba(186, 230, 253, 0.92)',
   },
   scroll: {
     maxHeight: 520,
@@ -678,9 +716,43 @@ const styles = StyleSheet.create({
   qrStage: {
     width: '100%',
     alignItems: 'center',
-    paddingVertical: LDS_SPACING.md,
-    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.md,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.panel,
+  },
+  qrCheckpointRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  qrIconRing: {
+    width: 48,
+    height: 48,
+    borderRadius: LDS_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    flexShrink: 0,
+    ...LDS_ELEVATION.flat,
+  },
+  qrCheckpointTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  qrCheckpointTitle: {
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  qrCheckpointSubtitle: {
+    lineHeight: 16,
   },
   qrWrapper: {
     backgroundColor: 'white',
@@ -688,11 +760,8 @@ const styles = StyleSheet.create({
     borderRadius: LDS_RADIUS.md,
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
-  },
-  instruction: {
-    marginBottom: LDS_SPACING.sm,
-    textAlign: 'center',
-    fontWeight: '600',
+    borderTopColor: 'rgba(34,211,238,0.22)',
+    ...LDS_ELEVATION.flat,
   },
   hint: {
     marginTop: LDS_SPACING.sm,
@@ -706,11 +775,12 @@ const styles = StyleSheet.create({
   cameraStage: {
     width: '100%',
     overflow: 'hidden',
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.panel,
   },
   cameraStatusOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8, 17, 31, 0.82)',
+    backgroundColor: 'rgba(8, 17, 31, 0.68)',
     justifyContent: 'center',
     alignItems: 'center',
     gap: LDS_SPACING.xs,
@@ -747,36 +817,36 @@ const styles = StyleSheet.create({
   },
   corner: {
     position: 'absolute',
-    width: 28,
-    height: 28,
-    borderColor: 'rgba(34, 211, 238, 0.72)',
+    width: 24,
+    height: 24,
+    borderColor: 'rgba(34, 211, 238, 0.52)',
   },
   topLeft: {
     top: 0,
     left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
     borderTopLeftRadius: LDS_RADIUS.sm,
   },
   topRight: {
     top: 0,
     right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
     borderTopRightRadius: LDS_RADIUS.sm,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
     borderBottomLeftRadius: LDS_RADIUS.sm,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
     borderBottomRightRadius: LDS_RADIUS.sm,
   },
   permCenter: {
@@ -801,7 +871,7 @@ const styles = StyleSheet.create({
   },
   permissionBtnText: {
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   cancelBtn: {
     marginHorizontal: LDS_SPACING.lg,
@@ -864,11 +934,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   legacyPickLabel: {
-    fontWeight: '700',
+    fontWeight: '600',
     marginBottom: LDS_SPACING.xs,
     textAlign: 'center',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
+    letterSpacing: 0.04,
   },
   legacyRow: {
     flexDirection: 'row',
