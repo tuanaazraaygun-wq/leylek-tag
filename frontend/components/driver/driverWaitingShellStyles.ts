@@ -1,12 +1,6 @@
 import { Platform, StyleSheet } from 'react-native';
-import {
-  PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_CARD_BG,
-  PREMIUM_TEXT_MUTED,
-  PREMIUM_TEXT_SOFT,
-} from '../auth/premiumAuthStyles';
+import { PREMIUM_NAVY_DEEP } from '../auth/premiumAuthStyles';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
-import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 
@@ -30,27 +24,33 @@ export const driverWaitingShellStyles = StyleSheet.create({
   cockpitHeaderPad: {
     paddingHorizontal: LDS_SPACING.sm,
     paddingTop: LDS_SPACING.xs,
-    paddingBottom: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.xxs,
+  },
+  cockpitHeaderGlass: {
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   cockpitHeaderBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.xs,
-    paddingVertical: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.sm,
-    borderRadius: LDS_RADIUS.lg,
-    backgroundColor: PREMIUM_ROLE_CARD_BG,
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
-    borderLeftColor: LDS_BORDER_COLOR.cockpitPanelLeft,
-    ...LDS_ELEVATION.panel,
+    gap: LDS_SPACING.sm,
   },
-  cockpitHeaderBtn: {
-    minWidth: LDS_SPACING.xxl + LDS_SPACING.sm,
-    minHeight: LDS_SPACING.xl + LDS_SPACING.xs,
+  cockpitHeaderBtnShell: {
+    width: 40,
+    height: 40,
+    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(8,17,31,0.42)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    flexShrink: 0,
+  },
+  cockpitHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    flexShrink: 0,
   },
   cockpitHeaderTitleCol: {
     flex: 1,
@@ -58,23 +58,17 @@ export const driverWaitingShellStyles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 1,
+    gap: LDS_SPACING.xxs,
     paddingHorizontal: LDS_SPACING.xxs,
   },
   cockpitHeaderBrand: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.2,
+    letterSpacing: -0.28,
     textAlign: 'center',
   },
   cockpitHeaderCaption: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
-    letterSpacing: 0.25,
+    letterSpacing: 0.15,
     textAlign: 'center',
-    opacity: 0.92,
+    lineHeight: 15,
   },
   cockpitTrustPad: {
     paddingTop: LDS_SPACING.xxs,

@@ -17718,41 +17718,49 @@ function DriverDashboard({
           <SafeAreaView edges={['top']} style={dws.cockpitSafe}>
             <View style={dws.cockpitUpperDeck}>
               <View style={dws.cockpitHeaderPad}>
-                <View style={dws.cockpitHeaderBar}>
-                  <TouchableOpacity
-                    style={dws.cockpitHeaderBtn}
-                    onPress={() => onDriverOfferGoToRoleSelect?.()}
-                    activeOpacity={0.88}
-                    accessibilityRole="button"
-                    accessibilityLabel="Rol seçimine dön"
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  >
-                    <Ionicons name="chevron-back" size={24} color={PREMIUM_AUTH_CYAN} />
-                  </TouchableOpacity>
-                  <View
-                    style={dws.cockpitHeaderTitleCol}
-                    accessibilityRole="header"
-                    accessibilityLabel="LeylekTAG. Sürücü kokpiti"
-                  >
-                    <Text style={dws.cockpitHeaderBrand} numberOfLines={1}>
-                      LeylekTAG
-                    </Text>
-                    <Text style={dws.cockpitHeaderCaption} numberOfLines={1}>
-                      Sürücü kokpiti
-                    </Text>
+                <GlassSurface
+                  variant="header"
+                  style={dws.cockpitHeaderGlass}
+                  borderRadius={LDS_RADIUS.lg}
+                >
+                  <View style={dws.cockpitHeaderBar}>
+                    <TouchableOpacity
+                      style={dws.cockpitHeaderBtnShell}
+                      onPress={() => onDriverOfferGoToRoleSelect?.()}
+                      activeOpacity={0.88}
+                      accessibilityRole="button"
+                      accessibilityLabel="Rol seçimine dön"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="chevron-back" size={22} color={PREMIUM_AUTH_CYAN} />
+                    </TouchableOpacity>
+                    <View
+                      style={dws.cockpitHeaderTitleCol}
+                      accessibilityRole="header"
+                      accessibilityLabel="LeylekTAG. Sürücü kokpiti"
+                    >
+                      <PremiumText variant="title" style={dws.cockpitHeaderBrand} numberOfLines={1}>
+                        LeylekTAG
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={dws.cockpitHeaderCaption} numberOfLines={1}>
+                        Sürücü kokpiti
+                      </PremiumText>
+                    </View>
+                    <View style={dws.cockpitHeaderActions}>
+                      <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
+                      <TouchableOpacity
+                        style={dws.cockpitHeaderBtnShell}
+                        onPress={() => onDriverOfferOpenProfile?.()}
+                        activeOpacity={0.88}
+                        accessibilityRole="button"
+                        accessibilityLabel="Profil"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="person-circle-outline" size={24} color={PREMIUM_AUTH_CYAN} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
-                  <TouchableOpacity
-                    style={dws.cockpitHeaderBtn}
-                    onPress={() => onDriverOfferOpenProfile?.()}
-                    activeOpacity={0.88}
-                    accessibilityRole="button"
-                    accessibilityLabel="Profil"
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  >
-                    <Ionicons name="person-circle-outline" size={26} color={PREMIUM_AUTH_CYAN} />
-                  </TouchableOpacity>
-                </View>
+                </GlassSurface>
               </View>
               <View style={dws.cockpitTrustPad}>
                 <DriverCockpitQuickStrip
