@@ -1,11 +1,9 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
@@ -16,17 +14,14 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CockpitBackground } from '../../design-system/primitives';
 import {
   PREMIUM_AUTH_CTA_DISABLED_GRADIENT,
   PREMIUM_AUTH_CTA_GRADIENT,
-  PREMIUM_SHELL_OVERLAY,
-  PREMIUM_SHELL_VIGNETTE_TOP,
   premiumAuthStyles as pa,
 } from './premiumAuthStyles';
 
-const LOGIN_BG = require('../../assets/images/login-background.png');
-
-/** Gece şehir görseli + koyu navy overlay (login / OTP ortak). */
+/** LHIS kokpit zemin — login / OTP / register / forgot ortak shell. */
 export function PremiumAuthScreenShell({
   parentStyles,
   children,
@@ -49,19 +44,7 @@ export function PremiumAuthScreenShell({
 
   return (
     <View style={pa.root}>
-      <Image source={LOGIN_BG} style={[pa.bgImage, { width: winW, height: winH }]} resizeMode="cover" />
-      <LinearGradient
-        colors={[...PREMIUM_SHELL_OVERLAY]}
-        locations={[0, 0.48, 1]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={[...PREMIUM_SHELL_VIGNETTE_TOP]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.42 }}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
+      <CockpitBackground />
 
       <SafeAreaView style={pa.safe} edges={['top', 'left', 'right']}>
         <View style={[layerStyle, pa.flexOne]}>
