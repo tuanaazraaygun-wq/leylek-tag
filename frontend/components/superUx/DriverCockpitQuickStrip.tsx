@@ -5,7 +5,6 @@ import { GlassSurface, PremiumText } from '../../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
-import { PREMIUM_AUTH_CYAN } from '../auth/premiumAuthStyles';
 import { useTrustedSummary } from '../../hooks/useTrustedSummary';
 import { formatDriverTrustedHeaderSubtitle } from '../../lib/trustedSummaryCopy';
 import type { TrustedSummaryResponse } from '../../lib/trustedNetworkApi';
@@ -61,7 +60,7 @@ export type DriverCockpitQuickStripProps = {
   onTrustedPress?: () => void;
 };
 
-/** Sürücü idle kokpit — trusted network özet sayıları (read-only). */
+/** Sürücü idle kokpit — secondary trust özeti (read-only). */
 function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProps) {
   const { status, summary } = useTrustedSummary();
   const summaryReady = status === 'ready' && summary != null;
@@ -76,28 +75,26 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
 
   const headerContent = (
     <>
+      <View style={styles.trustIconWrap}>
+        <Ionicons name="shield-checkmark-outline" size={12} color="rgba(34,211,238,0.72)" />
+      </View>
       <View style={styles.titleCol}>
-        <View style={styles.titleRow}>
-          <View style={styles.trustIconWrap}>
-            <Ionicons name="shield-checkmark-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-          </View>
-          <PremiumText variant="step" style={styles.title} numberOfLines={1}>
-            Güven ağı
-          </PremiumText>
-        </View>
-        <PremiumText variant="caption" muted style={styles.subtitle} numberOfLines={2}>
+        <PremiumText variant="caption" style={styles.title} numberOfLines={1}>
+          Güven ağı
+        </PremiumText>
+        <PremiumText variant="caption" muted style={styles.subtitle} numberOfLines={1}>
           {headerSubtitle}
         </PremiumText>
       </View>
       {headerWired ? (
-        <Ionicons name="chevron-forward" size={18} color={PREMIUM_AUTH_CYAN} />
+        <Ionicons name="chevron-forward" size={15} color="rgba(148,163,184,0.62)" />
       ) : null}
     </>
   );
 
   return (
     <View style={styles.wrap} accessibilityRole="summary">
-      <GlassSurface variant="panel" style={styles.card} borderRadius={LDS_RADIUS.xl}>
+      <GlassSurface variant="plain" style={styles.card} borderRadius={LDS_RADIUS.lg}>
         {headerWired ? (
           <Pressable
             onPress={onTrustedPress}
@@ -129,18 +126,17 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
                 style={[styles.metricCell, hasValue && styles.metricCellActive]}
                 accessibilityLabel={`${presentation.shortLabel}. ${value}`}
               >
-                <View style={styles.metricLabelRow}>
-                  <Ionicons
-                    name={presentation.icon}
-                    size={12}
-                    color={hasValue ? PREMIUM_AUTH_CYAN : 'rgba(148,163,184,0.72)'}
-                  />
-                  <PremiumText variant="caption" muted style={styles.metricLabel} numberOfLines={1}>
-                    {presentation.shortLabel}
-                  </PremiumText>
-                </View>
+                <Ionicons
+                  name={presentation.icon}
+                  size={11}
+                  color={hasValue ? 'rgba(148,163,184,0.82)' : 'rgba(148,163,184,0.55)'}
+                />
+                <PremiumText variant="caption" muted style={styles.metricLabel} numberOfLines={1}>
+                  {presentation.shortLabel}
+                </PremiumText>
                 <PremiumText
-                  variant="title"
+                  variant="caption"
+                  muted
                   style={[styles.metricValue, hasValue && styles.metricValueActive]}
                   numberOfLines={1}
                 >
@@ -155,9 +151,9 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
             accessibilityLabel="Hızlı eşleşme. Yakında"
             accessibilityRole="text"
           >
-            <Ionicons name="flash-outline" size={13} color="rgba(34,211,238,0.75)" />
+            <Ionicons name="flash-outline" size={10} color="rgba(148,163,184,0.48)" />
             <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
-              Hızlı eşleşme
+              Yakında
             </PremiumText>
           </View>
         </View>
@@ -174,14 +170,14 @@ const styles = StyleSheet.create({
     paddingBottom: LDS_SPACING.xxs,
   },
   card: {
-    paddingVertical: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: LDS_SPACING.sm,
-    marginBottom: LDS_SPACING.sm,
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xs,
   },
   headerRowPressable: {
     borderRadius: LDS_RADIUS.sm,
@@ -192,91 +188,86 @@ const styles = StyleSheet.create({
   headerRowPressed: {
     opacity: 0.88,
   },
-  titleCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: LDS_SPACING.xxs,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: LDS_SPACING.xs,
-  },
   trustIconWrap: {
     width: LDS_SPACING.lg,
     height: LDS_SPACING.lg,
     borderRadius: LDS_RADIUS.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34,211,238,0.08)',
+    backgroundColor: 'rgba(8,17,31,0.38)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    flexShrink: 0,
   },
-  title: {
-    letterSpacing: 0.2,
-    textTransform: 'uppercase',
-    flex: 1,
-  },
-  subtitle: {
-    lineHeight: 15,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: LDS_SPACING.xs,
-  },
-  metricCell: {
+  titleCol: {
     flex: 1,
     minWidth: 0,
-    paddingVertical: LDS_SPACING.xs,
-    paddingHorizontal: LDS_SPACING.sm,
-    borderRadius: LDS_RADIUS.md,
-    backgroundColor: 'rgba(8,17,31,0.42)',
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    gap: LDS_SPACING.xxs,
+    gap: 1,
   },
-  metricCellActive: {
-    borderTopColor: 'rgba(34,211,238,0.14)',
-    backgroundColor: 'rgba(8,17,31,0.55)',
+  title: {
+    letterSpacing: 0.08,
+    fontWeight: '600',
   },
-  metricLabelRow: {
+  subtitle: {
+    lineHeight: 14,
+    fontSize: 11,
+    opacity: 0.88,
+  },
+  metricsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: LDS_SPACING.xxs,
   },
+  metricCell: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(8,17,31,0.32)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  metricCellActive: {
+    backgroundColor: 'rgba(8,17,31,0.42)',
+  },
   metricLabel: {
     flex: 1,
     fontSize: 10,
-    letterSpacing: 0.1,
+    letterSpacing: 0.05,
+    opacity: 0.9,
   },
   metricValue: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: '800',
-    letterSpacing: -0.25,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: 'rgba(148,163,184,0.75)',
-    textAlign: 'left',
+    letterSpacing: 0,
   },
   metricValueActive: {
-    color: 'rgba(94,229,209,0.95)',
+    opacity: 0.95,
   },
   qmPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: LDS_SPACING.xxs,
-    paddingVertical: LDS_SPACING.xs,
-    paddingHorizontal: LDS_SPACING.sm,
-    borderRadius: LDS_RADIUS.md,
-    backgroundColor: 'rgba(8,17,31,0.38)',
+    gap: 3,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(8,17,31,0.24)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    maxWidth: 108,
+    opacity: 0.82,
+    maxWidth: 72,
+    flexShrink: 0,
   },
   qmLabel: {
-    fontSize: 10,
-    letterSpacing: 0.05,
+    fontSize: 9,
+    letterSpacing: 0.04,
+    opacity: 0.78,
   },
 });
