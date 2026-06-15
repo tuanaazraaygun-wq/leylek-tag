@@ -4,7 +4,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
@@ -14,6 +13,12 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 export type InRideSaferForceEndStep = 'choice' | 'complaint';
 
@@ -69,75 +74,125 @@ export default function InRideSaferForceEndModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-        <View style={styles.card}>
-          <TouchableOpacity style={styles.closeFab} onPress={onClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
-          </TouchableOpacity>
+        <View style={styles.cardWrap}>
+          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.card}>
+            <TouchableOpacity style={styles.closeFab} onPress={onClose} hitSlop={12}>
+              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
+            </TouchableOpacity>
 
-          {step === 'choice' ? (
-            <>
-              <Text style={styles.title}>Yolculuğu nasıl sonlandırmak istersiniz?</Text>
-              <Text style={styles.sub}>
-                Yolculuk devam ederken zorla bitirmek puan kaybına yol açabilir. Önce güvenli seçenekleri
-                değerlendirin.
-              </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={onChooseQr} activeOpacity={0.88}>
-                <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
-                <Text style={styles.primaryBtnText}>Sürücü yanınızdaysa karekodu okutun</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={onChooseIssue} activeOpacity={0.88}>
-                <Ionicons name="alert-circle-outline" size={20} color="rgba(248,113,113,0.92)" />
-                <Text style={styles.secondaryBtnText}>Sorun var</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={styles.title}>Kısaca belirtin</Text>
-              <Text style={styles.sub}>Sebep seçin; isteğe bağlı not ekleyebilirsiniz.</Text>
-              <View style={styles.chipWrap}>
-                {IN_RIDE_FORCE_END_REASONS.map((r) => {
-                  const sel = r.key === reasonKey;
-                  return (
-                    <TouchableOpacity
-                      key={r.key}
-                      style={[styles.chip, sel && styles.chipSel]}
-                      onPress={() => setReasonKey(r.key)}
-                    >
-                      <Text style={[styles.chipText, sel && styles.chipTextSel]}>{r.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              <Text style={styles.fieldLabel}>Kısaca belirtin</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="İsteğe bağlı açıklama"
-                placeholderTextColor="rgba(186,201,222,0.45)"
-                value={details}
-                onChangeText={setDetails}
-                multiline
-                maxLength={500}
-                editable={!submitting}
-              />
-              <TouchableOpacity
-                style={[styles.primaryBtn, submitting && { opacity: 0.6 }]}
-                disabled={submitting}
-                onPress={() => onSubmitComplaintAndEnd(reasonKey, details.trim())}
-                activeOpacity={0.88}
-              >
-                <Ionicons name="send" size={18} color="rgba(243,248,255,0.94)" />
-                <Text style={styles.primaryBtnText}>Şikayet et ve bitir</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.linkBtn}
-                disabled={submitting}
-                onPress={onBluntForceEnd}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.linkBtnText}>Yine de zorla bitir (-5 puan)</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          )}
+            <View style={styles.phaseBlock}>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                Güvenli sonlandırma
+              </PremiumText>
+            </View>
+
+            {step === 'choice' ? (
+              <>
+                <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+                  <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.82)" />
+                  <PremiumText variant="caption" style={styles.guardianChipText}>
+                    Önce güvenli seçenekler
+                  </PremiumText>
+                </GlassSurface>
+
+                <PremiumText variant="title" style={styles.title}>
+                  Yolculuğu nasıl sonlandırmak istersiniz?
+                </PremiumText>
+                <PremiumText variant="body" muted style={styles.sub}>
+                  Zorla bitirmek puan kaybına yol açabilir. Mümkünse karekod ile tamamlayın.
+                </PremiumText>
+
+                <TouchableOpacity style={styles.primaryBtn} onPress={onChooseQr} activeOpacity={0.88}>
+                  <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
+                  <PremiumText variant="body" style={styles.primaryBtnText}>
+                    Sürücü yanınızdaysa karekodu okutun
+                  </PremiumText>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.secondaryBtn} onPress={onChooseIssue} activeOpacity={0.88}>
+                  <Ionicons name="alert-circle-outline" size={20} color="rgba(248,113,113,0.88)" />
+                  <PremiumText variant="body" style={styles.secondaryBtnText}>
+                    Sorun var
+                  </PremiumText>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+                  <Ionicons name="document-text-outline" size={14} color="rgba(34,211,238,0.78)" />
+                  <PremiumText variant="caption" style={styles.guardianChipText}>
+                    Şikayet kaydı
+                  </PremiumText>
+                </GlassSurface>
+
+                <PremiumText variant="title" style={styles.title}>
+                  Kısaca belirtin
+                </PremiumText>
+                <PremiumText variant="body" muted style={styles.sub}>
+                  Sebep seçin; isteğe bağlı not ekleyebilirsiniz.
+                </PremiumText>
+
+                <View style={styles.chipWrap}>
+                  {IN_RIDE_FORCE_END_REASONS.map((r) => {
+                    const sel = r.key === reasonKey;
+                    return (
+                      <TouchableOpacity
+                        key={r.key}
+                        style={[styles.chip, sel && styles.chipSel]}
+                        onPress={() => setReasonKey(r.key)}
+                        activeOpacity={0.85}
+                      >
+                        <PremiumText
+                          variant="caption"
+                          muted={!sel}
+                          style={[styles.chipText, sel && styles.chipTextSel]}
+                        >
+                          {r.label}
+                        </PremiumText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <PremiumText variant="caption" muted style={styles.fieldLabel}>
+                  Kısaca belirtin
+                </PremiumText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="İsteğe bağlı açıklama"
+                  placeholderTextColor="rgba(186,201,222,0.45)"
+                  value={details}
+                  onChangeText={setDetails}
+                  multiline
+                  maxLength={500}
+                  editable={!submitting}
+                />
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                  disabled={submitting}
+                  onPress={() => onSubmitComplaintAndEnd(reasonKey, details.trim())}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons name="send" size={18} color="rgba(243,248,255,0.94)" />
+                  <PremiumText variant="body" style={styles.primaryBtnText}>
+                    Şikayet et ve bitir
+                  </PremiumText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.destructiveBtn, submitting && styles.btnDisabled]}
+                  disabled={submitting}
+                  onPress={onBluntForceEnd}
+                  activeOpacity={0.88}
+                >
+                  <PremiumText variant="body" style={styles.destructiveBtnText}>
+                    Yine de zorla bitir (-5 puan)
+                  </PremiumText>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </GlassSurface>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -149,138 +204,165 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(8,17,31,0.78)',
-    padding: 20,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+    padding: LDS_SPACING.lg,
+  },
+  cardWrap: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
   card: {
     width: '100%',
-    maxWidth: 400,
-    backgroundColor: 'rgba(16,26,43,0.88)',
-    borderRadius: 20,
-    padding: 20,
-    paddingTop: 22,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.22)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
-    elevation: 18,
+    paddingTop: LDS_SPACING.lg + 2,
+    paddingBottom: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
+    ...LDS_ELEVATION.cockpit,
   },
   closeFab: {
     position: 'absolute',
-    right: 12,
-    top: 12,
+    right: LDS_SPACING.sm,
+    top: LDS_SPACING.sm,
     zIndex: 2,
   },
+  phaseBlock: {
+    marginBottom: LDS_SPACING.sm,
+    paddingRight: LDS_SPACING.xl,
+  },
+  phaseStep: {
+    letterSpacing: 0.4,
+    color: 'rgba(186, 230, 253, 0.88)',
+  },
+  guardianChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.94)',
-    marginBottom: 8,
-    paddingRight: 28,
+    marginBottom: LDS_SPACING.xs,
+    paddingRight: LDS_SPACING.xl,
   },
   sub: {
-    fontSize: 13,
-    color: 'rgba(186,201,222,0.82)',
-    marginBottom: 16,
-    lineHeight: 19,
+    marginBottom: LDS_SPACING.md,
+    lineHeight: 22,
   },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(8, 36, 52, 0.82)',
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.4)',
-    borderLeftColor: 'rgba(34, 211, 238, 0.28)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    elevation: 6,
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    marginBottom: LDS_SPACING.sm,
+    minHeight: 50,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   primaryBtnText: {
-    color: 'rgba(243,248,255,0.94)',
-    fontWeight: '700',
-    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(127, 29, 29, 0.22)',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.35)',
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    minHeight: 50,
+    backgroundColor: 'rgba(55,10,22,0.32)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(248,113,113,0.32)',
+    borderTopColor: 'rgba(239,68,68,0.18)',
+    ...LDS_ELEVATION.flat,
   },
   secondaryBtnText: {
-    color: 'rgba(252, 165, 165, 0.98)',
     fontWeight: '700',
-    fontSize: 15,
+    color: 'rgba(252, 165, 165, 0.92)',
   },
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.sm,
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
     backgroundColor: 'rgba(8, 17, 31, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.85)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   chipSel: {
     backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    borderColor: 'rgba(34, 211, 238, 0.48)',
-    borderTopColor: 'rgba(34, 211, 238, 0.38)',
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
   },
   chipText: {
-    fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
   },
   chipTextSel: {
+    fontWeight: '700',
     color: 'rgba(243,248,255,0.94)',
   },
   fieldLabel: {
-    fontSize: 12,
     fontWeight: '700',
-    color: 'rgba(186,201,222,0.82)',
-    marginBottom: 6,
+    marginBottom: LDS_SPACING.xxs,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderRadius: 12,
-    padding: 12,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    borderRadius: LDS_RADIUS.md,
+    padding: LDS_SPACING.sm,
     minHeight: 88,
     textAlignVertical: 'top',
     fontSize: 14,
+    lineHeight: 20,
     color: 'rgba(243,248,255,0.94)',
     backgroundColor: 'rgba(8, 17, 31, 0.65)',
-    marginBottom: 14,
+    marginBottom: LDS_SPACING.md,
   },
-  linkBtn: {
+  destructiveBtn: {
     alignItems: 'center',
-    paddingVertical: 10,
-    marginBottom: 4,
+    justifyContent: 'center',
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    marginBottom: LDS_SPACING.xxs,
+    minHeight: 48,
+    backgroundColor: 'rgba(55,10,22,0.45)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(248,113,113,0.38)',
+    borderTopColor: 'rgba(239,68,68,0.22)',
+    ...LDS_ELEVATION.flat,
   },
-  linkBtnText: {
-    fontSize: 14,
+  destructiveBtnText: {
     fontWeight: '700',
-    color: '#22D3EE',
-    textDecorationLine: 'underline',
+    color: LDS_COLOR_ERROR,
+    textAlign: 'center',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });
