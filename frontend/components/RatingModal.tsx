@@ -2,15 +2,21 @@ import React, { useState } from 'react';
 import {
   Modal,
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Alert,
   Platform,
 } from 'react-native';
-
+import { Ionicons } from '@expo/vector-icons';
+import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
+
 const maskIdForLog = (v: string): string => {
   const s = String(v || '').trim();
   if (!s) return 'n/a';
@@ -133,9 +139,13 @@ export default function RatingModal({
             hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
             activeOpacity={0.75}
           >
-            <Text style={[styles.star, star <= rating && styles.starActive]}>
-              ★
-            </Text>
+            <Ionicons
+              name={star <= rating ? 'star' : 'star-outline'}
+              size={34}
+              color={
+                star <= rating ? 'rgba(34,211,238,0.92)' : 'rgba(186,201,222,0.38)'
+              }
+            />
           </TouchableOpacity>
         ))}
       </View>
@@ -150,26 +160,47 @@ export default function RatingModal({
       {...(Platform.OS === 'ios' ? { presentationStyle: 'overFullScreen' as const } : {})}
     >
       <View style={styles.overlay}>
-        <View style={styles.container}>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
+
+        <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
           {submitted ? (
             <View style={styles.successContainer}>
-              <Text style={styles.successIcon}>✓</Text>
-              <Text style={styles.successTitle}>Teşekkürler!</Text>
-              <Text style={styles.successText}>
-                {`${firstName}'a ${rating} ⭐ verdiniz`}
-              </Text>
-              <Text style={styles.pointsText}>+3 puan kazandınız!</Text>
+              <View style={styles.guardianOrb}>
+                <LeylekEye
+                  size={LEYLEK_EYE_ROLE_SELECT_SIZE}
+                  chromeTone="subtle"
+                  motionProfile="guardian"
+                  accessibilityLabel="Leylek guardian"
+                />
+              </View>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                Teşekkürler
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.successCaption}>
+                Geri bildirimin güven ağını güçlendiriyor
+              </PremiumText>
             </View>
           ) : (
             <>
-              <Text style={styles.title}>Yolculuk Tamamlandı!</Text>
-              <Text style={styles.subtitle}>
-                {`${firstName}'ı puanlayın`}
-              </Text>
+              <View style={styles.phaseBlock}>
+                <PremiumText variant="step" style={styles.phaseStep}>
+                  Yolculuk tamamlandı
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                  Deneyimini puanlayarak güven döngüsüne katkı ver
+                </PremiumText>
+              </View>
+
+              <PremiumText variant="body" style={styles.nameCaption}>
+                {`${firstName} için puanın`}
+              </PremiumText>
 
               {renderStars()}
 
-              <Text style={styles.ratingText}>{rating} / 5</Text>
+              <PremiumText variant="caption" style={styles.ratingText}>
+                {rating} / 5
+              </PremiumText>
 
               <TouchableOpacity
                 style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
@@ -181,16 +212,20 @@ export default function RatingModal({
                 {loading ? (
                   <ActivityIndicator color="#22D3EE" />
                 ) : (
-                  <Text style={styles.submitBtnText}>Puanla</Text>
+                  <PremiumText variant="body" style={styles.submitBtnText}>
+                    Puanla
+                  </PremiumText>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.skipBtn} onPress={onClose}>
-                <Text style={styles.skipBtnText}>Atla</Text>
+                <PremiumText variant="caption" muted style={styles.skipBtnText}>
+                  Atla
+                </PremiumText>
               </TouchableOpacity>
             </>
           )}
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );
@@ -199,127 +234,98 @@ export default function RatingModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8,17,31,0.82)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: LDS_SPACING.md,
+  },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
   },
   container: {
-    backgroundColor: 'rgba(16, 26, 43, 0.88)',
-    borderRadius: 24,
-    padding: 28,
     width: '100%',
     maxWidth: 400,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.2)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#010818',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.45,
-        shadowRadius: 24,
-      },
-      android: { elevation: 12 },
-      default: {},
-    }),
+    paddingTop: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
+    ...LDS_ELEVATION.cockpit,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.94)',
-    marginBottom: 8,
-    textAlign: 'center',
+  phaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
-  subtitle: {
-    fontSize: 15,
-    color: 'rgba(186,201,222,0.82)',
-    marginBottom: 22,
+  phaseStep: {
     textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  nameCaption: {
+    textAlign: 'center',
+    fontWeight: '700',
+    marginBottom: LDS_SPACING.sm,
   },
   starsContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: LDS_SPACING.sm,
+    gap: LDS_SPACING.xxs,
   },
   starBtn: {
-    padding: 8,
-  },
-  star: {
-    fontSize: 40,
-    color: 'rgba(186,201,222,0.35)',
-  },
-  starActive: {
-    color: '#22D3EE',
-    textShadowColor: 'rgba(34, 211, 238, 0.32)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    padding: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(5,11,24,0.35)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   ratingText: {
-    fontSize: 17,
-    color: 'rgba(243,248,255,0.94)',
-    marginBottom: 22,
+    marginBottom: LDS_SPACING.md,
     fontWeight: '700',
+    letterSpacing: 0.4,
   },
   submitBtn: {
-    backgroundColor: '#22D3EE',
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: 14,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.45)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 6,
+    justifyContent: 'center',
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.lg,
+    borderRadius: LDS_RADIUS.md,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   submitBtnDisabled: {
     opacity: 0.65,
   },
   submitBtnText: {
-    color: '#08111F',
-    fontSize: 17,
     fontWeight: '800',
+    letterSpacing: 0.3,
   },
   skipBtn: {
-    paddingVertical: 12,
+    paddingVertical: LDS_SPACING.sm,
   },
   skipBtnText: {
-    color: 'rgba(186,201,222,0.82)',
-    fontSize: 14,
     fontWeight: '600',
   },
   successContainer: {
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
   },
-  successIcon: {
-    fontSize: 56,
-    color: 'rgba(110,231,183,0.92)',
-    marginBottom: 14,
-    textShadowColor: 'rgba(34, 211, 238, 0.12)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
+  guardianOrb: {
+    marginBottom: LDS_SPACING.xs,
   },
-  successTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.94)',
-    marginBottom: 8,
-  },
-  successText: {
-    fontSize: 15,
-    color: 'rgba(186,201,222,0.82)',
-    marginBottom: 8,
+  successCaption: {
     textAlign: 'center',
-  },
-  pointsText: {
-    fontSize: 17,
-    color: 'rgba(110,231,183,0.95)',
-    fontWeight: '700',
+    lineHeight: 18,
+    paddingHorizontal: LDS_SPACING.xs,
   },
 });
