@@ -5,13 +5,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { appAlert } from '../contexts/AppAlertContext';
 import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { PREMIUM_AUTH_CYAN } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
@@ -109,7 +110,12 @@ export default function RatingModal({
             tag_id: maskIdForLog(tagId),
           }),
         );
-        Alert.alert('Hata', result.detail || 'Puanlama gönderilemedi');
+        appAlert(
+          'Puan gönderilemedi',
+          result.detail || 'Değerlendirmen şu an kaydedilemedi. Biraz sonra tekrar dene.',
+          [{ text: 'Tamam' }],
+          { tone: 'error' },
+        );
       }
     } catch (error) {
       console.log(
@@ -122,7 +128,12 @@ export default function RatingModal({
         }),
       );
       console.error('RATING_SUBMIT_ERROR', error);
-      Alert.alert('Hata', 'Puanlama gönderilemedi');
+      appAlert(
+        'Puan gönderilemedi',
+        'Bağlantı kurulamadı. İnternetini kontrol edip tekrar dene.',
+        [{ text: 'Tamam' }],
+        { tone: 'error' },
+      );
     } finally {
       setLoading(false);
     }
@@ -175,10 +186,10 @@ export default function RatingModal({
                 />
               </View>
               <PremiumText variant="step" style={styles.phaseStep}>
-                Teşekkürler
+                Değerlendirme kaydedildi
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.successCaption}>
-                Geri bildirimin güven ağını güçlendiriyor
+                Yolculuk kapanışına katkın güven ağına eklendi
               </PremiumText>
             </View>
           ) : (
@@ -188,7 +199,7 @@ export default function RatingModal({
                   Yolculuk tamamlandı
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.phaseCaption}>
-                  Deneyimini puanlayarak güven döngüsüne katkı ver
+                  Deneyimini puanlayarak yolculuk kaydını tamamla
                 </PremiumText>
               </View>
 
@@ -210,7 +221,7 @@ export default function RatingModal({
                 activeOpacity={0.85}
               >
                 {loading ? (
-                  <ActivityIndicator color="#22D3EE" />
+                  <ActivityIndicator color={PREMIUM_AUTH_CYAN} />
                 ) : (
                   <PremiumText variant="body" style={styles.submitBtnText}>
                     Puanla
@@ -220,7 +231,10 @@ export default function RatingModal({
 
               <TouchableOpacity style={styles.skipBtn} onPress={onClose}>
                 <PremiumText variant="caption" muted style={styles.skipBtnText}>
-                  Atla
+                  Şimdilik atla
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.skipSubtext}>
+                  Puanlamadan devam edebilirsin
                 </PremiumText>
               </TouchableOpacity>
             </>
@@ -310,10 +324,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   skipBtn: {
+    alignItems: 'center',
     paddingVertical: LDS_SPACING.sm,
+    gap: LDS_SPACING.xxs,
   },
   skipBtnText: {
     fontWeight: '600',
+  },
+  skipSubtext: {
+    textAlign: 'center',
+    lineHeight: 16,
   },
   successContainer: {
     alignItems: 'center',
