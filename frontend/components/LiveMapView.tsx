@@ -7680,135 +7680,119 @@ export default function LiveMapView({
             </GlassSurface>
           ) : null}
 
-          {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — klasik sürücü */}
-          {driverRideUiModern ? null : MapView && onCall && !driverNavImmersive && isDriver ? (
-            <View
+          {/* Sürücü journey cockpit deck — LHIS */}
+          {driverRideUiModern ? null : !driverNavImmersive && isDriver ? (
+            <GlassSurface
+              variant="panel"
               style={[
-                styles.tripActionBar,
-                compactMatchedLayout ? styles.tripActionBarCompact : null,
+                styles.drvBottomDeckShell,
+                compactMatchedLayout ? styles.drvBottomDeckShellCompact : null,
               ]}
-              pointerEvents="box-none"
+              borderRadius={LDS_RADIUS.lg}
             >
-              <View style={styles.tripActionBarCol} pointerEvents="auto">
-                {isDriver ? (
-                  <Text style={styles.driverTripCallTitle} numberOfLines={1}>
+              {MapView && onCall ? (
+                <View
+                  style={[
+                    styles.drvBottomCommSection,
+                    compactMatchedLayout ? styles.drvBottomCommSectionCompact : null,
+                  ]}
+                >
+                  <PremiumText variant="caption" style={styles.drvBottomCallLabel} numberOfLines={1}>
                     Yolcuyu Ara
-                  </Text>
-                ) : (
-                  <Animated.View style={{ opacity: callLabelBlink }}>
-                    <Text style={styles.callPromptLabelSingle} numberOfLines={1}>
-                      {callPromptLine}
-                    </Text>
-                  </Animated.View>
-                )}
-                <View style={styles.tripCallGuvenRow}>
-                  <View style={styles.tripCallFabSlot} pointerEvents="box-none">
-                    <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
-                      <TouchableOpacity
-                        style={[
-                          styles.mapCallFabCircle,
-                          callUiBusy && styles.mapCallFabCircleDisabled,
-                          boardingConfirmed && !callUiBusy ? { opacity: 0.45 } : null,
-                        ]}
-                        onPress={() => {
-                          logPax('tapButtonHaptic', tapButtonHaptic);
-                          void tapButtonHaptic();
-                          void handleCall('audio');
-                        }}
-                        activeOpacity={0.88}
-                        disabled={callUiBusy}
-                        accessibilityRole="button"
-                        accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
-                      >
-                        {voiceCallPending ? (
-                          <ActivityIndicator size="small" color="#22D3EE" />
-                        ) : (
-                          <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
-                        )}
-                      </TouchableOpacity>
-                    </Animated.View>
-                  </View>
-                  <View style={styles.tripCallChatMid}>
-                    {onChat ? (
-                      <TouchableOpacity
-                        style={[styles.tripInlineChatBtn, boardingConfirmed && { opacity: 0.45 }]}
-                        onPress={() => {
-                          logPax('tapButtonHaptic', tapButtonHaptic);
-                          void tapButtonHaptic();
-                          if (boardingConfirmed) {
-                            appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                              variant: 'warning',
-                              tone: 'warning',
-                              autoDismissMs: 3200,
-                              cancelable: true,
-                            });
-                            return;
-                          }
-                          logPax('onChat', onChat);
-                          onChat();
-                        }}
-                        activeOpacity={0.85}
-                        accessibilityRole="button"
-                        accessibilityLabel={isDriver ? 'Yolcuya yaz' : 'Sürücüye yaz'}
-                      >
-                        <LinearGradient
-                          colors={['#08111F', '#0B1220', 'rgba(30,58,95,0.88)', '#22D3EE']}
-                          style={styles.tripInlineChatBtnGrad}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
+                  </PremiumText>
+                  <View style={styles.tripCallGuvenRow}>
+                    <View style={styles.tripCallFabSlot} pointerEvents="box-none">
+                      <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.drvBottomCallBtn,
+                            callUiBusy && styles.mapCallFabCircleDisabled,
+                            boardingConfirmed && !callUiBusy ? { opacity: 0.45 } : null,
+                          ]}
+                          onPress={() => {
+                            logPax('tapButtonHaptic', tapButtonHaptic);
+                            void tapButtonHaptic();
+                            void handleCall('audio');
+                          }}
+                          activeOpacity={0.88}
+                          disabled={callUiBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel="Yolcuyu ara"
+                        >
+                          {voiceCallPending ? (
+                            <ActivityIndicator size="small" color="#22D3EE" />
+                          ) : (
+                            <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
+                          )}
+                        </TouchableOpacity>
+                      </Animated.View>
+                    </View>
+                    <View style={styles.tripCallChatMid}>
+                      {onChat ? (
+                        <TouchableOpacity
+                          style={[styles.drvBottomChatBtn, boardingConfirmed && { opacity: 0.45 }]}
+                          onPress={() => {
+                            logPax('tapButtonHaptic', tapButtonHaptic);
+                            void tapButtonHaptic();
+                            if (boardingConfirmed) {
+                              appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+                                variant: 'warning',
+                                tone: 'warning',
+                                autoDismissMs: 3200,
+                                cancelable: true,
+                              });
+                              return;
+                            }
+                            logPax('onChat', onChat);
+                            onChat();
+                          }}
+                          activeOpacity={0.85}
+                          accessibilityRole="button"
+                          accessibilityLabel="Yolcuya yaz"
                         >
                           <Ionicons
                             name="chatbubble-ellipses"
                             size={18}
                             color="rgba(243,248,255,0.94)"
                           />
-                          <Text style={styles.tripInlineChatBtnText} numberOfLines={1}>
-                            {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
-                          </Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                  {onTrustRequest ? (
-                    <View style={styles.tripGuvenMirrorWrap}>
-                      <TouchableOpacity
-                        style={[
-                          styles.tripGuvenFabCompact,
-                          boardingConfirmed && { opacity: 0.45 },
-                          trustRequestPending && { opacity: 0.78 },
-                        ]}
-                        onPress={() => {
-                          logPax('tapButtonHaptic', tapButtonHaptic);
-                          void tapButtonHaptic();
-                          if (boardingConfirmed) {
-                            appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
-                              variant: 'warning',
-                              tone: 'warning',
-                              autoDismissMs: 3200,
-                              cancelable: true,
-                            });
-                            return;
-                          }
-                          if (trustRequestDisabled || trustRequestPending) return;
-                          logPax('onTrustRequest', onTrustRequest);
-                          onTrustRequest();
-                        }}
-                        activeOpacity={0.88}
-                        disabled={!!trustRequestDisabled || !!trustRequestPending}
-                        accessibilityRole="button"
-                        accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
-                      >
-                        <LinearGradient
-                          colors={[
-                            'rgba(16,26,43,0.95)',
-                            '#0B1220',
-                            '#101A2B',
-                            'rgba(34,211,238,0.38)',
+                          <PremiumText variant="caption" style={styles.drvBottomChatBtnText} numberOfLines={1}>
+                            Yolcuya Yaz
+                          </PremiumText>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                    {onTrustRequest ? (
+                      <View style={styles.tripGuvenMirrorWrap}>
+                        <TouchableOpacity
+                          style={[
+                            styles.drvBottomGuvenBtn,
+                            boardingConfirmed && { opacity: 0.45 },
+                            trustRequestPending && { opacity: 0.78 },
                           ]}
-                          locations={[0, 0.42, 0.78, 1]}
-                          style={styles.tripGuvenFabCompactInner}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
+                          onPress={() => {
+                            logPax('tapButtonHaptic', tapButtonHaptic);
+                            void tapButtonHaptic();
+                            if (boardingConfirmed) {
+                              appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+                                variant: 'warning',
+                                tone: 'warning',
+                                autoDismissMs: 3200,
+                                cancelable: true,
+                              });
+                              return;
+                            }
+                            if (trustRequestDisabled || trustRequestPending) return;
+                            logPax('onTrustRequest', onTrustRequest);
+                            onTrustRequest();
+                          }}
+                          activeOpacity={0.88}
+                          disabled={!!trustRequestDisabled || !!trustRequestPending}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            trustRequestPending
+                              ? 'Güven isteği gönderiliyor'
+                              : (trustRequestLabel ?? 'Güven AL')
+                          }
                         >
                           {trustRequestPending ? (
                             <ActivityIndicator size="small" color="#22D3EE" />
@@ -7821,205 +7805,165 @@ export default function LiveMapView({
                               />
                             </Animated.View>
                           )}
-                          <Text style={styles.tripGuvenFabLabel}>
+                          <PremiumText variant="caption" style={styles.drvBottomGuvenBtnText}>
                             {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
-                          </Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <View style={styles.tripGuvenMirrorSpacer} />
-                  )}
-                </View>
-              </View>
-            </View>
-          ) : null}
-
-          {/* AI / QR / Zorla — klasik sürücü */}
-          {driverRideUiModern ? null : !driverNavImmersive && isDriver ? (
-          <View
-            style={[
-              styles.actionButtons,
-              compactMatchedLayout ? styles.actionButtonsCompact : null,
-            ]}
-            pointerEvents="auto"
-          >
-            {onOpenLeylekZekaSupport ? (
-              <Pressable
-                style={({ pressed }) => [styles.tripAiFabWrap, pressed && { opacity: 0.92 }]}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  onOpenLeylekZekaSupport();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="AI — Leylek Zeka"
-              >
-                <LinearGradient
-                  colors={['#08111F', '#101A2B', '#1E3A5F', '#22D3EE']}
-                  locations={[0, 0.38, 0.72, 1]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.tripAiFabGrad}
-                >
-                  <Ionicons name="sparkles" size={26} color="rgba(243,248,255,0.94)" />
-                </LinearGradient>
-                <Text style={styles.tripAiFabLabel} numberOfLines={1}>
-                  AI
-                </Text>
-              </Pressable>
-            ) : (
-              <TouchableOpacity
-                style={styles.supportDestekTouch}
-                onPress={() => {
-                  const phoneNumber = '905326497412';
-                  const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
-                  const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-                  const fallbackUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-                  const canOpen = Linking.canOpenURL;
-                  const openUrl = Linking.openURL;
-                  callCheck('Linking.canOpenURL', canOpen);
-                  callCheck('Linking.openURL', openUrl);
-                  if (typeof canOpen !== 'function' || typeof openUrl !== 'function') {
-                    return;
-                  }
-                  canOpen(whatsappUrl)
-                    .then((supported) => {
-                      if (supported) {
-                        void openUrl(whatsappUrl);
-                      } else {
-                        void openUrl(fallbackUrl);
-                      }
-                    })
-                    .catch(() => {
-                      void openUrl(fallbackUrl);
-                    });
-                }}
-                activeOpacity={0.75}
-                accessibilityLabel="Destek — WhatsApp"
-              >
-                <View style={styles.supportSplitIcon} pointerEvents="none">
-                  <View style={styles.supportSplitLeft}>
-                    <Ionicons name="chatbubbles" size={13} color="rgba(243,248,255,0.94)" />
-                  </View>
-                  <View style={styles.supportSplitRight}>
-                    <Ionicons name="alert" size={15} color="rgba(186,201,222,0.82)" />
+                          </PremiumText>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.tripGuvenMirrorSpacer} />
+                    )}
                   </View>
                 </View>
-                <Text style={styles.supportDestekLabel} numberOfLines={1}>
-                  Destek
-                </Text>
-              </TouchableOpacity>
-            )}
+              ) : null}
 
-            {/* Biniş QR (amber) · yol sonu QR (mor) — `handlePrimaryTripQrPress` */}
-            <Animated.View
-              style={[
-                {
-                  transform: [
-                    {
-                      scale: pulseAnim.interpolate({
-                        inputRange: [0.6, 1],
-                        outputRange: [0.98, 1.02],
-                      }),
-                    },
-                  ],
-                },
-                compactMatchedLayout ? styles.qrEndButtonWrapCompact : null,
-              ]}
-            >
-              <TouchableOpacity 
+              <View
                 style={[
-                  styles.qrEndButton,
-                  compactMatchedLayout ? styles.qrEndButtonCompact : null,
-                ]} 
-                onPress={() => {
-                  void tapButtonHaptic();
-                  handlePrimaryTripQrPress();
-                }}
-                activeOpacity={0.7}
+                  styles.drvBottomActionRow,
+                  compactMatchedLayout ? styles.drvBottomActionRowCompact : null,
+                ]}
               >
-                <LinearGradient
-                  colors={
-                    boardingConfirmed
-                      ? ['#08111F', '#101A2B', 'rgba(30,58,95,0.9)', 'rgba(34,211,238,0.48)']
-                      : [
-                          'rgba(217,119,6,0.16)',
-                          '#08111F',
-                          '#101A2B',
-                          'rgba(34,211,238,0.4)',
-                        ]
-                  }
+                {onOpenLeylekZekaSupport ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.drvBottomAiWrap, pressed && { opacity: 0.92 }]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      onOpenLeylekZekaSupport();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Leylek Zeka — Guardian"
+                  >
+                    <View style={styles.drvBottomAiOrb}>
+                      <Ionicons name="sparkles" size={22} color="rgba(148,163,184,0.92)" />
+                    </View>
+                    <PremiumText variant="caption" muted style={styles.drvBottomAiLabel} numberOfLines={1}>
+                      Leylek
+                    </PremiumText>
+                  </Pressable>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.drvBottomAiWrap}
+                    onPress={() => {
+                      const phoneNumber = '905326497412';
+                      const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
+                      const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
+                      const fallbackUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+                      const canOpen = Linking.canOpenURL;
+                      const openUrl = Linking.openURL;
+                      callCheck('Linking.canOpenURL', canOpen);
+                      callCheck('Linking.openURL', openUrl);
+                      if (typeof canOpen !== 'function' || typeof openUrl !== 'function') {
+                        return;
+                      }
+                      canOpen(whatsappUrl)
+                        .then((supported) => {
+                          if (supported) {
+                            void openUrl(whatsappUrl);
+                          } else {
+                            void openUrl(fallbackUrl);
+                          }
+                        })
+                        .catch(() => {
+                          void openUrl(fallbackUrl);
+                        });
+                    }}
+                    activeOpacity={0.75}
+                    accessibilityLabel="Destek — WhatsApp"
+                  >
+                    <View style={styles.drvBottomAiOrb}>
+                      <Ionicons name="chatbubbles" size={18} color="rgba(148,163,184,0.88)" />
+                    </View>
+                    <PremiumText variant="caption" muted style={styles.drvBottomAiLabel} numberOfLines={1}>
+                      Destek
+                    </PremiumText>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
                   style={[
-                    styles.qrEndButtonGradient,
-                    compactMatchedLayout ? styles.qrEndButtonGradientCompact : null,
+                    styles.drvBottomQrBtn,
+                    boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
+                    driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
+                    compactMatchedLayout ? styles.drvBottomQrBtnCompact : null,
                   ]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    handlePrimaryTripQrPress();
+                  }}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
+                  }
                 >
                   <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
-                  <Text style={styles.qrEndButtonText}>
-                    {boardingConfirmed
-                      ? 'Yol Paylaşımını Bitir'
-                      : isDriver
-                        ? 'Biniş QR Göster'
-                        : 'Biniş Kodunu Tara'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
+                  <PremiumText variant="caption" style={styles.drvBottomQrBtnText}>
+                    {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
+                  </PremiumText>
+                </TouchableOpacity>
 
-            {/* 🆕 BİTİR BUTONU - Donuk Kırmızı, Sadece Zorla Bitir */}
-            <TouchableOpacity 
-              style={[
-                styles.endButton,
-                compactMatchedLayout ? styles.endButtonCompact : null,
-              ]} 
-              onPress={() => {
-                void tapButtonHaptic();
-                if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
-                  if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
-                    return;
-                  }
-                  if (!tagId || String(tagId).trim() === '') {
+                <TouchableOpacity
+                  style={[
+                    styles.drvBottomEndBtn,
+                    compactMatchedLayout ? styles.drvBottomEndBtnCompact : null,
+                  ]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                      if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                        return;
+                      }
+                      if (!tagId || String(tagId).trim() === '') {
+                        appAlert(
+                          'İşlem yapılamıyor',
+                          'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                          [{ text: 'Tamam' }],
+                          { tone: 'error' },
+                        );
+                        return;
+                      }
+                      const stOpen = String(tagStatus || '').toLowerCase();
+                      if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                        appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
+                          tone: 'error',
+                        });
+                        return;
+                      }
+                      setInRideSaferFeStep('choice');
+                      setInRideSaferFeVisible(true);
+                      return;
+                    }
                     appAlert(
-                      'İşlem yapılamıyor',
-                      'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
-                      [{ text: 'Tamam' }],
-                      { tone: 'error' },
+                      '⚠️ Zorla Bitir',
+                      'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
+                      [
+                        { text: 'Vazgeç', style: 'cancel' },
+                        {
+                          text: 'Zorla Bitir (-5 Puan)',
+                          style: 'destructive',
+                          onPress: () => onForceEnd?.(),
+                        },
+                      ],
+                      { tone: 'warning' },
                     );
-                    return;
-                  }
-                  const stOpen = String(tagStatus || '').toLowerCase();
-                  if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
-                    appAlert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.', [{ text: 'Tamam' }], {
-                      tone: 'error',
-                    });
-                    return;
-                  }
-                  setInRideSaferFeStep('choice');
-                  setInRideSaferFeVisible(true);
-                  return;
-                }
-                appAlert(
-                  '⚠️ Zorla Bitir',
-                  'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
-                  [
-                    { text: 'Vazgeç', style: 'cancel' },
-                    {
-                      text: 'Zorla Bitir (-5 Puan)',
-                      style: 'destructive',
-                      onPress: () => onForceEnd?.(),
-                    },
-                  ],
-                  { tone: 'warning' },
-                );
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close-circle" size={18} color="rgba(252,165,165,0.92)" />
-              <Text style={styles.endButtonText}>Zorla Bitir</Text>
-            </TouchableOpacity>
-          </View>
+                  }}
+                  activeOpacity={0.82}
+                  accessibilityRole="button"
+                  accessibilityLabel="Zorla bitir"
+                >
+                  <Ionicons name="close-circle-outline" size={17} color="rgba(252,165,165,0.88)" />
+                  <PremiumText variant="caption" style={styles.drvBottomEndBtnText}>
+                    Zorla Bitir
+                  </PremiumText>
+                </TouchableOpacity>
+              </View>
+
+              {boardingConfirmed ? (
+                <PremiumText variant="caption" muted style={styles.drvBottomQrHint} numberOfLines={2}>
+                  Hedefe yaklaştığınızda yol paylaşımını QR ile güvenli şekilde tamamlayabilirsiniz.
+                </PremiumText>
+              ) : null}
+            </GlassSurface>
           ) : null}
         </View>
       </View>
@@ -9615,6 +9559,177 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginLeft: LDS_SPACING.xxs,
     color: 'rgba(252,165,165,0.92)',
+  },
+  drvBottomDeckShell: {
+    width: '100%',
+    marginBottom: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    ...LDS_ELEVATION.cockpit,
+  },
+  drvBottomDeckShellCompact: {
+    marginBottom: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.xs,
+  },
+  drvBottomCommSection: {
+    marginBottom: LDS_SPACING.sm,
+  },
+  drvBottomCommSectionCompact: {
+    marginBottom: LDS_SPACING.xs,
+  },
+  drvBottomCallLabel: {
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginBottom: LDS_SPACING.xxs,
+  },
+  drvBottomCallBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: LDS_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,26,43,0.88)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    ...LDS_ELEVATION.chip,
+  },
+  drvBottomChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.87)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    alignSelf: 'stretch',
+    width: '100%',
+    ...LDS_ELEVATION.chip,
+  },
+  drvBottomChatBtnText: {
+    fontWeight: '800',
+  },
+  drvBottomGuvenBtn: {
+    minWidth: 76,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.lg,
+    backgroundColor: 'rgba(16,26,43,0.92)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    ...LDS_ELEVATION.chip,
+  },
+  drvBottomGuvenBtnText: {
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  drvBottomActionRow: {
+    flexDirection: 'row',
+    gap: LDS_SPACING.sm,
+    alignItems: 'flex-end',
+    ...Platform.select({
+      ios: { zIndex: 56 },
+      android: { elevation: 34 },
+      default: {},
+    }),
+  },
+  drvBottomActionRowCompact: {
+    flexWrap: 'wrap',
+    gap: LDS_SPACING.xs,
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
+  },
+  drvBottomAiWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 52,
+    maxWidth: 56,
+  },
+  drvBottomAiOrb: {
+    width: 48,
+    height: 48,
+    borderRadius: LDS_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,26,43,0.72)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  drvBottomAiLabel: {
+    marginTop: LDS_SPACING.xxs,
+    fontWeight: '700',
+    letterSpacing: 0.35,
+    fontSize: 10,
+  },
+  drvBottomQrBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    ...LDS_ELEVATION.cta,
+  },
+  drvBottomQrBtnBoarding: {
+    borderColor: 'rgba(217,119,6,0.38)',
+    borderTopColor: 'rgba(217,119,6,0.48)',
+  },
+  drvBottomQrBtnBoardingNear: {
+    borderColor: 'rgba(217,119,6,0.52)',
+    borderTopColor: 'rgba(217,119,6,0.62)',
+    backgroundColor: 'rgba(16,26,43,0.94)',
+  },
+  drvBottomQrBtnTripEnd: {
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+  },
+  drvBottomQrBtnCompact: {
+    flex: undefined,
+    width: '100%',
+  },
+  drvBottomQrBtnText: {
+    fontWeight: '800',
+  },
+  drvBottomEndBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(127,29,29,0.14)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(248,113,113,0.28)',
+    ...LDS_ELEVATION.flat,
+  },
+  drvBottomEndBtnCompact: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.xs,
+  },
+  drvBottomEndBtnText: {
+    fontWeight: '600',
+    marginLeft: LDS_SPACING.xxs,
+    color: 'rgba(252,165,165,0.82)',
+    letterSpacing: 0.08,
+  },
+  drvBottomQrHint: {
+    marginTop: LDS_SPACING.sm,
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   routeInfoRow: {
     flexDirection: 'row',
