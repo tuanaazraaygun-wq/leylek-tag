@@ -17714,6 +17714,7 @@ function DriverDashboard({
     return (
       <>
         <View style={dws.waitingRoot}>
+          <CockpitBackground />
           <SafeAreaView edges={['top']} style={dws.cockpitSafe}>
             <View style={dws.cockpitUpperDeck}>
               <View style={dws.cockpitHeaderPad}>

@@ -10,16 +10,17 @@ import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 
 /**
- * Sürücü idle kokpit — üst operasyon şeridi (P-DRIVER-1 ground rhythm).
+ * Sürücü idle kokpit — üst operasyon şeridi (P-DRIVER-1 ground + P-DRIVER-2 CockpitBackground).
  * Yalnızca presentation; logic / child component API değişmez.
  */
 export const driverWaitingShellStyles = StyleSheet.create({
   waitingRoot: {
     flex: 1,
     backgroundColor: PREMIUM_NAVY_DEEP,
+    overflow: 'hidden',
   },
   cockpitSafe: {
-    backgroundColor: PREMIUM_NAVY_DEEP,
+    backgroundColor: 'transparent',
   },
   /** Üst katman: header + trust + panel — ortak dikey ritim */
   cockpitUpperDeck: {
@@ -68,12 +69,12 @@ export const driverWaitingShellStyles = StyleSheet.create({
     paddingTop: LDS_SPACING.xs,
     paddingBottom: LDS_SPACING.sm,
   },
-  /** Alt saha katmanı — dispatch / harita; üst kokpit ile ince dikiş */
+  /** Alt saha katmanı — dispatch / harita; üst kokpit ile ince dikiş; zemin CockpitBackground */
   cockpitOfferGround: {
     flex: 1,
     minHeight: 0,
     position: 'relative',
-    backgroundColor: PREMIUM_NAVY_DEEP,
+    backgroundColor: 'transparent',
     borderTopWidth: LDS_BORDER_WIDTH.hairline,
     borderTopColor: LDS_BORDER_COLOR.cockpitPanel,
     paddingTop: LDS_SPACING.xxs,
