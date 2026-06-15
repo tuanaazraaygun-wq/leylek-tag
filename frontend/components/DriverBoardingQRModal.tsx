@@ -2,13 +2,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Modal,
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 
@@ -75,36 +80,65 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
+
+        <GlassSurface variant="panel" style={styles.sheet} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
-            <Text style={styles.title}>Biniş karekodu</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-              <Text style={styles.closeText}>✕</Text>
+            <View style={styles.headerTextCol}>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                Biniş QR kodu
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                Yolcunun binişi güvenli şekilde doğrulaması için bu kodu göster.
+              </PremiumText>
+            </View>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeBtn}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Kapat"
+            >
+              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
             </TouchableOpacity>
           </View>
+
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-            <Text style={styles.instruction}>
-              Yolcu yakındayken bu kodu gösterin. Yolculuk, yolcu kodu tarayıp onayladıktan sonra başlar.
-            </Text>
             {loading ? (
               <View style={styles.center}>
                 <ActivityIndicator size="large" color="#22D3EE" />
-                <Text style={styles.muted}>Karekod hazırlanıyor…</Text>
+                <PremiumText variant="caption" muted style={styles.stateText}>
+                  Karekod hazırlanıyor…
+                </PremiumText>
               </View>
             ) : error ? (
               <View style={styles.center}>
-                <Text style={styles.err}>{error}</Text>
-                <TouchableOpacity style={styles.retry} onPress={() => void fetchCode()}>
-                  <Text style={styles.retryText}>Yeniden dene</Text>
+                <PremiumText variant="body" style={styles.errText}>
+                  {error}
+                </PremiumText>
+                <TouchableOpacity
+                  style={styles.retryBtn}
+                  onPress={() => void fetchCode()}
+                  activeOpacity={0.88}
+                >
+                  <PremiumText variant="body" style={styles.retryBtnText}>
+                    Yeniden dene
+                  </PremiumText>
                 </TouchableOpacity>
               </View>
             ) : qrString ? (
-              <View style={styles.qrBox}>
-                <QRCode value={qrString} size={220} backgroundColor="#fff" color="#0f172a" />
-              </View>
+              <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+                <View style={styles.qrBox}>
+                  <QRCode value={qrString} size={220} backgroundColor="#fff" color="#0f172a" />
+                </View>
+                <PremiumText variant="caption" muted style={styles.qrHint}>
+                  Yolcu kodu tarayıp onayladıktan sonra yolculuk başlar.
+                </PremiumText>
+              </GlassSurface>
             ) : null}
           </ScrollView>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );
@@ -113,68 +147,104 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     justifyContent: 'flex-end',
   },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
   sheet: {
-    backgroundColor: 'rgba(16, 26, 43, 0.97)',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
     maxHeight: '90%',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderBottomWidth: 0,
-    borderTopColor: 'rgba(34, 211, 238, 0.28)',
+    paddingBottom: LDS_SPACING.md,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    ...LDS_ELEVATION.cockpit,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.sm,
+    gap: LDS_SPACING.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(30, 58, 95, 0.65)',
+    borderBottomColor: LDS_BORDER_COLOR.card,
   },
-  title: {
-    color: 'rgba(243, 248, 255, 0.94)',
-    fontSize: 18,
-    fontWeight: '800',
+  headerTextCol: {
     flex: 1,
+    minWidth: 0,
+    gap: LDS_SPACING.xxs,
   },
-  closeBtn: { padding: 8 },
-  closeText: { color: 'rgba(186, 201, 222, 0.88)', fontSize: 20 },
-  body: { padding: 20, paddingBottom: 32 },
-  instruction: {
-    color: 'rgba(186, 201, 222, 0.82)',
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 16,
+  phaseStep: {
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  center: { alignItems: 'center', paddingVertical: 24 },
-  muted: { color: 'rgba(186, 201, 222, 0.82)', marginTop: 12, fontWeight: '600' },
-  err: {
-    color: 'rgba(252, 212, 213, 0.95)',
-    textAlign: 'center',
+  phaseCaption: {
+    lineHeight: 18,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+  },
+  body: {
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xl,
+  },
+  center: {
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.lg,
+    gap: LDS_SPACING.sm,
+  },
+  stateText: {
+    marginTop: LDS_SPACING.xs,
     fontWeight: '600',
   },
-  retry: {
-    marginTop: 16,
-    backgroundColor: 'rgba(8, 17, 31, 0.72)',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.42)',
+  errText: {
+    textAlign: 'center',
+    fontWeight: '600',
+    color: 'rgba(252, 212, 213, 0.92)',
+    paddingHorizontal: LDS_SPACING.sm,
   },
-  retryText: { color: 'rgba(243, 248, 255, 0.94)', fontWeight: '700', fontSize: 15 },
+  retryBtn: {
+    marginTop: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
+  },
+  retryBtnText: {
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  qrStage: {
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.md,
+    ...LDS_ELEVATION.panel,
+  },
   qrBox: {
-    alignSelf: 'center',
     backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
+    padding: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+  },
+  qrHint: {
+    marginTop: LDS_SPACING.sm,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: LDS_SPACING.xs,
   },
 });
