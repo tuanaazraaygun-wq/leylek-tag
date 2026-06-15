@@ -44,6 +44,9 @@ import {
 import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
 import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
@@ -88,6 +91,8 @@ const TYPING_CHAR_MS_MAX = 38;
 const TYPING_START_DELAY_MS = 180;
 const BUBBLE_MAX_W = 220;
 const PASSENGER_WATCH_CHIP_LABEL = 'Leylek Gözü izliyor';
+/** Waiting cockpit — compact guardian eye in map chip row (P-WAIT-1A). */
+const LEYLEK_EYE_WATCHING_SIZE = LDS_SPACING.xxxl - LDS_SPACING.xxs;
 
 const ORB_ACCENT_CYAN = 'rgba(34, 211, 238, 0.96)';
 const ORB_TEXT_SOFT = 'rgba(224, 246, 255, 0.94)';
@@ -983,6 +988,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               pointerEvents="box-none"
               style={[
                 styles.passengerWaitMapAnchor,
+                styles.passengerWatchMapAnchor,
                 { top: passengerWaitOrbOnMap.top, left: passengerWaitOrbOnMap.left },
               ]}
             >
@@ -990,7 +996,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 onPress={onOpen}
                 onPressIn={markInteraction}
                 style={({ pressed }) => [
-                  styles.passengerWatchChipRow,
+                  styles.passengerWatchGlassChip,
                   pressed && styles.passengerWatchChipPressed,
                 ]}
                 accessibilityRole="button"
@@ -1001,16 +1007,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                   pointerEvents="none"
                   style={[styles.passengerWatchEyeSlot, { opacity: chipPulse }]}
                 >
-                  <LinearGradient
-                    colors={['#08111F', '#101A2B', 'rgba(16, 26, 43, 0.94)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.passengerWatchEyeGrad}
-                  >
-                    <View style={styles.passengerWatchEyeRing}>
-                      <Ionicons name="eye-outline" size={18} color={ORB_ACCENT_CYAN} />
-                    </View>
-                  </LinearGradient>
+                  <LeylekEye
+                    size={LEYLEK_EYE_WATCHING_SIZE}
+                    chromeTone="subtle"
+                    motionProfile="guardian"
+                    reduceMotion={reduceMotion}
+                    accessibilityLabel={PASSENGER_WATCH_CHIP_LABEL}
+                  />
                 </Animated.View>
                 <Text style={styles.passengerWatchChipText} pointerEvents="none">
                   {PASSENGER_WATCH_CHIP_LABEL}
@@ -1158,6 +1161,9 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     alignItems: 'flex-start',
   },
+  passengerWatchMapAnchor: {
+    zIndex: 5,
+  },
   fabColumn: {
     alignItems: 'center',
     maxWidth: BUBBLE_MAX_W,
@@ -1292,58 +1298,37 @@ const styles = StyleSheet.create({
     width: LOGO_SIZE - 6,
     height: LOGO_SIZE - 6,
   },
-  passengerWatchChipRow: {
+  passengerWatchGlassChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    paddingRight: 12,
-    paddingLeft: 6,
-    borderRadius: 22,
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    borderWidth: StyleSheet.hairlineWidth + 0.5,
-    borderColor: 'rgba(34, 211, 238, 0.38)',
-    maxWidth: 240,
-    ...Platform.select({
-      ios: {
-        shadowColor: ORB_ACCENT_CYAN,
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.22,
-        shadowRadius: 8,
-      },
-      android: { elevation: 4 },
-    }),
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingRight: LDS_SPACING.sm,
+    paddingLeft: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(5,11,24,0.72)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    borderLeftColor: LDS_BORDER_COLOR.cockpitPanelLeft,
+    maxWidth: 248,
+    ...LDS_ELEVATION.chip,
   },
   passengerWatchChipPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],
   },
   passengerWatchEyeSlot: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    overflow: 'hidden',
-  },
-  passengerWatchEyeGrad: {
-    flex: 1,
+    width: LEYLEK_EYE_WATCHING_SIZE,
+    height: LEYLEK_EYE_WATCHING_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  passengerWatchEyeRing: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(30, 58, 95, 0.85)',
-    backgroundColor: 'rgba(34, 211, 238, 0.08)',
   },
   passengerWatchChipText: {
     flexShrink: 1,
     fontSize: 12,
     fontWeight: '700',
     color: ORB_TEXT_SOFT,
-    letterSpacing: 0.15,
+    letterSpacing: 0.2,
   },
 });

@@ -23,18 +23,33 @@ import {
   ScrollView,
   BackHandler,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { getPassengerMarkerImage, getDriverMarkerImage } from '../lib/mapNavMarkers';
 import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  PREMIUM_AUTH_CYAN,
+  PREMIUM_BORDER_SLATE,
+  PREMIUM_NAVY_DEEP,
+  PREMIUM_ROLE_CARD_BG,
+  PREMIUM_ROLE_CARD_BORDER,
+  PREMIUM_TEXT_MUTED,
+  PREMIUM_TEXT_SOFT,
+} from './auth/premiumAuthStyles';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING, ldsSnapSpacing } from '../design-system/tokens/spacing';
+import { LDS_TYPOGRAPHY } from '../design-system/tokens/typography';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const WAIT_NAV_ACTION_SIZE = LDS_SPACING.xxl + LDS_SPACING.xs;
+const WAIT_MAP_STAGE_HEIGHT = ldsSnapSpacing(SCREEN_HEIGHT * 0.38);
 
 // react-native-maps
 let MapView: any = null;
@@ -305,42 +320,52 @@ export default function PassengerWaitingScreen({
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#08111F', '#0B1220', '#101A2B']}
-        style={StyleSheet.absoluteFillObject}
-      />
+      <CockpitBackground />
 
       <ScrollView
         style={styles.waitingScroll}
-        contentContainerStyle={styles.waitingScrollContent}
+        contentContainerStyle={[
+          styles.waitingScrollContent,
+          { paddingTop: insets.top + LDS_SPACING.xs },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => (onPressBack ? onPressBack() : onCancel())}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Geri"
-        >
-          <Ionicons name="chevron-back" size={28} color="#22D3EE" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Eşleşme Aranıyor</Text>
-          <Text style={styles.headerSubtitle}>Teklif bekleniyor</Text>
-          <View style={styles.priceTag}>
-            <Text style={styles.priceText}>₺{offeredPrice}</Text>
+        <GlassSurface variant="panel" style={styles.waitingCockpitShell}>
+          <View style={styles.topBar}>
+            <TouchableOpacity
+              onPress={() => (onPressBack ? onPressBack() : onCancel())}
+              style={styles.navButton}
+              accessibilityRole="button"
+              accessibilityLabel="Geri"
+            >
+              <Ionicons name="chevron-back" size={20} color={PREMIUM_AUTH_CYAN} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onCancel}
+              style={styles.navButtonDanger}
+              accessibilityRole="button"
+              accessibilityLabel="Teklifi iptal et"
+            >
+              <Ionicons name="close" size={20} color="rgba(248,113,113,0.92)" />
+            </TouchableOpacity>
           </View>
-        </View>
-        
-        <View style={styles.headerRightCluster}>
-          <TouchableOpacity onPress={onCancel} style={styles.cancelButton} accessibilityRole="button" accessibilityLabel="Teklifi iptal et">
-            <Ionicons name="close" size={28} color="rgba(248,113,113,0.92)" />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
+
+          <View style={styles.phaseBlock}>
+            <PremiumText variant="step" style={styles.phaseStep}>
+              Yolculuk başladı
+            </PremiumText>
+            <PremiumText variant="caption" muted style={styles.phaseCaption}>
+              LeylekTAG senin adına çalışıyor · eşleşme bekleniyor
+            </PremiumText>
+            <View style={styles.priceChip}>
+              <PremiumText variant="body" style={styles.priceText}>
+                ₺{offeredPrice}
+              </PremiumText>
+            </View>
+          </View>
+
+          <GlassSurface variant="stage" style={styles.mapChrome} borderRadius={LDS_RADIUS.lg}>
       {/* Harita — GMS yoksa MapView mount edilmez (Huawei çökme önlemi) */}
       <View style={styles.mapContainer}>
         {MapView && userLocation && isNativeGoogleMapsSupported() ? (
@@ -427,7 +452,7 @@ export default function PassengerWaitingScreen({
           </MapView>
         ) : (
           <View style={styles.mapPlaceholder}>
-            <Ionicons name="map" size={48} color="#22D3EE" />
+            <Ionicons name="map" size={48} color={PREMIUM_AUTH_CYAN} />
             <Text style={styles.mapPlaceholderText}>
               {userLocation && !isNativeGoogleMapsSupported()
                 ? 'Bu cihazda harita kapalı; eşleşme ve sürücü listesi normal çalışır.'
@@ -444,7 +469,7 @@ export default function PassengerWaitingScreen({
         
         {/* Dispatch uygun sürücü rozeti (nearby sayısı değil) */}
         <View style={styles.driverCountBadge}>
-          <Ionicons name="car" size={20} color="#22D3EE" />
+          <Ionicons name="car" size={20} color={PREMIUM_AUTH_CYAN} />
           {dispatchEligibleCount > 0 ? (
             <>
               <Text style={styles.driverCountText}>{dispatchEligibleCount}</Text>
@@ -455,12 +480,12 @@ export default function PassengerWaitingScreen({
           )}
         </View>
       </View>
-      
-      {/* Konum Bilgisi Kartı */}
-      <View style={styles.locationCard}>
+          </GlassSurface>
+
+          <GlassSurface variant="plain" style={styles.locationCard}>
         <View style={styles.locationRow}>
           <View style={styles.locationDot}>
-            <View style={[styles.dot, { backgroundColor: '#22D3EE' }]} />
+            <View style={[styles.dot, { backgroundColor: PREMIUM_AUTH_CYAN }]} />
           </View>
           <Text style={styles.locationText} numberOfLines={1}>
             {pickupAddress || 'Alış noktası'}
@@ -490,21 +515,12 @@ export default function PassengerWaitingScreen({
         </View>
         
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-outline" size={18} color="#22D3EE" />
+          <Ionicons name="share-outline" size={18} color={PREMIUM_AUTH_CYAN} />
           <Text style={styles.shareButtonText}>Paylaş</Text>
         </TouchableOpacity>
-      </View>
-      
-      {/* Durum Paneli */}
-      <View style={styles.statusPanel}>
-        <View style={styles.calmWaitingBlock}>
-          <Text style={styles.calmWaitingLine}>
-            Şehir içi yol paylaşımı teklifiniz sürücüler tarafından değerlendiriliyor.
-          </Text>
-          <Text style={styles.calmWaitingLineMuted}>Eşleşme sağlanıyor, lütfen bekleyin.</Text>
-        </View>
+          </GlassSurface>
 
-        {/* Loading Animasyonu */}
+          <GlassSurface variant="plain" style={styles.statusPanel}>
         {dispatchStatus.current_driver_index === 0 && (
           <View style={styles.loadingContainer}>
             <View style={styles.loadingDots}>
@@ -514,29 +530,32 @@ export default function PassengerWaitingScreen({
             </View>
           </View>
         )}
-        
-        {/* Durum Mesajları */}
-        <Text style={styles.statusTitle}>{getStatusMessage()}</Text>
-        <Text style={styles.statusSubtitle}>{getSubStatusMessage()}</Text>
-        
-        {/* Teklif Gösterilen Kişi Sayısı */}
+
+        <PremiumText variant="body" style={styles.statusTitle}>
+          {getStatusMessage()}
+        </PremiumText>
+        <PremiumText variant="caption" muted style={styles.statusSubtitle}>
+          {getSubStatusMessage()}
+        </PremiumText>
+
         {dispatchStatus.current_driver_index > 0 && (
           <View style={styles.dispatchInfo}>
             <View style={styles.dispatchBadge}>
-              <Ionicons name="people" size={14} color="#22D3EE" />
+              <Ionicons name="people" size={14} color={PREMIUM_AUTH_CYAN} />
               <Text style={styles.dispatchBadgeText}>
                 {dispatchStatus.current_driver_index} / {dispatchStatus.total_drivers} sürücüye gösterildi
               </Text>
             </View>
           </View>
         )}
-      </View>
+          </GlassSurface>
+        </GlassSurface>
       </ScrollView>
 
       <View
         style={[
           styles.cancelTagFooter,
-          { paddingBottom: Math.max(insets.bottom, 12) + 6 },
+          { paddingBottom: Math.max(insets.bottom, LDS_SPACING.sm) + LDS_SPACING.xxs },
         ]}
       >
         <TouchableOpacity style={styles.cancelTagButton} onPress={onCancel} activeOpacity={0.88}>
@@ -568,7 +587,7 @@ export default function PassengerWaitingScreen({
                 <Text style={styles.driverName}>{displayFirstName(selectedDriver.name, 'Sürücü')}</Text>
                 
                 <View style={styles.driverRating}>
-                  <Ionicons name="star" size={18} color="#22D3EE" />
+                  <Ionicons name="star" size={18} color={PREMIUM_AUTH_CYAN} />
                   <Text style={styles.driverRatingText}>
                     {(selectedDriver.rating != null && selectedDriver.rating > 0
                       ? selectedDriver.rating
@@ -598,7 +617,7 @@ export default function PassengerWaitingScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#08111F',
+    backgroundColor: PREMIUM_NAVY_DEEP,
   },
   waitingScroll: {
     flex: 1,
@@ -606,96 +625,81 @@ const styles = StyleSheet.create({
   },
   waitingScrollContent: {
     flexGrow: 1,
-    paddingBottom: 8,
+    paddingBottom: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.md,
   },
-  cancelTagFooter: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    backgroundColor: 'transparent',
+  waitingCockpitShell: {
+    width: '100%',
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    ...LDS_ELEVATION.cockpit,
   },
-  
-  // Header
-  header: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 16,
-    paddingBottom: 12,
+    marginBottom: LDS_SPACING.sm,
   },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(16, 26, 43, 0.85)',
+  navButton: {
+    width: WAIT_NAV_ACTION_SIZE,
+    height: WAIT_NAV_ACTION_SIZE,
+    borderRadius: LDS_SPACING.sm + LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.18)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
-  headerCenter: {
+  navButtonDanger: {
+    width: WAIT_NAV_ACTION_SIZE,
+    height: WAIT_NAV_ACTION_SIZE,
+    borderRadius: LDS_SPACING.sm + LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
+    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(248, 113, 113, 0.35)',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.94)',
+  phaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
-    marginTop: 2,
+  phaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  priceTag: {
-    backgroundColor: 'rgba(16, 26, 43, 0.9)',
-    paddingHorizontal: 16,
-    paddingVertical: 5,
-    borderRadius: 20,
-    marginTop: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
+  phaseCaption: {
+    textAlign: 'center',
+  },
+  priceChip: {
+    marginTop: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   priceText: {
-    fontSize: 16,
     fontWeight: '800',
-    color: '#22D3EE',
+    color: PREMIUM_AUTH_CYAN,
+    letterSpacing: -0.2,
   },
-  cancelButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(16, 26, 43, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.25)',
+  mapChrome: {
+    width: '100%',
+    marginBottom: LDS_SPACING.sm,
+    overflow: 'hidden',
+    ...LDS_ELEVATION.panel,
   },
-  headerRightCluster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  // Harita
   mapContainer: {
-    height: SCREEN_HEIGHT * 0.38,
-    marginHorizontal: 16,
-    borderRadius: 20,
+    height: WAIT_MAP_STAGE_HEIGHT,
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.85)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 6,
   },
   map: {
     ...StyleSheet.absoluteFillObject,
@@ -704,292 +708,183 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0B1220',
+    backgroundColor: 'rgba(6,14,26,0.72)',
+    paddingHorizontal: LDS_SPACING.lg,
   },
   mapPlaceholderText: {
-    color: 'rgba(34, 211, 238, 0.92)',
-    marginTop: 8,
+    color: PREMIUM_AUTH_CYAN,
+    marginTop: LDS_SPACING.xs,
     fontWeight: '600',
     textAlign: 'center',
-    paddingHorizontal: 20,
   },
   mapPlaceholderSub: {
-    color: 'rgba(186,201,222,0.82)',
-    marginTop: 6,
+    color: PREMIUM_TEXT_MUTED,
+    marginTop: LDS_SPACING.xxs,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
+    textAlign: 'center',
   },
-
-  // Zonklama
-  pulseOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pulseCircle: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 3,
-    borderColor: 'rgba(34, 211, 238, 0.45)',
-    backgroundColor: 'transparent',
-  },
-  
-  // Marker'lar
-  userMarker: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.25)',
-  },
-  userMarkerInner: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(34, 211, 238, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(243, 248, 255, 0.9)',
-  },
-  destinationMarker: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(127, 29, 29, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.45)',
-  },
-  driverMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(110, 231, 183, 0.35)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  
-  // Sürücü Sayısı
   driverCountBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: LDS_SPACING.sm,
+    right: LDS_SPACING.sm,
     zIndex: 40,
-    elevation: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.25)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
+    backgroundColor: 'rgba(5,11,24,0.72)',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   driverCountText: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
+    color: PREMIUM_TEXT_SOFT,
   },
   driverCountLabel: {
-    fontSize: 13,
+    ...LDS_TYPOGRAPHY.caption,
     fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
-    opacity: 0.95,
+    color: PREMIUM_TEXT_MUTED,
   },
   driverCountSearching: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: 'rgba(243, 248, 255, 0.94)',
+    ...LDS_TYPOGRAPHY.caption,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_SOFT,
     flexShrink: 1,
   },
-  
-  // Konum Kartı
   locationCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    backgroundColor: 'rgba(16, 26, 43, 0.88)',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.18)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 6,
+    width: '100%',
+    marginBottom: LDS_SPACING.sm,
+    padding: LDS_SPACING.md,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   locationDot: {
-    width: 24,
+    width: LDS_SPACING.xl,
     justifyContent: 'center',
     alignItems: 'center',
   },
   dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: LDS_SPACING.sm,
+    height: LDS_SPACING.sm,
+    borderRadius: LDS_SPACING.xs,
   },
   locationText: {
     flex: 1,
-    fontSize: 14,
-    color: 'rgba(243, 248, 255, 0.92)',
+    ...LDS_TYPOGRAPHY.body,
     fontWeight: '600',
-    marginLeft: 12,
+    color: PREMIUM_TEXT_SOFT,
+    marginLeft: LDS_SPACING.sm,
   },
   locationDivider: {
-    paddingLeft: 12,
-    paddingVertical: 8,
+    paddingLeft: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
   },
   dividerLine: {
-    width: 2,
-    height: 20,
-    backgroundColor: 'rgba(30, 58, 95, 0.75)',
-    marginLeft: 5,
+    width: LDS_BORDER_WIDTH.emphasis,
+    height: LDS_SPACING.lg,
+    backgroundColor: PREMIUM_BORDER_SLATE,
+    marginLeft: LDS_SPACING.xxs,
   },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-    borderRadius: 10,
-    gap: 6,
-    borderWidth: 1,
+    marginTop: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+    borderRadius: LDS_RADIUS.md,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(34, 211, 238, 0.22)',
   },
   shareButtonText: {
-    fontSize: 14,
+    ...LDS_TYPOGRAPHY.body,
     fontWeight: '700',
-    color: '#22D3EE',
+    color: PREMIUM_AUTH_CYAN,
   },
-  
-  // Durum Paneli
   statusPanel: {
-    marginHorizontal: 16,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  calmWaitingBlock: {
-    marginBottom: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(16, 26, 43, 0.75)',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.85)',
     width: '100%',
-    maxWidth: 400,
-    alignSelf: 'center',
-  },
-  calmWaitingLine: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: 'rgba(243, 248, 255, 0.93)',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  calmWaitingLineMuted: {
-    marginTop: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
-    textAlign: 'center',
-    lineHeight: 20,
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   loadingContainer: {
-    marginBottom: 16,
+    marginBottom: LDS_SPACING.sm,
   },
   loadingDots: {
     flexDirection: 'row',
-    gap: 8,
+    gap: LDS_SPACING.xs,
   },
   loadingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#22D3EE',
+    width: LDS_SPACING.xs,
+    height: LDS_SPACING.xs,
+    borderRadius: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(34, 211, 238, 0.72)',
   },
   loadingDotDelay1: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   loadingDotDelay2: {
-    opacity: 0.3,
+    opacity: 0.28,
   },
   statusTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
     textAlign: 'center',
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+    lineHeight: 22,
   },
   statusSubtitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
-    marginTop: 6,
     textAlign: 'center',
+    marginTop: LDS_SPACING.xxs,
+    lineHeight: 18,
   },
   dispatchInfo: {
-    marginTop: 12,
+    marginTop: LDS_SPACING.sm,
   },
   dispatchBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.3)',
-    borderLeftColor: 'rgba(34, 211, 238, 0.18)',
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
   },
   dispatchBadgeText: {
-    fontSize: 13,
+    ...LDS_TYPOGRAPHY.caption,
     fontWeight: '700',
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
   },
-  
-  // İptal Butonu
+  cancelTagFooter: {
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.xxs,
+    backgroundColor: 'transparent',
+  },
   cancelTagButton: {
-    paddingVertical: 14,
-    backgroundColor: 'rgba(16, 26, 43, 0.82)',
-    borderRadius: 14,
-    borderWidth: 1,
+    paddingVertical: LDS_SPACING.sm + LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderRadius: LDS_RADIUS.md,
+    borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(248, 113, 113, 0.35)',
     alignItems: 'center',
   },
   cancelTagButtonText: {
-    fontSize: 16,
+    ...LDS_TYPOGRAPHY.body,
     fontWeight: '700',
     color: 'rgba(252, 165, 165, 0.98)',
   },
-  
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(8,17,31,0.78)',
@@ -997,70 +892,66 @@ const styles = StyleSheet.create({
   },
   driverProfileModal: {
     backgroundColor: 'rgba(16,26,43,0.88)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 40,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderTopLeftRadius: LDS_RADIUS.xl,
+    borderTopRightRadius: LDS_RADIUS.xl,
+    padding: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.xxxl,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_BORDER_SLATE,
     borderBottomWidth: 0,
-    borderTopColor: 'rgba(34, 211, 238, 0.22)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 20,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.cockpit,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: LDS_SPACING.lg,
   },
   modalTitle: {
-    fontSize: 18,
+    ...LDS_TYPOGRAPHY.title,
     fontWeight: '700',
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
   },
   driverProfileContent: {
     alignItems: 'center',
   },
   driverAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: LDS_SPACING.xxxl + LDS_SPACING.xxl,
+    height: LDS_SPACING.xxxl + LDS_SPACING.xxl,
+    borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(8, 17, 31, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.35)',
+    marginBottom: LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_BORDER_SLATE,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
   },
   driverName: {
-    fontSize: 20,
+    ...LDS_TYPOGRAPHY.title,
     fontWeight: '700',
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
   },
   driverRating: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    gap: 4,
+    marginTop: LDS_SPACING.xs,
+    gap: LDS_SPACING.xxs,
   },
   driverRatingText: {
-    fontSize: 16,
+    ...LDS_TYPOGRAPHY.body,
     fontWeight: '600',
-    color: '#22D3EE',
+    color: PREMIUM_AUTH_CYAN,
   },
   driverVehicle: {
-    fontSize: 14,
-    color: 'rgba(186,201,222,0.82)',
-    marginTop: 8,
+    ...LDS_TYPOGRAPHY.caption,
+    color: PREMIUM_TEXT_MUTED,
+    marginTop: LDS_SPACING.xs,
   },
   driverDistance: {
-    fontSize: 14,
-    color: 'rgba(34, 211, 238, 0.9)',
-    marginTop: 4,
+    ...LDS_TYPOGRAPHY.caption,
+    color: PREMIUM_AUTH_CYAN,
+    marginTop: LDS_SPACING.xxs,
   },
 });
