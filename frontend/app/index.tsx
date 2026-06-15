@@ -648,6 +648,10 @@ const COLORS = {
   info: '#007AFF',
 };
 
+/** Role-select journey closure — LHIS / Closure Constitution */
+const ROLE_SELECT_JOURNEY_CLOSURE_BANNER =
+  'Yolculuk başarıyla tamamlandı\nTeşekkür ederiz. Yeni bir yolculuk başlatabilir veya farklı bir rol seçebilirsin.';
+
 // User Context
 interface User {
   id: string;
@@ -9186,6 +9190,9 @@ function PassengerDashboard({
           lastCancelledTagId.current = data.tag.id;
           
           // Rol seçim ekranına yönlendir
+          if (data.tag.status === 'completed') {
+            onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
+          }
           setScreen('role-select');
           
           // Alert'i sadece bir kez göster — yolcu kendi iptalinde karşı taraf suçlu mesajı gösterme
@@ -12277,7 +12284,7 @@ function PassengerDashboard({
                               );
                               const data = await response.json();
                               if (data.success) {
-                                appAlert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
+                                onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
                                 setActiveTag(null);
                                 setDestination(null);
                                 setScreen('role-select');
@@ -16769,6 +16776,9 @@ function DriverDashboard({
             tag_id: _dt.id,
             status: _dt.status,
           });
+          if (data.tag.status === 'completed') {
+            onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
+          }
           setScreen('role-select');
           
           // Alert'i sadece bir kez göster
@@ -18388,7 +18398,7 @@ function DriverDashboard({
                         );
                         const data = await response.json();
                         if (data.success) {
-                          appAlert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
+                          onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
                           setActiveTag(null);
                           setRequests([]);
                           setDriverChatVisible(false);
@@ -18411,7 +18421,7 @@ function DriverDashboard({
                 );
                 const data = await response.json();
                 if (data.success) {
-                  appAlert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
+                  onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
                   setActiveTag(null);
                   setRequests([]);
                   setDriverChatVisible(false);
@@ -23242,47 +23252,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: LDS_SPACING.sm,
     width: '100%',
-    marginTop: 2,
-    marginBottom: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: 'rgba(6,12,24,0.38)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(32,54,82,0.35)',
-    borderTopColor: 'rgba(34,211,238,0.1)',
+    marginTop: ldsSnapSpacing(2),
+    marginBottom: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(6,12,24,0.52)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    ...LDS_ELEVATION.chip,
   },
   roleStatusStripCompactVery: {
     marginTop: 0,
-    marginBottom: 2,
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    gap: 8,
+    marginBottom: ldsSnapSpacing(2),
+    paddingVertical: ldsSnapSpacing(7),
+    paddingHorizontal: ldsSnapSpacing(9),
+    gap: LDS_SPACING.xs,
   },
   roleStatusStripCompactTight: {
-    paddingVertical: 7,
+    paddingVertical: ldsSnapSpacing(7),
   },
   roleStatusPillCompact: {
     flex: 1,
     flexShrink: 1,
     minWidth: 0,
-    paddingVertical: Platform.OS === 'android' ? 5 : 6,
-    paddingHorizontal: 10,
-    gap: 7,
+    paddingVertical: Platform.OS === 'android' ? ldsSnapSpacing(5) : ldsSnapSpacing(6),
+    paddingHorizontal: LDS_SPACING.sm,
+    gap: ldsSnapSpacing(7),
   },
   roleStatusPillCompactVery: {
-    paddingVertical: Platform.OS === 'android' ? 4 : 5,
-    paddingHorizontal: 9,
-    gap: 6,
+    paddingVertical: Platform.OS === 'android' ? LDS_SPACING.xxs : ldsSnapSpacing(5),
+    paddingHorizontal: ldsSnapSpacing(9),
+    gap: ldsSnapSpacing(6),
   },
   roleStatusTitleCompactInline: {
     flex: 1,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.22,
+    letterSpacing: -0.18,
   },
   roleStatusTitleCompactInlineVery: {
     fontSize: 13,
@@ -23480,25 +23491,17 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: ldsSnapSpacing(9),
     minWidth: 0,
-    paddingVertical: Platform.OS === 'android' ? 6 : 7,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingVertical: Platform.OS === 'android' ? ldsSnapSpacing(6) : ldsSnapSpacing(7),
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.sm,
     backgroundColor: 'rgba(10,18,34,0.88)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.88)',
-    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-    borderTopWidth: StyleSheet.hairlineWidth + 0.85,
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_NAVY_DEEP,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.28,
-        shadowRadius: 8,
-      },
-      default: {},
-    }),
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    borderTopWidth: LDS_BORDER_WIDTH.standard,
+    ...LDS_ELEVATION.chip,
   },
   roleStatusPillVery: {
     flex: undefined,
@@ -23529,24 +23532,15 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    paddingVertical: Platform.OS === 'android' ? 6 : 7,
-    paddingHorizontal: 10,
-    borderRadius: 999,
+    gap: ldsSnapSpacing(2),
+    paddingVertical: Platform.OS === 'android' ? ldsSnapSpacing(6) : ldsSnapSpacing(7),
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(4,11,22,0.78)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(36,62,94,0.52)',
-    borderTopColor: 'rgba(148,206,226,0.1)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.28,
-        shadowRadius: 6,
-      },
-      android: { elevation: 3 },
-      default: {},
-    }),
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.glassInnerRimTop,
+    ...LDS_ELEVATION.chip,
   },
   roleChangeRolePillSecondaryVery: {
     alignSelf: 'flex-end',
@@ -23559,9 +23553,9 @@ const styles = StyleSheet.create({
   },
   roleChangeRoleLabelSecondary: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     color: 'rgba(138,176,206,0.86)',
-    letterSpacing: -0.06,
+    letterSpacing: -0.04,
   },
   roleChangeRolePill: {
     flexShrink: 0,
@@ -23736,7 +23730,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   roleStepHelper: {
-    marginTop: 6,
+    marginTop: ldsSnapSpacing(6),
     fontSize: 11,
     fontWeight: '500',
     color: 'rgba(172, 188, 212, 0.62)',
@@ -23822,15 +23816,15 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumnCompact: {
     paddingTop: 0,
-    paddingBottom: 14,
-    gap: 3,
-    paddingHorizontal: 18,
+    paddingBottom: ldsSnapSpacing(14),
+    gap: ldsSnapSpacing(3),
+    paddingHorizontal: ldsSnapSpacing(18),
   },
   roleBottomFooterColumnVery: {
     paddingTop: 0,
-    paddingBottom: 10,
-    gap: 2,
-    paddingHorizontal: 14,
+    paddingBottom: LDS_SPACING.sm,
+    gap: ldsSnapSpacing(2),
+    paddingHorizontal: ldsSnapSpacing(14),
   },
   roleContinueBtnOuterCompact: {
     minHeight: 56,
@@ -23918,25 +23912,29 @@ const styles = StyleSheet.create({
   },
   /** Trip uyarısı — Phase 1: üst alanı sadeleştirmek için margin + tipografi StyleSheet’te */
   roleSelectBannerWrap: {
-    marginHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 10,
-    borderRadius: 12,
+    marginHorizontal: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xxs,
+    marginBottom: ldsSnapSpacing(10),
+    borderRadius: LDS_RADIUS.sm,
   },
   roleSelectBannerInner: {
-    backgroundColor: 'rgba(42, 24, 28, 0.82)',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.36)',
+    backgroundColor: 'rgba(6, 14, 28, 0.82)',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: ldsSnapSpacing(14),
+    borderRadius: LDS_RADIUS.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    borderLeftColor: LDS_BORDER_COLOR.cockpitPanelLeft,
+    ...LDS_ELEVATION.chip,
   },
   roleSelectBannerText: {
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
-    fontWeight: '800',
+    fontWeight: '700',
     fontSize: 14,
     lineHeight: 20,
+    letterSpacing: -0.12,
   },
   // Yeni kompakt stiller
   roleTopBarCompact: {
@@ -24065,10 +24063,10 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   roleBottomFooterColumn: {
-    paddingHorizontal: 20,
+    paddingHorizontal: LDS_SPACING.lg,
     paddingTop: 0,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 18,
-    gap: 6,
+    paddingBottom: Platform.OS === 'ios' ? ldsSnapSpacing(22) : ldsSnapSpacing(18),
+    gap: ldsSnapSpacing(6),
     alignItems: 'stretch',
   },
   roleCardsRow: {
