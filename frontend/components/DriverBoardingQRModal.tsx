@@ -86,11 +86,11 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
         <GlassSurface variant="panel" style={styles.sheet} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
-              <PremiumText variant="step" style={styles.phaseStep}>
-                Biniş QR kodu
+              <PremiumText variant="caption" style={styles.phaseStep}>
+                Biniş doğrulaması
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
-                Yolcunun binişi güvenli şekilde doğrulaması için bu kodu göster.
+                Yolcunun telefonuyla bu kodu okutmasını iste.
               </PremiumText>
             </View>
             <TouchableOpacity
@@ -104,12 +104,20 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
             </TouchableOpacity>
           </View>
 
+          <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+            <View style={styles.guardianLiveDot} />
+            <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.88)" />
+            <PremiumText variant="caption" style={styles.guardianChipText}>
+              Yolcu QR kodunu okutuyor
+            </PremiumText>
+          </GlassSurface>
+
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             {loading ? (
               <View style={styles.center}>
                 <ActivityIndicator size="large" color="#22D3EE" />
                 <PremiumText variant="caption" muted style={styles.stateText}>
-                  Karekod hazırlanıyor…
+                  Biniş kodu hazırlanıyor…
                 </PremiumText>
               </View>
             ) : error ? (
@@ -129,11 +137,26 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
               </View>
             ) : qrString ? (
               <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+                <View style={styles.qrCheckpointRow}>
+                  <View style={styles.qrIconRing}>
+                    <Ionicons name="qr-code-outline" size={22} color="rgba(34,211,238,0.92)" />
+                  </View>
+                  <View style={styles.qrCheckpointTextCol}>
+                    <PremiumText variant="body" style={styles.qrCheckpointTitle}>
+                      Biniş kodu hazır
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
+                      Ekranı yolcuya doğrult
+                    </PremiumText>
+                  </View>
+                </View>
+
                 <View style={styles.qrBox}>
                   <QRCode value={qrString} size={220} backgroundColor="#fff" color="#0f172a" />
                 </View>
+
                 <PremiumText variant="caption" muted style={styles.qrHint}>
-                  Yolcu kodu tarayıp onayladıktan sonra yolculuk başlar.
+                  Kod doğrulandığında yolculuk güvenli şekilde başlar.
                 </PremiumText>
               </GlassSurface>
             ) : null}
@@ -177,8 +200,9 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.xxs,
   },
   phaseStep: {
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    letterSpacing: 0.06,
+    fontWeight: '600',
+    color: 'rgba(186, 230, 253, 0.94)',
   },
   phaseCaption: {
     lineHeight: 18,
@@ -192,6 +216,31 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8,17,31,0.55)',
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
+  },
+  guardianChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.sm,
+    marginHorizontal: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(34,211,238,0.92)',
+  },
+  guardianChipText: {
+    fontWeight: '600',
+    letterSpacing: 0.04,
+    color: 'rgba(186, 230, 253, 0.92)',
   },
   body: {
     paddingHorizontal: LDS_SPACING.lg,
@@ -226,13 +275,47 @@ const styles = StyleSheet.create({
   },
   retryBtnText: {
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   qrStage: {
     alignItems: 'center',
     paddingVertical: LDS_SPACING.lg,
     paddingHorizontal: LDS_SPACING.md,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.panel,
+  },
+  qrCheckpointRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  qrIconRing: {
+    width: 48,
+    height: 48,
+    borderRadius: LDS_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    flexShrink: 0,
+    ...LDS_ELEVATION.flat,
+  },
+  qrCheckpointTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  qrCheckpointTitle: {
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  qrCheckpointSubtitle: {
+    lineHeight: 16,
   },
   qrBox: {
     backgroundColor: '#fff',
@@ -240,6 +323,8 @@ const styles = StyleSheet.create({
     borderRadius: LDS_RADIUS.md,
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: 'rgba(34,211,238,0.22)',
+    ...LDS_ELEVATION.flat,
   },
   qrHint: {
     marginTop: LDS_SPACING.sm,
