@@ -12,17 +12,13 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CockpitBackground, GlassSurface } from '../../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
 import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
-import {
-  PREMIUM_AUTH_CTA_DISABLED_GRADIENT,
-  PREMIUM_AUTH_CTA_GRADIENT,
-  premiumAuthStyles as pa,
-} from './premiumAuthStyles';
+import { premiumAuthStyles as pa } from './premiumAuthStyles';
 
 /** LHIS kokpit zemin — login / OTP / register / forgot ortak shell. */
 export function PremiumAuthScreenShell({
@@ -132,38 +128,64 @@ export function PremiumGradientCtaButton({
       disabled={muted}
       onPress={onPress}
       style={[
-        pa.ctaShadow,
-        grayInactive ? pa.ctaShadowDisabled : null,
+        ctaStyles.touchable,
+        grayInactive ? ctaStyles.touchableDisabled : null,
         touchableStyleOverrides ?? null,
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: muted }}
     >
-      <LinearGradient
-        colors={
-          grayInactive
-            ? ([...PREMIUM_AUTH_CTA_DISABLED_GRADIENT] as [string, string, string])
-            : ([...PREMIUM_AUTH_CTA_GRADIENT] as [string, string, string])
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        locations={[0, 0.5, 1]}
+      <View
         style={[
-          pa.ctaGradient,
-          grayInactive ? pa.ctaGradientDisabledFrame : null,
+          ctaStyles.body,
+          grayInactive ? ctaStyles.bodyDisabled : ctaStyles.bodyActive,
           gradientStyleOverrides ?? null,
         ]}
       >
         {busy ? (
-          <ActivityIndicator color="rgba(243,248,255,0.94)" size="small" />
+          <ActivityIndicator color="#22D3EE" size="small" />
         ) : (
           <>
             <Text style={[pa.ctaText, labelStyle]}>{label}</Text>
             {trailing ?? null}
           </>
         )}
-      </LinearGradient>
+      </View>
     </TouchableOpacity>
   );
 }
+
+const ctaStyles = StyleSheet.create({
+  touchable: {
+    alignSelf: 'stretch',
+    borderRadius: LDS_RADIUS.md,
+    ...LDS_ELEVATION.cta,
+  },
+  touchableDisabled: {
+    ...LDS_ELEVATION.flat,
+  },
+  body: {
+    alignSelf: 'stretch',
+    borderRadius: LDS_RADIUS.md,
+    paddingVertical: Platform.OS === 'ios' ? LDS_SPACING.sm + 2 : LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: LDS_SPACING.xs,
+  },
+  bodyActive: {
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+  },
+  bodyDisabled: {
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    opacity: 0.72,
+  },
+});
