@@ -31,7 +31,7 @@ type Props = {
   active: boolean;
 };
 
-/** LHIS Journey milestone — eşleşme tamamlandı, yolculuk ekranına güvenli geçiş (yalnızca görsel). */
+/** LHIS Journey milestone — eşleşme tamamlandı, buluşma ekranına güvenli geçiş (yalnızca görsel). */
 export default function TagMatchTransitionOverlay({ active }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.94)).current;
@@ -85,7 +85,7 @@ export default function TagMatchTransitionOverlay({ active }: Props) {
               Eşleşme tamam
             </PremiumText>
             <PremiumText variant="caption" muted style={styles.phaseCaption}>
-              Güvenli geçiş · Sürücün yola çıkıyor
+              Güvenli geçiş · Sürücünle eşleştin
             </PremiumText>
           </View>
 
@@ -95,13 +95,13 @@ export default function TagMatchTransitionOverlay({ active }: Props) {
                 size={LEYLEK_EYE_HERO_SIZE + LDS_SPACING.sm}
                 motionProfile="guardian"
                 chromeTone="subtle"
-                accessibilityLabel="Leylek guardian"
+                accessibilityLabel="Eşleşme tamamlandı. Sürücünle eşleştin. Buluşma ekranı hazırlanıyor."
               />
             </View>
           </View>
 
           <PremiumText variant="caption" muted style={styles.helperText}>
-            Yolculuk ekranına geçiliyor
+            Buluşma ekranı hazırlanıyor
           </PremiumText>
         </GlassSurface>
       </View>
