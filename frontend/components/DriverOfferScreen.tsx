@@ -1221,29 +1221,76 @@ export default function DriverOfferScreen({
         ]}
       >
         <GlassSurface
-          variant="plain"
-          borderRadius={LDS_RADIUS.full}
-          style={[styles.mapChromeShell, mapExpanded && styles.mapChromeShellExpanded]}
+          variant={mapExpanded ? 'plain' : 'panel'}
+          borderRadius={mapExpanded ? LDS_RADIUS.lg : LDS_RADIUS.xl}
+          style={[
+            styles.mapChromeShell,
+            mapExpanded ? styles.mapChromeShellExpanded : styles.mapChromeShellCollapsed,
+          ]}
         >
           <TouchableOpacity
-            style={[styles.mapExpandToggle, mapExpanded && styles.mapExpandToggleWithMapBelow]}
+            style={[styles.mapMiniHud, mapExpanded && styles.mapMiniHudExpanded]}
             onPress={() => setMapExpanded((v) => !v)}
             activeOpacity={0.88}
             accessibilityRole="button"
             accessibilityLabel={mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
           >
-            <Ionicons
-              name={mapExpanded ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color="rgba(34,211,238,0.88)"
-            />
-            <PremiumText variant="step" style={styles.mapExpandToggleText}>
-              {mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
-            </PremiumText>
-            <View style={styles.mapHudMini} pointerEvents="none">
-              <PremiumText variant="caption" muted style={styles.mapHudMiniText}>
-                {mapHud.seeking} talep · {mapHud.radius} km
-              </PremiumText>
+            <View style={styles.mapMiniHudLeft}>
+              <View
+                style={[
+                  styles.mapMiniHudIconWrap,
+                  mapExpanded && styles.mapMiniHudIconWrapExpanded,
+                ]}
+              >
+                <Ionicons
+                  name="satellite-outline"
+                  size={mapExpanded ? 16 : 18}
+                  color={PREMIUM_AUTH_CYAN}
+                />
+              </View>
+              <View style={styles.mapMiniHudTitleCol}>
+                <PremiumText
+                  variant="step"
+                  style={[styles.mapMiniHudPhase, mapExpanded && styles.mapMiniHudPhaseExpanded]}
+                >
+                  SAHA HARİTASI
+                </PremiumText>
+                <PremiumText
+                  variant="caption"
+                  muted
+                  style={styles.mapMiniHudSubtitle}
+                  numberOfLines={1}
+                >
+                  {mapExpanded ? 'Canlı izleme · Harita açık' : 'Canlı izleme · Harita hazır'}
+                </PremiumText>
+              </View>
+            </View>
+
+            <View style={styles.mapMiniHudMetrics}>
+              <View style={[styles.mapMiniHudPill, mapExpanded && styles.mapMiniHudPillExpanded]}>
+                <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
+                  {mapHud.seeking}
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
+                  Talep
+                </PremiumText>
+              </View>
+              <View style={[styles.mapMiniHudPill, mapExpanded && styles.mapMiniHudPillExpanded]}>
+                <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
+                  {mapHud.radius}
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
+                  km
+                </PremiumText>
+              </View>
+            </View>
+
+            <View style={styles.mapMiniHudChevronWrap}>
+              <Ionicons
+                name={mapExpanded ? 'chevron-up' : 'chevron-down'}
+                size={mapExpanded ? 15 : 17}
+                color="rgba(34,211,238,0.88)"
+              />
             </View>
           </TouchableOpacity>
         </GlassSurface>
@@ -1605,37 +1652,111 @@ const styles = StyleSheet.create({
     marginBottom: LDS_SPACING.xxs,
     overflow: 'hidden',
   },
+  mapChromeShellCollapsed: {
+    marginHorizontal: LDS_SPACING.xxs,
+    ...LDS_ELEVATION.panel,
+  },
   mapChromeShellExpanded: {
     marginBottom: LDS_SPACING.xs,
+    marginHorizontal: 0,
   },
-  mapExpandToggle: {
+  mapMiniHud: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: LDS_SPACING.xs,
     alignSelf: 'stretch',
-    paddingVertical: LDS_SPACING.sm,
+    gap: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.md,
     paddingHorizontal: LDS_SPACING.md,
     backgroundColor: 'transparent',
   },
-  mapExpandToggleText: {
-    letterSpacing: 0.15,
-    flexShrink: 1,
+  mapMiniHudExpanded: {
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
   },
-  mapHudMini: {
-    paddingHorizontal: LDS_SPACING.xs,
-    paddingVertical: 2,
+  mapMiniHudLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.sm,
+  },
+  mapMiniHudIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: LDS_RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: 'rgba(34,211,238,0.18)',
+    ...LDS_ELEVATION.chip,
+  },
+  mapMiniHudIconWrapExpanded: {
+    width: 32,
+    height: 32,
+    borderRadius: LDS_RADIUS.sm,
+  },
+  mapMiniHudTitleCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: LDS_SPACING.xxs,
+  },
+  mapMiniHudPhase: {
+    letterSpacing: 0.42,
+    textTransform: 'uppercase',
+    color: PREMIUM_AUTH_CYAN,
+    opacity: 0.9,
+  },
+  mapMiniHudPhaseExpanded: {
+    fontSize: 11,
+    letterSpacing: 0.35,
+  },
+  mapMiniHudSubtitle: {
+    letterSpacing: 0.06,
+    lineHeight: 14,
+  },
+  mapMiniHudMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    flexShrink: 0,
+  },
+  mapMiniHudPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 46,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
     borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(8,17,31,0.45)',
+    backgroundColor: 'rgba(8,17,31,0.52)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    gap: 1,
   },
-  mapHudMiniText: {
-    fontSize: 10,
-    letterSpacing: 0.05,
+  mapMiniHudPillExpanded: {
+    minWidth: 40,
+    paddingVertical: 2,
+    paddingHorizontal: LDS_SPACING.xs,
   },
-  mapExpandToggleWithMapBelow: {
-    marginBottom: 0,
+  mapMiniHudPillValue: {
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.1,
+    color: PREMIUM_TEXT_SOFT,
+  },
+  mapMiniHudPillLabel: {
+    fontSize: 9,
+    letterSpacing: 0.22,
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  mapMiniHudChevronWrap: {
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   mapDimOverlay: {
     ...StyleSheet.absoluteFillObject,
