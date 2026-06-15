@@ -3896,13 +3896,19 @@ export default function LiveMapView({
       });
       let alertBody: string;
       if (!originOk && !destOk) {
-        alertBody = 'Eksik: origin=MISSING destination=MISSING';
+        alertBody =
+          'Rota henüz hazırlanamıyor. Konum bilgisi birkaç saniye içinde güncellenebilir; lütfen kısa süre bekleyip tekrar deneyin.';
       } else if (!originOk) {
-        alertBody = 'Eksik: origin=MISSING (sürücü GPS / konum)';
+        alertBody = 'Konumunuz henüz alınamadı. Birkaç saniye bekleyip tekrar deneyin.';
       } else {
-        alertBody = 'Eksik: destination=MISSING (yolcu / alış noktası)';
+        alertBody = 'Yolcu alış noktası henüz hazır değil. Kısa bir süre sonra tekrar deneyin.';
       }
-      Alert.alert('Konum', alertBody);
+      appAlert('Konum hazırlanıyor', alertBody, [{ text: 'Tamam' }], {
+        tone: 'info',
+        variant: 'info',
+        autoDismissMs: 3000,
+        cancelable: true,
+      });
       return;
     }
 
@@ -5825,7 +5831,7 @@ export default function LiveMapView({
     async (provider: ExternalMapsProvider) => {
       void tapButtonHaptic();
       if (!driverExternalNavTarget) {
-        appAlert('Konum', 'Konum hazır değil.', [{ text: 'Tamam' }], {
+        appAlert('Harita', 'Konum hazırlanıyor; lütfen kısa bir süre sonra tekrar deneyin.', [{ text: 'Tamam' }], {
           variant: 'info',
           autoDismissMs: 2800,
           cancelable: true,
