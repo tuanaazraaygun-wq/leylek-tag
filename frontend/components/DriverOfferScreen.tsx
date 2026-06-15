@@ -542,7 +542,7 @@ function RequestCard({
             <View style={styles.reqDispatchDot} />
           </View>
           <PremiumText variant="caption" style={styles.reqDispatchLabel}>
-            DISPATCH TEKLİFİ
+            Dispatch teklifi
           </PremiumText>
         </View>
 
@@ -550,7 +550,7 @@ function RequestCard({
           <View style={styles.reqContentCol}>
             <View style={styles.reqRevenueHero}>
               <PremiumText variant="step" muted style={styles.reqRevenueLabel}>
-                TEKLİF TUTARI
+                Teklif tutarı
               </PremiumText>
               <PremiumText variant="headline" style={styles.reqPriceText}>
                 {request.offered_price || 0} ₺
@@ -1250,10 +1250,10 @@ export default function DriverOfferScreen({
               </View>
               <View style={styles.mapMiniHudTitleCol}>
                 <PremiumText
-                  variant="step"
+                  variant="caption"
                   style={[styles.mapMiniHudPhase, mapExpanded && styles.mapMiniHudPhaseExpanded]}
                 >
-                  SAHA HARİTASI
+                  Saha haritası
                 </PremiumText>
                 <PremiumText
                   variant="caption"
@@ -1384,8 +1384,8 @@ export default function DriverOfferScreen({
                 <View style={styles.listHeaderAccentDot} />
               </View>
               <View style={styles.listHeaderTitleCol}>
-                <PremiumText variant="step" style={styles.listPhaseLabel}>
-                  SAHA DISPATCH
+                <PremiumText variant="caption" style={styles.listPhaseLabel}>
+                  Saha dispatch
                 </PremiumText>
                 <PremiumText
                   variant="title"
@@ -1414,7 +1414,7 @@ export default function DriverOfferScreen({
                   <View style={styles.emptyBrandDot} />
                 </View>
                 <PremiumText variant="caption" style={styles.emptyBrandLabel}>
-                  LEYLEKTAG · SAHA OPERASYONU
+                  LeylekTAG · Saha operasyonu
                 </PremiumText>
               </View>
 
@@ -1704,14 +1704,14 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.xxs,
   },
   mapMiniHudPhase: {
-    letterSpacing: 0.42,
-    textTransform: 'uppercase',
+    letterSpacing: 0.06,
     color: PREMIUM_AUTH_CYAN,
-    opacity: 0.9,
+    opacity: 0.86,
+    fontWeight: '600',
   },
   mapMiniHudPhaseExpanded: {
     fontSize: 11,
-    letterSpacing: 0.35,
+    letterSpacing: 0.05,
   },
   mapMiniHudSubtitle: {
     letterSpacing: 0.06,
@@ -1748,9 +1748,8 @@ const styles = StyleSheet.create({
   },
   mapMiniHudPillLabel: {
     fontSize: 9,
-    letterSpacing: 0.22,
-    textTransform: 'uppercase',
-    fontWeight: '700',
+    letterSpacing: 0.04,
+    fontWeight: '600',
   },
   mapMiniHudChevronWrap: {
     width: 22,
@@ -2173,10 +2172,10 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.xxs,
   },
   listPhaseLabel: {
-    letterSpacing: 0.55,
-    textTransform: 'uppercase',
+    letterSpacing: 0.06,
     color: PREMIUM_AUTH_CYAN,
-    opacity: 0.88,
+    opacity: 0.82,
+    fontWeight: '600',
   },
   listTitle: {
     letterSpacing: -0.32,
@@ -2267,12 +2266,11 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   emptyBrandLabel: {
-    letterSpacing: 0.42,
-    textTransform: 'uppercase',
+    letterSpacing: 0.05,
     color: PREMIUM_AUTH_CYAN,
-    opacity: 0.84,
+    opacity: 0.82,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   emptyInstrumentOrb: {
     width: 76,
@@ -2462,12 +2460,11 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   reqDispatchLabel: {
-    letterSpacing: 0.45,
-    textTransform: 'uppercase',
+    letterSpacing: 0.05,
     color: PREMIUM_AUTH_CYAN,
     opacity: 0.82,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   reqMainRow: {
     flexDirection: 'row',
@@ -2483,8 +2480,7 @@ const styles = StyleSheet.create({
     marginBottom: LDS_SPACING.xs,
   },
   reqRevenueLabel: {
-    letterSpacing: 0.55,
-    textTransform: 'uppercase',
+    letterSpacing: 0.05,
   },
   reqPriceText: {
     fontSize: 28,
@@ -2691,8 +2687,7 @@ const styles = StyleSheet.create({
   },
   reqBottomMetaLabel: {
     fontSize: 10,
-    letterSpacing: 0.08,
-    textTransform: 'uppercase',
+    letterSpacing: 0.04,
   },
   reqBottomMetaValue: {
     fontWeight: '700',
