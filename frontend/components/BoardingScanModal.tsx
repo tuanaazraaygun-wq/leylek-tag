@@ -279,11 +279,11 @@ export default function BoardingScanModal({
         <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
-              <PremiumText variant="step" style={styles.phaseStep}>
-                QR doğrulaması
+              <PremiumText variant="caption" style={styles.phaseStep}>
+                Biniş doğrulaması
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
-                Binişi güvenli şekilde tamamlamak için karekodu okut.
+                Sürücünün gösterdiği QR kodu okut.
               </PremiumText>
             </View>
             <TouchableOpacity
@@ -297,8 +297,16 @@ export default function BoardingScanModal({
             </TouchableOpacity>
           </View>
 
+          <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+            <View style={styles.guardianLiveDot} />
+            <Ionicons name="scan-outline" size={14} color="rgba(34,211,238,0.88)" />
+            <PremiumText variant="caption" style={styles.guardianChipText}>
+              Güvenli biniş kontrolü
+            </PremiumText>
+          </GlassSurface>
+
           <PremiumText variant="caption" muted style={styles.hint}>
-            Yalnızca sürücünün gösterdiği biniş karekodu geçerlidir (yol sonu kodu değil).
+            Yalnızca sürücünün gösterdiği biniş kodu geçerlidir; yol sonu kodu değil.
           </PremiumText>
 
           {!hasPermission?.granted ? (
@@ -385,8 +393,6 @@ const styles = StyleSheet.create({
   container: {
     maxHeight: '88%',
     paddingBottom: LDS_SPACING.lg,
-    paddingHorizontal: LDS_SPACING.md,
-    paddingTop: LDS_SPACING.sm,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     ...LDS_ELEVATION.cockpit,
@@ -396,7 +402,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: LDS_SPACING.sm,
-    paddingBottom: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: LDS_BORDER_COLOR.card,
   },
@@ -406,8 +414,9 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.xxs,
   },
   phaseStep: {
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    letterSpacing: 0.06,
+    fontWeight: '600',
+    color: 'rgba(186, 230, 253, 0.94)',
   },
   phaseCaption: {
     lineHeight: 18,
@@ -422,12 +431,39 @@ const styles = StyleSheet.create({
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
   },
+  guardianChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.sm,
+    marginHorizontal: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(34,211,238,0.92)',
+  },
+  guardianChipText: {
+    fontWeight: '600',
+    letterSpacing: 0.04,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
   hint: {
     marginTop: LDS_SPACING.sm,
+    marginHorizontal: LDS_SPACING.lg,
     lineHeight: 18,
     paddingHorizontal: LDS_SPACING.xxs,
   },
   centerBox: {
+    marginHorizontal: LDS_SPACING.lg,
     paddingVertical: LDS_SPACING.xl,
     alignItems: 'center',
     gap: LDS_SPACING.sm,
@@ -448,11 +484,13 @@ const styles = StyleSheet.create({
   },
   permBtnText: {
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   cameraStage: {
     marginTop: LDS_SPACING.md,
+    marginHorizontal: LDS_SPACING.lg,
     overflow: 'hidden',
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.panel,
   },
   cameraBox: {
@@ -473,41 +511,41 @@ const styles = StyleSheet.create({
   },
   corner: {
     position: 'absolute',
-    width: 28,
-    height: 28,
-    borderColor: 'rgba(34, 211, 238, 0.72)',
+    width: 24,
+    height: 24,
+    borderColor: 'rgba(34, 211, 238, 0.52)',
   },
   topLeft: {
     top: 0,
     left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
     borderTopLeftRadius: LDS_RADIUS.sm,
   },
   topRight: {
     top: 0,
     right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
     borderTopRightRadius: LDS_RADIUS.sm,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
     borderBottomLeftRadius: LDS_RADIUS.sm,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
     borderBottomRightRadius: LDS_RADIUS.sm,
   },
   processing: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8, 17, 31, 0.82)',
+    backgroundColor: 'rgba(8, 17, 31, 0.68)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: LDS_SPACING.xs,
