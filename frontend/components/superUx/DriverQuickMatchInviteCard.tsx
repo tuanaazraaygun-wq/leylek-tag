@@ -5,22 +5,16 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import {
-  PREMIUM_AUTH_CYAN,
-  PREMIUM_AUTH_CTA_GRADIENT,
-  PREMIUM_BORDER_SLATE,
-  PREMIUM_NAVY_CARD,
-  PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-  PREMIUM_TEXT_MUTED,
-  PREMIUM_TEXT_SOFT,
-} from '../auth/premiumAuthStyles';
+import { CockpitBackground, GlassSurface, PremiumText } from '../../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
+import { PREMIUM_AUTH_CYAN, LDS_COLOR_ERROR } from '../../design-system/tokens/color';
+import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import type { useQuickMatchDriverSession } from '../../hooks/useQuickMatchDriverSession';
 
 export type DriverQuickMatchSessionView = Pick<
@@ -145,12 +139,16 @@ function InviteHeader({
 }) {
   return (
     <View style={styles.headerRow}>
-      <View style={styles.headerIconOrb}>
-        <Text style={styles.headerEmoji}>⚡</Text>
-      </View>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.headerIconOrb}>
+        <Ionicons name="flash-outline" size={20} color={PREMIUM_AUTH_CYAN} />
+      </GlassSurface>
       <View style={styles.headerTextCol}>
-        <Text style={styles.headerTitle}>⚡ Yakınınızda Hızlı Eşleşme</Text>
-        <Text style={styles.headerSubtitle}>Yolcu size çok yakın.</Text>
+        <PremiumText variant="step" style={styles.headerTitle}>
+          Hızlı eşleşme isteği
+        </PremiumText>
+        <PremiumText variant="caption" muted style={styles.headerSubtitle}>
+          Yakındaki yolcu değerlendiriliyor
+        </PremiumText>
       </View>
       <Pressable
         onPress={onClose}
@@ -168,7 +166,7 @@ function InviteHeader({
         <Ionicons
           name="close"
           size={24}
-          color={closeDisabled ? PREMIUM_TEXT_MUTED : PREMIUM_AUTH_CYAN}
+          color={closeDisabled ? 'rgba(186,201,222,0.55)' : PREMIUM_AUTH_CYAN}
         />
       </Pressable>
     </View>
@@ -177,10 +175,12 @@ function InviteHeader({
 
 function PollWarningBanner() {
   return (
-    <View style={styles.pollWarningBanner}>
+    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.pollWarningBanner}>
       <Ionicons name="cloud-offline-outline" size={16} color="rgba(251, 191, 36, 0.95)" />
-      <Text style={styles.pollWarningText}>{POLL_WARNING_COPY}</Text>
-    </View>
+      <PremiumText variant="caption" style={styles.pollWarningText}>
+        {POLL_WARNING_COPY}
+      </PremiumText>
+    </GlassSurface>
   );
 }
 
@@ -207,22 +207,22 @@ function PrimaryButton({
         pressed && !disabled && !loading && styles.primaryBtnPressed,
       ]}
     >
-      <LinearGradient
-        colors={
-          disabled || loading
-            ? ['rgba(30, 58, 95, 0.65)', 'rgba(16, 26, 43, 0.85)']
-            : [...PREMIUM_AUTH_CTA_GRADIENT]
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.primaryBtnGradient}
+      <GlassSurface
+        variant="plain"
+        borderRadius={LDS_RADIUS.md}
+        style={[
+          styles.primaryBtnSurface,
+          (disabled || loading) && styles.primaryBtnSurfaceDisabled,
+        ]}
       >
         {loading ? (
-          <ActivityIndicator size="small" color="#F8FAFF" />
+          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
         ) : (
-          <Text style={styles.primaryBtnText}>{label}</Text>
+          <PremiumText variant="body" style={styles.primaryBtnText}>
+            {label}
+          </PremiumText>
         )}
-      </LinearGradient>
+      </GlassSurface>
     </Pressable>
   );
 }
@@ -245,16 +245,20 @@ function SecondaryButton({
       accessibilityRole="button"
       accessibilityState={{ disabled: Boolean(disabled || loading) }}
       style={({ pressed }) => [
-        styles.secondaryBtn,
+        styles.secondaryBtnOuter,
         (disabled || loading) && styles.secondaryBtnDisabled,
         pressed && !disabled && !loading && styles.secondaryBtnPressed,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-      ) : (
-        <Text style={styles.secondaryBtnText}>{label}</Text>
-      )}
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.secondaryBtnSurface}>
+        {loading ? (
+          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+        ) : (
+          <PremiumText variant="body" muted style={styles.secondaryBtnText}>
+            {label}
+          </PremiumText>
+        )}
+      </GlassSurface>
     </Pressable>
   );
 }
@@ -278,43 +282,58 @@ function InviteDetailsCard({
     countdownSec != null && countdownSec > 0 && countdownSec <= 15;
 
   return (
-    <View style={styles.glassCard}>
+    <GlassSurface variant="panel" borderRadius={LDS_RADIUS.md} style={styles.glassCard}>
       <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>Alış noktası</Text>
+        <PremiumText variant="caption" muted style={styles.fieldLabel}>
+          Alış noktası
+        </PremiumText>
         <View style={styles.pickupRow}>
           <Ionicons name="radio-button-on" size={14} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.fieldValue} numberOfLines={3}>
+          <PremiumText variant="body" style={styles.fieldValue} numberOfLines={3}>
             {pickupLabel}
-          </Text>
+          </PremiumText>
         </View>
       </View>
 
       <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>Mesafe bandı</Text>
+        <PremiumText variant="caption" muted style={styles.fieldLabel}>
+          Mesafe bandı
+        </PremiumText>
         <View style={styles.inlineValueRow}>
           <Ionicons name="navigate-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.fieldValue}>{formatDistanceBand(distanceBand)}</Text>
+          <PremiumText variant="body" style={styles.fieldValue}>
+            {formatDistanceBand(distanceBand)}
+          </PremiumText>
         </View>
       </View>
 
       <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>Katkı teklifi</Text>
+        <PremiumText variant="caption" muted style={styles.fieldLabel}>
+          Katkı teklifi
+        </PremiumText>
         <View style={styles.inlineValueRow}>
           <Ionicons name="cash-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.contributionValue}>{contributionTl} TL</Text>
+          <PremiumText variant="title" style={styles.contributionValue}>
+            {contributionTl} TL
+          </PremiumText>
         </View>
-        <Text style={styles.disclaimer}>{CONTRIBUTION_DISCLAIMER}</Text>
+        <PremiumText variant="caption" muted style={styles.disclaimer}>
+          {CONTRIBUTION_DISCLAIMER}
+        </PremiumText>
       </View>
 
       <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>Kalan süre</Text>
-        <View style={styles.countdownRow}>
+        <PremiumText variant="caption" muted style={styles.fieldLabel}>
+          Kalan süre
+        </PremiumText>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.countdownChip}>
           <Ionicons
             name="timer-outline"
             size={18}
-            color={countdownExpired ? '#F87171' : countdownUrgent ? '#FBBF24' : PREMIUM_AUTH_CYAN}
+            color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : PREMIUM_AUTH_CYAN}
           />
-          <Text
+          <PremiumText
+            variant="body"
             style={[
               styles.countdownText,
               countdownExpired && styles.countdownExpired,
@@ -322,14 +341,16 @@ function InviteDetailsCard({
             ]}
           >
             {countdownLabel}
-          </Text>
-        </View>
+          </PremiumText>
+        </GlassSurface>
       </View>
 
       {sequenceNo != null && sequenceNo > 0 ? (
-        <Text style={styles.sequenceMuted}>Sıra {sequenceNo}</Text>
+        <PremiumText variant="caption" muted style={styles.sequenceMuted}>
+          Sıra {sequenceNo}
+        </PremiumText>
       ) : null}
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -391,7 +412,9 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.centerCard}>
           <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.loadingTitle}>Davet kontrol ediliyor…</Text>
+          <PremiumText variant="body" style={styles.loadingTitle}>
+            Davet kontrol ediliyor…
+          </PremiumText>
         </View>
       );
     }
@@ -400,7 +423,9 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.centerCard}>
           <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.loadingTitle}>Eşleşme hazırlanıyor…</Text>
+          <PremiumText variant="body" style={styles.loadingTitle}>
+            Eşleşme hazırlanıyor…
+          </PremiumText>
         </View>
       );
     }
@@ -411,8 +436,12 @@ export function DriverQuickMatchInviteCard({
           <View style={styles.successIconWrap}>
             <Ionicons name="checkmark-circle" size={52} color={PREMIUM_AUTH_CYAN} />
           </View>
-          <Text style={styles.title}>Eşleşme tamamlandı</Text>
-          <Text style={styles.bodyMuted}>Yolculuk ekranınız hazırlanıyor.</Text>
+          <PremiumText variant="step" style={styles.title}>
+            Eşleşme tamamlandı
+          </PremiumText>
+          <PremiumText variant="caption" muted style={styles.bodyMuted}>
+            Buluşma ekranı hazırlanıyor
+          </PremiumText>
           <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} style={styles.matchedSpinner} />
         </View>
       );
@@ -422,12 +451,12 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.section}>
           {renderPollWarning()}
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle-outline" size={28} color="#F87171" />
-            <Text style={styles.errorBody}>
-              {session.errorMessage || 'Hızlı Eşleşme şu an kullanılamıyor.'}
-            </Text>
-          </View>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.errorCard}>
+            <Ionicons name="alert-circle-outline" size={28} color={LDS_COLOR_ERROR} />
+            <PremiumText variant="body" muted style={styles.errorBody}>
+              {session.errorMessage || 'Hızlı eşleşme şu an kullanılamıyor.'}
+            </PremiumText>
+          </GlassSurface>
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -441,6 +470,9 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.section}>
           {renderPollWarning()}
+          <PremiumText variant="caption" muted style={styles.decisionHint}>
+            Kabul edersen buluşma ekranına geçeceksin
+          </PremiumText>
           <InviteDetailsCard
             pickupLabel={pickupLabel}
             contributionTl={contributionTl}
@@ -449,7 +481,7 @@ export function DriverQuickMatchInviteCard({
             sequenceNo={invite.sequence_no}
           />
           <PrimaryButton
-            label="Kabul Et"
+            label="Kabul et"
             onPress={handleAccept}
             disabled={session.isDeclining || inviteExpired}
             loading={session.isAccepting}
@@ -474,10 +506,9 @@ export function DriverQuickMatchInviteCard({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <LinearGradient
-        colors={[PREMIUM_NAVY_DEEP, '#0B1220', PREMIUM_NAVY_CARD]}
-        style={styles.modalRoot}
-      >
+      <View style={styles.modalRoot}>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <InviteHeader onClose={handleClose} closeDisabled={closeDisabled} />
           <ScrollView
@@ -488,7 +519,7 @@ export function DriverQuickMatchInviteCard({
             {body}
           </ScrollView>
         </SafeAreaView>
-      </LinearGradient>
+      </View>
     </Modal>
   );
 }
@@ -499,61 +530,50 @@ const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
   },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
   safe: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 18,
-    paddingBottom: 24,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.lg,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    gap: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm + LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.sm,
+    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
+    borderBottomColor: LDS_BORDER_COLOR.cardTopCyan,
   },
   headerIconOrb: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34, 211, 238, 0.32)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: PREMIUM_AUTH_CYAN,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  headerEmoji: {
-    fontSize: 20,
-    lineHeight: 24,
+    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   headerTextCol: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: LDS_SPACING.xxs,
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.2,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   headerSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 16,
   },
   closeBtn: {
-    padding: 4,
-    borderRadius: 12,
+    padding: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.sm,
   },
   closeBtnDisabled: {
     opacity: 0.45,
@@ -562,131 +582,115 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   section: {
-    gap: 14,
-    paddingTop: 6,
+    gap: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xs,
+  },
+  decisionHint: {
+    textAlign: 'center',
+    lineHeight: 17,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   centerCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    paddingTop: 40,
-    paddingHorizontal: 8,
+    gap: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xl + LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   glassCard: {
-    borderRadius: 16,
-    padding: 14,
-    gap: 12,
-    backgroundColor: 'rgba(16, 26, 43, 0.88)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    padding: LDS_SPACING.sm + LDS_SPACING.xxs,
+    gap: LDS_SPACING.sm,
+    ...LDS_ELEVATION.panel,
   },
   fieldBlock: {
-    gap: 6,
+    gap: LDS_SPACING.xs,
   },
   fieldLabel: {
-    fontSize: 11,
     fontWeight: '800',
-    color: PREMIUM_TEXT_MUTED,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   pickupRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: LDS_SPACING.xs,
   },
   inlineValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: LDS_SPACING.xs,
   },
   fieldValue: {
     flex: 1,
-    fontSize: 14,
     fontWeight: '700',
-    color: PREMIUM_TEXT_SOFT,
     lineHeight: 20,
   },
   contributionValue: {
-    fontSize: 18,
     fontWeight: '800',
     color: PREMIUM_AUTH_CYAN,
     letterSpacing: -0.3,
   },
   disclaimer: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(148, 163, 184, 0.92)',
     lineHeight: 16,
-    marginTop: 2,
+    marginTop: LDS_SPACING.xxs,
   },
-  countdownRow: {
+  countdownChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    alignSelf: 'flex-start',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   countdownText: {
-    fontSize: 14,
     fontWeight: '700',
     color: PREMIUM_AUTH_CYAN,
+    fontVariant: ['tabular-nums'],
   },
   countdownUrgent: {
     color: '#FBBF24',
   },
   countdownExpired: {
-    color: '#F87171',
+    color: LDS_COLOR_ERROR,
   },
   sequenceMuted: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(148, 163, 184, 0.75)',
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: LDS_SPACING.xxs,
   },
   title: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.3,
     textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   bodyMuted: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
-    lineHeight: 19,
+    lineHeight: 18,
     textAlign: 'center',
   },
   loadingTitle: {
-    fontSize: 14,
     fontWeight: '700',
-    color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: LDS_SPACING.xs,
   },
   pollWarningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
     backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(251, 191, 36, 0.28)',
+    ...LDS_ELEVATION.flat,
   },
   pollWarningText: {
     flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
     color: 'rgba(251, 191, 36, 0.95)',
     lineHeight: 17,
   },
   primaryBtnOuter: {
-    borderRadius: 14,
+    borderRadius: LDS_RADIUS.md,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34, 211, 238, 0.28)',
   },
   primaryBtnDisabled: {
     opacity: 0.72,
@@ -695,29 +699,29 @@ const styles = StyleSheet.create({
     opacity: 0.92,
     transform: [{ scale: 0.992 }],
   },
-  primaryBtnGradient: {
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+  primaryBtnSurface: {
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
+  },
+  primaryBtnSurfaceDisabled: {
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
   },
   primaryBtnText: {
-    fontSize: 15,
     fontWeight: '800',
-    color: '#F8FAFF',
-    letterSpacing: -0.2,
+    letterSpacing: 0.3,
   },
-  secondaryBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_BORDER_SLATE,
-    backgroundColor: 'rgba(8, 17, 31, 0.55)',
-    alignItems: 'center',
-    minHeight: 44,
-    justifyContent: 'center',
+  secondaryBtnOuter: {
+    borderRadius: LDS_RADIUS.md,
+    overflow: 'hidden',
   },
   secondaryBtnDisabled: {
     opacity: 0.5,
@@ -725,31 +729,36 @@ const styles = StyleSheet.create({
   secondaryBtnPressed: {
     opacity: 0.88,
   },
+  secondaryBtnSurface: {
+    paddingVertical: LDS_SPACING.sm + LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.md,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
   secondaryBtnText: {
-    fontSize: 14,
     fontWeight: '700',
-    color: PREMIUM_TEXT_SOFT,
   },
   errorCard: {
-    borderRadius: 16,
-    padding: 16,
-    gap: 10,
+    padding: LDS_SPACING.md,
+    gap: LDS_SPACING.sm,
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: 'rgba(248, 113, 113, 0.35)',
+    borderTopColor: 'rgba(248, 113, 113, 0.42)',
+    ...LDS_ELEVATION.flat,
   },
   errorBody: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
     textAlign: 'center',
     lineHeight: 20,
   },
   successIconWrap: {
-    marginBottom: 2,
+    marginBottom: LDS_SPACING.xxs,
   },
   matchedSpinner: {
-    marginTop: 6,
+    marginTop: LDS_SPACING.xs,
   },
 });
