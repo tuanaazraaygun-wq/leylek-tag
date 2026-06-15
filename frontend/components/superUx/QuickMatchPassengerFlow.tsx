@@ -5,17 +5,20 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_AUTH_CTA_GRADIENT,
   PREMIUM_BORDER_SLATE,
-  PREMIUM_NAVY_CARD,
   PREMIUM_NAVY_DEEP,
   PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
   PREMIUM_TEXT_MUTED,
@@ -158,12 +161,22 @@ function FlowHeader({
 }) {
   return (
     <View style={styles.headerRow}>
-      <View style={styles.headerIconOrb}>
-        <Text style={styles.headerEmoji}>⚡</Text>
-      </View>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.headerIconOrb}>
+        <Ionicons name="flash-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+      </GlassSurface>
       <View style={styles.headerTextCol}>
-        <Text style={styles.headerTitle}>Hızlı Eşleşme</Text>
-        <Text style={styles.headerSubtitle}>Yakın sürücülerle hızlı bağlantı</Text>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.guardianChip}>
+          <Ionicons name="compass-outline" size={14} color="rgba(34,211,238,0.82)" />
+          <PremiumText variant="caption" style={styles.guardianChipText}>
+            Hızlı eşleşme
+          </PremiumText>
+        </GlassSurface>
+        <PremiumText variant="step" style={styles.headerTitle}>
+          Yakın sürücülerle eşleş
+        </PremiumText>
+        <PremiumText variant="caption" muted style={styles.headerSubtitle}>
+          Rota hazırsa isteğinizi gönderebilirsiniz
+        </PremiumText>
       </View>
       <Pressable
         onPress={() => void onClose()}
@@ -201,35 +214,41 @@ function RouteSummaryCard({
 }) {
   const distanceText = formatDistanceKm(distanceKm);
   return (
-    <View style={styles.glassCard}>
+    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.glassCard}>
       <View style={styles.routeRow}>
         <Ionicons name="radio-button-on" size={14} color={PREMIUM_AUTH_CYAN} />
-        <Text style={styles.routeLabel} numberOfLines={2}>
+        <PremiumText variant="body" style={styles.routeLabel} numberOfLines={2}>
           {pickupLabel}
-        </Text>
+        </PremiumText>
       </View>
       <View style={styles.routeConnector} />
       <View style={styles.routeRow}>
         <Ionicons name="location" size={14} color={PREMIUM_AUTH_CYAN} />
-        <Text style={styles.routeLabel} numberOfLines={2}>
+        <PremiumText variant="body" style={styles.routeLabel} numberOfLines={2}>
           {dropoffLabel}
-        </Text>
+        </PremiumText>
       </View>
       {distanceText || contributionTl != null ? (
         <View style={styles.routeMetaRow}>
-          {distanceText ? <Text style={styles.routeMetaText}>{distanceText}</Text> : null}
+          {distanceText ? (
+            <PremiumText variant="caption" style={styles.routeMetaText}>
+              {distanceText}
+            </PremiumText>
+          ) : null}
           {contributionTl != null ? (
-            <Text style={styles.routeMetaText}>{contributionTl} TL katkı payı</Text>
+            <PremiumText variant="caption" style={styles.routeMetaText}>
+              {contributionTl} TL katkı payı
+            </PremiumText>
           ) : null}
         </View>
       ) : null}
-    </View>
+    </GlassSurface>
   );
 }
 
 function ProgressDots() {
   return (
-    <View style={styles.dotsRow} accessibilityLabel="Aranıyor">
+    <View style={styles.dotsRow} accessibilityLabel="Uygun sürücüler değerlendiriliyor">
       <View style={[styles.dot, styles.dotActive]} />
       <View style={[styles.dot, styles.dotMid]} />
       <View style={styles.dot} />
@@ -273,7 +292,9 @@ function PrimaryButton({
         {loading ? (
           <ActivityIndicator size="small" color="#F8FAFF" />
         ) : (
-          <Text style={styles.primaryBtnText}>{label}</Text>
+          <PremiumText variant="body" style={styles.primaryBtnText}>
+            {label}
+          </PremiumText>
         )}
       </LinearGradient>
     </Pressable>
@@ -296,12 +317,16 @@ function SecondaryButton({
       accessibilityRole="button"
       accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
-        styles.secondaryBtn,
+        styles.secondaryBtnWrap,
         disabled && styles.secondaryBtnDisabled,
         pressed && !disabled && styles.secondaryBtnPressed,
       ]}
     >
-      <Text style={styles.secondaryBtnText}>{label}</Text>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.secondaryBtn}>
+        <PremiumText variant="body" muted={disabled} style={styles.secondaryBtnText}>
+          {label}
+        </PremiumText>
+      </GlassSurface>
     </Pressable>
   );
 }
@@ -571,7 +596,9 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.centerCard}>
           <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.loadingTitle}>Quick Match durumu kontrol ediliyor…</Text>
+          <PremiumText variant="body" style={styles.loadingTitle}>
+            Eşleşme durumu güncelleniyor
+          </PremiumText>
         </View>
       );
     }
@@ -580,7 +607,9 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.centerCard}>
           <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.loadingTitle}>Hızlı Eşleşme isteğiniz hazırlanıyor…</Text>
+          <PremiumText variant="body" style={styles.loadingTitle}>
+            Hızlı eşleşme isteğiniz hazırlanıyor
+          </PremiumText>
         </View>
       );
     }
@@ -591,8 +620,12 @@ export function QuickMatchPassengerFlow({
           <View style={styles.successIconWrap}>
             <Ionicons name="checkmark-circle" size={56} color={PREMIUM_AUTH_CYAN} />
           </View>
-          <Text style={styles.title}>Eşleşme bulundu</Text>
-          <Text style={styles.bodyMuted}>Yolculuk ekranınız hazırlanıyor.</Text>
+          <PremiumText variant="title" style={styles.title}>
+            Eşleşme bulundu
+          </PremiumText>
+          <PremiumText variant="body" muted style={styles.bodyMuted}>
+            Yolculuk ekranınız hazırlanıyor.
+          </PremiumText>
           <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} style={styles.matchedSpinner} />
         </View>
       );
@@ -602,28 +635,30 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.section}>
           <ProgressDots />
-          <Text style={styles.title}>Yakınınızdaki sürücüler aranıyor</Text>
-          <Text style={styles.bodyMuted}>
-            İsteğiniz uygun sürücülere sırayla iletiliyor.
-          </Text>
-          <Text style={styles.statusHint}>
-            İlk kabul eden sürücüyle eşleşeceksiniz.
-          </Text>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.statusChip}>
+            <PremiumText variant="caption" style={styles.statusChipText}>
+              Eşleşme aranıyor
+            </PremiumText>
+          </GlassSurface>
+          <PremiumText variant="title" style={styles.title}>
+            Uygun sürücüler değerlendiriliyor
+          </PremiumText>
+          <PremiumText variant="body" muted style={styles.bodyMuted}>
+            Uygun sürücüler sırayla değerlendiriliyor.
+          </PremiumText>
+          <PremiumText variant="caption" muted style={styles.statusHint}>
+            İlk onaylayan sürücüyle eşleşirsiniz.
+          </PremiumText>
           <RouteSummaryCard
             pickupLabel={pickupLabel}
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
             contributionTl={displayContribution}
           />
-          {session.request?.attempt_count != null && session.request.attempt_count > 0 ? (
-            <Text style={styles.attemptMuted}>
-              Deneme {session.request.attempt_count}
-            </Text>
-          ) : null}
           {session.pollErrorMessage ? (
-            <Text style={styles.pollWarning}>
-              Bağlantı zayıf, yeniden deneniyor.
-            </Text>
+            <PremiumText variant="caption" style={styles.pollWarning}>
+              Bağlantı zayıf. Kısa süre sonra tekrar denenecek.
+            </PremiumText>
           ) : null}
           <SecondaryButton
             label="İsteği iptal et"
@@ -640,18 +675,20 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'exhausted') {
       return (
         <View style={styles.section}>
-          <Text style={styles.title}>Yakınınızda uygun sürücü bulunamadı.</Text>
-          <Text style={styles.bodyMuted}>
-            İsterseniz tekrar deneyebilir veya Normal Eşleşme ile devam edebilirsiniz.
-          </Text>
+          <PremiumText variant="title" style={styles.title}>
+            Yakınınızda uygun sürücü bulunamadı
+          </PremiumText>
+          <PremiumText variant="body" muted style={styles.bodyMuted}>
+            İsterseniz tekrar deneyebilir veya normal eşleşme ile devam edebilirsiniz.
+          </PremiumText>
           <RouteSummaryCard
             pickupLabel={pickupLabel}
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
             contributionTl={displayContribution}
           />
-          <PrimaryButton label="Tekrar Dene" onPress={handleRetry} />
-          <SecondaryButton label="Normal Eşleşmeye Geç" onPress={handleGoNormal} />
+          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
+          <SecondaryButton label="Normal eşleşmeye geç" onPress={handleGoNormal} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -660,12 +697,14 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'expired') {
       return (
         <View style={styles.section}>
-          <Text style={styles.title}>İstek süresi doldu.</Text>
-          <Text style={styles.bodyMuted}>
-            İsterseniz tekrar deneyebilir veya Normal Eşleşme ile devam edebilirsiniz.
-          </Text>
-          <PrimaryButton label="Tekrar Dene" onPress={handleRetry} />
-          <SecondaryButton label="Normal Eşleşmeye Geç" onPress={handleGoNormal} />
+          <PremiumText variant="title" style={styles.title}>
+            İstek süresi doldu
+          </PremiumText>
+          <PremiumText variant="body" muted style={styles.bodyMuted}>
+            İsterseniz tekrar deneyebilir veya normal eşleşme ile devam edebilirsiniz.
+          </PremiumText>
+          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
+          <SecondaryButton label="Normal eşleşmeye geç" onPress={handleGoNormal} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -674,8 +713,10 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'cancelled') {
       return (
         <View style={styles.section}>
-          <Text style={styles.title}>İstek iptal edildi.</Text>
-          <PrimaryButton label="Tekrar Dene" onPress={handleRetry} />
+          <PremiumText variant="title" style={styles.title}>
+            İstek iptal edildi
+          </PremiumText>
+          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -687,14 +728,16 @@ export function QuickMatchPassengerFlow({
     ) {
       return (
         <View style={styles.section}>
-          <View style={styles.errorCard}>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.errorCard}>
             <Ionicons name="alert-circle-outline" size={28} color="#F87171" />
-            <Text style={styles.errorTitle}>İşlem tamamlanamadı</Text>
-            <Text style={styles.errorBody}>
+            <PremiumText variant="title" style={styles.errorTitle}>
+              İşlem tamamlanamadı
+            </PremiumText>
+            <PremiumText variant="body" muted style={styles.errorBody}>
               {session.errorMessage || 'Bir sorun oluştu. Lütfen tekrar deneyin.'}
-            </Text>
-          </View>
-          <PrimaryButton label="Tekrar Dene" onPress={handleRetry} />
+            </PremiumText>
+          </GlassSurface>
+          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -703,20 +746,22 @@ export function QuickMatchPassengerFlow({
     if (distanceTooFar) {
       return (
         <View style={styles.section}>
-          <View style={styles.errorCard}>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.errorCard}>
             <Ionicons name="map-outline" size={28} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.errorTitle}>Bu rota Hızlı Eşleşme için uygun değil</Text>
-            <Text style={styles.errorBody}>
-              Hızlı Eşleşme en fazla {QUICK_MATCH_MAX_DISTANCE_KM} km mesafede kullanılabilir.
-              Normal Eşleşme ile devam edebilirsiniz.
-            </Text>
-          </View>
+            <PremiumText variant="title" style={styles.errorTitle}>
+              Bu rota hızlı eşleşme için uygun değil
+            </PremiumText>
+            <PremiumText variant="body" muted style={styles.errorBody}>
+              Hızlı eşleşme en fazla {QUICK_MATCH_MAX_DISTANCE_KM} km mesafede kullanılabilir.
+              Normal eşleşme ile devam edebilirsiniz.
+            </PremiumText>
+          </GlassSurface>
           <RouteSummaryCard
             pickupLabel={pickupLabel}
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
           />
-          <SecondaryButton label="Normal Eşleşmeye Geç" onPress={handleGoNormal} />
+          <SecondaryButton label="Normal eşleşmeye geç" onPress={handleGoNormal} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -725,10 +770,12 @@ export function QuickMatchPassengerFlow({
     if (!route) {
       return (
         <View style={styles.centerCard}>
-          <Text style={styles.title}>Rota bilgisi gerekli</Text>
-          <Text style={styles.bodyMuted}>
-            Hızlı Eşleşme için alış ve varış noktası seçilmelidir.
-          </Text>
+          <PremiumText variant="title" style={styles.title}>
+            Rota bilgisi gerekli
+          </PremiumText>
+          <PremiumText variant="body" muted style={styles.bodyMuted}>
+            Hızlı eşleşme için alış ve varış noktası seçilmelidir.
+          </PremiumText>
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -744,16 +791,22 @@ export function QuickMatchPassengerFlow({
           dropoffLabel={dropoffLabel}
           distanceKm={displayDistanceKm}
         />
-        <View style={styles.glassCard}>
-          <Text style={styles.contributionLabel}>Hızlı eşleşme katkı payı</Text>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.glassCard}>
+          <PremiumText variant="caption" muted style={styles.contributionLabel}>
+            Hızlı eşleşme katkı payı
+          </PremiumText>
           {priceLoading ? (
             <View style={styles.priceLoadingRow}>
               <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-              <Text style={styles.bodyMuted}>Önerilen katkı hesaplanıyor…</Text>
+              <PremiumText variant="body" muted style={styles.bodyMuted}>
+                Önerilen katkı hesaplanıyor
+              </PremiumText>
             </View>
           ) : (
             <>
-              <Text style={styles.contributionSubLabel}>Önerilen katkı</Text>
+              <PremiumText variant="caption" muted style={styles.contributionSubLabel}>
+                Önerilen katkı
+              </PremiumText>
               <View style={styles.stepperRow}>
             <Pressable
               onPress={decreaseContribution}
@@ -773,7 +826,9 @@ export function QuickMatchPassengerFlow({
                 color={canDecrease ? PREMIUM_AUTH_CYAN : PREMIUM_TEXT_MUTED}
               />
             </Pressable>
-            <Text style={styles.contributionValue}>{contributionTl} TL</Text>
+            <PremiumText variant="title" style={styles.contributionValue}>
+              {contributionTl} TL
+            </PremiumText>
             <Pressable
               onPress={increaseContribution}
               disabled={!canIncrease}
@@ -793,26 +848,34 @@ export function QuickMatchPassengerFlow({
               />
             </Pressable>
           </View>
-          <Text style={styles.bodyMuted}>
-            Önerilen katkı payının 2 katına kadar artırabilirsiniz
-          </Text>
-          <Text style={styles.disclaimer}>
+          <PremiumText variant="caption" muted style={styles.bodyMuted}>
+            Önerilen katkı payının 2 katına kadar artırabilirsiniz.
+          </PremiumText>
+          <PremiumText variant="caption" muted style={styles.disclaimer}>
             LeylekTAG katkı payını tahsil etmez.{'\n'}
             Katkı payı yolculuk sonrası sürücüyle aranızda.
-          </Text>
+          </PremiumText>
             </>
           )}
-        </View>
-        {priceError ? <Text style={styles.inlineError}>{priceError}</Text> : null}
+        </GlassSurface>
+        {priceError ? (
+          <PremiumText variant="caption" style={styles.inlineError}>
+            {priceError}
+          </PremiumText>
+        ) : null}
         {createGuardMessage ? (
-          <Text style={styles.inlineError}>{createGuardMessage}</Text>
+          <PremiumText variant="caption" style={styles.inlineError}>
+            {createGuardMessage}
+          </PremiumText>
         ) : null}
         {isContributionTooLowRecovery && session.errorMessage ? (
-          <Text style={styles.inlineError}>{session.errorMessage}</Text>
+          <PremiumText variant="caption" style={styles.inlineError}>
+            {session.errorMessage}
+          </PremiumText>
         ) : null}
-        <Text style={styles.ctaPreface}>
-          Rota hazır. Sürücülere hızlı eşleşme isteği göndermek için aşağıdaki butona basın.
-        </Text>
+        <PremiumText variant="caption" muted style={styles.ctaPreface}>
+          Rota hazır. İsteğinizi göndermek için aşağıdaki düğmeye dokunun.
+        </PremiumText>
         <PrimaryButton
           label="Hızlı eşleşme isteği gönder"
           onPress={() => void handleCreate()}
@@ -836,10 +899,8 @@ export function QuickMatchPassengerFlow({
       animationType="slide"
       onRequestClose={() => void handleClose()}
     >
-      <LinearGradient
-        colors={[PREMIUM_NAVY_DEEP, '#0B1220', PREMIUM_NAVY_CARD]}
-        style={styles.modalRoot}
-      >
+      <View style={styles.modalRoot}>
+        <CockpitBackground />
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <FlowHeader onClose={handleClose} closeDisabled={session.isCancelling} />
           <ScrollView
@@ -850,7 +911,7 @@ export function QuickMatchPassengerFlow({
             {renderBody()}
           </ScrollView>
         </SafeAreaView>
-      </LinearGradient>
+      </View>
     </Modal>
   );
 }
@@ -860,57 +921,68 @@ export default memo(QuickMatchPassengerFlow);
 const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
+    backgroundColor: PREMIUM_NAVY_DEEP,
   },
   safe: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 28,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.lg,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.sm,
+    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
     borderBottomColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
   },
   headerIconOrb: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34, 211, 238, 0.32)',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+    ...LDS_ELEVATION.chip,
   },
-  headerEmoji: {
-    fontSize: 22,
-    lineHeight: 26,
+  guardianChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
   },
   headerTextCol: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: LDS_SPACING.xxs,
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
     letterSpacing: -0.2,
   },
   headerSubtitle: {
-    fontSize: 12,
     fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
   },
   closeBtn: {
-    padding: 4,
-    borderRadius: 12,
+    padding: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.md,
   },
   closeBtnDisabled: {
     opacity: 0.45,
@@ -919,23 +991,35 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   section: {
-    gap: 16,
-    paddingTop: 8,
+    gap: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.xs,
   },
   centerCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
-    paddingTop: 48,
-    paddingHorizontal: 8,
+    gap: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xxxl,
+    paddingHorizontal: LDS_SPACING.xs,
   },
   glassCard: {
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
+    padding: LDS_SPACING.md,
+    gap: LDS_SPACING.sm,
     backgroundColor: 'rgba(16, 26, 43, 0.88)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    ...LDS_ELEVATION.chip,
+  },
+  statusChip: {
+    alignSelf: 'center',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
+  },
+  statusChipText: {
+    fontWeight: '700',
+    color: 'rgba(186, 230, 253, 0.92)',
+    letterSpacing: 0.2,
   },
   routeRow: {
     flexDirection: 'row',
@@ -951,7 +1035,6 @@ const styles = StyleSheet.create({
   },
   routeLabel: {
     flex: 1,
-    fontSize: 14,
     fontWeight: '600',
     color: PREMIUM_TEXT_SOFT,
     lineHeight: 20,
@@ -959,66 +1042,53 @@ const styles = StyleSheet.create({
   routeMetaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 4,
+    gap: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xxs,
   },
   routeMetaText: {
-    fontSize: 12,
     fontWeight: '700',
     color: PREMIUM_AUTH_CYAN,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
     letterSpacing: -0.3,
     textAlign: 'center',
   },
   bodyMuted: {
-    fontSize: 14,
     fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
     lineHeight: 20,
     textAlign: 'center',
   },
   ctaPreface: {
-    fontSize: 13,
     fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
     lineHeight: 19,
     textAlign: 'center',
-    marginTop: 4,
-    marginBottom: 12,
-    paddingHorizontal: 4,
+    marginTop: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   statusHint: {
-    fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(186, 201, 222, 0.75)',
     textAlign: 'center',
   },
   loadingTitle: {
-    fontSize: 15,
     fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: LDS_SPACING.xs,
   },
   contributionLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_MUTED,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: LDS_SPACING.xs,
   },
   contributionSubLabel: {
-    fontSize: 12,
     fontWeight: '700',
-    color: PREMIUM_TEXT_MUTED,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: LDS_SPACING.xs,
   },
   priceLoadingRow: {
     flexDirection: 'row',
@@ -1050,35 +1120,24 @@ const styles = StyleSheet.create({
     opacity: 0.88,
   },
   contributionValue: {
-    fontSize: 32,
-    fontWeight: '800',
+    fontWeight: '700',
     color: PREMIUM_AUTH_CYAN,
     minWidth: 120,
     textAlign: 'center',
     letterSpacing: -0.5,
   },
   disclaimer: {
-    fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(148, 163, 184, 0.92)',
     lineHeight: 18,
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: LDS_SPACING.xxs,
   },
   inlineError: {
-    fontSize: 13,
     fontWeight: '600',
     color: '#F87171',
     textAlign: 'center',
   },
-  attemptMuted: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(148, 163, 184, 0.85)',
-    textAlign: 'center',
-  },
   pollWarning: {
-    fontSize: 12,
     fontWeight: '600',
     color: 'rgba(251, 191, 36, 0.92)',
     textAlign: 'center',
@@ -1127,19 +1186,20 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   primaryBtnText: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#F8FAFF',
     letterSpacing: -0.2,
   },
+  secondaryBtnWrap: {
+    width: '100%',
+  },
   secondaryBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_BORDER_SLATE,
-    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
     alignItems: 'center',
+    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+    borderColor: PREMIUM_BORDER_SLATE,
+    ...LDS_ELEVATION.chip,
   },
   secondaryBtnDisabled: {
     opacity: 0.5,
@@ -1148,29 +1208,25 @@ const styles = StyleSheet.create({
     opacity: 0.88,
   },
   secondaryBtnText: {
-    fontSize: 15,
     fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
+    textAlign: 'center',
   },
   errorCard: {
-    borderRadius: 18,
-    padding: 18,
-    gap: 10,
+    padding: LDS_SPACING.md,
+    gap: LDS_SPACING.sm,
     alignItems: 'center',
     backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: 'rgba(248, 113, 113, 0.35)',
+    ...LDS_ELEVATION.chip,
   },
   errorTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
   },
   errorBody: {
-    fontSize: 14,
     fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
     textAlign: 'center',
     lineHeight: 20,
   },
