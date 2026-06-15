@@ -13,6 +13,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { PREMIUM_AUTH_CYAN } from './auth/premiumAuthStyles';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
@@ -131,8 +132,12 @@ export default function QRTripEndModal({
         } catch {
           console.error('QR complete-qr non-JSON:', raw.slice(0, 200));
           appAlert(
-            'Hata',
-            response.ok ? 'Sunucu yanıtı okunamadı' : `Sunucu hatası (${response.status})`,
+            'Yanıt okunamadı',
+            response.ok
+              ? 'Kısa bir süre sonra tekrar deneyin.'
+              : 'Sunucu yanıt vermedi. Kısa bir süre sonra tekrar deneyin.',
+            [{ text: 'Tamam', style: 'default' }],
+            { variant: 'info' },
           );
           return;
         }
@@ -142,11 +147,21 @@ export default function QRTripEndModal({
           onComplete(true, driverUserId, result.driver_name || firstName);
           onClose();
         } else {
-          appAlert('Hata', result.detail || `Yolculuk bitirilemedi (${response.status})`);
+          appAlert(
+            'Tamamlanamadı',
+            result.detail || 'Yolculuk bitirilemedi. Kısa bir süre sonra tekrar deneyin.',
+            [{ text: 'Tamam', style: 'default' }],
+            { variant: 'warning' },
+          );
         }
       } catch (error) {
         console.error('QR complete error:', error);
-        appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+        appAlert(
+          'Bağlantı kurulamadı',
+          'İnternet bağlantını kontrol edip tekrar deneyin.',
+          [{ text: 'Tamam', style: 'default' }],
+          { variant: 'info' },
+        );
       } finally {
         setProcessing(false);
       }
@@ -178,14 +193,24 @@ export default function QRTripEndModal({
       const qrTagId = params.get('t');
 
       if (!driverUserId || !qrTagId) {
-        appAlert('Hata', 'Geçersiz QR kod');
+        appAlert(
+          'Geçersiz kod',
+          'QR kodu okunamadı. Tekrar deneyin.',
+          [{ text: 'Tamam', style: 'default' }],
+          { variant: 'warning' },
+        );
         lastScannedValueRef.current = { data: '', ts: 0 };
         setScanned(false);
         return;
       }
 
       if (qrTagId !== tagId) {
-        appAlert('Hata', 'Bu QR kod bu yolculuğa ait değil');
+        appAlert(
+          'Uyumsuz kod',
+          'Bu QR kod bu yolculuğa ait değil.',
+          [{ text: 'Tamam', style: 'default' }],
+          { variant: 'warning' },
+        );
         lastScannedValueRef.current = { data: '', ts: 0 };
         setScanned(false);
         return;
@@ -202,7 +227,12 @@ export default function QRTripEndModal({
 
   const handlePassengerPaymentConfirm = (method: PaymentMethod) => {
     if (!pendingDriverId) {
-      appAlert('Hata', 'Önce QR kodunu tarayın');
+      appAlert(
+        'Önce tara',
+        'Önce sürücü QR kodunu tarayın.',
+        [{ text: 'Tamam', style: 'default' }],
+        { variant: 'info' },
+      );
       return;
     }
     void submitCompleteQr(method, pendingDriverId);
@@ -210,7 +240,12 @@ export default function QRTripEndModal({
 
   const handleLegacyConfirm = () => {
     if (!legacyPaymentPick || !pendingDriverId) {
-      appAlert('Seçim gerekli', 'Nakit veya kart ile ödemeyi tamamladığınızı seçin.');
+      appAlert(
+        'Seçim gerekli',
+        'Nakit ödeme veya kart seçeneğini işaretleyin.',
+        [{ text: 'Tamam', style: 'default' }],
+        { variant: 'info' },
+      );
       return;
     }
     void submitCompleteQr(legacyPaymentPick, pendingDriverId);
@@ -231,18 +266,21 @@ export default function QRTripEndModal({
     bookingPaymentMethod === 'cash'
       ? 'Nakit ödeme'
       : bookingPaymentMethod === 'card'
-        ? 'Kart'
-        : 'Ödeme onayı';
+        ? 'Kart (yakında)'
+        : 'Ödeme yöntemini seç';
 
   const paymentSubtitle =
     bookingPaymentMethod === 'cash'
       ? 'Teklifinizde nakit seçmiştiniz. Ücreti nakit olarak ödediğinizi onaylayın.'
       : bookingPaymentMethod === 'card'
-        ? 'Teklifinizde kart seçmiştiniz. Ödemeyi kart ile tamamladığınızı onaylayın.'
+        ? 'Kart ödemesi yakında. Şimdilik ödeme kaydını onaylayarak yolculuğu tamamlayın.'
         : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
 
-  const phaseStep =
-    passengerStep === 'payment' && !isDriver ? 'Ödeme onayı' : 'Yolculuk doğrulaması';
+  const phaseStep = isDriver
+    ? 'Yolculuk tamamlandı'
+    : passengerStep === 'choose' || passengerStep === 'payment'
+      ? 'Ödeme yöntemini seç'
+      : 'Yolculuk tamamlandı';
 
   const phaseCaption = isDriver
     ? `${firstName} bu kodu tarasın`
@@ -283,7 +321,7 @@ export default function QRTripEndModal({
             <View style={styles.guardianLiveDot} />
             <Ionicons name="checkmark-done-outline" size={14} color="rgba(34,211,238,0.88)" />
             <PremiumText variant="caption" style={styles.guardianChipText}>
-              Yolculuk tamamlanıyor
+              Yolculuk tamamlandı
             </PremiumText>
           </GlassSurface>
 
@@ -328,7 +366,7 @@ export default function QRTripEndModal({
                   onPress={() => onChooseDriverIban?.()}
                   activeOpacity={0.88}
                   accessibilityRole="button"
-                  accessibilityLabel="Sürücü IBAN'ını gör"
+                  accessibilityLabel="Havale / EFT bilgilerini gör"
                 >
                   <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
                     <View style={styles.chooseOptionIconWrap}>
@@ -336,10 +374,10 @@ export default function QRTripEndModal({
                     </View>
                     <View style={styles.chooseOptionTextCol}>
                       <PremiumText variant="body" style={styles.chooseOptionTitle}>
-                        {'Sürücü IBAN\'ını gör'}
+                        Havale / EFT
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
-                        Havale/EFT ile ödediyseniz
+                        Sürücü hesap bilgilerini görüntüle
                       </PremiumText>
                     </View>
                     <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
@@ -361,7 +399,7 @@ export default function QRTripEndModal({
                         Sürücü QR kodunu tara
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
-                        Nakit ödeme onayı
+                        Nakit ödeme ile tamamla
                       </PremiumText>
                     </View>
                     <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
@@ -396,17 +434,17 @@ export default function QRTripEndModal({
                       </View>
                       {!cameraReady && !processing ? (
                         <View style={styles.cameraStatusOverlay}>
-                          <ActivityIndicator size="large" color="#22D3EE" />
+                          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
                           <PremiumText variant="caption" muted style={styles.processingText}>
-                            Kamera hazırlanıyor…
+                            Kamera hazırlanıyor
                           </PremiumText>
                         </View>
                       ) : null}
                       {processing ? (
                         <View style={styles.cameraStatusOverlay}>
-                          <ActivityIndicator size="large" color="#22D3EE" />
+                          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
                           <PremiumText variant="caption" muted style={styles.processingText}>
-                            İşleniyor…
+                            İşlem hazırlanıyor
                           </PremiumText>
                         </View>
                       ) : null}
@@ -415,18 +453,20 @@ export default function QRTripEndModal({
                 ) : (
                   <View style={styles.permCenter}>
                     <PremiumText variant="body" muted style={styles.permLabel}>
-                      Kamera izni gerekli
+                      Kameraya erişim gerekli
                     </PremiumText>
                     <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission} activeOpacity={0.88}>
-                      <PremiumText variant="body" style={styles.permissionBtnText}>
-                        İzin ver
-                      </PremiumText>
+                      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.permissionBtnGlass}>
+                        <PremiumText variant="body" style={styles.permissionBtnText}>
+                          İzin ver
+                        </PremiumText>
+                      </GlassSurface>
                     </TouchableOpacity>
                   </View>
                 )}
 
                 <PremiumText variant="caption" muted style={styles.hint}>
-                  Ardından ödeme yönteminizi onaylayacaksınız
+                  Ardından ödeme yöntemini onaylayacaksın
                 </PremiumText>
               </View>
             ) : (
@@ -451,7 +491,7 @@ export default function QRTripEndModal({
                     >
                       <Ionicons name="cash-outline" size={24} color="rgba(34,211,238,0.92)" />
                       <PremiumText variant="body" style={styles.primaryPayText}>
-                        Nakit ödemeyi tamamladım
+                        Nakit ödemeyi onayla
                       </PremiumText>
                     </TouchableOpacity>
                   )}
@@ -465,7 +505,7 @@ export default function QRTripEndModal({
                     >
                       <Ionicons name="card-outline" size={24} color="rgba(34,211,238,0.92)" />
                       <PremiumText variant="body" style={styles.primaryPayText}>
-                        Kart ile ödemeyi tamamladım
+                        Kart ödemesini onayla
                       </PremiumText>
                     </TouchableOpacity>
                   )}
@@ -477,58 +517,70 @@ export default function QRTripEndModal({
                       </PremiumText>
                       <View style={styles.legacyRow}>
                         <TouchableOpacity
-                          style={[
-                            styles.legacyChip,
-                            legacyPaymentPick === 'cash' && styles.legacyChipActive,
-                          ]}
+                          style={styles.legacyChipWrap}
                           onPress={() => setLegacyPaymentPick('cash')}
                           activeOpacity={0.88}
                         >
-                          <Ionicons
-                            name="cash-outline"
-                            size={22}
-                            color={
-                              legacyPaymentPick === 'cash'
-                                ? 'rgba(243,248,255,0.94)'
-                                : 'rgba(34,211,238,0.92)'
-                            }
-                          />
-                          <PremiumText
-                            variant="body"
+                          <GlassSurface
+                            variant="plain"
+                            borderRadius={LDS_RADIUS.md}
                             style={[
-                              styles.legacyChipText,
-                              legacyPaymentPick === 'cash' && styles.legacyChipTextActive,
+                              styles.legacyChip,
+                              legacyPaymentPick === 'cash' && styles.legacyChipActive,
                             ]}
                           >
-                            Nakit
-                          </PremiumText>
+                            <Ionicons
+                              name="cash-outline"
+                              size={22}
+                              color={
+                                legacyPaymentPick === 'cash'
+                                  ? 'rgba(243,248,255,0.94)'
+                                  : 'rgba(34,211,238,0.92)'
+                              }
+                            />
+                            <PremiumText
+                              variant="body"
+                              style={[
+                                styles.legacyChipText,
+                                legacyPaymentPick === 'cash' && styles.legacyChipTextActive,
+                              ]}
+                            >
+                              Nakit ödeme
+                            </PremiumText>
+                          </GlassSurface>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[
-                            styles.legacyChip,
-                            legacyPaymentPick === 'card' && styles.legacyChipActive,
-                          ]}
+                          style={styles.legacyChipWrap}
                           onPress={() => setLegacyPaymentPick('card')}
                           activeOpacity={0.88}
                         >
-                          <Ionicons
-                            name="card-outline"
-                            size={22}
-                            color={
-                              legacyPaymentPick === 'card'
-                                ? 'rgba(243,248,255,0.94)'
-                                : 'rgba(34,211,238,0.92)'
-                            }
-                          />
-                          <PremiumText
-                            variant="body"
+                          <GlassSurface
+                            variant="plain"
+                            borderRadius={LDS_RADIUS.md}
                             style={[
-                              styles.legacyChipText,
-                              legacyPaymentPick === 'card' && styles.legacyChipTextActive,
+                              styles.legacyChip,
+                              legacyPaymentPick === 'card' && styles.legacyChipActive,
                             ]}
                           >
-                            Kart
-                          </PremiumText>
+                            <Ionicons
+                              name="card-outline"
+                              size={22}
+                              color={
+                                legacyPaymentPick === 'card'
+                                  ? 'rgba(243,248,255,0.94)'
+                                  : 'rgba(34,211,238,0.92)'
+                              }
+                            />
+                            <PremiumText
+                              variant="body"
+                              style={[
+                                styles.legacyChipText,
+                                legacyPaymentPick === 'card' && styles.legacyChipTextActive,
+                              ]}
+                            >
+                              Kart (yakında)
+                            </PremiumText>
+                          </GlassSurface>
                         </TouchableOpacity>
                       </View>
                       <TouchableOpacity
@@ -549,9 +601,9 @@ export default function QRTripEndModal({
 
                   {processing ? (
                     <View style={styles.processingRow}>
-                      <ActivityIndicator size="small" color="#22D3EE" />
+                      <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
                       <PremiumText variant="caption" muted style={styles.processingInlineText}>
-                        Tamamlanıyor…
+                        Yolculuk tamamlanıyor
                       </PremiumText>
                     </View>
                   ) : null}
@@ -649,9 +701,9 @@ const styles = StyleSheet.create({
     ...LDS_ELEVATION.flat,
   },
   guardianLiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: LDS_SPACING.xxs + 2,
+    height: LDS_SPACING.xxs + 2,
+    borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(34,211,238,0.92)',
   },
   guardianChipText: {
@@ -860,9 +912,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   permissionBtn: {
+    alignSelf: 'stretch',
+  },
+  permissionBtnGlass: {
     paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.lg,
-    borderRadius: LDS_RADIUS.md,
+    alignItems: 'center',
     backgroundColor: 'rgba(16,26,43,0.9)',
     borderWidth: LDS_BORDER_WIDTH.emphasis,
     borderColor: LDS_BORDER_COLOR.selected,
@@ -944,6 +999,9 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.sm,
     marginBottom: LDS_SPACING.sm,
   },
+  legacyChipWrap: {
+    flex: 1,
+  },
   legacyChip: {
     flex: 1,
     flexDirection: 'row',
@@ -951,10 +1009,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: LDS_SPACING.xs,
     paddingVertical: LDS_SPACING.sm,
-    borderRadius: LDS_RADIUS.md,
     backgroundColor: 'rgba(8,17,31,0.55)',
-    borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
   },
   legacyChipActive: {
     backgroundColor: 'rgba(16,26,43,0.9)',
