@@ -266,7 +266,9 @@ export default function PassengerWaitingScreen({
   
   // Paylaş
   const handleShare = async () => {
-    console.log('[PAX_DEBUG] PassengerWaitingScreen handleShare');
+    if (__DEV__) {
+      console.log('[PAX_DEBUG] PassengerWaitingScreen handleShare');
+    }
     try {
       callCheck('Share.share', Share.share);
       if (typeof Share.share !== 'function') return;
@@ -292,26 +294,26 @@ export default function PassengerWaitingScreen({
   // Durum mesajı
   const getStatusMessage = () => {
     if (dispatchStatus.status === 'matched') {
-      return 'Eşleşme sağlandı!';
+      return 'Eşleşme sağlandı';
     }
     if (dispatchEligibleCount > 0) {
-      return `Kuyrukta ${dispatchEligibleCount} uygun sürücü var. Teklifiniz sırayla iletiliyor.`;
+      return 'Teklifin uygun sürücülere iletiliyor';
     }
-    return 'Uygun sürücü aranıyor. Çevredeki sürücüler mesafe ve uygunluk durumuna göre değerlendiriliyor.';
+    return 'Uygun sürücü aranıyor';
   };
-  
+
   // Alt durum mesajı
   const getSubStatusMessage = () => {
     if (dispatchStatus.status === 'matched') {
-      return 'Sürücünüz yola çıkıyor';
+      return 'Eşleşme tamamlanıyor';
     }
     if (dispatchStatus.current_driver_index > 0 && dispatchEligibleCount > 0) {
-      return `${dispatchStatus.current_driver_index}. sürücüye teklif gösterildi`;
+      return 'Sürücüler değerlendiriliyor';
     }
     if (isDispatchEligibleSearching) {
-      return 'Bölgedeki çevrimiçi sürücüler mesafe ve uygunluk durumuna göre değerlendiriliyor.';
+      return 'Sürücüler değerlendiriliyor';
     }
-    return 'Teklifiniz uygun sürücülere sırayla iletiliyor.';
+    return 'İlk teklif geldiğinde karar sizde';
   };
 
   const destinationMarkerCoord = destinationLocation
@@ -353,10 +355,10 @@ export default function PassengerWaitingScreen({
 
           <View style={styles.phaseBlock}>
             <PremiumText variant="step" style={styles.phaseStep}>
-              Yolculuk başladı
+              Eşleşme aranıyor
             </PremiumText>
             <PremiumText variant="caption" muted style={styles.phaseCaption}>
-              LeylekTAG senin adına çalışıyor · eşleşme bekleniyor
+              LeylekTAG uygun sürücüleri sırayla değerlendiriyor
             </PremiumText>
             <View style={styles.priceChip}>
               <PremiumText variant="body" style={styles.priceText}>
@@ -460,7 +462,7 @@ export default function PassengerWaitingScreen({
             </Text>
             {userLocation && !isNativeGoogleMapsSupported() ? (
               <Text style={styles.mapPlaceholderSub}>
-                Uygun sürücüler mesafe ve uygunluk durumuna göre değerlendiriliyor.
+                Sürücüler değerlendiriliyor
               </Text>
             ) : null}
           </View>
@@ -559,7 +561,7 @@ export default function PassengerWaitingScreen({
         ]}
       >
         <TouchableOpacity style={styles.cancelTagButton} onPress={onCancel} activeOpacity={0.88}>
-          <Text style={styles.cancelTagButtonText}>Teklifi İptal Et</Text>
+          <Text style={styles.cancelTagButtonText}>Teklifi iptal et</Text>
         </TouchableOpacity>
       </View>
       
