@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -21,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { appAlert } from '../contexts/AppAlertContext';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
@@ -707,7 +709,15 @@ export default function CreateListingModal({
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== 'granted') {
-        Alert.alert('Konum izni gerekli', 'Konumunu kullanmak için ayarlardan konum iznini aç.');
+        appAlert(
+          'Konum izni gerekli',
+          'Konumunu kullanarak kalkış veya varış noktası seçebilmek için konum izni gereklidir.',
+          [
+            { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+            { text: 'Şimdi değil', style: 'cancel' },
+          ],
+          { tone: 'warning' },
+        );
         return;
       }
 
@@ -742,7 +752,12 @@ export default function CreateListingModal({
             ),
           ]);
         } catch {
-          Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
+          appAlert(
+            'Konum hazırlanıyor',
+            'Konumunuz şu an alınamadı. Başka adres seçerek devam edebilirsiniz.',
+            [{ text: 'Tamam' }],
+            { tone: 'info', variant: 'info', autoDismissMs: 3000, cancelable: true },
+          );
           return;
         }
       }
@@ -750,13 +765,20 @@ export default function CreateListingModal({
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
+        appAlert(
+          'Konum hazırlanıyor',
+          'Konumunuz şu an alınamadı. Başka adres seçerek devam edebilirsiniz.',
+          [{ text: 'Tamam' }],
+          { tone: 'info', variant: 'info', autoDismissMs: 3000, cancelable: true },
+        );
         return;
       }
       if (cityCtx && !isLatLngWithinRegisteredCity(cityCtx, lat, lng)) {
-        Alert.alert(
+        appAlert(
           'Şehir sınırı',
           'Anlık konumun seçili şehir alanı dışında görünüyor. Haritadan adres seçebilirsin.',
+          [{ text: 'Tamam' }],
+          { tone: 'info', variant: 'info', autoDismissMs: 3000, cancelable: true },
         );
         return;
       }
@@ -828,7 +850,12 @@ export default function CreateListingModal({
         })();
       }
     } catch {
-      Alert.alert('Konum', 'Konum alınamadı, lütfen başka adres seç.');
+      appAlert(
+        'Konum hazırlanıyor',
+        'Konumunuz şu an alınamadı. Başka adres seçerek devam edebilirsiniz.',
+        [{ text: 'Tamam' }],
+        { tone: 'info', variant: 'info', autoDismissMs: 3000, cancelable: true },
+      );
     } finally {
       gpsFetchingRef.current = false;
       setLocationChoiceLoading(false);
