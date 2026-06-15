@@ -2,6 +2,7 @@ import { Platform, StyleSheet } from 'react-native';
 import {
   PREMIUM_NAVY_DEEP,
   PREMIUM_ROLE_CARD_BG,
+  PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
@@ -10,7 +11,7 @@ import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 
 /**
- * Sürücü idle kokpit — üst operasyon şeridi (P-DRIVER-1 ground + P-DRIVER-2 CockpitBackground).
+ * Sürücü idle kokpit — shell stilleri (P-DRIVER-1..3).
  * Yalnızca presentation; logic / child component API değişmez.
  */
 export const driverWaitingShellStyles = StyleSheet.create({
@@ -51,14 +52,29 @@ export const driverWaitingShellStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cockpitHeaderTitle: {
+  cockpitHeaderTitleCol: {
     flex: 1,
     flexShrink: 1,
-    textAlign: 'center',
-    fontSize: 14,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  cockpitHeaderBrand: {
+    fontSize: 15,
     fontWeight: '800',
     color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.15,
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  cockpitHeaderCaption: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    letterSpacing: 0.25,
+    textAlign: 'center',
+    opacity: 0.92,
   },
   cockpitTrustPad: {
     paddingTop: LDS_SPACING.xxs,

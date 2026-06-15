@@ -17729,9 +17729,18 @@ function DriverDashboard({
                   >
                     <Ionicons name="chevron-back" size={24} color={PREMIUM_AUTH_CYAN} />
                   </TouchableOpacity>
-                  <Text style={dws.cockpitHeaderTitle} numberOfLines={1}>
-                    Sürücü paneli
-                  </Text>
+                  <View
+                    style={dws.cockpitHeaderTitleCol}
+                    accessibilityRole="header"
+                    accessibilityLabel="LeylekTAG. Sürücü kokpiti"
+                  >
+                    <Text style={dws.cockpitHeaderBrand} numberOfLines={1}>
+                      LeylekTAG
+                    </Text>
+                    <Text style={dws.cockpitHeaderCaption} numberOfLines={1}>
+                      Sürücü kokpiti
+                    </Text>
+                  </View>
                   <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
                   <TouchableOpacity
                     style={dws.cockpitHeaderBtn}
