@@ -6,12 +6,15 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { LinearGradient } from 'expo-linear-gradient';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import type { TripPaymentDetailsResponse } from '../lib/tripPaymentApi';
 import { appAlert } from '../contexts/AppAlertContext';
 
@@ -83,12 +86,28 @@ export default function DriverPaymentDetailsSheet({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Kapat" />
-        <View style={styles.sheet}>
+
+        <GlassSurface variant="panel" style={styles.sheet} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
-            <Text style={styles.title}>Sürücü ödeme bilgileri</Text>
-            <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Kapat">
-              <Ionicons name="close" size={22} color="rgba(172, 188, 212, 0.95)" />
+            <View style={styles.headerTextCol}>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                Ödeme bilgileri
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                Transfer bilgilerini dikkatlice kontrol et.
+              </PremiumText>
+            </View>
+            <Pressable
+              onPress={onClose}
+              hitSlop={12}
+              style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Kapat"
+            >
+              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
             </Pressable>
           </View>
 
@@ -96,54 +115,80 @@ export default function DriverPaymentDetailsSheet({
             {loading ? (
               <View style={styles.centerBlock}>
                 <ActivityIndicator size="small" color="#22D3EE" />
-                <Text style={styles.loadingText}>Ödeme bilgileri yükleniyor…</Text>
+                <PremiumText variant="caption" muted style={styles.loadingText}>
+                  Ödeme bilgileri yükleniyor…
+                </PremiumText>
               </View>
             ) : null}
 
             {!loading && error ? (
-              <View style={styles.errorCard}>
-                <Ionicons name="information-circle-outline" size={20} color="#22D3EE" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
+              <GlassSurface variant="plain" style={styles.errorCard} borderRadius={LDS_RADIUS.md}>
+                <Ionicons name="information-circle-outline" size={20} color="rgba(34,211,238,0.88)" />
+                <PremiumText variant="caption" style={styles.errorText}>
+                  {error}
+                </PremiumText>
+              </GlassSurface>
             ) : null}
 
             {!loading && !error && details ? (
               <>
-                <Text style={styles.fieldLabel}>Hesap sahibi</Text>
-                <Text style={styles.fieldValue}>{holderName || '—'}</Text>
+                <PremiumText variant="caption" muted style={styles.fieldLabel}>
+                  Hesap sahibi
+                </PremiumText>
+                <GlassSurface variant="plain" style={styles.fieldCard} borderRadius={LDS_RADIUS.md}>
+                  <PremiumText variant="body" style={styles.fieldValue}>
+                    {holderName || '—'}
+                  </PremiumText>
+                </GlassSurface>
 
-                <Text style={styles.fieldLabel}>IBAN</Text>
-                <Text style={styles.ibanValue} selectable>
-                  {iban || '—'}
-                </Text>
+                <PremiumText variant="caption" muted style={styles.fieldLabel}>
+                  IBAN
+                </PremiumText>
+                <GlassSurface variant="plain" style={styles.fieldCard} borderRadius={LDS_RADIUS.md}>
+                  <PremiumText variant="body" selectable style={styles.ibanValue}>
+                    {iban || '—'}
+                  </PremiumText>
+                </GlassSurface>
 
-                <Pressable style={styles.secondaryBtn} onPress={() => void handleCopyName()} disabled={!holderName}>
-                  <Ionicons name="copy-outline" size={18} color="#22D3EE" />
-                  <Text style={styles.secondaryBtnText}>Ad soyad kopyala</Text>
+                <Pressable
+                  style={[styles.secondaryBtn, !holderName && styles.btnDisabled]}
+                  onPress={() => void handleCopyName()}
+                  disabled={!holderName}
+                >
+                  <Ionicons name="copy-outline" size={18} color="rgba(34,211,238,0.92)" />
+                  <PremiumText variant="caption" style={styles.secondaryBtnText}>
+                    Ad soyad kopyala
+                  </PremiumText>
                 </Pressable>
 
-                <Pressable style={styles.secondaryBtn} onPress={() => void handleCopyIban()} disabled={!iban}>
-                  <Ionicons name="copy-outline" size={18} color="#22D3EE" />
-                  <Text style={styles.secondaryBtnText}>IBAN kopyala</Text>
+                <Pressable
+                  style={[styles.secondaryBtn, !iban && styles.btnDisabled]}
+                  onPress={() => void handleCopyIban()}
+                  disabled={!iban}
+                >
+                  <Ionicons name="copy-outline" size={18} color="rgba(34,211,238,0.92)" />
+                  <PremiumText variant="caption" style={styles.secondaryBtnText}>
+                    IBAN kopyala
+                  </PremiumText>
                 </Pressable>
 
-                <Text style={styles.hint}>
+                <PremiumText variant="caption" muted style={styles.hint}>
                   Havale/EFT ile ödeme yapıyorsanız bilgileri kontrol edip sürücüye gönderin.
-                </Text>
+                </PremiumText>
               </>
             ) : null}
           </ScrollView>
 
           <Pressable
-            style={[styles.primaryWrap, (loading || !!error) && styles.primaryDisabled]}
+            style={[styles.primaryBtn, (loading || !!error) && styles.primaryDisabled]}
             disabled={loading || !!error}
             onPress={handlePrimary}
           >
-            <LinearGradient colors={['#22D3EE', '#0EA5E9', '#2563EB']} style={styles.primaryGradient}>
-              <Text style={styles.primaryText}>{mode === 'trip_end' ? 'Ödemeyi yaptım' : 'Tamam'}</Text>
-            </LinearGradient>
+            <PremiumText variant="body" style={styles.primaryText}>
+              {mode === 'trip_end' ? 'Ödemeyi yaptım' : 'Tamam'}
+            </PremiumText>
           </Pressable>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );
@@ -152,121 +197,144 @@ export default function DriverPaymentDetailsSheet({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(1, 8, 24, 0.72)',
     justifyContent: 'flex-end',
+  },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
   },
   sheet: {
     maxHeight: '88%',
-    backgroundColor: '#0B1220',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderBottomWidth: 0,
-    paddingBottom: 16,
+    paddingBottom: LDS_SPACING.md,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    ...LDS_ELEVATION.cockpit,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.sm,
+    gap: LDS_SPACING.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(30, 58, 95, 0.55)',
+    borderBottomColor: LDS_BORDER_COLOR.card,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
+  headerTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: LDS_SPACING.xxs,
+  },
+  phaseStep: {
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
+    lineHeight: 18,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   body: {
-    padding: 16,
-    gap: 8,
-    paddingBottom: 12,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
   },
   centerBlock: {
     alignItems: 'center',
-    paddingVertical: 24,
-    gap: 10,
+    paddingVertical: LDS_SPACING.lg,
+    gap: LDS_SPACING.sm,
   },
   loadingText: {
-    fontSize: 13,
-    color: 'rgba(172, 188, 212, 0.92)',
+    fontWeight: '600',
   },
   errorCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(16, 26, 43, 0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.18)',
+    gap: LDS_SPACING.sm,
+    padding: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
   errorText: {
     flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    color: 'rgba(172, 188, 212, 0.95)',
+    lineHeight: 18,
   },
   fieldLabel: {
-    marginTop: 4,
-    fontSize: 13,
+    marginTop: LDS_SPACING.xs,
     fontWeight: '700',
-    color: 'rgba(172, 188, 212, 0.95)',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  fieldCard: {
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
   fieldValue: {
-    fontSize: 16,
     fontWeight: '600',
-    color: 'rgba(243, 248, 255, 0.94)',
   },
   ibanValue: {
-    fontSize: 16,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.6,
-    color: '#22D3EE',
+    color: 'rgba(186, 230, 253, 0.95)',
   },
   secondaryBtn: {
-    marginTop: 6,
+    marginTop: LDS_SPACING.xs,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   secondaryBtnText: {
-    fontSize: 14,
     fontWeight: '700',
-    color: '#22D3EE',
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
+  btnDisabled: {
+    opacity: 0.45,
   },
   hint: {
-    marginTop: 8,
-    fontSize: 12,
+    marginTop: LDS_SPACING.xs,
     lineHeight: 18,
-    color: 'rgba(148, 163, 184, 0.88)',
   },
-  primaryWrap: {
-    marginHorizontal: 16,
-    marginTop: 4,
-    borderRadius: 12,
-    overflow: 'hidden',
+  primaryBtn: {
+    marginHorizontal: LDS_SPACING.lg,
+    marginTop: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   primaryDisabled: {
     opacity: 0.55,
   },
-  primaryGradient: {
-    paddingVertical: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   primaryText: {
-    fontSize: 15,
     fontWeight: '800',
-    color: '#08111F',
+    letterSpacing: 0.2,
   },
 });
