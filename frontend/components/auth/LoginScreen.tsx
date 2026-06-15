@@ -79,7 +79,7 @@ export function LoginScreen({
         <LoginBrandHeader usableWidth={columnW} isCompact={isCompact} isShort={isShort} theme="premium" />
 
         <PremiumGlassShell compactPadding={isShort}>
-          <Text style={pa.phoneLabel}>Telefon Numaranız</Text>
+          <Text style={pa.phoneLabel}>Telefon numaranız</Text>
           <View style={pa.inputShell}>
             <Ionicons name="call-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
             <TextInput
@@ -120,7 +120,7 @@ export function LoginScreen({
           </View>
 
           <PremiumGradientCtaButton
-            label="DEVAM ET →"
+            label="Devam et"
             disabled={blocked}
             onPress={() => {
               void tapButtonHaptic();
@@ -177,19 +177,19 @@ export function LoginScreen({
           <View style={pa.trustRow}>
             <View style={pa.trustCol}>
               <Ionicons name="shield-checkmark-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-              <Text style={pa.trustTitle}>GÜVENLİ</Text>
+              <Text style={pa.trustTitle}>Güvenli</Text>
               <Text style={pa.trustSub}>Korunan yolculuk</Text>
             </View>
             <View style={pa.trustDivider} />
             <View style={pa.trustCol}>
               <Ionicons name="flash-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-              <Text style={pa.trustTitle}>HIZLI</Text>
+              <Text style={pa.trustTitle}>Hızlı</Text>
               <Text style={pa.trustSub}>Anında eşleşme</Text>
             </View>
             <View style={pa.trustDivider} />
             <View style={pa.trustCol}>
               <Ionicons name="body-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-              <Text style={pa.trustTitle}>KONFORLU</Text>
+              <Text style={pa.trustTitle}>Konforlu</Text>
               <Text style={pa.trustSub}>Premium deneyim</Text>
             </View>
           </View>

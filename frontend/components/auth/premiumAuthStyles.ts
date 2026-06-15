@@ -133,11 +133,10 @@ export const premiumAuthStyles = StyleSheet.create({
   phoneLabel: {
     alignSelf: 'stretch',
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.35,
+    fontWeight: '600',
+    letterSpacing: 0.05,
     color: PREMIUM_TEXT_SOFT,
     marginBottom: 6,
-    textTransform: 'uppercase',
   },
   otpHint: {
     alignSelf: 'stretch',
@@ -148,6 +147,7 @@ export const premiumAuthStyles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
     paddingHorizontal: 4,
+    letterSpacing: 0.02,
   },
   /** Telefon girişi */
   inputShell: {
@@ -288,7 +288,7 @@ export const premiumAuthStyles = StyleSheet.create({
     color: PREMIUM_TEXT_SOFT,
     fontSize: 16,
     fontWeight: '800',
-    letterSpacing: 1.35,
+    letterSpacing: 0.1,
     textAlign: 'center',
     ...Platform.select({
       android: {
@@ -314,10 +314,9 @@ export const premiumAuthStyles = StyleSheet.create({
   },
   veyaLabel: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: 'rgba(148,163,184,0.95)',
-    letterSpacing: 0.35,
-    textTransform: 'lowercase',
+    letterSpacing: 0.04,
   },
 
   outlineGlass: {
@@ -336,8 +335,8 @@ export const premiumAuthStyles = StyleSheet.create({
   outlineLabel: {
     color: PREMIUM_TEXT_SOFT,
     fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontWeight: '700',
+    letterSpacing: 0.06,
   },
   forgotWrap: {
     alignSelf: 'center',
@@ -362,9 +361,9 @@ export const premiumAuthStyles = StyleSheet.create({
   },
   otpBackText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: 'rgba(226,232,240,0.78)',
-    letterSpacing: 0.25,
+    letterSpacing: 0.04,
     textAlign: 'center',
     textDecorationLine: 'underline',
     textDecorationColor: 'rgba(148,163,184,0.35)',
@@ -425,12 +424,11 @@ export const premiumAuthStyles = StyleSheet.create({
   },
   trustTitle: {
     marginTop: 2,
-    fontSize: 9.8,
-    fontWeight: '900',
-    letterSpacing: 0.58,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.04,
     color: PREMIUM_TEXT_SOFT,
     textAlign: 'center',
-    textTransform: 'uppercase',
   },
   trustSub: {
     fontSize: 9,

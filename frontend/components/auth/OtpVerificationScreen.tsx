@@ -69,7 +69,7 @@ export function OtpVerificationScreen({
         {countdownSlot}
 
         <PremiumGradientCtaButton
-          label="DOĞRULA"
+          label="Doğrula"
           disabled={ctaLooksDisabled}
           onPress={() => {
             void tapButtonHaptic();
@@ -86,7 +86,7 @@ export function OtpVerificationScreen({
             onBack();
           }}
         >
-          <Text style={pa.otpBackText}>Geri Dön</Text>
+          <Text style={pa.otpBackText}>Geri dön</Text>
         </TouchableOpacity>
       </PremiumGlassShell>
     </PremiumAuthScreenShell>
