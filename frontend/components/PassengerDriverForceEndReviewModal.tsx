@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   Modal,
@@ -9,7 +8,11 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,6 +57,8 @@ export default function PassengerDriverForceEndReviewModal({
     }
   }, [visible, scaleAnim, opacityAnim]);
 
+  const eventLine = title?.trim() ? title.trim() : 'Sürücü eşleşmeyi zorla bitirdi';
+
   if (!visible) return null;
 
   return (
@@ -68,45 +73,62 @@ export default function PassengerDriverForceEndReviewModal({
         <View style={[StyleSheet.absoluteFill, styles.backdrop]} />
         <Animated.View
           style={[
-            styles.modalContainer,
+            styles.modalWrap,
             {
               opacity: opacityAnim,
               transform: [{ scale: scaleAnim }],
             },
           ]}
         >
-          <View style={styles.iconContainer}>
-            <LinearGradient
-              colors={['rgba(8,17,31,0.96)', 'rgba(16,26,43,0.92)', '#1E3A5F']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.iconGradient}
-            >
-              <Ionicons name="alert-circle" size={40} color="#22D3EE" />
-            </LinearGradient>
-          </View>
-          <Text style={styles.title}>
-            {title?.trim() ? title.trim() : 'Sürücü eşleşmeyi zorla bitirdi'}
-          </Text>
-          <Text style={styles.description}>Bu bitişi onaylıyor musunuz?</Text>
-          <View style={styles.buttonColumn}>
-            <TouchableOpacity
-              style={[styles.primaryBtn, submitting && styles.btnDisabled]}
-              onPress={() => void onConfirm()}
-              activeOpacity={0.88}
-              disabled={submitting}
-            >
-              <Text style={styles.primaryBtnText}>{submitting ? 'Gönderiliyor…' : 'Onaylıyorum'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
-              onPress={() => void onReject()}
-              activeOpacity={0.88}
-              disabled={submitting}
-            >
-              <Text style={styles.secondaryBtnText}>{submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}</Text>
-            </TouchableOpacity>
-          </View>
+          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.modalContainer}>
+            <View style={styles.iconContainer}>
+              <View style={styles.iconOrb}>
+                <Ionicons name="alert-circle-outline" size={32} color="rgba(253,224,71,0.92)" />
+              </View>
+            </View>
+
+            <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+              <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.82)" />
+              <PremiumText variant="caption" style={styles.guardianChipText}>
+                Bitiş onayı
+              </PremiumText>
+            </GlassSurface>
+
+            <PremiumText variant="body" muted style={styles.eventLine}>
+              {eventLine}
+            </PremiumText>
+
+            <PremiumText variant="title" style={styles.questionTitle}>
+              Bu bitişi onaylıyor musunuz?
+            </PremiumText>
+
+            <PremiumText variant="caption" muted style={styles.description}>
+              Yanıtınız yolculuk kaydına işlenir. Lütfen durumu sakin şekilde değerlendirin.
+            </PremiumText>
+
+            <View style={styles.buttonColumn}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                onPress={() => void onConfirm()}
+                activeOpacity={0.88}
+                disabled={submitting}
+              >
+                <PremiumText variant="body" style={styles.primaryBtnText}>
+                  {submitting ? 'Gönderiliyor…' : 'Onaylıyorum'}
+                </PremiumText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+                onPress={() => void onReject()}
+                activeOpacity={0.88}
+                disabled={submitting}
+              >
+                <PremiumText variant="body" muted style={styles.secondaryBtnText}>
+                  {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
+                </PremiumText>
+              </TouchableOpacity>
+            </View>
+          </GlassSurface>
         </Animated.View>
       </View>
     </Modal>
@@ -118,90 +140,111 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: LDS_SPACING.md,
   },
   backdrop: {
-    backgroundColor: 'rgba(8,17,31,0.78)',
+    backgroundColor: 'rgba(8,17,31,0.72)',
   },
-  modalContainer: {
+  modalWrap: {
     width: SCREEN_WIDTH * 0.88,
     maxWidth: 380,
-    backgroundColor: 'rgba(16,26,43,0.88)',
-    borderRadius: 22,
-    padding: 22,
+    alignSelf: 'center',
+  },
+  modalContainer: {
+    width: '100%',
+    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.22)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 22,
-    elevation: 20,
+    ...LDS_ELEVATION.cockpit,
   },
   iconContainer: {
-    marginBottom: 14,
+    marginBottom: LDS_SPACING.sm,
   },
-  iconGradient: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: 'center',
+  iconOrb: {
+    width: 64,
+    height: 64,
+    borderRadius: LDS_RADIUS.full,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.28)',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(251,191,36,0.38)',
+    borderTopColor: 'rgba(253,224,71,0.28)',
+    ...LDS_ELEVATION.flat,
   },
-  title: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.94)',
-    marginBottom: 10,
+  guardianChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
+  eventLine: {
     textAlign: 'center',
+    marginBottom: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.xxs,
+    lineHeight: 22,
+  },
+  questionTitle: {
+    textAlign: 'center',
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   description: {
-    fontSize: 15,
-    color: 'rgba(186,201,222,0.82)',
     textAlign: 'center',
-    marginBottom: 22,
-    lineHeight: 22,
+    marginBottom: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.xs,
+    lineHeight: 18,
   },
   buttonColumn: {
     width: '100%',
-    gap: 12,
+    gap: LDS_SPACING.sm,
   },
   primaryBtn: {
     width: '100%',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(8, 36, 52, 0.82)',
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.4)',
-    borderLeftColor: 'rgba(34, 211, 238, 0.28)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    elevation: 6,
+    justifyContent: 'center',
+    minHeight: 50,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   primaryBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'rgba(243,248,255,0.94)',
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   secondaryBtn: {
     width: '100%',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(8, 17, 31, 0.55)',
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
+    justifyContent: 'center',
+    minHeight: 50,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
   },
   secondaryBtnText: {
-    fontSize: 16,
     fontWeight: '700',
-    color: 'rgba(186,201,222,0.88)',
+    textAlign: 'center',
   },
   btnDisabled: {
     opacity: 0.55,
