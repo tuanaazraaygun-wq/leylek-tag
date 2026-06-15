@@ -25,6 +25,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -97,6 +100,11 @@ interface OfferMapScreenProps {
   timeRemaining?: number;  // saniye
 }
 
+function formatOfferItemRating(rating: number | undefined): string | null {
+  const n = Number(rating);
+  return Number.isFinite(n) && n > 0 ? n.toFixed(1) : null;
+}
+
 // Teklif Kartı Bileşeni
 function OfferCard({
   item,
@@ -138,6 +146,7 @@ function OfferCard({
   };
 
   const isRecommended = item.isRecommended || index === 0;
+  const ratingText = formatOfferItemRating(item.rating);
 
   return (
     <Animated.View 
@@ -171,8 +180,20 @@ function OfferCard({
             
             {/* Yıldız */}
             <View style={styles.ratingRow}>
-              <Ionicons name="star" size={14} color="#FFC107" />
-              <Text style={styles.ratingText}>{item.rating?.toFixed(1) || '5.0'}</Text>
+              {ratingText ? (
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.ratingChip}>
+                  <Ionicons name="star" size={14} color="#FFC107" />
+                  <PremiumText variant="caption" style={styles.ratingText}>
+                    {ratingText}
+                  </PremiumText>
+                </GlassSurface>
+              ) : (
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.ratingEmptyChip}>
+                  <PremiumText variant="caption" muted style={styles.ratingEmptyText}>
+                    Henüz değerlendirme yok
+                  </PremiumText>
+                </GlassSurface>
+              )}
               {item.vehicle && (
                 <>
                   <Text style={styles.separator}>|</Text>
@@ -706,13 +727,29 @@ const styles = StyleSheet.create({
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: LDS_SPACING.xs,
     marginBottom: 2,
   },
+  ratingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(8,17,31,0.45)',
+  },
   ratingText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text,
-    marginLeft: 4,
+  },
+  ratingEmptyChip: {
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(8,17,31,0.35)',
+  },
+  ratingEmptyText: {
+    fontWeight: '600',
   },
   separator: {
     marginHorizontal: 6,

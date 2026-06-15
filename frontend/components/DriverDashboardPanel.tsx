@@ -47,7 +47,7 @@ interface DashboardData {
     overall_progress: number;
   };
   stats: {
-    rating: number;
+    rating: number | null;
     total_trips: number;
   };
 }
@@ -125,13 +125,15 @@ export default function DriverDashboardPanel({
     if (!raw || raw.success !== true || !raw.active_time || typeof raw.active_time !== 'object') {
       return null;
     }
-    let rating = 5;
+    let rating: number | null = null;
     try {
       const r = raw.stats?.rating;
-      if (r != null && r !== '') rating = Number(r);
-      if (!Number.isFinite(rating)) rating = 5;
+      if (r != null && r !== '') {
+        const n = Number(r);
+        if (Number.isFinite(n) && n > 0) rating = n;
+      }
     } catch {
-      rating = 5;
+      rating = null;
     }
     let totalTrips = 0;
     try {
@@ -376,10 +378,14 @@ export default function DriverDashboardPanel({
                   <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
                 </View>
                 <PremiumText variant="title" style={styles.statValue}>
-                  {(Number.isFinite(data.stats.rating) ? data.stats.rating : 5).toFixed(1)}
+                  {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
+                    ? data.stats.rating.toFixed(1)
+                    : '—'}
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.statLabel}>
-                  Puan
+                  {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
+                    ? 'Puan'
+                    : 'Henüz değerlendirme yok'}
                 </PremiumText>
               </View>
             </View>
