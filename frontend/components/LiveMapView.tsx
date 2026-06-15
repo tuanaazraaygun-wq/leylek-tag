@@ -516,6 +516,33 @@ function formatRouteKmMin(distanceKm: number | null, durationMin: number | null)
   return `${distPart} • ${min} dk`;
 }
 
+function driverOpsPhaseLabel(
+  boardingConfirmed: boolean,
+  tagStatus: string | undefined | null,
+): string {
+  if (boardingConfirmed) return 'Yolcu araçta';
+  if (String(tagStatus || '').toLowerCase() === 'in_progress') return 'Hedefe ilerle';
+  return 'Yolcuya git';
+}
+
+function formatDriverMatrixDisplay(matrixStatus: string): string {
+  const raw = matrixStatus.replace(/^>\s*/, '').trim().toUpperCase();
+  switch (raw) {
+    case 'YOLCU ARACTA':
+      return 'Yolcu araçta';
+    case 'YOLCUYU ALINIZ':
+      return 'Yolcuya gidiliyor';
+    case 'YOLCUYA YAKLASTINIZ':
+      return 'Yolcuya yaklaşıldı';
+    case 'YOLCUYU ALDINIZ':
+      return 'Yolcu alındı';
+    case 'YOLCUNUN HEDEFINE GIDIN':
+      return 'Hedefe ilerleniyor';
+    default:
+      return matrixStatus.replace(/^>\s*/, '').trim();
+  }
+}
+
 /** Yeşil tema + hafif kare animasyonu — rota metriği beklenirken (gürültüsüz) */
 function RouteCalculatingPremium({
   compact,
@@ -6391,218 +6418,169 @@ export default function LiveMapView({
             driverNavImmersive ? { paddingTop: Math.max(insets.top, 8) + 100 } : null,
           ]}
         >
-        <View
+        <GlassSurface
+          variant="header"
           style={[
-            styles.topInfoBorder,
-            driverNavImmersive ? styles.topInfoBorderNav : null,
-            compactMatchedLayout ? styles.topInfoBorderCompact : null,
+            styles.drvTopRouteShell,
+            driverNavImmersive ? styles.drvTopRouteShellNav : null,
+            compactMatchedLayout ? styles.drvTopRouteShellCompact : null,
           ]}
+          borderRadius={LDS_RADIUS.lg}
         >
-          <LinearGradient
-            colors={['rgba(16,26,43,0.92)', 'rgba(11,18,32,0.96)', 'rgba(8,17,31,0.94)', 'rgba(16,26,43,0.9)']}
-            locations={[0, 0.35, 0.72, 1]}
-            style={styles.infoGradient}
+          <View style={styles.drvTopRouteHeaderRow}>
+            <GlassSurface
+              variant="plain"
+              style={styles.drvTopPhaseChipShell}
+              borderRadius={LDS_RADIUS.sm}
+            >
+              <PremiumText variant="caption" style={styles.drvTopPhaseChip}>
+                {driverOpsPhaseLabel(boardingConfirmed, tagStatus)}
+              </PremiumText>
+            </GlassSurface>
+            {userLocation && otherLocation ? (
+              <View style={styles.drvTopLiveChipWrap}>
+                <GlassSurface
+                  variant="plain"
+                  style={styles.drvTopLiveChipShell}
+                  borderRadius={LDS_RADIUS.full}
+                >
+                  <View style={styles.drvTopLiveChipDot} />
+                  <PremiumText variant="caption" style={styles.drvTopLiveChipText}>
+                    CANLI
+                  </PremiumText>
+                </GlassSurface>
+              </View>
+            ) : null}
+          </View>
+
+          <View
+            style={[
+              styles.drvTopRouteRow,
+              compactMatchedLayout ? styles.drvTopRouteRowCompact : null,
+              navigationMode ? { opacity: navigationStage === 'pickup' ? 1 : 0.42 } : null,
+            ]}
           >
-            <View style={styles.topCardPatternRoot} pointerEvents="none">
-              {[
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-              ].map((i) => (
-                <View key={i} style={[styles.topCardStripe, { left: -72 + i * 26 }]} />
-              ))}
+            <View style={[styles.drvTopRouteDot, { backgroundColor: '#22D3EE' }]} />
+            <View style={styles.drvTopRouteTextCol}>
+              <PremiumText variant="caption" muted style={styles.drvTopRouteLabel}>
+                Buluşma
+              </PremiumText>
+              <View style={{ alignSelf: 'stretch' }}>
+                {showMeetingRouteCalculating ? (
+                  <RouteCalculatingPremium compact={driverNavImmersive} />
+                ) : showMeetingRouteUnavailable ? (
+                  <RouteUnavailableMuted
+                    compact={driverNavImmersive}
+                    valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }}
+                  />
+                ) : (
+                  <View>
+                    <PremiumText variant="body" style={styles.drvTopRouteValue}>
+                      {formatRouteKmMin(meetingDistance, meetingDuration)}
+                    </PremiumText>
+                    {showMeetingRoutePolylineLoadingHint ? (
+                      <PremiumText variant="caption" muted style={styles.drvTopRouteHint}>
+                        Rota yükleniyor
+                      </PremiumText>
+                    ) : null}
+                  </View>
+                )}
+              </View>
             </View>
+          </View>
+
+          {destinationLocation ? (
             <View
               style={[
-                styles.topCardContent,
-                driverNavImmersive ? styles.topCardContentNav : null,
-                compactMatchedLayout ? styles.topCardContentCompact : null,
+                styles.drvTopRouteRow,
+                compactMatchedLayout ? styles.drvTopRouteRowCompact : null,
+                navigationMode ? { opacity: navigationStage === 'destination' ? 1 : 0.42 } : null,
               ]}
             >
-              <View
-                style={[
-                  styles.routeInfoRow,
-                  driverNavImmersive ? styles.routeInfoRowNav : null,
-                  compactMatchedLayout ? styles.routeInfoRowCompact : null,
-                  isDriver && navigationMode
-                    ? { opacity: navigationStage === 'pickup' ? 1 : 0.42 }
-                    : null,
-                ]}
-              >
-                <View style={[styles.routeDot, { backgroundColor: '#22D3EE' }]} />
-                <View style={styles.routeTextStack}>
-                  <Text
-                    style={[
-                      styles.routeLabelModern,
-                      driverNavImmersive ? styles.routeLabelModernNav : null,
-                    ]}
-                  >
-                    Buluşma
-                  </Text>
-                  <View style={{ alignSelf: 'stretch' }}>
-                    {showMeetingRouteCalculating ? (
-                      <RouteCalculatingPremium compact={driverNavImmersive} />
-                    ) : showMeetingRouteUnavailable ? (
-                      <RouteUnavailableMuted compact={driverNavImmersive} valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }} />
-                    ) : (
-                      <View>
-                        <Text style={routeValueStyle}>
-                          {formatRouteKmMin(meetingDistance, meetingDuration)}
-                        </Text>
-                        {showMeetingRoutePolylineLoadingHint ? (
-                          <Text
-                            style={[
-                              styles.routePolylineHint,
-                              driverNavImmersive ? styles.routePolylineHintNav : null,
-                            ]}
-                          >
-                            Rota yükleniyor
-                          </Text>
-                        ) : null}
-                      </View>
-                    )}
-                  </View>
+              <View style={[styles.drvTopRouteDot, { backgroundColor: 'rgba(34,211,238,0.88)' }]} />
+              <View style={styles.drvTopRouteTextCol}>
+                <PremiumText variant="caption" muted style={styles.drvTopRouteLabel}>
+                  Hedef
+                </PremiumText>
+                <View style={{ alignSelf: 'stretch' }}>
+                  {showDestinationRouteCalculating ? (
+                    <RouteCalculatingPremium compact={driverNavImmersive} />
+                  ) : showDestinationRouteUnavailable ? (
+                    <RouteUnavailableMuted
+                      compact={driverNavImmersive}
+                      valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }}
+                    />
+                  ) : (
+                    <View>
+                      <PremiumText variant="body" style={styles.drvTopRouteValue}>
+                        {formatRouteKmMin(destinationDistance, destinationDuration)}
+                      </PremiumText>
+                      {showDestinationRoutePolylineLoadingHint ? (
+                        <PremiumText variant="caption" muted style={styles.drvTopRouteHint}>
+                          Rota yükleniyor
+                        </PremiumText>
+                      ) : null}
+                    </View>
+                  )}
                 </View>
               </View>
-
-              {destinationLocation ? (
-                <View
-                  style={[
-                    styles.routeInfoRow,
-                    driverNavImmersive ? styles.routeInfoRowNav : null,
-                    compactMatchedLayout ? styles.routeInfoRowCompact : null,
-                    isDriver && navigationMode
-                      ? { opacity: navigationStage === 'destination' ? 1 : 0.42 }
-                      : null,
-                  ]}
-                >
-                  <View style={[styles.routeDot, { backgroundColor: 'rgba(34, 211, 238, 0.88)' }]} />
-                  <View style={styles.routeTextStack}>
-                    <Text
-                      style={[
-                        styles.routeLabelModern,
-                        driverNavImmersive ? styles.routeLabelModernNav : null,
-                      ]}
-                    >
-                      Hedef
-                    </Text>
-                    <View style={{ alignSelf: 'stretch' }}>
-                      {showDestinationRouteCalculating ? (
-                        <RouteCalculatingPremium compact={driverNavImmersive} />
-                      ) : showDestinationRouteUnavailable ? (
-                        <RouteUnavailableMuted compact={driverNavImmersive} valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }} />
-                      ) : (
-                        <View>
-                          <Text style={routeValueStyle}>
-                            {formatRouteKmMin(destinationDistance, destinationDuration)}
-                          </Text>
-                          {showDestinationRoutePolylineLoadingHint ? (
-                            <Text
-                              style={[
-                                styles.routePolylineHint,
-                                driverNavImmersive ? styles.routePolylineHintNav : null,
-                              ]}
-                            >
-                              Rota yükleniyor
-                            </Text>
-                          ) : null}
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                  <View style={styles.routeRowTrailColumn}>
-                    <View style={styles.routeRowTrail}>
-                      {nearDestination ? (
-                        <View
-                          style={[
-                            styles.nearBadge,
-                            driverNavImmersive ? styles.nearBadgeNav : null,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.nearBadgeText,
-                              driverNavImmersive ? styles.nearBadgeTextNav : null,
-                            ]}
-                          >
-                            YAKIN!
-                          </Text>
-                        </View>
-                      ) : null}
-                      {offeredPrice ? (
-                        <View
-                          style={[
-                            styles.offeredPriceBadge,
-                            driverNavImmersive ? styles.offeredPriceBadgeNav : null,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.offeredPriceText,
-                              driverNavImmersive ? styles.offeredPriceTextNav : null,
-                            ]}
-                          >
-                            ₺{offeredPrice}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-
-              {price && !offeredPrice ? (
-                <View
-                  style={[
-                    styles.priceRow,
-                    driverNavImmersive ? styles.priceRowNav : null,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.priceLabel,
-                      driverNavImmersive ? styles.priceLabelNav : null,
-                    ]}
+              <View style={styles.drvTopRouteTrailCol}>
+                {nearDestination ? (
+                  <GlassSurface
+                    variant="plain"
+                    style={styles.drvTopNearChip}
+                    borderRadius={LDS_RADIUS.sm}
                   >
-                    Ücret
-                  </Text>
-                  <View style={styles.priceRowRightCol}>
-                    <Text
-                      style={[
-                        styles.priceValue,
-                        driverNavImmersive ? styles.priceValueNav : null,
-                      ]}
-                    >
-                      ₺{price}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-
-              {isDriver && passengerPaymentMethod ? (
-                <View
-                  style={[
-                    styles.paymentMethodPill,
-                    driverNavImmersive ? styles.paymentMethodPillNav : null,
-                  ]}
-                >
-                  <Ionicons
-                    name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
-                    size={driverNavImmersive ? 13 : 15}
-                    color="rgba(186,201,222,0.82)"
-                  />
-                  <Text
-                    style={[
-                      styles.paymentMethodPillText,
-                      driverNavImmersive ? styles.paymentMethodPillTextNav : null,
-                    ]}
+                    <PremiumText variant="caption" style={styles.drvTopNearChipText}>
+                      YAKIN
+                    </PremiumText>
+                  </GlassSurface>
+                ) : null}
+                {offeredPrice ? (
+                  <GlassSurface
+                    variant="plain"
+                    style={styles.drvTopPriceChip}
+                    borderRadius={LDS_RADIUS.sm}
                   >
-                    {passengerPaymentMethod === 'card' ? 'Yolcu: Kart ile Öde · Yakında' : 'Yolcu: nakit'}
-                  </Text>
-                </View>
-              ) : null}
-
+                    <PremiumText variant="caption" style={styles.drvTopPriceChipText}>
+                      ₺{offeredPrice}
+                    </PremiumText>
+                  </GlassSurface>
+                ) : null}
+              </View>
             </View>
-          </LinearGradient>
-        </View>
+          ) : null}
+
+          {price && !offeredPrice ? (
+            <View style={styles.drvTopPriceRow}>
+              <PremiumText variant="caption" muted>
+                Ücret
+              </PremiumText>
+              <PremiumText variant="body" style={styles.drvTopRouteValue}>
+                ₺{price}
+              </PremiumText>
+            </View>
+          ) : null}
+
+          {passengerPaymentMethod ? (
+            <GlassSurface
+              variant="plain"
+              style={styles.drvTopPaymentChip}
+              borderRadius={LDS_RADIUS.full}
+            >
+              <Ionicons
+                name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
+                size={13}
+                color="rgba(186,201,222,0.82)"
+              />
+              <PremiumText variant="caption" style={styles.drvTopPaymentChipText}>
+                {passengerPaymentMethod === 'card'
+                  ? 'Yolcu: Kart · Yakında'
+                  : 'Yolcu: Nakit'}
+              </PremiumText>
+            </GlassSurface>
+          ) : null}
+        </GlassSurface>
 
         {!driverRideUiModern && trustedAddEnabled && !driverNavImmersive ? (
           <View
@@ -6791,9 +6769,15 @@ export default function LiveMapView({
         {driverRideUiModern ? null : isDriver && !driverNavImmersive ? (
           <View style={styles.driverMatchMatrixRow} pointerEvents="box-none">
             {matrixStatus ? (
-              <View style={[styles.matrixContainerDriver, styles.matrixContainerDriverInRow]} pointerEvents="none">
-                <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
-              </View>
+              <GlassSurface
+                variant="plain"
+                style={[styles.drvTopStatusChip, styles.matrixContainerDriverInRow]}
+                borderRadius={LDS_RADIUS.md}
+              >
+                <PremiumText variant="caption" muted style={styles.drvTopMatrixText}>
+                  {formatDriverMatrixDisplay(matrixStatus)}
+                </PremiumText>
+              </GlassSurface>
             ) : (
               <View style={styles.driverMatchMatrixRowFlex1} />
             )}
@@ -9146,6 +9130,169 @@ const styles = StyleSheet.create({
   },
   paxTopInfoPanelCompact: {
     paddingTop: 0,
+  },
+  drvTopRouteShell: {
+    alignSelf: 'center',
+    width: SCREEN_WIDTH * 0.885,
+    marginTop: LDS_SPACING.xl + LDS_SPACING.lg,
+    marginBottom: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    ...LDS_ELEVATION.chip,
+  },
+  drvTopRouteShellNav: {
+    marginTop: LDS_SPACING.md,
+  },
+  drvTopRouteShellCompact: {
+    marginTop: 28,
+    marginBottom: LDS_SPACING.xxs,
+    maxHeight: 130,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+  },
+  drvTopRouteHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: LDS_SPACING.xxs,
+  },
+  drvTopPhaseChipShell: {
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  drvTopPhaseChip: {
+    fontWeight: '700',
+    letterSpacing: 0.45,
+    textTransform: 'uppercase',
+  },
+  drvTopLiveChipWrap: {
+    flexShrink: 0,
+  },
+  drvTopLiveChipShell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  drvTopLiveChipDot: {
+    width: LDS_SPACING.xs,
+    height: LDS_SPACING.xs,
+    borderRadius: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(34,211,238,0.68)',
+  },
+  drvTopLiveChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: 'rgba(186, 230, 253, 0.95)',
+  },
+  drvTopRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: LDS_SPACING.xxs + 2,
+  },
+  drvTopRouteRowCompact: {
+    marginBottom: 2,
+  },
+  drvTopRouteDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: LDS_SPACING.sm,
+  },
+  drvTopRouteTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  drvTopRouteLabel: {
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 1,
+  },
+  drvTopRouteValue: {
+    fontWeight: '700',
+  },
+  drvTopRouteHint: {
+    marginTop: 2,
+  },
+  drvTopRouteTrailCol: {
+    alignItems: 'flex-end',
+    gap: LDS_SPACING.xxs,
+    marginLeft: LDS_SPACING.xxs,
+    flexShrink: 0,
+  },
+  drvTopNearChip: {
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  drvTopNearChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
+  drvTopPriceChip: {
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  drvTopPriceChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.95)',
+  },
+  drvTopPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xxs,
+  },
+  drvTopPaymentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  drvTopPaymentChipText: {
+    fontWeight: '600',
+    letterSpacing: 0.08,
+  },
+  drvTopStatusChip: {
+    alignSelf: 'flex-start',
+    marginLeft: 0,
+    marginTop: 0,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  drvTopMatrixText: {
+    letterSpacing: 0.12,
+    lineHeight: 15,
   },
   paxTopRouteShell: {
     alignSelf: 'center',
