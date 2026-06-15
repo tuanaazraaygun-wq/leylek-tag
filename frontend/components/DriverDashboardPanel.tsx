@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -9,18 +8,13 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
-import {
-  PREMIUM_AUTH_CYAN,
-  PREMIUM_BORDER_SLATE,
-  PREMIUM_NAVY_CARD,
-  PREMIUM_NAVY_DEEP,
-  PREMIUM_NAVY_MID,
-  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-  PREMIUM_TEXT_MUTED,
-  PREMIUM_TEXT_SOFT,
-} from './auth/premiumAuthStyles';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { PREMIUM_AUTH_CYAN, PREMIUM_BORDER_SLATE, PREMIUM_TEXT_MUTED } from './auth/premiumAuthStyles';
 
 interface DriverDashboardPanelProps {
   userId: string;
@@ -56,6 +50,18 @@ interface DashboardData {
     rating: number;
     total_trips: number;
   };
+}
+
+const PANEL_HEIGHT_COLLAPSED = 168;
+const PANEL_HEIGHT_EXPANDED = 256;
+
+function sessionDisplayText(
+  isActive: boolean,
+  remainingText: string,
+): string {
+  if (!isActive) return 'Ücretsiz';
+  if (/ücret/i.test(remainingText)) return 'Ücretsiz';
+  return remainingText;
 }
 
 export default function DriverDashboardPanel({
@@ -215,7 +221,9 @@ export default function DriverDashboardPanel({
   if (loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+        <GlassSurface variant="panel" style={styles.panelShellLoading} borderRadius={LDS_RADIUS.xl}>
+          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+        </GlassSurface>
       </View>
     );
   }
@@ -224,65 +232,112 @@ export default function DriverDashboardPanel({
 
   const panelHeight = expandAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [92, 186],
+    outputRange: [PANEL_HEIGHT_COLLAPSED, PANEL_HEIGHT_EXPANDED],
   });
+
+  const goalProgress = data.daily_goal.overall_progress;
+  const sessionText = sessionDisplayText(data.active_time.is_active, remainingText);
+  const availabilityLabel = data.active_time.is_online ? 'Çevrimiçi' : 'Çevrimdışı';
 
   return (
     <Animated.View style={[styles.container, { height: panelHeight }]}>
-      <LinearGradient
-        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_MID, PREMIUM_NAVY_CARD, PREMIUM_NAVY_MID]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradient}
-      >
-        <View style={styles.gradientInnerStroke} pointerEvents="none" />
-        {/* Üst Satır - Her zaman görünür */}
-        <TouchableOpacity style={styles.topRow} onPress={onExpandToggle} activeOpacity={0.85}>
-          {/* Çevrimiçi süre */}
-          <View style={styles.timeBox}>
+      <GlassSurface variant="panel" style={styles.panelShell} borderRadius={LDS_RADIUS.xl}>
+        <View style={styles.collapsedHud}>
+          <View style={styles.availabilityRail}>
+            <View style={styles.availabilityStatus}>
+              <View
+                style={[
+                  styles.statusDot,
+                  data.active_time.is_online ? styles.statusDotOnline : styles.statusDotOffline,
+                ]}
+              />
+              <PremiumText variant="step" style={styles.availabilityLabel}>
+                {availabilityLabel}
+              </PremiumText>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.onlineBtn,
+                data.active_time.is_online ? styles.onlineBtnActive : styles.onlineBtnInactive,
+              ]}
+              onPress={toggleOnline}
+              disabled={toggling || !data.active_time.is_active}
+              accessibilityRole="button"
+              accessibilityLabel={
+                data.active_time.is_online ? 'Çevrimdışı ol' : 'Çevrimiçi ol'
+              }
+              accessibilityState={{
+                disabled: toggling || !data.active_time.is_active,
+              }}
+            >
+              {toggling ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <View
+                    style={[
+                      styles.onlineDot,
+                      data.active_time.is_online && styles.onlineDotActive,
+                    ]}
+                  />
+                  <PremiumText variant="step" style={styles.onlineText}>
+                    {data.active_time.is_online ? 'ON' : 'OFF'}
+                  </PremiumText>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View
+            style={styles.revenueHero}
+            accessibilityRole="summary"
+            accessibilityLabel={`Bugün ${data.today.earnings} lira. Hedef yüzde ${goalProgress}.`}
+          >
+            <PremiumText variant="step" muted style={styles.revenueLabel}>
+              BUGÜN
+            </PremiumText>
+            <View style={styles.revenueHeroRow}>
+              <PremiumText variant="headline" style={styles.revenueAmount}>
+                {data.today.earnings} ₺
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.revenueTrips}>
+                {data.today.trips_count} sefer
+              </PremiumText>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${goalProgress}%` }]} />
+            </View>
+            <PremiumText variant="caption" muted style={styles.progressCaption}>
+              Hedef %{goalProgress}
+            </PremiumText>
+          </View>
+
+          <TouchableOpacity
+            style={styles.sessionRow}
+            onPress={onExpandToggle}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Seans süresi ${sessionText}. Detayları ${expanded ? 'gizle' : 'göster'}.`}
+          >
             <Ionicons
               name="time-outline"
-              size={17}
-              color={data.active_time.is_active ? 'rgba(34,211,238,0.88)' : 'rgba(148,163,184,0.72)'}
+              size={14}
+              color={
+                data.active_time.is_active
+                  ? 'rgba(34,211,238,0.88)'
+                  : 'rgba(148,163,184,0.72)'
+              }
             />
-            <Text style={[styles.timeText, !data.active_time.is_active && styles.timeTextInactive]}>
-              {data.active_time.is_active
-                ? /ücret/i.test(remainingText)
-                  ? 'Ücretsizdir'
-                  : remainingText
-                : 'Ücretsizdir'}
-            </Text>
-          </View>
-
-          {/* Bugünkü kazanç */}
-          <View style={styles.earningsBox}>
-            <Text style={styles.earningsLabel}>Bugün</Text>
-            <Text style={styles.earningsValue}>{data.today.earnings} ₺</Text>
-          </View>
-
-          {/* Online Toggle */}
-          <TouchableOpacity
-            style={[styles.onlineBtn, data.active_time.is_online ? styles.onlineBtnActive : styles.onlineBtnInactive]}
-            onPress={toggleOnline}
-            disabled={toggling || !data.active_time.is_active}
-          >
-            {toggling ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <View style={[styles.onlineDot, data.active_time.is_online && styles.onlineDotActive]} />
-                <Text style={styles.onlineText}>{data.active_time.is_online ? 'ON' : 'OFF'}</Text>
-              </>
-            )}
+            <PremiumText variant="caption" muted style={styles.sessionText}>
+              {sessionText}
+            </PremiumText>
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={PREMIUM_TEXT_MUTED}
+            />
           </TouchableOpacity>
-
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={22}
-            color={PREMIUM_TEXT_MUTED}
-            style={styles.expandIcon}
-          />
-        </TouchableOpacity>
+        </View>
 
         {expanded && (
           <View style={styles.expandedContent}>
@@ -291,8 +346,12 @@ export default function DriverDashboardPanel({
                 <View style={styles.statIconWrap}>
                   <Ionicons name="car-outline" size={20} color="rgba(34,211,238,0.88)" />
                 </View>
-                <Text style={styles.statValue}>{data.today.trips_count}</Text>
-                <Text style={styles.statLabel}>Bugünkü sefer</Text>
+                <PremiumText variant="title" style={styles.statValue}>
+                  {data.today.trips_count}
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLabel}>
+                  Bugünkü sefer
+                </PremiumText>
               </View>
 
               <View style={styles.statDivider} />
@@ -301,8 +360,12 @@ export default function DriverDashboardPanel({
                 <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
                   <Ionicons name="wallet-outline" size={20} color="rgba(226,232,240,0.88)" />
                 </View>
-                <Text style={styles.statValue}>{data.weekly.earnings} ₺</Text>
-                <Text style={styles.statLabel}>Haftalık kazanç</Text>
+                <PremiumText variant="title" style={styles.statValue}>
+                  {data.weekly.earnings} ₺
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLabel}>
+                  Haftalık kazanç
+                </PremiumText>
               </View>
 
               <View style={styles.statDivider} />
@@ -311,111 +374,82 @@ export default function DriverDashboardPanel({
                 <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
                   <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
                 </View>
-                <Text style={styles.statValue}>
+                <PremiumText variant="title" style={styles.statValue}>
                   {(Number.isFinite(data.stats.rating) ? data.stats.rating : 5).toFixed(1)}
-                </Text>
-                <Text style={styles.statLabel}>Puan</Text>
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.statLabel}>
+                  Puan
+                </PremiumText>
               </View>
             </View>
           </View>
         )}
-      </LinearGradient>
+      </GlassSurface>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 10,
-    marginTop: 6,
-    borderRadius: 22,
+    marginHorizontal: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xxs,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.42,
-        shadowRadius: 22,
-      },
-      android: { elevation: 13 },
-      default: {},
-    }),
+    ...LDS_ELEVATION.panel,
   },
-  gradient: {
+  panelShell: {
     flex: 1,
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.72)',
-    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
   },
-  gradientInnerStroke: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 20,
-    margin: 2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    gap: 8,
-  },
-  timeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(8,17,31,0.65)',
-    paddingVertical: 8,
-    paddingHorizontal: 11,
-    borderRadius: 13,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.75)',
-    borderTopColor: 'rgba(34,211,238,0.14)',
-    maxWidth: '34%',
-  },
-  timeText: {
-    color: 'rgba(94,209,226,0.92)',
-    fontSize: 13,
-    fontWeight: '800',
-    marginLeft: 6,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 0.15,
-  },
-  timeTextInactive: {
-    color: 'rgba(148,163,184,0.75)',
-  },
-  earningsBox: {
-    flex: 1,
+  panelShellLoading: {
+    minHeight: PANEL_HEIGHT_COLLAPSED,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingVertical: LDS_SPACING.lg,
   },
-  earningsLabel: {
-    fontSize: 11,
-    color: PREMIUM_TEXT_MUTED,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    opacity: 0.92,
+  collapsedHud: {
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xs,
+    gap: LDS_SPACING.sm,
   },
-  earningsValue: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: PREMIUM_TEXT_SOFT,
-    marginTop: 2,
-    letterSpacing: -0.35,
-    fontVariant: ['tabular-nums'],
+  availabilityRail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: LDS_SPACING.sm,
+  },
+  availabilityStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    flex: 1,
+    minWidth: 0,
+  },
+  statusDot: {
+    width: LDS_SPACING.xs,
+    height: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  statusDotOnline: {
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    borderColor: 'rgba(243,248,255,0.35)',
+  },
+  statusDotOffline: {
+    backgroundColor: 'rgba(148,163,184,0.55)',
+  },
+  availabilityLabel: {
+    letterSpacing: 0.15,
   },
   onlineBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 15,
-    borderRadius: 14,
-    minWidth: 74,
-    borderWidth: StyleSheet.hairlineWidth + 1,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    minWidth: LDS_SPACING.xxxl + LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
   },
   onlineBtnActive: {
     backgroundColor: 'rgba(6,55,52,0.92)',
@@ -436,12 +470,12 @@ const styles = StyleSheet.create({
     borderColor: PREMIUM_BORDER_SLATE,
   },
   onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: LDS_SPACING.xs,
+    height: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(148,163,184,0.55)',
-    marginRight: 6,
-    borderWidth: StyleSheet.hairlineWidth,
+    marginRight: LDS_SPACING.xs,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: 'rgba(30,58,95,0.6)',
   },
   onlineDotActive: {
@@ -458,59 +492,101 @@ const styles = StyleSheet.create({
     }),
   },
   onlineText: {
-    color: PREMIUM_TEXT_SOFT,
-    fontSize: 12,
-    fontWeight: '900',
     letterSpacing: 1,
     fontVariant: ['tabular-nums'],
   },
-  expandIcon: {
-    marginLeft: 2,
-    opacity: 0.95,
+  revenueHero: {
+    gap: LDS_SPACING.xxs,
+  },
+  revenueLabel: {
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  revenueHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: LDS_SPACING.sm,
+  },
+  revenueAmount: {
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
+    color: 'rgba(94,229,209,0.95)',
+  },
+  revenueTrips: {
+    paddingBottom: 2,
+  },
+  progressTrack: {
+    height: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(8,17,31,0.65)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    overflow: 'hidden',
+    marginTop: LDS_SPACING.xxs,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    minWidth: 0,
+  },
+  progressCaption: {
+    marginTop: 1,
+    letterSpacing: 0.1,
+  },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(8,17,31,0.38)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  sessionText: {
+    flex: 1,
+    fontVariant: ['tabular-nums'],
   },
   expandedContent: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    paddingTop: 2,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xxs,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
     justifyContent: 'space-between',
     backgroundColor: 'rgba(8,17,31,0.48)',
-    borderRadius: 16,
-    paddingVertical: 13,
-    paddingHorizontal: 6,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30,58,95,0.55)',
+    borderRadius: LDS_RADIUS.md,
+    paddingVertical: LDS_SPACING.sm + 1,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
     borderTopColor: 'rgba(34,211,238,0.09)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01050c',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.22,
-        shadowRadius: 12,
-      },
-      android: { elevation: 5 },
-      default: {},
-    }),
+    ...LDS_ELEVATION.chip,
   },
   statColumn: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'flex-start',
-    paddingHorizontal: 4,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   statIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: LDS_SPACING.xxl + LDS_SPACING.xs,
+    height: LDS_SPACING.xxl + LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
     backgroundColor: 'rgba(34,211,238,0.08)',
-    borderWidth: StyleSheet.hairlineWidth + 1,
+    borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(34,211,238,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: LDS_SPACING.xs,
   },
   statIconWrapViolet: {
     backgroundColor: 'rgba(148,163,184,0.08)',
@@ -521,26 +597,19 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(251,191,36,0.22)',
   },
   statValue: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: PREMIUM_TEXT_SOFT,
-    marginTop: 0,
     letterSpacing: -0.22,
     fontVariant: ['tabular-nums'],
+    textAlign: 'center',
   },
   statLabel: {
-    fontSize: 10,
-    color: PREMIUM_TEXT_MUTED,
-    marginTop: 4,
-    fontWeight: '700',
+    marginTop: LDS_SPACING.xxs,
     textAlign: 'center',
-    letterSpacing: 0.15,
     opacity: 0.9,
   },
   statDivider: {
-    width: StyleSheet.hairlineWidth,
+    width: LDS_BORDER_WIDTH.hairline,
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(30,58,95,0.55)',
-    marginVertical: 4,
+    backgroundColor: LDS_BORDER_COLOR.cockpitPanel,
+    marginVertical: LDS_SPACING.xxs,
   },
 });
