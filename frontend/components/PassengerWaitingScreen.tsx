@@ -575,7 +575,9 @@ export default function PassengerWaitingScreen({
         <View style={styles.modalOverlay}>
           <View style={styles.driverProfileModal}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sürücü Profili</Text>
+              <PremiumText variant="title" style={styles.modalTitle}>
+                Sürücü profili
+              </PremiumText>
               <TouchableOpacity onPress={() => setShowDriverProfile(false)}>
                 <Ionicons name="close" size={24} color="rgba(186,201,222,0.82)" />
               </TouchableOpacity>
@@ -583,30 +585,51 @@ export default function PassengerWaitingScreen({
             
             {selectedDriver && (
               <View style={styles.driverProfileContent}>
-                <View style={styles.driverAvatar}>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.driverAvatar}>
                   <Ionicons name="person" size={40} color="rgba(243,248,255,0.94)" />
-                </View>
-                <Text style={styles.driverName}>{displayFirstName(selectedDriver.name, 'Sürücü')}</Text>
+                </GlassSurface>
+                <PremiumText variant="title" style={styles.driverName}>
+                  {displayFirstName(selectedDriver.name, 'Sürücü')}
+                </PremiumText>
                 
-                <View style={styles.driverRating}>
-                  <Ionicons name="star" size={18} color={PREMIUM_AUTH_CYAN} />
-                  <Text style={styles.driverRatingText}>
-                    {(selectedDriver.rating != null && selectedDriver.rating > 0
-                      ? selectedDriver.rating
-                      : 4
-                    ).toFixed(1)}
-                  </Text>
-                </View>
-                
-                {selectedDriver.vehicle && (
-                  <Text style={styles.driverVehicle}>{selectedDriver.vehicle}</Text>
+                {selectedDriver.rating != null &&
+                selectedDriver.rating > 0 &&
+                Number.isFinite(Number(selectedDriver.rating)) ? (
+                  <GlassSurface
+                    variant="plain"
+                    borderRadius={LDS_RADIUS.full}
+                    style={styles.driverRating}
+                  >
+                    <Ionicons name="star" size={18} color={PREMIUM_AUTH_CYAN} />
+                    <PremiumText variant="body" style={styles.driverRatingText}>
+                      {Number(selectedDriver.rating).toFixed(1)}
+                    </PremiumText>
+                  </GlassSurface>
+                ) : (
+                  <GlassSurface
+                    variant="plain"
+                    borderRadius={LDS_RADIUS.sm}
+                    style={styles.driverRatingEmpty}
+                  >
+                    <PremiumText variant="caption" muted style={styles.driverRatingEmptyText}>
+                      Henüz değerlendirme yok
+                    </PremiumText>
+                  </GlassSurface>
                 )}
                 
-                {selectedDriver.distance_km && (
-                  <Text style={styles.driverDistance}>
-                    {selectedDriver.distance_km.toFixed(1)} km uzaklıkta
-                  </Text>
-                )}
+                {selectedDriver.vehicle ? (
+                  <PremiumText variant="caption" muted style={styles.driverVehicle}>
+                    {selectedDriver.vehicle}
+                  </PremiumText>
+                ) : null}
+                
+                {selectedDriver.distance_km != null &&
+                Number.isFinite(Number(selectedDriver.distance_km)) &&
+                Number(selectedDriver.distance_km) > 0 ? (
+                  <PremiumText variant="caption" style={styles.driverDistance}>
+                    {Number(selectedDriver.distance_km).toFixed(1)} km uzaklıkta
+                  </PremiumText>
+                ) : null}
               </View>
             )}
           </View>
@@ -921,17 +944,15 @@ const styles = StyleSheet.create({
   driverAvatar: {
     width: LDS_SPACING.xxxl + LDS_SPACING.xxl,
     height: LDS_SPACING.xxxl + LDS_SPACING.xxl,
-    borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(8, 17, 31, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: LDS_SPACING.sm,
-    borderWidth: LDS_BORDER_WIDTH.standard,
+    backgroundColor: 'rgba(8, 17, 31, 0.72)',
     borderColor: PREMIUM_BORDER_SLATE,
     borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   driverName: {
-    ...LDS_TYPOGRAPHY.title,
     fontWeight: '700',
     color: PREMIUM_TEXT_SOFT,
   },
@@ -940,19 +961,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: LDS_SPACING.xs,
     gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
   },
   driverRatingText: {
-    ...LDS_TYPOGRAPHY.body,
-    fontWeight: '600',
+    fontWeight: '700',
     color: PREMIUM_AUTH_CYAN,
   },
+  driverRatingEmpty: {
+    marginTop: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(8,17,31,0.45)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
+  },
+  driverRatingEmptyText: {
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   driverVehicle: {
-    ...LDS_TYPOGRAPHY.caption,
-    color: PREMIUM_TEXT_MUTED,
     marginTop: LDS_SPACING.xs,
   },
   driverDistance: {
-    ...LDS_TYPOGRAPHY.caption,
     color: PREMIUM_AUTH_CYAN,
     marginTop: LDS_SPACING.xxs,
   },
