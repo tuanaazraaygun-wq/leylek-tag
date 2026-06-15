@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, Keyboard, StatusBar, Vibration, DeviceEventEmitter, AccessibilityInfo } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, Share, AppState, KeyboardAvoidingView, Keyboard, StatusBar, Vibration, DeviceEventEmitter, AccessibilityInfo } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17956,11 +17956,8 @@ function DriverDashboard({
   }
 
   return (
-    <ImageBackground 
-      source={require('../assets/images/driver-background.png')} 
-      style={styles.driverBackgroundContainer}
-      imageStyle={styles.driverBackgroundImage}
-    >
+    <View style={styles.driverTripShell}>
+    <CockpitBackground />
     {isMotorDriverUi ? (
       <LinearGradient
         colors={['rgba(21, 128, 61, 0.45)', 'rgba(15, 23, 42, 0.72)']}
@@ -17974,7 +17971,20 @@ function DriverDashboard({
       {/* CANLI HARİTA - Tam Ekran (Şoför)
           Android'de (stabilite için) haritayı kapatıyoruz. */}
       {activeTag && !shouldDisableActivityMap && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
+        <View style={styles.driverTripActiveLayer}>
         <View style={styles.fullScreenMapContainer}>
+          <GlassSurface variant="panel" style={styles.driverTripPhaseShell} borderRadius={LDS_RADIUS.lg}>
+            <View style={styles.driverTripPhaseBlock}>
+              <PremiumText variant="step" style={styles.driverTripPhaseStep}>
+                {activeTag.status === 'in_progress' ? 'Yolculuk devam ediyor' : 'Buluşma'}
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.driverTripPhaseCaption}>
+                {activeTag.status === 'in_progress'
+                  ? 'Varış operasyonu'
+                  : 'Sürücü saha operasyonu'}
+              </PremiumText>
+            </View>
+          </GlassSurface>
           {driverFirstChatTapBanner ? (
             <TouchableOpacity
               activeOpacity={0.9}
@@ -17982,32 +17992,24 @@ function DriverDashboard({
                 setDriverChatVisible(true);
                 setDriverFirstChatTapBanner(null);
               }}
-              style={{
-                backgroundColor: 'rgba(42, 24, 28, 0.82)',
-                marginHorizontal: 12,
-                marginTop: 8,
-                marginBottom: 6,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: 'rgba(248,113,113,0.38)',
-              }}
+              style={styles.driverTripBannerWrap}
             >
-              <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
-                {driverFirstChatTapBanner.title}
-              </Text>
-              <Text style={{ color: 'rgba(186,201,222,0.88)', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
-                {driverFirstChatTapBanner.subtitle}
-              </Text>
-              <Text style={{ color: 'rgba(186,201,222,0.72)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
-                Mesajı görmek için tıklayın
-              </Text>
+              <GlassSurface variant="plain" style={styles.driverTripBannerAlert} borderRadius={LDS_RADIUS.md}>
+                <PremiumText variant="body" style={styles.driverTripBannerTitle}>
+                  {driverFirstChatTapBanner.title}
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.driverTripBannerBody}>
+                  {driverFirstChatTapBanner.subtitle}
+                </PremiumText>
+                <PremiumText variant="caption" muted style={styles.driverTripBannerHint}>
+                  Mesajı görmek için tıklayın
+                </PremiumText>
+              </GlassSurface>
             </TouchableOpacity>
           ) : null}
           {/* Biniş yakın uyarısı — LiveMapView alt panelinde QR vurgusu ile birleştirildi */}
           {/* Sürücü haritası: otherLocationFromPickupFallback true iken buluşma metrikleri routeInfo ile OSRM çelişmez; kotasyonlu trip OSRM ile sessizce ezilmez */}
-          <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+          <View style={styles.driverTripContent}>
           <TestFlightDebugPanel
             role="driver"
             userLocation={userLocation}
@@ -18522,6 +18524,7 @@ function DriverDashboard({
             }}
           />
         </View>
+        </View>
       ) : null}
 
       {/* Modern Teklif Modal */}
@@ -18996,7 +18999,7 @@ function DriverDashboard({
         }}
       />
     </SafeAreaView>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -19114,6 +19117,66 @@ const styles = StyleSheet.create({
   passengerTripShell: {
     flex: 1,
   },
+  // 🆕 Sürücü active trip shell (LHIS cockpit zemin)
+  driverTripShell: {
+    flex: 1,
+  },
+  driverTripActiveLayer: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  driverTripPhaseShell: {
+    marginHorizontal: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    ...LDS_ELEVATION.chip,
+  },
+  driverTripPhaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+  },
+  driverTripPhaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  driverTripPhaseCaption: {
+    textAlign: 'center',
+  },
+  driverTripBannerWrap: {
+    marginHorizontal: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+  },
+  driverTripBannerAlert: {
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    borderColor: 'rgba(248,113,113,0.38)',
+    borderTopColor: 'rgba(248,113,113,0.52)',
+    ...LDS_ELEVATION.chip,
+  },
+  driverTripBannerTitle: {
+    textAlign: 'center',
+    fontWeight: '800',
+  },
+  driverTripBannerBody: {
+    textAlign: 'center',
+    marginTop: LDS_SPACING.xxs,
+    lineHeight: 17,
+  },
+  driverTripBannerHint: {
+    textAlign: 'center',
+    marginTop: LDS_SPACING.xxs,
+  },
+  driverTripContent: {
+    flex: 1,
+    position: 'relative',
+    minHeight: 0,
+  },
   passengerTripActiveLayer: {
     flex: 1,
     minHeight: 0,
@@ -19213,15 +19276,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   passengerBackgroundImage: {
-    resizeMode: 'stretch',
-    width: '100%',
-    height: '100%',
-  },
-  // 🆕 Sürücü Arka Plan Stilleri
-  driverBackgroundContainer: {
-    flex: 1,
-  },
-  driverBackgroundImage: {
     resizeMode: 'stretch',
     width: '100%',
     height: '100%',
