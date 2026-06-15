@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -13,7 +12,11 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
-import { LinearGradient } from 'expo-linear-gradient';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 
@@ -238,140 +241,194 @@ export default function QRTripEndModal({
         ? 'Teklifinizde kart seçmiştiniz. Ödemeyi kart ile tamamladığınızı onaylayın.'
         : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
 
+  const phaseStep = isDriver
+    ? 'Yolculuk sonu QR'
+    : passengerStep === 'choose'
+      ? 'Yolculuk sonu'
+      : passengerStep === 'payment'
+        ? 'Ödeme onayı'
+        : 'QR doğrulaması';
+
+  const phaseCaption = isDriver
+    ? `${firstName} bu kodu tarasın`
+    : passengerStep === 'choose'
+      ? 'Yolculuğu güvenli şekilde tamamlamak için yöntemi seç.'
+      : passengerStep === 'payment'
+        ? 'Ödeme bilgisini kontrol ederek tamamla.'
+        : 'Sürücünün yolculuk sonu QR kodunu okut.';
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
-        <View style={styles.container}>
-          <LinearGradient colors={['#08111F', '#0B1220', '#101A2B']} style={styles.header}>
-            <Text style={styles.title}>
-              {isDriver
-                ? 'QR Kodunuz'
-                : passengerStep === 'choose'
-                  ? 'Yol paylaşımını bitir'
-                  : passengerStep === 'payment'
-                    ? 'Yolculuk sonu — ödeme'
-                    : 'QR Tarayın'}
-            </Text>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
+
+        <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
+          <View style={styles.header}>
+            <View style={styles.headerTextCol}>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                {phaseStep}
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                {phaseCaption}
+              </PremiumText>
+            </View>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeBtn}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Kapat"
+            >
+              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
             </TouchableOpacity>
-          </LinearGradient>
+          </View>
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             {isDriver ? (
               <View style={styles.qrContainer}>
-                <Text style={styles.instruction}>
-                  {firstName} bu kodu tarasın
-                </Text>
-                <View style={styles.qrWrapper}>
-                  <QRCode
-                    value={qrValue}
-                    size={width * 0.55}
-                    backgroundColor="white"
-                    color="#041e33"
-                    quietZone={10}
-                  />
-                </View>
-                <Text style={styles.hint}>
-                  Yolcu QR kodu taradığında yolculuk tamamlanır
-                </Text>
+                <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+                  <View style={styles.qrWrapper}>
+                    <QRCode
+                      value={qrValue}
+                      size={width * 0.55}
+                      backgroundColor="white"
+                      color="#041e33"
+                      quietZone={10}
+                    />
+                  </View>
+                  <PremiumText variant="caption" muted style={styles.hint}>
+                    Yolcu QR kodu taradığında yolculuk tamamlanır
+                  </PremiumText>
+                </GlassSurface>
               </View>
             ) : passengerStep === 'choose' ? (
               <View style={styles.choosePanel}>
-                <Text style={styles.instruction}>Yolculuğu nasıl bitirmek istersiniz?</Text>
+                <PremiumText variant="body" style={styles.chooseQuestion}>
+                  Yolculuğu nasıl bitirmek istersiniz?
+                </PremiumText>
                 <TouchableOpacity
-                  style={styles.chooseOption}
+                  style={styles.chooseOptionWrap}
                   onPress={() => onChooseDriverIban?.()}
                   activeOpacity={0.88}
                   accessibilityRole="button"
                   accessibilityLabel="Sürücü IBAN'ını gör"
                 >
-                  <View style={styles.chooseOptionIconWrap}>
-                    <Ionicons name="card-outline" size={24} color="#22D3EE" />
-                  </View>
-                  <View style={styles.chooseOptionTextCol}>
-                    <Text style={styles.chooseOptionTitle}>Sürücü IBAN'ını gör</Text>
-                    <Text style={styles.chooseOptionSubtitle}>Havale/EFT ile ödediyseniz</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                  <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
+                    <View style={styles.chooseOptionIconWrap}>
+                      <Ionicons name="card-outline" size={24} color="rgba(34,211,238,0.92)" />
+                    </View>
+                    <View style={styles.chooseOptionTextCol}>
+                      <PremiumText variant="body" style={styles.chooseOptionTitle}>
+                        Sürücü IBAN'ını gör
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
+                        Havale/EFT ile ödediyseniz
+                      </PremiumText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                  </GlassSurface>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.chooseOption}
+                  style={styles.chooseOptionWrap}
                   onPress={() => setPassengerStep('scan')}
                   activeOpacity={0.88}
                   accessibilityRole="button"
                   accessibilityLabel="Sürücü QR kodunu tara"
                 >
-                  <View style={styles.chooseOptionIconWrap}>
-                    <Ionicons name="qr-code-outline" size={24} color="#22D3EE" />
-                  </View>
-                  <View style={styles.chooseOptionTextCol}>
-                    <Text style={styles.chooseOptionTitle}>Sürücü QR kodunu tara</Text>
-                    <Text style={styles.chooseOptionSubtitle}>Nakit ödeme onayı</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                  <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
+                    <View style={styles.chooseOptionIconWrap}>
+                      <Ionicons name="qr-code-outline" size={24} color="rgba(34,211,238,0.92)" />
+                    </View>
+                    <View style={styles.chooseOptionTextCol}>
+                      <PremiumText variant="body" style={styles.chooseOptionTitle}>
+                        Sürücü QR kodunu tara
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
+                        Nakit ödeme onayı
+                      </PremiumText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                  </GlassSurface>
                 </TouchableOpacity>
               </View>
             ) : passengerStep === 'scan' ? (
               <View style={styles.cameraContainer}>
-                <Text style={styles.instruction}>
+                <PremiumText variant="body" style={styles.instruction}>
                   {`${firstName}'ın QR kodunu tarayın`}
-                </Text>
+                </PremiumText>
 
                 {hasPermission?.granted ? (
-                  <View style={styles.cameraWrapper}>
-                    <CameraView
-                      key={`trip-end-cam-${cameraSessionKey}`}
-                      style={styles.camera}
-                      facing="back"
-                      barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                      onCameraReady={() => {
-                        setCameraReady(true);
-                        if (__DEV__) {
-                          console.log('[QRTripEndModal] onCameraReady');
-                        }
-                      }}
-                      onBarcodeScanned={scannerActive ? handleBarCodeScanned : undefined}
-                    />
-                    <View style={styles.scanOverlay} pointerEvents="none">
-                      <View style={styles.scanFrame}>
-                        <View style={[styles.corner, styles.topLeft]} />
-                        <View style={[styles.corner, styles.topRight]} />
-                        <View style={[styles.corner, styles.bottomLeft]} />
-                        <View style={[styles.corner, styles.bottomRight]} />
+                  <GlassSurface variant="stage" style={styles.cameraStage} borderRadius={LDS_RADIUS.lg}>
+                    <View style={styles.cameraWrapper}>
+                      <CameraView
+                        key={`trip-end-cam-${cameraSessionKey}`}
+                        style={styles.camera}
+                        facing="back"
+                        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                        onCameraReady={() => {
+                          setCameraReady(true);
+                          if (__DEV__) {
+                            console.log('[QRTripEndModal] onCameraReady');
+                          }
+                        }}
+                        onBarcodeScanned={scannerActive ? handleBarCodeScanned : undefined}
+                      />
+                      <View style={styles.scanOverlay} pointerEvents="none">
+                        <View style={styles.scanFrame}>
+                          <View style={[styles.corner, styles.topLeft]} />
+                          <View style={[styles.corner, styles.topRight]} />
+                          <View style={[styles.corner, styles.bottomLeft]} />
+                          <View style={[styles.corner, styles.bottomRight]} />
+                        </View>
                       </View>
+                      {!cameraReady && !processing ? (
+                        <View style={styles.cameraStatusOverlay}>
+                          <ActivityIndicator size="large" color="#22D3EE" />
+                          <PremiumText variant="caption" muted style={styles.processingText}>
+                            Kamera hazırlanıyor…
+                          </PremiumText>
+                        </View>
+                      ) : null}
+                      {processing ? (
+                        <View style={styles.cameraStatusOverlay}>
+                          <ActivityIndicator size="large" color="#22D3EE" />
+                          <PremiumText variant="caption" muted style={styles.processingText}>
+                            İşleniyor…
+                          </PremiumText>
+                        </View>
+                      ) : null}
                     </View>
-                    {!cameraReady && !processing ? (
-                      <View style={styles.cameraStatusOverlay}>
-                        <ActivityIndicator size="large" color="#22D3EE" />
-                        <Text style={styles.processingText}>Kamera hazırlanıyor…</Text>
-                      </View>
-                    ) : null}
-                    {processing ? (
-                      <View style={styles.cameraStatusOverlay}>
-                        <ActivityIndicator size="large" color="#22D3EE" />
-                        <Text style={styles.processingText}>İşleniyor…</Text>
-                      </View>
-                    ) : null}
-                  </View>
+                  </GlassSurface>
                 ) : (
-                  <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-                    <Text style={styles.permissionBtnText}>Kamera İzni Ver</Text>
-                  </TouchableOpacity>
+                  <View style={styles.permCenter}>
+                    <PremiumText variant="body" muted style={styles.permLabel}>
+                      Kamera izni gerekli
+                    </PremiumText>
+                    <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission} activeOpacity={0.88}>
+                      <PremiumText variant="body" style={styles.permissionBtnText}>
+                        Kamera İzni Ver
+                      </PremiumText>
+                    </TouchableOpacity>
+                  </View>
                 )}
 
-                <Text style={styles.hint}>
+                <PremiumText variant="caption" muted style={styles.hint}>
                   Ardından ödeme yönteminizi onaylayacaksınız
-                </Text>
+                </PremiumText>
               </View>
             ) : (
               <View style={styles.paymentPanel}>
-                <View style={styles.paymentCard}>
+                <GlassSurface variant="plain" style={styles.paymentCard} borderRadius={LDS_RADIUS.lg}>
                   <View style={styles.paymentIconWrap}>
-                    <Ionicons name="wallet-outline" size={32} color="#22D3EE" />
+                    <Ionicons name="wallet-outline" size={32} color="rgba(34,211,238,0.92)" />
                   </View>
-                  <Text style={styles.paymentHeading}>{paymentTitle}</Text>
-                  <Text style={styles.paymentBody}>{paymentSubtitle}</Text>
+                  <PremiumText variant="body" style={styles.paymentHeading}>
+                    {paymentTitle}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.paymentBody}>
+                    {paymentSubtitle}
+                  </PremiumText>
 
                   {bookingPaymentMethod === 'cash' && (
                     <TouchableOpacity
@@ -380,10 +437,10 @@ export default function QRTripEndModal({
                       disabled={processing}
                       activeOpacity={0.88}
                     >
-                      <View style={[styles.primaryPayGradient, styles.primaryPayGlass]}>
-                        <Ionicons name="cash-outline" size={24} color="#22D3EE" />
-                        <Text style={styles.primaryPayText}>Nakit ödemeyi tamamladım</Text>
-                      </View>
+                      <Ionicons name="cash-outline" size={24} color="rgba(34,211,238,0.92)" />
+                      <PremiumText variant="body" style={styles.primaryPayText}>
+                        Nakit ödemeyi tamamladım
+                      </PremiumText>
                     </TouchableOpacity>
                   )}
 
@@ -394,16 +451,18 @@ export default function QRTripEndModal({
                       disabled={processing}
                       activeOpacity={0.88}
                     >
-                      <View style={[styles.primaryPayGradient, styles.primaryPayGlass]}>
-                        <Ionicons name="card-outline" size={24} color="#22D3EE" />
-                        <Text style={styles.primaryPayText}>Kart ile ödemeyi tamamladım</Text>
-                      </View>
+                      <Ionicons name="card-outline" size={24} color="rgba(34,211,238,0.92)" />
+                      <PremiumText variant="body" style={styles.primaryPayText}>
+                        Kart ile ödemeyi tamamladım
+                      </PremiumText>
                     </TouchableOpacity>
                   )}
 
                   {!bookingPaymentMethod && (
                     <>
-                      <Text style={styles.legacyPickLabel}>Nasıl ödediniz?</Text>
+                      <PremiumText variant="caption" muted style={styles.legacyPickLabel}>
+                        Nasıl ödediniz?
+                      </PremiumText>
                       <View style={styles.legacyRow}>
                         <TouchableOpacity
                           style={[
@@ -411,6 +470,7 @@ export default function QRTripEndModal({
                             legacyPaymentPick === 'cash' && styles.legacyChipActive,
                           ]}
                           onPress={() => setLegacyPaymentPick('cash')}
+                          activeOpacity={0.88}
                         >
                           <Ionicons
                             name="cash-outline"
@@ -418,17 +478,18 @@ export default function QRTripEndModal({
                             color={
                               legacyPaymentPick === 'cash'
                                 ? 'rgba(243,248,255,0.94)'
-                                : '#22D3EE'
+                                : 'rgba(34,211,238,0.92)'
                             }
                           />
-                          <Text
+                          <PremiumText
+                            variant="body"
                             style={[
                               styles.legacyChipText,
                               legacyPaymentPick === 'cash' && styles.legacyChipTextActive,
                             ]}
                           >
                             Nakit
-                          </Text>
+                          </PremiumText>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[
@@ -436,6 +497,7 @@ export default function QRTripEndModal({
                             legacyPaymentPick === 'card' && styles.legacyChipActive,
                           ]}
                           onPress={() => setLegacyPaymentPick('card')}
+                          activeOpacity={0.88}
                         >
                           <Ionicons
                             name="card-outline"
@@ -443,46 +505,43 @@ export default function QRTripEndModal({
                             color={
                               legacyPaymentPick === 'card'
                                 ? 'rgba(243,248,255,0.94)'
-                                : '#22D3EE'
+                                : 'rgba(34,211,238,0.92)'
                             }
                           />
-                          <Text
+                          <PremiumText
+                            variant="body"
                             style={[
                               styles.legacyChipText,
                               legacyPaymentPick === 'card' && styles.legacyChipTextActive,
                             ]}
                           >
                             Kart
-                          </Text>
+                          </PremiumText>
                         </TouchableOpacity>
                       </View>
                       <TouchableOpacity
-                        style={styles.primaryPayBtn}
+                        style={[
+                          styles.primaryPayBtn,
+                          (!legacyPaymentPick || processing) && styles.primaryPayBtnDisabled,
+                        ]}
                         onPress={handleLegacyConfirm}
                         disabled={processing || !legacyPaymentPick}
                         activeOpacity={0.88}
                       >
-                        <LinearGradient
-                          colors={
-                            legacyPaymentPick
-                              ? ['rgba(8,36,52,0.95)', '#0E7490', '#22D3EE']
-                              : ['rgba(30,58,95,0.45)', 'rgba(16,26,43,0.88)']
-                          }
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={[
-                            styles.primaryPayGradient,
-                            legacyPaymentPick && styles.primaryPayGradientAccentBorder,
-                          ]}
-                        >
-                          <Text style={styles.primaryPayText}>Onayla ve yolculuğu bitir</Text>
-                        </LinearGradient>
+                        <PremiumText variant="body" style={styles.primaryPayText}>
+                          Onayla ve yolculuğu bitir
+                        </PremiumText>
                       </TouchableOpacity>
                     </>
                   )}
 
                   {processing ? (
-                    <ActivityIndicator style={{ marginTop: 16 }} color="#22D3EE" />
+                    <View style={styles.processingRow}>
+                      <ActivityIndicator size="small" color="#22D3EE" />
+                      <PremiumText variant="caption" muted style={styles.processingInlineText}>
+                        Tamamlanıyor…
+                      </PremiumText>
+                    </View>
                   ) : null}
 
                   <TouchableOpacity
@@ -491,18 +550,23 @@ export default function QRTripEndModal({
                       setPassengerStep('scan');
                       setPendingDriverId(null);
                     }}
+                    activeOpacity={0.85}
                   >
-                    <Text style={styles.backScanText}>← QR taramaya dön</Text>
+                    <PremiumText variant="caption" style={styles.backScanText}>
+                      ← QR taramaya dön
+                    </PremiumText>
                   </TouchableOpacity>
-                </View>
+                </GlassSurface>
               </View>
             )}
           </ScrollView>
 
-          <TouchableOpacity style={styles.cancelBtn} onPress={handleClose}>
-            <Text style={styles.cancelBtnText}>Vazgeç</Text>
+          <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} activeOpacity={0.85}>
+            <PremiumText variant="body" muted style={styles.cancelBtnText}>
+              Vazgeç
+            </PremiumText>
           </TouchableOpacity>
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );
@@ -511,146 +575,158 @@ export default function QRTripEndModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
     justifyContent: 'flex-end',
   },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
   container: {
-    backgroundColor: '#08111F',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 28,
     maxHeight: '92%',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderBottomWidth: 0,
+    paddingBottom: LDS_SPACING.md,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    ...LDS_ELEVATION.cockpit,
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 18,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.sm,
+    gap: LDS_SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: LDS_BORDER_COLOR.card,
   },
-  title: {
-    fontSize: 19,
-    fontWeight: '700',
-    color: 'rgba(243, 248, 255, 0.94)',
+  headerTextCol: {
     flex: 1,
+    minWidth: 0,
+    gap: LDS_SPACING.xxs,
+  },
+  phaseStep: {
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
+    lineHeight: 18,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(30,58,95,0.65)',
-    justifyContent: 'center',
+    width: 40,
+    height: 40,
     alignItems: 'center',
-  },
-  closeBtnText: {
-    fontSize: 18,
-    color: 'rgba(186,201,222,0.88)',
-    fontWeight: '600',
+    justifyContent: 'center',
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   scroll: {
     maxHeight: 520,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 8,
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xs,
   },
   choosePanel: {
-    gap: 12,
+    gap: LDS_SPACING.sm,
+  },
+  chooseQuestion: {
+    textAlign: 'center',
+    fontWeight: '700',
+    marginBottom: LDS_SPACING.xxs,
+  },
+  chooseOptionWrap: {
+    width: '100%',
   },
   chooseOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(16, 26, 43, 0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.22)',
+    gap: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
   chooseOptionIconWrap: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(8, 17, 31, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.28)',
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chooseOptionTextCol: {
     flex: 1,
     minWidth: 0,
+    gap: LDS_SPACING.xxs,
   },
   chooseOptionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.94)',
+    fontWeight: '700',
   },
   chooseOptionSubtitle: {
-    marginTop: 4,
-    fontSize: 13,
     lineHeight: 18,
-    color: 'rgba(186, 201, 222, 0.82)',
   },
   qrContainer: {
     alignItems: 'center',
   },
-  instruction: {
-    fontSize: 17,
-    color: 'rgba(243, 248, 255, 0.94)',
-    marginBottom: 16,
-    textAlign: 'center',
-    fontWeight: '600',
+  qrStage: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
+    ...LDS_ELEVATION.panel,
   },
   qrWrapper: {
     backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 6,
+    padding: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+  },
+  instruction: {
+    marginBottom: LDS_SPACING.sm,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   hint: {
-    marginTop: 16,
-    fontSize: 13,
-    color: 'rgba(186, 201, 222, 0.82)',
+    marginTop: LDS_SPACING.sm,
     textAlign: 'center',
-    paddingHorizontal: 16,
+    lineHeight: 18,
+    paddingHorizontal: LDS_SPACING.xs,
   },
   cameraContainer: {
     alignItems: 'center',
   },
-  /** Kamera kutusu içi: hazırlanıyor / işleniyor (BoardingScanModal ile uyumlu) */
+  cameraStage: {
+    width: '100%',
+    overflow: 'hidden',
+    ...LDS_ELEVATION.panel,
+  },
   cameraStatusOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8, 17, 31, 0.88)',
+    backgroundColor: 'rgba(8, 17, 31, 0.82)',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: LDS_SPACING.xs,
     zIndex: 100,
   },
   processingText: {
-    marginTop: 12,
-    color: 'rgba(186,201,222,0.88)',
-    fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   cameraWrapper: {
     width: width * 0.75,
     height: width * 0.75,
-    borderRadius: 16,
+    alignSelf: 'center',
+    borderRadius: LDS_RADIUS.lg,
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: '#020617',
   },
   camera: {
     flex: 1,
@@ -678,157 +754,174 @@ const styles = StyleSheet.create({
   topLeft: {
     top: 0,
     left: 0,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    borderTopLeftRadius: 8,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderTopLeftRadius: LDS_RADIUS.sm,
   },
   topRight: {
     top: 0,
     right: 0,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    borderTopRightRadius: 8,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderTopRightRadius: LDS_RADIUS.sm,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    borderBottomLeftRadius: 8,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderBottomLeftRadius: LDS_RADIUS.sm,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    borderBottomRightRadius: 8,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderBottomRightRadius: LDS_RADIUS.sm,
+  },
+  permCenter: {
+    paddingVertical: LDS_SPACING.xl,
+    alignItems: 'center',
+    gap: LDS_SPACING.sm,
+    width: '100%',
+  },
+  permLabel: {
+    fontWeight: '600',
+    textAlign: 'center',
   },
   permissionBtn: {
-    backgroundColor: 'rgba(16, 26, 43, 0.95)',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.lg,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   permissionBtnText: {
-    color: '#22D3EE',
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   cancelBtn: {
-    marginHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: LDS_SPACING.lg,
+    marginTop: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: 'rgba(186, 201, 222, 0.82)',
-    fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '700',
+    textAlign: 'center',
   },
   paymentPanel: {
     width: '100%',
   },
   paymentCard: {
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    padding: LDS_SPACING.lg,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
   paymentIconWrap: {
     alignSelf: 'center',
-    marginBottom: 10,
+    marginBottom: LDS_SPACING.xs,
   },
   paymentHeading: {
-    fontSize: 20,
     fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.96)',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: LDS_SPACING.xxs,
   },
   paymentBody: {
-    fontSize: 14,
-    color: 'rgba(186, 201, 222, 0.82)',
     textAlign: 'center',
-    lineHeight: 21,
-    marginBottom: 20,
+    lineHeight: 20,
+    marginBottom: LDS_SPACING.md,
   },
   primaryPayBtn: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  primaryPayGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
+    marginTop: LDS_SPACING.xxs,
   },
-  primaryPayGlass: {
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.24)',
-  },
-  primaryPayGradientAccentBorder: {
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.45)',
+  primaryPayBtnDisabled: {
+    opacity: 0.55,
   },
   primaryPayText: {
-    color: 'rgba(243, 248, 255, 0.94)',
-    fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   legacyPickLabel: {
-    fontSize: 14,
     fontWeight: '700',
-    color: 'rgba(243, 248, 255, 0.9)',
-    marginBottom: 10,
+    marginBottom: LDS_SPACING.xs,
     textAlign: 'center',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   legacyRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
+    gap: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.sm,
   },
   legacyChip: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(8, 17, 31, 0.65)',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.65)',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   legacyChipActive: {
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    borderColor: 'rgba(34, 211, 238, 0.48)',
-    borderTopColor: 'rgba(34, 211, 238, 0.35)',
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   legacyChipText: {
-    fontSize: 15,
     fontWeight: '700',
     color: 'rgba(186, 201, 222, 0.82)',
   },
   legacyChipTextActive: {
     color: 'rgba(243, 248, 255, 0.94)',
   },
-  backScan: {
-    marginTop: 18,
+  processingRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.sm,
+  },
+  processingInlineText: {
+    fontWeight: '600',
+  },
+  backScan: {
+    marginTop: LDS_SPACING.md,
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   backScanText: {
-    color: '#22D3EE',
-    fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: 'rgba(186, 230, 253, 0.92)',
   },
 });
