@@ -13027,52 +13027,72 @@ function PassengerDashboard({
 
                         <View style={styles.priceModalPayScrollHint}>
                           <Ionicons name="chevron-down" size={16} color="rgba(186,201,222,0.72)" />
-                          <Text style={styles.priceModalPayScrollHintText}>
-                            Ödeme yöntemini görmek için aşağı kaydırın
-                          </Text>
+                          <PremiumText variant="caption" muted style={styles.priceModalPayScrollHintText}>
+                            Ödeme seçenekleri için aşağı kaydır
+                          </PremiumText>
                         </View>
 
                         <View style={styles.priceModalPayLockHeader}>
                           <Ionicons name="lock-closed-outline" size={18} color="rgba(34,211,238,0.85)" />
-                          <Text style={styles.priceModalPayLockTitle}>Ödeme yöntemi</Text>
+                          <PremiumText variant="step" style={styles.priceModalPayLockTitle}>
+                            Ödeme yöntemini seç
+                          </PremiumText>
                         </View>
-                        <Text style={styles.priceModalPaySubtitle}>
-                          Sürücü yolculuk sonunda tahsil eder
-                        </Text>
+                        <PremiumText variant="caption" muted style={styles.priceModalPaySubtitle}>
+                          Ücret yolculuk sonunda tahsil edilir.
+                        </PremiumText>
 
                         <TouchableOpacity
                           onPress={() => {
                             void tapButtonHaptic();
                             priceOfferPaymentExplicitRef.current = true;
                           }}
-                          style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash]}
                           activeOpacity={0.88}
+                          style={styles.priceModalPayOptionWrap}
                         >
-                          <View style={styles.priceModalPayOptionLeft}>
-                            <Ionicons name="wallet-outline" size={22} color={PREMIUM_AUTH_CYAN} />
-                          </View>
-                          <View style={styles.priceModalPayOptionBody}>
-                            <View style={styles.priceModalPayOptionTitleRow}>
-                              <Text style={styles.priceModalPayOptionTitle}>Nakit</Text>
-                              <View style={styles.priceModalPayBadgeRecommended}>
-                                <Text style={styles.priceModalPayBadgeRecommendedText}>Önerilen</Text>
-                              </View>
+                          <GlassSurface
+                            variant="plain"
+                            borderRadius={LDS_RADIUS.md}
+                            style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash]}
+                          >
+                            <View style={styles.priceModalPayOptionLeft}>
+                              <Ionicons name="wallet-outline" size={22} color={PREMIUM_AUTH_CYAN} />
                             </View>
-                            <Text style={styles.priceModalPayOptionDesc}>
-                              Yolculuk sonunda sürücüye nakit ödeme yaparsınız.
-                            </Text>
-                          </View>
-                          <View style={styles.priceModalPayRadioOuterActive}>
-                            <View style={styles.priceModalPayRadioInnerActive} />
-                          </View>
+                            <View style={styles.priceModalPayOptionBody}>
+                              <View style={styles.priceModalPayOptionTitleRow}>
+                                <PremiumText variant="body" style={styles.priceModalPayOptionTitle}>
+                                  Nakit ödeme
+                                </PremiumText>
+                                <GlassSurface
+                                  variant="plain"
+                                  borderRadius={LDS_RADIUS.full}
+                                  style={styles.priceModalPayBadgeRecommended}
+                                >
+                                  <PremiumText variant="caption" style={styles.priceModalPayBadgeRecommendedText}>
+                                    Önerilen
+                                  </PremiumText>
+                                </GlassSurface>
+                              </View>
+                              <PremiumText variant="caption" muted style={styles.priceModalPayOptionDesc}>
+                                Yolculuk sonunda sürücüye nakit ödersin.
+                              </PremiumText>
+                            </View>
+                            <View style={styles.priceModalPayRadioOuterActive}>
+                              <View style={styles.priceModalPayRadioInnerActive} />
+                            </View>
+                          </GlassSurface>
                         </TouchableOpacity>
 
-                        <View style={styles.priceModalPayDefaultNote}>
+                        <GlassSurface
+                          variant="plain"
+                          borderRadius={LDS_RADIUS.sm}
+                          style={styles.priceModalPayDefaultNote}
+                        >
                           <Ionicons name="information-circle-outline" size={17} color="rgba(186,201,222,0.72)" />
-                          <Text style={styles.priceModalPayDefaultNoteText}>
-                            Herhangi bir seçim yapmazsanız varsayılan olarak Nakit seçeneği kullanılacaktır.
-                          </Text>
-                        </View>
+                          <PremiumText variant="caption" muted style={styles.priceModalPayDefaultNoteText}>
+                            Seçim yapmazsan varsayılan nakit ödeme uygulanır.
+                          </PremiumText>
+                        </GlassSurface>
                       </ScrollView>
 
                       <View style={[styles.priceModalFooter, { paddingBottom: Math.max(12, insets.bottom) }]}>
@@ -13149,18 +13169,19 @@ function PassengerDashboard({
                     if (!offerSendSubmitting) resetPriceOfferPaymentUi();
                   }}
                 />
-                <View style={styles.priceOfferPaymentWarnCard}>
+                <GlassSurface variant="panel" borderRadius={LDS_RADIUS.lg} style={styles.priceOfferPaymentWarnCard}>
                   <Ionicons
-                    name="warning"
+                    name="information-circle-outline"
                     size={40}
-                    color="rgba(251, 191, 36, 0.92)"
-                    style={{ alignSelf: 'center', marginBottom: 10 }}
+                    color={PREMIUM_AUTH_CYAN}
+                    style={styles.priceOfferPaymentWarnIcon}
                   />
-                  <Text style={styles.priceOfferPaymentWarnTitle}>Ödeme yöntemi seçilmedi</Text>
-                  <Text style={styles.priceOfferPaymentWarnBody}>
-                    Herhangi bir yöntem seçmezseniz yolculuk sonunda varsayılan olarak Nakit ile ödeme
-                    yapılacaktır.
-                  </Text>
+                  <PremiumText variant="title" style={styles.priceOfferPaymentWarnTitle}>
+                    Ödeme yöntemini seç
+                  </PremiumText>
+                  <PremiumText variant="body" muted style={styles.priceOfferPaymentWarnBody}>
+                    Seçim yapmazsan yolculuk sonunda varsayılan olarak nakit ödeme uygulanır.
+                  </PremiumText>
                   <TouchableOpacity
                     style={styles.priceOfferPaymentWarnPrimary}
                     activeOpacity={0.88}
@@ -13174,11 +13195,13 @@ function PassengerDashboard({
                       end={{ x: 1, y: 1 }}
                       style={styles.priceOfferPaymentWarnPrimaryGradient}
                     >
-                      <Text style={styles.priceOfferPaymentWarnPrimaryText}>Tamam, devam et</Text>
+                      <PremiumText variant="body" style={styles.priceOfferPaymentWarnPrimaryText}>
+                        Devam et
+                      </PremiumText>
                     </LinearGradient>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.priceOfferPaymentWarnSecondary}
+                    style={styles.priceOfferPaymentWarnSecondaryWrap}
                     activeOpacity={0.88}
                     disabled={offerSendSubmitting}
                     onPress={() => {
@@ -13186,9 +13209,13 @@ function PassengerDashboard({
                       resetPriceOfferPaymentUi();
                     }}
                   >
-                    <Text style={styles.priceOfferPaymentWarnSecondaryText}>Geri dön, seçim yap</Text>
+                    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.priceOfferPaymentWarnSecondary}>
+                      <PremiumText variant="body" muted style={styles.priceOfferPaymentWarnSecondaryText}>
+                        Geri dön ve seç
+                      </PremiumText>
+                    </GlassSurface>
                   </TouchableOpacity>
-                </View>
+                </GlassSurface>
               </View>
             </Modal>
           </View>
@@ -20110,46 +20137,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    marginTop: 4,
-    marginBottom: 8,
+    gap: LDS_SPACING.xxs,
+    paddingVertical: ldsSnapSpacing(6),
+    marginTop: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.xs,
   },
   priceModalPayScrollHintText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(186,201,222,0.78)',
     flexShrink: 1,
     textAlign: 'center',
+    fontWeight: '600',
   },
   priceModalPayLockHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
+    gap: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
   },
   priceModalPayLockTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.94)',
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
   },
   priceModalPaySubtitle: {
-    fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
-    marginBottom: 12,
-    marginLeft: 26,
+    marginBottom: LDS_SPACING.sm,
+    marginLeft: ldsSnapSpacing(26),
     lineHeight: 17,
+  },
+  priceModalPayOptionWrap: {
+    marginBottom: LDS_SPACING.sm,
   },
   priceModalPayOptionCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    marginBottom: 10,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
     backgroundColor: 'rgba(8,17,31,0.45)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
   },
   priceModalPayOptionCardCash: {
     borderColor: 'rgba(34,211,238,0.42)',
@@ -20162,8 +20186,8 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   priceModalPayOptionLeft: {
-    marginRight: 10,
-    paddingTop: 2,
+    marginRight: LDS_SPACING.sm,
+    paddingTop: ldsSnapSpacing(2),
   },
   priceModalPayOptionBody: {
     flex: 1,
@@ -20173,13 +20197,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 4,
+    gap: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
   },
   priceModalPayOptionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.94)',
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
   },
   priceModalPayOptionTitleMuted: {
     fontSize: 16,
@@ -20188,17 +20211,15 @@ const styles = StyleSheet.create({
   },
   priceModalPayBadgeRecommended: {
     backgroundColor: 'rgba(34,211,238,0.12)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: ldsSnapSpacing(7),
+    paddingVertical: LDS_SPACING.xxs,
     borderColor: 'rgba(34,211,238,0.28)',
+    ...LDS_ELEVATION.flat,
   },
   priceModalPayBadgeRecommendedText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     color: PREMIUM_AUTH_CYAN,
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
   priceModalPayBadgeSoon: {
     backgroundColor: 'rgba(22,36,56,0.75)',
@@ -20215,9 +20236,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.25,
   },
   priceModalPayOptionDesc: {
-    fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(186,201,222,0.82)',
     lineHeight: 17,
   },
   priceModalPayRadioOuterActive: {
@@ -20259,16 +20278,18 @@ const styles = StyleSheet.create({
   priceModalPayDefaultNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    marginTop: 2,
-    paddingHorizontal: 2,
-    marginBottom: 6,
+    gap: LDS_SPACING.xs,
+    marginTop: ldsSnapSpacing(2),
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    marginBottom: ldsSnapSpacing(6),
+    backgroundColor: 'rgba(8,17,31,0.45)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
   },
   priceModalPayDefaultNoteText: {
     flex: 1,
-    fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(186,201,222,0.78)',
     lineHeight: 17,
   },
   priceOfferPaymentWarnOverlay: {
@@ -20276,76 +20297,64 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(2, 6, 23, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 22,
+    paddingHorizontal: LDS_SPACING.lg,
   },
   priceOfferPaymentWarnCard: {
     width: '100%',
     maxWidth: 340,
+    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
     backgroundColor: 'rgba(16, 26, 43, 0.96)',
-    borderRadius: 20,
-    paddingVertical: 22,
-    paddingHorizontal: 20,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_BORDER_SLATE,
-    borderTopColor: 'rgba(34,211,238,0.22)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.38,
-    shadowRadius: 24,
-    elevation: 14,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     zIndex: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#030712',
-      },
-      default: {},
-    }),
+    ...LDS_ELEVATION.panel,
+  },
+  priceOfferPaymentWarnIcon: {
+    alignSelf: 'center',
+    marginBottom: LDS_SPACING.sm,
   },
   priceOfferPaymentWarnTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.96)',
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: LDS_SPACING.sm,
+    color: PREMIUM_TEXT_SOFT,
   },
   priceOfferPaymentWarnBody: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(186,201,222,0.88)',
     textAlign: 'center',
     lineHeight: 21,
-    marginBottom: 18,
+    marginBottom: LDS_SPACING.md,
   },
   priceOfferPaymentWarnPrimary: {
-    borderRadius: 14,
+    borderRadius: LDS_RADIUS.md,
     overflow: 'hidden',
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: 'rgba(34,211,238,0.35)',
   },
   priceOfferPaymentWarnPrimaryGradient: {
-    paddingVertical: 15,
-    paddingHorizontal: 16,
+    paddingVertical: ldsSnapSpacing(15),
+    paddingHorizontal: LDS_SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   priceOfferPaymentWarnPrimaryText: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#08111F',
   },
+  priceOfferPaymentWarnSecondaryWrap: {
+    width: '100%',
+  },
   priceOfferPaymentWarnSecondary: {
-    borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: ldsSnapSpacing(14),
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_BORDER_SLATE,
     backgroundColor: 'rgba(8,17,31,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
   },
   priceOfferPaymentWarnSecondaryText: {
-    fontSize: 15,
     fontWeight: '700',
-    color: 'rgba(243,248,255,0.88)',
+    textAlign: 'center',
   },
   priceModalSendWrapDisabled: {
     opacity: 0.72,
