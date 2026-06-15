@@ -8102,7 +8102,7 @@ function PassengerDashboard({
         if (data.success && data.user) {
           const driverDetails = data.user.driver_details || {};
           setOtherUserDetails({
-            rating: data.user.rating != null ? Number(data.user.rating) : 4.0,
+            rating: data.user.rating != null ? Number(data.user.rating) : undefined,
             totalTrips: data.user.total_trips || 0,
             profilePhoto: data.user.profile_photo,
             vehiclePhoto: driverDetails.vehicle_photo_url,
@@ -16292,7 +16292,7 @@ function DriverDashboard({
         
         if (data.success && data.user) {
           setOtherUserDetails({
-            rating: data.user.rating != null ? Number(data.user.rating) : 4.0,
+            rating: data.user.rating != null ? Number(data.user.rating) : undefined,
             totalTrips: data.user.total_trips || 0,
             profilePhoto: data.user.profile_photo,
           });

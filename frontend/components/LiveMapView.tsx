@@ -8139,23 +8139,33 @@ export default function LiveMapView({
                 <View style={styles.infoCardRow}>
                   <Ionicons name="star" size={20} color="#22D3EE" />
                   <Text style={styles.infoCardLabel}>Puan</Text>
-                  <View style={styles.infoCardRatingContainer}>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Ionicons 
-                        key={star}
-                        name={star <= Math.round(otherUserDetails?.rating ?? 4) ? "star" : "star-outline"} 
-                        size={18} 
-                        color={
-                          star <= Math.round(otherUserDetails?.rating ?? 4)
-                            ? '#22D3EE'
-                            : 'rgba(186,201,222,0.38)'
-                        } 
-                      />
-                    ))}
-                    <Text style={styles.infoCardRatingText}>
-                      {(otherUserDetails?.rating ?? 4).toFixed(1)}
-                    </Text>
-                  </View>
+                  {otherUserDetails?.rating != null &&
+                  Number.isFinite(Number(otherUserDetails.rating)) &&
+                  Number(otherUserDetails.rating) > 0 ? (
+                    <View style={styles.infoCardRatingContainer}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Ionicons
+                          key={star}
+                          name={
+                            star <= Math.round(Number(otherUserDetails.rating))
+                              ? 'star'
+                              : 'star-outline'
+                          }
+                          size={18}
+                          color={
+                            star <= Math.round(Number(otherUserDetails.rating))
+                              ? '#22D3EE'
+                              : 'rgba(186,201,222,0.38)'
+                          }
+                        />
+                      ))}
+                      <Text style={styles.infoCardRatingText}>
+                        {Number(otherUserDetails.rating).toFixed(1)}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.infoCardValue}>Henüz değerlendirme yok</Text>
+                  )}
                 </View>
               </View>
 
