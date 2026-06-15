@@ -2,12 +2,17 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
@@ -268,60 +273,101 @@ export default function BoardingScanModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
-        <View style={styles.container}>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
+
+        <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
-            <Text style={styles.title}>Biniş kodunu tarayın</Text>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} hitSlop={12}>
-              <Text style={styles.closeText}>✕</Text>
+            <View style={styles.headerTextCol}>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                QR doğrulaması
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                Binişi güvenli şekilde tamamlamak için karekodu okut.
+              </PremiumText>
+            </View>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeBtn}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Kapat"
+            >
+              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.hint}>Yalnızca sürücünün gösterdiği biniş karekodu geçerlidir (yol sonu kodu değil).</Text>
+
+          <PremiumText variant="caption" muted style={styles.hint}>
+            Yalnızca sürücünün gösterdiği biniş karekodu geçerlidir (yol sonu kodu değil).
+          </PremiumText>
+
           {!hasPermission?.granted ? (
             <View style={styles.centerBox}>
-              <Text style={styles.muted}>Kamera izni gerekli</Text>
-              <TouchableOpacity style={styles.permBtn} onPress={() => void requestPermission()}>
-                <Text style={styles.permBtnText}>İzin ver</Text>
+              <PremiumText variant="body" muted style={styles.permLabel}>
+                Kamera izni gerekli
+              </PremiumText>
+              <TouchableOpacity
+                style={styles.permBtn}
+                onPress={() => void requestPermission()}
+                activeOpacity={0.88}
+              >
+                <PremiumText variant="body" style={styles.permBtnText}>
+                  İzin ver
+                </PremiumText>
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.cameraBox}>
-              <CameraView
-                key={`boarding-cam-${cameraSessionKey}`}
-                style={StyleSheet.absoluteFill}
-                facing="back"
-                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                onCameraReady={() => {
-                  if (
-                    !mountedRef.current ||
-                    !visibleRef.current ||
-                    closingRef.current ||
-                    verifiedClosingRef.current
-                  ) {
-                    return;
-                  }
-                  setCameraReady(true);
-                  if (__DEV__) {
-                    console.log('[BoardingScanModal] onCameraReady');
-                  }
-                }}
-                onBarcodeScanned={scannerActive ? onBarcodeScanned : undefined}
-              />
-              <View style={styles.frame} pointerEvents="none" />
-              {!cameraReady && !processing ? (
-                <View style={styles.processing}>
-                  <ActivityIndicator size="large" color="#22D3EE" />
-                  <Text style={styles.processingText}>Kamera hazırlanıyor…</Text>
+            <GlassSurface variant="stage" style={styles.cameraStage} borderRadius={LDS_RADIUS.lg}>
+              <View style={styles.cameraBox}>
+                <CameraView
+                  key={`boarding-cam-${cameraSessionKey}`}
+                  style={StyleSheet.absoluteFill}
+                  facing="back"
+                  barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                  onCameraReady={() => {
+                    if (
+                      !mountedRef.current ||
+                      !visibleRef.current ||
+                      closingRef.current ||
+                      verifiedClosingRef.current
+                    ) {
+                      return;
+                    }
+                    setCameraReady(true);
+                    if (__DEV__) {
+                      console.log('[BoardingScanModal] onCameraReady');
+                    }
+                  }}
+                  onBarcodeScanned={scannerActive ? onBarcodeScanned : undefined}
+                />
+                <View style={styles.scanOverlay} pointerEvents="none">
+                  <View style={styles.scanFrame}>
+                    <View style={[styles.corner, styles.topLeft]} />
+                    <View style={[styles.corner, styles.topRight]} />
+                    <View style={[styles.corner, styles.bottomLeft]} />
+                    <View style={[styles.corner, styles.bottomRight]} />
+                  </View>
                 </View>
-              ) : null}
-              {processing ? (
-                <View style={styles.processing}>
-                  <ActivityIndicator size="large" color="#22D3EE" />
-                  <Text style={styles.processingText}>Doğrulanıyor…</Text>
-                </View>
-              ) : null}
-            </View>
+                {!cameraReady && !processing ? (
+                  <View style={styles.processing}>
+                    <ActivityIndicator size="large" color="#22D3EE" />
+                    <PremiumText variant="caption" muted style={styles.processingText}>
+                      Kamera hazırlanıyor…
+                    </PremiumText>
+                  </View>
+                ) : null}
+                {processing ? (
+                  <View style={styles.processing}>
+                    <ActivityIndicator size="large" color="#22D3EE" />
+                    <PremiumText variant="caption" muted style={styles.processingText}>
+                      Doğrulanıyor…
+                    </PremiumText>
+                  </View>
+                ) : null}
+              </View>
+            </GlassSurface>
           )}
-        </View>
+        </GlassSurface>
       </View>
     </Modal>
   );
@@ -330,77 +376,144 @@ export default function BoardingScanModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 17, 31, 0.88)',
     justifyContent: 'flex-end',
   },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
   container: {
-    backgroundColor: 'rgba(16, 26, 43, 0.98)',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 28,
-    paddingHorizontal: 16,
-    paddingTop: 12,
     maxHeight: '88%',
-    borderWidth: 1,
-    borderColor: '#1E3A5F',
-    borderBottomWidth: 0,
-    borderTopColor: 'rgba(34, 211, 238, 0.26)',
+    paddingBottom: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.sm,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    ...LDS_ELEVATION.cockpit,
   },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: {
-    color: 'rgba(243, 248, 255, 0.94)',
-    fontSize: 18,
-    fontWeight: '800',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: LDS_BORDER_COLOR.card,
+  },
+  headerTextCol: {
     flex: 1,
+    minWidth: 0,
+    gap: LDS_SPACING.xxs,
   },
-  closeBtn: { padding: 8 },
-  closeText: { color: 'rgba(186, 201, 222, 0.82)', fontSize: 20, fontWeight: '600' },
-  hint: {
-    color: 'rgba(186, 201, 222, 0.82)',
-    fontSize: 13,
-    marginTop: 10,
+  phaseStep: {
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
     lineHeight: 18,
   },
-  centerBox: { paddingVertical: 40, alignItems: 'center' },
-  muted: { color: 'rgba(186, 201, 222, 0.82)', marginBottom: 12, fontWeight: '600' },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+  },
+  hint: {
+    marginTop: LDS_SPACING.sm,
+    lineHeight: 18,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  centerBox: {
+    paddingVertical: LDS_SPACING.xl,
+    alignItems: 'center',
+    gap: LDS_SPACING.sm,
+  },
+  permLabel: {
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   permBtn: {
-    backgroundColor: 'rgba(8, 17, 31, 0.78)',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.42)',
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   permBtnText: {
-    color: '#22D3EE',
-    fontWeight: '700',
-    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  cameraStage: {
+    marginTop: LDS_SPACING.md,
+    overflow: 'hidden',
+    ...LDS_ELEVATION.panel,
   },
   cameraBox: {
-    marginTop: 16,
     height: 320,
-    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#020617',
-    borderWidth: 1,
-    borderColor: 'rgba(30, 58, 95, 0.55)',
+    position: 'relative',
   },
-  frame: {
+  scanOverlay: {
     ...StyleSheet.absoluteFillObject,
-    borderWidth: 2,
-    borderColor: 'rgba(34, 211, 238, 0.42)',
-    borderRadius: 14,
-    margin: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanFrame: {
+    width: '70%',
+    height: '70%',
+    position: 'relative',
+  },
+  corner: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderColor: 'rgba(34, 211, 238, 0.72)',
+  },
+  topLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderTopLeftRadius: LDS_RADIUS.sm,
+  },
+  topRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderTopRightRadius: LDS_RADIUS.sm,
+  },
+  bottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderBottomLeftRadius: LDS_RADIUS.sm,
+  },
+  bottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderBottomRightRadius: LDS_RADIUS.sm,
   },
   processing: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(8, 17, 31, 0.82)',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: LDS_SPACING.xs,
   },
   processingText: {
-    color: 'rgba(186,201,222,0.88)',
-    marginTop: 12,
+    marginTop: LDS_SPACING.xs,
     fontWeight: '600',
   },
 });
