@@ -8,27 +8,24 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
-  Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR } from '../design-system/tokens/border';
+import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
+import { appAlert } from '../contexts/AppAlertContext';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
-const TEXT_PRIMARY = '#111111';
-const TEXT_SECONDARY = '#6E6E73';
-const CARD_BG = '#FFFFFF';
-const CARD_SHADOW = Platform.select({
-  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
-  android: { elevation: 2 },
-  default: {},
-});
 
 export type MatchRequestMeRow = {
   id: string;
@@ -46,6 +43,17 @@ export type MatchRequestMeRow = {
 
 function routeLine(from?: string | null, to?: string | null): string {
   return `${(from && String(from).trim()) || '—'} → ${(to && String(to).trim()) || '—'}`;
+}
+
+function formatSenderRating(rating: number | null | undefined): string | null {
+  const n = Number(rating);
+  return Number.isFinite(n) && n > 0 ? n.toFixed(1) : null;
+}
+
+function formatSenderTrips(trips: number | null | undefined): string | null {
+  if (trips == null) return null;
+  const n = Number(trips);
+  return Number.isFinite(n) && n >= 0 ? String(n) : null;
 }
 
 function pushToChat(
@@ -139,7 +147,12 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
         detail?: string;
       };
       if (!res.ok || !d.success || !d.conversation_id) {
-        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Kabul edilemedi.');
+        appAlert(
+          'Talep kabul edilemedi',
+          typeof d.detail === 'string' && d.detail ? d.detail : 'İstek tamamlanamadı. Lütfen tekrar deneyin.',
+          [{ text: 'Tamam' }],
+          { tone: 'error' },
+        );
         return;
       }
       const sid = String(row.sender_user_id || '').trim();
@@ -152,7 +165,12 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
       });
       void load();
     } catch {
-      Alert.alert('Talep', 'Bağlantı hatası.');
+      appAlert(
+        'Bağlantı hatası',
+        'İstek tamamlanamadı. Lütfen tekrar deneyin.',
+        [{ text: 'Tamam' }],
+        { tone: 'error' },
+      );
     } finally {
       setBusyId(null);
       setBusyAction(null);
@@ -172,12 +190,22 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
       });
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
       if (!res.ok || !d.success) {
-        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Reddedilemedi.');
+        appAlert(
+          'Talep reddedilemedi',
+          typeof d.detail === 'string' && d.detail ? d.detail : 'İstek tamamlanamadı. Lütfen tekrar deneyin.',
+          [{ text: 'Tamam' }],
+          { tone: 'error' },
+        );
         return;
       }
       void load();
     } catch {
-      Alert.alert('Talep', 'Bağlantı hatası.');
+      appAlert(
+        'Bağlantı hatası',
+        'İstek tamamlanamadı. Lütfen tekrar deneyin.',
+        [{ text: 'Tamam' }],
+        { tone: 'error' },
+      );
     } finally {
       setBusyId(null);
       setBusyAction(null);
@@ -192,6 +220,7 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
+      <CockpitBackground />
       <ScreenHeaderGradient
         title="Gelen talepler"
         onBack={onBack ?? (() => router.back())}
@@ -199,53 +228,109 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
       />
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
+          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <PremiumText variant="body" muted style={styles.loadingText}>
+            Talepler yükleniyor
+          </PremiumText>
         </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void onPull()} tintColor={PRIMARY_GRAD[0]} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => void onPull()} tintColor={PREMIUM_AUTH_CYAN} />
           }
         >
-          <Text style={styles.lead}>Teklifine gelen talepler — kabul sonrası sohbet açılır.</Text>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.leadPanel}>
+            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.guardianChip}>
+              <Ionicons name="compass-outline" size={14} color="rgba(34,211,238,0.82)" />
+              <PremiumText variant="caption" style={styles.guardianChipText}>
+                Talep değerlendirme
+              </PremiumText>
+            </GlassSurface>
+            <PremiumText variant="body" muted style={styles.lead}>
+              Gelen talepler değerlendiriliyor. Kabul ettiğinizde sohbet açılır.
+            </PremiumText>
+          </GlassSurface>
+
           {rows.length === 0 ? (
-            <Text style={styles.muted}>Bekleyen talep yok.</Text>
+            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.emptyPanel}>
+              <PremiumText variant="title" style={styles.emptyTitle}>
+                Eşleşme bekleniyor
+              </PremiumText>
+              <PremiumText variant="body" muted style={styles.emptyBody}>
+                Uygun talep gelince burada görünür.
+              </PremiumText>
+            </GlassSurface>
           ) : (
             rows.map((r) => {
               const name = (r.sender_user_name || r.sender_name || 'Kullanıcı').trim();
-              const rating = r.sender_rating != null ? Number(r.sender_rating).toFixed(1) : '—';
-              const trips = r.sender_total_trips != null ? String(r.sender_total_trips) : '—';
+              const ratingText = formatSenderRating(r.sender_rating);
+              const tripsText = formatSenderTrips(r.sender_total_trips);
               const acceptBusy = busyId === r.id && busyAction === 'accept';
               const rejectBusy = busyId === r.id && busyAction === 'reject';
+              const timeHint = String(r.time_match_hint || '').trim();
               return (
-                <View key={r.id} style={styles.card}>
-                  <Text style={styles.name}>{name}</Text>
-                  <Text style={styles.meta}>
-                    ⭐ {rating} · 🧭 {trips} yolculuk
-                  </Text>
-                  <Text style={styles.route}>{routeLine(r.listing?.from_text, r.listing?.to_text)}</Text>
-                  {r.message ? (
-                    <Text style={styles.msg} numberOfLines={4}>
-                      “{r.message}”
-                    </Text>
+                <GlassSurface key={r.id} variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.card}>
+                  <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.statusChip}>
+                    <PremiumText variant="caption" style={styles.statusChipText}>
+                      Değerlendirme bekliyor
+                    </PremiumText>
+                  </GlassSurface>
+                  <PremiumText variant="title" style={styles.name}>
+                    {name}
+                  </PremiumText>
+                  {ratingText || tripsText ? (
+                    <View style={styles.metaRow}>
+                      {ratingText ? (
+                        <View style={styles.metaItem}>
+                          <Ionicons name="star" size={13} color={PREMIUM_AUTH_CYAN} />
+                          <PremiumText variant="caption" muted style={styles.metaText}>
+                            {ratingText}
+                          </PremiumText>
+                        </View>
+                      ) : null}
+                      {tripsText ? (
+                        <View style={styles.metaItem}>
+                          <Ionicons name="navigate-outline" size={13} color={PREMIUM_AUTH_CYAN} />
+                          <PremiumText variant="caption" muted style={styles.metaText}>
+                            {tripsText} yolculuk
+                          </PremiumText>
+                        </View>
+                      ) : null}
+                    </View>
                   ) : null}
-                  <Text style={styles.hint}>Saat uyumu: {r.time_match_hint || '—'}</Text>
+                  <PremiumText variant="body" style={styles.route}>
+                    {routeLine(r.listing?.from_text, r.listing?.to_text)}
+                  </PremiumText>
+                  {r.message ? (
+                    <PremiumText variant="body" muted style={styles.msg} numberOfLines={4}>
+                      “{r.message}”
+                    </PremiumText>
+                  ) : null}
+                  {timeHint ? (
+                    <PremiumText variant="caption" muted style={styles.hint}>
+                      Zaman uyumu: {timeHint}
+                    </PremiumText>
+                  ) : null}
                   <View style={styles.row}>
                     <Pressable onPress={() => openProfile(r.sender_user_id)} style={styles.linkBtn}>
-                      <Text style={styles.linkText}>Profili Gör</Text>
+                      <PremiumText variant="body" style={styles.linkText}>
+                        Profili gör
+                      </PremiumText>
                     </Pressable>
                     <Pressable onPress={() => void onReject(r)} disabled={!!busyId}>
-                      <Text style={styles.reject}>{rejectBusy ? '…' : 'Reddet'}</Text>
+                      <PremiumText variant="body" muted style={styles.reject}>
+                        {rejectBusy ? '…' : 'Reddet'}
+                      </PremiumText>
                     </Pressable>
                     <GradientButton
-                      label="Kabul Et"
+                      label="Kabul et"
                       loading={acceptBusy}
                       onPress={() => void onAccept(r)}
                       style={{ minWidth: 112 }}
                     />
                   </View>
-                </View>
+                </GlassSurface>
               );
             })
           )}
@@ -256,32 +341,140 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F2F2F7' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll: { padding: 16, paddingBottom: 32 },
-  lead: { fontSize: 14, color: TEXT_SECONDARY, marginBottom: 14, lineHeight: 20 },
-  muted: { fontSize: 15, color: TEXT_SECONDARY },
-  card: {
-    backgroundColor: CARD_BG,
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
-    ...CARD_SHADOW,
+  root: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
-  name: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
-  meta: { marginTop: 4, fontSize: 13, color: TEXT_SECONDARY },
-  route: { marginTop: 8, fontSize: 15, color: TEXT_PRIMARY, fontWeight: '600', lineHeight: 22 },
-  msg: { marginTop: 8, fontSize: 14, color: TEXT_PRIMARY, lineHeight: 20 },
-  hint: { marginTop: 6, fontSize: 12, color: TEXT_SECONDARY },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: LDS_SPACING.sm,
+  },
+  loadingText: {
+    textAlign: 'center',
+  },
+  scroll: {
+    padding: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xl,
+    gap: LDS_SPACING.sm,
+  },
+  leadPanel: {
+    padding: LDS_SPACING.md,
+    marginBottom: LDS_SPACING.xs,
+    backgroundColor: 'rgba(16,26,43,0.88)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
+  },
+  guardianChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
+  lead: {
+    lineHeight: 20,
+  },
+  emptyPanel: {
+    padding: LDS_SPACING.lg,
+    alignItems: 'center',
+    backgroundColor: 'rgba(16,26,43,0.88)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
+  },
+  emptyTitle: {
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+    textAlign: 'center',
+    marginBottom: LDS_SPACING.xs,
+  },
+  emptyBody: {
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  card: {
+    padding: LDS_SPACING.md,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(16,26,43,0.92)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
+  },
+  statusChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
+  },
+  statusChipText: {
+    fontWeight: '700',
+    color: 'rgba(186, 230, 253, 0.92)',
+    letterSpacing: 0.1,
+  },
+  name: {
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xxs,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+  },
+  metaText: {
+    fontWeight: '600',
+  },
+  route: {
+    marginTop: LDS_SPACING.xs,
+    fontWeight: '600',
+    lineHeight: 22,
+    color: PREMIUM_TEXT_SOFT,
+  },
+  msg: {
+    marginTop: LDS_SPACING.xs,
+    lineHeight: 20,
+  },
+  hint: {
+    marginTop: LDS_SPACING.xs,
+  },
   row: {
-    marginTop: 12,
+    marginTop: LDS_SPACING.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: LDS_SPACING.xs,
     flexWrap: 'wrap',
   },
-  linkBtn: { paddingVertical: 6, paddingHorizontal: 4 },
-  linkText: { color: PRIMARY_GRAD[0], fontWeight: '700', fontSize: 15 },
-  reject: { color: TEXT_SECONDARY, fontWeight: '600', fontSize: 15, paddingHorizontal: 8 },
+  linkBtn: {
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  linkText: {
+    color: PREMIUM_AUTH_CYAN,
+    fontWeight: '700',
+  },
+  reject: {
+    fontWeight: '600',
+    paddingHorizontal: LDS_SPACING.xs,
+  },
 });
