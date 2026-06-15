@@ -5396,8 +5396,24 @@ function PassengerOfferCard({
   const [accepting, setAccepting] = useState(false);
   
   const personName = displayFirstName(offer.driver_name, 'Sürücü');
-  const personRating = offer.driver_rating ?? 4.0;
-  const tripCount = Math.floor(personRating * 100) + 50;
+  const rawRating = Number(offer.driver_rating);
+  const hasRating =
+    offer.driver_rating != null && Number.isFinite(rawRating) && rawRating > 0;
+  const offerTrust = offer as {
+    total_trips?: number;
+    driver_total_trips?: number;
+    driver_verified?: boolean;
+    is_verified?: boolean;
+    kyc_verified?: boolean;
+  };
+  const rawTripCount = Number(
+    offerTrust.total_trips ?? offerTrust.driver_total_trips,
+  );
+  const hasTripCount = Number.isFinite(rawTripCount) && rawTripCount > 0;
+  const isVerified = Boolean(
+    offerTrust.driver_verified ?? offerTrust.is_verified ?? offerTrust.kyc_verified,
+  );
+  const hasTrustMeta = hasRating || hasTripCount || isVerified;
   const dtp = Number(offer.distance_to_passenger_km);
   const dk = Number(offer.distance_km);
   const distanceToPassengerKm =
@@ -5406,9 +5422,9 @@ function PassengerOfferCard({
       : Number.isFinite(dk) && dk > 0
         ? dk.toFixed(1)
         : '?';
-  const arrivalTime =
-    offer.estimated_arrival_min ??
-    (Number.isFinite(dtp) && dtp > 0 ? Math.round((dtp / 40) * 60) : Math.round((5 / 40) * 60));
+  const rawEta = Number(offer.estimated_arrival_min);
+  const hasServerEta =
+    offer.estimated_arrival_min != null && Number.isFinite(rawEta) && rawEta > 0;
 
   const handleAccept = async () => {
     setAccepting(true);
@@ -5425,7 +5441,9 @@ function PassengerOfferCard({
       {isBest && (
         <View style={passengerCardStyles.bestBadge}>
           <Ionicons name="trophy" size={14} color={PREMIUM_AUTH_CYAN} />
-          <Text style={passengerCardStyles.bestText}>ÖNERİLEN</Text>
+          <PremiumText variant="caption" style={passengerCardStyles.bestText}>
+            ÖNERİLEN
+          </PremiumText>
         </View>
       )}
       
@@ -5437,7 +5455,9 @@ function PassengerOfferCard({
             <Image source={{ uri: offer.driver_photo }} style={passengerCardStyles.avatar} />
           ) : (
             <View style={passengerCardStyles.avatarPlaceholder}>
-              <Text style={passengerCardStyles.avatarLetter}>{personName.charAt(0)}</Text>
+              <PremiumText variant="title" style={passengerCardStyles.avatarLetter}>
+                {personName.charAt(0)}
+              </PremiumText>
             </View>
           )}
           <View style={passengerCardStyles.onlineDot} />
@@ -5445,21 +5465,63 @@ function PassengerOfferCard({
         
         {/* Sürücü Bilgileri */}
         <View style={passengerCardStyles.driverInfo}>
-          <Text style={passengerCardStyles.driverName}>{personName}</Text>
-          <View style={passengerCardStyles.ratingRow}>
-            <Ionicons name="star" size={12} color="#FBBF24" />
-            <Text style={passengerCardStyles.ratingText}>{personRating.toFixed(1)}</Text>
-            <Text style={passengerCardStyles.tripCount}>• {tripCount} yolculuk</Text>
-          </View>
+          <PremiumText variant="body" style={passengerCardStyles.driverName}>
+            {personName}
+          </PremiumText>
+          {hasTrustMeta ? (
+            <View style={passengerCardStyles.ratingRow}>
+              {hasRating ? (
+                <>
+                  <Ionicons name="star" size={12} color="#FBBF24" />
+                  <PremiumText variant="caption" style={passengerCardStyles.ratingText}>
+                    {rawRating.toFixed(1)}
+                  </PremiumText>
+                </>
+              ) : null}
+              {hasTripCount ? (
+                <>
+                  {hasRating ? (
+                    <PremiumText variant="caption" muted style={passengerCardStyles.trustSep}>
+                      •
+                    </PremiumText>
+                  ) : null}
+                  <PremiumText variant="caption" muted style={passengerCardStyles.tripCount}>
+                    {Math.floor(rawTripCount)} yolculuk
+                  </PremiumText>
+                </>
+              ) : null}
+              {isVerified ? (
+                <>
+                  {hasRating || hasTripCount ? (
+                    <PremiumText variant="caption" muted style={passengerCardStyles.trustSep}>
+                      •
+                    </PremiumText>
+                  ) : null}
+                  <Ionicons name="shield-checkmark" size={12} color={PREMIUM_AUTH_CYAN} />
+                  <PremiumText variant="caption" muted style={passengerCardStyles.verifiedText}>
+                    Doğrulanmış
+                  </PremiumText>
+                </>
+              ) : null}
+            </View>
+          ) : (
+            <PremiumText variant="caption" muted style={passengerCardStyles.noRatingText}>
+              Henüz değerlendirme yok
+            </PremiumText>
+          )}
           {offer.vehicle_model && (
-            <Text style={passengerCardStyles.vehicleText}>{offer.vehicle_model}</Text>
+            <PremiumText variant="caption" muted style={passengerCardStyles.vehicleText}>
+              {offer.vehicle_model}
+            </PremiumText>
           )}
         </View>
         
         {/* Fiyat */}
-        <View style={passengerCardStyles.priceBox}>
-          <Text style={passengerCardStyles.priceAmount}>₺{offer.price || '?'}</Text>
-        </View>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={passengerCardStyles.priceBox}>
+          <PremiumText variant="title" style={passengerCardStyles.priceAmount}>
+            ₺{offer.price || '?'}
+          </PremiumText>
+        </GlassSurface>
       </View>
       
       {/* Alt Kısım - Mesafe + Süre + Butonlar */}
@@ -5467,12 +5529,18 @@ function PassengerOfferCard({
         <View style={passengerCardStyles.statsRow}>
           <View style={passengerCardStyles.statItem}>
             <Ionicons name="navigate-circle-outline" size={16} color="rgba(186,201,222,0.82)" />
-            <Text style={passengerCardStyles.statText}>{distanceToPassengerKm} km</Text>
+            <PremiumText variant="caption" muted style={passengerCardStyles.statText}>
+              {distanceToPassengerKm} km
+            </PremiumText>
           </View>
-          <View style={passengerCardStyles.statItem}>
-            <Ionicons name="time-outline" size={16} color="rgba(186,201,222,0.82)" />
-            <Text style={passengerCardStyles.statText}>{arrivalTime} dk</Text>
-          </View>
+          {hasServerEta ? (
+            <View style={passengerCardStyles.statItem}>
+              <Ionicons name="time-outline" size={16} color="rgba(186,201,222,0.82)" />
+              <PremiumText variant="caption" muted style={passengerCardStyles.statText}>
+                {Math.round(rawEta)} dk
+              </PremiumText>
+            </View>
+          ) : null}
         </View>
         
         <View style={passengerCardStyles.actionRow}>
@@ -5495,7 +5563,9 @@ function PassengerOfferCard({
             ) : (
               <>
                 <Ionicons name="checkmark" size={18} color="#08111F" />
-                <Text style={passengerCardStyles.acceptText}>Kabul Et</Text>
+                <PremiumText variant="body" style={passengerCardStyles.acceptText}>
+                  Kabul et
+                </PremiumText>
               </>
             )}
           </TouchableOpacity>
@@ -5607,23 +5677,25 @@ const passengerCardStyles = StyleSheet.create({
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginTop: LDS_SPACING.xxs,
+    gap: LDS_SPACING.xxs,
   },
   ratingText: {
-    fontSize: 12,
     fontWeight: '600',
     color: 'rgba(243, 248, 255, 0.9)',
-    marginLeft: 3,
   },
-  tripCount: {
-    fontSize: 11,
-    color: 'rgba(186, 201, 222, 0.82)',
-    marginLeft: 4,
+  noRatingText: {
+    marginTop: LDS_SPACING.xxs,
+  },
+  trustSep: {
+    marginHorizontal: LDS_SPACING.xxs,
+  },
+  tripCount: {},
+  verifiedText: {
+    marginLeft: LDS_SPACING.xxs,
   },
   vehicleText: {
-    fontSize: 11,
-    color: 'rgba(186, 201, 222, 0.78)',
-    marginTop: 2,
+    marginTop: LDS_SPACING.xxs,
   },
   priceBox: {
     backgroundColor: 'rgba(5, 11, 24, 0.55)',
@@ -5655,17 +5727,15 @@ const passengerCardStyles = StyleSheet.create({
   statItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: LDS_SPACING.xxs,
   },
   statText: {
-    fontSize: 12,
-    color: 'rgba(186, 201, 222, 0.82)',
     fontWeight: '500',
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: LDS_SPACING.sm,
   },
   dismissBtn: {
     width: 36,
