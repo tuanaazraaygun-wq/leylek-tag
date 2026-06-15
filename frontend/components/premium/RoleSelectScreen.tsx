@@ -28,6 +28,8 @@ import {
   computeRoleCardHeroHeight,
   computeRoleIllustrationHeroSize,
 } from '../../design-system/primitives';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
 
 export type RoleSelectBreakpoints = {
   usableHeight: number;
@@ -192,6 +194,19 @@ export function RoleSelectScreen({
   onCloseAdminPanel,
 }: RoleSelectScreenProps) {
   const styles = stylesProp as Record<string, object>;
+
+  const tripExitBannerNewline = roleSelectTripExitBanner?.indexOf('\n') ?? -1;
+  const tripExitBannerTitle =
+    roleSelectTripExitBanner == null
+      ? null
+      : tripExitBannerNewline >= 0
+        ? roleSelectTripExitBanner.slice(0, tripExitBannerNewline)
+        : roleSelectTripExitBanner;
+  const tripExitBannerBody =
+    roleSelectTripExitBanner != null && tripExitBannerNewline >= 0
+      ? roleSelectTripExitBanner.slice(tripExitBannerNewline + 1)
+      : null;
+
   const roleCardHeroHeight = computeRoleCardHeroHeight(
     roleCardMinHeight,
     rs.isVeryCompact,
@@ -254,9 +269,27 @@ export function RoleSelectScreen({
               style={[styles.roleSelectBannerWrap, { opacity: roleSelectBannerShimmer }]}
               pointerEvents="none"
             >
-              <View style={styles.roleSelectBannerInner}>
-                <Text style={styles.roleSelectBannerText}>{roleSelectTripExitBanner}</Text>
-              </View>
+              <GlassSurface
+                variant="plain"
+                borderRadius={LDS_RADIUS.sm}
+                style={styles.roleSelectBannerInner}
+              >
+                <PremiumText
+                  variant="body"
+                  style={[styles.roleSelectBannerText, { textAlign: 'center' }]}
+                >
+                  {tripExitBannerTitle}
+                </PremiumText>
+                {tripExitBannerBody ? (
+                  <PremiumText
+                    variant="caption"
+                    muted
+                    style={{ textAlign: 'center', marginTop: LDS_SPACING.xxs }}
+                  >
+                    {tripExitBannerBody}
+                  </PremiumText>
+                ) : null}
+              </GlassSurface>
             </Animated.View>
           ) : null}
           {/* Üst Bar */}
