@@ -45,6 +45,7 @@ import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
 import PassengerDriverForceEndReviewModal from '../components/PassengerDriverForceEndReviewModal';
+import MutualTripEndReviewModal from '../components/MutualTripEndReviewModal';
 import TransferPaymentConfirmModal from '../components/TransferPaymentConfirmModal';
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
@@ -8955,6 +8956,7 @@ function PassengerDashboard({
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
+  const [mutualTripEndSubmitting, setMutualTripEndSubmitting] = useState(false);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
@@ -14011,74 +14013,68 @@ function PassengerDashboard({
       ) : null}
 
       {/* Karşılıklı İptal Onay Modalı - YOLCU (force-end / mavi kart ile legacyTripEndModalVisible) */}
-      <Modal
+      <MutualTripEndReviewModal
         visible={legacyTripEndModalVisible(showTripEndModal, activeTag, passengerDriverForceReview)}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
+        requesterRole={
+          tripEndRequesterType === 'driver' || tripEndRequesterType === 'passenger'
+            ? tripEndRequesterType
+            : null
+        }
+        submitting={mutualTripEndSubmitting}
+        onClose={() => {
+          if (mutualTripEndSubmitting) return;
           setShowTripEndModal(false);
           setTripEndRequesterType(null);
         }}
-      >
-        <View style={styles.tripEndModalOverlay}>
-          <View style={styles.tripEndModalContainer}>
-            <View style={styles.tripEndModalHeader}>
-              <Ionicons name="alert-circle" size={50} color="#3FA9F5" />
-              <Text style={styles.tripEndModalTitle}>Yolculuk Sonlandırma</Text>
-            </View>
-            
-            <Text style={styles.tripEndModalMessage}>
-              {tripEndRequesterType === 'driver' 
-                ? 'Şoför yolculuğu bitirmek istiyor. Onaylıyor musunuz?'
-                : 'Yolcu yolculuğu bitirmek istiyor. Onaylıyor musunuz?'
-              }
-            </Text>
-            
-            <View style={styles.tripEndModalButtons}>
-              <TouchableOpacity
-                style={styles.tripEndApproveButton}
-                onPress={async () => {
-                  try {
-                    const response = await fetch(
-                      `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=true`,
-                      { method: 'POST' }
-                    );
-                    const data = await response.json();
-                    if (data.success && data.approved) {
-                      appAlert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
-                      setActiveTag(null);
-                      setDestination(null);
-                      setScreen('role-select');
-                    }
-                  } catch (error) {
-                    appAlert('Hata', 'İşlem başarısız');
-                  }
-                  setShowTripEndModal(false);
-                  setTripEndRequesterType(null);
-                }}
-              >
-                <Text style={styles.tripEndApproveButtonText}>Onaylıyorum</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.tripEndRejectButton}
-                onPress={async () => {
-                  try {
-                    await fetch(
-                      `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=false`,
-                      { method: 'POST' }
-                    );
-                  } catch (error) {}
-                  setShowTripEndModal(false);
-                  setTripEndRequesterType(null);
-                }}
-              >
-                <Text style={styles.tripEndRejectButtonText}>Onaylamıyorum</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onApprove={async () => {
+          if (mutualTripEndSubmitting) return;
+          setMutualTripEndSubmitting(true);
+          try {
+            const response = await fetch(
+              `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=true`,
+              { method: 'POST' },
+            );
+            const data = await response.json();
+            if (data.success && data.approved) {
+              appAlert(
+                'Yolculuk sonlandırıldı',
+                'Yolculuk kaydı kapatıldı.',
+                [{ text: 'Tamam' }],
+                { tone: 'success' },
+              );
+              setActiveTag(null);
+              setDestination(null);
+              setScreen('role-select');
+            }
+          } catch (error) {
+            appAlert(
+              'İşlem tamamlanamadı',
+              'Lütfen kısa bir süre sonra tekrar deneyin.',
+              [{ text: 'Tamam' }],
+              { tone: 'error' },
+            );
+          } finally {
+            setMutualTripEndSubmitting(false);
+            setShowTripEndModal(false);
+            setTripEndRequesterType(null);
+          }
+        }}
+        onReject={async () => {
+          if (mutualTripEndSubmitting) return;
+          setMutualTripEndSubmitting(true);
+          try {
+            await fetch(
+              `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=false`,
+              { method: 'POST' },
+            );
+          } catch (error) {}
+          finally {
+            setMutualTripEndSubmitting(false);
+            setShowTripEndModal(false);
+            setTripEndRequesterType(null);
+          }
+        }}
+      />
       
       <DriverPaymentDetailsSheet
         visible={driverPaymentSheetVisible}
@@ -16116,6 +16112,7 @@ function DriverDashboard({
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
+  const [mutualTripEndSubmitting, setMutualTripEndSubmitting] = useState(false);
   
   // Animation
   const buttonPulse = useRef(new Animated.Value(1)).current;
@@ -18815,73 +18812,67 @@ function DriverDashboard({
       ) : null}
 
       {/* Karşılıklı İptal Onay Modalı - ŞOFÖR (force-end / mavi kart ile legacyTripEndModalVisible) */}
-      <Modal
+      <MutualTripEndReviewModal
         visible={legacyTripEndModalVisible(showTripEndModal, activeTag, driverPassengerForceEndReview)}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
+        requesterRole={
+          tripEndRequesterType === 'driver' || tripEndRequesterType === 'passenger'
+            ? tripEndRequesterType
+            : null
+        }
+        submitting={mutualTripEndSubmitting}
+        onClose={() => {
+          if (mutualTripEndSubmitting) return;
           setShowTripEndModal(false);
           setTripEndRequesterType(null);
         }}
-      >
-        <View style={styles.tripEndModalOverlay}>
-          <View style={styles.tripEndModalContainer}>
-            <View style={styles.tripEndModalHeader}>
-              <Ionicons name="alert-circle" size={50} color="#3FA9F5" />
-              <Text style={styles.tripEndModalTitle}>Yolculuk Sonlandırma</Text>
-            </View>
-            
-            <Text style={styles.tripEndModalMessage}>
-              {tripEndRequesterType === 'passenger' 
-                ? 'Yolcu yolculuğu bitirmek istiyor. Onaylıyor musunuz?'
-                : 'Şoför yolculuğu bitirmek istiyor. Onaylıyor musunuz?'
-              }
-            </Text>
-            
-            <View style={styles.tripEndModalButtons}>
-              <TouchableOpacity
-                style={styles.tripEndApproveButton}
-                onPress={async () => {
-                  try {
-                    const response = await fetch(
-                      `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=true`,
-                      { method: 'POST' }
-                    );
-                    const data = await response.json();
-                    if (data.success && data.approved) {
-                      appAlert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
-                      setActiveTag(null);
-                      setScreen('role-select');
-                    }
-                  } catch (error) {
-                    appAlert('Hata', 'İşlem başarısız');
-                  }
-                  setShowTripEndModal(false);
-                  setTripEndRequesterType(null);
-                }}
-              >
-                <Text style={styles.tripEndApproveButtonText}>Onaylıyorum</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.tripEndRejectButton}
-                onPress={async () => {
-                  try {
-                    await fetch(
-                      `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=false`,
-                      { method: 'POST' }
-                    );
-                  } catch (error) {}
-                  setShowTripEndModal(false);
-                  setTripEndRequesterType(null);
-                }}
-              >
-                <Text style={styles.tripEndRejectButtonText}>Onaylamıyorum</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onApprove={async () => {
+          if (mutualTripEndSubmitting) return;
+          setMutualTripEndSubmitting(true);
+          try {
+            const response = await fetch(
+              `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=true`,
+              { method: 'POST' },
+            );
+            const data = await response.json();
+            if (data.success && data.approved) {
+              appAlert(
+                'Yolculuk sonlandırıldı',
+                'Yolculuk kaydı kapatıldı.',
+                [{ text: 'Tamam' }],
+                { tone: 'success' },
+              );
+              setActiveTag(null);
+              setScreen('role-select');
+            }
+          } catch (error) {
+            appAlert(
+              'İşlem tamamlanamadı',
+              'Lütfen kısa bir süre sonra tekrar deneyin.',
+              [{ text: 'Tamam' }],
+              { tone: 'error' },
+            );
+          } finally {
+            setMutualTripEndSubmitting(false);
+            setShowTripEndModal(false);
+            setTripEndRequesterType(null);
+          }
+        }}
+        onReject={async () => {
+          if (mutualTripEndSubmitting) return;
+          setMutualTripEndSubmitting(true);
+          try {
+            await fetch(
+              `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=false`,
+              { method: 'POST' },
+            );
+          } catch (error) {}
+          finally {
+            setMutualTripEndSubmitting(false);
+            setShowTripEndModal(false);
+            setTripEndRequesterType(null);
+          }
+        }}
+      />
       
       <TransferPaymentConfirmModal
         visible={transferPaymentConfirmVisible}
@@ -24799,82 +24790,6 @@ const styles = StyleSheet.create({
   },
   adminButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  // ==================== KARŞILIKLI İPTAL MODAL STİLLERİ ====================
-  tripEndModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  tripEndModalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    width: '100%',
-    maxWidth: 340,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  tripEndModalHeader: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  tripEndModalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1B1B1E',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  tripEndModalMessage: {
-    fontSize: 16,
-    color: '#495057',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  tripEndModalButtons: {
-    flexDirection: 'column',
-    width: '100%',
-    gap: 12,
-  },
-  tripEndApproveButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  tripEndApproveButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  tripEndRejectButton: {
-    backgroundColor: '#EF4444',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  tripEndRejectButtonText: {
-    fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
