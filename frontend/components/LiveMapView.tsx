@@ -6852,13 +6852,28 @@ export default function LiveMapView({
             borderRadius={LDS_RADIUS.lg}
           >
             <View style={styles.paxTopRouteHeaderRow}>
-              <PremiumText variant="caption" style={styles.paxTopPhaseChip}>
-                {String(tagStatus || '').toLowerCase() === 'in_progress' ? 'Yolculuk' : 'Buluşma'}
-              </PremiumText>
+              <GlassSurface
+                variant="plain"
+                style={styles.paxTopPhaseChipShell}
+                borderRadius={LDS_RADIUS.sm}
+              >
+                <PremiumText variant="caption" style={styles.paxTopPhaseChip}>
+                  {String(tagStatus || '').toLowerCase() === 'in_progress' ? 'Yolculuk' : 'Buluşma'}
+                </PremiumText>
+              </GlassSurface>
               {userLocation && otherLocation ? (
-                <Animated.Text style={[styles.paxTopLiveChip, { opacity: canliBlink }]}>
-                  CANLI
-                </Animated.Text>
+                <Animated.View style={[styles.paxTopLiveChipWrap, { opacity: canliBlink }]}>
+                  <GlassSurface
+                    variant="plain"
+                    style={styles.paxTopLiveChipShell}
+                    borderRadius={LDS_RADIUS.full}
+                  >
+                    <View style={styles.paxTopLiveChipDot} />
+                    <PremiumText variant="caption" style={styles.paxTopLiveChipText}>
+                      CANLI
+                    </PremiumText>
+                  </GlassSurface>
+                </Animated.View>
               ) : null}
             </View>
 
@@ -6933,18 +6948,26 @@ export default function LiveMapView({
                 </View>
                 <View style={styles.paxTopRouteTrailCol}>
                   {nearDestination ? (
-                    <View style={styles.paxTopNearChip}>
+                    <GlassSurface
+                      variant="plain"
+                      style={styles.paxTopNearChip}
+                      borderRadius={LDS_RADIUS.sm}
+                    >
                       <PremiumText variant="caption" style={styles.paxTopNearChipText}>
                         YAKIN!
                       </PremiumText>
-                    </View>
+                    </GlassSurface>
                   ) : null}
                   {offeredPrice ? (
-                    <View style={styles.paxTopPriceChip}>
+                    <GlassSurface
+                      variant="plain"
+                      style={styles.paxTopPriceChip}
+                      borderRadius={LDS_RADIUS.sm}
+                    >
                       <PremiumText variant="caption" style={styles.paxTopPriceChipText}>
                         ₺{offeredPrice}
                       </PremiumText>
-                    </View>
+                    </GlassSurface>
                   ) : null}
                 </View>
               </View>
@@ -7043,7 +7066,7 @@ export default function LiveMapView({
 
           {matrixStatus ? (
             <GlassSurface variant="plain" style={styles.paxTopStatusChip} borderRadius={LDS_RADIUS.md}>
-              <PremiumText variant="caption" style={styles.paxTopMatrixText}>
+              <PremiumText variant="caption" muted style={styles.paxTopMatrixText}>
                 {matrixStatus
                   .replace('SURUCU', 'SÜRÜCÜ')
                   .replace('SIZIN', 'SİZİN')
@@ -7053,9 +7076,15 @@ export default function LiveMapView({
           ) : null}
 
           {userLocation && otherLocation && passengerDriverHint ? (
-            <PremiumText variant="caption" muted style={styles.paxTopLiveHint}>
-              {passengerDriverHint}
-            </PremiumText>
+            <GlassSurface
+              variant="plain"
+              style={styles.paxTopLiveHintShell}
+              borderRadius={LDS_RADIUS.md}
+            >
+              <PremiumText variant="caption" muted style={styles.paxTopLiveHint}>
+                {passengerDriverHint}
+              </PremiumText>
+            </GlassSurface>
           ) : null}
         </View>
       )}
@@ -9140,16 +9169,43 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: LDS_SPACING.xxs,
   },
+  paxTopPhaseChipShell: {
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
   paxTopPhaseChip: {
-    fontWeight: '800',
-    letterSpacing: 0.8,
+    fontWeight: '700',
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
-  paxTopLiveChip: {
-    color: '#22D3EE',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 3,
+  paxTopLiveChipWrap: {
+    flexShrink: 0,
+  },
+  paxTopLiveChipShell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  paxTopLiveChipDot: {
+    width: LDS_SPACING.xs,
+    height: LDS_SPACING.xs,
+    borderRadius: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(34,211,238,0.68)',
+  },
+  paxTopLiveChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: 'rgba(186, 230, 253, 0.95)',
   },
   paxTopRouteRow: {
     flexDirection: 'row',
@@ -9187,26 +9243,30 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   paxTopNearChip: {
-    backgroundColor: 'rgba(34,211,238,0.14)',
-    paddingHorizontal: LDS_SPACING.xs,
-    paddingVertical: 2,
-    borderRadius: LDS_RADIUS.sm,
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
   paxTopNearChipText: {
-    fontWeight: '800',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    color: 'rgba(186, 230, 253, 0.92)',
   },
   paxTopPriceChip: {
-    backgroundColor: 'rgba(16,26,43,0.72)',
-    paddingHorizontal: LDS_SPACING.xs,
-    paddingVertical: 2,
-    borderRadius: LDS_RADIUS.sm,
-    borderWidth: LDS_BORDER_WIDTH.hairline,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(5,11,24,0.55)',
     borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
   paxTopPriceChipText: {
-    fontWeight: '800',
+    fontWeight: '700',
+    letterSpacing: -0.1,
+    color: 'rgba(186, 230, 253, 0.95)',
   },
   paxTopPriceRow: {
     flexDirection: 'row',
@@ -9220,21 +9280,32 @@ const styles = StyleSheet.create({
     marginTop: LDS_SPACING.xxs,
     paddingHorizontal: LDS_SPACING.sm,
     paddingVertical: LDS_SPACING.xxs + 2,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.flat,
   },
   paxTopMatrixText: {
-    fontWeight: '700',
-    letterSpacing: 0.6,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    lineHeight: 16,
   },
-  paxTopLiveHint: {
+  paxTopLiveHintShell: {
     alignSelf: 'flex-end',
     marginRight: LDS_SPACING.md,
     marginTop: LDS_SPACING.xxs,
     maxWidth: SCREEN_WIDTH * 0.62,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs + 2,
+    backgroundColor: 'rgba(5,11,24,0.5)',
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    ...LDS_ELEVATION.flat,
+  },
+  paxTopLiveHint: {
     textAlign: 'right',
     lineHeight: 17,
+    letterSpacing: 0.15,
   },
   paxBottomDeckShell: {
     width: '100%',
