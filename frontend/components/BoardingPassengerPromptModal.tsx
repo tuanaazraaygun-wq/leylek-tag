@@ -2,13 +2,16 @@ import React from 'react';
 import {
   Modal,
   View,
-  Text,
-  TouchableOpacity,
   StyleSheet,
+  TouchableOpacity,
   Pressable,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 type Props = {
   visible: boolean;
@@ -16,54 +19,60 @@ type Props = {
   onNo: () => void;
 };
 
-const CARD_BG = 'rgba(16,26,43,0.88)';
-const BORDER_SLATE = '#1E3A5F';
-const ACCENT_CYAN = '#22D3EE';
-const TEXT_PRIMARY = 'rgba(243,248,255,0.94)';
-const TEXT_MUTED = 'rgba(186,201,222,0.82)';
-const SOFT_DANGER_BG = 'rgba(127,29,29,0.22)';
-const SOFT_DANGER_BORDER = 'rgba(248,113,113,0.35)';
-
 export default function BoardingPassengerPromptModal({ visible, onYes, onNo }: Props) {
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <Pressable style={styles.backdrop} onPress={onNo}>
+      <Pressable style={styles.overlay} onPress={onNo}>
+        <CockpitBackground showGrid={false} />
+        <View style={styles.scrim} pointerEvents="none" />
+
         <Pressable style={styles.cardWrap} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.card}>
+          <GlassSurface variant="panel" style={styles.card} borderRadius={LDS_RADIUS.xl}>
+            <View style={styles.phaseBlock}>
+              <PremiumText variant="step" style={styles.phaseStep}>
+                Güvenli biniş
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.phaseCaption}>
+                Doğru araçta olduğunu teyit et.
+              </PremiumText>
+            </View>
+
             <View style={styles.iconRing}>
-              <Ionicons name="car-sport-outline" size={26} color={ACCENT_CYAN} />
+              <Ionicons name="car-sport-outline" size={26} color="rgba(34,211,238,0.92)" />
             </View>
-            <Text style={styles.title}>Araca bindiniz mi?</Text>
-            <View style={styles.warningPill}>
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={16}
-                color="rgba(252,211,77,0.92)"
-                style={styles.warningPillIcon}
-              />
-              <Text style={styles.warningPillText}>Güvenli biniş</Text>
-            </View>
-            <Text style={styles.sub}>
-              Doğru araçta olduğunuzu teyit edin; ardından sürücünün biniş QR kodunu okutun.
-            </Text>
+
+            <PremiumText variant="body" style={styles.questionText}>
+              Araca bindiniz mi?
+            </PremiumText>
+
+            <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+              <Ionicons name="shield-checkmark-outline" size={15} color="rgba(34,211,238,0.88)" />
+              <PremiumText variant="caption" style={styles.guardianChipText}>
+                Biniş QR ile doğrulanır
+              </PremiumText>
+            </GlassSurface>
+
+            <PremiumText variant="caption" muted style={styles.sub}>
+              Onayladıktan sonra sürücünün biniş QR kodunu okutun.
+            </PremiumText>
+
             <View style={styles.row}>
-              <TouchableOpacity style={styles.btnSecondaryWrap} onPress={onNo} activeOpacity={0.85}>
-                <View style={styles.btnSecondary}>
-                  <Text style={styles.btnSecondaryText}>Hayır</Text>
-                </View>
+              <TouchableOpacity
+                style={styles.btnSecondaryWrap}
+                onPress={onNo}
+                activeOpacity={0.85}
+              >
+                <PremiumText variant="body" muted style={styles.btnSecondaryText}>
+                  Hayır
+                </PremiumText>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnPrimaryWrap} onPress={onYes} activeOpacity={0.88}>
-                <LinearGradient
-                  colors={['rgba(34,211,238,0.28)', '#0B1220', '#08111F', 'rgba(34,211,238,0.22)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.btnPrimaryGrad}
-                >
-                  <Text style={styles.btnPrimaryText}>Evet</Text>
-                </LinearGradient>
+                <PremiumText variant="body" style={styles.btnPrimaryText}>
+                  Evet
+                </PremiumText>
               </TouchableOpacity>
             </View>
-          </View>
+          </GlassSurface>
         </Pressable>
       </Pressable>
     </Modal>
@@ -71,118 +80,119 @@ export default function BoardingPassengerPromptModal({ visible, onYes, onNo }: P
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  overlay: {
     flex: 1,
-    backgroundColor: 'rgba(2,6,23,0.72)',
     justifyContent: 'center',
-    paddingHorizontal: 22,
+    paddingHorizontal: LDS_SPACING.lg,
   },
-  cardWrap: { width: '100%', maxWidth: 400, alignSelf: 'center' },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
+  cardWrap: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
   card: {
-    borderRadius: 20,
-    paddingTop: 24,
-    paddingBottom: 22,
-    paddingHorizontal: 22,
-    backgroundColor: CARD_BG,
-    borderWidth: 1,
-    borderColor: BORDER_SLATE,
-    borderTopColor: 'rgba(34,211,238,0.38)',
-    borderLeftColor: 'rgba(34,211,238,0.14)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.5,
-    shadowRadius: 28,
-    elevation: 22,
+    alignItems: 'center',
+    paddingTop: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
+    ...LDS_ELEVATION.cockpit,
+  },
+  phaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  phaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
+    textAlign: 'center',
+    lineHeight: 18,
   },
   iconRing: {
     alignSelf: 'center',
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: LDS_RADIUS.full,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8,17,31,0.72)',
-    borderWidth: 1,
-    borderColor: BORDER_SLATE,
-    borderTopColor: 'rgba(34,211,238,0.42)',
-    marginBottom: 14,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    marginBottom: LDS_SPACING.sm,
+    ...LDS_ELEVATION.flat,
   },
-  title: {
-    color: TEXT_PRIMARY,
-    fontSize: 20,
-    fontWeight: '800',
+  questionText: {
     textAlign: 'center',
-    letterSpacing: 0.2,
+    fontWeight: '700',
+    marginBottom: LDS_SPACING.sm,
   },
-  warningPill: {
+  guardianChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: SOFT_DANGER_BG,
-    borderWidth: 1,
-    borderColor: SOFT_DANGER_BORDER,
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
   },
-  warningPillIcon: {
-    marginRight: 6,
-  },
-  warningPillText: {
-    color: 'rgba(253,224,71,0.95)',
-    fontSize: 12,
+  guardianChipText: {
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
   },
   sub: {
-    marginTop: 14,
-    color: TEXT_MUTED,
-    fontSize: 14,
-    lineHeight: 21,
     textAlign: 'center',
-    fontWeight: '600',
+    lineHeight: 18,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   row: {
     flexDirection: 'row',
-    marginTop: 24,
+    gap: LDS_SPACING.sm,
+    width: '100%',
   },
-  btnSecondaryWrap: { flex: 1, borderRadius: 14, overflow: 'hidden', marginRight: 5 },
-  btnSecondary: {
-    borderRadius: 14,
+  btnSecondaryWrap: {
+    flex: 1,
     minHeight: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(8,17,31,0.78)',
-    borderWidth: 1,
-    borderColor: BORDER_SLATE,
-    borderTopColor: 'rgba(148,163,184,0.22)',
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   btnSecondaryText: {
-    color: TEXT_MUTED,
+    fontWeight: '700',
     textAlign: 'center',
-    fontWeight: '800',
-    fontSize: 16,
   },
   btnPrimaryWrap: {
     flex: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(34,211,238,0.45)',
-    marginLeft: 5,
-  },
-  btnPrimaryGrad: {
     minHeight: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   btnPrimaryText: {
-    color: TEXT_PRIMARY,
-    fontWeight: '900',
-    fontSize: 16,
+    fontWeight: '800',
     letterSpacing: 0.3,
   },
 });
