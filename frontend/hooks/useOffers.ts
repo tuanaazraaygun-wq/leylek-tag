@@ -41,6 +41,12 @@ export interface Offer {
   _optimistic?: boolean;
 }
 
+function parseOfferDriverRating(rating: unknown): number | undefined {
+  if (rating == null) return undefined;
+  const n = Number(rating);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 export interface UseOffersOptions {
   userId: string;
   tagId?: string;
@@ -118,7 +124,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       tag_id: offerData.tag_id || tagId || '',
       driver_id: offerData.driver_id || '',
       driver_name: offerData.driver_name || 'Şoför',
-      driver_rating: offerData.driver_rating || 5,
+      driver_rating: parseOfferDriverRating(offerData.driver_rating),
       driver_photo: offerData.driver_photo,
       price: offerData.price || 0,
       notes: offerData.notes,
@@ -168,7 +174,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
             tag_id: tId,
             driver_id: String(u.driver_id ?? ''),
             driver_name: String(u.driver_name ?? 'Şoför'),
-            driver_rating: typeof u.driver_rating === 'number' ? u.driver_rating : 5,
+            driver_rating: parseOfferDriverRating(u.driver_rating),
             driver_photo: typeof u.driver_photo === 'string' ? u.driver_photo : undefined,
             price: typeof u.price === 'number' ? u.price : Number(u.price) || 0,
             notes: typeof u.notes === 'string' ? u.notes : undefined,

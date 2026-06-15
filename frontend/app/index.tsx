@@ -17472,12 +17472,18 @@ function DriverDashboard({
     
     // 🔥 ÖNCE SOCKET - ANINDA YOLCUYA ULAŞSIN
     if (socketSendOffer) {
+      const socketDriverRating =
+        user.rating != null &&
+        Number.isFinite(Number(user.rating)) &&
+        Number(user.rating) > 0
+          ? Number(user.rating)
+          : undefined;
       const offerPayload = {
         request_id: requestId,
         tag_id: tagId,
         driver_id: user.id,
         driver_name: user.name || user.phone,
-        driver_rating: user.rating ?? 4.0,
+        ...(socketDriverRating != null ? { driver_rating: socketDriverRating } : {}),
         passenger_id: passengerId || '',
         price: price,
         vehicle_model: user.vehicle_model,
@@ -17983,7 +17989,13 @@ function DriverDashboard({
               };
               })}
               driverName={user.name}
-              driverRating={user.rating ?? 4.0}
+              driverRating={
+                user.rating != null &&
+                Number.isFinite(Number(user.rating)) &&
+                Number(user.rating) > 0
+                  ? Number(user.rating)
+                  : undefined
+              }
               onSendOffer={sendOfferInstant}
               onDismissRequest={handleDismissRequest}
               onAcceptFlowStart={handleDriverAcceptFlowStart}

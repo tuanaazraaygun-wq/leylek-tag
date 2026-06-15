@@ -280,7 +280,7 @@ interface DriverOfferScreenProps {
   driverLocation: { latitude: number; longitude: number } | null;
   requests: PassengerRequest[];
   driverName: string;
-  driverRating: number;
+  driverRating?: number;
   onSendOffer: (requestId: string, price: number) => Promise<boolean>;
   /** Sürücü ID — Kabul butonunda driver_accept_offer emit için zorunlu */
   driverId: string;
