@@ -46,6 +46,11 @@ import {
   type ExternalMapsProvider,
 } from '../lib/openExternalMapsNavigation';
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -6379,7 +6384,7 @@ export default function LiveMapView({
             </View>
           </View>
         </View>
-      ) : (
+      ) : isDriver ? (
         <View
           style={[
             styles.topInfoPanel,
@@ -6830,28 +6835,228 @@ export default function LiveMapView({
             </View>
           </View>
         ) : null}
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.topInfoPanel,
+            compactMatchedLayout ? styles.paxTopInfoPanelCompact : null,
+          ]}
+        >
+          <GlassSurface
+            variant="header"
+            style={[
+              styles.paxTopRouteShell,
+              compactMatchedLayout ? styles.paxTopRouteShellCompact : null,
+            ]}
+            borderRadius={LDS_RADIUS.lg}
+          >
+            <View style={styles.paxTopRouteHeaderRow}>
+              <PremiumText variant="caption" style={styles.paxTopPhaseChip}>
+                {String(tagStatus || '').toLowerCase() === 'in_progress' ? 'Yolculuk' : 'Buluşma'}
+              </PremiumText>
+              {userLocation && otherLocation ? (
+                <Animated.Text style={[styles.paxTopLiveChip, { opacity: canliBlink }]}>
+                  CANLI
+                </Animated.Text>
+              ) : null}
+            </View>
 
-        {matrixStatus && !isDriver && (
-          <View style={styles.matrixContainerPassenger} pointerEvents="none">
-            <Text style={styles.matrixTextPassenger}>
-              {matrixStatus
-                .replace('SURUCU', 'SÜRÜCÜ')
-                .replace('SIZIN', 'SİZİN')
-                .replace('ICIN', 'İÇİN')}
-            </Text>
-          </View>
-        )}
+            <View
+              style={[
+                styles.paxTopRouteRow,
+                compactMatchedLayout ? styles.paxTopRouteRowCompact : null,
+              ]}
+            >
+              <View style={[styles.paxTopRouteDot, { backgroundColor: '#22D3EE' }]} />
+              <View style={styles.paxTopRouteTextCol}>
+                <PremiumText variant="caption" muted style={styles.paxTopRouteLabel}>
+                  Buluşma
+                </PremiumText>
+                <View style={{ alignSelf: 'stretch' }}>
+                  {showMeetingRouteCalculating ? (
+                    <RouteCalculatingPremium compact={false} />
+                  ) : showMeetingRouteUnavailable ? (
+                    <RouteUnavailableMuted
+                      compact={false}
+                      valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }}
+                    />
+                  ) : (
+                    <View>
+                      <PremiumText variant="body" style={styles.paxTopRouteValue}>
+                        {formatRouteKmMin(meetingDistance, meetingDuration)}
+                      </PremiumText>
+                      {showMeetingRoutePolylineLoadingHint ? (
+                        <PremiumText variant="caption" muted style={styles.paxTopRouteHint}>
+                          Rota yükleniyor
+                        </PremiumText>
+                      ) : null}
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
 
-        {!isDriver && userLocation && otherLocation ? (
-          <View style={styles.passengerLiveBlock} pointerEvents="none">
-            <Animated.Text style={[styles.passengerLiveLabel, { opacity: canliBlink }]}>
-              CANLI
-            </Animated.Text>
-            {passengerDriverHint ? (
-              <Text style={styles.passengerLiveHint}>{passengerDriverHint}</Text>
+            {destinationLocation ? (
+              <View
+                style={[
+                  styles.paxTopRouteRow,
+                  compactMatchedLayout ? styles.paxTopRouteRowCompact : null,
+                ]}
+              >
+                <View style={[styles.paxTopRouteDot, { backgroundColor: 'rgba(34,211,238,0.88)' }]} />
+                <View style={styles.paxTopRouteTextCol}>
+                  <PremiumText variant="caption" muted style={styles.paxTopRouteLabel}>
+                    Hedef
+                  </PremiumText>
+                  <View style={{ alignSelf: 'stretch' }}>
+                    {showDestinationRouteCalculating ? (
+                      <RouteCalculatingPremium compact={false} />
+                    ) : showDestinationRouteUnavailable ? (
+                      <RouteUnavailableMuted
+                        compact={false}
+                        valueTextStyle={{ color: 'rgba(186,201,222,0.82)' }}
+                      />
+                    ) : (
+                      <View>
+                        <PremiumText variant="body" style={styles.paxTopRouteValue}>
+                          {formatRouteKmMin(destinationDistance, destinationDuration)}
+                        </PremiumText>
+                        {showDestinationRoutePolylineLoadingHint ? (
+                          <PremiumText variant="caption" muted style={styles.paxTopRouteHint}>
+                            Rota yükleniyor
+                          </PremiumText>
+                        ) : null}
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.paxTopRouteTrailCol}>
+                  {nearDestination ? (
+                    <View style={styles.paxTopNearChip}>
+                      <PremiumText variant="caption" style={styles.paxTopNearChipText}>
+                        YAKIN!
+                      </PremiumText>
+                    </View>
+                  ) : null}
+                  {offeredPrice ? (
+                    <View style={styles.paxTopPriceChip}>
+                      <PremiumText variant="caption" style={styles.paxTopPriceChipText}>
+                        ₺{offeredPrice}
+                      </PremiumText>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
             ) : null}
-          </View>
-        ) : null}
+
+            {price && !offeredPrice ? (
+              <View style={styles.paxTopPriceRow}>
+                <PremiumText variant="caption" muted>
+                  Ücret
+                </PremiumText>
+                <PremiumText variant="body" style={styles.paxTopRouteValue}>
+                  ₺{price}
+                </PremiumText>
+              </View>
+            ) : null}
+          </GlassSurface>
+
+          {!driverRideUiModern && trustedAddEnabled ? (
+            <View
+              style={[
+                styles.trustedAddCompactWrap,
+                { top: Math.max(insets.top, 8) + (compactMatchedLayout ? 2 : 4) },
+              ]}
+              pointerEvents="box-none"
+            >
+              {trustedAddLoading ||
+              trustedAddCreating ||
+              trustedAddStatus === 'loading' ? (
+                <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+                  <ActivityIndicator size="small" color="#22D3EE" />
+                </View>
+              ) : trustedAddStatus === 'error' ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.trustedAddCompactChipError,
+                    pressed && { opacity: 0.88 },
+                  ]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    void refreshTrustedAddStatus();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    trustedAddErrorMessage || 'Güven ağı durumu yeniden yüklensin'
+                  }
+                >
+                  <Ionicons name="refresh-outline" size={14} color="rgba(252,165,165,0.95)" />
+                  <Text style={styles.trustedAddCompactChipErrorText} numberOfLines={1}>
+                    Tekrar dene
+                  </Text>
+                </Pressable>
+              ) : trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.trustedAddCompactChip,
+                    pressed && { opacity: 0.88 },
+                  ]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    void sendTrustedAddInvite();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sürücüyü güven ağına ekle"
+                >
+                  <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
+                  <Text style={styles.trustedAddCompactChipText} numberOfLines={1}>
+                    Güven ağı
+                  </Text>
+                </Pressable>
+              ) : (
+                <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+                  <Ionicons
+                    name={
+                      trustedAddStatus === 'active'
+                        ? 'checkmark-circle-outline'
+                        : 'time-outline'
+                    }
+                    size={14}
+                    color="rgba(186,201,222,0.78)"
+                  />
+                  <Text style={styles.trustedAddCompactChipMutedText} numberOfLines={1}>
+                    {trustedAddStatus === 'active'
+                      ? 'Güven ağında'
+                      : trustedAddStatus === 'incoming_pending'
+                        ? 'Davet var'
+                        : trustedAddStatus === 'outgoing_pending'
+                          ? 'Davet gönderildi'
+                          : trustedAddStatus === 'blocked'
+                            ? 'Eklenemez'
+                            : 'Güven ağı'}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {matrixStatus ? (
+            <GlassSurface variant="plain" style={styles.paxTopStatusChip} borderRadius={LDS_RADIUS.md}>
+              <PremiumText variant="caption" style={styles.paxTopMatrixText}>
+                {matrixStatus
+                  .replace('SURUCU', 'SÜRÜCÜ')
+                  .replace('SIZIN', 'SİZİN')
+                  .replace('ICIN', 'İÇİN')}
+              </PremiumText>
+            </GlassSurface>
+          ) : null}
+
+          {userLocation && otherLocation && passengerDriverHint ? (
+            <PremiumText variant="caption" muted style={styles.paxTopLiveHint}>
+              {passengerDriverHint}
+            </PremiumText>
+          ) : null}
         </View>
       )}
 
@@ -8618,6 +8823,127 @@ const styles = StyleSheet.create({
   topCardContentCompact: {
     paddingVertical: 5,
     paddingHorizontal: 12,
+  },
+  paxTopInfoPanelCompact: {
+    paddingTop: 0,
+  },
+  paxTopRouteShell: {
+    alignSelf: 'center',
+    width: SCREEN_WIDTH * 0.885,
+    marginTop: LDS_SPACING.xl + LDS_SPACING.lg,
+    marginBottom: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    ...LDS_ELEVATION.chip,
+  },
+  paxTopRouteShellCompact: {
+    marginTop: 28,
+    marginBottom: LDS_SPACING.xxs,
+    maxHeight: 118,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+  },
+  paxTopRouteHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: LDS_SPACING.xxs,
+  },
+  paxTopPhaseChip: {
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  paxTopLiveChip: {
+    color: '#22D3EE',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
+  paxTopRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: LDS_SPACING.xxs + 2,
+  },
+  paxTopRouteRowCompact: {
+    marginBottom: 2,
+  },
+  paxTopRouteDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: LDS_SPACING.sm,
+  },
+  paxTopRouteTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  paxTopRouteLabel: {
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 1,
+  },
+  paxTopRouteValue: {
+    fontWeight: '700',
+  },
+  paxTopRouteHint: {
+    marginTop: 2,
+  },
+  paxTopRouteTrailCol: {
+    alignItems: 'flex-end',
+    gap: LDS_SPACING.xxs,
+    marginLeft: LDS_SPACING.xxs,
+    flexShrink: 0,
+  },
+  paxTopNearChip: {
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: LDS_RADIUS.sm,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanelTop,
+  },
+  paxTopNearChipText: {
+    fontWeight: '800',
+  },
+  paxTopPriceChip: {
+    backgroundColor: 'rgba(16,26,43,0.72)',
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: LDS_RADIUS.sm,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.card,
+  },
+  paxTopPriceChipText: {
+    fontWeight: '800',
+  },
+  paxTopPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: LDS_SPACING.xxs,
+  },
+  paxTopStatusChip: {
+    alignSelf: 'flex-start',
+    marginLeft: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs + 2,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    ...LDS_ELEVATION.flat,
+  },
+  paxTopMatrixText: {
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  paxTopLiveHint: {
+    alignSelf: 'flex-end',
+    marginRight: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xxs,
+    maxWidth: SCREEN_WIDTH * 0.62,
+    textAlign: 'right',
+    lineHeight: 17,
   },
   routeInfoRow: {
     flexDirection: 'row',
