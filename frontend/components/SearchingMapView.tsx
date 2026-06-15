@@ -15,6 +15,11 @@ import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
 import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
 import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
+import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_MUTED, PREMIUM_TEXT_SOFT } from './auth/premiumAuthStyles';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -126,7 +131,7 @@ export default function SearchingMapView({
     return (
       <View style={[styles.container, { height }]}>
         <View style={styles.webFallback}>
-          <Ionicons name="map" size={40} color="#22D3EE" />
+          <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
           <Text style={styles.webFallbackText}>
             {driverLocations.length > 0
               ? `Harita - ${driverLocations.length} teklif`
@@ -235,15 +240,19 @@ export default function SearchingMapView({
 
       {offerDriverCount > 0 ? (
         <View style={styles.driverCountBadge}>
-          <Ionicons name="car" size={16} color="#22D3EE" />
+          <Ionicons name="car" size={16} color={PREMIUM_AUTH_CYAN} />
           <Text style={styles.driverCountText}>{offerDriverCount} teklif</Text>
         </View>
       ) : null}
 
       <View style={styles.infoBanner}>
-        <Text style={styles.infoBannerText}>Teklifiniz değerlendiriliyor</Text>
+        <Text style={styles.infoBannerText}>
+          {offerDriverCount > 0 ? 'Teklifler haritada' : 'Teklifiniz değerlendiriliyor'}
+        </Text>
         <Text style={styles.infoBannerSubtext}>
-          Uygun sürücülerden yanıt bekleniyor
+          {offerDriverCount > 0
+            ? 'Canlı sürücü konumları'
+            : 'Uygun sürücülerden yanıt bekleniyor'}
         </Text>
       </View>
     </View>
@@ -253,16 +262,8 @@ export default function SearchingMapView({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#101A2B',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: '#1E3A5F',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
+    backgroundColor: 'rgba(6,14,26,0.72)',
   },
   map: {
     flex: 1,
@@ -271,248 +272,86 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0B1220',
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#1E3A5F',
+    backgroundColor: 'rgba(6,14,26,0.72)',
+    padding: LDS_SPACING.md,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   webFallbackText: {
     fontSize: 14,
-    color: 'rgba(186, 201, 222, 0.88)',
-    marginTop: 8,
+    color: PREMIUM_TEXT_MUTED,
+    marginTop: LDS_SPACING.xs,
     fontWeight: '600',
+    textAlign: 'center',
   },
   driverItem: {
     fontSize: 12,
-    color: 'rgba(243, 248, 255, 0.85)',
-    marginTop: 4,
-  },
-  // Yolcu marker
-  userMarker: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userMarkerInner: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(34, 211, 238, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(243, 248, 255, 0.95)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  userMarkerPulse: {
-    position: 'absolute',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(34, 211, 238, 0.2)',
-  },
-  // Hedef marker
-  destinationMarker: {
-    alignItems: 'center',
-  },
-  // Sürücü marker
-  driverMarker: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(16, 26, 43, 0.95)',
-    borderWidth: 2,
-    borderColor: '#1E3A5F',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  priceTag: {
-    position: 'absolute',
-    top: -20,
-    backgroundColor: '#0B1220',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
-  },
-  priceText: {
-    color: 'rgba(243, 248, 255, 0.94)',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  // 🆕 Profesyonel Yolcu Pin Marker
-  passengerMarker: {
-    alignItems: 'center',
-  },
-  passengerPin: {
-    alignItems: 'center',
-  },
-  passengerPinHead: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#0891b2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(243, 248, 255, 0.95)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  passengerPinTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 10,
-    borderRightWidth: 10,
-    borderTopWidth: 14,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#0891b2',
-    marginTop: -2,
-  },
-  markerShadow: {
-    width: 24,
-    height: 8,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    borderRadius: 12,
-    marginTop: 4,
-  },
-
-  // 🆕 Bayrak Stili Hedef Marker
-  flagMarker: {
-    alignItems: 'flex-start',
-  },
-  flagPole: {
-    width: 3,
-    height: 45,
-    backgroundColor: '#101A2B',
-    borderRadius: 2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#1E3A5F',
-  },
-  flagBody: {
-    position: 'absolute',
-    top: 0,
-    left: 3,
-    width: 36,
-    height: 24,
-    backgroundColor: '#DC2626',
-    borderTopRightRadius: 4,
-    borderBottomRightRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 6,
-  },
-  flagBase: {
-    width: 12,
-    height: 6,
-    backgroundColor: '#1E3A5F',
-    borderRadius: 3,
-    marginLeft: -4,
-  },
-
-  // 🆕 Profesyonel Araç Marker
-  carMarker: {
-    alignItems: 'center',
-  },
-  carBody: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(14, 165, 233, 0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(243, 248, 255, 0.9)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 8,
+    color: PREMIUM_TEXT_SOFT,
+    marginTop: LDS_SPACING.xxs,
   },
   carPriceTag: {
     position: 'absolute',
     top: -22,
-    backgroundColor: 'rgba(16, 26, 43, 0.96)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: '#1E3A5F',
-    borderLeftColor: 'rgba(34, 211, 238, 0.45)',
+    backgroundColor: 'rgba(5, 11, 24, 0.72)',
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderLeftColor: LDS_BORDER_COLOR.cardTopCyan,
   },
   carPriceText: {
-    color: '#22D3EE',
+    color: PREMIUM_AUTH_CYAN,
     fontSize: 11,
     fontWeight: '700',
   },
-  // Sürücü sayısı badge
   driverCountBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: LDS_SPACING.sm,
+    right: LDS_SPACING.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 26, 43, 0.94)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-    gap: 6,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.28)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 10,
+    backgroundColor: 'rgba(5,11,24,0.72)',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   driverCountText: {
-    color: 'rgba(243, 248, 255, 0.94)',
+    color: PREMIUM_TEXT_SOFT,
     fontSize: 13,
     fontWeight: '700',
   },
   infoBanner: {
     position: 'absolute',
-    bottom: 12,
-    left: 12,
-    right: 12,
-    backgroundColor: 'rgba(8, 17, 31, 0.94)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+    bottom: LDS_SPACING.sm,
+    left: LDS_SPACING.sm,
+    right: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5, 11, 24, 0.72)',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(30, 58, 95, 0.92)',
-    borderTopColor: 'rgba(34, 211, 238, 0.15)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   infoBannerText: {
-    color: 'rgba(243, 248, 255, 0.93)',
+    color: PREMIUM_TEXT_SOFT,
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
   infoBannerSubtext: {
-    color: 'rgba(186, 201, 222, 0.82)',
+    color: PREMIUM_TEXT_MUTED,
     fontSize: 12,
     fontWeight: '500',
-    marginTop: 4,
+    marginTop: LDS_SPACING.xxs,
     textAlign: 'center',
   },
 });

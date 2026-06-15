@@ -99,6 +99,9 @@ import {
   LDS_MOTION_ORIGIN_REVEAL,
 } from '../design-system/tokens/motion';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING, ldsSnapSpacing } from '../design-system/tokens/spacing';
 import { LDS_ILLUSTRATION } from '../design-system/tokens/illustration';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
@@ -5415,7 +5418,7 @@ function PassengerOfferCard({
       {/* ÖNERİLEN Etiketi */}
       {isBest && (
         <View style={passengerCardStyles.bestBadge}>
-          <Ionicons name="trophy" size={14} color="#22D3EE" />
+          <Ionicons name="trophy" size={14} color={PREMIUM_AUTH_CYAN} />
           <Text style={passengerCardStyles.bestText}>ÖNERİLEN</Text>
         </View>
       )}
@@ -5499,44 +5502,52 @@ function PassengerOfferCard({
 // 🎨 YOLCU TEKLİF KARTI STİLLERİ
 const passengerCardStyles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(16, 26, 43, 0.9)',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.32,
-    shadowRadius: 14,
-    elevation: 6,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.22)',
+    backgroundColor: 'rgba(5, 11, 24, 0.55)',
+    borderRadius: LDS_RADIUS.md,
+    padding: LDS_SPACING.sm + LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
+    ...LDS_ELEVATION.panel,
   },
   cardBest: {
-    borderColor: 'rgba(34, 211, 238, 0.65)',
-    borderWidth: 2,
-    backgroundColor: 'rgba(11, 18, 32, 0.95)',
-    shadowColor: '#22D3EE',
-    shadowOpacity: 0.2,
+    borderColor: 'rgba(34, 211, 238, 0.38)',
+    borderTopColor: 'rgba(34, 211, 238, 0.42)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.2)',
+    backgroundColor: 'rgba(34, 211, 238, 0.04)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.32,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 8 },
+    }),
   },
   bestBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(8, 17, 31, 0.88)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    marginBottom: 10,
-    gap: 6,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(34, 211, 238, 0.45)',
+    backgroundColor: 'rgba(5, 11, 24, 0.72)',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.full,
+    marginBottom: LDS_SPACING.sm,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+    borderTopColor: 'rgba(34, 211, 238, 0.55)',
+    ...LDS_ELEVATION.chip,
   },
   bestText: {
     fontSize: 11,
     fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.94)',
-    letterSpacing: 0.4,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.55,
+    textTransform: 'uppercase',
   },
   topRow: {
     flexDirection: 'row',
@@ -5574,18 +5585,18 @@ const passengerCardStyles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#22D3EE',
+    backgroundColor: PREMIUM_AUTH_CYAN,
     borderWidth: 2,
-    borderColor: '#0B1220',
+    borderColor: PREMIUM_NAVY_DEEP,
   },
   driverInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: LDS_SPACING.sm,
   },
   driverName: {
     fontSize: 16,
     fontWeight: '700',
-    color: 'rgba(243, 248, 255, 0.94)',
+    color: PREMIUM_TEXT_SOFT,
   },
   ratingRow: {
     flexDirection: 'row',
@@ -5609,30 +5620,31 @@ const passengerCardStyles = StyleSheet.create({
     marginTop: 2,
   },
   priceBox: {
-    backgroundColor: 'rgba(34, 211, 238, 0.22)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(34, 211, 238, 0.5)',
+    backgroundColor: 'rgba(5, 11, 24, 0.55)',
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   priceAmount: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#22D3EE',
+    color: PREMIUM_AUTH_CYAN,
   },
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth + 1,
-    borderTopColor: 'rgba(30, 58, 95, 0.85)',
+    marginTop: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.sm,
+    borderTopWidth: LDS_BORDER_WIDTH.standard,
+    borderTopColor: LDS_BORDER_COLOR.card,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: LDS_SPACING.sm,
   },
   statItem: {
     flexDirection: 'row',
@@ -5662,22 +5674,18 @@ const passengerCardStyles = StyleSheet.create({
   acceptBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#22D3EE',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.sm,
+    gap: LDS_SPACING.xxs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(186, 230, 253, 0.55)',
-    shadowColor: '#22D3EE',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.38,
-    shadowRadius: 10,
-    elevation: 8,
+    ...LDS_ELEVATION.cta,
   },
   acceptBtnBest: {
-    backgroundColor: '#0EA5E9',
     borderColor: 'rgba(125, 211, 252, 0.75)',
+    backgroundColor: '#0EA5E9',
   },
   acceptBtnBusy: {
     opacity: 0.88,
@@ -5689,145 +5697,152 @@ const passengerCardStyles = StyleSheet.create({
   },
 });
 
-// 🎨 SEARCHING PHASE STİLLERİ
+const OFFER_MAP_STAGE_HEIGHT = ldsSnapSpacing(SCREEN_HEIGHT * 0.38);
+const OFFER_NAV_ACTION_SIZE = LDS_SPACING.xxl + LDS_SPACING.xs;
+
+// 🎨 SEARCHING PHASE STİLLERİ — P-OFFER-1A Journey Offer Cockpit
 const searchingStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#08111F',
+    backgroundColor: 'transparent',
+  },
+  offerCockpitOuter: {
+    flex: 1,
+    paddingHorizontal: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.xs,
+  },
+  offerCockpitShell: {
+    flex: 1,
+    width: '100%',
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    ...LDS_ELEVATION.cockpit,
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(8, 17, 31, 0.92)',
-    borderBottomWidth: StyleSheet.hairlineWidth + 1,
-    borderBottomColor: '#1E3A5F',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
+    marginBottom: LDS_SPACING.sm,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    width: OFFER_NAV_ACTION_SIZE,
+    height: OFFER_NAV_ACTION_SIZE,
+    borderRadius: LDS_SPACING.sm + LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#1E3A5F',
-  },
-  statusCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: 'rgba(243, 248, 255, 0.94)',
-    letterSpacing: 0.2,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: PREMIUM_ROLE_CARD_BORDER,
   },
   cancelBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    width: OFFER_NAV_ACTION_SIZE,
+    height: OFFER_NAV_ACTION_SIZE,
+    borderRadius: LDS_SPACING.sm + LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_ROLE_CARD_BG,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(248, 113, 113, 0.38)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(248, 113, 113, 0.35)',
   },
-  mapContainer: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 16,
+  phaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  phaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  phaseCaption: {
+    textAlign: 'center',
+  },
+  mapChromeWrap: {
+    width: '100%',
+    marginBottom: LDS_SPACING.sm,
     overflow: 'hidden',
+    ...LDS_ELEVATION.panel,
   },
   routeCard: {
-    backgroundColor: 'rgba(16, 26, 43, 0.92)',
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: '#1E3A5F',
-    borderTopColor: 'rgba(34, 211, 238, 0.2)',
-    shadowColor: '#010818',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    elevation: 8,
+    width: '100%',
+    marginBottom: LDS_SPACING.sm,
+    padding: LDS_SPACING.md,
   },
   routeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: LDS_SPACING.sm,
   },
   routeDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: LDS_SPACING.sm,
+    height: LDS_SPACING.sm,
+    borderRadius: LDS_SPACING.xs,
   },
   routeText: {
     flex: 1,
-    fontSize: 13,
-    color: 'rgba(243, 248, 255, 0.9)',
     fontWeight: '600',
+    color: PREMIUM_TEXT_SOFT,
   },
-  // 📤 PAYLAŞ BUTONU
+  routeArrow: {
+    marginLeft: LDS_SPACING.xxs,
+  },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(34, 211, 238, 0.14)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginTop: 12,
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.full,
+    marginTop: LDS_SPACING.sm,
     alignSelf: 'center',
-    gap: 8,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: 'rgba(34, 211, 238, 0.42)',
+    gap: LDS_SPACING.xs,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
   },
   shareButtonText: {
-    color: '#22D3EE',
-    fontSize: 14,
+    color: PREMIUM_AUTH_CYAN,
     fontWeight: '700',
   },
   offersContainer: {
     flex: 1,
-    marginTop: 12,
-    paddingHorizontal: 16,
+    minHeight: 0,
   },
   offersHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
   offersTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: 'rgba(243, 248, 255, 0.94)',
-    letterSpacing: 0.2,
+    letterSpacing: -0.2,
   },
   liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
   },
   liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#22D3EE',
+    width: LDS_SPACING.xs,
+    height: LDS_SPACING.xs,
+    borderRadius: LDS_SPACING.xxs,
+    backgroundColor: PREMIUM_AUTH_CYAN,
   },
   liveText: {
-    fontSize: 12,
     fontWeight: '700',
     color: 'rgba(186, 230, 253, 0.95)',
+  },
+  offersListContent: {
+    paddingBottom: LDS_SPACING.lg,
   },
   emptyOffersContainer: {
     flex: 1,
@@ -11734,87 +11749,106 @@ function PassengerDashboard({
     return (
       <View style={{ flex: 1 }}>
         <TagMatchTransitionOverlay active={matchingInProgress} />
-      <SafeAreaView style={searchingStyles.container}>
-        {/* Üst Bar - Geri + Durum + İptal */}
-        <View style={searchingStyles.topBar}>
-          <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={searchingStyles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color="#22D3EE" />
-          </TouchableOpacity>
-          <View style={searchingStyles.statusCenter}>
-            <Text style={searchingStyles.statusText}>
-              {offers.length > 0 ? `${offers.length} teklif geldi` : 'Teklifler bekleniyor...'}
-            </Text>
-            {offers.length === 0 && <ActivityIndicator size="small" color="#22D3EE" style={{ marginLeft: 8 }} />}
-          </View>
-          <TouchableOpacity onPress={handleCancelTag} style={searchingStyles.cancelBtn}>
-            <Ionicons name="close" size={22} color="#F87171" />
-          </TouchableOpacity>
-        </View>
+        <CockpitBackground />
+        <SafeAreaView style={searchingStyles.container}>
+          <View style={searchingStyles.offerCockpitOuter}>
+            <GlassSurface
+              variant="panel"
+              style={[styles.roleUnifiedCockpitShell, searchingStyles.offerCockpitShell]}
+            >
+              <View style={searchingStyles.topBar}>
+                <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={searchingStyles.backBtn}>
+                  <Ionicons name="chevron-back" size={20} color={PREMIUM_AUTH_CYAN} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleCancelTag} style={searchingStyles.cancelBtn}>
+                  <Ionicons name="close" size={20} color="rgba(248,113,113,0.92)" />
+                </TouchableOpacity>
+              </View>
 
-        {/* HARİTA - Üstte Sabit */}
-        <View style={{ marginHorizontal: 16, marginTop: 12, position: 'relative' }}>
-          <View style={{ borderRadius: 16, overflow: 'hidden' }}>
-            <SearchingMapView
-              userLocation={userLocation}
-              destinationLocation={passengerDestinationLocation}
-              driverLocations={offerDriverLocations}
-              height={SCREEN_HEIGHT * 0.32}
-              nearbyDriverCount={nearbyDriverCount}
-              selfUserId={user?.id}
-            />
-          </View>
-        </View>
+              <View style={searchingStyles.phaseBlock}>
+                <PremiumText variant="step" style={searchingStyles.phaseStep}>
+                  Teklifler geldi
+                </PremiumText>
+                <PremiumText variant="caption" muted style={searchingStyles.phaseCaption}>
+                  Kararın sende · Haritadan sürücüleri incele
+                </PremiumText>
+              </View>
 
-        {/* Rota Bilgisi - Küçük Kart */}
-        <View style={searchingStyles.routeCard}>
-          <View style={searchingStyles.routeRow}>
-            <View style={[searchingStyles.routeDot, { backgroundColor: '#22D3EE' }]} />
-            <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.pickup_location}</Text>
-          </View>
-          <Ionicons name="arrow-down" size={14} color="rgba(186,201,222,0.55)" style={{ marginLeft: 5 }} />
-          <View style={searchingStyles.routeRow}>
-            <View style={[searchingStyles.routeDot, { backgroundColor: 'rgba(248,140,148,0.78)' }]} />
-            <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.dropoff_location}</Text>
-          </View>
-          
-          {/* 📤 PAYLAŞ BUTONU - Arkadaşlarına gönder */}
-          <TouchableOpacity 
-            style={searchingStyles.shareButton}
-            onPress={handleShareRideRequest}
-          >
-            <Ionicons name="share-social" size={18} color="#22D3EE" />
-            <Text style={searchingStyles.shareButtonText}>Paylaş</Text>
-          </TouchableOpacity>
-        </View>
+              <GlassSurface variant="stage" style={searchingStyles.mapChromeWrap} borderRadius={LDS_RADIUS.lg}>
+                <SearchingMapView
+                  userLocation={userLocation}
+                  destinationLocation={passengerDestinationLocation}
+                  driverLocations={offerDriverLocations}
+                  height={OFFER_MAP_STAGE_HEIGHT}
+                  nearbyDriverCount={nearbyDriverCount}
+                  selfUserId={user?.id}
+                />
+              </GlassSurface>
 
-        {/* TEKLİF LİSTESİ - Scrollable */}
-        <View style={searchingStyles.offersContainer}>
-          <View style={searchingStyles.offersHeader}>
-            <Text style={searchingStyles.offersTitle}>Teklifler</Text>
-            <View style={searchingStyles.liveIndicator}>
-              <View style={searchingStyles.liveDot} />
-              <Text style={searchingStyles.liveText}>Canlı</Text>
-            </View>
+              <GlassSurface variant="plain" style={searchingStyles.routeCard}>
+                <View style={searchingStyles.routeRow}>
+                  <View style={[searchingStyles.routeDot, { backgroundColor: PREMIUM_AUTH_CYAN }]} />
+                  <PremiumText variant="body" style={searchingStyles.routeText} numberOfLines={1}>
+                    {activeTag.pickup_location}
+                  </PremiumText>
+                </View>
+                <Ionicons
+                  name="arrow-down"
+                  size={14}
+                  color="rgba(186,201,222,0.55)"
+                  style={searchingStyles.routeArrow}
+                />
+                <View style={searchingStyles.routeRow}>
+                  <View style={[searchingStyles.routeDot, { backgroundColor: 'rgba(248,140,148,0.78)' }]} />
+                  <PremiumText variant="body" style={searchingStyles.routeText} numberOfLines={1}>
+                    {activeTag.dropoff_location}
+                  </PremiumText>
+                </View>
+
+                <TouchableOpacity
+                  style={searchingStyles.shareButton}
+                  onPress={handleShareRideRequest}
+                >
+                  <Ionicons name="share-social" size={18} color={PREMIUM_AUTH_CYAN} />
+                  <PremiumText variant="body" style={searchingStyles.shareButtonText}>
+                    Paylaş
+                  </PremiumText>
+                </TouchableOpacity>
+              </GlassSurface>
+
+              <View style={searchingStyles.offersContainer}>
+                <View style={searchingStyles.offersHeader}>
+                  <PremiumText variant="title" style={searchingStyles.offersTitle}>
+                    Teklifler
+                  </PremiumText>
+                  <View style={searchingStyles.liveIndicator}>
+                    <View style={searchingStyles.liveDot} />
+                    <PremiumText variant="step" style={searchingStyles.liveText}>
+                      Canlı
+                    </PremiumText>
+                  </View>
+                </View>
+
+                <FlatList
+                  data={offers}
+                  keyExtractor={(item, index) => item.id || index.toString()}
+                  renderItem={({ item, index }) => (
+                    <PassengerOfferCard
+                      offer={item}
+                      index={index}
+                      total={offers.length}
+                      onAccept={() => handleAcceptOffer(item.id)}
+                      onDismiss={() => handleDismissOffer(item.id)}
+                      isBest={index === 0}
+                    />
+                  )}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={searchingStyles.offersListContent}
+                />
+              </View>
+            </GlassSurface>
           </View>
-          
-          <FlatList
-            data={offers}
-            keyExtractor={(item, index) => item.id || index.toString()}
-            renderItem={({ item, index }) => (
-              <PassengerOfferCard
-                offer={item}
-                index={index}
-                total={offers.length}
-                onAccept={() => handleAcceptOffer(item.id)}
-                onDismiss={() => handleDismissOffer(item.id)}
-                isBest={index === 0}
-              />
-            )}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 20 }}
-          />
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
       </View>
     );
   }

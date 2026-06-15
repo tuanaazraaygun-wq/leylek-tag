@@ -292,6 +292,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, [insets.top]);
 
   const isPassengerMatchingChipMode = flowHint === 'passenger_matching';
+  const isPassengerOfferWaitingMode = flowHint === 'passenger_offer_waiting';
 
   const suppressAmbientOrbChrome =
     isRoleSelectScreen || isPassengerMatchHomeGuardianMode || isPassengerMatchingChipMode;
@@ -1067,7 +1068,12 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                   <Pressable
                     onPress={onOpen}
                     onPressIn={markInteraction}
-                    style={({ pressed }) => [styles.fabOuter, fabGlowStyle, pressed && styles.fabPressed]}
+                    style={({ pressed }) => [
+                      styles.fabOuter,
+                      isPassengerOfferWaitingMode && styles.passengerOfferWaitFabOuter,
+                      fabGlowStyle,
+                      pressed && styles.fabPressed,
+                    ]}
                     accessibilityRole="button"
                     accessibilityLabel="Leylek Zeka"
                     accessibilityHint={
@@ -1190,6 +1196,20 @@ const styles = StyleSheet.create({
         shadowRadius: 18,
       },
       android: {},
+    }),
+  },
+  passengerOfferWaitFabOuter: {
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: LDS_BORDER_COLOR.cockpitPanelTop,
+    borderLeftColor: LDS_BORDER_COLOR.cockpitPanelLeft,
+    ...Platform.select({
+      ios: {
+        shadowColor: ORB_ACCENT_CYAN,
+        shadowOpacity: 0.28,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 6 },
     }),
   },
   fabGrad: {
