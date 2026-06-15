@@ -11858,11 +11858,8 @@ function PassengerDashboard({
 
   // YOLCU EKRANI - AKTİF TAG VAR (matched veya in_progress)
   return (
-    <ImageBackground 
-      source={require('../assets/images/passenger-background.png')} 
-      style={styles.passengerBackgroundContainer}
-      imageStyle={styles.passengerBackgroundImage}
-    >
+    <View style={styles.passengerTripShell}>
+    <CockpitBackground />
     <SafeAreaView style={styles.containerTransparent}>
       {/* 🆕 Eşleşme Sağlanıyor Modal */}
       <TagMatchTransitionOverlay active={matchingInProgress} />
@@ -11885,17 +11882,22 @@ function PassengerDashboard({
       {/* Üst Header - KALDIRILDI - TAM EKRAN */}
       
       {activeTag ? (
-        <View
-          style={{
-            flex: 1,
-            minHeight: 0,
-            width: '100%',
-            overflow: 'hidden',
-          }}
-        >
+        <View style={styles.passengerTripActiveLayer}>
             {/* CANLI HARİTA - Tam Ekran (Yolcu) - SADECE MATCHED/IN_PROGRESS'DE */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
+                <GlassSurface variant="panel" style={styles.passengerTripPhaseShell} borderRadius={LDS_RADIUS.lg}>
+                  <View style={styles.passengerTripPhaseBlock}>
+                    <PremiumText variant="step" style={styles.passengerTripPhaseStep}>
+                      {activeTag.status === 'in_progress' ? 'Yolculuk devam ediyor' : 'Buluşma'}
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.passengerTripPhaseCaption}>
+                      {activeTag.status === 'in_progress'
+                        ? 'Güvenli yolculuk · Varışa doğru'
+                        : 'Sürücün yolda · Biniş QR\u2019ını hazırla'}
+                    </PremiumText>
+                  </View>
+                </GlassSurface>
                 {firstChatTapBanner ? (
                   <TouchableOpacity
                     activeOpacity={0.9}
@@ -11903,27 +11905,19 @@ function PassengerDashboard({
                       setPassengerChatVisible(true);
                       setFirstChatTapBanner(null);
                     }}
-                    style={{
-                      backgroundColor: 'rgba(42, 24, 28, 0.82)',
-                      marginHorizontal: 12,
-                      marginTop: 8,
-                      marginBottom: 6,
-                      paddingVertical: 12,
-                      paddingHorizontal: 14,
-                      borderRadius: 10,
-                      borderWidth: 1,
-                      borderColor: 'rgba(248,113,113,0.38)',
-                    }}
+                    style={styles.passengerTripBannerWrap}
                   >
-                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
-                      {firstChatTapBanner.title}
-                    </Text>
-                    <Text style={{ color: 'rgba(186,201,222,0.88)', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
-                      {firstChatTapBanner.subtitle}
-                    </Text>
-                    <Text style={{ color: 'rgba(186,201,222,0.72)', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
-                      Mesajı görmek için tıklayın
-                    </Text>
+                    <GlassSurface variant="plain" style={styles.passengerTripBannerAlert} borderRadius={LDS_RADIUS.md}>
+                      <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
+                        {firstChatTapBanner.title}
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.passengerTripBannerBody}>
+                        {firstChatTapBanner.subtitle}
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.passengerTripBannerHint}>
+                        Mesajı görmek için tıklayın
+                      </PremiumText>
+                    </GlassSurface>
                   </TouchableOpacity>
                 ) : null}
                 {passengerBoardingGuidanceNearBanner &&
@@ -11938,102 +11932,58 @@ function PassengerDashboard({
                       if (passengerBoardingScanVisible) return;
                       setPassengerBoardingScanVisible(true);
                     }}
-                    style={{
-                      marginHorizontal: 12,
-                      marginTop: 8,
-                      marginBottom: 6,
-                      paddingVertical: 14,
-                      paddingHorizontal: 16,
-                      borderRadius: 16,
-                      backgroundColor: 'rgba(16,26,43,0.88)',
-                      borderWidth: 1,
-                      borderColor: '#1E3A5F',
-                      borderTopColor: 'rgba(34,211,238,0.38)',
-                      shadowColor: '#010818',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.35,
-                      shadowRadius: 16,
-                      elevation: 14,
-                    }}
+                    style={styles.passengerTripBannerWrap}
                   >
-                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 15, textAlign: 'center', lineHeight: 22 }}>
-                      Sürücü yakın — araca bindikten sonra biniş QR kodunu okutun
-                    </Text>
-                    <Text style={{ color: 'rgba(186,201,222,0.82)', fontSize: 12, textAlign: 'center', marginTop: 8, fontWeight: '600', lineHeight: 17 }}>
-                      Yolculuk, biniş doğrulandıktan sonra başlar.{' '}
-                      <Text style={{ color: 'rgba(34,211,238,0.88)' }}>Dokunarak onaylayın.</Text>
-                    </Text>
+                    <GlassSurface variant="plain" style={styles.passengerTripBannerPlain} borderRadius={LDS_RADIUS.lg}>
+                      <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
+                        Sürücü yakın — araca bindikten sonra biniş QR kodunu okutun
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.passengerTripBannerBody}>
+                        Yolculuk, biniş doğrulandıktan sonra başlar.{' '}
+                        <PremiumText variant="caption" style={styles.passengerTripBannerHintAccent}>
+                          Dokunarak onaylayın.
+                        </PremiumText>
+                      </PremiumText>
+                    </GlassSurface>
                   </TouchableOpacity>
                 ) : null}
                 {passengerBoardingReminderBannerVisible &&
                 activeTag?.status === 'matched' &&
                 !activeTag?.boarding_confirmed_at ? (
-                  <View
-                    style={{
-                      backgroundColor: 'rgba(16,26,43,0.88)',
-                      marginHorizontal: 12,
-                      marginTop: 8,
-                      marginBottom: 6,
-                      paddingVertical: 14,
-                      paddingHorizontal: 16,
-                      borderRadius: 16,
-                      borderWidth: 1,
-                      borderColor: '#1E3A5F',
-                      borderTopColor: 'rgba(34,211,238,0.28)',
-                      shadowColor: '#010818',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.32,
-                      shadowRadius: 14,
-                      elevation: 12,
-                    }}
-                  >
-                    <Text style={{ color: 'rgba(243,248,255,0.94)', fontWeight: '800', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+                  <GlassSurface variant="plain" style={[styles.passengerTripBannerWrap, styles.passengerTripBannerPlain]} borderRadius={LDS_RADIUS.lg}>
+                    <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
                       Biniş QR kodunu, araca bindikten sonra okutun
-                    </Text>
-                    <Text style={{ color: 'rgba(186,201,222,0.82)', fontSize: 12, textAlign: 'center', marginTop: 8, lineHeight: 17, fontWeight: '600' }}>
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.passengerTripBannerBody}>
                       Sürücüden uzaksanız önce buluşma noktasına ilerleyin. Kapatırsanız uyarı, uygun mesafede yeniden gösterilir.
-                    </Text>
-                    <View style={{ flexDirection: 'row', marginTop: 14 }}>
+                    </PremiumText>
+                    <View style={styles.passengerTripBannerActions}>
                       <TouchableOpacity
-                        style={{
-                          flex: 1,
-                          backgroundColor: 'rgba(8,17,31,0.78)',
-                          paddingVertical: 12,
-                          borderRadius: 12,
-                          alignItems: 'center',
-                          marginRight: 6,
-                          borderWidth: 1,
-                          borderColor: '#1E3A5F',
-                        }}
+                        style={styles.passengerTripBannerBtnSecondary}
                         onPress={() => {
                           passengerBoardingBannerDismissedRef.current = true;
                           setPassengerBoardingReminderBannerVisible(false);
                         }}
                       >
-                        <Text style={{ color: 'rgba(186,201,222,0.94)', fontWeight: '800' }}>Kapat</Text>
+                        <PremiumText variant="caption" style={styles.passengerTripBannerBtnSecondaryText}>
+                          Kapat
+                        </PremiumText>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={{
-                          flex: 1,
-                          backgroundColor: 'rgba(34,211,238,0.14)',
-                          paddingVertical: 12,
-                          borderRadius: 12,
-                          alignItems: 'center',
-                          marginLeft: 6,
-                          borderWidth: 1,
-                          borderColor: 'rgba(34,211,238,0.42)',
-                        }}
+                        style={styles.passengerTripBannerBtnPrimary}
                         onPress={() => {
                           setPassengerBoardingReminderBannerVisible(false);
                           setPassengerBoardingScanVisible(true);
                         }}
                       >
-                        <Text style={{ color: 'rgba(243,248,255,0.96)', fontWeight: '800' }}>Kodu tara</Text>
+                        <PremiumText variant="caption" style={styles.passengerTripBannerBtnPrimaryText}>
+                          Kodu tara
+                        </PremiumText>
                       </TouchableOpacity>
                     </View>
-                  </View>
+                  </GlassSurface>
                 ) : null}
-                <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <View style={styles.passengerTripMapLayer}>
                 <TestFlightDebugPanel
                   role="passenger"
                   userLocation={userLocation}
@@ -14149,7 +14099,7 @@ function PassengerDashboard({
         }}
       />
     </SafeAreaView>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -19146,7 +19096,105 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFF',
   },
-  // 🆕 Yolcu Arka Plan Stilleri
+  // 🆕 Yolcu active trip shell (LHIS cockpit zemin)
+  passengerTripShell: {
+    flex: 1,
+  },
+  passengerTripActiveLayer: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  passengerTripPhaseShell: {
+    marginHorizontal: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    ...LDS_ELEVATION.chip,
+  },
+  passengerTripPhaseBlock: {
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+  },
+  passengerTripPhaseStep: {
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  passengerTripPhaseCaption: {
+    textAlign: 'center',
+  },
+  passengerTripBannerWrap: {
+    marginHorizontal: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
+  },
+  passengerTripBannerAlert: {
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    borderColor: 'rgba(248,113,113,0.38)',
+    borderTopColor: 'rgba(248,113,113,0.52)',
+    ...LDS_ELEVATION.chip,
+  },
+  passengerTripBannerPlain: {
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.md,
+    ...LDS_ELEVATION.panel,
+  },
+  passengerTripBannerTitle: {
+    textAlign: 'center',
+    fontWeight: '800',
+  },
+  passengerTripBannerBody: {
+    textAlign: 'center',
+    marginTop: LDS_SPACING.xxs,
+    lineHeight: 17,
+  },
+  passengerTripBannerHint: {
+    textAlign: 'center',
+    marginTop: LDS_SPACING.xxs,
+  },
+  passengerTripBannerHintAccent: {
+    color: PREMIUM_AUTH_CYAN,
+    fontWeight: '700',
+  },
+  passengerTripBannerActions: {
+    flexDirection: 'row',
+    marginTop: LDS_SPACING.sm + LDS_SPACING.xxs,
+    gap: LDS_SPACING.xs,
+  },
+  passengerTripBannerBtnSecondary: {
+    flex: 1,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    alignItems: 'center',
+    backgroundColor: 'rgba(8,17,31,0.78)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.slate,
+  },
+  passengerTripBannerBtnSecondaryText: {
+    fontWeight: '800',
+  },
+  passengerTripBannerBtnPrimary: {
+    flex: 1,
+    paddingVertical: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    alignItems: 'center',
+    backgroundColor: 'rgba(34,211,238,0.14)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+  },
+  passengerTripBannerBtnPrimaryText: {
+    fontWeight: '800',
+  },
+  passengerTripMapLayer: {
+    flex: 1,
+    position: 'relative',
+    minHeight: 0,
+  },
+  // 🆕 Yolcu Arka Plan Stilleri (legacy — driver / referans)
   passengerBackgroundContainer: {
     flex: 1,
   },
