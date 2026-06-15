@@ -538,8 +538,10 @@ function formatDriverMatrixDisplay(matrixStatus: string): string {
       return 'Yolcu alındı';
     case 'YOLCUNUN HEDEFINE GIDIN':
       return 'Hedefe ilerleniyor';
-    default:
-      return matrixStatus.replace(/^>\s*/, '').trim();
+    default: {
+      const cleaned = matrixStatus.replace(/^>\s*/, '').trim();
+      return cleaned || 'Durum güncelleniyor';
+    }
   }
 }
 
@@ -6003,7 +6005,7 @@ export default function LiveMapView({
         </View>
       ) : null}
       
-      {/* Uyarı yazısı (matrixStatus) artık üst bilgi panelinin altına sabitleniyor */}
+      {/* Sürücü operasyon durum göstergesi — üst panel altında */}
 
       {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF + sol üst Ara (48x48) */}
       {MapView ? (
@@ -6433,7 +6435,7 @@ export default function LiveMapView({
               style={styles.drvTopPhaseChipShell}
               borderRadius={LDS_RADIUS.sm}
             >
-              <PremiumText variant="caption" style={styles.drvTopPhaseChip}>
+              <PremiumText variant="caption" muted style={styles.drvTopPhaseChip}>
                 {driverOpsPhaseLabel(boardingConfirmed, tagStatus)}
               </PremiumText>
             </GlassSurface>
@@ -6445,8 +6447,8 @@ export default function LiveMapView({
                   borderRadius={LDS_RADIUS.full}
                 >
                   <View style={styles.drvTopLiveChipDot} />
-                  <PremiumText variant="caption" style={styles.drvTopLiveChipText}>
-                    CANLI
+                  <PremiumText variant="caption" muted style={styles.drvTopLiveChipText}>
+                    Canlı
                   </PremiumText>
                 </GlassSurface>
               </View>
@@ -6531,8 +6533,8 @@ export default function LiveMapView({
                     style={styles.drvTopNearChip}
                     borderRadius={LDS_RADIUS.sm}
                   >
-                    <PremiumText variant="caption" style={styles.drvTopNearChipText}>
-                      YAKIN
+                    <PremiumText variant="caption" muted style={styles.drvTopNearChipText}>
+                      Yakın
                     </PremiumText>
                   </GlassSurface>
                 ) : null}
@@ -6765,18 +6767,21 @@ export default function LiveMapView({
           </View>
         ) : null}
 
-        {/* Sürücü matrix + Yolcuya Git — modern özet ekranda alt panele taşındı */}
+        {/* Sürücü operasyon durumu + Yolcuya Git */}
         {driverRideUiModern ? null : isDriver && !driverNavImmersive ? (
           <View style={styles.driverMatchMatrixRow} pointerEvents="box-none">
             {matrixStatus ? (
               <GlassSurface
                 variant="plain"
-                style={[styles.drvTopStatusChip, styles.matrixContainerDriverInRow]}
+                style={[styles.drvTopStatusChip, styles.drvOpsStatusChipInRow]}
                 borderRadius={LDS_RADIUS.md}
               >
-                <PremiumText variant="caption" muted style={styles.drvTopMatrixText}>
-                  {formatDriverMatrixDisplay(matrixStatus)}
-                </PremiumText>
+                <View style={styles.drvOpsStatusChipInner}>
+                  <View style={styles.drvOpsStatusChipDot} />
+                  <PremiumText variant="caption" muted style={styles.drvTopMatrixText} numberOfLines={2}>
+                    {formatDriverMatrixDisplay(matrixStatus)}
+                  </PremiumText>
+                </View>
               </GlassSurface>
             ) : (
               <View style={styles.driverMatchMatrixRowFlex1} />
@@ -8456,11 +8461,23 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 8,
   },
-  matrixContainerDriverInRow: {
+  drvOpsStatusChipInRow: {
     marginLeft: 0,
     marginTop: 0,
     flexShrink: 1,
     maxWidth: '58%',
+  },
+  drvOpsStatusChipInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+  },
+  drvOpsStatusChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(34,211,238,0.68)',
+    flexShrink: 0,
   },
   driverMatchYgitOuter: {
     position: 'relative',
@@ -9109,9 +9126,8 @@ const styles = StyleSheet.create({
     ...LDS_ELEVATION.flat,
   },
   drvTopPhaseChip: {
-    fontWeight: '700',
-    letterSpacing: 0.45,
-    textTransform: 'uppercase',
+    fontWeight: '600',
+    letterSpacing: 0.15,
   },
   drvTopLiveChipWrap: {
     flexShrink: 0,
@@ -9134,9 +9150,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34,211,238,0.68)',
   },
   drvTopLiveChipText: {
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    color: 'rgba(186, 230, 253, 0.95)',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   drvTopRouteRow: {
     flexDirection: 'row',
@@ -9182,9 +9197,8 @@ const styles = StyleSheet.create({
     ...LDS_ELEVATION.flat,
   },
   drvTopNearChipText: {
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    color: 'rgba(186, 230, 253, 0.92)',
+    fontWeight: '600',
+    letterSpacing: 0.15,
   },
   drvTopPriceChip: {
     paddingHorizontal: LDS_SPACING.sm,
@@ -9228,15 +9242,17 @@ const styles = StyleSheet.create({
     marginLeft: 0,
     marginTop: 0,
     paddingHorizontal: LDS_SPACING.sm,
-    paddingVertical: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs + 2,
     backgroundColor: 'rgba(5,11,24,0.55)',
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderColor: LDS_BORDER_COLOR.card,
     borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.flat,
   },
   drvTopMatrixText: {
-    letterSpacing: 0.12,
-    lineHeight: 15,
+    fontWeight: '600',
+    letterSpacing: 0.15,
+    lineHeight: 16,
+    flexShrink: 1,
   },
   paxTopRouteShell: {
     alignSelf: 'center',
