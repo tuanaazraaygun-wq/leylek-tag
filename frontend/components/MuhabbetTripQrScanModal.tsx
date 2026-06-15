@@ -7,11 +7,17 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   Vibration,
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
+import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { LDS_ELEVATION } from '../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LDS_SPACING } from '../design-system/tokens/spacing';
 
 type MuhabbetTripQrScanModalProps = {
   visible: boolean;
@@ -234,12 +240,38 @@ export default function MuhabbetTripQrScanModal({
         <Text style={styles.hint}>{hint}</Text>
 
         {!hasPermission?.granted ? (
-          <View style={styles.permissionBox}>
-            <Ionicons name="camera-outline" size={42} color="#94A3B8" />
-            <Text style={styles.permissionText}>Kamera izni gerekli.</Text>
-            <Pressable style={styles.permissionButton} onPress={() => void requestPermission()}>
-              <Text style={styles.permissionButtonText}>İzin ver</Text>
-            </Pressable>
+          <View style={styles.permissionStage}>
+            <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.permissionPanel}>
+              <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
+                <Ionicons name="scan-outline" size={14} color="rgba(34,211,238,0.88)" />
+                <PremiumText variant="caption" style={styles.guardianChipText}>
+                  QR doğrulaması
+                </PremiumText>
+              </GlassSurface>
+
+              <PremiumText variant="title" style={styles.permTitle}>
+                Kamera izni
+              </PremiumText>
+              <PremiumText variant="body" muted style={styles.permSubtitle}>
+                QR kodunu okutabilmek için kamera izni gereklidir.
+              </PremiumText>
+
+              <TouchableOpacity
+                style={styles.permBtnPrimary}
+                onPress={() => void requestPermission()}
+                activeOpacity={0.88}
+              >
+                <PremiumText variant="body" style={styles.permBtnPrimaryText}>
+                  İzin ver
+                </PremiumText>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.permBtnSecondary} onPress={onClose} activeOpacity={0.85}>
+                <PremiumText variant="body" muted style={styles.permBtnSecondaryText}>
+                  Şimdi değil
+                </PremiumText>
+              </TouchableOpacity>
+            </GlassSurface>
           </View>
         ) : (
           <View style={styles.cameraBox}>
@@ -332,10 +364,85 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '800',
   },
-  permissionBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 24 },
-  permissionText: { color: '#CBD5E1', fontWeight: '800' },
-  permissionButton: { backgroundColor: '#2563EB', paddingHorizontal: 18, paddingVertical: 11, borderRadius: 12 },
-  permissionButtonText: { color: '#FFFFFF', fontWeight: '900' },
+  permissionStage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: LDS_SPACING.lg,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+  },
+  permissionPanel: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
+    ...LDS_ELEVATION.cockpit,
+  },
+  guardianChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.flat,
+  },
+  guardianChipText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    color: 'rgba(186, 230, 253, 0.92)',
+  },
+  permTitle: {
+    textAlign: 'center',
+    marginBottom: LDS_SPACING.xs,
+  },
+  permSubtitle: {
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
+  },
+  permBtnPrimary: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    paddingVertical: LDS_SPACING.sm + 2,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    marginBottom: LDS_SPACING.sm,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
+  },
+  permBtnPrimaryText: {
+    fontWeight: '800',
+    letterSpacing: 0.1,
+    textAlign: 'center',
+  },
+  permBtnSecondary: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
+  },
+  permBtnSecondaryText: {
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   cameraBox: {
     flex: 1,
     overflow: 'hidden',
