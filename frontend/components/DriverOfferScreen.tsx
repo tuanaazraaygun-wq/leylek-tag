@@ -1361,23 +1361,60 @@ export default function DriverOfferScreen({
               style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}
               borderRadius={LDS_RADIUS.lg}
             >
+              <View style={styles.emptyBrandStrip}>
+                <View style={styles.emptyBrandDotWrap} pointerEvents="none">
+                  <View style={styles.emptyBrandDotOuter} />
+                  <View style={styles.emptyBrandDot} />
+                </View>
+                <PremiumText variant="caption" style={styles.emptyBrandLabel}>
+                  LEYLEKTAG · SAHA OPERASYONU
+                </PremiumText>
+              </View>
+
               <View
                 style={[
-                  styles.emptyIconRing,
-                  mapExpanded && styles.emptyIconRingMapExpanded,
-                  isMotor && styles.emptyIconRingMotor,
+                  styles.emptyInstrumentOrb,
+                  mapExpanded && styles.emptyInstrumentOrbMapExpanded,
                 ]}
               >
-                {isMotor ? (
-                  <MaterialCommunityIcons
-                    name="motorbike"
-                    size={mapExpanded ? 40 : 48}
-                    color="rgba(134,239,172,0.92)"
+                <View
+                  style={[
+                    styles.emptyOrbRing,
+                    styles.emptyOrbRingOuter,
+                    mapExpanded && styles.emptyOrbRingOuterMapExpanded,
+                    isMotor && styles.emptyOrbRingOuterMotor,
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.emptyOrbRing,
+                    styles.emptyOrbRingMid,
+                    mapExpanded && styles.emptyOrbRingMidMapExpanded,
+                    isMotor && styles.emptyOrbRingMidMotor,
+                  ]}
+                />
+                <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded]}>
+                  <Ionicons
+                    name="radio-outline"
+                    size={mapExpanded ? 18 : 22}
+                    color={isMotor ? 'rgba(134,239,172,0.92)' : 'rgba(34,211,238,0.9)'}
                   />
-                ) : (
-                  <Ionicons name="car-outline" size={mapExpanded ? 38 : 46} color="rgba(34,211,238,0.9)" />
-                )}
+                </View>
               </View>
+
+              <View
+                style={[
+                  styles.emptyStatusPill,
+                  mapExpanded && styles.emptyStatusPillMapExpanded,
+                  isMotor && styles.emptyStatusPillMotor,
+                ]}
+              >
+                <View style={styles.emptyStatusLiveDot} />
+                <PremiumText variant="step" style={styles.emptyStatusText}>
+                  Saha taraması aktif
+                </PremiumText>
+              </View>
+
               <PremiumText
                 variant="headline"
                 style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}
@@ -1389,20 +1426,25 @@ export default function DriverOfferScreen({
                 muted
                 style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
               >
-                Saha taraması aktif. Çevrimiçi kaldığınızda yakın talepler burada listelenir.
+                Operasyon merkezi açık. {mapHud.radius} km saha çevresinde canlı dispatch taraması
+                sürüyor; yakın talepler burada listelenir.
               </PremiumText>
+
               <View style={styles.emptyChipRow}>
                 <View style={styles.emptyChip}>
+                  <Ionicons name="locate-outline" size={11} color={PREMIUM_AUTH_CYAN} />
                   <PremiumText variant="caption" style={styles.emptyChipText}>
-                    {mapHud.radius} km
+                    {mapHud.radius} km saha
                   </PremiumText>
                 </View>
                 <View style={styles.emptyChip}>
+                  <Ionicons name="pulse-outline" size={11} color={PREMIUM_AUTH_CYAN} />
                   <PremiumText variant="caption" style={styles.emptyChipText}>
-                    Saha taraması aktif
+                    Canlı tarama
                   </PremiumText>
                 </View>
                 <View style={styles.emptyChip}>
+                  <Ionicons name="shield-checkmark-outline" size={11} color={PREMIUM_AUTH_CYAN} />
                   <PremiumText variant="caption" style={styles.emptyChipText}>
                     LeylekTAG saha
                   </PremiumText>
@@ -2059,46 +2101,165 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
     alignItems: 'center',
-    paddingVertical: LDS_SPACING.xl,
+    paddingTop: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.xl,
     paddingHorizontal: LDS_SPACING.lg,
     backgroundColor: 'transparent',
   },
   emptyStateCardMapExpanded: {
-    paddingVertical: LDS_SPACING.md,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.md,
     paddingHorizontal: LDS_SPACING.md,
     maxWidth: 380,
   },
-  emptyIconRing: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(34,211,238,0.07)',
-    borderWidth: StyleSheet.hairlineWidth + 1.25,
-    borderColor: 'rgba(34,211,238,0.22)',
-    justifyContent: 'center',
+  emptyBrandStrip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    gap: LDS_SPACING.xs,
+    alignSelf: 'stretch',
+    marginBottom: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.sm,
+    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
+    borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
   },
-  emptyIconRingMotor: {
-    backgroundColor: 'rgba(34,211,238,0.05)',
-    borderColor: 'rgba(134,239,172,0.22)',
+  emptyBrandDotWrap: {
+    width: 12,
+    height: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emptyIconRingMapExpanded: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    marginBottom: 2,
+  emptyBrandDotOuter: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34,211,238,0.2)',
+  },
+  emptyBrandDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    opacity: 0.92,
+  },
+  emptyBrandLabel: {
+    letterSpacing: 0.42,
+    textTransform: 'uppercase',
+    color: PREMIUM_AUTH_CYAN,
+    opacity: 0.84,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  emptyInstrumentOrb: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: LDS_SPACING.sm,
+  },
+  emptyInstrumentOrbMapExpanded: {
+    width: 64,
+    height: 64,
+    marginBottom: LDS_SPACING.xs,
+  },
+  emptyOrbRingOuterMotor: {
+    borderColor: 'rgba(134,239,172,0.16)',
+    backgroundColor: 'rgba(134,239,172,0.04)',
+  },
+  emptyOrbRingMidMotor: {
+    borderColor: 'rgba(134,239,172,0.24)',
+  },
+  emptyOrbRingOuterMapExpanded: {
+    width: 64,
+    height: 64,
+  },
+  emptyOrbRingMidMapExpanded: {
+    width: 48,
+    height: 48,
+  },
+  emptyOrbCoreMapExpanded: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  emptyOrbRing: {
+    position: 'absolute',
+    borderRadius: 999,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+  },
+  emptyOrbRingOuter: {
+    width: 76,
+    height: 76,
+    borderColor: 'rgba(34,211,238,0.14)',
+    backgroundColor: 'rgba(34,211,238,0.03)',
+  },
+  emptyOrbRingMid: {
+    width: 56,
+    height: 56,
+    borderColor: 'rgba(34,211,238,0.22)',
+    backgroundColor: 'rgba(8,17,31,0.35)',
+  },
+  emptyOrbCore: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,17,31,0.62)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: 'rgba(34,211,238,0.18)',
+    ...LDS_ELEVATION.chip,
+  },
+  emptyStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(34,211,238,0.1)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: 'rgba(34,211,238,0.28)',
+    borderTopColor: 'rgba(34,211,238,0.42)',
+    marginBottom: LDS_SPACING.sm,
+  },
+  emptyStatusPillMapExpanded: {
+    paddingVertical: LDS_SPACING.xxs + 1,
+    paddingHorizontal: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.xs,
+  },
+  emptyStatusPillMotor: {
+    backgroundColor: 'rgba(134,239,172,0.08)',
+    borderColor: 'rgba(134,239,172,0.24)',
+    borderTopColor: 'rgba(134,239,172,0.34)',
+  },
+  emptyStatusLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    opacity: 0.95,
+  },
+  emptyStatusText: {
+    letterSpacing: 0.18,
+    color: 'rgba(186,235,245,0.95)',
+    fontWeight: '800',
   },
   emptyTitle: {
-    marginTop: LDS_SPACING.md,
+    marginTop: LDS_SPACING.xxs,
     textAlign: 'center',
-    letterSpacing: -0.35,
+    letterSpacing: -0.38,
   },
   emptySubtitle: {
     textAlign: 'center',
     marginTop: LDS_SPACING.sm,
     lineHeight: 18,
-    paddingHorizontal: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xs,
+    maxWidth: 320,
   },
   emptyChipRow: {
     flexDirection: 'row',
@@ -2110,6 +2271,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: LDS_SPACING.xxs,
   },
   emptyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingVertical: LDS_SPACING.xxs,
     paddingHorizontal: LDS_SPACING.sm,
     borderRadius: LDS_RADIUS.full,
@@ -2119,8 +2283,9 @@ const styles = StyleSheet.create({
   },
   emptyChipText: {
     fontWeight: '700',
-    color: 'rgba(186,218,226,0.88)',
-    letterSpacing: 0.15,
+    color: 'rgba(186,218,226,0.9)',
+    letterSpacing: 0.12,
+    fontSize: 10,
   },
   emptyTitleMapExpanded: {
     fontSize: 19,
