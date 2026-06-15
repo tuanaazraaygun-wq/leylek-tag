@@ -48,6 +48,7 @@ import {
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
+import { PREMIUM_AUTH_CYAN } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
@@ -2278,17 +2279,14 @@ function PassengerDriverIbanFab({ onPress }: { onPress: () => void }) {
           style={({ pressed }) => [styles.passengerIbanFabPressable, pressed && { opacity: 0.92 }]}
           onPress={onPress}
           accessibilityRole="button"
-          accessibilityLabel="Sürücü IBAN'ı"
+          accessibilityLabel="Sürücü havale bilgilerini aç"
         >
-          <LinearGradient
-            colors={['rgba(16, 26, 43, 0.98)', 'rgba(30, 58, 95, 0.9)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.passengerIbanFab}
-          >
-            <Ionicons name="wallet-outline" size={18} color="#22D3EE" />
-            <Text style={styles.passengerIbanFabText}>Sürücü IBAN'ı</Text>
-          </LinearGradient>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.passengerIbanFab}>
+            <Ionicons name="wallet-outline" size={18} color={PREMIUM_AUTH_CYAN} />
+            <PremiumText variant="caption" style={styles.passengerIbanFabText}>
+              Havale bilgileri
+            </PremiumText>
+          </GlassSurface>
         </Pressable>
       </View>
     </Animated.View>
@@ -6385,9 +6383,9 @@ export default function LiveMapView({
 
             <View style={styles.driverRidePriceRow}>
               {passengerPaymentMethod ? (
-                <Text style={styles.driverRidePayHint} numberOfLines={1}>
-                  {passengerPaymentMethod === 'card' ? 'Kart ile Öde · Yakında' : 'Nakit'}
-                </Text>
+                <PremiumText variant="caption" muted style={styles.driverRidePayHint} numberOfLines={1}>
+                  {passengerPaymentMethod === 'card' ? 'Kart ile öde · yakında' : 'Nakit'}
+                </PremiumText>
               ) : (
                 <View style={styles.driverRidePriceRowSpacer} />
               )}
@@ -6581,10 +6579,10 @@ export default function LiveMapView({
                 size={13}
                 color="rgba(186,201,222,0.82)"
               />
-              <PremiumText variant="caption" style={styles.drvTopPaymentChipText}>
+              <PremiumText variant="caption" muted style={styles.drvTopPaymentChipText}>
                 {passengerPaymentMethod === 'card'
-                  ? 'Yolcu: Kart · Yakında'
-                  : 'Yolcu: Nakit'}
+                  ? 'Yolcu: kart · yakında'
+                  : 'Yolcu: nakit'}
               </PremiumText>
             </GlassSurface>
           ) : null}
@@ -9960,32 +9958,28 @@ const styles = StyleSheet.create({
     zIndex: 94,
   },
   passengerIbanFabGlow: {
-    borderRadius: 24,
-    shadowColor: '#22D3EE',
+    borderRadius: LDS_RADIUS.full,
+    shadowColor: PREMIUM_AUTH_CYAN,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.42,
-    shadowRadius: 14,
+    shadowRadius: LDS_SPACING.sm,
     elevation: 12,
   },
   passengerIbanFabPressable: {
-    borderRadius: 24,
+    borderRadius: LDS_RADIUS.full,
     overflow: 'hidden',
     maxWidth: SCREEN_WIDTH * 0.5,
   },
   passengerIbanFab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: 'rgba(34, 211, 238, 0.72)',
-    borderTopColor: '#22D3EE',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm + LDS_SPACING.xxs,
+    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+    ...LDS_ELEVATION.chip,
   },
   passengerIbanFabText: {
-    color: 'rgba(243, 248, 255, 0.96)',
-    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.25,
   },
@@ -10872,13 +10866,11 @@ const styles = StyleSheet.create({
     color: 'rgba(34,211,238,0.96)',
   },
   driverRidePayHint: {
-    fontSize: 13,
     fontWeight: '700',
-    color: 'rgba(186,201,222,0.82)',
     flexShrink: 1,
     flex: 1,
     minWidth: 0,
-    marginRight: 8,
+    marginRight: LDS_SPACING.sm,
   },
   driverRidePassengerRow: {
     flexDirection: 'row',
