@@ -1,16 +1,11 @@
 import React, { memo, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import {
-  PREMIUM_AUTH_CYAN,
-  PREMIUM_BORDER_SLATE,
-  PREMIUM_NAVY_CARD,
-  PREMIUM_NAVY_DEEP,
-  PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-  PREMIUM_TEXT_MUTED,
-  PREMIUM_TEXT_SOFT,
-} from '../auth/premiumAuthStyles';
+import { GlassSurface, PremiumText } from '../../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
+import { PREMIUM_AUTH_CYAN } from '../auth/premiumAuthStyles';
 import { useTrustedSummary } from '../../hooks/useTrustedSummary';
 import { formatDriverTrustedHeaderSubtitle } from '../../lib/trustedSummaryCopy';
 import type { TrustedSummaryResponse } from '../../lib/trustedNetworkApi';
@@ -25,6 +20,17 @@ const CHIPS = [
 type ChipLabel = (typeof CHIPS)[number];
 
 const STUB_HEADER_SUBTITLE = 'Güven ağı ve direkt eşleşme yakında';
+
+/** Collapsed trust metrics — duplicate “Güven ağı” chip omitted in presentation. */
+const TRUST_METRIC_KEYS: ChipLabel[] = ['Aktif yolcular', 'Bekleyen davetler'];
+
+const METRIC_PRESENTATION: Record<
+  (typeof TRUST_METRIC_KEYS)[number],
+  { shortLabel: string; icon: keyof typeof Ionicons.glyphMap }
+> = {
+  'Aktif yolcular': { shortLabel: 'Aktif yolcu', icon: 'people-outline' },
+  'Bekleyen davetler': { shortLabel: 'Bekleyen davet', icon: 'mail-open-outline' },
+};
 
 function chipMetaForLabel(
   label: ChipLabel,
@@ -42,6 +48,12 @@ function chipMetaForLabel(
     return ` · ${active}`;
   }
   return null;
+}
+
+function metricValueFromMeta(meta: string | null): string {
+  if (!meta) return '—';
+  const trimmed = meta.replace(/^\s*·\s*/, '').trim();
+  return trimmed || '—';
 }
 
 export type DriverCockpitQuickStripProps = {
@@ -65,36 +77,32 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
   const headerContent = (
     <>
       <View style={styles.titleCol}>
-        <Text style={styles.title} numberOfLines={1}>
-          Yolcularım
-        </Text>
-        <Text style={styles.subtitle} numberOfLines={2}>
+        <View style={styles.titleRow}>
+          <View style={styles.trustIconWrap}>
+            <Ionicons name="shield-checkmark-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+          </View>
+          <PremiumText variant="step" style={styles.title} numberOfLines={1}>
+            Güven ağı
+          </PremiumText>
+        </View>
+        <PremiumText variant="caption" muted style={styles.subtitle} numberOfLines={2}>
           {headerSubtitle}
-        </Text>
+        </PremiumText>
       </View>
       {headerWired ? (
         <Ionicons name="chevron-forward" size={18} color={PREMIUM_AUTH_CYAN} />
-      ) : !summaryReady ? (
-        <View style={styles.headerSoonPill}>
-          <Text style={styles.headerSoonText}>Yakında</Text>
-        </View>
       ) : null}
     </>
   );
 
   return (
     <View style={styles.wrap} accessibilityRole="summary">
-      <LinearGradient
-        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(16, 26, 43, 0.88)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.card}
-      >
+      <GlassSurface variant="panel" style={styles.card} borderRadius={LDS_RADIUS.xl}>
         {headerWired ? (
           <Pressable
             onPress={onTrustedPress}
             accessibilityRole="button"
-            accessibilityLabel={`Yolcularım. ${headerSubtitle}`}
+            accessibilityLabel={`Güven ağı. ${headerSubtitle}`}
             style={({ pressed }) => [
               styles.headerRow,
               styles.headerRowPressable,
@@ -107,43 +115,53 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
           <View style={styles.headerRow}>{headerContent}</View>
         )}
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
-          keyboardShouldPersistTaps="handled"
-        >
-          {CHIPS.map((label) => {
-            const isDirect = label === 'Direkt istek';
+        <View style={styles.metricsRow}>
+          {TRUST_METRIC_KEYS.map((label) => {
+            const presentation = METRIC_PRESENTATION[label];
             const chipMeta =
-              summaryReady && summary && !isDirect
-                ? chipMetaForLabel(label, summary)
-                : null;
-            const showSoon = isDirect || !chipMeta;
-            const a11ySuffix = showSoon ? 'Yakında' : chipMeta?.trim() ?? '';
+              summaryReady && summary ? chipMetaForLabel(label, summary) : null;
+            const value = metricValueFromMeta(chipMeta);
+            const hasValue = value !== '—';
 
             return (
-              <Pressable
+              <View
                 key={label}
-                disabled
-                accessibilityRole="button"
-                accessibilityState={{ disabled: true }}
-                accessibilityLabel={`${label}. ${a11ySuffix}`}
-                style={styles.chip}
+                style={[styles.metricCell, hasValue && styles.metricCellActive]}
+                accessibilityLabel={`${presentation.shortLabel}. ${value}`}
               >
-                <Text style={styles.chipLabel} numberOfLines={1}>
-                  {label}
-                </Text>
-                {showSoon ? (
-                  <Text style={styles.chipSoon}>Yakında</Text>
-                ) : (
-                  <Text style={styles.chipMeta}>{chipMeta}</Text>
-                )}
-              </Pressable>
+                <View style={styles.metricLabelRow}>
+                  <Ionicons
+                    name={presentation.icon}
+                    size={12}
+                    color={hasValue ? PREMIUM_AUTH_CYAN : 'rgba(148,163,184,0.72)'}
+                  />
+                  <PremiumText variant="caption" muted style={styles.metricLabel} numberOfLines={1}>
+                    {presentation.shortLabel}
+                  </PremiumText>
+                </View>
+                <PremiumText
+                  variant="title"
+                  style={[styles.metricValue, hasValue && styles.metricValueActive]}
+                  numberOfLines={1}
+                >
+                  {value}
+                </PremiumText>
+              </View>
             );
           })}
-        </ScrollView>
-      </LinearGradient>
+
+          <View
+            style={styles.qmPill}
+            accessibilityLabel="Hızlı eşleşme. Yakında"
+            accessibilityRole="text"
+          >
+            <Ionicons name="flash-outline" size={13} color="rgba(34,211,238,0.75)" />
+            <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
+              Hızlı eşleşme
+            </PremiumText>
+          </View>
+        </View>
+      </GlassSurface>
     </View>
   );
 }
@@ -152,28 +170,24 @@ export default memo(DriverCockpitQuickStrip);
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: 12,
-    paddingBottom: 4,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xxs,
   },
   card: {
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: StyleSheet.hairlineWidth + 1,
-    borderColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
-    overflow: 'hidden',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    marginBottom: 10,
+    gap: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.sm,
   },
   headerRowPressable: {
-    borderRadius: 12,
-    marginHorizontal: -4,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    borderRadius: LDS_RADIUS.sm,
+    marginHorizontal: -LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xxs,
   },
   headerRowPressed: {
     opacity: 0.88,
@@ -181,71 +195,88 @@ const styles = StyleSheet.create({
   titleCol: {
     flex: 1,
     minWidth: 0,
-    gap: 4,
+    gap: LDS_SPACING.xxs,
   },
-  title: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
-    letterSpacing: -0.15,
-  },
-  subtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
-    lineHeight: 16,
-  },
-  headerSoonPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(30, 58, 95, 0.55)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: PREMIUM_BORDER_SLATE,
-  },
-  headerSoonText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: 'rgba(148, 163, 184, 0.92)',
-    letterSpacing: 0.35,
-    textTransform: 'uppercase',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingRight: 4,
-  },
-  chip: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(8, 17, 31, 0.55)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: PREMIUM_BORDER_SLATE,
-    opacity: 0.72,
+    gap: LDS_SPACING.xs,
   },
-  chipLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: 'rgba(186, 201, 222, 0.82)',
-    maxWidth: 120,
+  trustIconWrap: {
+    width: LDS_SPACING.lg,
+    height: LDS_SPACING.lg,
+    borderRadius: LDS_RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
   },
-  chipSoon: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: PREMIUM_AUTH_CYAN,
-    opacity: 0.65,
-    letterSpacing: 0.25,
+  title: {
+    letterSpacing: 0.2,
     textTransform: 'uppercase',
+    flex: 1,
   },
-  chipMeta: {
+  subtitle: {
+    lineHeight: 15,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: LDS_SPACING.xs,
+  },
+  metricCell: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.42)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    gap: LDS_SPACING.xxs,
+  },
+  metricCellActive: {
+    borderTopColor: 'rgba(34,211,238,0.14)',
+    backgroundColor: 'rgba(8,17,31,0.55)',
+  },
+  metricLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+  },
+  metricLabel: {
+    flex: 1,
     fontSize: 10,
-    fontWeight: '800',
-    color: PREMIUM_AUTH_CYAN,
-    opacity: 0.85,
     letterSpacing: 0.1,
+  },
+  metricValue: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '800',
+    letterSpacing: -0.25,
+    fontVariant: ['tabular-nums'],
+    color: 'rgba(148,163,184,0.75)',
+    textAlign: 'left',
+  },
+  metricValueActive: {
+    color: 'rgba(94,229,209,0.95)',
+  },
+  qmPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.38)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    maxWidth: 108,
+  },
+  qmLabel: {
+    fontSize: 10,
+    letterSpacing: 0.05,
   },
 });
