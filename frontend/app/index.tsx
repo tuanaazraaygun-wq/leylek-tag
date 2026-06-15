@@ -17715,53 +17715,57 @@ function DriverDashboard({
       <>
         <View style={dws.waitingRoot}>
           <SafeAreaView edges={['top']} style={dws.cockpitSafe}>
-            <View style={dws.cockpitHeaderPad}>
-              <View style={dws.cockpitHeaderBar}>
-                <TouchableOpacity
-                  style={dws.cockpitHeaderBtn}
-                  onPress={() => onDriverOfferGoToRoleSelect?.()}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel="Rol seçimine dön"
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                >
-                  <Ionicons name="chevron-back" size={24} color={PREMIUM_AUTH_CYAN} />
-                </TouchableOpacity>
-                <Text style={dws.cockpitHeaderTitle} numberOfLines={1}>
-                  Sürücü paneli
-                </Text>
-                <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
-                <TouchableOpacity
-                  style={dws.cockpitHeaderBtn}
-                  onPress={() => onDriverOfferOpenProfile?.()}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel="Profil"
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                >
-                  <Ionicons name="person-circle-outline" size={26} color={PREMIUM_AUTH_CYAN} />
-                </TouchableOpacity>
+            <View style={dws.cockpitUpperDeck}>
+              <View style={dws.cockpitHeaderPad}>
+                <View style={dws.cockpitHeaderBar}>
+                  <TouchableOpacity
+                    style={dws.cockpitHeaderBtn}
+                    onPress={() => onDriverOfferGoToRoleSelect?.()}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rol seçimine dön"
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="chevron-back" size={24} color={PREMIUM_AUTH_CYAN} />
+                  </TouchableOpacity>
+                  <Text style={dws.cockpitHeaderTitle} numberOfLines={1}>
+                    Sürücü paneli
+                  </Text>
+                  <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
+                  <TouchableOpacity
+                    style={dws.cockpitHeaderBtn}
+                    onPress={() => onDriverOfferOpenProfile?.()}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel="Profil"
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="person-circle-outline" size={26} color={PREMIUM_AUTH_CYAN} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={dws.cockpitTrustPad}>
+                <DriverCockpitQuickStrip
+                  onTrustedPress={() => {
+                    playTapSound();
+                    router.push('/trusted-network?role=driver' as never);
+                  }}
+                />
+              </View>
+              <View style={dws.cockpitPanelPad}>
+                <DriverDashboardPanel
+                  userId={user.id}
+                  onPackagePress={() => setShowDriverPackagesModal(true)}
+                  onToggleOnline={(isOnline) => {
+                    console.log('Sürücü online durumu değişti:', isOnline);
+                  }}
+                  expanded={driverDashboardExpanded}
+                  onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
+                />
               </View>
             </View>
-            <DriverCockpitQuickStrip
-              onTrustedPress={() => {
-                playTapSound();
-                router.push('/trusted-network?role=driver' as never);
-              }}
-            />
-            <View style={dws.cockpitPanelPad}>
-              <DriverDashboardPanel
-                userId={user.id}
-                onPackagePress={() => setShowDriverPackagesModal(true)}
-                onToggleOnline={(isOnline) => {
-                  console.log('Sürücü online durumu değişti:', isOnline);
-                }}
-                expanded={driverDashboardExpanded}
-                onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
-              />
-            </View>
           </SafeAreaView>
-          <View style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+          <View style={dws.cockpitOfferGround}>
             <DriverOfferScreen
               embedded
               vehicleKind={driverVehicleKind}
