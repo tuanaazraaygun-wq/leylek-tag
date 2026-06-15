@@ -52,8 +52,8 @@ interface DashboardData {
   };
 }
 
-const PANEL_HEIGHT_COLLAPSED = 168;
-const PANEL_HEIGHT_EXPANDED = 256;
+const PANEL_HEIGHT_COLLAPSED = 188;
+const PANEL_HEIGHT_EXPANDED = 272;
 
 function sessionDisplayText(
   isActive: boolean,
@@ -238,12 +238,37 @@ export default function DriverDashboardPanel({
   const goalProgress = data.daily_goal.overall_progress;
   const sessionText = sessionDisplayText(data.active_time.is_active, remainingText);
   const availabilityLabel = data.active_time.is_online ? 'Çevrimiçi' : 'Çevrimdışı';
+  const onlineActionLabel = data.active_time.is_online ? 'Çevrimdışı ol' : 'Çevrimiçi ol';
 
   return (
     <Animated.View style={[styles.container, { height: panelHeight }]}>
       <GlassSurface variant="panel" style={styles.panelShell} borderRadius={LDS_RADIUS.xl}>
         <View style={styles.collapsedHud}>
-          <View style={styles.availabilityRail}>
+          <View
+            style={styles.revenueHeroShell}
+            accessibilityRole="summary"
+            accessibilityLabel={`Bugün ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
+          >
+            <PremiumText variant="caption" muted style={styles.revenueLabel}>
+              Bugün
+            </PremiumText>
+            <PremiumText variant="headline" style={styles.revenueAmount}>
+              {data.today.earnings} ₺
+            </PremiumText>
+            <View style={styles.revenueMetaRow}>
+              <PremiumText variant="caption" muted style={styles.revenueTrips}>
+                {data.today.trips_count} sefer
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.progressCaption}>
+                Hedef %{goalProgress}
+              </PremiumText>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${goalProgress}%` }]} />
+            </View>
+          </View>
+
+          <View style={styles.opsRail}>
             <View style={styles.availabilityStatus}>
               <View
                 style={[
@@ -251,9 +276,14 @@ export default function DriverDashboardPanel({
                   data.active_time.is_online ? styles.statusDotOnline : styles.statusDotOffline,
                 ]}
               />
-              <PremiumText variant="step" style={styles.availabilityLabel}>
-                {availabilityLabel}
-              </PremiumText>
+              <View style={styles.availabilityTextCol}>
+                <PremiumText variant="caption" muted style={styles.opsMetaLabel}>
+                  Durum
+                </PremiumText>
+                <PremiumText variant="body" style={styles.availabilityLabel}>
+                  {availabilityLabel}
+                </PremiumText>
+              </View>
             </View>
             <TouchableOpacity
               style={[
@@ -263,53 +293,19 @@ export default function DriverDashboardPanel({
               onPress={toggleOnline}
               disabled={toggling || !data.active_time.is_active}
               accessibilityRole="button"
-              accessibilityLabel={
-                data.active_time.is_online ? 'Çevrimdışı ol' : 'Çevrimiçi ol'
-              }
+              accessibilityLabel={onlineActionLabel}
               accessibilityState={{
                 disabled: toggling || !data.active_time.is_active,
               }}
             >
               {toggling ? (
-                <ActivityIndicator size="small" color="white" />
+                <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" />
               ) : (
-                <>
-                  <View
-                    style={[
-                      styles.onlineDot,
-                      data.active_time.is_online && styles.onlineDotActive,
-                    ]}
-                  />
-                  <PremiumText variant="step" style={styles.onlineText}>
-                    {data.active_time.is_online ? 'ON' : 'OFF'}
-                  </PremiumText>
-                </>
+                <PremiumText variant="caption" style={styles.onlineText}>
+                  {onlineActionLabel}
+                </PremiumText>
               )}
             </TouchableOpacity>
-          </View>
-
-          <View
-            style={styles.revenueHero}
-            accessibilityRole="summary"
-            accessibilityLabel={`Bugün ${data.today.earnings} lira. Hedef yüzde ${goalProgress}.`}
-          >
-            <PremiumText variant="step" muted style={styles.revenueLabel}>
-              BUGÜN
-            </PremiumText>
-            <View style={styles.revenueHeroRow}>
-              <PremiumText variant="headline" style={styles.revenueAmount}>
-                {data.today.earnings} ₺
-              </PremiumText>
-              <PremiumText variant="caption" muted style={styles.revenueTrips}>
-                {data.today.trips_count} sefer
-              </PremiumText>
-            </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${goalProgress}%` }]} />
-            </View>
-            <PremiumText variant="caption" muted style={styles.progressCaption}>
-              Hedef %{goalProgress}
-            </PremiumText>
           </View>
 
           <TouchableOpacity
@@ -317,20 +313,25 @@ export default function DriverDashboardPanel({
             onPress={onExpandToggle}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel={`Seans süresi ${sessionText}. Detayları ${expanded ? 'gizle' : 'göster'}.`}
+            accessibilityLabel={`Seans ${sessionText}. Detayları ${expanded ? 'gizle' : 'göster'}.`}
           >
             <Ionicons
               name="time-outline"
-              size={14}
+              size={15}
               color={
                 data.active_time.is_active
                   ? 'rgba(34,211,238,0.88)'
                   : 'rgba(148,163,184,0.72)'
               }
             />
-            <PremiumText variant="caption" muted style={styles.sessionText}>
-              {sessionText}
-            </PremiumText>
+            <View style={styles.sessionTextCol}>
+              <PremiumText variant="caption" muted style={styles.opsMetaLabel}>
+                Seans
+              </PremiumText>
+              <PremiumText variant="caption" style={styles.sessionText}>
+                {sessionText}
+              </PremiumText>
+            </View>
             <Ionicons
               name={expanded ? 'chevron-up' : 'chevron-down'}
               size={18}
@@ -407,22 +408,43 @@ const styles = StyleSheet.create({
   },
   collapsedHud: {
     paddingHorizontal: LDS_SPACING.md,
-    paddingTop: LDS_SPACING.sm,
-    paddingBottom: LDS_SPACING.xs,
+    paddingTop: LDS_SPACING.md,
+    paddingBottom: LDS_SPACING.sm,
     gap: LDS_SPACING.sm,
   },
-  availabilityRail: {
+  revenueHeroShell: {
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.md,
+    borderRadius: LDS_RADIUS.lg,
+    backgroundColor: 'rgba(8,17,31,0.52)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    borderTopColor: 'rgba(34,211,238,0.14)',
+    ...LDS_ELEVATION.chip,
+  },
+  opsRail: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
   },
   availabilityStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.xs,
+    gap: LDS_SPACING.sm,
     flex: 1,
     minWidth: 0,
+  },
+  availabilityTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  opsMetaLabel: {
+    letterSpacing: 0.12,
+    lineHeight: 14,
   },
   statusDot: {
     width: LDS_SPACING.xs,
@@ -439,17 +461,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(148,163,184,0.55)',
   },
   availabilityLabel: {
-    letterSpacing: 0.15,
+    letterSpacing: 0.1,
+    fontWeight: '700',
   },
   onlineBtn: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.md,
     borderRadius: LDS_RADIUS.md,
-    minWidth: LDS_SPACING.xxxl + LDS_SPACING.sm,
     borderWidth: LDS_BORDER_WIDTH.standard,
+    flexShrink: 0,
   },
   onlineBtnActive: {
     backgroundColor: 'rgba(6,55,52,0.92)',
@@ -469,64 +491,40 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16,26,43,0.95)',
     borderColor: PREMIUM_BORDER_SLATE,
   },
-  onlineDot: {
-    width: LDS_SPACING.xs,
-    height: LDS_SPACING.xs,
-    borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(148,163,184,0.55)',
-    marginRight: LDS_SPACING.xs,
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: 'rgba(30,58,95,0.6)',
-  },
-  onlineDotActive: {
-    backgroundColor: 'rgba(34,211,238,0.95)',
-    borderColor: 'rgba(243,248,255,0.35)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_AUTH_CYAN,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.22,
-        shadowRadius: 6,
-      },
-      default: {},
-    }),
-  },
   onlineText: {
-    letterSpacing: 1,
-    fontVariant: ['tabular-nums'],
-  },
-  revenueHero: {
-    gap: LDS_SPACING.xxs,
+    letterSpacing: 0.12,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   revenueLabel: {
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    letterSpacing: 0.15,
   },
-  revenueHeroRow: {
+  revenueMetaRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: LDS_SPACING.sm,
+    marginTop: LDS_SPACING.xxs,
   },
   revenueAmount: {
-    fontSize: 26,
-    lineHeight: 30,
+    fontSize: 32,
+    lineHeight: 36,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
     fontVariant: ['tabular-nums'],
-    color: 'rgba(94,229,209,0.95)',
+    color: 'rgba(94,229,209,0.98)',
   },
   revenueTrips: {
-    paddingBottom: 2,
+    flex: 1,
   },
   progressTrack: {
-    height: LDS_SPACING.xxs,
+    height: 6,
     borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(8,17,31,0.65)',
+    backgroundColor: 'rgba(8,17,31,0.72)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
     overflow: 'hidden',
-    marginTop: LDS_SPACING.xxs,
+    marginTop: LDS_SPACING.xs,
   },
   progressFill: {
     height: '100%',
@@ -535,23 +533,28 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   progressCaption: {
-    marginTop: 1,
     letterSpacing: 0.1,
+    textAlign: 'right',
   },
   sessionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.xs,
-    paddingVertical: LDS_SPACING.xxs,
-    paddingHorizontal: LDS_SPACING.xxs,
-    borderRadius: LDS_RADIUS.sm,
+    gap: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    borderRadius: LDS_RADIUS.md,
     backgroundColor: 'rgba(8,17,31,0.38)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
   },
-  sessionText: {
+  sessionTextCol: {
     flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  sessionText: {
     fontVariant: ['tabular-nums'],
+    letterSpacing: 0.08,
   },
   expandedContent: {
     paddingHorizontal: LDS_SPACING.sm,
