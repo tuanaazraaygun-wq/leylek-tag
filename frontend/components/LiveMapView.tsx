@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Pressable,
   Linking,
-  Alert,
   Dimensions,
   Animated,
   Easing,
@@ -48,7 +47,7 @@ import {
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
-import { PREMIUM_AUTH_CYAN } from '../design-system/tokens/color';
+import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
@@ -517,14 +516,27 @@ function formatRouteKmMin(distanceKm: number | null, durationMin: number | null)
   return `${distPart} • ${min} dk`;
 }
 
+/** TAG yolculuk faz etiketi — biniş öncesi/sonrası guardian journey dili */
+function tagRidePhaseLabel(
+  boardingConfirmed: boolean,
+  tagStatus: string | undefined | null,
+): string {
+  if (boardingConfirmed) return 'Yolculuk başladı';
+  const st = String(tagStatus || '').toLowerCase();
+  if (st === 'in_progress') return 'Yolculuk başladı';
+  if (st === 'matched') return 'Biniş bekleniyor';
+  return 'Eşleşme aktif';
+}
+
 function driverOpsPhaseLabel(
   boardingConfirmed: boolean,
   tagStatus: string | undefined | null,
 ): string {
-  if (boardingConfirmed) return 'Yolcu araçta';
-  if (String(tagStatus || '').toLowerCase() === 'in_progress') return 'Hedefe ilerle';
-  return 'Yolcuya git';
+  return tagRidePhaseLabel(boardingConfirmed, tagStatus);
 }
+
+const FORCE_END_ALERT_TITLE = 'Zorla bitir';
+const FORCE_END_ALERT_BODY = 'Bu işlem puan kaybına yol açabilir. Mümkünse QR ile tamamlayın.';
 
 function formatDriverMatrixDisplay(matrixStatus: string): string {
   const raw = matrixStatus.replace(/^>\s*/, '').trim().toUpperCase();
@@ -4674,10 +4686,11 @@ export default function LiveMapView({
 
     if (isNear && !autoCompleteTriggered.current) {
       autoCompleteTriggered.current = true;
-      Alert.alert(
-        '🎯 Hedefe Ulaşıldı!',
-        'Hedefe 1 km\'den az kaldı. Yolculuk otomatik olarak tamamlanacak ve +1 puan kazanacaksınız!',
+      appAlert(
+        'Hedefe yaklaştınız',
+        'Hedefe 1 km\'den az kaldınız. Yolculuk tamamlama adımına geçebilirsiniz.',
         [{ text: 'Tamam', onPress: () => onAutoComplete?.() }],
+        { variant: 'info', tone: 'info', cancelable: true },
       );
     }
   }, [
@@ -6310,27 +6323,36 @@ export default function LiveMapView({
               </View>
             ) : null}
             <View style={styles.driverRideTopHeader}>
-              <View
+              <GlassSurface
+                variant="plain"
+                borderRadius={LDS_RADIUS.full}
                 style={[
                   styles.driverRideStatusPill,
                   boardingConfirmed ? styles.driverRideStatusPillStarted : null,
                 ]}
               >
                 <View style={styles.driverRideStatusDot} />
-                <Text
+                <PremiumText
+                  variant="caption"
                   style={[
                     styles.driverRideStatusPillText,
                     boardingConfirmed ? styles.driverRideStatusPillTextStarted : null,
                   ]}
                 >
-                  {boardingConfirmed ? 'Yolculuk başladı' : 'Yolculuk aktif'}
-                </Text>
-              </View>
+                  {tagRidePhaseLabel(boardingConfirmed, tagStatus)}
+                </PremiumText>
+              </GlassSurface>
               <View style={styles.driverRideTopHeaderRight}>
-                <Text style={styles.driverRideLiveTag}>CANLI</Text>
-                <View style={styles.driverRideVehicleChip}>
-                  <Text style={styles.driverRideVehicleChipText}>{passMotor ? 'Motor' : 'Araba'}</Text>
-                </View>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.driverRideLiveTagShell}>
+                  <PremiumText variant="caption" style={styles.driverRideLiveTag}>
+                    Canlı
+                  </PremiumText>
+                </GlassSurface>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.driverRideVehicleChip}>
+                  <PremiumText variant="caption" muted style={styles.driverRideVehicleChipText}>
+                    {passMotor ? 'Motor' : 'Araba'}
+                  </PremiumText>
+                </GlassSurface>
               </View>
             </View>
 
@@ -6339,37 +6361,43 @@ export default function LiveMapView({
                 <Ionicons name="navigate-circle" size={20} color="#22D3EE" />
               </View>
               <View style={styles.driverRideLocTextCol}>
-                <Text style={styles.driverRideSectionLabel}>Buluşma noktası</Text>
-                <Text
+                <PremiumText variant="caption" muted style={styles.driverRideSectionLabel}>
+                  Buluşma noktası
+                </PremiumText>
+                <PremiumText
+                  variant="body"
                   style={styles.driverRideAddr}
                   numberOfLines={2}
                   adjustsFontSizeToFit
                   minimumFontScale={0.88}
                 >
                   {driverPickupAddr || 'Alış noktası'}
-                </Text>
+                </PremiumText>
               </View>
             </View>
 
-            <View style={[styles.driverRideLocRow, { marginTop: 12 }]}>
+            <View style={[styles.driverRideLocRow, { marginTop: LDS_SPACING.sm }]}>
               <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconDest]}>
                 <Ionicons name="flag" size={18} color="rgba(34,211,238,0.92)" />
               </View>
               <View style={styles.driverRideLocTextCol}>
-                <Text style={styles.driverRideSectionLabel}>Hedef</Text>
-                <Text
+                <PremiumText variant="caption" muted style={styles.driverRideSectionLabel}>
+                  Hedef
+                </PremiumText>
+                <PremiumText
+                  variant="body"
                   style={styles.driverRideAddr}
                   numberOfLines={2}
                   adjustsFontSizeToFit
                   minimumFontScale={0.88}
                 >
                   {driverDropoffAddr || 'Varış'}
-                </Text>
+                </PremiumText>
               </View>
             </View>
 
             <View style={styles.driverRideMetricsRow}>
-              <Text style={styles.driverRideMetricsText} numberOfLines={2}>
+              <PremiumText variant="caption" muted style={styles.driverRideMetricsText} numberOfLines={2}>
                 {showMeetingRouteCalculating || showMeetingRouteUnavailable
                   ? 'Buluşma: hesaplanıyor…'
                   : `Buluşma: ${formatRouteKmMin(meetingDistance, meetingDuration)}`}
@@ -6378,7 +6406,7 @@ export default function LiveMapView({
                     ? '  ·  Hedef: …'
                     : `  ·  Hedef: ${formatRouteKmMin(destinationDistance, destinationDuration)}`
                   : ''}
-              </Text>
+              </PremiumText>
             </View>
 
             <View style={styles.driverRidePriceRow}>
@@ -6404,15 +6432,18 @@ export default function LiveMapView({
                 />
               </View>
               <View style={styles.driverRidePassengerTextCol}>
-                <Text style={styles.driverRidePassengerLabel}>Yolcu</Text>
-                <Text
+                <PremiumText variant="caption" muted style={styles.driverRidePassengerLabel}>
+                  Yolcu
+                </PremiumText>
+                <PremiumText
+                  variant="body"
                   style={styles.driverRidePassengerName}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.85}
                 >
                   {displayFirstName(otherUserName, 'Yolcu')}
-                </Text>
+                </PremiumText>
               </View>
             </View>
           </View>
@@ -6851,7 +6882,7 @@ export default function LiveMapView({
                 borderRadius={LDS_RADIUS.sm}
               >
                 <PremiumText variant="caption" style={styles.paxTopPhaseChip}>
-                  {String(tagStatus || '').toLowerCase() === 'in_progress' ? 'Yolculuk' : 'Buluşma'}
+                  {tagRidePhaseLabel(boardingConfirmed, tagStatus)}
                 </PremiumText>
               </GlassSurface>
               {userLocation && otherLocation ? (
@@ -6863,7 +6894,7 @@ export default function LiveMapView({
                   >
                     <View style={styles.paxTopLiveChipDot} />
                     <PremiumText variant="caption" style={styles.paxTopLiveChipText}>
-                      CANLI
+                      Canlı
                     </PremiumText>
                   </GlassSurface>
                 </Animated.View>
@@ -7257,12 +7288,12 @@ export default function LiveMapView({
                           return;
                         }
                         appAlert(
-                          '⚠️ Zorla Bitir',
-                          'Bu işlem puanınızı düşürebilir. Mümkünse QR ile tamamlayın.',
+                          FORCE_END_ALERT_TITLE,
+                          FORCE_END_ALERT_BODY,
                           [
                             { text: 'Vazgeç', style: 'cancel' },
                             {
-                              text: 'Zorla Bitir',
+                              text: 'Zorla bitir',
                               style: 'destructive',
                               onPress: () => onForceEnd?.(),
                             },
@@ -7366,12 +7397,12 @@ export default function LiveMapView({
                           return;
                         }
                         appAlert(
-                          '⚠️ Zorla Bitir',
-                          'Bu işlem puanınızı düşürebilir. Mümkünse QR ile tamamlayın.',
+                          FORCE_END_ALERT_TITLE,
+                          FORCE_END_ALERT_BODY,
                           [
                             { text: 'Vazgeç', style: 'cancel' },
                             {
-                              text: 'Zorla Bitir',
+                              text: 'Zorla bitir',
                               style: 'destructive',
                               onPress: () => onForceEnd?.(),
                             },
@@ -7665,12 +7696,12 @@ export default function LiveMapView({
                       return;
                     }
                     appAlert(
-                      '⚠️ Zorla Bitir',
-                      'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
+                      FORCE_END_ALERT_TITLE,
+                      FORCE_END_ALERT_BODY,
                       [
                         { text: 'Vazgeç', style: 'cancel' },
                         {
-                          text: 'Zorla Bitir (-5 Puan)',
+                          text: 'Zorla bitir',
                           style: 'destructive',
                           onPress: () => onForceEnd?.(),
                         },
@@ -7943,12 +7974,12 @@ export default function LiveMapView({
                       return;
                     }
                     appAlert(
-                      '⚠️ Zorla Bitir',
-                      'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
+                      FORCE_END_ALERT_TITLE,
+                      FORCE_END_ALERT_BODY,
                       [
                         { text: 'Vazgeç', style: 'cancel' },
                         {
-                          text: 'Zorla Bitir (-5 Puan)',
+                          text: 'Zorla bitir',
                           style: 'destructive',
                           onPress: () => onForceEnd?.(),
                         },
@@ -8022,11 +8053,15 @@ export default function LiveMapView({
               {/* Başlık */}
               <View style={styles.infoCardHeader}>
                 <View style={styles.infoCardIconCircle}>
-                  <Text style={styles.infoCardIcon}>{isDriver ? '👤' : '🚗'}</Text>
+                  <Ionicons
+                    name={isDriver ? 'person' : 'car-sport'}
+                    size={28}
+                    color={PREMIUM_AUTH_CYAN}
+                  />
                 </View>
-                <Text style={styles.infoCardTitle}>
-                  {isDriver ? 'Yolcu Bilgileri' : 'Sürücü Bilgileri'}
-                </Text>
+                <PremiumText variant="title" style={styles.infoCardTitle}>
+                  {isDriver ? 'Yolcu bilgileri' : 'Sürücü bilgileri'}
+                </PremiumText>
               </View>
 
               {/* İçerik */}
@@ -8192,12 +8227,12 @@ export default function LiveMapView({
             setInRideSaferFeVisible(false);
             setInRideSaferFeStep('choice');
             appAlert(
-              '⚠️ Zorla Bitir',
-              'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
+              FORCE_END_ALERT_TITLE,
+              FORCE_END_ALERT_BODY,
               [
                 { text: 'Vazgeç', style: 'cancel' },
                 {
-                  text: 'Zorla Bitir (-5 Puan)',
+                  text: 'Zorla bitir',
                   style: 'destructive',
                   onPress: () => onForceEnd?.(),
                 },
@@ -10488,13 +10523,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
-  infoCardIcon: {
-    fontSize: 28,
-  },
   infoCardTitle: {
-    fontSize: 20,
     fontWeight: '700',
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
     flex: 1,
   },
   infoCardContent: {
@@ -10754,87 +10785,82 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: LDS_SPACING.sm,
   },
   driverRideStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
+    gap: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
     backgroundColor: 'rgba(8,17,31,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(34,211,238,0.38)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.chip,
   },
   driverRideStatusPillStarted: {
-    backgroundColor: 'rgba(8,17,31,0.55)',
     borderColor: 'rgba(34,211,238,0.48)',
   },
   driverRideStatusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(34,211,238,0.85)',
+    backgroundColor: PREMIUM_AUTH_CYAN,
   },
   driverRideStatusPillText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: 'rgba(243,248,255,0.92)',
-    letterSpacing: 0.2,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: 0.1,
   },
   driverRideStatusPillTextStarted: {
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
   },
   driverRideTopHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: LDS_SPACING.xs,
+  },
+  driverRideLiveTagShell: {
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
+    backgroundColor: 'rgba(127,29,29,0.22)',
+    borderColor: 'rgba(248,113,113,0.28)',
+    ...LDS_ELEVATION.flat,
   },
   driverRideLiveTag: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-    color: 'rgba(248,171,173,0.88)',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    color: 'rgba(248,171,173,0.92)',
   },
   driverRideVehicleChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs,
     backgroundColor: 'rgba(30,58,95,0.35)',
-    borderWidth: 1,
-    borderColor: 'rgba(30,58,95,0.55)',
+    borderColor: LDS_BORDER_COLOR.card,
+    ...LDS_ELEVATION.flat,
   },
   driverRideVehicleChipText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: 'rgba(186,201,222,0.9)',
+    fontWeight: '700',
   },
   driverRideSectionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: 'rgba(186,201,222,0.82)',
-    letterSpacing: 0.8,
+    fontWeight: '700',
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
-    marginBottom: 4,
+    marginBottom: LDS_SPACING.xxs,
   },
   driverRideAddr: {
-    fontSize: 15,
     fontWeight: '700',
-    color: 'rgba(243,248,255,0.94)',
+    color: PREMIUM_TEXT_SOFT,
     lineHeight: 21,
     flexShrink: 1,
   },
   driverRideMetricsRow: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(30,58,95,0.55)',
+    marginTop: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.sm,
+    borderTopWidth: LDS_BORDER_WIDTH.hairline,
+    borderTopColor: LDS_BORDER_COLOR.card,
   },
   driverRideMetricsText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: 'rgba(186,201,222,0.88)',
+    fontWeight: '600',
     lineHeight: 19,
     flexShrink: 1,
   },
@@ -10898,17 +10924,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   driverRidePassengerLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: 'rgba(186,201,222,0.82)',
-    letterSpacing: 0.6,
+    fontWeight: '700',
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
-    marginBottom: 2,
+    marginBottom: LDS_SPACING.xxs,
   },
   driverRidePassengerName: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: 'rgba(243,248,255,0.94)',
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
   },
   driverRideMiniCall: {
     flexDirection: 'row',
