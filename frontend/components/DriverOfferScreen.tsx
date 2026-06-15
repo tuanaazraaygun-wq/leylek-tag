@@ -594,12 +594,14 @@ function RequestCard({
                   {request.passenger_name?.split(' ')[0] || 'Yolcu'}
                 </PremiumText>
               </View>
-              <View style={styles.reqRatingChip}>
-                <Ionicons name="star" size={12} color="#FACC15" />
-                <PremiumText variant="caption" style={styles.reqRatingText}>
-                  {passengerRatingText}
-                </PremiumText>
-              </View>
+              {passengerRatingText !== '—' ? (
+                <View style={styles.reqRatingChip}>
+                  <Ionicons name="star" size={12} color="#FACC15" />
+                  <PremiumText variant="caption" style={styles.reqRatingText}>
+                    {passengerRatingText}
+                  </PremiumText>
+                </View>
+              ) : null}
               {request.passenger_payment_method === 'card' ? (
                 <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
                   <PremiumText variant="caption" style={styles.reqPaymentPillText}>
@@ -1230,7 +1232,10 @@ export default function DriverOfferScreen({
     );
   };
 
-  const displayRating = driverRating != null ? driverRating.toFixed(1) : '4.0';
+  const driverMapRatingText =
+    Number.isFinite(Number(driverRating)) && Number(driverRating) > 0
+      ? Number(driverRating).toFixed(1)
+      : null;
 
   const body = (
     <View style={styles.driverOfferBody}>
@@ -1357,10 +1362,18 @@ export default function DriverOfferScreen({
                       {driverName?.split(' ')[0] || 'Sürücü'}
                     </PremiumText>
                     <View style={styles.mapRatingRow}>
-                      <Ionicons name="star" size={14} color="#FBBF24" />
-                      <PremiumText variant="caption" style={styles.mapRatingText}>
-                        {displayRating}
-                      </PremiumText>
+                      {driverMapRatingText ? (
+                        <>
+                          <Ionicons name="star" size={14} color="#FBBF24" />
+                          <PremiumText variant="caption" style={styles.mapRatingText}>
+                            {driverMapRatingText}
+                          </PremiumText>
+                        </>
+                      ) : (
+                        <PremiumText variant="caption" muted style={styles.mapRatingEmpty}>
+                          Henüz değerlendirme yok
+                        </PremiumText>
+                      )}
                     </View>
                   </View>
                 </View>
@@ -1865,6 +1878,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: 'rgba(251,211,141,0.95)',
     fontVariant: ['tabular-nums'],
+  },
+  mapRatingEmpty: {
+    fontWeight: '600',
+    fontSize: 12,
   },
 
   // Map (yükseklik mapCardShell üzerinden mapSectionHeight ile verilir)
