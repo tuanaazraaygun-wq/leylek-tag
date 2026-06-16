@@ -1549,6 +1549,95 @@ def _tag_dispatch_obs_log(
         logger.info("[tag_dispatch] event=%s log_error=%s", event, _obs_e)
 
 
+def _match_dynamic_radius_shadow_enabled() -> bool:
+    """MATCH-1A — default kapalı; açıkken yalnızca shadow log, dispatch radius değişmez."""
+    return os.getenv("MATCH_DYNAMIC_RADIUS_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+async def _shadow_count_online_drivers_near_pickup(
+    pickup_lat: float,
+    pickup_lng: float,
+    *,
+    radius_km: float = 15.0,
+) -> Optional[int]:
+    """Shadow gözlem — dispatch filtrelemesi yapmaz; haversine ön sayım."""
+    if not supabase:
+        return None
+    try:
+        plat = float(pickup_lat)
+        plng = float(pickup_lng)
+    except (TypeError, ValueError):
+        return None
+    now = datetime.utcnow().isoformat()
+    query = (
+        supabase.table("users")
+        .select("latitude, longitude")
+        .eq("driver_online", True)
+        .eq("is_active", True)
+    )
+    query = _apply_driver_active_until_filter(query, now)
+    result = query.execute()
+    rows = list(result.data or [])
+    count = 0
+    rk = max(1.0, float(radius_km))
+    for row in rows:
+        try:
+            dlat = float(row.get("latitude"))
+            dlng = float(row.get("longitude"))
+        except (TypeError, ValueError):
+            continue
+        dlat_deg = abs(dlat - plat)
+        dlng_deg = abs(dlng - plng)
+        approx_km = math.sqrt(dlat_deg * dlat_deg + dlng_deg * dlng_deg) * 111.0
+        if approx_km <= rk:
+            count += 1
+    return count
+
+
+async def _run_match_dynamic_radius_shadow(
+    *,
+    tag_id: str,
+    pickup_lat: float,
+    pickup_lng: float,
+    pickup_location: str,
+) -> None:
+    """MATCH-1A — dynamic radius shadow; gerçek teklif yarıçapını değiştirmez."""
+    try:
+        from services.match_dynamic_radius import resolve_dynamic_dispatch_radius
+
+        legacy = float(DISPATCH_RADIUS_KM)
+        resolved = resolve_dynamic_dispatch_radius(
+            pickup_lat,
+            pickup_lng,
+            pickup_location or "",
+            legacy_radius_km=legacy,
+        )
+        online_driver_count = await _shadow_count_online_drivers_near_pickup(
+            pickup_lat,
+            pickup_lng,
+            radius_km=15.0,
+        )
+        payload = {
+            "event": "MATCH_DYNAMIC_RADIUS_SHADOW",
+            "tag_id": str(tag_id),
+            "pickup_city": resolved.pickup_city,
+            "pickup_district": resolved.pickup_district,
+            "legacy_radius": legacy,
+            "dynamic_radius": resolved.dynamic_radius_km,
+            "tier": resolved.tier,
+            "remote_district": resolved.remote_district,
+            "online_driver_count": online_driver_count,
+        }
+        logger.info("MATCH_DYNAMIC_RADIUS_SHADOW %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as shadow_err:
+        logger.warning("MATCH_DYNAMIC_RADIUS_SHADOW error tag_id=%s err=%s", tag_id, shadow_err)
+
+
 @dataclass
 class OfferEmitResult:
     success: bool
@@ -21098,6 +21187,22 @@ async def _create_ride_offer_execute(
                 f"(yolcu araç tercihi={passenger_pref_vehicle}, insert_variant={used_variant})"
             )
             logger.info(f"PASSENGER CREATED TAG {tag_id}")
+            if _match_dynamic_radius_shadow_enabled():
+                try:
+                    asyncio.create_task(
+                        _run_match_dynamic_radius_shadow(
+                            tag_id=str(tag.get("id") or tag_id),
+                            pickup_lat=float(tag.get("pickup_lat") or payload.pickup_lat),
+                            pickup_lng=float(tag.get("pickup_lng") or payload.pickup_lng),
+                            pickup_location=str(tag.get("pickup_location") or payload.pickup_location or ""),
+                        )
+                    )
+                except Exception as shadow_sched_err:
+                    logger.warning(
+                        "MATCH_DYNAMIC_RADIUS_SHADOW schedule_failed tag_id=%s err=%s",
+                        tag_id,
+                        shadow_sched_err,
+                    )
             # Dağıtım hatası teklif oluşturmayı bozmasın (yolcu ekranında "Teklif oluşturulamadı" önlenir)
             notified = 0
             try:
