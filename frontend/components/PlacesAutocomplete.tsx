@@ -168,10 +168,10 @@ function placesSearchStableKey(queryTrim: string, cityRaw: string): string {
   return `${normCityNeedle(queryTrim)}|${normCityNeedle(String(cityRaw || '').trim())}`;
 }
 
-/** replayOnBiasChange: GPS titreşiminde tick artmasın — anlamlı konum sıçraması için yeterince kaba grid */
+/** replayOnBiasChange: GPS titreşiminde tick artmasın — ~100 m grid (1e-3), küçük drift yazım sırasında replay tetiklemez */
 function roundPlacesReplayCoord(n: number | undefined): number | null {
   if (n == null || !Number.isFinite(n)) return null;
-  return Math.round(n * 1e4) / 1e4;
+  return Math.round(n * 1e3) / 1e3;
 }
 
 /** Karşılaştırma için Türkçe toleranslı normalize */
@@ -1184,7 +1184,9 @@ function placesClientDiag(phase: string, payload: Record<string, unknown>) {
   }
 }
 
-const REPLAY_BIAS_DEBOUNCE_MS = Platform.OS === 'android' ? 450 : 280;
+const REPLAY_BIAS_DEBOUNCE_MS = Platform.OS === 'android' ? 300 : 280;
+/** Aktif yazım sırasında yalnızca bias kaynaklı replay'i kes — manuel query debounce etkilenmez */
+const REPLAY_TYPING_SUPPRESS_MS = 900;
 
 interface PlacesAutocompleteProps {
   placeholder?: string;
@@ -1307,8 +1309,12 @@ export default function PlacesAutocomplete({
     key: null,
     at: 0,
   });
-  /** replayOnBiasChange: aynı semantik anahtarda searchReplayTick artırılmasın (abort/replan döngüsü) */
-  const lastPlacesReplayKeyRef = useRef<string>('');
+  /** Son kullanıcı TextInput değişimi — aktif yazım guard */
+  const lastQueryInputAtRef = useRef(0);
+  /** replayOnBiasChange: yalnızca bias koordinatı değişiminde tick (city/query ana debounce'ta) */
+  const lastPlacesBiasReplayKeyRef = useRef<string>('');
+  /** Bias-only suppress: query/şehir bağlamı aynı mı */
+  const lastPlacesQueryContextKeyRef = useRef('');
   const replayBiasDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const matchesActivePlacesJob = (jobRequestId: number, searchedTrim: string): boolean =>
@@ -1488,17 +1494,26 @@ export default function PlacesAutocomplete({
   useEffect(() => {
     if (!replayOnBiasChange) return;
     if (query.trim().length < 2) return;
-    const replayKey = JSON.stringify({
-      q: normalizeText(query),
-      city: normalizeText(city || ''),
-      strict: !!strictCityBounds,
+
+    const biasOnlyKey = JSON.stringify({
       biasLat: roundPlacesReplayCoord(biasLatitude ?? undefined),
       biasLng: roundPlacesReplayCoord(biasLongitude ?? undefined),
       biasDeltaDeg: Math.round(biasDeltaDeg * 10000) / 10000,
-      forceCityInSearch: !!forceCityInSearch,
     });
-    if (replayKey === lastPlacesReplayKeyRef.current) return;
-    lastPlacesReplayKeyRef.current = replayKey;
+    if (biasOnlyKey === lastPlacesBiasReplayKeyRef.current) return;
+
+    const msSinceInput = Date.now() - lastQueryInputAtRef.current;
+    if (msSinceInput < REPLAY_TYPING_SUPPRESS_MS) {
+      placesClientDiag('replay_suppressed_typing', {
+        query: query.trim(),
+        city: String(city || '').trim(),
+        ms_since_input: msSinceInput,
+        suppress_ms: REPLAY_TYPING_SUPPRESS_MS,
+      });
+      return;
+    }
+
+    lastPlacesBiasReplayKeyRef.current = biasOnlyKey;
 
     if (replayBiasDebounceRef.current) {
       clearTimeout(replayBiasDebounceRef.current);
@@ -1519,6 +1534,13 @@ export default function PlacesAutocomplete({
 
     replayBiasDebounceRef.current = setTimeout(() => {
       replayBiasDebounceRef.current = null;
+      if (Date.now() - lastQueryInputAtRef.current < REPLAY_TYPING_SUPPRESS_MS) {
+        placesClientDiag('replay_suppressed_typing_deferred', {
+          query: query.trim(),
+          suppress_ms: REPLAY_TYPING_SUPPRESS_MS,
+        });
+        return;
+      }
       try {
         console.log(
           'TAG_PLACE_SEARCH_REPLAY_ON_BIAS_CHANGE',
@@ -1532,7 +1554,7 @@ export default function PlacesAutocomplete({
               biasLongitude != null &&
               Number.isFinite(biasLongitude)
             ),
-            replay_key_len: replayKey.length,
+            bias_only_key_len: biasOnlyKey.length,
             platform: Platform.OS,
           }),
         );
@@ -1548,16 +1570,7 @@ export default function PlacesAutocomplete({
         replayBiasDebounceRef.current = null;
       }
     };
-  }, [
-    replayOnBiasChange,
-    query,
-    city,
-    strictCityBounds,
-    biasLatitude,
-    biasLongitude,
-    biasDeltaDeg,
-    forceCityInSearch,
-  ]);
+  }, [replayOnBiasChange, query, biasLatitude, biasLongitude, biasDeltaDeg, city, strictCityBounds]);
 
   useEffect(() => {
     if (!compactMerkezChips || compactMerkezEntries.districts.length === 0) return undefined;
@@ -1604,6 +1617,13 @@ export default function PlacesAutocomplete({
   useEffect(() => {
     const trimmed = query.trim();
     const minChars = 2;
+    const queryContextKey = JSON.stringify({
+      q: trimmed,
+      city: String(city || '').trim(),
+      strict: !!strictCityBounds,
+      wider: !!widerSearch,
+      forceCityInSearch: !!forceCityInSearch,
+    });
     const placesSearchSignatureFor = (qTrim: string) =>
       JSON.stringify({
         q: qTrim,
@@ -1614,7 +1634,6 @@ export default function PlacesAutocomplete({
         biasLng: roundPlacesReplayCoord(biasLongitude ?? undefined),
         biasDeltaDeg: Math.round(biasDeltaDeg * 10000) / 10000,
         forceCityInSearch: !!forceCityInSearch,
-        replay: searchReplayTick,
       });
 
     if (trimmed.length < minChars) {
@@ -1646,6 +1665,22 @@ export default function PlacesAutocomplete({
     if (searchSignature === lastPlacesSearchSignatureRef.current) {
       return;
     }
+
+    const msSinceInput = Date.now() - lastQueryInputAtRef.current;
+    if (
+      msSinceInput < REPLAY_TYPING_SUPPRESS_MS &&
+      queryContextKey === lastPlacesQueryContextKeyRef.current
+    ) {
+      placesClientDiag('search_suppressed_bias_typing', {
+        query: trimmed,
+        city: String(city || '').trim(),
+        ms_since_input: msSinceInput,
+        suppress_ms: REPLAY_TYPING_SUPPRESS_MS,
+      });
+      return;
+    }
+
+    lastPlacesQueryContextKeyRef.current = queryContextKey;
     lastPlacesSearchSignatureRef.current = searchSignature;
 
     if (debounceRef.current) {
@@ -3017,6 +3052,7 @@ export default function PlacesAutocomplete({
           onChangeText={(t) => {
             setPopularGeocodeError(null);
             setPredictionActionError(null);
+            lastQueryInputAtRef.current = Date.now();
             setQuery(t);
           }}
           autoFocus={true}
