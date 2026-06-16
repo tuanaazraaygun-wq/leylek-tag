@@ -36,7 +36,7 @@ export type PassengerMatchModeCardsProps = {
 };
 
 type CardDef = {
-  id: 'quick' | 'trusted' | 'normal';
+  id: 'quick' | 'trusted' | 'normal' | 'proxy';
   title: string;
   subtitle: string;
   enabled: boolean;
@@ -60,13 +60,22 @@ const PRIMARY_CARDS: CardDef[] = [
   },
 ];
 
-const SECONDARY_CARD: CardDef = {
-  id: 'trusted',
-  title: 'Sürücülerim',
-  subtitle: 'Güvendiğiniz sürücüler',
-  enabled: false,
-  tier: 'secondary',
-};
+const SECONDARY_CARDS: CardDef[] = [
+  {
+    id: 'proxy',
+    title: 'Yerime Al',
+    subtitle: 'Yakınınız için güvenli aldırma',
+    enabled: false,
+    tier: 'primary',
+  },
+  {
+    id: 'trusted',
+    title: 'Sürücülerim',
+    subtitle: 'Güvendiğiniz sürücüler',
+    enabled: false,
+    tier: 'secondary',
+  },
+];
 
 function PassengerMatchModeCards({
   onNormalPress,
@@ -91,14 +100,6 @@ function PassengerMatchModeCards({
       isVeryCompact,
       isCompact && !isVeryCompact,
     );
-    const trustCardMinHeight = Math.round(
-      Math.max(LDS_SPACING.xxxl + LDS_SPACING.xxl, primaryCardMinHeight * 0.56),
-    );
-    const trustHeroHeight = computeRoleCardHeroHeight(
-      trustCardMinHeight,
-      isVeryCompact,
-      isCompact && !isVeryCompact,
-    );
     const titleSize = isVeryCompact ? 15 : isCompact ? 16 : 17;
     const subtitleSize = isVeryCompact ? 10 : 11;
     return {
@@ -106,8 +107,6 @@ function PassengerMatchModeCards({
       isVeryCompact,
       primaryCardMinHeight,
       primaryHeroHeight,
-      trustCardMinHeight,
-      trustHeroHeight,
       titleSize,
       subtitleSize,
     };
@@ -208,13 +207,16 @@ function PassengerMatchModeCards({
     );
   };
 
-  const renderTrustFooter = (card: CardDef) => {
+  const renderSecondaryHero = (card: CardDef) => {
+    const isProxy = card.id === 'proxy';
     const isTrusted = card.id === 'trusted';
-    const isEnabled = card.enabled || (isTrusted && trustedWired);
+    const isEnabled = isProxy
+      ? false
+      : card.enabled || (isTrusted && trustedWired);
     const trustedReady = isTrusted && status === 'ready' && summary != null;
     const trustedSubtitle =
       trustedReady && summary ? formatPassengerTrustedCardSubtitle(summary) : null;
-    const showSoonPill = isTrusted && !trustedWired && !trustedReady;
+    const showSoonPill = isProxy || (isTrusted && !trustedWired && !trustedReady);
     const onPress = isTrusted && trustedWired ? onTrustedPress : undefined;
 
     const displaySubtitle = showSoonPill
@@ -225,36 +227,54 @@ function PassengerMatchModeCards({
           ? card.subtitle
           : card.subtitle;
 
-    const trustCard = (
+    const cardShellStyle = [
+      styles.heroCardShell,
+      { minHeight: layout.primaryCardMinHeight, maxHeight: layout.primaryCardMinHeight + 16 },
+      isProxy ? styles.proxyHeroCard : styles.normalHeroCard,
+      !isEnabled && styles.heroCardDisabledShell,
+    ];
+
+    const titleStyle = [
+      LDS_TYPOGRAPHY.title,
+      styles.heroTitle,
+      { fontSize: layout.titleSize },
+      !isEnabled && styles.titleDisabled,
+    ];
+
+    const subtitleStyle = [
+      LDS_TYPOGRAPHY.caption,
+      styles.heroSubtitle,
+      { fontSize: layout.subtitleSize, lineHeight: layout.subtitleSize + 4 },
+      isEnabled && !isProxy && styles.normalSubtitle,
+      !isEnabled && styles.subtitleMuted,
+    ];
+
+    const secondaryCard = (
       <PremiumSelectionCard
         selected={false}
         onPress={onPress ?? (() => {})}
-        heroHeight={layout.trustHeroHeight}
-        compactCopy
-        style={[
-          styles.trustFooterShell,
-          { minHeight: layout.trustCardMinHeight },
-          isEnabled ? styles.trustFooterShellActive : styles.trustFooterShellMuted,
-        ]}
+        heroHeight={layout.primaryHeroHeight}
+        compactCopy={layout.isCompact}
+        style={cardShellStyle}
         illustration={
-          <DriverCockpitHero
-            stageHeight={layout.trustHeroHeight}
-            active={isEnabled}
-            isVeryCompact={layout.isVeryCompact}
-          />
+          isProxy ? (
+            <PassengerSeatHero
+              stageHeight={layout.primaryHeroHeight}
+              active={false}
+              isVeryCompact={layout.isVeryCompact}
+            />
+          ) : (
+            <DriverCockpitHero
+              stageHeight={layout.primaryHeroHeight}
+              active={isEnabled}
+              isVeryCompact={layout.isVeryCompact}
+            />
+          )
         }
         title={card.title}
         subtitle={showSoonPill ? ' ' : displaySubtitle ?? card.subtitle}
-        titleStyle={[
-          LDS_TYPOGRAPHY.body,
-          styles.trustFooterTitle,
-          !isEnabled && styles.titleDisabled,
-        ]}
-        subtitleStyle={[
-          LDS_TYPOGRAPHY.caption,
-          styles.trustFooterSubtitle,
-          !isEnabled && styles.trustFooterSubtitleMuted,
-        ]}
+        titleStyle={titleStyle}
+        subtitleStyle={subtitleStyle}
         checkmark={
           showSoonPill ? (
             <View style={styles.soonPill}>
@@ -270,20 +290,21 @@ function PassengerMatchModeCards({
     if (!isEnabled) {
       return (
         <Pressable
+          key={card.id}
           disabled
           accessibilityRole="button"
           accessibilityState={{ disabled: true }}
           accessibilityLabel={`${card.title}. Yakında`}
-          style={styles.trustFooterCell}
+          style={styles.heroCell}
         >
-          <View pointerEvents="none">{trustCard}</View>
+          <View pointerEvents="none">{secondaryCard}</View>
         </Pressable>
       );
     }
 
     return (
-      <View style={styles.trustFooterCell} accessibilityRole="button">
-        {trustCard}
+      <View key={card.id} style={styles.heroCell}>
+        {secondaryCard}
       </View>
     );
   };
@@ -293,7 +314,9 @@ function PassengerMatchModeCards({
       <View style={styles.heroRow}>
         {PRIMARY_CARDS.map(renderPrimaryHero)}
       </View>
-      {renderTrustFooter(SECONDARY_CARD)}
+      <View style={styles.heroRow}>
+        {SECONDARY_CARDS.map(renderSecondaryHero)}
+      </View>
     </View>
   );
 }
@@ -358,6 +381,12 @@ const styles = StyleSheet.create({
       android: { elevation: 6 },
     }),
   },
+  proxyHeroCard: {
+    borderTopColor: 'rgba(251, 191, 36, 0.32)',
+    borderLeftColor: 'rgba(251, 191, 36, 0.16)',
+    borderColor: 'rgba(251, 191, 36, 0.24)',
+    backgroundColor: 'rgba(251, 191, 36, 0.04)',
+  },
   heroCardDisabledShell: {
     opacity: 0.58,
     borderColor: PREMIUM_BORDER_SLATE,
@@ -393,34 +422,7 @@ const styles = StyleSheet.create({
   titleDisabled: {
     color: PREMIUM_TEXT_MUTED,
   },
-  trustFooterCell: {
-    alignSelf: 'stretch',
-    width: '100%',
-  },
-  trustFooterShell: {
-    width: '100%',
-  },
-  trustFooterShellActive: {
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
-    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
-    borderColor: LDS_BORDER_COLOR.card,
-  },
-  trustFooterShellMuted: {
-    opacity: 0.58,
-    borderColor: PREMIUM_BORDER_SLATE,
-  },
-  trustFooterTitle: {
-    textAlign: 'center',
-    fontWeight: '700',
-    color: 'rgba(224, 236, 248, 0.92)',
-    letterSpacing: -0.15,
-  },
-  trustFooterSubtitle: {
-    textAlign: 'center',
-    fontWeight: '500',
-    color: 'rgba(148, 168, 196, 0.72)',
-  },
-  trustFooterSubtitleMuted: {
+  subtitleMuted: {
     color: PREMIUM_TEXT_MUTED,
   },
   soonPill: {
