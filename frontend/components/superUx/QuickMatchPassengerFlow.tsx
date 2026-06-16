@@ -120,7 +120,7 @@ export type QuickMatchPassengerFlowProps = {
   session: QuickMatchPassengerSessionView;
   onClose: () => void;
   onRetry?: () => void;
-  onGoNormalMatch?: () => void;
+  onGoNormalMatch?: (opts?: { contributionTl?: number }) => void;
 };
 
 function isDistanceTooFarForQuickMatch(distanceKm: number | null | undefined): boolean {
@@ -450,9 +450,14 @@ export function QuickMatchPassengerFlow({
   }, [session, onRetry]);
 
   const handleGoNormal = useCallback(() => {
+    const contribution =
+      session.request?.offered_contribution_tl ?? contributionTl;
     session.clear();
-    onGoNormalMatch?.();
-  }, [session, onGoNormalMatch]);
+    onGoNormalMatch?.({
+      contributionTl:
+        Number.isFinite(contribution) && contribution > 0 ? contribution : undefined,
+    });
+  }, [session, onGoNormalMatch, contributionTl]);
 
   const handleCreate = useCallback(async () => {
     setCreateGuardMessage(null);
@@ -676,10 +681,10 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.section}>
           <PremiumText variant="title" style={styles.title}>
-            Yakınınızda uygun sürücü bulunamadı
+            Yakındaki sürücülerden yanıt alınamadı.
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
-            İsterseniz tekrar deneyebilir veya normal eşleşme ile devam edebilirsiniz.
+            Normal Eşleş ile daha geniş alanda teklif gönderebilirsin.
           </PremiumText>
           <RouteSummaryCard
             pickupLabel={pickupLabel}
@@ -687,8 +692,8 @@ export function QuickMatchPassengerFlow({
             distanceKm={displayDistanceKm}
             contributionTl={displayContribution}
           />
-          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
-          <SecondaryButton label="Normal eşleşmeye geç" onPress={handleGoNormal} />
+          <PrimaryButton label="Normal Eşleş ile Devam Et" onPress={handleGoNormal} />
+          <SecondaryButton label="Tekrar Hızlı Eşleş Dene" onPress={handleRetry} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -698,13 +703,19 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.section}>
           <PremiumText variant="title" style={styles.title}>
-            İstek süresi doldu
+            Yakındaki sürücülerden yanıt alınamadı.
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
-            İsterseniz tekrar deneyebilir veya normal eşleşme ile devam edebilirsiniz.
+            Normal Eşleş ile daha geniş alanda teklif gönderebilirsin.
           </PremiumText>
-          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
-          <SecondaryButton label="Normal eşleşmeye geç" onPress={handleGoNormal} />
+          <RouteSummaryCard
+            pickupLabel={pickupLabel}
+            dropoffLabel={dropoffLabel}
+            distanceKm={displayDistanceKm}
+            contributionTl={displayContribution}
+          />
+          <PrimaryButton label="Normal Eşleş ile Devam Et" onPress={handleGoNormal} />
+          <SecondaryButton label="Tekrar Hızlı Eşleş Dene" onPress={handleRetry} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );
@@ -737,7 +748,8 @@ export function QuickMatchPassengerFlow({
               {session.errorMessage || 'Bir sorun oluştu. Lütfen tekrar deneyin.'}
             </PremiumText>
           </GlassSurface>
-          <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
+          <PrimaryButton label="Normal Eşleş ile Devam Et" onPress={handleGoNormal} />
+          <SecondaryButton label="Tekrar Hızlı Eşleş Dene" onPress={handleRetry} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
         </View>
       );

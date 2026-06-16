@@ -10021,6 +10021,8 @@ function PassengerDashboard({
     dropLng: number;
     playTapSound: boolean;
     source: 'call_button' | 'destination_confirm';
+    /** QM fallback: katkı payını modalda önceden doldur; yoksa suggested kullanılır. */
+    initialPriceTl?: number;
   }) => {
     if (passengerPriceCalculateInFlightRef.current) return;
     if (showPriceModal || offerSendSubmitting) {
@@ -10116,7 +10118,14 @@ function PassengerDashboard({
         pf.data.suggested_price != null
       ) {
         setPriceInfo(pf.data as any);
-        setSelectedPrice(Number((pf.data as { suggested_price: number }).suggested_price));
+        const prefetchSuggested = Number((pf.data as { suggested_price: number }).suggested_price);
+        const prefetchPrice =
+          opts.initialPriceTl != null &&
+          Number.isFinite(opts.initialPriceTl) &&
+          opts.initialPriceTl > 0
+            ? opts.initialPriceTl
+            : prefetchSuggested;
+        setSelectedPrice(prefetchPrice);
         setShowPriceModal(true);
         passengerPostForceEndRef.current = false;
         if (opts.source === 'destination_confirm') {
@@ -10175,7 +10184,13 @@ function PassengerDashboard({
 
       if (data.success) {
         setPriceInfo(data);
-        setSelectedPrice(data.suggested_price);
+        const calculatedPrice =
+          opts.initialPriceTl != null &&
+          Number.isFinite(opts.initialPriceTl) &&
+          opts.initialPriceTl > 0
+            ? opts.initialPriceTl
+            : data.suggested_price;
+        setSelectedPrice(calculatedPrice);
         pricePrefetchRef.current = { key: prefetchKey, data, ts: Date.now() };
         setShowPriceModal(true);
         passengerPostForceEndRef.current = false;
@@ -14215,10 +14230,12 @@ function PassengerDashboard({
               }
             });
         }}
-        onGoNormalMatch={() => {
+        onGoNormalMatch={(opts) => {
           void quickMatchSession
             .releaseActiveRequest({ bestEffort: true })
             .finally(() => {
+              setRoutePickerIntent('normal');
+              setPassengerIdleOfferChannel('normal');
               resetPassengerQuickMatchIdleState({ clearSession: true });
               if (destination && resolvePassengerPickupCoords(passengerPickup, userLocation)) {
                 void runTagPassengerPriceFlow({
@@ -14226,6 +14243,7 @@ function PassengerDashboard({
                   dropLng: Number(destination.longitude),
                   playTapSound: true,
                   source: 'call_button',
+                  initialPriceTl: opts?.contributionTl,
                 });
               } else {
                 setShowDestinationPicker(true);
