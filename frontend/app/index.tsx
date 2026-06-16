@@ -11492,12 +11492,6 @@ function PassengerDashboard({
         latitude: coords.latitude,
         longitude: coords.longitude,
       });
-      void pushRecentPickup(String(user?.id ?? ''), {
-        address: 'Konumum',
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        source: 'gps',
-      });
       setRoutePickerStep('destination');
       setDestinationPickerPhase('search');
       setDestinationPickerAutocompleteMountKey((k) => k + 1);

@@ -46,6 +46,28 @@ function coordDedupeKey(latitude: number, longitude: number): string {
   return `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
 }
 
+/** Pickup recent listesinden hariç tutulacak etiketler (GPS oturum etiketi). */
+function normalizePickupHistoryLabel(address: unknown): string {
+  return String(address ?? '')
+    .trim()
+    .toLocaleLowerCase('tr-TR');
+}
+
+function isExcludedPickupHistoryPoint(point: RouteHistoryPoint): boolean {
+  if (point.source === 'gps') return true;
+  return normalizePickupHistoryLabel(point.address) === 'konumum';
+}
+
+function shouldSkipPickupHistoryWrite(
+  point: Omit<RouteHistoryPoint, 'usedAt'> & { usedAt?: number },
+  addressFallback: string,
+): boolean {
+  if (point.source === 'gps') return true;
+  const raw = String(point.address ?? '').trim();
+  const label = raw || addressFallback;
+  return normalizePickupHistoryLabel(label) === 'konumum';
+}
+
 function parseEnvelope(raw: string | null): RouteHistoryEnvelope {
   if (!raw) return { v: ENVELOPE_VERSION, items: [] };
   try {
@@ -144,7 +166,8 @@ async function pushRecent(
 export async function getRecentPickups(userId: string): Promise<RouteHistoryPoint[]> {
   const uid = normalizeUserId(userId);
   if (!uid) return [];
-  return readList(passengerRecentPickupsKey(uid));
+  const items = await readList(passengerRecentPickupsKey(uid));
+  return items.filter((item) => !isExcludedPickupHistoryPoint(item));
 }
 
 export async function getRecentDestinations(userId: string): Promise<RouteHistoryPoint[]> {
@@ -157,6 +180,9 @@ export async function pushRecentPickup(
   userId: string,
   point: Omit<RouteHistoryPoint, 'usedAt'> & { usedAt?: number },
 ): Promise<void> {
+  if (shouldSkipPickupHistoryWrite(point, 'Konumum')) {
+    return;
+  }
   await pushRecent(userId, passengerRecentPickupsKey, point, MAX_RECENT_PICKUPS, 'Konumum');
 }
 
