@@ -10,11 +10,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
-import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
-import { LDS_ELEVATION } from '../design-system/tokens/elevation';
-import { LDS_RADIUS } from '../design-system/tokens/radius';
-import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { CockpitBackground, GlassSurface, PremiumText } from '../../design-system/primitives';
+import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
+import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
+import { LDS_RADIUS } from '../../design-system/tokens/radius';
+import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_AUTH_CTA_GRADIENT,
