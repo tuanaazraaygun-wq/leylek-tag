@@ -27,8 +27,8 @@ const METRIC_PRESENTATION: Record<
   (typeof TRUST_METRIC_KEYS)[number],
   { shortLabel: string; icon: keyof typeof Ionicons.glyphMap }
 > = {
-  'Aktif yolcular': { shortLabel: 'Aktif yolcu', icon: 'people-outline' },
-  'Bekleyen davetler': { shortLabel: 'Bekleyen davet', icon: 'mail-open-outline' },
+  'Aktif yolcular': { shortLabel: 'Aktif', icon: 'people-outline' },
+  'Bekleyen davetler': { shortLabel: 'Bekleyen', icon: 'mail-open-outline' },
 };
 
 function chipMetaForLabel(
@@ -58,10 +58,53 @@ function metricValueFromMeta(meta: string | null): string {
 export type DriverCockpitQuickStripProps = {
   /** Güvenilir yolcular hub — /trusted-network?role=driver */
   onTrustedPress?: () => void;
+  /** Kokpit panel sağ kolon — GlassSurface yok */
+  embedded?: boolean;
 };
 
+function TrustMetricRow({
+  label,
+  summaryReady,
+  summary,
+  compact,
+}: {
+  label: (typeof TRUST_METRIC_KEYS)[number];
+  summaryReady: boolean;
+  summary: TrustedSummaryResponse | null;
+  compact?: boolean;
+}) {
+  const presentation = METRIC_PRESENTATION[label];
+  const chipMeta = summaryReady && summary ? chipMetaForLabel(label, summary) : null;
+  const value = metricValueFromMeta(chipMeta);
+  const hasValue = value !== '—';
+
+  return (
+    <View
+      style={[compact ? styles.embeddedMetricRow : styles.metricCell, hasValue && !compact && styles.metricCellActive]}
+      accessibilityLabel={`${presentation.shortLabel}. ${value}`}
+    >
+      <Ionicons
+        name={presentation.icon}
+        size={compact ? 12 : 11}
+        color={hasValue ? 'rgba(148,163,184,0.82)' : 'rgba(148,163,184,0.55)'}
+      />
+      <PremiumText variant="caption" muted style={compact ? styles.embeddedMetricLabel : styles.metricLabel} numberOfLines={1}>
+        {presentation.shortLabel}
+      </PremiumText>
+      <PremiumText
+        variant="caption"
+        muted
+        style={[compact ? styles.embeddedMetricValue : styles.metricValue, hasValue && styles.metricValueActive]}
+        numberOfLines={1}
+      >
+        {value}
+      </PremiumText>
+    </View>
+  );
+}
+
 /** Sürücü idle kokpit — secondary trust özeti (read-only). */
-function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProps) {
+function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCockpitQuickStripProps) {
   const { status, summary } = useTrustedSummary();
   const summaryReady = status === 'ready' && summary != null;
   const headerWired = typeof onTrustedPress === 'function';
@@ -75,8 +118,8 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
 
   const headerContent = (
     <>
-      <View style={styles.trustIconWrap}>
-        <Ionicons name="shield-checkmark-outline" size={12} color="rgba(34,211,238,0.72)" />
+      <View style={embedded ? styles.embeddedTrustIconWrap : styles.trustIconWrap}>
+        <Ionicons name="shield-checkmark-outline" size={embedded ? 13 : 12} color="rgba(34,211,238,0.72)" />
       </View>
       <View style={styles.titleCol}>
         <PremiumText variant="caption" style={styles.title} numberOfLines={1}>
@@ -91,6 +134,44 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
       ) : null}
     </>
   );
+
+  if (embedded) {
+    return (
+      <View style={styles.embeddedCol} accessibilityRole="summary">
+        {headerWired ? (
+          <Pressable
+            onPress={onTrustedPress}
+            accessibilityRole="button"
+            accessibilityLabel={`Güven ağı. ${headerSubtitle}. Hub`}
+            style={({ pressed }) => [styles.embeddedHeaderRow, pressed && styles.headerRowPressed]}
+          >
+            {headerContent}
+          </Pressable>
+        ) : (
+          <View style={styles.embeddedHeaderRow}>{headerContent}</View>
+        )}
+
+        <View style={styles.embeddedMetricsCol}>
+          {TRUST_METRIC_KEYS.map((label) => (
+            <TrustMetricRow
+              key={label}
+              label={label}
+              summaryReady={summaryReady}
+              summary={summary}
+              compact
+            />
+          ))}
+        </View>
+
+        <View style={styles.embeddedQmPill} accessibilityLabel="Hızlı eşleşme. Yakında" accessibilityRole="text">
+          <Ionicons name="flash-outline" size={10} color="rgba(148,163,184,0.48)" />
+          <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
+            Yakında
+          </PremiumText>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap} accessibilityRole="summary">
@@ -113,38 +194,14 @@ function DriverCockpitQuickStrip({ onTrustedPress }: DriverCockpitQuickStripProp
         )}
 
         <View style={styles.metricsRow}>
-          {TRUST_METRIC_KEYS.map((label) => {
-            const presentation = METRIC_PRESENTATION[label];
-            const chipMeta =
-              summaryReady && summary ? chipMetaForLabel(label, summary) : null;
-            const value = metricValueFromMeta(chipMeta);
-            const hasValue = value !== '—';
-
-            return (
-              <View
-                key={label}
-                style={[styles.metricCell, hasValue && styles.metricCellActive]}
-                accessibilityLabel={`${presentation.shortLabel}. ${value}`}
-              >
-                <Ionicons
-                  name={presentation.icon}
-                  size={11}
-                  color={hasValue ? 'rgba(148,163,184,0.82)' : 'rgba(148,163,184,0.55)'}
-                />
-                <PremiumText variant="caption" muted style={styles.metricLabel} numberOfLines={1}>
-                  {presentation.shortLabel}
-                </PremiumText>
-                <PremiumText
-                  variant="caption"
-                  muted
-                  style={[styles.metricValue, hasValue && styles.metricValueActive]}
-                  numberOfLines={1}
-                >
-                  {value}
-                </PremiumText>
-              </View>
-            );
-          })}
+          {TRUST_METRIC_KEYS.map((label) => (
+            <TrustMetricRow
+              key={label}
+              label={label}
+              summaryReady={summaryReady}
+              summary={summary}
+            />
+          ))}
 
           <View
             style={styles.qmPill}
@@ -172,6 +229,60 @@ const styles = StyleSheet.create({
   card: {
     paddingVertical: LDS_SPACING.xs,
     paddingHorizontal: LDS_SPACING.sm,
+  },
+  embeddedCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: LDS_SPACING.xxs,
+  },
+  embeddedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+  },
+  embeddedMetricsCol: {
+    gap: 3,
+  },
+  embeddedMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xxs,
+    paddingVertical: 2,
+  },
+  embeddedMetricLabel: {
+    flex: 1,
+    fontSize: 10,
+    letterSpacing: 0.04,
+  },
+  embeddedMetricValue: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  embeddedTrustIconWrap: {
+    width: LDS_SPACING.lg,
+    height: LDS_SPACING.lg,
+    borderRadius: LDS_RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,17,31,0.38)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    flexShrink: 0,
+  },
+  embeddedQmPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(8,17,31,0.24)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    opacity: 0.82,
   },
   headerRow: {
     flexDirection: 'row',

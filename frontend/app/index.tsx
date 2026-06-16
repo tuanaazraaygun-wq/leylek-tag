@@ -61,7 +61,6 @@ import {
 } from '../hooks/useQuickMatchPassengerSession';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
 import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession';
-import DriverCockpitQuickStrip from '../components/superUx/DriverCockpitQuickStrip';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
@@ -17902,18 +17901,14 @@ function DriverDashboard({
                   </View>
                 </GlassSurface>
               </View>
-              <View style={dws.cockpitTrustPad}>
-                <DriverCockpitQuickStrip
-                  onTrustedPress={() => {
-                    playTapSound();
-                    router.push('/trusted-network?role=driver' as never);
-                  }}
-                />
-              </View>
               <View style={dws.cockpitPanelPad}>
                 <DriverDashboardPanel
                   userId={user.id}
                   onPackagePress={() => setShowDriverPackagesModal(true)}
+                  onTrustedPress={() => {
+                    playTapSound();
+                    router.push('/trusted-network?role=driver' as never);
+                  }}
                   onToggleOnline={(isOnline) => {
                     console.log('Sürücü online durumu değişti:', isOnline);
                   }}

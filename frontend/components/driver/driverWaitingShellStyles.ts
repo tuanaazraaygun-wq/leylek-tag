@@ -17,17 +17,17 @@ export const driverWaitingShellStyles = StyleSheet.create({
   cockpitSafe: {
     backgroundColor: 'transparent',
   },
-  /** Üst katman: header + trust + panel — ortak dikey ritim */
+  /** Üst katman: header + online + cockpit */
   cockpitUpperDeck: {
-    paddingBottom: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.xxs,
   },
   cockpitHeaderPad: {
     paddingHorizontal: LDS_SPACING.sm,
-    paddingTop: LDS_SPACING.xs,
+    paddingTop: LDS_SPACING.xxs,
     paddingBottom: LDS_SPACING.xxs,
   },
   cockpitHeaderGlass: {
-    paddingVertical: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
     paddingHorizontal: LDS_SPACING.sm,
   },
   cockpitHeaderBar: {
@@ -58,26 +58,26 @@ export const driverWaitingShellStyles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: LDS_SPACING.xxs,
+    gap: 0,
     paddingHorizontal: LDS_SPACING.xxs,
   },
   cockpitHeaderBrand: {
     letterSpacing: -0.28,
     textAlign: 'center',
+    fontSize: 17,
+    lineHeight: 22,
   },
   cockpitHeaderCaption: {
-    letterSpacing: 0.15,
+    letterSpacing: 0.12,
     textAlign: 'center',
-    lineHeight: 15,
-  },
-  cockpitTrustPad: {
-    paddingTop: LDS_SPACING.xxs,
-    paddingBottom: LDS_SPACING.xxs,
+    lineHeight: 14,
+    fontSize: 11,
+    opacity: 0.82,
   },
   cockpitPanelPad: {
     paddingHorizontal: LDS_SPACING.xxs,
-    paddingTop: LDS_SPACING.xs,
-    paddingBottom: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xxs,
+    paddingBottom: LDS_SPACING.xs,
   },
   /** Alt saha katmanı — dispatch / harita; üst kokpit ile ince dikiş; zemin CockpitBackground */
   cockpitOfferGround: {

@@ -15,11 +15,13 @@ import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { PREMIUM_AUTH_CYAN, PREMIUM_BORDER_SLATE, PREMIUM_TEXT_MUTED } from './auth/premiumAuthStyles';
+import DriverCockpitQuickStrip from './superUx/DriverCockpitQuickStrip';
 
 interface DriverDashboardPanelProps {
   userId: string;
   onPackagePress: () => void;
   onToggleOnline?: (isOnline: boolean) => void;
+  onTrustedPress?: () => void;
   expanded?: boolean;
   onExpandToggle?: () => void;
 }
@@ -52,8 +54,9 @@ interface DashboardData {
   };
 }
 
-const PANEL_HEIGHT_COLLAPSED = 188;
-const PANEL_HEIGHT_EXPANDED = 272;
+const PANEL_HEIGHT_COLLAPSED = 124;
+const PANEL_HEIGHT_EXPANDED = 208;
+const ONLINE_STRIP_HEIGHT = 52;
 
 function sessionDisplayText(
   isActive: boolean,
@@ -68,6 +71,7 @@ export default function DriverDashboardPanel({
   userId,
   onPackagePress,
   onToggleOnline,
+  onTrustedPress,
   expanded = false,
   onExpandToggle,
 }: DriverDashboardPanelProps) {
@@ -81,15 +85,14 @@ export default function DriverDashboardPanel({
 
   useEffect(() => {
     fetchDashboard();
-    const refreshInterval = setInterval(fetchDashboard, 60000); // Her dakika güncelle
-    
+    const refreshInterval = setInterval(fetchDashboard, 60000);
+
     return () => {
       clearInterval(refreshInterval);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [userId]);
 
-  // Expand animation
   useEffect(() => {
     Animated.timing(expandAnim, {
       toValue: expanded ? 1 : 0,
@@ -98,7 +101,6 @@ export default function DriverDashboardPanel({
     }).start();
   }, [expanded]);
 
-  // Countdown timer
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
 
@@ -197,13 +199,13 @@ export default function DriverDashboardPanel({
 
   const toggleOnline = async () => {
     if (!data) return;
-    
+
     setToggling(true);
     try {
       const endpoint = data.active_time.is_online ? 'go-offline' : 'go-online';
       const response = await fetch(`${API_BASE_URL}/driver/${endpoint}?user_id=${userId}`, { method: 'POST' });
       const result = await response.json();
-      
+
       if (result.success) {
         setData(prev => prev ? {
           ...prev,
@@ -222,10 +224,17 @@ export default function DriverDashboardPanel({
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <GlassSurface variant="panel" style={styles.panelShellLoading} borderRadius={LDS_RADIUS.xl}>
-          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-        </GlassSurface>
+      <View style={styles.stack}>
+        <View style={styles.onlineStripWrap}>
+          <GlassSurface variant="plain" style={styles.onlineStripLoading} borderRadius={LDS_RADIUS.lg}>
+            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+          </GlassSurface>
+        </View>
+        <View style={styles.container}>
+          <GlassSurface variant="panel" style={styles.panelShellLoading} borderRadius={LDS_RADIUS.xl}>
+            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+          </GlassSurface>
+        </View>
       </View>
     );
   }
@@ -239,167 +248,320 @@ export default function DriverDashboardPanel({
 
   const goalProgress = data.daily_goal.overall_progress;
   const sessionText = sessionDisplayText(data.active_time.is_active, remainingText);
-  const availabilityLabel = data.active_time.is_online ? 'Çevrimiçi' : 'Çevrimdışı';
-  const onlineActionLabel = data.active_time.is_online ? 'Çevrimdışı ol' : 'Çevrimiçi ol';
+  const isOnline = data.active_time.is_online;
+  const availabilityLabel = isOnline ? 'Çevrimiçi' : 'Çevrimdışı';
+  const onlineActionLabel = isOnline ? 'Çevrimdışı ol' : 'Çevrimiçi ol';
+  const onlineStatusHint = isOnline
+    ? 'Yolculuk fırsatlarını almaya hazırsın'
+    : 'Çevrimiçi olunca talepler gelir';
 
   return (
-    <Animated.View style={[styles.container, { height: panelHeight }]}>
-      <GlassSurface variant="panel" style={styles.panelShell} borderRadius={LDS_RADIUS.xl}>
-        <View style={styles.collapsedHud}>
-          <View
-            style={styles.revenueHeroShell}
-            accessibilityRole="summary"
-            accessibilityLabel={`Bugün ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
-          >
-            <PremiumText variant="caption" muted style={styles.revenueLabel}>
-              Bugün
-            </PremiumText>
-            <PremiumText variant="headline" style={styles.revenueAmount}>
-              {data.today.earnings} ₺
-            </PremiumText>
-            <View style={styles.revenueMetaRow}>
-              <PremiumText variant="caption" muted style={styles.revenueTrips}>
-                {data.today.trips_count} sefer
-              </PremiumText>
-              <PremiumText variant="caption" muted style={styles.progressCaption}>
-                Hedef %{goalProgress}
-              </PremiumText>
-            </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${goalProgress}%` }]} />
-            </View>
-          </View>
-
-          <View style={styles.opsRail}>
-            <View style={styles.availabilityStatus}>
-              <View
-                style={[
-                  styles.statusDot,
-                  data.active_time.is_online ? styles.statusDotOnline : styles.statusDotOffline,
-                ]}
-              />
-              <View style={styles.availabilityTextCol}>
-                <PremiumText variant="caption" muted style={styles.opsMetaLabel}>
-                  Durum
-                </PremiumText>
-                <PremiumText variant="body" style={styles.availabilityLabel}>
-                  {availabilityLabel}
-                </PremiumText>
-              </View>
-            </View>
-            <TouchableOpacity
+    <View style={styles.stack}>
+      <View style={styles.onlineStripWrap}>
+        <GlassSurface
+          variant="plain"
+          style={[
+            styles.onlineStrip,
+            isOnline ? styles.onlineStripActive : styles.onlineStripInactive,
+          ]}
+          borderRadius={LDS_RADIUS.lg}
+        >
+          <View style={styles.onlineStripLeft}>
+            <View
               style={[
-                styles.onlineBtn,
-                data.active_time.is_online ? styles.onlineBtnActive : styles.onlineBtnInactive,
+                styles.statusDot,
+                isOnline ? styles.statusDotOnline : styles.statusDotOffline,
               ]}
-              onPress={toggleOnline}
-              disabled={toggling || !data.active_time.is_active}
-              accessibilityRole="button"
-              accessibilityLabel={onlineActionLabel}
-              accessibilityState={{
-                disabled: toggling || !data.active_time.is_active,
-              }}
-            >
-              {toggling ? (
-                <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" />
-              ) : (
-                <PremiumText variant="caption" style={styles.onlineText}>
-                  {onlineActionLabel}
-                </PremiumText>
-              )}
-            </TouchableOpacity>
+            />
+            <View style={styles.onlineTextCol}>
+              <PremiumText variant="body" style={styles.onlineStatusLabel}>
+                {availabilityLabel}
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.onlineStatusHint} numberOfLines={1}>
+                {onlineStatusHint}
+              </PremiumText>
+            </View>
           </View>
 
           <TouchableOpacity
-            style={styles.sessionRow}
-            onPress={onExpandToggle}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel={`Seans ${sessionText}. Detayları ${expanded ? 'gizle' : 'göster'}.`}
+            style={[
+              styles.switchTrack,
+              isOnline ? styles.switchTrackOn : styles.switchTrackOff,
+              (toggling || !data.active_time.is_active) && styles.switchTrackDisabled,
+            ]}
+            onPress={toggleOnline}
+            disabled={toggling || !data.active_time.is_active}
+            activeOpacity={0.92}
+            accessibilityRole="switch"
+            accessibilityLabel={onlineActionLabel}
+            accessibilityState={{
+              checked: isOnline,
+              disabled: toggling || !data.active_time.is_active,
+            }}
           >
-            <Ionicons
-              name="time-outline"
-              size={15}
-              color={
-                data.active_time.is_active
-                  ? 'rgba(34,211,238,0.88)'
-                  : 'rgba(148,163,184,0.72)'
-              }
-            />
-            <View style={styles.sessionTextCol}>
-              <PremiumText variant="caption" muted style={styles.opsMetaLabel}>
-                Seans
-              </PremiumText>
-              <PremiumText variant="caption" style={styles.sessionText}>
-                {sessionText}
-              </PremiumText>
-            </View>
-            <Ionicons
-              name={expanded ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={PREMIUM_TEXT_MUTED}
-            />
+            {toggling ? (
+              <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" style={styles.switchSpinner} />
+            ) : (
+              <View
+                style={[
+                  styles.switchThumb,
+                  isOnline ? styles.switchThumbOn : styles.switchThumbOff,
+                ]}
+              />
+            )}
           </TouchableOpacity>
-        </View>
+        </GlassSurface>
+      </View>
 
-        {expanded && (
-          <View style={styles.expandedContent}>
-            <View style={styles.statsRow}>
-              <View style={styles.statColumn}>
-                <View style={styles.statIconWrap}>
-                  <Ionicons name="car-outline" size={20} color="rgba(34,211,238,0.88)" />
+      <Animated.View style={[styles.container, { height: panelHeight }]}>
+        <GlassSurface variant="panel" style={styles.panelShell} borderRadius={LDS_RADIUS.xl}>
+          <View style={styles.collapsedHud}>
+            <PremiumText variant="caption" muted style={styles.cockpitSectionLabel}>
+              Kokpit
+            </PremiumText>
+
+            <View style={styles.cockpitGrid}>
+              <View
+                style={styles.todayCol}
+                accessibilityRole="summary"
+                accessibilityLabel={`Bugün ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
+              >
+                <PremiumText variant="caption" muted style={styles.instrumentLabel}>
+                  Bugün
+                </PremiumText>
+                <PremiumText variant="title" style={styles.instrumentAmount}>
+                  {data.today.earnings} ₺
+                </PremiumText>
+                <View style={styles.instrumentMetaRow}>
+                  <PremiumText variant="caption" muted style={styles.instrumentMeta}>
+                    {data.today.trips_count} sefer
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.instrumentMeta}>
+                    Hedef %{goalProgress}
+                  </PremiumText>
                 </View>
-                <PremiumText variant="title" style={styles.statValue}>
-                  {data.today.trips_count}
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.statLabel}>
-                  Bugünkü sefer
-                </PremiumText>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${goalProgress}%` }]} />
+                </View>
               </View>
 
-              <View style={styles.statDivider} />
+              <View style={styles.gridDivider} />
 
-              <View style={styles.statColumn}>
-                <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
-                  <Ionicons name="wallet-outline" size={20} color="rgba(226,232,240,0.88)" />
+              <DriverCockpitQuickStrip embedded onTrustedPress={onTrustedPress} />
+            </View>
+
+            <View style={styles.footerRow}>
+              <TouchableOpacity
+                style={styles.footerCell}
+                onPress={onExpandToggle}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Seans ${sessionText}. Detayları ${expanded ? 'gizle' : 'göster'}.`}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={14}
+                  color={
+                    data.active_time.is_active
+                      ? 'rgba(34,211,238,0.88)'
+                      : 'rgba(148,163,184,0.72)'
+                  }
+                />
+                <View style={styles.footerTextCol}>
+                  <PremiumText variant="caption" muted style={styles.footerMetaLabel}>
+                    Seans
+                  </PremiumText>
+                  <PremiumText variant="caption" style={styles.footerValue}>
+                    {sessionText}
+                  </PremiumText>
                 </View>
-                <PremiumText variant="title" style={styles.statValue}>
-                  {data.weekly.earnings} ₺
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.statLabel}>
-                  Haftalık kazanç
-                </PremiumText>
-              </View>
+                <Ionicons
+                  name={expanded ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={PREMIUM_TEXT_MUTED}
+                />
+              </TouchableOpacity>
 
-              <View style={styles.statDivider} />
+              <View style={styles.footerDivider} />
 
-              <View style={styles.statColumn}>
-                <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
-                  <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
+              <TouchableOpacity
+                style={styles.footerCell}
+                onPress={onPackagePress}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Paket yönetimi"
+              >
+                <Ionicons name="cube-outline" size={14} color="rgba(148,163,184,0.82)" />
+                <View style={styles.footerTextCol}>
+                  <PremiumText variant="caption" muted style={styles.footerMetaLabel}>
+                    Paket
+                  </PremiumText>
+                  <PremiumText variant="caption" style={styles.footerValue}>
+                    Yönet
+                  </PremiumText>
                 </View>
-                <PremiumText variant="title" style={styles.statValue}>
-                  {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
-                    ? data.stats.rating.toFixed(1)
-                    : '—'}
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.statLabel}>
-                  {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
-                    ? 'Puan'
-                    : 'Henüz değerlendirme yok'}
-                </PremiumText>
-              </View>
+                <Ionicons name="chevron-forward" size={14} color={PREMIUM_TEXT_MUTED} />
+              </TouchableOpacity>
             </View>
           </View>
-        )}
-      </GlassSurface>
-    </Animated.View>
+
+          {expanded && (
+            <View style={styles.expandedContent}>
+              <View style={styles.statsRow}>
+                <View style={styles.statColumn}>
+                  <View style={styles.statIconWrap}>
+                    <Ionicons name="car-outline" size={20} color="rgba(34,211,238,0.88)" />
+                  </View>
+                  <PremiumText variant="title" style={styles.statValue}>
+                    {data.today.trips_count}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.statLabel}>
+                    Bugünkü sefer
+                  </PremiumText>
+                </View>
+
+                <View style={styles.statDivider} />
+
+                <View style={styles.statColumn}>
+                  <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
+                    <Ionicons name="wallet-outline" size={20} color="rgba(226,232,240,0.88)" />
+                  </View>
+                  <PremiumText variant="title" style={styles.statValue}>
+                    {data.weekly.earnings} ₺
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.statLabel}>
+                    Haftalık kazanç
+                  </PremiumText>
+                </View>
+
+                <View style={styles.statDivider} />
+
+                <View style={styles.statColumn}>
+                  <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
+                    <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
+                  </View>
+                  <PremiumText variant="title" style={styles.statValue}>
+                    {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
+                      ? data.stats.rating.toFixed(1)
+                      : '—'}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.statLabel}>
+                    {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
+                      ? 'Puan'
+                      : 'Henüz değerlendirme yok'}
+                  </PremiumText>
+                </View>
+              </View>
+            </View>
+          )}
+        </GlassSurface>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  stack: {
+    gap: LDS_SPACING.xxs,
+  },
+  onlineStripWrap: {
+    marginHorizontal: LDS_SPACING.sm,
+  },
+  onlineStrip: {
+    minHeight: ONLINE_STRIP_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    gap: LDS_SPACING.sm,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+  },
+  onlineStripActive: {
+    borderColor: 'rgba(34,211,238,0.22)',
+    borderTopColor: 'rgba(34,211,238,0.28)',
+    backgroundColor: 'rgba(6,55,52,0.18)',
+  },
+  onlineStripInactive: {
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    backgroundColor: 'rgba(8,17,31,0.42)',
+  },
+  onlineStripLoading: {
+    minHeight: ONLINE_STRIP_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onlineStripLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.sm,
+  },
+  onlineTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  onlineStatusLabel: {
+    fontWeight: '700',
+    letterSpacing: 0.06,
+  },
+  onlineStatusHint: {
+    letterSpacing: 0.04,
+    lineHeight: 14,
+  },
+  switchTrack: {
+    width: 52,
+    height: 30,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    flexShrink: 0,
+  },
+  switchTrackOn: {
+    backgroundColor: 'rgba(6,55,52,0.95)',
+    borderColor: 'rgba(34,211,238,0.35)',
+    alignItems: 'flex-end',
+  },
+  switchTrackOff: {
+    backgroundColor: 'rgba(16,26,43,0.95)',
+    borderColor: PREMIUM_BORDER_SLATE,
+    alignItems: 'flex-start',
+  },
+  switchTrackDisabled: {
+    opacity: 0.55,
+  },
+  switchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+  },
+  switchThumbOn: {
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    borderColor: 'rgba(243,248,255,0.45)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.45,
+        shadowRadius: 6,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  switchThumbOff: {
+    backgroundColor: 'rgba(148,163,184,0.72)',
+    borderColor: 'rgba(148,163,184,0.35)',
+  },
+  switchSpinner: {
+    alignSelf: 'center',
+  },
   container: {
     marginHorizontal: LDS_SPACING.sm,
-    marginTop: LDS_SPACING.xxs,
     overflow: 'hidden',
     ...LDS_ELEVATION.panel,
   },
@@ -413,124 +575,65 @@ const styles = StyleSheet.create({
     paddingVertical: LDS_SPACING.lg,
   },
   collapsedHud: {
-    paddingHorizontal: LDS_SPACING.md,
-    paddingTop: LDS_SPACING.md,
-    paddingBottom: LDS_SPACING.sm,
-    gap: LDS_SPACING.sm,
-  },
-  revenueHeroShell: {
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xs,
     gap: LDS_SPACING.xs,
-    paddingVertical: LDS_SPACING.md,
-    paddingHorizontal: LDS_SPACING.md,
-    borderRadius: LDS_RADIUS.lg,
-    backgroundColor: 'rgba(8,17,31,0.52)',
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    borderTopColor: 'rgba(34,211,238,0.14)',
-    ...LDS_ELEVATION.chip,
   },
-  opsRail: {
+  cockpitSectionLabel: {
+    letterSpacing: 0.14,
+    textTransform: 'uppercase',
+    fontSize: 10,
+    opacity: 0.72,
+  },
+  cockpitGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'stretch',
     gap: LDS_SPACING.sm,
+  },
+  todayCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
     paddingVertical: LDS_SPACING.xxs,
   },
-  availabilityStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: LDS_SPACING.sm,
-    flex: 1,
-    minWidth: 0,
+  gridDivider: {
+    width: LDS_BORDER_WIDTH.hairline,
+    alignSelf: 'stretch',
+    backgroundColor: LDS_BORDER_COLOR.cockpitPanel,
+    marginVertical: LDS_SPACING.xxs,
   },
-  availabilityTextCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: 1,
-  },
-  opsMetaLabel: {
+  instrumentLabel: {
     letterSpacing: 0.12,
-    lineHeight: 14,
+    fontSize: 10,
   },
-  statusDot: {
-    width: LDS_SPACING.xs,
-    height: LDS_SPACING.xs,
-    borderRadius: LDS_RADIUS.full,
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+  instrumentAmount: {
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '800',
+    letterSpacing: -0.35,
+    fontVariant: ['tabular-nums'],
+    color: 'rgba(94,229,209,0.96)',
   },
-  statusDotOnline: {
-    backgroundColor: PREMIUM_AUTH_CYAN,
-    borderColor: 'rgba(243,248,255,0.35)',
-  },
-  statusDotOffline: {
-    backgroundColor: 'rgba(148,163,184,0.55)',
-  },
-  availabilityLabel: {
-    letterSpacing: 0.1,
-    fontWeight: '700',
-  },
-  onlineBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.md,
-    borderRadius: LDS_RADIUS.md,
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    flexShrink: 0,
-  },
-  onlineBtnActive: {
-    backgroundColor: 'rgba(6,55,52,0.92)',
-    borderColor: 'rgba(34,211,238,0.22)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#01060e',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
-      },
-      android: { elevation: 5 },
-      default: {},
-    }),
-  },
-  onlineBtnInactive: {
-    backgroundColor: 'rgba(16,26,43,0.95)',
-    borderColor: PREMIUM_BORDER_SLATE,
-  },
-  onlineText: {
-    letterSpacing: 0.12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  revenueLabel: {
-    letterSpacing: 0.15,
-  },
-  revenueMetaRow: {
+  instrumentMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: LDS_SPACING.sm,
-    marginTop: LDS_SPACING.xxs,
+    gap: LDS_SPACING.xs,
+    marginTop: 1,
   },
-  revenueAmount: {
-    fontSize: 32,
-    lineHeight: 36,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    fontVariant: ['tabular-nums'],
-    color: 'rgba(94,229,209,0.98)',
-  },
-  revenueTrips: {
-    flex: 1,
+  instrumentMeta: {
+    letterSpacing: 0.06,
+    fontSize: 10,
   },
   progressTrack: {
-    height: 6,
+    height: 4,
     borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(8,17,31,0.72)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
     overflow: 'hidden',
-    marginTop: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
   },
   progressFill: {
     height: '100%',
@@ -538,29 +641,58 @@ const styles = StyleSheet.create({
     backgroundColor: PREMIUM_AUTH_CYAN,
     minWidth: 0,
   },
-  progressCaption: {
-    letterSpacing: 0.1,
-    textAlign: 'right',
-  },
-  sessionRow: {
+  footerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: LDS_SPACING.sm,
-    paddingVertical: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.sm,
+    alignItems: 'stretch',
     borderRadius: LDS_RADIUS.md,
-    backgroundColor: 'rgba(8,17,31,0.38)',
+    backgroundColor: 'rgba(8,17,31,0.32)',
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    overflow: 'hidden',
   },
-  sessionTextCol: {
+  footerCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
+    minWidth: 0,
+  },
+  footerDivider: {
+    width: LDS_BORDER_WIDTH.hairline,
+    alignSelf: 'stretch',
+    backgroundColor: LDS_BORDER_COLOR.cockpitPanel,
+  },
+  footerTextCol: {
     flex: 1,
     minWidth: 0,
     gap: 1,
   },
-  sessionText: {
+  footerMetaLabel: {
+    letterSpacing: 0.1,
+    lineHeight: 13,
+    fontSize: 10,
+  },
+  footerValue: {
     fontVariant: ['tabular-nums'],
-    letterSpacing: 0.08,
+    letterSpacing: 0.06,
+    fontSize: 11,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: LDS_RADIUS.full,
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    flexShrink: 0,
+  },
+  statusDotOnline: {
+    backgroundColor: PREMIUM_AUTH_CYAN,
+    borderColor: 'rgba(243,248,255,0.35)',
+  },
+  statusDotOffline: {
+    backgroundColor: 'rgba(148,163,184,0.55)',
   },
   expandedContent: {
     paddingHorizontal: LDS_SPACING.sm,

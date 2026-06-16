@@ -50,6 +50,7 @@ import {
 } from '../lib/routeLoadingUiConstants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const MAP_PREVIEW_HEIGHT = Math.min(110, Math.max(96, Math.round(SCREEN_HEIGHT * 0.14)));
 
 const MAP_POLL_INTERVAL_MS = 9000;
 
@@ -957,12 +958,12 @@ export default function DriverOfferScreen({
   }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
 
   useEffect(() => {
-    if (mapExpanded) {
+    if (mapExpanded || embedded) {
       mapMountedRef.current = true;
     }
-  }, [mapExpanded]);
+  }, [mapExpanded, embedded]);
 
-  const showMapHost = mapExpanded || mapMountedRef.current;
+  const showMapHost = embedded || mapExpanded || mapMountedRef.current;
 
   /** Genişletilmiş harita yüksekliği — ilk expand sonrası MapView mount kalır (collapse'ta gizlenir) */
   const mapExpandedHeight = Math.min(SCREEN_HEIGHT * 0.42, 360);
@@ -1326,7 +1327,7 @@ export default function DriverOfferScreen({
               styles.mapExpandedMapHost,
               mapExpanded
                 ? { height: mapExpandedHeight }
-                : styles.mapExpandedMapHostCollapsed,
+                : styles.mapExpandedMapHostPreview,
             ]}
             pointerEvents={mapExpanded ? 'box-none' : 'none'}
             accessibilityElementsHidden={!mapExpanded}
@@ -1334,7 +1335,7 @@ export default function DriverOfferScreen({
           >
             <View style={[styles.mapViewportFixed, styles.mapContainerSolidExpanded]}>
               {renderMap()}
-              <View style={styles.mapDimOverlay} pointerEvents="none" />
+              <View style={[styles.mapDimOverlay, !mapExpanded && styles.mapDimOverlayPreview]} pointerEvents="none" />
               {mapExpanded && (!driverLocation || !mapReady) ? (
                 <View style={styles.mapLoadingOverlay} pointerEvents="none">
                   <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
@@ -1352,39 +1353,43 @@ export default function DriverOfferScreen({
                   </GlassSurface>
                 </View>
               ) : null}
-              <View style={styles.mapTopOverlay} pointerEvents="box-none">
-                <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
-                  <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
-                </TouchableOpacity>
-                <View style={styles.mapNameCardWrap} pointerEvents="none">
-                  <View style={styles.mapNameCard}>
-                    <PremiumText variant="step" style={styles.mapNameText}>
-                      {driverName?.split(' ')[0] || 'Sürücü'}
-                    </PremiumText>
-                    <View style={styles.mapRatingRow}>
-                      {driverMapRatingText ? (
-                        <>
-                          <Ionicons name="star" size={14} color="#FBBF24" />
-                          <PremiumText variant="caption" style={styles.mapRatingText}>
-                            {driverMapRatingText}
+              {mapExpanded ? (
+                <View style={styles.mapTopOverlay} pointerEvents="box-none">
+                  <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
+                    <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
+                  </TouchableOpacity>
+                  <View style={styles.mapNameCardWrap} pointerEvents="none">
+                    <View style={styles.mapNameCard}>
+                      <PremiumText variant="step" style={styles.mapNameText}>
+                        {driverName?.split(' ')[0] || 'Sürücü'}
+                      </PremiumText>
+                      <View style={styles.mapRatingRow}>
+                        {driverMapRatingText ? (
+                          <>
+                            <Ionicons name="star" size={14} color="#FBBF24" />
+                            <PremiumText variant="caption" style={styles.mapRatingText}>
+                              {driverMapRatingText}
+                            </PremiumText>
+                          </>
+                        ) : (
+                          <PremiumText variant="caption" muted style={styles.mapRatingEmpty}>
+                            Henüz değerlendirme yok
                           </PremiumText>
-                        </>
-                      ) : (
-                        <PremiumText variant="caption" muted style={styles.mapRatingEmpty}>
-                          Henüz değerlendirme yok
-                        </PremiumText>
-                      )}
+                        )}
+                      </View>
                     </View>
                   </View>
+                  <View style={styles.mapTopSpacer} />
                 </View>
-                <View style={styles.mapTopSpacer} />
-              </View>
-              <View style={styles.mapHud} pointerEvents="none">
-                <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
-                <PremiumText variant="caption" muted style={styles.mapHudText}>
-                  Talep {mapHud.seeking} · {mapHud.radius} km
-                </PremiumText>
-              </View>
+              ) : null}
+              {mapExpanded ? (
+                <View style={styles.mapHud} pointerEvents="none">
+                  <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
+                  <PremiumText variant="caption" muted style={styles.mapHudText}>
+                    Talep {mapHud.seeking} · {mapHud.radius} km
+                  </PremiumText>
+                </View>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -1631,6 +1636,13 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
   },
+  mapExpandedMapHostPreview: {
+    height: MAP_PREVIEW_HEIGHT,
+    overflow: 'hidden',
+    opacity: 1,
+    marginTop: LDS_SPACING.xxs,
+    borderRadius: LDS_RADIUS.lg,
+  },
   mapLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 4,
@@ -1702,7 +1714,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'stretch',
     gap: LDS_SPACING.sm,
-    paddingVertical: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.md,
     backgroundColor: 'transparent',
   },
@@ -1798,6 +1810,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(8,17,31,0.1)',
     zIndex: 2,
+  },
+  mapDimOverlayPreview: {
+    backgroundColor: 'rgba(8,17,31,0.28)',
   },
 
   mapTopOverlay: {
