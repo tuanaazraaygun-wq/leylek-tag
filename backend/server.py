@@ -6959,6 +6959,343 @@ def _trusted_invite_create_for_actor(
     )
 
 
+def _trusted_connection_row_by_id(row_id: str) -> Optional[dict]:
+    rid = _normalize_trusted_uuid(row_id)
+    if not rid:
+        return None
+    try:
+        res = (
+            supabase.table("trusted_connections")
+            .select(
+                "id, initiator_id, counterparty_id, initiator_role, counterparty_role, "
+                "status, source_tag_id, invited_at, expires_at, updated_at, responded_at, "
+                "revoked_at, last_trip_at, pair_key"
+            )
+            .eq("id", rid)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(
+            "trusted_connection fetch id=%s err=%s",
+            _mask_log_id(rid),
+            e,
+        )
+        raise
+    return res.data[0] if res.data else None
+
+
+def _trusted_other_party(actor: str, row: dict) -> str:
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    return ini if actor == cp else cp
+
+
+def _trusted_assert_actor_is_participant(actor: str, row: dict) -> None:
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    if actor not in (ini, cp):
+        _trusted_invite_reject(403, "forbidden", "Bu kayıt üzerinde işlem yapamazsınız.")
+
+
+def _trusted_assert_not_blocked_pair(actor: str, row: dict) -> None:
+    other = _trusted_other_party(actor, row)
+    blocked = _get_bilateral_blocked_user_ids(actor)
+    if other in blocked:
+        _trusted_invite_reject(403, "blocked", "Bu kullanıcı güven ağına eklenemez.")
+
+
+def _trusted_assert_pair_eligible(actor: str, row: dict) -> None:
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    eligibility = _user_eligibility_map_for_ids({ini, cp})
+    if not eligibility.get(ini, False) or not eligibility.get(cp, False):
+        _trusted_invite_reject(
+            403,
+            "counterparty_not_eligible",
+            "Karşı taraf şu an kullanılamıyor.",
+        )
+
+
+def _trusted_active_success_payload(row: dict, *, actor: str) -> dict:
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    other = cp if actor == ini else ini
+    return {
+        "success": True,
+        "connection_id": str(row.get("id") or ""),
+        "invite_id": str(row.get("id") or ""),
+        "status": "active",
+        "counterparty_user_id": other,
+        "source_tag_id": row.get("source_tag_id"),
+        "invited_at": row.get("invited_at"),
+        "responded_at": row.get("responded_at"),
+        "updated_at": row.get("updated_at"),
+        "since": row.get("responded_at") or row.get("invited_at"),
+    }
+
+
+def _trusted_find_active_row_for_pair(pair_key: str) -> Optional[dict]:
+    res = (
+        supabase.table("trusted_connections")
+        .select(
+            "id, initiator_id, counterparty_id, status, source_tag_id, "
+            "invited_at, responded_at, updated_at"
+        )
+        .eq("pair_key", pair_key)
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def _trusted_expire_pending_row(row_id: str) -> None:
+    now_s = _trusted_utc_iso_now()
+    supabase.table("trusted_connections").update(
+        {
+            "status": "expired",
+            "revoke_reason": "expired_system",
+            "updated_at": now_s,
+        }
+    ).eq("id", row_id).execute()
+
+
+def _trusted_last_trip_at_from_source_tag(source_tag_id: Optional[Any]) -> Optional[str]:
+    if not source_tag_id:
+        return None
+    try:
+        tag_res = (
+            supabase.table("tags")
+            .select("completed_at, updated_at")
+            .eq("id", str(source_tag_id))
+            .limit(1)
+            .execute()
+        )
+        if not tag_res.data:
+            return None
+        tag = tag_res.data[0]
+        ref = tag.get("completed_at") or tag.get("updated_at")
+        return str(ref) if ref else None
+    except Exception:
+        return None
+
+
+def _trusted_invite_accept_for_actor(actor_norm: str, invite_id: str) -> tuple[dict, int]:
+    """POST /trusted/invites/{id}/accept — pending → active (counterparty only)."""
+    actor = str(actor_norm or "").strip().lower()
+    rid = _normalize_trusted_uuid(invite_id)
+    if not rid:
+        _trusted_invite_reject(400, "invalid_input", "Geçersiz davet.")
+
+    row = _trusted_connection_row_by_id(rid)
+    if not row:
+        _trusted_invite_reject(404, "not_found", "Davet bulunamadı.")
+
+    _trusted_assert_actor_is_participant(actor, row)
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    if actor != cp:
+        _trusted_invite_reject(
+            403,
+            "forbidden",
+            "Yalnızca davet alan kişi kabul edebilir.",
+        )
+
+    _trusted_assert_not_blocked_pair(actor, row)
+    _trusted_assert_pair_eligible(actor, row)
+
+    st = str(row.get("status") or "").strip().lower()
+    if st == "active":
+        return _trusted_active_success_payload(row, actor=actor), 200
+
+    if st != "pending":
+        _trusted_invite_reject(
+            409,
+            "invalid_state",
+            "Bu davet artık kabul edilemez.",
+        )
+
+    if not _is_pending_not_expired(row):
+        _trusted_expire_pending_row(rid)
+        _trusted_invite_reject(409, "invite_expired", "Davetin süresi dolmuş.")
+
+    pair_key = _trusted_pair_key(
+        str(row.get("initiator_id") or ""),
+        str(row.get("counterparty_id") or ""),
+    )
+    existing_active = _trusted_find_active_row_for_pair(pair_key)
+    if existing_active:
+        return _trusted_active_success_payload(existing_active, actor=actor), 200
+
+    now_s = _trusted_utc_iso_now()
+    update_payload: dict = {
+        "status": "active",
+        "responded_at": now_s,
+        "updated_at": now_s,
+    }
+    last_trip = _trusted_last_trip_at_from_source_tag(row.get("source_tag_id"))
+    if last_trip:
+        update_payload["last_trip_at"] = last_trip
+
+    upd = (
+        supabase.table("trusted_connections")
+        .update(update_payload)
+        .eq("id", rid)
+        .eq("status", "pending")
+        .execute()
+    )
+    if not upd.data:
+        refreshed = _trusted_connection_row_by_id(rid)
+        if refreshed and str(refreshed.get("status") or "").lower() == "active":
+            return _trusted_active_success_payload(refreshed, actor=actor), 200
+        replay_active = _trusted_find_active_row_for_pair(pair_key)
+        if replay_active:
+            return _trusted_active_success_payload(replay_active, actor=actor), 200
+        _trusted_invite_reject(409, "invalid_state", "Bu davet artık kabul edilemez.")
+
+    return _trusted_active_success_payload(upd.data[0], actor=actor), 200
+
+
+def _trusted_invite_decline_for_actor(actor_norm: str, invite_id: str) -> tuple[dict, int]:
+    """POST /trusted/invites/{id}/decline — pending → declined (counterparty only)."""
+    actor = str(actor_norm or "").strip().lower()
+    rid = _normalize_trusted_uuid(invite_id)
+    if not rid:
+        _trusted_invite_reject(400, "invalid_input", "Geçersiz davet.")
+
+    row = _trusted_connection_row_by_id(rid)
+    if not row:
+        _trusted_invite_reject(404, "not_found", "Davet bulunamadı.")
+
+    _trusted_assert_actor_is_participant(actor, row)
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    if actor != cp:
+        _trusted_invite_reject(
+            403,
+            "forbidden",
+            "Yalnızca davet alan kişi reddedebilir.",
+        )
+
+    _trusted_assert_not_blocked_pair(actor, row)
+
+    st = str(row.get("status") or "").strip().lower()
+    if st != "pending":
+        _trusted_invite_reject(
+            409,
+            "invalid_state",
+            "Bu davet artık reddedilemez.",
+        )
+
+    if not _is_pending_not_expired(row):
+        _trusted_expire_pending_row(rid)
+        _trusted_invite_reject(409, "invite_expired", "Davetin süresi dolmuş.")
+
+    now_s = _trusted_utc_iso_now()
+    upd = (
+        supabase.table("trusted_connections")
+        .update(
+            {
+                "status": "declined",
+                "responded_at": now_s,
+                "updated_at": now_s,
+            }
+        )
+        .eq("id", rid)
+        .eq("status", "pending")
+        .execute()
+    )
+    if not upd.data:
+        refreshed = _trusted_connection_row_by_id(rid)
+        if refreshed and str(refreshed.get("status") or "").lower() == "declined":
+            row = refreshed
+        else:
+            _trusted_invite_reject(409, "invalid_state", "Bu davet artık reddedilemez.")
+    else:
+        row = upd.data[0]
+
+    other = _trusted_other_party(actor, row)
+    return (
+        {
+            "success": True,
+            "invite_id": str(row.get("id") or ""),
+            "status": "declined",
+            "counterparty_user_id": other,
+            "source_tag_id": row.get("source_tag_id"),
+            "invited_at": row.get("invited_at"),
+            "responded_at": row.get("responded_at"),
+            "updated_at": row.get("updated_at"),
+        },
+        200,
+    )
+
+
+def _trusted_connection_revoke_for_actor(
+    actor_norm: str, connection_id: str
+) -> tuple[dict, int]:
+    """POST /trusted/connections/{id}/revoke — active → revoked (either participant)."""
+    actor = str(actor_norm or "").strip().lower()
+    rid = _normalize_trusted_uuid(connection_id)
+    if not rid:
+        _trusted_invite_reject(400, "invalid_input", "Geçersiz bağlantı.")
+
+    row = _trusted_connection_row_by_id(rid)
+    if not row:
+        _trusted_invite_reject(404, "not_found", "Bağlantı bulunamadı.")
+
+    _trusted_assert_actor_is_participant(actor, row)
+
+    st = str(row.get("status") or "").strip().lower()
+    if st != "active":
+        _trusted_invite_reject(
+            409,
+            "invalid_state",
+            "Yalnızca aktif bağlantılar kaldırılabilir.",
+        )
+
+    now_s = _trusted_utc_iso_now()
+    upd = (
+        supabase.table("trusted_connections")
+        .update(
+            {
+                "status": "revoked",
+                "revoked_at": now_s,
+                "revoked_by": actor,
+                "revoke_reason": "user_revoke",
+                "updated_at": now_s,
+            }
+        )
+        .eq("id", rid)
+        .eq("status", "active")
+        .execute()
+    )
+    if not upd.data:
+        refreshed = _trusted_connection_row_by_id(rid)
+        if refreshed and str(refreshed.get("status") or "").lower() == "revoked":
+            row = refreshed
+        else:
+            _trusted_invite_reject(
+                409,
+                "invalid_state",
+                "Yalnızca aktif bağlantılar kaldırılabilir.",
+            )
+    else:
+        row = upd.data[0]
+
+    other = _trusted_other_party(actor, row)
+    return (
+        {
+            "success": True,
+            "connection_id": str(row.get("id") or ""),
+            "status": "revoked",
+            "counterparty_user_id": other,
+            "revoked_at": row.get("revoked_at"),
+            "revoked_by": row.get("revoked_by"),
+            "updated_at": row.get("updated_at"),
+        },
+        200,
+    )
+
+
 async def _active_tag_disabled_response_if_ineligible(
     user_id, *, action: str
 ) -> Optional[dict]:
@@ -10833,6 +11170,98 @@ async def post_trusted_invite(
                 "detail": "Güven ağı daveti oluşturulamadı.",
             },
         )
+
+
+async def _trusted_mutation_route(
+    actor_id: str,
+    *,
+    action: str,
+    resource_id: str,
+    mutate_fn,
+) -> JSONResponse:
+    """Trusted accept/decline/revoke — ortak auth + hata zarfı."""
+    try:
+        actor_norm = await require_eligible_user(actor_id, action=action)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "code": "account_not_eligible",
+                    "detail": str(exc.detail or "Hesabınız devre dışı bırakılmıştır."),
+                },
+            )
+        raise
+
+    try:
+        payload, http_status = mutate_fn(actor_norm, resource_id)
+        return JSONResponse(status_code=http_status, content=payload)
+    except _TrustedInviteReject as rej:
+        return JSONResponse(
+            status_code=rej.status,
+            content={"success": False, "code": rej.code, "detail": rej.detail},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_mutation action=%s actor=%s resource=%s err=%s",
+            action,
+            _mask_log_id(actor_id),
+            _mask_log_id(resource_id),
+            e,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "code": "trusted_action_failed",
+                "detail": "Güven ağı işlemi tamamlanamadı.",
+            },
+        )
+
+
+@api_router.post("/trusted/invites/{invite_id}/accept")
+async def post_trusted_invite_accept(
+    invite_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Network — gelen daveti kabul et (TRUST-3A)."""
+    return await _trusted_mutation_route(
+        actor_id,
+        action="trusted_invite_accept",
+        resource_id=invite_id,
+        mutate_fn=_trusted_invite_accept_for_actor,
+    )
+
+
+@api_router.post("/trusted/invites/{invite_id}/decline")
+async def post_trusted_invite_decline(
+    invite_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Network — gelen daveti reddet (TRUST-3A)."""
+    return await _trusted_mutation_route(
+        actor_id,
+        action="trusted_invite_decline",
+        resource_id=invite_id,
+        mutate_fn=_trusted_invite_decline_for_actor,
+    )
+
+
+@api_router.post("/trusted/connections/{connection_id}/revoke")
+async def post_trusted_connection_revoke(
+    connection_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Network — aktif bağlantıyı kaldır (TRUST-3A)."""
+    return await _trusted_mutation_route(
+        actor_id,
+        action="trusted_connection_revoke",
+        resource_id=connection_id,
+        mutate_fn=_trusted_connection_revoke_for_actor,
+    )
 
 
 _PASSENGER_BLOCKING_TAG_STATUSES_FOR_QUICK_MATCH = [
