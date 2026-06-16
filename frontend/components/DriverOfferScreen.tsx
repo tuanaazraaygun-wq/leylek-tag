@@ -1297,9 +1297,9 @@ export default function DriverOfferScreen({
               />
               <View style={styles.driverMarker}>
                 {isMotor ? (
-                  <MaterialCommunityIcons name="motorbike" size={24} color="#FFF" />
+                  <MaterialCommunityIcons name="motorbike" size={22} color="#FFF" />
                 ) : (
-                  <Ionicons name="car" size={24} color="#FFF" />
+                  <Ionicons name="car" size={22} color="#FFF" />
                 )}
               </View>
             </View>
@@ -1315,9 +1315,16 @@ export default function DriverOfferScreen({
               title={listed ? 'Aktif Talep' : 'Yakın Talep'}
               description={listed ? 'Dispatch listesinde' : 'Aktif yolcu talebi'}
             >
-              <View style={[styles.passengerMarkerSeeking, listed && styles.passengerMarkerSeekingListed]}>
-                <Ionicons name="navigate" size={15} color="#FFF" />
-              </View>
+              {listed ? (
+                <View style={styles.passengerMarkerSeekingActive}>
+                  <Ionicons name="navigate" size={16} color="#FFF" />
+                </View>
+              ) : (
+                <View style={styles.passengerMarkerSeekingNear}>
+                  <View style={styles.passengerMarkerSeekingNearRing} pointerEvents="none" />
+                  <Ionicons name="navigate" size={13} color="#EA580C" />
+                </View>
+              )}
             </Marker>
           );
         })}
@@ -1329,9 +1336,7 @@ export default function DriverOfferScreen({
             title="Konum Paylaşan Yolcu"
             description="Yakın çevre sinyali"
           >
-            <View style={styles.passengerMarkerLight}>
-              <View style={styles.passengerMarkerLightDot} />
-            </View>
+            <View style={styles.passengerMarkerLightSignal} collapsable={false} />
           </Marker>
         ))}
       </MapView>
@@ -2221,16 +2226,16 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   driverMarkerPulseWrap: {
-    width: 96,
-    height: 96,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
   driverPulseRing: {
     position: 'absolute',
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 2,
     borderColor: 'rgba(34,211,238,0.55)',
     backgroundColor: 'transparent',
@@ -2241,18 +2246,18 @@ const styles = StyleSheet.create({
   },
   driverMarker: {
     backgroundColor: '#0369a1',
-    padding: 8,
-    borderRadius: 22,
-    borderWidth: 3,
+    padding: 6,
+    borderRadius: 18,
+    borderWidth: 2.5,
     borderColor: 'rgba(243,248,255,0.92)',
     ...Platform.select({
       ios: {
         shadowColor: PREMIUM_NAVY_DEEP,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.38,
-        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.32,
+        shadowRadius: 5,
       },
-      android: { elevation: 6 },
+      android: { elevation: 5 },
       default: {},
     }),
   },
@@ -2295,46 +2300,45 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(243, 248, 255, 0.85)',
   },
-  passengerMarkerSeeking: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EA580C',
+  passengerMarkerSeekingActive: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#059669',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2.5,
-    borderColor: 'rgba(16, 26, 43, 0.95)',
-    shadowColor: '#7c2d12',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 5,
-    elevation: 6,
-  },
-  passengerMarkerSeekingListed: {
-    backgroundColor: '#059669',
-    borderColor: 'rgba(16, 26, 43, 0.92)',
+    borderColor: 'rgba(110, 231, 183, 0.62)',
     shadowColor: '#064e3b',
-  },
-  passengerMarkerLight: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(16, 26, 43, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(34, 211, 238, 0.25)',
-    shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.38,
     shadowRadius: 4,
     elevation: 5,
   },
-  passengerMarkerLightDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: PREMIUM_AUTH_CYAN,
+  passengerMarkerSeekingNear: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(8, 17, 31, 0.42)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2.5,
+    borderColor: '#EA580C',
+  },
+  passengerMarkerSeekingNearRing: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: 'rgba(234, 88, 12, 0.48)',
+    backgroundColor: 'transparent',
+  },
+  passengerMarkerLightSignal: {
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: 'rgba(34, 211, 238, 0.68)',
   },
 
   // List / dispatch deck
