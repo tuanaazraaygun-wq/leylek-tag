@@ -781,6 +781,22 @@ function resolveFieldTemporalTrend(snapshots: FieldTemporalSnapshot[]): FieldTem
   };
 }
 
+/** FI-06B-2 — spatial insight + temporal trend suffix (presentation-only) */
+function resolveFieldInsightLineWithTrend(
+  spatialLine: string,
+  mapExpanded: boolean,
+  trend: FieldTemporalTrendResult | null,
+): string {
+  if (!mapExpanded) return spatialLine;
+  if (!trend || trend.overall === 'insufficient') {
+    return `${spatialLine} · Veri toplanıyor`;
+  }
+  if (trend.overall === 'stable') return `${spatialLine} · Saha stabil`;
+  if (trend.overall === 'increasing') return `${spatialLine} · Talep artıyor`;
+  if (trend.overall === 'decreasing') return `${spatialLine} · Talep azalıyor`;
+  return spatialLine;
+}
+
 /** LHIS cockpit — DriverActivityMap ile uyumlu koyu Google Maps stili */
 const DRIVER_OFFER_DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
@@ -2401,7 +2417,11 @@ export default function DriverOfferScreen({
               style={styles.fieldOpInsightLine}
               numberOfLines={1}
             >
-              {fieldIntelMetrics.spatialInsightLine}
+              {resolveFieldInsightLineWithTrend(
+                fieldIntelMetrics.spatialInsightLine,
+                mapExpanded,
+                fieldTemporalTrendRef.current,
+              )}
             </PremiumText>
           </TouchableOpacity>
         </GlassSurface>
