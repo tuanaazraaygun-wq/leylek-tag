@@ -8,7 +8,7 @@
  * - Hızlı teklif gönderme
  */
 
-import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -59,6 +59,59 @@ const FIELD_DEFAULT_RADIUS_KM = 10;
 function resolveFieldRadiusKm(radius: number | undefined | null): number {
   const n = Number(radius);
   return Number.isFinite(n) && n > 0 ? Math.round(n) : FIELD_DEFAULT_RADIUS_KM;
+}
+
+type FieldMapZoomBand = 'near' | 'mid' | 'far';
+
+/** Zoom LOD — latitudeDelta eşikleri (client-only, backend yok) */
+const FIELD_ZOOM_NEAR_MAX_DELTA = 0.04;
+const FIELD_ZOOM_MID_MAX_DELTA = 0.12;
+const FIELD_ZOOM_NEAR_HEAT_MAX = 20;
+const FIELD_ZOOM_MID_LIGHT_MAX = 20;
+
+function resolveFieldMapZoomBand(latitudeDelta: number | undefined | null): FieldMapZoomBand {
+  const d = Number(latitudeDelta);
+  if (!Number.isFinite(d) || d <= 0) return 'near';
+  if (d < FIELD_ZOOM_NEAR_MAX_DELTA) return 'near';
+  if (d < FIELD_ZOOM_MID_MAX_DELTA) return 'mid';
+  return 'far';
+}
+
+function selectFieldLightPinsForZoom(
+  pins: DriverMapLightPin[],
+  band: FieldMapZoomBand,
+): DriverMapLightPin[] {
+  if (band === 'far') return [];
+  if (band === 'near') return pins;
+  if (pins.length <= FIELD_ZOOM_MID_LIGHT_MAX) return pins;
+  return [...pins]
+    .sort((a, b) => {
+      const da = Number(a.distance_km);
+      const db = Number(b.distance_km);
+      const na = Number.isFinite(da) && da > 0 ? da : 999;
+      const nb = Number.isFinite(db) && db > 0 ? db : 999;
+      return na - nb;
+    })
+    .slice(0, FIELD_ZOOM_MID_LIGHT_MAX);
+}
+
+function selectFieldSeekingPinsForZoom(
+  pins: DriverMapSeekingPin[],
+  listedIds: Set<string>,
+  band: FieldMapZoomBand,
+): DriverMapSeekingPin[] {
+  if (band === 'far') return [];
+  if (band === 'near') return pins;
+  return pins.filter((pin) => listedIds.has(String(pin.tag_id)));
+}
+
+function selectFieldHeatCellsForZoom(
+  grid: DriverMapCityGridCell[],
+  band: FieldMapZoomBand,
+): DriverMapCityGridCell[] {
+  if (band !== 'near') return grid;
+  if (grid.length <= FIELD_ZOOM_NEAR_HEAT_MAX) return grid;
+  return [...grid].sort((a, b) => b.intensity - a.intensity).slice(0, FIELD_ZOOM_NEAR_HEAT_MAX);
 }
 
 type FieldActivityBand = 'Pasif' | 'Sakin' | 'Canlı' | 'Yoğun';
@@ -960,6 +1013,7 @@ export default function DriverOfferScreen({
   const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: FIELD_DEFAULT_RADIUS_KM });
   const [mapExpanded, setMapExpanded] = useState(false);
   const [mapPinsLoadError, setMapPinsLoadError] = useState<string | null>(null);
+  const [mapZoomBand, setMapZoomBand] = useState<FieldMapZoomBand>('mid');
   const driverPulseScale = useRef(new Animated.Value(1)).current;
   const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
   const driverPulse2Scale = useRef(new Animated.Value(1)).current;
@@ -1019,8 +1073,17 @@ export default function DriverOfferScreen({
   useEffect(() => {
     if (!mapExpanded) {
       setMapReady(false);
+      setMapZoomBand('mid');
     }
   }, [mapExpanded]);
+
+  const handleFieldMapRegionChangeComplete = useCallback(
+    (region: { latitudeDelta?: number }) => {
+      const next = resolveFieldMapZoomBand(region?.latitudeDelta);
+      setMapZoomBand((prev) => (prev === next ? prev : next));
+    },
+    [],
+  );
 
   /** Collapsed: yalnızca mini HUD bar; MapView yalnızca expanded iken mount */
   const showMapHost = mapExpanded;
@@ -1209,64 +1272,61 @@ export default function DriverOfferScreen({
     return ids.join('|');
   }, [listedTagIds]);
 
-  const mapHeatMarkerElements = useMemo(
-    () =>
-      mapCityGrid.map((cell, idx) => (
+  const mapHeatMarkerElements = useMemo(() => {
+    const cells = selectFieldHeatCellsForZoom(mapCityGrid, mapZoomBand);
+    return cells.map((cell, idx) => (
+      <Marker
+        key={`heat-${idx}-${cell.center_lat}-${cell.center_lng}`}
+        coordinate={{ latitude: cell.center_lat, longitude: cell.center_lng }}
+        anchor={{ x: 0.5, y: 0.5 }}
+        tracksViewChanges={false}
+      >
+        <CityHeatCellMarker cell={cell} delayMs={(idx % 6) * 180} />
+      </Marker>
+    ));
+  }, [mapCityGrid, mapZoomBand]);
+
+  const mapSeekingMarkerElements = useMemo(() => {
+    const pins = selectFieldSeekingPinsForZoom(mapSeekingPins, listedTagIds, mapZoomBand);
+    return pins.map((pin) => {
+      const listed = listedTagIds.has(String(pin.tag_id));
+      return (
         <Marker
-          key={`heat-${idx}-${cell.center_lat}-${cell.center_lng}`}
-          coordinate={{ latitude: cell.center_lat, longitude: cell.center_lng }}
-          anchor={{ x: 0.5, y: 0.5 }}
+          key={`seek-${pin.tag_id}`}
+          coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
+          title={listed ? 'Aktif Talep' : 'Yakın Talep'}
+          description={listed ? 'Dispatch listesinde' : 'Aktif yolcu talebi'}
           tracksViewChanges={false}
         >
-          <CityHeatCellMarker cell={cell} delayMs={(idx % 6) * 180} />
+          {listed ? (
+            <View style={styles.passengerMarkerSeekingActive}>
+              <Ionicons name="navigate" size={16} color="#FFF" />
+            </View>
+          ) : (
+            <View style={styles.passengerMarkerSeekingNear}>
+              <View style={styles.passengerMarkerSeekingNearRing} pointerEvents="none" />
+              <Ionicons name="navigate" size={13} color="#EA580C" />
+            </View>
+          )}
         </Marker>
-      )),
-    [mapCityGrid],
-  );
+      );
+    });
+  }, [mapSeekingPins, listedTagIdKey, listedTagIds, mapZoomBand]);
 
-  const mapSeekingMarkerElements = useMemo(
-    () =>
-      mapSeekingPins.map((pin) => {
-        const listed = listedTagIds.has(String(pin.tag_id));
-        return (
-          <Marker
-            key={`seek-${pin.tag_id}`}
-            coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
-            title={listed ? 'Aktif Talep' : 'Yakın Talep'}
-            description={listed ? 'Dispatch listesinde' : 'Aktif yolcu talebi'}
-            tracksViewChanges={false}
-          >
-            {listed ? (
-              <View style={styles.passengerMarkerSeekingActive}>
-                <Ionicons name="navigate" size={16} color="#FFF" />
-              </View>
-            ) : (
-              <View style={styles.passengerMarkerSeekingNear}>
-                <View style={styles.passengerMarkerSeekingNearRing} pointerEvents="none" />
-                <Ionicons name="navigate" size={13} color="#EA580C" />
-              </View>
-            )}
-          </Marker>
-        );
-      }),
-    [mapSeekingPins, listedTagIdKey, listedTagIds],
-  );
-
-  const mapLightMarkerElements = useMemo(
-    () =>
-      mapLightPins.map((pin) => (
-        <Marker
-          key={`light-${pin.user_id}`}
-          coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
-          title="Konum Paylaşan Yolcu"
-          description="Yakın çevre sinyali"
-          tracksViewChanges={false}
-        >
-          <View style={styles.passengerMarkerLightSignal} collapsable={false} />
-        </Marker>
-      )),
-    [mapLightPins],
-  );
+  const mapLightMarkerElements = useMemo(() => {
+    const pins = selectFieldLightPinsForZoom(mapLightPins, mapZoomBand);
+    return pins.map((pin) => (
+      <Marker
+        key={`light-${pin.user_id}`}
+        coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
+        title="Konum Paylaşan Yolcu"
+        description="Yakın çevre sinyali"
+        tracksViewChanges={false}
+      >
+        <View style={styles.passengerMarkerLightSignal} collapsable={false} />
+      </Marker>
+    ));
+  }, [mapLightPins, mapZoomBand]);
 
   const driverMapMarkerElement = useMemo(() => {
     if (!driverLocation) return null;
@@ -1351,6 +1411,7 @@ export default function DriverOfferScreen({
               }
         }
         onMapReady={() => setMapReady(true)}
+        onRegionChangeComplete={handleFieldMapRegionChangeComplete}
         showsUserLocation={false}
         showsMyLocationButton={false}
         customMapStyle={DRIVER_OFFER_DARK_MAP_STYLE}
