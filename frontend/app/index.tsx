@@ -16916,6 +16916,14 @@ function DriverDashboard({
     return () => clearInterval(timer);
   }, [quickMatchDriverEnabled, quickMatchDriverSession.status, quickMatchDriverSession.refresh]);
 
+  const quickMatchDriverOverlayVisible =
+    quickMatchDriverEnabled &&
+    (quickMatchDriverSession.status === 'pending' ||
+      quickMatchDriverSession.status === 'accepting' ||
+      quickMatchDriverSession.status === 'matched' ||
+      (quickMatchDriverSession.status === 'error' &&
+        !!quickMatchDriverSession.invite));
+
   useEffect(() => {
     driverBoardingStableSinceRef.current = null;
   }, [activeTag?.id]);
@@ -17911,7 +17919,13 @@ function DriverDashboard({
               </View>
             </View>
           </SafeAreaView>
-          <View style={dws.cockpitOfferGround}>
+          <View
+            style={[
+              dws.cockpitOfferGround,
+              quickMatchDriverOverlayVisible && { opacity: 0.38 },
+            ]}
+            pointerEvents={quickMatchDriverOverlayVisible ? 'none' : 'auto'}
+          >
             <DriverOfferScreen
               embedded
               vehicleKind={driverVehicleKind}
@@ -18074,14 +18088,7 @@ function DriverDashboard({
           }}
         />
         <DriverQuickMatchInviteCard
-          visible={
-            quickMatchDriverEnabled &&
-            (quickMatchDriverSession.status === 'pending' ||
-              quickMatchDriverSession.status === 'accepting' ||
-              quickMatchDriverSession.status === 'matched' ||
-              (quickMatchDriverSession.status === 'error' &&
-                !!quickMatchDriverSession.invite))
-          }
+          visible={quickMatchDriverOverlayVisible}
           session={quickMatchDriverSession}
           onAccept={() => {
             void quickMatchDriverSession.accept();

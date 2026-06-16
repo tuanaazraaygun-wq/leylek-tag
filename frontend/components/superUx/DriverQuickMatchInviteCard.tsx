@@ -3,13 +3,11 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { CockpitBackground, GlassSurface, PremiumText } from '../../design-system/primitives';
+import { GlassSurface, PremiumText } from '../../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
 import { PREMIUM_AUTH_CYAN, LDS_COLOR_ERROR } from '../../design-system/tokens/color';
 import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
@@ -37,6 +35,8 @@ export type DriverQuickMatchInviteCardProps = {
   onClose: () => void;
 };
 
+const TITLE_COPY = 'Hızlı Eşleşme Teklifi';
+const SUBTITLE_COPY = 'Yakındaki yolcu hızlı eşleşme bekliyor.';
 const POLL_WARNING_COPY = 'Bağlantı zayıf, yeniden deneniyor.';
 const CONTRIBUTION_DISCLAIMER = 'LeylekTAG katkıyı tahsil etmez.';
 
@@ -85,6 +85,16 @@ function formatCountdownLabel(seconds: number | null): string {
   return `${secs} sn`;
 }
 
+function formatCountdownHint(seconds: number | null): string {
+  if (seconds == null) {
+    return 'Yanıt süresi hesaplanıyor';
+  }
+  if (seconds <= 0) {
+    return 'Yanıt süresi doldu';
+  }
+  return `${seconds} saniye içinde yanıtla`;
+}
+
 function useInviteCountdown(
   expiresAt: string | null | undefined,
   fallbackSec: number | null | undefined,
@@ -130,45 +140,18 @@ function useInviteCountdown(
   return remainingSec;
 }
 
-function InviteHeader({
-  onClose,
-  closeDisabled,
-}: {
-  onClose: () => void;
-  closeDisabled?: boolean;
-}) {
+function DecisionHeader() {
   return (
-    <View style={styles.headerRow}>
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.headerIconOrb}>
-        <Ionicons name="flash-outline" size={20} color={PREMIUM_AUTH_CYAN} />
-      </GlassSurface>
-      <View style={styles.headerTextCol}>
-        <PremiumText variant="step" style={styles.headerTitle}>
-          Hızlı eşleşme isteği
-        </PremiumText>
-        <PremiumText variant="caption" muted style={styles.headerSubtitle}>
-          Yakındaki yolcu değerlendiriliyor
-        </PremiumText>
+    <View style={styles.phaseBlock}>
+      <View style={styles.iconRing}>
+        <Ionicons name="flash-outline" size={26} color="rgba(34,211,238,0.92)" />
       </View>
-      <Pressable
-        onPress={onClose}
-        disabled={closeDisabled}
-        accessibilityRole="button"
-        accessibilityLabel="Kapat"
-        accessibilityState={{ disabled: Boolean(closeDisabled) }}
-        hitSlop={12}
-        style={({ pressed }) => [
-          styles.closeBtn,
-          closeDisabled && styles.closeBtnDisabled,
-          pressed && !closeDisabled && styles.closeBtnPressed,
-        ]}
-      >
-        <Ionicons
-          name="close"
-          size={24}
-          color={closeDisabled ? 'rgba(186,201,222,0.55)' : PREMIUM_AUTH_CYAN}
-        />
-      </Pressable>
+      <PremiumText variant="step" style={styles.phaseStep}>
+        {TITLE_COPY}
+      </PremiumText>
+      <PremiumText variant="caption" muted style={styles.phaseCaption}>
+        {SUBTITLE_COPY}
+      </PremiumText>
     </View>
   );
 }
@@ -202,27 +185,18 @@ function PrimaryButton({
       accessibilityRole="button"
       accessibilityState={{ disabled: Boolean(disabled || loading) }}
       style={({ pressed }) => [
-        styles.primaryBtnOuter,
+        styles.primaryBtnWrap,
         (disabled || loading) && styles.primaryBtnDisabled,
         pressed && !disabled && !loading && styles.primaryBtnPressed,
       ]}
     >
-      <GlassSurface
-        variant="plain"
-        borderRadius={LDS_RADIUS.md}
-        style={[
-          styles.primaryBtnSurface,
-          (disabled || loading) && styles.primaryBtnSurfaceDisabled,
-        ]}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-        ) : (
-          <PremiumText variant="body" style={styles.primaryBtnText}>
-            {label}
-          </PremiumText>
-        )}
-      </GlassSurface>
+      {loading ? (
+        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+      ) : (
+        <PremiumText variant="body" style={styles.primaryBtnText}>
+          {label}
+        </PremiumText>
+      )}
     </Pressable>
   );
 }
@@ -245,44 +219,41 @@ function SecondaryButton({
       accessibilityRole="button"
       accessibilityState={{ disabled: Boolean(disabled || loading) }}
       style={({ pressed }) => [
-        styles.secondaryBtnOuter,
+        styles.secondaryBtnWrap,
         (disabled || loading) && styles.secondaryBtnDisabled,
         pressed && !disabled && !loading && styles.secondaryBtnPressed,
       ]}
     >
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.secondaryBtnSurface}>
-        {loading ? (
-          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-        ) : (
-          <PremiumText variant="body" muted style={styles.secondaryBtnText}>
-            {label}
-          </PremiumText>
-        )}
-      </GlassSurface>
+      {loading ? (
+        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+      ) : (
+        <PremiumText variant="body" muted style={styles.secondaryBtnText}>
+          {label}
+        </PremiumText>
+      )}
     </Pressable>
   );
 }
 
-function InviteDetailsCard({
+function InviteDetailsBlock({
   pickupLabel,
   contributionTl,
   distanceBand,
   countdownSec,
-  sequenceNo,
 }: {
   pickupLabel: string;
   contributionTl: number;
   distanceBand: string | null | undefined;
   countdownSec: number | null;
-  sequenceNo?: number | null;
 }) {
   const countdownLabel = formatCountdownLabel(countdownSec);
+  const countdownHint = formatCountdownHint(countdownSec);
   const countdownExpired = countdownSec != null && countdownSec <= 0;
   const countdownUrgent =
     countdownSec != null && countdownSec > 0 && countdownSec <= 15;
 
   return (
-    <GlassSurface variant="panel" borderRadius={LDS_RADIUS.md} style={styles.glassCard}>
+    <View style={styles.detailsBlock}>
       <View style={styles.fieldBlock}>
         <PremiumText variant="caption" muted style={styles.fieldLabel}>
           Alış noktası
@@ -295,43 +266,53 @@ function InviteDetailsCard({
         </View>
       </View>
 
-      <View style={styles.fieldBlock}>
-        <PremiumText variant="caption" muted style={styles.fieldLabel}>
-          Mesafe bandı
-        </PremiumText>
-        <View style={styles.inlineValueRow}>
-          <Ionicons name="navigate-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-          <PremiumText variant="body" style={styles.fieldValue}>
-            {formatDistanceBand(distanceBand)}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricCell}>
+          <PremiumText variant="caption" muted style={styles.fieldLabel}>
+            Mesafe
           </PremiumText>
+          <View style={styles.inlineValueRow}>
+            <Ionicons name="navigate-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+            <PremiumText variant="body" style={styles.fieldValue}>
+              {formatDistanceBand(distanceBand)}
+            </PremiumText>
+          </View>
+        </View>
+        <View style={styles.metricCell}>
+          <PremiumText variant="caption" muted style={styles.fieldLabel}>
+            Katkı
+          </PremiumText>
+          <View style={styles.inlineValueRow}>
+            <Ionicons name="cash-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+            <PremiumText variant="body" style={styles.contributionValue}>
+              {contributionTl} TL
+            </PremiumText>
+          </View>
         </View>
       </View>
 
-      <View style={styles.fieldBlock}>
-        <PremiumText variant="caption" muted style={styles.fieldLabel}>
-          Katkı teklifi
-        </PremiumText>
-        <View style={styles.inlineValueRow}>
-          <Ionicons name="cash-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-          <PremiumText variant="title" style={styles.contributionValue}>
-            {contributionTl} TL
-          </PremiumText>
-        </View>
-        <PremiumText variant="caption" muted style={styles.disclaimer}>
-          {CONTRIBUTION_DISCLAIMER}
-        </PremiumText>
-      </View>
+      <PremiumText variant="caption" muted style={styles.disclaimer}>
+        {CONTRIBUTION_DISCLAIMER}
+      </PremiumText>
 
-      <View style={styles.fieldBlock}>
-        <PremiumText variant="caption" muted style={styles.fieldLabel}>
-          Kalan süre
-        </PremiumText>
-        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.countdownChip}>
-          <Ionicons
-            name="timer-outline"
-            size={18}
-            color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : PREMIUM_AUTH_CYAN}
-          />
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.countdownChip}>
+        <Ionicons
+          name="timer-outline"
+          size={18}
+          color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : PREMIUM_AUTH_CYAN}
+        />
+        <View style={styles.countdownTextCol}>
+          <PremiumText
+            variant="caption"
+            muted
+            style={[
+              styles.countdownHint,
+              countdownExpired && styles.countdownExpired,
+              countdownUrgent && styles.countdownUrgent,
+            ]}
+          >
+            {countdownHint}
+          </PremiumText>
           <PremiumText
             variant="body"
             style={[
@@ -342,15 +323,9 @@ function InviteDetailsCard({
           >
             {countdownLabel}
           </PremiumText>
-        </GlassSurface>
-      </View>
-
-      {sequenceNo != null && sequenceNo > 0 ? (
-        <PremiumText variant="caption" muted style={styles.sequenceMuted}>
-          Sıra {sequenceNo}
-        </PremiumText>
-      ) : null}
-    </GlassSurface>
+        </View>
+      </GlassSurface>
+    </View>
   );
 }
 
@@ -376,14 +351,16 @@ export function DriverQuickMatchInviteCard({
   const contributionTl = invite?.offered_contribution_tl ?? 0;
   const inviteExpired = countdownSec != null && countdownSec <= 0;
 
-  const closeDisabled = session.isAccepting || session.isDeclining;
+  const actionLocked = session.isAccepting || session.isDeclining;
+  const canDeclineViaScrim =
+    session.status === 'pending' && !actionLocked && !inviteExpired;
 
   const handleClose = useCallback(() => {
-    if (closeDisabled) {
+    if (actionLocked) {
       return;
     }
     onClose();
-  }, [closeDisabled, onClose]);
+  }, [actionLocked, onClose]);
 
   const handleAccept = useCallback(() => {
     void onAccept();
@@ -392,6 +369,16 @@ export function DriverQuickMatchInviteCard({
   const handleDecline = useCallback(() => {
     void onDecline();
   }, [onDecline]);
+
+  const handleScrimPress = useCallback(() => {
+    if (canDeclineViaScrim) {
+      handleDecline();
+      return;
+    }
+    if (session.status === 'error' && !actionLocked) {
+      handleClose();
+    }
+  }, [canDeclineViaScrim, session.status, actionLocked, handleDecline, handleClose]);
 
   if (!visible || session.status === 'idle') {
     return null;
@@ -434,7 +421,7 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.centerCard}>
           <View style={styles.successIconWrap}>
-            <Ionicons name="checkmark-circle" size={52} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="checkmark-circle" size={48} color={PREMIUM_AUTH_CYAN} />
           </View>
           <PremiumText variant="step" style={styles.title}>
             Eşleşme tamamlandı
@@ -470,28 +457,26 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.section}>
           {renderPollWarning()}
-          <PremiumText variant="caption" muted style={styles.decisionHint}>
-            Kabul edersen buluşma ekranına geçeceksin
-          </PremiumText>
-          <InviteDetailsCard
+          <InviteDetailsBlock
             pickupLabel={pickupLabel}
             contributionTl={contributionTl}
             distanceBand={invite.distance_band}
             countdownSec={countdownSec}
-            sequenceNo={invite.sequence_no}
           />
-          <PrimaryButton
-            label="Kabul et"
-            onPress={handleAccept}
-            disabled={session.isDeclining || inviteExpired}
-            loading={session.isAccepting}
-          />
-          <SecondaryButton
-            label="Reddet"
-            onPress={handleDecline}
-            disabled={session.isAccepting}
-            loading={session.isDeclining}
-          />
+          <View style={styles.ctaRow}>
+            <SecondaryButton
+              label="Müsait Değilim"
+              onPress={handleDecline}
+              disabled={session.isAccepting}
+              loading={session.isDeclining}
+            />
+            <PrimaryButton
+              label="Kabul Et"
+              onPress={handleAccept}
+              disabled={session.isDeclining || inviteExpired}
+              loading={session.isAccepting}
+            />
+          </View>
         </View>
       );
     }
@@ -504,22 +489,30 @@ export function DriverQuickMatchInviteCard({
     return null;
   }
 
+  const showDecisionHeader =
+    session.status === 'pending' ||
+    session.status === 'restoring' ||
+    session.isRestoring ||
+    session.status === 'accepting' ||
+    session.isAccepting;
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.modalRoot}>
-        <CockpitBackground showGrid={false} />
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent
+      onRequestClose={handleScrimPress}
+    >
+      <Pressable style={styles.overlay} onPress={handleScrimPress}>
         <View style={styles.scrim} pointerEvents="none" />
-        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-          <InviteHeader onClose={handleClose} closeDisabled={closeDisabled} />
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
+
+        <Pressable style={styles.cardWrap} onPress={(e) => e.stopPropagation()}>
+          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.card}>
+            {showDecisionHeader ? <DecisionHeader /> : null}
             {body}
-          </ScrollView>
-        </SafeAreaView>
-      </View>
+          </GlassSurface>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -527,83 +520,70 @@ export function DriverQuickMatchInviteCard({
 export default memo(DriverQuickMatchInviteCard);
 
 const styles = StyleSheet.create({
-  modalRoot: {
+  overlay: {
     flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: LDS_SPACING.lg,
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8,17,31,0.72)',
+    backgroundColor: 'rgba(8,17,31,0.78)',
   },
-  safe: {
-    flex: 1,
+  cardWrap: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: LDS_SPACING.md,
+  card: {
+    paddingTop: LDS_SPACING.lg,
     paddingBottom: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.lg,
+    ...LDS_ELEVATION.cockpit,
   },
-  headerRow: {
-    flexDirection: 'row',
+  phaseBlock: {
     alignItems: 'center',
-    gap: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.sm + LDS_SPACING.xxs,
-    paddingVertical: LDS_SPACING.sm,
-    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
-    borderBottomColor: LDS_BORDER_COLOR.cardTopCyan,
-  },
-  headerIconOrb: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderColor: LDS_BORDER_COLOR.cardTopCyan,
-    ...LDS_ELEVATION.chip,
-  },
-  headerTextCol: {
-    flex: 1,
-    minWidth: 0,
     gap: LDS_SPACING.xxs,
+    marginBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.xxs,
   },
-  headerTitle: {
+  phaseStep: {
+    textAlign: 'center',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
-  headerSubtitle: {
-    lineHeight: 16,
+  phaseCaption: {
+    textAlign: 'center',
+    lineHeight: 18,
   },
-  closeBtn: {
-    padding: LDS_SPACING.xxs,
-    borderRadius: LDS_RADIUS.sm,
-  },
-  closeBtnDisabled: {
-    opacity: 0.45,
-  },
-  closeBtnPressed: {
-    opacity: 0.85,
+  iconRing: {
+    alignSelf: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: LDS_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5,11,24,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    marginBottom: LDS_SPACING.xs,
+    ...LDS_ELEVATION.flat,
   },
   section: {
     gap: LDS_SPACING.sm,
-    paddingTop: LDS_SPACING.xs,
-  },
-  decisionHint: {
-    textAlign: 'center',
-    lineHeight: 17,
-    paddingHorizontal: LDS_SPACING.xxs,
   },
   centerCard: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: LDS_SPACING.sm,
-    paddingTop: LDS_SPACING.xl + LDS_SPACING.md,
-    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
   },
-  glassCard: {
-    padding: LDS_SPACING.sm + LDS_SPACING.xxs,
+  detailsBlock: {
     gap: LDS_SPACING.sm,
-    ...LDS_ELEVATION.panel,
+    width: '100%',
   },
   fieldBlock: {
-    gap: LDS_SPACING.xs,
+    gap: LDS_SPACING.xxs,
   },
   fieldLabel: {
     fontWeight: '800',
@@ -615,10 +595,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: LDS_SPACING.xs,
   },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: LDS_SPACING.sm,
+  },
+  metricCell: {
+    flex: 1,
+    gap: LDS_SPACING.xxs,
+  },
   inlineValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.xs,
+    gap: LDS_SPACING.xxs,
   },
   fieldValue: {
     flex: 1,
@@ -632,17 +620,22 @@ const styles = StyleSheet.create({
   },
   disclaimer: {
     lineHeight: 16,
-    marginTop: LDS_SPACING.xxs,
   },
   countdownChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: LDS_SPACING.xs,
-    paddingVertical: LDS_SPACING.xs,
+    gap: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.sm,
     borderColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.chip,
+  },
+  countdownTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  countdownHint: {
+    lineHeight: 16,
   },
   countdownText: {
     fontWeight: '700',
@@ -654,10 +647,6 @@ const styles = StyleSheet.create({
   },
   countdownExpired: {
     color: LDS_COLOR_ERROR,
-  },
-  sequenceMuted: {
-    textAlign: 'center',
-    marginTop: LDS_SPACING.xxs,
   },
   title: {
     textAlign: 'center',
@@ -671,7 +660,7 @@ const styles = StyleSheet.create({
   loadingTitle: {
     fontWeight: '700',
     textAlign: 'center',
-    marginTop: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
   },
   pollWarningBanner: {
     flexDirection: 'row',
@@ -688,9 +677,24 @@ const styles = StyleSheet.create({
     color: 'rgba(251, 191, 36, 0.95)',
     lineHeight: 17,
   },
-  primaryBtnOuter: {
+  ctaRow: {
+    flexDirection: 'row',
+    gap: LDS_SPACING.sm,
+    width: '100%',
+    marginTop: LDS_SPACING.xxs,
+  },
+  primaryBtnWrap: {
+    flex: 1,
+    minHeight: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: LDS_SPACING.sm,
     borderRadius: LDS_RADIUS.md,
-    overflow: 'hidden',
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
   },
   primaryBtnDisabled: {
     opacity: 0.72,
@@ -699,29 +703,21 @@ const styles = StyleSheet.create({
     opacity: 0.92,
     transform: [{ scale: 0.992 }],
   },
-  primaryBtnSurface: {
-    paddingVertical: LDS_SPACING.md,
-    paddingHorizontal: LDS_SPACING.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    backgroundColor: 'rgba(16,26,43,0.9)',
-    borderColor: LDS_BORDER_COLOR.selected,
-    borderTopColor: LDS_BORDER_COLOR.selectedTop,
-    ...LDS_ELEVATION.cta,
-  },
-  primaryBtnSurfaceDisabled: {
-    backgroundColor: 'rgba(8,17,31,0.55)',
-    borderColor: LDS_BORDER_COLOR.card,
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
-  },
   primaryBtnText: {
     fontWeight: '800',
     letterSpacing: 0.3,
+    textAlign: 'center',
   },
-  secondaryBtnOuter: {
+  secondaryBtnWrap: {
+    flex: 1,
+    minHeight: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: LDS_SPACING.sm,
     borderRadius: LDS_RADIUS.md,
-    overflow: 'hidden',
+    backgroundColor: 'rgba(8,17,31,0.55)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
   },
   secondaryBtnDisabled: {
     opacity: 0.5,
@@ -729,19 +725,9 @@ const styles = StyleSheet.create({
   secondaryBtnPressed: {
     opacity: 0.88,
   },
-  secondaryBtnSurface: {
-    paddingVertical: LDS_SPACING.sm + LDS_SPACING.xxs,
-    paddingHorizontal: LDS_SPACING.md,
-    alignItems: 'center',
-    minHeight: 44,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(8,17,31,0.55)',
-    borderColor: LDS_BORDER_COLOR.card,
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
-    ...LDS_ELEVATION.flat,
-  },
   secondaryBtnText: {
     fontWeight: '700',
+    textAlign: 'center',
   },
   errorCard: {
     padding: LDS_SPACING.md,
@@ -759,6 +745,6 @@ const styles = StyleSheet.create({
     marginBottom: LDS_SPACING.xxs,
   },
   matchedSpinner: {
-    marginTop: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
   },
 });
