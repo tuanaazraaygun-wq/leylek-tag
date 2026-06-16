@@ -20,7 +20,11 @@ from pydantic import BaseModel, Field
 
 # Faz 1: Redis places önbelleği (REDIS_CACHE=0 → yalnız _CACHE bellek)
 from redis_cache import cache_get as _redis_cache_get, cache_set as _redis_cache_set
-from services.places_learned_store import LearnedAddressValidationError, upsert_learned_address
+from services.places_learned_store import (
+    LearnedAddressValidationError,
+    lookup_learned_addresses,
+    upsert_learned_address,
+)
 from services.places_seed_cache import lookup_places_seed
 
 router = APIRouter(prefix="/places", tags=["places"])
@@ -1922,16 +1926,6 @@ async def api_places_search(
         stale.setdefault("success", True)
         return stale
 
-    norm_stale = _norm_cache_get(norm_cache_key)
-    if norm_stale is not None:
-        norm_out = dict(norm_stale)
-        norm_out["cached"] = True
-        norm_out.setdefault("success", True)
-        stored_provider = norm_out.get("provider_used")
-        if not stored_provider:
-            norm_out["provider_used"] = "normalized_cache"
-        return norm_out
-
     seed_rows = lookup_places_seed(
         trimmed,
         city,
@@ -1947,6 +1941,43 @@ async def api_places_search(
         }
         _persist_places_search_response(cache_key_raw, norm_cache_key, payload_seed)
         return payload_seed
+
+    learned_rows: list[dict[str, Any]] = []
+    try:
+        import server as srv
+
+        sb = getattr(srv, "supabase", None)
+        if sb is not None:
+            learned_rows = lookup_learned_addresses(
+                sb,
+                trimmed,
+                city=city,
+                district=district,
+                city_raw=city_raw or city_param,
+                max_results=5,
+            )
+    except Exception:
+        learned_rows = []
+
+    if learned_rows:
+        payload_learned: dict[str, Any] = {
+            "success": True,
+            "cached": False,
+            "provider_used": "learned",
+            "results": learned_rows,
+        }
+        _persist_places_search_response(cache_key_raw, norm_cache_key, payload_learned)
+        return payload_learned
+
+    norm_stale = _norm_cache_get(norm_cache_key)
+    if norm_stale is not None:
+        norm_out = dict(norm_stale)
+        norm_out["cached"] = True
+        norm_out.setdefault("success", True)
+        stored_provider = norm_out.get("provider_used")
+        if not stored_provider:
+            norm_out["provider_used"] = "normalized_cache"
+        return norm_out
 
     candidates = _build_search_candidates(trimmed, city, district=district, city_raw=city_raw)
     if not candidates:
