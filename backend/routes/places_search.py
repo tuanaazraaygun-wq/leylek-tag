@@ -4,6 +4,7 @@ Mobil birçok Google/Nominatim isteği yerine tek HTTP; rate-limit riskini düş
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -18,6 +19,7 @@ from fastapi import APIRouter, Query
 
 # Faz 1: Redis places önbelleği (REDIS_CACHE=0 → yalnız _CACHE bellek)
 from redis_cache import cache_get as _redis_cache_get, cache_set as _redis_cache_set
+from services.places_seed_cache import lookup_places_seed
 
 router = APIRouter(prefix="/places", tags=["places"])
 
@@ -27,6 +29,8 @@ _PLACES_CACHE_NS = "places"
 GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
 GEOAPIFY_API_KEY = (os.getenv("GEOAPIFY_API_KEY") or "").strip()
 _GEOAPIFY_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("GEOAPIFY_HTTP_TIMEOUT_SEC", "4") or "4"))
+_PLACES_HTTP_TIMEOUT_SEC = min(10.0, float(os.getenv("PLACES_HTTP_TIMEOUT_SEC", "8") or "8"))
+_PROVIDER_HTTP_TIMEOUT_SEC = min(8.0, float(os.getenv("PLACES_PROVIDER_TIMEOUT_SEC", "6") or "6"))
 
 # Önbellek bellek fallback: anahtar -> (monotonic_expire, gövde_dict)
 # Faz 1: birincil TTL Redis'te; Redis yoksa veya REDIS_CACHE=0 ise yalnız bu dict kullanılır
@@ -34,7 +38,7 @@ _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski cache girdilerini deploy sonrası baypas; ilçe → il kapsamı (Ankara + Muğla)
-_CACHE_KEY_VER = "v14_selectable_coords"
+_CACHE_KEY_VER = "v15_fast_seed"
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -47,6 +51,14 @@ def _norm_key(s: str) -> str:
     except Exception:
         pass
     return " ".join(t.split())
+
+
+async def _provider_wait(awaitable: Any) -> Any:
+    """Harici provider çağrısı — yavaş katman tüm isteği kilitlemesin."""
+    try:
+        return await asyncio.wait_for(awaitable, timeout=_PROVIDER_HTTP_TIMEOUT_SEC)
+    except (asyncio.TimeoutError, httpx.TimeoutException, httpx.RequestError):
+        return None
 
 
 _ANKARA_METRO_ILCE_NAMES: tuple[str, ...] = (
@@ -1440,7 +1452,9 @@ async def _google_autocomplete(
             params["radius"] = str(rr)
 
     url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-    r = await client.get(url, params=params)
+    r = await _provider_wait(client.get(url, params=params))
+    if r is None:
+        return 0, {}
     data = json.loads(r.text) if r.text else {}
     return r.status_code, data
 
@@ -1557,7 +1571,9 @@ async def _google_geocode(client: httpx.AsyncClient, address: str):
         "region": "tr",
     }
     url = "https://maps.googleapis.com/maps/api/geocode/json"
-    r = await client.get(url, params=params)
+    r = await _provider_wait(client.get(url, params=params))
+    if r is None:
+        return 0, {}
     try:
         data = json.loads(r.text) if r.text else {}
     except json.JSONDecodeError:
@@ -1575,7 +1591,9 @@ async def _nominatim_search(
         f"&q={q_enc}&countrycodes=tr&addressdetails=1&extratags=1"
         "&limit=12&accept-language=tr"
     )
-    r = await client.get(url)
+    r = await _provider_wait(client.get(url))
+    if r is None:
+        return 0, [], False
     if r.status_code in (429, 403):
         return r.status_code, [], True
     if not r.is_success:
@@ -1714,6 +1732,80 @@ def _scoped_geocode_address(
     return f"{trimmed}, {ct}, Türkiye" if ct else trimmed
 
 
+def _finalize_selectable_city_results(
+    over_primary: list[dict[str, Any]],
+    collected: list[dict[str, Any]],
+    trimmed: str,
+    city: str,
+    city_trim: str,
+    lat: Optional[float],
+    lng: Optional[float],
+    *,
+    district: str = "",
+) -> list[dict[str, Any]]:
+    """En az 1 koordinatlı seçilebilir satır varsa döndür; yoksa []."""
+    fast_combined: list[dict[str, Any]] = list(over_primary) + list(collected)
+    ng_fast = _numeric_street_prefix_token(trimmed)
+    if ng_fast:
+        fast_combined = [
+            x for x in fast_combined if _numeric_street_gate_keeps_item(x, ng_fast)
+        ]
+    fr_fast = _filter_results_city_safe(fast_combined, city, district=district)
+    fr_fast = _dedupe_merged_city_results(fr_fast)
+    if not fr_fast and fast_combined:
+        google_raw_fast = [
+            x
+            for x in fast_combined
+            if str(x.get("provider") or "") == "google"
+            or str(x.get("provider") or "") in ("local_seed", "seed")
+            or "turkiye" in _norm_key(_result_full_address_text(x))
+        ]
+        if google_raw_fast:
+            fr_fast = _dedupe_merged_city_results(google_raw_fast)[:20]
+    if not fr_fast:
+        return []
+    fr_fast = _rank_city_scoped_results(
+        fr_fast, trimmed, city_trim, lat, lng, district=district
+    )
+    return _filter_selectable_places_for_client(fr_fast[:20])
+
+
+def _try_fast_city_payload(
+    over_primary: list[dict[str, Any]],
+    collected: list[dict[str, Any]],
+    trimmed: str,
+    city: str,
+    city_trim: str,
+    lat: Optional[float],
+    lng: Optional[float],
+    cache_key_raw: str,
+    *,
+    district: str = "",
+    provider_used: str = "google_fast_path",
+) -> Optional[dict[str, Any]]:
+    """ADDR-P0-1A: tek güçlü sonuç yeterli — Nominatim beklenmez."""
+    fr_fast_sel = _finalize_selectable_city_results(
+        over_primary,
+        collected,
+        trimmed,
+        city,
+        city_trim,
+        lat,
+        lng,
+        district=district,
+    )
+    if not fr_fast_sel:
+        return None
+    payload_fast: dict[str, Any] = {
+        "success": True,
+        "cached": False,
+        "provider_used": provider_used,
+        "results": fr_fast_sel,
+    }
+    _cache_set(cache_key_raw, payload_fast)
+    return payload_fast
+
+
 @router.get("/search")
 async def api_places_search(
     q: str = Query(..., min_length=0, alias="q"),
@@ -1756,11 +1848,27 @@ async def api_places_search(
         stale.setdefault("success", True)
         return stale
 
+    seed_rows = lookup_places_seed(
+        trimmed,
+        city,
+        district=district,
+        city_raw=city_raw or city_param,
+    )
+    if seed_rows:
+        payload_seed: dict[str, Any] = {
+            "success": True,
+            "cached": False,
+            "provider_used": "local_seed",
+            "results": seed_rows,
+        }
+        _cache_set(cache_key_raw, payload_seed)
+        return payload_seed
+
     candidates = _build_search_candidates(trimmed, city, district=district, city_raw=city_raw)
     if not candidates:
         candidates = [trimmed]
 
-    timeout = httpx.Timeout(22.0, connect=12.0)
+    timeout = httpx.Timeout(_PLACES_HTTP_TIMEOUT_SEC, connect=3.0)
     headers = {"User-Agent": "LeylekTAG-Backend/1.0 (contact:dev@leylektag.com)"}
 
     nominatim_rate_blocked = False
@@ -1826,43 +1934,37 @@ async def api_places_search(
             except Exception:
                 pass
 
-            collected_coord_n = sum(
-                1 for it in collected if _result_lon_lat(it)[0] is not None
+            fast_payload = _try_fast_city_payload(
+                over_primary,
+                collected,
+                trimmed,
+                city,
+                city_trim,
+                lat,
+                lng,
+                cache_key_raw,
+                district=dr,
             )
-            if len(collected) >= 3 and collected_coord_n >= 1:
-                fast_combined: list[dict[str, Any]] = list(over_primary) + list(collected)
-                ng_fast = _numeric_street_prefix_token(trimmed)
-                if ng_fast:
-                    fast_combined = [
-                        x for x in fast_combined if _numeric_street_gate_keeps_item(x, ng_fast)
-                    ]
-                fr_fast = _filter_results_city_safe(fast_combined, city, district=dr)
-                fr_fast = _dedupe_merged_city_results(fr_fast)
-                if not fr_fast and fast_combined:
-                    google_raw_fast = [
-                        x
-                        for x in fast_combined
-                        if str(x.get("provider") or "") == "google"
-                        or "turkiye" in _norm_key(_result_full_address_text(x))
-                    ]
-                    if google_raw_fast:
-                        fr_fast = _dedupe_merged_city_results(google_raw_fast)[:20]
-                if fr_fast:
-                    fr_fast = _rank_city_scoped_results(
-                        fr_fast, trimmed, city_trim, lat, lng, district=dr
-                    )
-                    fr_fast_sel = _filter_selectable_places_for_client(fr_fast[:20])
-                    if fr_fast_sel:
-                        payload_fast: dict[str, Any] = {
-                            "success": True,
-                            "cached": False,
-                            "provider_used": "google_fast_path",
-                            "results": fr_fast_sel,
-                        }
-                        _cache_set(cache_key_raw, payload_fast)
-                        return payload_fast
+            if fast_payload is not None:
+                return fast_payload
 
-            if GEOAPIFY_API_KEY and not _has_google_provider_rows(collected):
+            needs_slow_tier = (
+                len(
+                    _finalize_selectable_city_results(
+                        over_primary,
+                        collected,
+                        trimmed,
+                        city,
+                        city_trim,
+                        lat,
+                        lng,
+                        district=dr,
+                    )
+                )
+                == 0
+            )
+
+            if needs_slow_tier and GEOAPIFY_API_KEY and not _has_google_provider_rows(collected):
                 try:
                     ga_rows = await _geoapify_scoped_search(
                         http,
@@ -1881,22 +1983,53 @@ async def api_places_search(
                 except Exception:
                     pass
 
-            nom_cands_m = _nominatim_try_order(
-                trimmed, city, candidates, district=dr, city_raw=cr
+            fast_payload = _try_fast_city_payload(
+                over_primary,
+                collected,
+                trimmed,
+                city,
+                city_trim,
+                lat,
+                lng,
+                cache_key_raw,
+                district=dr,
             )
-            for cand in nom_cands_m[:4]:
-                if nominatim_rate_blocked:
-                    break
-                try:
-                    _nst, nrows, rate_hit = await _nominatim_search(http, cand)
-                    if rate_hit:
-                        nominatim_rate_blocked = True
+            if fast_payload is not None:
+                return fast_payload
+
+            needs_slow_tier = (
+                len(
+                    _finalize_selectable_city_results(
+                        over_primary,
+                        collected,
+                        trimmed,
+                        city,
+                        city_trim,
+                        lat,
+                        lng,
+                        district=dr,
+                    )
+                )
+                == 0
+            )
+
+            if needs_slow_tier:
+                nom_cands_m = _nominatim_try_order(
+                    trimmed, city, candidates, district=dr, city_raw=cr
+                )
+                for cand in nom_cands_m[:4]:
+                    if nominatim_rate_blocked:
                         break
-                    nr = _results_from_nominatim(nrows)
-                    raw_rows = nr.get("results") if isinstance(nr.get("results"), list) else []
-                    collected.extend(_filter_results_city_safe(raw_rows, city, district=dr))
-                except httpx.TimeoutException:
-                    continue
+                    try:
+                        _nst, nrows, rate_hit = await _nominatim_search(http, cand)
+                        if rate_hit:
+                            nominatim_rate_blocked = True
+                            break
+                        nr = _results_from_nominatim(nrows)
+                        raw_rows = nr.get("results") if isinstance(nr.get("results"), list) else []
+                        collected.extend(_filter_results_city_safe(raw_rows, city, district=dr))
+                    except httpx.TimeoutException:
+                        continue
 
             if nominatim_rate_blocked and not (over_primary or collected):
                 stale2 = _cache_get(cache_key_raw)
