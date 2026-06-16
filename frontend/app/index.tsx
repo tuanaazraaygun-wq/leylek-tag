@@ -13488,8 +13488,65 @@ function PassengerDashboard({
                         </Text>
                       </Animated.View>
                       <Text style={styles.pickupRouteSubtitle}>
-                        Adres arayın veya konumunuzu kullanın.
+                        Konumunuzu kullanın veya haritadan işaretleyin; adres de arayabilirsiniz.
                       </Text>
+                      <View style={styles.pickupPrimaryCtaStack}>
+                        <TouchableOpacity
+                          style={styles.pickupUseLocationBtnWrap}
+                          activeOpacity={0.88}
+                          disabled={pickupConfirmBusy}
+                          onPress={() => void confirmPassengerPickupFromGps()}
+                        >
+                          <LinearGradient
+                            colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.pickupUseLocationBtnGlass}
+                          >
+                            <View style={styles.pickupUseLocationIconRing}>
+                              <Ionicons name="locate" size={22} color="#22D3EE" />
+                            </View>
+                            <View style={styles.pickupUseLocationTextCol}>
+                              <Text style={styles.pickupUseLocationBtnText}>
+                                {pickupConfirmBusy ? 'Konum alınıyor…' : 'Konumumu kullan'}
+                              </Text>
+                              <Text style={styles.pickupUseLocationBtnSub}>
+                                GPS konumunuz alınış noktası olarak kullanılacak.
+                              </Text>
+                            </View>
+                            {pickupConfirmBusy ? (
+                              <ActivityIndicator size="small" color="#22D3EE" />
+                            ) : (
+                              <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                            )}
+                          </LinearGradient>
+                        </TouchableOpacity>
+                        {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
+                          <TouchableOpacity
+                            style={styles.pickupMapPickBtnWrapPrimary}
+                            activeOpacity={0.88}
+                            onPress={openPickupMapPickerDirect}
+                          >
+                            <LinearGradient
+                              colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={styles.pickupUseLocationBtnGlass}
+                            >
+                              <View style={styles.pickupUseLocationIconRing}>
+                                <Ionicons name="map-outline" size={22} color="#22D3EE" />
+                              </View>
+                              <View style={styles.pickupUseLocationTextCol}>
+                                <Text style={styles.pickupUseLocationBtnText}>Haritadan seç</Text>
+                                <Text style={styles.pickupUseLocationBtnSub}>
+                                  Alınış noktasını harita üzerinde işaretleyin
+                                </Text>
+                              </View>
+                              <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
                       <View style={styles.destinationSearchShellModern}>
                         <PlacesAutocomplete
                           key={pickupPickerAutocompleteMountKey}
@@ -13509,36 +13566,6 @@ function PassengerDashboard({
                           onPlaceSelected={(place) => handlePickupAreaFromSearch(place)}
                         />
                       </View>
-                      <TouchableOpacity
-                        style={[styles.pickupUseLocationBtnWrap, styles.pickupUseLocationBtnWrapAfterSearch]}
-                        activeOpacity={0.88}
-                        disabled={pickupConfirmBusy}
-                        onPress={() => void confirmPassengerPickupFromGps()}
-                      >
-                        <LinearGradient
-                          colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={styles.pickupUseLocationBtnGlass}
-                        >
-                          <View style={styles.pickupUseLocationIconRing}>
-                            <Ionicons name="locate" size={22} color="#22D3EE" />
-                          </View>
-                          <View style={styles.pickupUseLocationTextCol}>
-                            <Text style={styles.pickupUseLocationBtnText}>
-                              {pickupConfirmBusy ? 'Konum alınıyor…' : 'Konumumu kullan'}
-                            </Text>
-                            <Text style={styles.pickupUseLocationBtnSub}>
-                              GPS konumunuz alınış noktası olarak kullanılacak.
-                            </Text>
-                          </View>
-                          {pickupConfirmBusy ? (
-                            <ActivityIndicator size="small" color="#22D3EE" />
-                          ) : (
-                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
-                          )}
-                        </LinearGradient>
-                      </TouchableOpacity>
                       {savedHomeAddress || savedWorkAddress ? (
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
@@ -13661,31 +13688,6 @@ function PassengerDashboard({
                             ))}
                           </View>
                         </View>
-                      ) : null}
-                      {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
-                        <TouchableOpacity
-                          style={styles.destinationMapPickBtnWrap}
-                          activeOpacity={0.88}
-                          onPress={openPickupMapPickerDirect}
-                        >
-                          <LinearGradient
-                            colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.destinationMapPickBtnGlass}
-                          >
-                            <View style={styles.destinationMapPickIconRing}>
-                              <Ionicons name="map-outline" size={22} color="#22D3EE" />
-                            </View>
-                            <View style={styles.destinationMapPickTextCol}>
-                              <Text style={styles.destinationMapPickBtnText}>Haritadan seç</Text>
-                              <Text style={styles.destinationMapPickBtnSub}>
-                                Alınış noktasını harita üzerinde işaretleyin
-                              </Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
-                          </LinearGradient>
-                        </TouchableOpacity>
                       ) : null}
                       </ScrollView>
                     </View>
@@ -26027,8 +26029,23 @@ const styles = StyleSheet.create({
     color: 'rgba(186, 201, 222, 0.92)',
     textAlign: 'center',
     lineHeight: 21,
-    marginBottom: 16,
+    marginBottom: 14,
     paddingHorizontal: 6,
+  },
+  pickupPrimaryCtaStack: {
+    gap: 10,
+    marginBottom: 14,
+  },
+  pickupMapPickBtnWrapPrimary: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.44)',
+    shadowColor: '#22D3EE',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 9,
   },
   pickupUseLocationBtnWrap: {
     borderRadius: 20,
