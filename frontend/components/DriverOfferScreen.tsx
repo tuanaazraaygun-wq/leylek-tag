@@ -50,7 +50,7 @@ import {
 } from '../lib/routeLoadingUiConstants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MAP_PREVIEW_HEIGHT = Math.min(110, Math.max(96, Math.round(SCREEN_HEIGHT * 0.14)));
+const MAP_PREVIEW_HEIGHT = Math.min(80, Math.max(72, Math.round(SCREEN_HEIGHT * 0.1)));
 
 const MAP_POLL_INTERVAL_MS = 9000;
 
@@ -537,119 +537,121 @@ function RequestCard({
       style={[styles.reqCardWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
     >
       <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.reqCard}>
-        <View style={styles.reqCardTopStrip}>
-          <View style={styles.reqDispatchDotWrap} pointerEvents="none">
-            <View style={styles.reqDispatchDotOuter} />
-            <View style={styles.reqDispatchDot} />
+        <View style={styles.reqHeaderRow}>
+          <View style={styles.reqPriceBlock}>
+            <PremiumText variant="caption" muted style={styles.reqRevenueLabel}>
+              Teklif
+            </PremiumText>
+            <PremiumText variant="title" style={styles.reqPriceText}>
+              {request.offered_price || 0} ₺
+            </PremiumText>
           </View>
-          <PremiumText variant="caption" style={styles.reqDispatchLabel}>
-            Dispatch teklifi
-          </PremiumText>
+          <View style={styles.reqSecondLine}>
+            <View style={styles.reqPassengerChip}>
+              <Ionicons name="person-circle-outline" size={13} color="rgba(148,163,184,0.92)" />
+              <PremiumText variant="caption" style={styles.reqPassengerName} numberOfLines={1}>
+                {request.passenger_name?.split(' ')[0] || 'Yolcu'}
+              </PremiumText>
+            </View>
+            {passengerRatingText !== '—' ? (
+              <View style={styles.reqRatingChip}>
+                <Ionicons name="star" size={11} color="#FACC15" />
+                <PremiumText variant="caption" style={styles.reqRatingText}>
+                  {passengerRatingText}
+                </PremiumText>
+              </View>
+            ) : null}
+            {request.passenger_payment_method === 'card' ? (
+              <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
+                <PremiumText variant="caption" style={styles.reqPaymentPillText}>
+                  Kart
+                </PremiumText>
+              </View>
+            ) : request.passenger_payment_method === 'cash' ? (
+              <View style={[styles.reqPaymentPill, styles.reqPaymentPillCash]}>
+                <PremiumText variant="caption" style={styles.reqPaymentPillText}>
+                  Nakit
+                </PremiumText>
+              </View>
+            ) : null}
+          </View>
         </View>
 
-        <View style={styles.reqMainRow}>
-          <View style={styles.reqContentCol}>
-            <View style={styles.reqRevenueHero}>
-              <PremiumText variant="step" muted style={styles.reqRevenueLabel}>
-                Teklif tutarı
-              </PremiumText>
-              <PremiumText variant="headline" style={styles.reqPriceText}>
-                {request.offered_price || 0} ₺
-              </PremiumText>
-            </View>
-
-            <View style={styles.reqMetaRail}>
-              <View style={styles.reqMetaCell}>
-                <View style={styles.reqMetaIconWrap}>
-                  <Ionicons name="navigate-outline" size={13} color={PREMIUM_AUTH_CYAN} />
-                </View>
-                <View style={styles.reqMetaTextCol}>
-                  <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
-                    Alış
-                  </PremiumText>
-                  <PremiumText variant="step" style={styles.reqMetaValue}>
-                    {distanceToPassenger} km
-                  </PremiumText>
-                </View>
-              </View>
-              <View style={styles.reqMetaDivider} />
-              <View style={styles.reqMetaCell}>
-                <View style={styles.reqMetaIconWrap}>
-                  <Ionicons name="time-outline" size={13} color={PREMIUM_AUTH_CYAN} />
-                </View>
-                <View style={styles.reqMetaTextCol}>
-                  <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
-                    Süre
-                  </PremiumText>
-                  <PremiumText variant="step" style={styles.reqMetaValue}>
-                    {rideDurationText}
-                  </PremiumText>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.reqSecondLine}>
-              <View style={styles.reqPassengerChip}>
-                <Ionicons name="person-circle-outline" size={14} color="rgba(148,163,184,0.92)" />
-                <PremiumText variant="caption" style={styles.reqPassengerName} numberOfLines={1}>
-                  {request.passenger_name?.split(' ')[0] || 'Yolcu'}
-                </PremiumText>
-              </View>
-              {passengerRatingText !== '—' ? (
-                <View style={styles.reqRatingChip}>
-                  <Ionicons name="star" size={12} color="#FACC15" />
-                  <PremiumText variant="caption" style={styles.reqRatingText}>
-                    {passengerRatingText}
-                  </PremiumText>
-                </View>
-              ) : null}
-              {request.passenger_payment_method === 'card' ? (
-                <View style={[styles.reqPaymentPill, styles.reqPaymentPillCard]}>
-                  <PremiumText variant="caption" style={styles.reqPaymentPillText}>
-                    Kart · Yakında
-                  </PremiumText>
-                </View>
-              ) : request.passenger_payment_method === 'cash' ? (
-                <View style={[styles.reqPaymentPill, styles.reqPaymentPillCash]}>
-                  <PremiumText variant="caption" style={styles.reqPaymentPillText}>
-                    Nakit
-                  </PremiumText>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.reqRouteBlock}>
-              <View style={styles.reqRouteLine}>
-                <View style={[styles.reqDot, styles.reqDotPickup]} />
-                <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
-                  {pickupLineFromRequest(request)}
-                </PremiumText>
-              </View>
-              <View style={styles.reqRouteLine}>
-                <View style={[styles.reqDot, styles.reqDotDropoff]} />
-                <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
-                  {dropoffLineFromRequest(request)}
-                </PremiumText>
-              </View>
-            </View>
+        <View style={styles.reqMetaRail}>
+          <View style={styles.reqMetaCellCompact}>
+            <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
+              Alış
+            </PremiumText>
+            <PremiumText variant="caption" style={styles.reqMetaValue}>
+              {distanceToPassenger} km
+            </PremiumText>
           </View>
-
-          <View style={styles.reqActionsCol}>
-            <TouchableOpacity
-              style={styles.reqDismissBtn}
-              onPress={onDismiss}
-              activeOpacity={0.82}
-              accessibilityRole="button"
-              accessibilityLabel="Geç"
-            >
-              <PremiumText variant="caption" muted style={styles.reqDismissText}>
-                Geç
+          <View style={styles.reqMetaDivider} />
+          <View style={styles.reqMetaCellCompact}>
+            <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
+              Yolcuya
+            </PremiumText>
+            <PremiumText variant="caption" style={styles.reqMetaValue}>
+              {typeof timeToPassengerDisplay === 'number'
+                ? `${timeToPassengerDisplay} dk`
+                : '—'}
+            </PremiumText>
+          </View>
+          <View style={styles.reqMetaDivider} />
+          <View style={styles.reqMetaCellCompact}>
+            <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
+              Rota
+            </PremiumText>
+            {tripRoadShowLoading ? (
+              <TripRouteCalculatingInline compact />
+            ) : (
+              <PremiumText variant="caption" style={styles.reqMetaValue}>
+                {routeDistanceText}
               </PremiumText>
-            </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.reqMetaDivider} />
+          <View style={styles.reqMetaCellCompact}>
+            <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
+              Süre
+            </PremiumText>
+            <PremiumText variant="caption" style={styles.reqMetaValue}>
+              {rideDurationText}
+            </PremiumText>
+          </View>
+        </View>
 
-            <TouchableOpacity
-              style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
-              onPress={async () => {
+        <View style={styles.reqRouteBlock}>
+          <View style={styles.reqRouteLine}>
+            <View style={[styles.reqDot, styles.reqDotPickup]} />
+            <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
+              {pickupLineFromRequest(request)}
+            </PremiumText>
+          </View>
+          <View style={styles.reqRouteLine}>
+            <View style={[styles.reqDot, styles.reqDotDropoff]} />
+            <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
+              {dropoffLineFromRequest(request)}
+            </PremiumText>
+          </View>
+        </View>
+
+        <View style={styles.reqActionsRow}>
+          <TouchableOpacity
+            style={styles.reqDismissBtn}
+            onPress={onDismiss}
+            activeOpacity={0.82}
+            accessibilityRole="button"
+            accessibilityLabel="Geç"
+          >
+            <PremiumText variant="caption" muted style={styles.reqDismissText}>
+              Geç
+            </PremiumText>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
+            onPress={async () => {
               if (accepting || globalAcceptFrozen) return;
 
               const tagIdForAccept = String(request.tag_id || request.id || '').trim();
@@ -762,33 +764,6 @@ function RequestCard({
                 </PremiumText>
               )}
             </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.reqBottomMetaRow}>
-          <View style={styles.reqBottomMetaCell}>
-            <PremiumText variant="caption" muted style={styles.reqBottomMetaLabel}>
-              Rota
-            </PremiumText>
-            {tripRoadShowLoading ? (
-              <TripRouteCalculatingInline compact />
-            ) : (
-              <PremiumText variant="caption" style={styles.reqBottomMetaValue}>
-                {routeDistanceText}
-              </PremiumText>
-            )}
-          </View>
-          <View style={styles.reqBottomMetaDivider} />
-          <View style={styles.reqBottomMetaCell}>
-            <PremiumText variant="caption" muted style={styles.reqBottomMetaLabel}>
-              Yolcuya
-            </PremiumText>
-            <PremiumText variant="caption" style={styles.reqBottomMetaValue}>
-              {typeof timeToPassengerDisplay === 'number'
-                ? `${timeToPassengerDisplay} dk`
-                : '—'}
-            </PremiumText>
-          </View>
         </View>
       </GlassSurface>
     </Animated.View>
@@ -1240,6 +1215,171 @@ export default function DriverOfferScreen({
 
   const body = (
     <View style={styles.driverOfferBody}>
+      {/* Dispatch deck — dispatch-first; harita altta */}
+      <View style={styles.listContainer}>
+        <LinearGradient
+          colors={[...LDS_GRADIENT_COCKPIT_BASE]}
+          locations={[...LDS_GRADIENT_COCKPIT_BASE_LOCATIONS]}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <LinearGradient
+          colors={[...LDS_GRADIENT_COCKPIT_TOP_HAZE]}
+          locations={[...LDS_GRADIENT_COCKPIT_TOP_HAZE_LOCATIONS]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFillObject}
+        />
+        {isMotor ? (
+          <LinearGradient
+            colors={['rgba(22, 101, 52, 0.12)', 'rgba(8,17,31,0.38)']}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
+        ) : null}
+        <GlassSurface
+          variant="panel"
+          style={[styles.dispatchDeck, mapExpanded && styles.dispatchDeckMapExpanded]}
+          borderRadius={LDS_RADIUS.xl}
+        >
+          <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
+            <View style={styles.listHeaderCompactRow}>
+              <View style={styles.listHeaderLiveDotWrap} pointerEvents="none">
+                <View style={styles.listHeaderAccentDotOuter} />
+                <View style={styles.listHeaderAccentDot} />
+              </View>
+              <PremiumText variant="step" style={styles.listTitleCompact} numberOfLines={1}>
+                Yakın talepler · {mapHud.radius} km
+              </PremiumText>
+              {visibleRequests.length > 0 ? (
+                <View style={styles.listHeaderCountPill}>
+                  <PremiumText variant="caption" style={styles.listHeaderCountText}>
+                    {visibleRequests.length}
+                  </PremiumText>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+        {visibleRequests.length === 0 ? (
+          <View style={[styles.emptyState, mapExpanded && styles.emptyStateMapExpanded]}>
+            <GlassSurface
+              variant="plain"
+              style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}
+              borderRadius={LDS_RADIUS.lg}
+            >
+              <View style={styles.emptyBrandStrip}>
+                <View style={styles.emptyBrandDotWrap} pointerEvents="none">
+                  <View style={styles.emptyBrandDotOuter} />
+                  <View style={styles.emptyBrandDot} />
+                </View>
+                <PremiumText variant="caption" style={styles.emptyBrandLabel}>
+                  LeylekTAG · Saha operasyonu
+                </PremiumText>
+              </View>
+
+              <View
+                style={[
+                  styles.emptyInstrumentOrb,
+                  mapExpanded && styles.emptyInstrumentOrbMapExpanded,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.emptyOrbRing,
+                    styles.emptyOrbRingOuter,
+                    mapExpanded && styles.emptyOrbRingOuterMapExpanded,
+                    isMotor && styles.emptyOrbRingOuterMotor,
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.emptyOrbRing,
+                    styles.emptyOrbRingMid,
+                    mapExpanded && styles.emptyOrbRingMidMapExpanded,
+                    isMotor && styles.emptyOrbRingMidMotor,
+                  ]}
+                />
+                <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded]}>
+                  <Ionicons
+                    name="radio-outline"
+                    size={mapExpanded ? 18 : 22}
+                    color={isMotor ? 'rgba(134,239,172,0.92)' : 'rgba(34,211,238,0.9)'}
+                  />
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.emptyStatusPill,
+                  mapExpanded && styles.emptyStatusPillMapExpanded,
+                  isMotor && styles.emptyStatusPillMotor,
+                ]}
+              >
+                <View style={styles.emptyStatusLiveDot} />
+                <PremiumText variant="step" style={styles.emptyStatusText}>
+                  Saha taraması aktif
+                </PremiumText>
+              </View>
+
+              <PremiumText
+                variant="headline"
+                style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}
+              >
+                Teklif bekleniyor
+              </PremiumText>
+              <PremiumText
+                variant="caption"
+                muted
+                style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
+              >
+                {mapHud.radius} km saha çevresinde tarama sürüyor.
+              </PremiumText>
+
+              <View style={styles.emptyChipRow}>
+                <View style={styles.emptyChip}>
+                  <Ionicons name="pulse-outline" size={11} color={PREMIUM_AUTH_CYAN} />
+                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                    Canlı tarama
+                  </PremiumText>
+                </View>
+                <View style={styles.emptyChip}>
+                  <Ionicons name="shield-checkmark-outline" size={11} color={PREMIUM_AUTH_CYAN} />
+                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                    LeylekTAG saha
+                  </PremiumText>
+                </View>
+              </View>
+            </GlassSurface>
+          </View>
+        ) : (
+          <FlatList
+            data={visibleRequests.slice(0, 20)}
+            keyExtractor={(item, index) => item.id || item.request_id || index.toString()}
+            renderItem={({ item, index }) => (
+              <RequestCard
+                request={item}
+                driverLocation={driverLocation}
+                driverId={driverId}
+                playTapSound={playTapSound}
+                onDismiss={() => onDismissRequest(item.id)}
+                onDriverAcceptMatch={onDriverAcceptMatch}
+                onAcceptFlowStart={onAcceptFlowStart}
+                onAcceptFlowEnd={onAcceptFlowEnd}
+                onOfferUnavailable={onOfferUnavailable}
+                index={index}
+                globalAcceptFrozen={globalAcceptFrozen}
+                setGlobalAcceptFrozen={setGlobalAcceptFrozen}
+              />
+            )}
+            contentContainerStyle={[styles.listContent, mapExpanded && styles.listContentMapExpanded]}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+        </GlassSurface>
+      </View>
+
       <View
         style={[
           styles.mapCardShell,
@@ -1266,11 +1406,12 @@ export default function DriverOfferScreen({
                 style={[
                   styles.mapMiniHudIconWrap,
                   mapExpanded && styles.mapMiniHudIconWrapExpanded,
+                  !mapExpanded && styles.mapMiniHudIconWrapCompact,
                 ]}
               >
                 <Ionicons
                   name="satellite-outline"
-                  size={mapExpanded ? 16 : 18}
+                  size={mapExpanded ? 16 : 15}
                   color={PREMIUM_AUTH_CYAN}
                 />
               </View>
@@ -1287,34 +1428,38 @@ export default function DriverOfferScreen({
                   style={styles.mapMiniHudSubtitle}
                   numberOfLines={1}
                 >
-                  {mapExpanded ? 'Saha taraması · Harita açık' : 'Saha taraması · Hazır'}
+                  {mapExpanded
+                    ? 'Saha taraması · Harita açık'
+                    : `${mapHud.seeking} talep · ${mapHud.radius} km`}
                 </PremiumText>
               </View>
             </View>
 
-            <View style={styles.mapMiniHudMetrics}>
-              <View style={[styles.mapMiniHudPill, mapExpanded && styles.mapMiniHudPillExpanded]}>
-                <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
-                  {mapHud.seeking}
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
-                  Talep
-                </PremiumText>
+            {mapExpanded ? (
+              <View style={styles.mapMiniHudMetrics}>
+                <View style={[styles.mapMiniHudPill, styles.mapMiniHudPillExpanded]}>
+                  <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
+                    {mapHud.seeking}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
+                    Talep
+                  </PremiumText>
+                </View>
+                <View style={[styles.mapMiniHudPill, styles.mapMiniHudPillExpanded]}>
+                  <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
+                    {mapHud.radius}
+                  </PremiumText>
+                  <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
+                    km
+                  </PremiumText>
+                </View>
               </View>
-              <View style={[styles.mapMiniHudPill, mapExpanded && styles.mapMiniHudPillExpanded]}>
-                <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
-                  {mapHud.radius}
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
-                  km
-                </PremiumText>
-              </View>
-            </View>
+            ) : null}
 
             <View style={styles.mapMiniHudChevronWrap}>
               <Ionicons
                 name={mapExpanded ? 'chevron-up' : 'chevron-down'}
-                size={mapExpanded ? 15 : 17}
+                size={mapExpanded ? 15 : 16}
                 color="rgba(34,211,238,0.88)"
               />
             </View>
@@ -1394,182 +1539,6 @@ export default function DriverOfferScreen({
           </View>
         ) : null}
       </View>
-
-      {/* Dispatch deck — cockpit zemin; haritayı sarmaz */}
-      <View style={styles.listContainer}>
-        <LinearGradient
-          colors={[...LDS_GRADIENT_COCKPIT_BASE]}
-          locations={[...LDS_GRADIENT_COCKPIT_BASE_LOCATIONS]}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        <LinearGradient
-          colors={[...LDS_GRADIENT_COCKPIT_TOP_HAZE]}
-          locations={[...LDS_GRADIENT_COCKPIT_TOP_HAZE_LOCATIONS]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFillObject}
-        />
-        {isMotor ? (
-          <LinearGradient
-            colors={['rgba(22, 101, 52, 0.12)', 'rgba(8,17,31,0.38)']}
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="none"
-          />
-        ) : null}
-        <GlassSurface
-          variant="panel"
-          style={[styles.dispatchDeck, mapExpanded && styles.dispatchDeckMapExpanded]}
-          borderRadius={LDS_RADIUS.xl}
-        >
-          <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
-            <View style={styles.listHeaderTopRow}>
-              <View style={styles.listHeaderLiveDotWrap} pointerEvents="none">
-                <View style={styles.listHeaderAccentDotOuter} />
-                <View style={styles.listHeaderAccentDot} />
-              </View>
-              <View style={styles.listHeaderTitleCol}>
-                <PremiumText variant="caption" style={styles.listPhaseLabel}>
-                  Saha dispatch
-                </PremiumText>
-                <PremiumText
-                  variant="title"
-                  style={[styles.listTitle, mapExpanded && styles.listTitleMapExpanded]}
-                  numberOfLines={1}
-                >
-                  Yakın talepler
-                </PremiumText>
-                <PremiumText variant="caption" muted style={styles.listSectionSubtitle} numberOfLines={2}>
-                  Yakın talepler · {mapHud.radius} km saha
-                </PremiumText>
-              </View>
-            </View>
-          </View>
-
-        {visibleRequests.length === 0 ? (
-          <View style={[styles.emptyState, mapExpanded && styles.emptyStateMapExpanded]}>
-            <GlassSurface
-              variant="plain"
-              style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}
-              borderRadius={LDS_RADIUS.lg}
-            >
-              <View style={styles.emptyBrandStrip}>
-                <View style={styles.emptyBrandDotWrap} pointerEvents="none">
-                  <View style={styles.emptyBrandDotOuter} />
-                  <View style={styles.emptyBrandDot} />
-                </View>
-                <PremiumText variant="caption" style={styles.emptyBrandLabel}>
-                  LeylekTAG · Saha operasyonu
-                </PremiumText>
-              </View>
-
-              <View
-                style={[
-                  styles.emptyInstrumentOrb,
-                  mapExpanded && styles.emptyInstrumentOrbMapExpanded,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.emptyOrbRing,
-                    styles.emptyOrbRingOuter,
-                    mapExpanded && styles.emptyOrbRingOuterMapExpanded,
-                    isMotor && styles.emptyOrbRingOuterMotor,
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.emptyOrbRing,
-                    styles.emptyOrbRingMid,
-                    mapExpanded && styles.emptyOrbRingMidMapExpanded,
-                    isMotor && styles.emptyOrbRingMidMotor,
-                  ]}
-                />
-                <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded]}>
-                  <Ionicons
-                    name="radio-outline"
-                    size={mapExpanded ? 18 : 22}
-                    color={isMotor ? 'rgba(134,239,172,0.92)' : 'rgba(34,211,238,0.9)'}
-                  />
-                </View>
-              </View>
-
-              <View
-                style={[
-                  styles.emptyStatusPill,
-                  mapExpanded && styles.emptyStatusPillMapExpanded,
-                  isMotor && styles.emptyStatusPillMotor,
-                ]}
-              >
-                <View style={styles.emptyStatusLiveDot} />
-                <PremiumText variant="step" style={styles.emptyStatusText}>
-                  Saha taraması aktif
-                </PremiumText>
-              </View>
-
-              <PremiumText
-                variant="headline"
-                style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}
-              >
-                Teklif bekleniyor
-              </PremiumText>
-              <PremiumText
-                variant="caption"
-                muted
-                style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
-              >
-                Yakın talepler burada listelenir. {mapHud.radius} km saha çevresinde tarama sürüyor.
-              </PremiumText>
-
-              <View style={styles.emptyChipRow}>
-                <View style={styles.emptyChip}>
-                  <Ionicons name="locate-outline" size={11} color={PREMIUM_AUTH_CYAN} />
-                  <PremiumText variant="caption" style={styles.emptyChipText}>
-                    {mapHud.radius} km saha
-                  </PremiumText>
-                </View>
-                <View style={styles.emptyChip}>
-                  <Ionicons name="pulse-outline" size={11} color={PREMIUM_AUTH_CYAN} />
-                  <PremiumText variant="caption" style={styles.emptyChipText}>
-                    Canlı tarama
-                  </PremiumText>
-                </View>
-                <View style={styles.emptyChip}>
-                  <Ionicons name="shield-checkmark-outline" size={11} color={PREMIUM_AUTH_CYAN} />
-                  <PremiumText variant="caption" style={styles.emptyChipText}>
-                    LeylekTAG saha
-                  </PremiumText>
-                </View>
-              </View>
-            </GlassSurface>
-          </View>
-        ) : (
-          <FlatList
-            data={visibleRequests.slice(0, 20)}
-            keyExtractor={(item, index) => item.id || item.request_id || index.toString()}
-            renderItem={({ item, index }) => (
-              <RequestCard
-                request={item}
-                driverLocation={driverLocation}
-                driverId={driverId}
-                playTapSound={playTapSound}
-                onDismiss={() => onDismissRequest(item.id)}
-                onDriverAcceptMatch={onDriverAcceptMatch}
-                onAcceptFlowStart={onAcceptFlowStart}
-                onAcceptFlowEnd={onAcceptFlowEnd}
-                onOfferUnavailable={onOfferUnavailable}
-                index={index}
-                globalAcceptFrozen={globalAcceptFrozen}
-                setGlobalAcceptFrozen={setGlobalAcceptFrozen}
-              />
-            )}
-            contentContainerStyle={[styles.listContent, mapExpanded && styles.listContentMapExpanded]}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-        </GlassSurface>
-      </View>
     </View>
   );
 
@@ -1593,7 +1562,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
     backgroundColor: 'transparent',
   },
-  /** Sütun: üstte harita alanı, altta yalnızca liste (ImageBackground haritayı örtmez) */
+  /** Sütun: dispatch üstte (flex), harita altta (sabit) */
   driverOfferBody: {
     flex: 1,
     width: '100%',
@@ -1607,6 +1576,7 @@ const styles = StyleSheet.create({
   },
 
   mapCardShell: {
+    flexShrink: 0,
     alignSelf: 'center',
     width: '100%',
     maxWidth: SCREEN_WIDTH,
@@ -1697,7 +1667,7 @@ const styles = StyleSheet.create({
     }),
   },
   mapChromeShell: {
-    marginTop: LDS_SPACING.xs,
+    marginTop: 0,
     marginBottom: LDS_SPACING.xxs,
     overflow: 'hidden',
   },
@@ -1714,8 +1684,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'stretch',
     gap: LDS_SPACING.sm,
-    paddingVertical: LDS_SPACING.sm,
-    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.sm,
     backgroundColor: 'transparent',
   },
   mapMiniHudExpanded: {
@@ -1745,6 +1715,11 @@ const styles = StyleSheet.create({
   mapMiniHudIconWrapExpanded: {
     width: 32,
     height: 32,
+    borderRadius: LDS_RADIUS.sm,
+  },
+  mapMiniHudIconWrapCompact: {
+    width: 30,
+    height: 30,
     borderRadius: LDS_RADIUS.sm,
   },
   mapMiniHudTitleCol: {
@@ -2179,7 +2154,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     marginHorizontal: LDS_SPACING.sm,
-    marginTop: LDS_SPACING.xxs,
+    marginTop: 0,
     marginBottom: LDS_SPACING.xxs,
     overflow: 'hidden',
   },
@@ -2187,12 +2162,41 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   listHeader: {
-    paddingHorizontal: LDS_SPACING.md,
-    paddingTop: LDS_SPACING.sm,
-    paddingBottom: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xs,
     borderBottomWidth: LDS_BORDER_WIDTH.hairline,
     borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
     backgroundColor: 'transparent',
+  },
+  listHeaderCompactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: LDS_SPACING.xs,
+    minHeight: 32,
+  },
+  listHeaderCountPill: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.full,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: 'rgba(34,211,238,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  listHeaderCountText: {
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    color: PREMIUM_AUTH_CYAN,
+    fontSize: 11,
+  },
+  listTitleCompact: {
+    flex: 1,
+    minWidth: 0,
+    letterSpacing: -0.12,
+    fontWeight: '700',
   },
   listHeaderTopRow: {
     flexDirection: 'row',
@@ -2200,11 +2204,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   listHeaderLiveDotWrap: {
-    width: 16,
-    height: 16,
-    marginTop: 4,
+    width: 12,
+    height: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   listHeaderAccentDotOuter: {
     position: 'absolute',
@@ -2241,18 +2245,13 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   listHeaderMapExpanded: {
-    paddingTop: LDS_SPACING.sm,
-    paddingBottom: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
     paddingHorizontal: LDS_SPACING.sm,
   },
-  listTitleMapExpanded: {
-    fontSize: 17,
-    letterSpacing: -0.25,
-  },
   listContent: {
-    paddingHorizontal: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
     paddingTop: LDS_SPACING.xxs,
-    paddingBottom: LDS_SPACING.lg,
+    paddingBottom: LDS_SPACING.sm,
   },
   listContentMapExpanded: {
     paddingTop: LDS_SPACING.xxs,
@@ -2263,8 +2262,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: LDS_SPACING.md,
-    paddingVertical: LDS_SPACING.lg,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.sm,
   },
   emptyStateMapExpanded: {
     paddingVertical: LDS_SPACING.sm,
@@ -2277,9 +2276,9 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
     alignItems: 'center',
-    paddingTop: LDS_SPACING.md,
-    paddingBottom: LDS_SPACING.xl,
-    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.md,
     backgroundColor: 'transparent',
   },
   emptyStateCardMapExpanded: {
@@ -2294,8 +2293,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: LDS_SPACING.xs,
     alignSelf: 'stretch',
-    marginBottom: LDS_SPACING.md,
-    paddingBottom: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.sm,
+    paddingBottom: LDS_SPACING.xs,
     borderBottomWidth: LDS_BORDER_WIDTH.hairline,
     borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
   },
@@ -2329,11 +2328,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   emptyInstrumentOrb: {
-    width: 76,
-    height: 76,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.xs,
   },
   emptyInstrumentOrbMapExpanded: {
     width: 64,
@@ -2475,75 +2474,35 @@ const styles = StyleSheet.create({
 
   // Dispatch talep kartı — LHIS cockpit card
   reqCardWrap: {
-    marginTop: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
   },
   reqCard: {
-    paddingHorizontal: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.sm,
     paddingTop: LDS_SPACING.sm,
     paddingBottom: LDS_SPACING.sm,
-    minHeight: 168,
+    minHeight: 148,
     backgroundColor: 'transparent',
     overflow: 'hidden',
   },
-  reqCardTopStrip: {
+  reqHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: LDS_SPACING.xs,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: LDS_SPACING.sm,
     marginBottom: LDS_SPACING.xs,
-    paddingBottom: LDS_SPACING.xs,
-    borderBottomWidth: LDS_BORDER_WIDTH.hairline,
-    borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
   },
-  reqDispatchDotWrap: {
-    width: 12,
-    height: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reqDispatchDotOuter: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: 'rgba(34,211,238,0.12)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(34,211,238,0.2)',
-  },
-  reqDispatchDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: PREMIUM_AUTH_CYAN,
-    opacity: 0.92,
-  },
-  reqDispatchLabel: {
-    letterSpacing: 0.05,
-    color: PREMIUM_AUTH_CYAN,
-    opacity: 0.82,
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  reqMainRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  reqContentCol: {
-    flex: 1,
-    minWidth: 0,
-    paddingRight: LDS_SPACING.sm,
-  },
-  reqRevenueHero: {
-    gap: LDS_SPACING.xxs,
-    marginBottom: LDS_SPACING.xs,
+  reqPriceBlock: {
+    gap: 1,
+    flexShrink: 0,
   },
   reqRevenueLabel: {
     letterSpacing: 0.05,
   },
   reqPriceText: {
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: 23,
+    lineHeight: 27,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.35,
     fontVariant: ['tabular-nums'],
     color: 'rgba(94,229,209,0.95)',
   },
@@ -2554,31 +2513,17 @@ const styles = StyleSheet.create({
     borderRadius: LDS_RADIUS.md,
     borderWidth: LDS_BORDER_WIDTH.hairline,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
-    paddingVertical: LDS_SPACING.xs,
-    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.xxs,
     marginBottom: LDS_SPACING.xs,
   },
-  reqMetaCell: {
+  reqMetaCellCompact: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: LDS_SPACING.xs,
     minWidth: 0,
-  },
-  reqMetaIconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: LDS_RADIUS.sm,
-    backgroundColor: 'rgba(34,211,238,0.08)',
-    borderWidth: LDS_BORDER_WIDTH.hairline,
-    borderColor: 'rgba(34,211,238,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  reqMetaTextCol: {
-    flex: 1,
-    minWidth: 0,
     gap: 1,
+    paddingHorizontal: 2,
   },
   reqMetaLabel: {
     letterSpacing: 0.08,
@@ -2586,7 +2531,10 @@ const styles = StyleSheet.create({
   },
   reqMetaValue: {
     fontVariant: ['tabular-nums'],
-    letterSpacing: -0.1,
+    letterSpacing: -0.05,
+    fontWeight: '700',
+    fontSize: 11,
+    textAlign: 'center',
   },
   reqMetaDivider: {
     width: LDS_BORDER_WIDTH.hairline,
@@ -2597,9 +2545,11 @@ const styles = StyleSheet.create({
   reqSecondLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: LDS_SPACING.xs,
-    marginTop: LDS_SPACING.xxs,
+    gap: LDS_SPACING.xxs,
     flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    flex: 1,
+    minWidth: 0,
   },
   reqPassengerChip: {
     flexDirection: 'row',
@@ -2649,9 +2599,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   reqRouteBlock: {
-    marginTop: LDS_SPACING.sm,
-    gap: LDS_SPACING.xs,
-    paddingTop: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
+    gap: 3,
+    paddingTop: LDS_SPACING.xxs,
     borderTopWidth: LDS_BORDER_WIDTH.hairline,
     borderTopColor: LDS_BORDER_COLOR.cockpitPanel,
   },
@@ -2678,14 +2628,15 @@ const styles = StyleSheet.create({
     opacity: 0.92,
     lineHeight: 16,
   },
-  reqActionsCol: {
-    width: 88,
-    justifyContent: 'space-between',
+  reqActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
     gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.sm,
   },
   reqDismissBtn: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     backgroundColor: 'rgba(8,17,31,0.35)',
     borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
@@ -2698,8 +2649,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.12,
   },
   reqAcceptBtn: {
-    flex: 1,
-    minHeight: 42,
+    flex: 2,
+    minHeight: 44,
     backgroundColor: 'rgba(8,145,178,0.88)',
     borderRadius: LDS_RADIUS.md,
     alignItems: 'center',
