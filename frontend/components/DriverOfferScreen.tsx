@@ -50,12 +50,20 @@ import {
 } from '../lib/routeLoadingUiConstants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MAP_PREVIEW_HEIGHT =
-  SCREEN_HEIGHT < 700
-    ? 64
-    : Math.min(80, Math.max(72, Math.round(SCREEN_HEIGHT * 0.1)));
 
 const MAP_POLL_INTERVAL_MS = 9000;
+
+/** LHIS cockpit — DriverActivityMap ile uyumlu koyu Google Maps stili */
+const DRIVER_OFFER_DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+];
 
 /** İki nokta arası km (haritada yakın pin / zoom sınırı için). */
 /** Kartta km: 0 veya geçersizse "?" (0.0 göstermeyi engeller). */
@@ -879,7 +887,6 @@ export default function DriverOfferScreen({
   const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: 20 });
   const [mapExpanded, setMapExpanded] = useState(false);
   const [mapPinsLoadError, setMapPinsLoadError] = useState<string | null>(null);
-  const mapMountedRef = useRef(false);
   const driverPulseScale = useRef(new Animated.Value(1)).current;
   const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
   const driverPulse2Scale = useRef(new Animated.Value(1)).current;
@@ -936,14 +943,15 @@ export default function DriverOfferScreen({
   }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
 
   useEffect(() => {
-    if (mapExpanded || embedded) {
-      mapMountedRef.current = true;
+    if (!mapExpanded) {
+      setMapReady(false);
     }
-  }, [mapExpanded, embedded]);
+  }, [mapExpanded]);
 
-  const showMapHost = embedded || mapExpanded || mapMountedRef.current;
+  /** Collapsed: yalnızca mini HUD bar; MapView yalnızca expanded iken mount */
+  const showMapHost = mapExpanded;
 
-  /** Genişletilmiş harita yüksekliği — ilk expand sonrası MapView mount kalır (collapse'ta gizlenir) */
+  /** Genişletilmiş harita yüksekliği */
   const mapExpandedHeight = Math.min(SCREEN_HEIGHT * 0.42, 360);
 
   /** Normal TAG: teklifleri gizleme; araç uyumsuzluğu yalnızca tanılama logu (sunucu hedefli socket teklifi kartta kalsın). */
@@ -1036,7 +1044,7 @@ export default function DriverOfferScreen({
 
   // Harita sınırları: sürücü + yalnızca tarama yarıçapı içindeki pinler (şehir grid zoom’u şişirmez)
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !driverLocation) return;
+    if (!mapExpanded || !mapReady || !mapRef.current || !driverLocation) return;
 
     const rk = mapHud.radius || 20;
     const fitKm = Math.min(45, rk * 1.2);
@@ -1077,7 +1085,7 @@ export default function DriverOfferScreen({
         animated: true,
       });
     }, 350);
-  }, [mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius]);
+  }, [mapExpanded, mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius]);
 
   // Web fallback veya harita yoksa
   const renderMap = () => {
@@ -1115,6 +1123,12 @@ export default function DriverOfferScreen({
         onMapReady={() => setMapReady(true)}
         showsUserLocation={false}
         showsMyLocationButton={false}
+        customMapStyle={DRIVER_OFFER_DARK_MAP_STYLE}
+        scrollEnabled={mapExpanded}
+        zoomEnabled={mapExpanded}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        showsTraffic={mapExpanded}
       >
         {driverLocation && Circle ? (
           <>
@@ -1421,19 +1435,16 @@ export default function DriverOfferScreen({
               <View style={styles.mapMiniHudTitleCol}>
                 <PremiumText
                   variant="caption"
-                  style={[styles.mapMiniHudPhase, mapExpanded && styles.mapMiniHudPhaseExpanded]}
-                >
-                  Saha haritası
-                </PremiumText>
-                <PremiumText
-                  variant="caption"
-                  muted
-                  style={styles.mapMiniHudSubtitle}
+                  style={[
+                    styles.mapMiniHudPhase,
+                    mapExpanded && styles.mapMiniHudPhaseExpanded,
+                    !mapExpanded && styles.mapMiniHudPhaseCompact,
+                  ]}
                   numberOfLines={1}
                 >
                   {mapExpanded
-                    ? 'Saha taraması · Harita açık'
-                    : `${mapHud.seeking} talep · ${mapHud.radius} km`}
+                    ? 'Saha haritası'
+                    : `Saha haritası · ${mapHud.seeking} talep · ${mapHud.radius} km`}
                 </PremiumText>
               </View>
             </View>
@@ -1461,7 +1472,7 @@ export default function DriverOfferScreen({
 
             <View style={styles.mapMiniHudChevronWrap}>
               <Ionicons
-                name={mapExpanded ? 'chevron-up' : 'chevron-down'}
+                name={mapExpanded ? 'chevron-down' : 'chevron-up'}
                 size={mapExpanded ? 15 : 16}
                 color="rgba(34,211,238,0.88)"
               />
@@ -1471,20 +1482,13 @@ export default function DriverOfferScreen({
 
         {showMapHost ? (
           <View
-            style={[
-              styles.mapExpandedMapHost,
-              mapExpanded
-                ? { height: mapExpandedHeight }
-                : styles.mapExpandedMapHostPreview,
-            ]}
-            pointerEvents={mapExpanded ? 'box-none' : 'none'}
-            accessibilityElementsHidden={!mapExpanded}
-            importantForAccessibility={mapExpanded ? 'auto' : 'no-hide-descendants'}
+            style={[styles.mapExpandedMapHost, { height: mapExpandedHeight }]}
+            pointerEvents="box-none"
           >
             <View style={[styles.mapViewportFixed, styles.mapContainerSolidExpanded]}>
               {renderMap()}
-              <View style={[styles.mapDimOverlay, !mapExpanded && styles.mapDimOverlayPreview]} pointerEvents="none" />
-              {mapExpanded && (!driverLocation || !mapReady) ? (
+              <View style={styles.mapDimOverlay} pointerEvents="none" />
+              {!driverLocation || !mapReady ? (
                 <View style={styles.mapLoadingOverlay} pointerEvents="none">
                   <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
                   <PremiumText variant="caption" muted style={styles.mapLoadingOverlayText}>
@@ -1492,7 +1496,7 @@ export default function DriverOfferScreen({
                   </PremiumText>
                 </View>
               ) : null}
-              {mapExpanded && mapPinsLoadError ? (
+              {mapPinsLoadError ? (
                 <View style={styles.mapPinsErrorBanner} pointerEvents="none">
                   <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.mapPinsErrorGlass}>
                     <PremiumText variant="caption" muted style={styles.mapPinsErrorText}>
@@ -1501,8 +1505,7 @@ export default function DriverOfferScreen({
                   </GlassSurface>
                 </View>
               ) : null}
-              {mapExpanded ? (
-                <View style={styles.mapTopOverlay} pointerEvents="box-none">
+              <View style={styles.mapTopOverlay} pointerEvents="box-none">
                   <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
                     <Ionicons name="chevron-back" size={24} color="#F1F5F9" />
                   </TouchableOpacity>
@@ -1529,15 +1532,12 @@ export default function DriverOfferScreen({
                   </View>
                   <View style={styles.mapTopSpacer} />
                 </View>
-              ) : null}
-              {mapExpanded ? (
-                <View style={styles.mapHud} pointerEvents="none">
-                  <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
-                  <PremiumText variant="caption" muted style={styles.mapHudText}>
-                    Talep {mapHud.seeking} · {mapHud.radius} km
-                  </PremiumText>
-                </View>
-              ) : null}
+              <View style={styles.mapHud} pointerEvents="none">
+                <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
+                <PremiumText variant="caption" muted style={styles.mapHudText}>
+                  Talep {mapHud.seeking} · {mapHud.radius} km
+                </PremiumText>
+              </View>
             </View>
           </View>
         ) : null}
@@ -1608,13 +1608,6 @@ const styles = StyleSheet.create({
     opacity: 0,
     elevation: 0,
     shadowOpacity: 0,
-  },
-  mapExpandedMapHostPreview: {
-    height: MAP_PREVIEW_HEIGHT,
-    overflow: 'hidden',
-    opacity: 1,
-    marginTop: LDS_SPACING.xxs,
-    borderRadius: LDS_RADIUS.lg,
   },
   mapLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1740,9 +1733,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.05,
   },
-  mapMiniHudSubtitle: {
-    letterSpacing: 0.06,
-    lineHeight: 14,
+  mapMiniHudPhaseCompact: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.08,
+    opacity: 0.92,
   },
   mapMiniHudMetrics: {
     flexDirection: 'row',
@@ -1789,10 +1784,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8,17,31,0.1)',
     zIndex: 2,
   },
-  mapDimOverlayPreview: {
-    backgroundColor: 'rgba(8,17,31,0.28)',
-  },
-
   mapTopOverlay: {
     position: 'absolute',
     top: 0,
