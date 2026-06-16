@@ -256,6 +256,304 @@ function resolveMinLightDistanceKm(pins: DriverMapLightPin[]): number | null {
   return min;
 }
 
+type FieldCardinalSector = 'Kuzey' | 'Doğu' | 'Güney' | 'Batı';
+type FieldSpatialDensityBand = 'Düşük' | 'Orta' | 'Yüksek';
+type FieldOperationScoreBand = 'Zayıf' | 'Orta' | 'Güçlü' | 'Çok güçlü';
+type FieldNearSignalLevel = 'Yok' | 'Düşük' | 'Orta' | 'Yüksek';
+
+function resolveFieldCardinalSector(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+): FieldCardinalSector {
+  return resolveCardinalBearing(fromLat, fromLng, toLat, toLng) as FieldCardinalSector;
+}
+
+function resolveFieldHaversineKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const r = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function resolveFieldSpatialDensityBand(intensity: number): FieldSpatialDensityBand {
+  const n = Number(intensity);
+  if (!Number.isFinite(n) || n < 0.35) return 'Düşük';
+  if (n <= 0.7) return 'Orta';
+  return 'Yüksek';
+}
+
+function resolveFieldSectorActivityLabel(band: FieldSpatialDensityBand): string {
+  if (band === 'Yüksek') return 'hareketli';
+  if (band === 'Orta') return 'aktif';
+  return 'sakin';
+}
+
+function resolveFieldOperationScoreBand(score: number): FieldOperationScoreBand {
+  const n = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+  if (n <= 24) return 'Zayıf';
+  if (n <= 49) return 'Orta';
+  if (n <= 74) return 'Güçlü';
+  return 'Çok güçlü';
+}
+
+function resolveFieldNearSignalLevel(
+  count: number,
+  minKm: number | null,
+): FieldNearSignalLevel {
+  const c = Math.max(0, Math.floor(Number(count) || 0));
+  if (c <= 0) return 'Yok';
+  if (c >= 8 || (minKm != null && minKm <= 1.5)) return 'Yüksek';
+  if (c >= 3 || (minKm != null && minKm <= 3.5)) return 'Orta';
+  return 'Düşük';
+}
+
+function resolveFieldAreaOccupancyLevel(
+  grid: DriverMapCityGridCell[],
+  seeking: number,
+  nearby: number,
+): FieldSpatialDensityBand {
+  const activeCells = grid.filter((cell) => Number(cell.count) > 0).length;
+  const gridRatio = grid.length > 0 ? activeCells / grid.length : 0;
+  const activityRatio = Math.min(1, (Math.max(0, seeking) + Math.max(0, nearby) * 0.45) / 10);
+  const blend = grid.length > 0 ? 0.4 * gridRatio + 0.6 * activityRatio : activityRatio;
+  if (blend < 0.22) return 'Düşük';
+  if (blend < 0.52) return 'Orta';
+  return 'Yüksek';
+}
+
+function resolveFieldDominantSector(
+  driverLocation: { latitude: number; longitude: number },
+  grid: DriverMapCityGridCell[],
+  seekingPins: DriverMapSeekingPin[],
+  lightPins: DriverMapLightPin[],
+): { sector: FieldCardinalSector; band: FieldSpatialDensityBand } | null {
+  const totals: Record<FieldCardinalSector, number> = {
+    Kuzey: 0,
+    Doğu: 0,
+    Güney: 0,
+    Batı: 0,
+  };
+
+  for (const cell of grid) {
+    const sector = resolveFieldCardinalSector(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      cell.center_lat,
+      cell.center_lng,
+    );
+    totals[sector] += Number(cell.intensity) * 2 + Number(cell.count) * 0.15;
+  }
+  for (const pin of seekingPins) {
+    const sector = resolveFieldCardinalSector(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      pin.pickup_lat,
+      pin.pickup_lng,
+    );
+    totals[sector] += 1;
+  }
+  for (const pin of lightPins) {
+    const sector = resolveFieldCardinalSector(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      pin.latitude,
+      pin.longitude,
+    );
+    totals[sector] += 0.35;
+  }
+
+  let bestSector: FieldCardinalSector | null = null;
+  let bestScore = 0;
+  let total = 0;
+  (Object.keys(totals) as FieldCardinalSector[]).forEach((sector) => {
+    total += totals[sector];
+    if (totals[sector] > bestScore) {
+      bestScore = totals[sector];
+      bestSector = sector;
+    }
+  });
+  if (!bestSector || bestScore <= 0) return null;
+
+  const share = total > 0 ? bestScore / total : 0;
+  let band: FieldSpatialDensityBand = 'Düşük';
+  if (bestScore >= 2.5 || share >= 0.45) band = 'Yüksek';
+  else if (bestScore >= 1 || share >= 0.28) band = 'Orta';
+  return { sector: bestSector, band };
+}
+
+function resolveFieldNearestDenseRegion(
+  driverLocation: { latitude: number; longitude: number },
+  grid: DriverMapCityGridCell[],
+): { km: number; band: FieldSpatialDensityBand } | null {
+  if (!grid.length) return null;
+
+  const ranked = [...grid].sort((a, b) => b.intensity - a.intensity);
+  const threshold = 0.35;
+  const candidates = ranked.filter((cell) => Number(cell.intensity) >= threshold);
+  const pool = candidates.length > 0 ? candidates : ranked.slice(0, 1);
+
+  let bestKm: number | null = null;
+  let bestBand: FieldSpatialDensityBand = 'Düşük';
+  for (const cell of pool) {
+    const km = resolveFieldHaversineKm(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      cell.center_lat,
+      cell.center_lng,
+    );
+    if (bestKm == null || km < bestKm) {
+      bestKm = km;
+      bestBand = resolveFieldSpatialDensityBand(cell.intensity);
+    }
+  }
+  if (bestKm == null) return null;
+  return { km: bestKm, band: bestBand };
+}
+
+function resolveFieldOperationScore(input: {
+  seeking: number;
+  nearby: number;
+  peakIntensity: number;
+  listedCount: number;
+  occupancy: FieldSpatialDensityBand;
+}): number {
+  const seekingNorm = Math.min(1, Math.max(0, input.seeking) / 8);
+  const nearbyNorm = Math.min(1, Math.max(0, input.nearby) / 20);
+  const peakNorm = Math.min(1, Math.max(0, input.peakIntensity));
+  const listedNorm = Math.min(1, Math.max(0, input.listedCount) / 5);
+  const occupancyNorm =
+    input.occupancy === 'Yüksek' ? 1 : input.occupancy === 'Orta' ? 0.55 : 0.2;
+
+  const raw =
+    seekingNorm * 30 +
+    nearbyNorm * 20 +
+    peakNorm * 25 +
+    listedNorm * 15 +
+    occupancyNorm * 10;
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+/** FI-05B — presentation-only Spatial Insight Engine (backend yok) */
+function resolveFieldSpatialInsights(input: {
+  mapExpanded: boolean;
+  driverLocation: { latitude: number; longitude: number } | null;
+  grid: DriverMapCityGridCell[];
+  seekingPins: DriverMapSeekingPin[];
+  lightPins: DriverMapLightPin[];
+  seeking: number;
+  nearby: number;
+  listedCount: number;
+}): {
+  dominantSector: FieldCardinalSector | null;
+  dominantSectorBand: FieldSpatialDensityBand | null;
+  nearestDenseRegionKm: number | null;
+  nearestDenseRegionBand: FieldSpatialDensityBand | null;
+  areaOccupancy: FieldSpatialDensityBand;
+  nearSignalLevel: FieldNearSignalLevel;
+  operationScore: number;
+  operationScoreBand: FieldOperationScoreBand;
+  insightLine: string;
+} {
+  const minLightKm = resolveMinLightDistanceKm(input.lightPins);
+  const nearSignalLevel = resolveFieldNearSignalLevel(input.nearby, minLightKm);
+  const areaOccupancy = resolveFieldAreaOccupancyLevel(input.grid, input.seeking, input.nearby);
+
+  let peakIntensity = 0;
+  for (const cell of input.grid) {
+    if (Number(cell.intensity) > peakIntensity) peakIntensity = Number(cell.intensity);
+  }
+
+  const operationScore = resolveFieldOperationScore({
+    seeking: input.seeking,
+    nearby: input.nearby,
+    peakIntensity,
+    listedCount: input.listedCount,
+    occupancy: areaOccupancy,
+  });
+  const operationScoreBand = resolveFieldOperationScoreBand(operationScore);
+
+  if (!input.mapExpanded || !input.driverLocation) {
+    return {
+      dominantSector: null,
+      dominantSectorBand: null,
+      nearestDenseRegionKm: null,
+      nearestDenseRegionBand: null,
+      areaOccupancy,
+      nearSignalLevel,
+      operationScore,
+      operationScoreBand,
+      insightLine: 'Saha analizi için haritayı aç',
+    };
+  }
+
+  const dominant = resolveFieldDominantSector(
+    input.driverLocation,
+    input.grid,
+    input.seekingPins,
+    input.lightPins,
+  );
+  const nearestDense = resolveFieldNearestDenseRegion(input.driverLocation, input.grid);
+  const hasSpatialData =
+    input.grid.length > 0 ||
+    input.seekingPins.length > 0 ||
+    input.lightPins.length > 0 ||
+    input.seeking > 0 ||
+    input.nearby > 0;
+
+  if (!hasSpatialData) {
+    return {
+      dominantSector: null,
+      dominantSectorBand: null,
+      nearestDenseRegionKm: null,
+      nearestDenseRegionBand: null,
+      areaOccupancy,
+      nearSignalLevel,
+      operationScore,
+      operationScoreBand,
+      insightLine: `Saha sakin · Skor ${operationScore}`,
+    };
+  }
+
+  if (dominant) {
+    const activity = resolveFieldSectorActivityLabel(dominant.band);
+    return {
+      dominantSector: dominant.sector,
+      dominantSectorBand: dominant.band,
+      nearestDenseRegionKm: nearestDense?.km ?? null,
+      nearestDenseRegionBand: nearestDense?.band ?? null,
+      areaOccupancy,
+      nearSignalLevel,
+      operationScore,
+      operationScoreBand,
+      insightLine: `${dominant.sector} sektörü ${activity} · Skor ${operationScore}`,
+    };
+  }
+
+  return {
+    dominantSector: null,
+    dominantSectorBand: null,
+    nearestDenseRegionKm: nearestDense?.km ?? null,
+    nearestDenseRegionBand: nearestDense?.band ?? null,
+    areaOccupancy,
+    nearSignalLevel,
+    operationScore,
+    operationScoreBand,
+    insightLine: `Saha sakin · Skor ${operationScore}`,
+  };
+}
+
 /** LHIS cockpit — DriverActivityMap ile uyumlu koyu Google Maps stili */
 const DRIVER_OFFER_DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
@@ -1253,12 +1551,29 @@ export default function DriverOfferScreen({
     const denseRegionLabel = mapExpanded
       ? resolveFieldDenseRegionLabel(mapCityGrid, driverLocation)
       : 'Saha haritasını aç';
+    const spatialInsights = resolveFieldSpatialInsights({
+      mapExpanded,
+      driverLocation,
+      grid: mapCityGrid,
+      seekingPins: mapSeekingPins,
+      lightPins: mapLightPins,
+      seeking: mapExpanded ? mapHud.seeking : visibleRequests.length,
+      nearby: mapExpanded ? mapHud.nearby : 0,
+      listedCount: visibleRequests.length,
+    });
     return {
       nearRequestsLabel,
       scanLabel,
       fieldStatus,
       nearSignalLabel,
       denseRegionLabel,
+      spatialInsightLine: spatialInsights.insightLine,
+      operationScore: spatialInsights.operationScore,
+      operationScoreBand: spatialInsights.operationScoreBand,
+      areaOccupancy: spatialInsights.areaOccupancy,
+      nearSignalLevel: spatialInsights.nearSignalLevel,
+      dominantSector: spatialInsights.dominantSector,
+      nearestDenseRegionKm: spatialInsights.nearestDenseRegionKm,
     };
   }, [
     mapExpanded,
@@ -1266,6 +1581,7 @@ export default function DriverOfferScreen({
     mapHud.nearby,
     mapHud.radius,
     mapLightPins,
+    mapSeekingPins,
     mapCityGrid,
     driverLocation,
     visibleRequests.length,
@@ -1826,6 +2142,14 @@ export default function DriverOfferScreen({
                 </PremiumText>
               </View>
             </ScrollView>
+            <PremiumText
+              variant="caption"
+              muted
+              style={styles.fieldOpInsightLine}
+              numberOfLines={1}
+            >
+              {fieldIntelMetrics.spatialInsightLine}
+            </PremiumText>
           </TouchableOpacity>
         </GlassSurface>
 
@@ -2024,13 +2348,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   fieldOpHudCollapsed: {
-    maxHeight: 56,
+    maxHeight: 60,
     paddingVertical: 3,
     paddingHorizontal: LDS_SPACING.sm,
     gap: 2,
   },
   fieldOpHudExpanded: {
-    maxHeight: 64,
+    maxHeight: 68,
     paddingVertical: 4,
     paddingHorizontal: LDS_SPACING.sm,
     gap: 3,
@@ -2096,6 +2420,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     color: PREMIUM_TEXT_SOFT,
+  },
+  fieldOpInsightLine: {
+    fontSize: 9,
+    lineHeight: 11,
+    letterSpacing: 0.02,
+    color: PREMIUM_TEXT_MUTED,
+    opacity: 0.92,
   },
   mapMiniHud: {
     flexDirection: 'row',
