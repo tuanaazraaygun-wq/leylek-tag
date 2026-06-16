@@ -136,6 +136,10 @@ import {
 } from '../lib/tripPaymentApi';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import {
+  deriveNormalizedQueryFromDisplayName,
+  learnAddressFromMapConfirm,
+} from '../lib/placesLearnApi';
+import {
   haversineMetersLatLng,
   BOARDING_NEAR_ENTER_M,
   BOARDING_NEAR_EXIT_M,
@@ -7704,6 +7708,8 @@ function PassengerDashboard({
   } | null>(null);
   /** Harita görünümünün merkezi (crosshair); onRegionChangeComplete ile güncellenir — state yok, gereksiz re-render yok */
   const destinationPickerMapCenterRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  /** Harita onayı öncesi son arama seçimi (PlacesAutocomplete query yok — seçilen öneri metni) */
+  const routePickerPendingSearchQueryRef = useRef('');
   const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
 
   const destinationPickerMapRef = useRef<any>(null);
@@ -11395,6 +11401,7 @@ function PassengerDashboard({
     } catch {
       /* noop */
     }
+    routePickerPendingSearchQueryRef.current = (place.address || '').trim();
     openDestinationMapToVerify(place.address, lat, lng);
   };
 
@@ -11405,6 +11412,7 @@ function PassengerDashboard({
     longitude: number;
   }) => {
     void tapButtonHaptic();
+    routePickerPendingSearchQueryRef.current = (place.address || '').trim();
     openPickupMapToVerify(place.address, place.latitude, place.longitude);
   };
 
@@ -11431,6 +11439,7 @@ function PassengerDashboard({
       DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
 
     destinationPickerPinUserLockRef.current = true;
+    routePickerPendingSearchQueryRef.current = '';
     setDestinationPickerMapBootRegion(lat, lng);
     setDestinationPickerPin({ latitude: lat, longitude: lng });
     destinationPickerMapCenterRef.current = { latitude: lat, longitude: lng };
@@ -11727,6 +11736,8 @@ function PassengerDashboard({
     } catch (_) {}
 
     let address = 'Seçilen konum';
+    let reverseCity = '';
+    let reverseDistrict = '';
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=tr`;
       const response = await fetch(url, {
@@ -11742,7 +11753,10 @@ function PassengerDashboard({
           }),
         );
       } else {
-        const data = (await response.json()) as { display_name?: string };
+        const data = (await response.json()) as {
+          display_name?: string;
+          address?: Record<string, string>;
+        };
         const dn = data?.display_name;
         if (typeof dn === 'string' && dn.trim()) {
           address = dn.trim();
@@ -11756,6 +11770,17 @@ function PassengerDashboard({
             }),
           );
         }
+        const addr = data?.address;
+        if (addr && typeof addr === 'object') {
+          reverseDistrict =
+            addr.suburb ||
+            addr.city_district ||
+            addr.district ||
+            addr.county ||
+            '';
+          reverseCity =
+            addr.city || addr.town || addr.province || addr.state || '';
+        }
       }
     } catch (e) {
       console.warn(
@@ -11767,6 +11792,23 @@ function PassengerDashboard({
         }),
       );
     }
+
+    const pendingSearchQuery = routePickerPendingSearchQueryRef.current.trim();
+    routePickerPendingSearchQueryRef.current = '';
+    const cityForLearn =
+      passengerAddressSearchCityScope.trim() ||
+      (user?.city && String(user.city).trim()) ||
+      reverseCity.trim();
+    learnAddressFromMapConfirm({
+      display_name: address,
+      normalized_query:
+        pendingSearchQuery || deriveNormalizedQueryFromDisplayName(address),
+      city: cityForLearn,
+      district: reverseDistrict.trim(),
+      latitude,
+      longitude,
+      provider: 'map_confirm',
+    });
 
     try {
       if (routePickerStep === 'pickup') {
