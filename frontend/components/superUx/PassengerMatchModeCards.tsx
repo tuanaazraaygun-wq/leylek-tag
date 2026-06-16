@@ -9,6 +9,7 @@ import {
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
+  PREMIUM_NAVY_DEEP,
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
@@ -299,22 +300,33 @@ function PassengerMatchModeCards({
 
 export default memo(PassengerMatchModeCards);
 
+/** Role select kokpit kartları ile aynı optik genişlik — yatay merkez hizası */
+const MATCH_DECK_MAX_WIDTH = 440;
+
 const styles = StyleSheet.create({
   matchDeck: {
-    alignSelf: 'stretch',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: MATCH_DECK_MAX_WIDTH,
     gap: LDS_SPACING.sm,
   },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    justifyContent: 'center',
+    width: '100%',
     gap: LDS_SPACING.sm,
   },
   heroCell: {
     flex: 1,
+    flexBasis: 0,
     minWidth: 0,
+    alignSelf: 'stretch',
   },
   heroCardShell: {
     flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
   },
   quickHeroCard: {
     borderTopColor: 'rgba(34, 211, 238, 0.42)',
@@ -336,6 +348,15 @@ const styles = StyleSheet.create({
     borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
     borderColor: LDS_BORDER_COLOR.card,
     backgroundColor: 'rgba(4, 10, 20, 0.28)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.28,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 6 },
+    }),
   },
   heroCardDisabledShell: {
     opacity: 0.58,

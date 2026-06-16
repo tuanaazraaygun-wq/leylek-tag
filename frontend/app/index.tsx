@@ -19872,13 +19872,16 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   passengerMatchDecisionCockpit: {
-    marginHorizontal: LDS_SPACING.md,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 440,
     marginTop: LDS_SPACING.xs,
   },
   passengerMatchTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
     marginBottom: LDS_SPACING.sm,
   },
   passengerMatchBackBtn: {
@@ -19910,6 +19913,8 @@ const styles = StyleSheet.create({
   },
   passengerMatchPhaseBlock: {
     alignItems: 'center',
+    alignSelf: 'center',
+    width: '100%',
     gap: LDS_SPACING.xxs,
     marginBottom: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.xxs,
@@ -21858,11 +21863,15 @@ const styles = StyleSheet.create({
   },
   passengerHomeScrollContent: {
     flexGrow: 1,
+    alignItems: 'center',
+    width: '100%',
     paddingBottom: 32,
     paddingHorizontal: 10,
   },
   emptyStateContainerFull: {
     flex: 1,
+    alignItems: 'center',
+    width: '100%',
     paddingTop: LDS_SPACING.xs,
     minHeight: 0,
   },
