@@ -4,6 +4,7 @@ Kişisel veri (user_id, phone, tag_id, route pair) saklanmaz.
 """
 from __future__ import annotations
 
+import math
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -17,6 +18,10 @@ _MAX_QUERY_LEN = 128
 _MAX_CITY_LEN = 128
 _MAX_DISTRICT_LEN = 128
 _MAX_PROVIDER_LEN = 32
+
+# P1-A: düşük skorlu learned satırları döndürme — provider fallback açık kalsın
+_MIN_LEARNED_SCORE = 32.0
+_LEARNED_FETCH_LIMIT = 35
 
 # FE route picker ile uyumlu Türkiye bbox
 _TR_LAT_MIN = 35.0
@@ -115,7 +120,128 @@ def _learned_city_context_match(
     return bool(scope & row_labels)
 
 
-def _learned_row_to_result(row: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _learned_text_match_tier(q_norm: str, stored_nq: str) -> int:
+    """3=exact, 2=prefix, 1=reverse-prefix, 0=miss."""
+    if not _learned_query_matches(q_norm, stored_nq):
+        return 0
+    if q_norm == stored_nq:
+        return 3
+    if len(q_norm) >= 3 and stored_nq.startswith(q_norm):
+        return 2
+    if len(stored_nq) >= 3 and q_norm.startswith(stored_nq):
+        return 1
+    return 0
+
+
+def _learned_scope_norms(
+    *,
+    city: str = "",
+    district: str = "",
+    city_raw: str = "",
+) -> tuple[set[str], set[str]]:
+    scope: set[str] = set()
+    for label in (city, district, city_raw):
+        nk = _norm_key(label)
+        if nk:
+            scope.add(nk)
+    dist = _norm_key(district)
+    district_scope = {dist} if dist else set()
+    return scope, district_scope
+
+
+def _learned_city_district_score(
+    row_city: str,
+    row_district: str,
+    *,
+    city: str = "",
+    district: str = "",
+    city_raw: str = "",
+) -> tuple[float, float]:
+    scope, district_scope = _learned_scope_norms(
+        city=city, district=district, city_raw=city_raw
+    )
+    rc = _norm_key(row_city)
+    rd = _norm_key(row_district)
+
+    if not scope:
+        city_score = 0.5
+        district_score = 0.5 if rd else 0.0
+        return city_score, district_score
+
+    city_score = 1.0 if rc in scope or rd in scope else 0.0
+    district_score = 1.0 if rd and rd in district_scope else 0.0
+    if district_score == 0.0 and rd and rd in scope:
+        district_score = 0.75
+    return city_score, district_score
+
+
+def _learned_usage_score(usage_count: int) -> float:
+    return math.log1p(max(0, int(usage_count))) * 2.5
+
+
+def _learned_recency_score(last_used_at: str) -> float:
+    raw = (last_used_at or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        age_days = max(
+            0.0,
+            (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
+            / 86400.0,
+        )
+        return 10.0 * (0.5 ** (age_days / 30.0))
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
+def _compute_learned_score(
+    q_norm: str,
+    row: dict[str, Any],
+    *,
+    city: str = "",
+    district: str = "",
+    city_raw: str = "",
+) -> float:
+    stored_nq = _norm_key(str(row.get("normalized_query") or ""))
+    tier = _learned_text_match_tier(q_norm, stored_nq)
+    if tier == 0:
+        return -1.0
+
+    text_points = {3: 100.0, 2: 72.0, 1: 42.0}[tier]
+    city_s, dist_s = _learned_city_district_score(
+        str(row.get("city") or ""),
+        str(row.get("district") or ""),
+        city=city,
+        district=district,
+        city_raw=city_raw,
+    )
+    scope, _ = _learned_scope_norms(city=city, district=district, city_raw=city_raw)
+    if scope and city_s <= 0.0:
+        text_points *= 0.45
+
+    usage_score = _learned_usage_score(int(row.get("usage_count") or 1))
+    recency_score = _learned_recency_score(str(row.get("last_used_at") or ""))
+
+    return (
+        text_points
+        + city_s * 15.0
+        + dist_s * 8.0
+        + usage_score
+        + recency_score
+    )
+
+
+def _learned_row_to_result(
+    row: dict[str, Any],
+    *,
+    score: float,
+    q_norm: str,
+) -> Optional[dict[str, Any]]:
     display_name = str(row.get("display_name") or "").strip()
     if len(display_name) < _MIN_DISPLAY_NAME_LEN:
         return None
@@ -147,14 +273,81 @@ def _learned_row_to_result(row: dict[str, Any]) -> Optional[dict[str, Any]]:
         "lat": str(round(latitude, 7)),
         "lng": str(round(longitude, 7)),
         "provider": "learned",
+        "_score": score,
         "_usage_count": int(row.get("usage_count") or 1),
         "_last_used_at": str(row.get("last_used_at") or ""),
-        "_normalized_query": stored_nq,
+        "_normalized_query": _norm_key(str(row.get("normalized_query") or "")),
+        "_text_tier": _learned_text_match_tier(
+            q_norm, _norm_key(str(row.get("normalized_query") or ""))
+        ),
     }
 
 
-def _learned_sort_key(item: dict[str, Any]) -> tuple[int, str]:
-    return (-int(item.get("_usage_count", 1)), str(item.get("_last_used_at", "")))
+def _learned_sort_key(item: dict[str, Any]) -> tuple[float, int, str]:
+    return (
+        -float(item.get("_score", 0.0)),
+        -int(item.get("_text_tier", 0)),
+        str(item.get("_last_used_at", "")),
+    )
+
+
+def _scope_labels(city: str, district: str, city_raw: str) -> list[str]:
+    labels: list[str] = []
+    for label in (city, district, city_raw):
+        t = (label or "").strip()
+        if t and t not in labels:
+            labels.append(t)
+    return labels
+
+
+def _learned_or_filter(scope_labels: list[str]) -> str:
+    parts: list[str] = []
+    for label in scope_labels[:3]:
+        parts.append(f"city.eq.{label}")
+        parts.append(f"district.eq.{label}")
+    return ",".join(parts)
+
+
+def _fetch_learned_rows_primary(
+    supabase: Any,
+    q_norm: str,
+) -> list[dict[str, Any]]:
+    try:
+        q = supabase.table(TABLE_LEARNED_ADDRESSES).select("*")
+        if len(q_norm) >= 3:
+            q = q.like("normalized_query", f"{q_norm}%")
+        else:
+            q = q.eq("normalized_query", q_norm)
+        res = (
+            q.order("usage_count", desc=True)
+            .order("last_used_at", desc=True)
+            .limit(_LEARNED_FETCH_LIMIT)
+            .execute()
+        )
+        rows = res.data if isinstance(res.data, list) else []
+        return [r for r in rows if isinstance(r, dict)]
+    except Exception:
+        return []
+
+
+def _fetch_learned_rows_scoped_popular(
+    supabase: Any,
+    scope_labels: list[str],
+) -> list[dict[str, Any]]:
+    try:
+        q = supabase.table(TABLE_LEARNED_ADDRESSES).select("*")
+        if scope_labels:
+            q = q.or_(_learned_or_filter(scope_labels))
+        res = (
+            q.order("usage_count", desc=True)
+            .order("last_used_at", desc=True)
+            .limit(_LEARNED_FETCH_LIMIT)
+            .execute()
+        )
+        rows = res.data if isinstance(res.data, list) else []
+        return [r for r in rows if isinstance(r, dict)]
+    except Exception:
+        return []
 
 
 def lookup_learned_addresses(
@@ -167,8 +360,8 @@ def lookup_learned_addresses(
     max_results: int = 5,
 ) -> list[dict[str, Any]]:
     """
-    Öğrenilmiş anonim adres araması — normalized_query + şehir/ilçe kapsamı.
-    usage_count DESC, last_used_at DESC; en fazla max_results satır.
+    Öğrenilmiş anonim adres araması — P1-A composite score ile sıralama.
+    En fazla max_results satır; düşük skorlu adaylar elenir.
     """
     if supabase is None:
         return []
@@ -179,6 +372,7 @@ def lookup_learned_addresses(
 
     max_results = max(1, min(int(max_results or 5), 5))
     matched: dict[str, dict[str, Any]] = {}
+    scope_labels = _scope_labels(city, district, city_raw)
 
     def _ingest_rows(rows: Any) -> None:
         if not isinstance(rows, list):
@@ -197,111 +391,31 @@ def lookup_learned_addresses(
                 city_raw=city_raw,
             ):
                 continue
-            result = _learned_row_to_result(row)
+            score = _compute_learned_score(
+                q_norm,
+                row,
+                city=city,
+                district=district,
+                city_raw=city_raw,
+            )
+            if score < _MIN_LEARNED_SCORE:
+                continue
+            result = _learned_row_to_result(row, score=score, q_norm=q_norm)
             if not result:
                 continue
             dedupe_key = str(row.get("dedupe_key") or row.get("id") or result.get("place_id"))
-            if dedupe_key in matched:
+            prev = matched.get(dedupe_key)
+            if prev is not None and float(prev.get("_score", 0.0)) >= score:
                 continue
             matched[dedupe_key] = result
 
-    def _fetch_exact() -> None:
-        try:
-            res = (
-                supabase.table(TABLE_LEARNED_ADDRESSES)
-                .select("*")
-                .eq("normalized_query", q_norm)
-                .order("usage_count", desc=True)
-                .order("last_used_at", desc=True)
-                .limit(20)
-                .execute()
-            )
-            _ingest_rows(res.data)
-        except Exception:
-            pass
+    _ingest_rows(_fetch_learned_rows_primary(supabase, q_norm))
 
-    def _fetch_prefix() -> None:
-        if len(q_norm) < 3:
-            return
-        try:
-            res = (
-                supabase.table(TABLE_LEARNED_ADDRESSES)
-                .select("*")
-                .like("normalized_query", f"{q_norm}%")
-                .order("usage_count", desc=True)
-                .order("last_used_at", desc=True)
-                .limit(20)
-                .execute()
-            )
-            _ingest_rows(res.data)
-        except Exception:
-            pass
-
-    def _fetch_city_scoped_usage() -> None:
-        """Reverse-prefix: kullanıcı sorgusu stored query ile başlıyorsa."""
-        if len(q_norm) < 3:
-            return
-        scope_labels: list[str] = []
-        for label in (city, district, city_raw):
-            t = (label or "").strip()
-            if t and t not in scope_labels:
-                scope_labels.append(t)
-        try:
-            if scope_labels:
-                seen_ids: set[str] = set()
-                for label in scope_labels[:3]:
-                    res = (
-                        supabase.table(TABLE_LEARNED_ADDRESSES)
-                        .select("*")
-                        .eq("city", label)
-                        .order("usage_count", desc=True)
-                        .order("last_used_at", desc=True)
-                        .limit(25)
-                        .execute()
-                    )
-                    rows = res.data if isinstance(res.data, list) else []
-                    for row in rows:
-                        rid = str(row.get("id") or row.get("dedupe_key") or "")
-                        if rid and rid in seen_ids:
-                            continue
-                        if rid:
-                            seen_ids.add(rid)
-                        _ingest_rows([row])
-                    res_d = (
-                        supabase.table(TABLE_LEARNED_ADDRESSES)
-                        .select("*")
-                        .eq("district", label)
-                        .order("usage_count", desc=True)
-                        .order("last_used_at", desc=True)
-                        .limit(25)
-                        .execute()
-                    )
-                    rows_d = res_d.data if isinstance(res_d.data, list) else []
-                    for row in rows_d:
-                        rid = str(row.get("id") or row.get("dedupe_key") or "")
-                        if rid and rid in seen_ids:
-                            continue
-                        if rid:
-                            seen_ids.add(rid)
-                        _ingest_rows([row])
-            else:
-                res = (
-                    supabase.table(TABLE_LEARNED_ADDRESSES)
-                    .select("*")
-                    .order("usage_count", desc=True)
-                    .order("last_used_at", desc=True)
-                    .limit(40)
-                    .execute()
-                )
-                _ingest_rows(res.data)
-        except Exception:
-            pass
-
-    _fetch_exact()
-    if len(matched) < max_results:
-        _fetch_prefix()
-    if len(matched) < max_results:
-        _fetch_city_scoped_usage()
+    needs_reverse = len(q_norm) >= 3 and any(
+        int(item.get("_text_tier", 0)) < 2 for item in matched.values()
+    )
+    if len(matched) < max_results or needs_reverse:
+        _ingest_rows(_fetch_learned_rows_scoped_popular(supabase, scope_labels))
 
     if not matched:
         return []
@@ -310,6 +424,8 @@ def lookup_learned_addresses(
     out: list[dict[str, Any]] = []
     for item in ranked[:max_results]:
         clean = dict(item)
+        clean.pop("_score", None)
+        clean.pop("_text_tier", None)
         clean.pop("_usage_count", None)
         clean.pop("_last_used_at", None)
         clean.pop("_normalized_query", None)
