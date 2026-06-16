@@ -8,7 +8,7 @@
  * - Hızlı teklif gönderme
  */
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -854,7 +854,7 @@ function RequestCard({
 }
 
 /** Şehir içi talep yoğunluğu — kırmızı dalga (tüm sürücüler aynı API verisini görür) */
-function CityHeatCellMarker({
+const CityHeatCellMarker = memo(function CityHeatCellMarker({
   cell,
   delayMs,
 }: {
@@ -868,45 +868,46 @@ function CityHeatCellMarker({
 
   useEffect(() => {
     const boost = 0.35 + cell.intensity * 0.55;
-    const loop1 = Animated.loop(
+    const dur = 1500;
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(delayMs),
         Animated.parallel([
-          Animated.timing(scale, {
-            toValue: 1.5 + boost * 0.35,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacity, { toValue: 0, duration: 1500, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
+          Animated.sequence([
+            Animated.parallel([
+              Animated.timing(scale, {
+                toValue: 1.5 + boost * 0.35,
+                duration: dur,
+                useNativeDriver: true,
+              }),
+              Animated.timing(opacity, { toValue: 0, duration: dur, useNativeDriver: true }),
+            ]),
+            Animated.parallel([
+              Animated.timing(scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+              Animated.timing(opacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
+            ]),
+          ]),
+          Animated.sequence([
+            Animated.delay(480),
+            Animated.parallel([
+              Animated.timing(scale2, {
+                toValue: 1.35 + boost * 0.28,
+                duration: dur,
+                useNativeDriver: true,
+              }),
+              Animated.timing(opacity2, { toValue: 0, duration: dur, useNativeDriver: true }),
+            ]),
+            Animated.parallel([
+              Animated.timing(scale2, { toValue: 1, duration: 0, useNativeDriver: true }),
+              Animated.timing(opacity2, { toValue: 0.38, duration: 0, useNativeDriver: true }),
+            ]),
+          ]),
         ]),
       ]),
     );
-    const loop2 = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delayMs + 480),
-        Animated.parallel([
-          Animated.timing(scale2, {
-            toValue: 1.35 + boost * 0.28,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacity2, { toValue: 0, duration: 1500, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(scale2, { toValue: 1, duration: 0, useNativeDriver: true }),
-          Animated.timing(opacity2, { toValue: 0.38, duration: 0, useNativeDriver: true }),
-        ]),
-      ]),
-    );
-    loop1.start();
-    loop2.start();
+    loop.start();
     return () => {
-      loop1.stop();
-      loop2.stop();
+      loop.stop();
     };
   }, [cell.intensity, delayMs, scale, opacity, scale2, opacity2]);
 
@@ -928,7 +929,7 @@ function CityHeatCellMarker({
       <View style={styles.cityHeatCore} />
     </View>
   );
-}
+});
 
 export default function DriverOfferScreen({
   driverLocation,
@@ -965,52 +966,53 @@ export default function DriverOfferScreen({
   const driverPulse2Opacity = useRef(new Animated.Value(0.35)).current;
 
   useEffect(() => {
-    const ring1 = Animated.loop(
+    const dur = 1800;
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.parallel([
-          Animated.timing(driverPulseScale, {
-            toValue: 2.2,
-            duration: 1800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(driverPulseOpacity, {
-            toValue: 0,
-            duration: 1800,
-            useNativeDriver: true,
-          }),
+          Animated.sequence([
+            Animated.parallel([
+              Animated.timing(driverPulseScale, {
+                toValue: 2.2,
+                duration: dur,
+                useNativeDriver: true,
+              }),
+              Animated.timing(driverPulseOpacity, {
+                toValue: 0,
+                duration: dur,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.parallel([
+              Animated.timing(driverPulseScale, { toValue: 1, duration: 0, useNativeDriver: true }),
+              Animated.timing(driverPulseOpacity, { toValue: 0.55, duration: 0, useNativeDriver: true }),
+            ]),
+          ]),
+          Animated.sequence([
+            Animated.delay(650),
+            Animated.parallel([
+              Animated.timing(driverPulse2Scale, {
+                toValue: 2.05,
+                duration: dur,
+                useNativeDriver: true,
+              }),
+              Animated.timing(driverPulse2Opacity, {
+                toValue: 0,
+                duration: dur,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.parallel([
+              Animated.timing(driverPulse2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+              Animated.timing(driverPulse2Opacity, { toValue: 0.35, duration: 0, useNativeDriver: true }),
+            ]),
+          ]),
         ]),
-        Animated.parallel([
-          Animated.timing(driverPulseScale, { toValue: 1, duration: 0, useNativeDriver: true }),
-          Animated.timing(driverPulseOpacity, { toValue: 0.55, duration: 0, useNativeDriver: true }),
-        ]),
-      ])
+      ]),
     );
-    const ring2 = Animated.loop(
-      Animated.sequence([
-        Animated.delay(650),
-        Animated.parallel([
-          Animated.timing(driverPulse2Scale, {
-            toValue: 2.05,
-            duration: 1800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(driverPulse2Opacity, {
-            toValue: 0,
-            duration: 1800,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(driverPulse2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-          Animated.timing(driverPulse2Opacity, { toValue: 0.35, duration: 0, useNativeDriver: true }),
-        ]),
-      ])
-    );
-    ring1.start();
-    ring2.start();
+    loop.start();
     return () => {
-      ring1.stop();
-      ring2.stop();
+      loop.stop();
     };
   }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
 
@@ -1200,6 +1202,121 @@ export default function DriverOfferScreen({
     }, 350);
   }, [mapExpanded, mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius]);
 
+  const listedTagIdKey = useMemo(() => {
+    const ids: string[] = [];
+    listedTagIds.forEach((id) => ids.push(id));
+    ids.sort();
+    return ids.join('|');
+  }, [listedTagIds]);
+
+  const mapHeatMarkerElements = useMemo(
+    () =>
+      mapCityGrid.map((cell, idx) => (
+        <Marker
+          key={`heat-${idx}-${cell.center_lat}-${cell.center_lng}`}
+          coordinate={{ latitude: cell.center_lat, longitude: cell.center_lng }}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+        >
+          <CityHeatCellMarker cell={cell} delayMs={(idx % 6) * 180} />
+        </Marker>
+      )),
+    [mapCityGrid],
+  );
+
+  const mapSeekingMarkerElements = useMemo(
+    () =>
+      mapSeekingPins.map((pin) => {
+        const listed = listedTagIds.has(String(pin.tag_id));
+        return (
+          <Marker
+            key={`seek-${pin.tag_id}`}
+            coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
+            title={listed ? 'Aktif Talep' : 'Yakın Talep'}
+            description={listed ? 'Dispatch listesinde' : 'Aktif yolcu talebi'}
+            tracksViewChanges={false}
+          >
+            {listed ? (
+              <View style={styles.passengerMarkerSeekingActive}>
+                <Ionicons name="navigate" size={16} color="#FFF" />
+              </View>
+            ) : (
+              <View style={styles.passengerMarkerSeekingNear}>
+                <View style={styles.passengerMarkerSeekingNearRing} pointerEvents="none" />
+                <Ionicons name="navigate" size={13} color="#EA580C" />
+              </View>
+            )}
+          </Marker>
+        );
+      }),
+    [mapSeekingPins, listedTagIdKey, listedTagIds],
+  );
+
+  const mapLightMarkerElements = useMemo(
+    () =>
+      mapLightPins.map((pin) => (
+        <Marker
+          key={`light-${pin.user_id}`}
+          coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
+          title="Konum Paylaşan Yolcu"
+          description="Yakın çevre sinyali"
+          tracksViewChanges={false}
+        >
+          <View style={styles.passengerMarkerLightSignal} collapsable={false} />
+        </Marker>
+      )),
+    [mapLightPins],
+  );
+
+  const driverMapMarkerElement = useMemo(() => {
+    if (!driverLocation) return null;
+    return (
+      <Marker
+        coordinate={driverLocation}
+        title="Siz"
+        anchor={{ x: 0.5, y: 0.5 }}
+        tracksViewChanges
+      >
+        <View style={styles.driverMarkerPulseWrap} collapsable={false}>
+          <Animated.View
+            style={[
+              styles.driverPulseRing,
+              {
+                transform: [{ scale: driverPulseScale }],
+                opacity: driverPulseOpacity,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.driverPulseRing,
+              styles.driverPulseRingOuter,
+              {
+                transform: [{ scale: driverPulse2Scale }],
+                opacity: driverPulse2Opacity,
+              },
+            ]}
+          />
+          <View style={styles.driverMarker}>
+            {isMotor ? (
+              <MaterialCommunityIcons name="motorbike" size={22} color="#FFF" />
+            ) : (
+              <Ionicons name="car" size={22} color="#FFF" />
+            )}
+          </View>
+        </View>
+      </Marker>
+    );
+  }, [
+    driverLocation?.latitude,
+    driverLocation?.longitude,
+    isMotor,
+    driverPulseScale,
+    driverPulseOpacity,
+    driverPulse2Scale,
+    driverPulse2Opacity,
+  ]);
+
   // Web fallback veya harita yoksa
   const renderMap = () => {
     if (Platform.OS === 'web' || !MapView) {
@@ -1262,83 +1379,13 @@ export default function DriverOfferScreen({
           </>
         ) : null}
 
-        {mapCityGrid.map((cell, idx) => (
-          <Marker
-            key={`heat-${idx}-${cell.center_lat}-${cell.center_lng}`}
-            coordinate={{ latitude: cell.center_lat, longitude: cell.center_lng }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-          >
-            <CityHeatCellMarker cell={cell} delayMs={(idx % 6) * 180} />
-          </Marker>
-        ))}
+        {mapHeatMarkerElements}
 
-        {driverLocation && (
-          <Marker coordinate={driverLocation} title="Siz" anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.driverMarkerPulseWrap} collapsable={false}>
-              <Animated.View
-                style={[
-                  styles.driverPulseRing,
-                  {
-                    transform: [{ scale: driverPulseScale }],
-                    opacity: driverPulseOpacity,
-                  },
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.driverPulseRing,
-                  styles.driverPulseRingOuter,
-                  {
-                    transform: [{ scale: driverPulse2Scale }],
-                    opacity: driverPulse2Opacity,
-                  },
-                ]}
-              />
-              <View style={styles.driverMarker}>
-                {isMotor ? (
-                  <MaterialCommunityIcons name="motorbike" size={22} color="#FFF" />
-                ) : (
-                  <Ionicons name="car" size={22} color="#FFF" />
-                )}
-              </View>
-            </View>
-          </Marker>
-        )}
+        {driverMapMarkerElement}
 
-        {mapSeekingPins.map((pin) => {
-          const listed = listedTagIds.has(String(pin.tag_id));
-          return (
-            <Marker
-              key={`seek-${pin.tag_id}`}
-              coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
-              title={listed ? 'Aktif Talep' : 'Yakın Talep'}
-              description={listed ? 'Dispatch listesinde' : 'Aktif yolcu talebi'}
-            >
-              {listed ? (
-                <View style={styles.passengerMarkerSeekingActive}>
-                  <Ionicons name="navigate" size={16} color="#FFF" />
-                </View>
-              ) : (
-                <View style={styles.passengerMarkerSeekingNear}>
-                  <View style={styles.passengerMarkerSeekingNearRing} pointerEvents="none" />
-                  <Ionicons name="navigate" size={13} color="#EA580C" />
-                </View>
-              )}
-            </Marker>
-          );
-        })}
+        {mapSeekingMarkerElements}
 
-        {mapLightPins.map((pin) => (
-          <Marker
-            key={`light-${pin.user_id}`}
-            coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
-            title="Konum Paylaşan Yolcu"
-            description="Yakın çevre sinyali"
-          >
-            <View style={styles.passengerMarkerLightSignal} collapsable={false} />
-          </Marker>
-        ))}
+        {mapLightMarkerElements}
       </MapView>
     );
   };
