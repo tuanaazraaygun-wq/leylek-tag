@@ -55,6 +55,11 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_POLL_INTERVAL_MS = 9000;
 /** Dispatch radius ile hizalı saha tarama yarıçapı (backend `DISPATCH_RADIUS_KM` default) */
 const FIELD_DEFAULT_RADIUS_KM = 10;
+/** FI-06B — temporal ring buffer (~5 dk @ 9s poll) */
+const FIELD_TEMPORAL_BUFFER_MAX = 34;
+const FIELD_TEMPORAL_MIN_SNAPSHOTS = 3;
+const FIELD_TEMPORAL_MIN_COVERAGE_MS = 27_000;
+const FIELD_TEMPORAL_DRIVER_RESET_KM = 2;
 
 function resolveFieldRadiusKm(radius: number | undefined | null): number {
   const n = Number(radius);
@@ -339,6 +344,33 @@ function resolveFieldDominantSector(
   seekingPins: DriverMapSeekingPin[],
   lightPins: DriverMapLightPin[],
 ): { sector: FieldCardinalSector; band: FieldSpatialDensityBand } | null {
+  const totals = resolveFieldSectorScores(driverLocation, grid, seekingPins, lightPins);
+
+  let bestSector: FieldCardinalSector | null = null;
+  let bestScore = 0;
+  let total = 0;
+  (Object.keys(totals) as FieldCardinalSector[]).forEach((sector) => {
+    total += totals[sector];
+    if (totals[sector] > bestScore) {
+      bestScore = totals[sector];
+      bestSector = sector;
+    }
+  });
+  if (!bestSector || bestScore <= 0) return null;
+
+  const share = total > 0 ? bestScore / total : 0;
+  let band: FieldSpatialDensityBand = 'Düşük';
+  if (bestScore >= 2.5 || share >= 0.45) band = 'Yüksek';
+  else if (bestScore >= 1 || share >= 0.28) band = 'Orta';
+  return { sector: bestSector, band };
+}
+
+function resolveFieldSectorScores(
+  driverLocation: { latitude: number; longitude: number },
+  grid: DriverMapCityGridCell[],
+  seekingPins: DriverMapSeekingPin[],
+  lightPins: DriverMapLightPin[],
+): Record<FieldCardinalSector, number> {
   const totals: Record<FieldCardinalSector, number> = {
     Kuzey: 0,
     Doğu: 0,
@@ -374,23 +406,7 @@ function resolveFieldDominantSector(
     totals[sector] += 0.35;
   }
 
-  let bestSector: FieldCardinalSector | null = null;
-  let bestScore = 0;
-  let total = 0;
-  (Object.keys(totals) as FieldCardinalSector[]).forEach((sector) => {
-    total += totals[sector];
-    if (totals[sector] > bestScore) {
-      bestScore = totals[sector];
-      bestSector = sector;
-    }
-  });
-  if (!bestSector || bestScore <= 0) return null;
-
-  const share = total > 0 ? bestScore / total : 0;
-  let band: FieldSpatialDensityBand = 'Düşük';
-  if (bestScore >= 2.5 || share >= 0.45) band = 'Yüksek';
-  else if (bestScore >= 1 || share >= 0.28) band = 'Orta';
-  return { sector: bestSector, band };
+  return totals;
 }
 
 function resolveFieldNearestDenseRegion(
@@ -551,6 +567,217 @@ function resolveFieldSpatialInsights(input: {
     operationScore,
     operationScoreBand,
     insightLine: `Saha sakin · Skor ${operationScore}`,
+  };
+}
+
+type FieldTemporalTrendDirection = 'insufficient' | 'stable' | 'increasing' | 'decreasing';
+type FieldTemporalTrendConfidence = 'low' | 'medium' | 'high';
+
+type FieldTemporalSnapshot = {
+  ts: number;
+  seekingCount: number;
+  nearbyCount: number;
+  peakIntensity: number;
+  dominantSector: FieldCardinalSector | null;
+  sectorScores: Record<FieldCardinalSector, number>;
+  operationScore: number;
+  listedCount: number;
+  radiusKm: number;
+};
+
+type FieldTemporalTrendResult = {
+  overall: FieldTemporalTrendDirection;
+  seeking: FieldTemporalTrendDirection;
+  nearby: FieldTemporalTrendDirection;
+  operationScore: FieldTemporalTrendDirection;
+  confidence: FieldTemporalTrendConfidence;
+  coverageMs: number;
+  snapshotCount: number;
+};
+
+type FieldTemporalBufferState = {
+  snapshots: FieldTemporalSnapshot[];
+  origin: { latitude: number; longitude: number } | null;
+};
+
+function createFieldTemporalBufferState(): FieldTemporalBufferState {
+  return { snapshots: [], origin: null };
+}
+
+function resetFieldTemporalBuffer(state: FieldTemporalBufferState): void {
+  state.snapshots.length = 0;
+  state.origin = null;
+}
+
+function shouldResetFieldTemporalBuffer(
+  state: FieldTemporalBufferState,
+  driverLocation: { latitude: number; longitude: number },
+): boolean {
+  if (!state.origin) return false;
+  return (
+    resolveFieldHaversineKm(
+      state.origin.latitude,
+      state.origin.longitude,
+      driverLocation.latitude,
+      driverLocation.longitude,
+    ) > FIELD_TEMPORAL_DRIVER_RESET_KM
+  );
+}
+
+function buildFieldTemporalSnapshot(input: {
+  driverLocation: { latitude: number; longitude: number };
+  grid: DriverMapCityGridCell[];
+  seekingPins: DriverMapSeekingPin[];
+  lightPins: DriverMapLightPin[];
+  seeking: number;
+  nearby: number;
+  listedCount: number;
+  radiusKm: number;
+}): FieldTemporalSnapshot {
+  const sectorScores = resolveFieldSectorScores(
+    input.driverLocation,
+    input.grid,
+    input.seekingPins,
+    input.lightPins,
+  );
+  const dominant = resolveFieldDominantSector(
+    input.driverLocation,
+    input.grid,
+    input.seekingPins,
+    input.lightPins,
+  );
+
+  let peakIntensity = 0;
+  for (const cell of input.grid) {
+    if (Number(cell.intensity) > peakIntensity) peakIntensity = Number(cell.intensity);
+  }
+
+  const areaOccupancy = resolveFieldAreaOccupancyLevel(input.grid, input.seeking, input.nearby);
+  const operationScore = resolveFieldOperationScore({
+    seeking: input.seeking,
+    nearby: input.nearby,
+    peakIntensity,
+    listedCount: input.listedCount,
+    occupancy: areaOccupancy,
+  });
+
+  return {
+    ts: Date.now(),
+    seekingCount: Math.max(0, Math.floor(Number(input.seeking) || 0)),
+    nearbyCount: Math.max(0, Math.floor(Number(input.nearby) || 0)),
+    peakIntensity,
+    dominantSector: dominant?.sector ?? null,
+    sectorScores,
+    operationScore,
+    listedCount: Math.max(0, Math.floor(Number(input.listedCount) || 0)),
+    radiusKm: resolveFieldRadiusKm(input.radiusKm),
+  };
+}
+
+function appendFieldTemporalSnapshot(
+  state: FieldTemporalBufferState,
+  snapshot: FieldTemporalSnapshot,
+  driverLocation: { latitude: number; longitude: number },
+): void {
+  if (shouldResetFieldTemporalBuffer(state, driverLocation)) {
+    resetFieldTemporalBuffer(state);
+  }
+  if (!state.origin) {
+    state.origin = {
+      latitude: driverLocation.latitude,
+      longitude: driverLocation.longitude,
+    };
+  }
+  state.snapshots.push(snapshot);
+  if (state.snapshots.length > FIELD_TEMPORAL_BUFFER_MAX) {
+    state.snapshots.splice(0, state.snapshots.length - FIELD_TEMPORAL_BUFFER_MAX);
+  }
+}
+
+function resolveFieldMetricTrendDirection(
+  first: number,
+  last: number,
+  stableThreshold: number,
+): Exclude<FieldTemporalTrendDirection, 'insufficient'> {
+  const delta = last - first;
+  if (Math.abs(delta) <= stableThreshold) return 'stable';
+  return delta > 0 ? 'increasing' : 'decreasing';
+}
+
+function resolveFieldTemporalTrendConfidence(
+  seeking: Exclude<FieldTemporalTrendDirection, 'insufficient'>,
+  nearby: Exclude<FieldTemporalTrendDirection, 'insufficient'>,
+  operationScore: Exclude<FieldTemporalTrendDirection, 'insufficient'>,
+): FieldTemporalTrendConfidence {
+  const inc = [seeking, nearby, operationScore].filter((d) => d === 'increasing').length;
+  const dec = [seeking, nearby, operationScore].filter((d) => d === 'decreasing').length;
+  const aligned = Math.max(inc, dec);
+  if (aligned >= 3) return 'high';
+  if (aligned >= 2) return 'medium';
+  return 'low';
+}
+
+function resolveFieldTemporalOverallTrend(
+  seeking: Exclude<FieldTemporalTrendDirection, 'insufficient'>,
+  nearby: Exclude<FieldTemporalTrendDirection, 'insufficient'>,
+  operationScore: Exclude<FieldTemporalTrendDirection, 'insufficient'>,
+): Exclude<FieldTemporalTrendDirection, 'insufficient'> {
+  const inc = [seeking, nearby, operationScore].filter((d) => d === 'increasing').length;
+  const dec = [seeking, nearby, operationScore].filter((d) => d === 'decreasing').length;
+  if (inc >= 2) return 'increasing';
+  if (dec >= 2) return 'decreasing';
+  if (seeking !== 'stable') return seeking;
+  if (nearby !== 'stable') return nearby;
+  return operationScore;
+}
+
+function resolveFieldTemporalTrend(snapshots: FieldTemporalSnapshot[]): FieldTemporalTrendResult {
+  const snapshotCount = snapshots.length;
+  if (snapshotCount < FIELD_TEMPORAL_MIN_SNAPSHOTS) {
+    return {
+      overall: 'insufficient',
+      seeking: 'insufficient',
+      nearby: 'insufficient',
+      operationScore: 'insufficient',
+      confidence: 'low',
+      coverageMs: 0,
+      snapshotCount,
+    };
+  }
+
+  const first = snapshots[0];
+  const last = snapshots[snapshotCount - 1];
+  const coverageMs = Math.max(0, last.ts - first.ts);
+  if (coverageMs < FIELD_TEMPORAL_MIN_COVERAGE_MS) {
+    return {
+      overall: 'insufficient',
+      seeking: 'insufficient',
+      nearby: 'insufficient',
+      operationScore: 'insufficient',
+      confidence: 'low',
+      coverageMs,
+      snapshotCount,
+    };
+  }
+
+  const seeking = resolveFieldMetricTrendDirection(first.seekingCount, last.seekingCount, 1);
+  const nearby = resolveFieldMetricTrendDirection(first.nearbyCount, last.nearbyCount, 1);
+  const operationScore = resolveFieldMetricTrendDirection(
+    first.operationScore,
+    last.operationScore,
+    3,
+  );
+  const confidence = resolveFieldTemporalTrendConfidence(seeking, nearby, operationScore);
+  const overall = resolveFieldTemporalOverallTrend(seeking, nearby, operationScore);
+
+  return {
+    overall,
+    seeking,
+    nearby,
+    operationScore,
+    confidence,
+    coverageMs,
+    snapshotCount,
   };
 }
 
@@ -1423,6 +1650,9 @@ export default function DriverOfferScreen({
   const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
   const driverPulse2Scale = useRef(new Animated.Value(1)).current;
   const driverPulse2Opacity = useRef(new Animated.Value(0.35)).current;
+  const fieldTemporalBufferRef = useRef(createFieldTemporalBufferState());
+  const fieldTemporalTrendRef = useRef<FieldTemporalTrendResult | null>(null);
+  const fieldListedCountRef = useRef(0);
 
   useEffect(() => {
     const dur = 1800;
@@ -1534,6 +1764,8 @@ export default function DriverOfferScreen({
     return s;
   }, [visibleRequests]);
 
+  fieldListedCountRef.current = visibleRequests.length;
+
   const fieldIntelMetrics = useMemo(() => {
     const scanLabel = `${resolveFieldRadiusKm(mapHud.radius)} km`;
     const nearRequestsLabel = mapExpanded ? String(mapHud.seeking) : String(visibleRequests.length);
@@ -1619,6 +1851,25 @@ export default function DriverOfferScreen({
           nearby: Number(j.nearby_light_count) || 0,
           radius: resolveFieldRadiusKm(j.radius_km),
         });
+        if (driverLocation) {
+          appendFieldTemporalSnapshot(
+            fieldTemporalBufferRef.current,
+            buildFieldTemporalSnapshot({
+              driverLocation,
+              grid: Array.isArray(j.city_grid) ? j.city_grid : [],
+              seekingPins: Array.isArray(j.seeking) ? j.seeking : [],
+              lightPins: Array.isArray(j.nearby_app_users) ? j.nearby_app_users : [],
+              seeking: Number(j.seeking_count) || 0,
+              nearby: Number(j.nearby_light_count) || 0,
+              listedCount: fieldListedCountRef.current,
+              radiusKm: resolveFieldRadiusKm(j.radius_km),
+            }),
+            driverLocation,
+          );
+          fieldTemporalTrendRef.current = resolveFieldTemporalTrend(
+            fieldTemporalBufferRef.current.snapshots,
+          );
+        }
       } catch (e) {
         if (cancelled) return;
         console.warn('[driver_map] nearby-passengers-map fetch failed', e);
@@ -1640,6 +1891,8 @@ export default function DriverOfferScreen({
       setMapCityGrid([]);
       setMapDriverCity('');
       setMapPinsLoadError(null);
+      resetFieldTemporalBuffer(fieldTemporalBufferRef.current);
+      fieldTemporalTrendRef.current = null;
     }
   }, [driverId, driverLocation?.latitude, driverLocation?.longitude]);
 
