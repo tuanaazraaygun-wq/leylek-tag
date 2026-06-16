@@ -39,6 +39,12 @@ _CACHE_TTL_SEC = 180.0
 _CACHE_MAX = 4096
 # Eski cache girdilerini deploy sonrası baypas; ilçe → il kapsamı (Ankara + Muğla)
 _CACHE_KEY_VER = "v15_fast_seed"
+# ADDR-P0-2A: GPS'siz normalize replay — exact cache miss sonrası ikinci katman
+_NORM_CACHE_KEY_VER = "v16"
+_NORM_CACHE_TTL_SEC = 72 * 3600.0
+_PLACES_NORM_CACHE_NS = "places_norm"
+_NORM_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_NORM_CACHE_MAX = 2048
 
 # normalized city key -> (min_lon, min_lat, max_lon, max_lat)
 CITY_BBOX: dict[str, tuple[float, float, float, float]] = {}
@@ -878,6 +884,70 @@ def _cache_set(key: str, payload: dict[str, Any]) -> None:
                 pass
     exp = time.monotonic() + _CACHE_TTL_SEC
     _CACHE[key] = (exp, body)
+
+
+def _build_normalized_cache_key(
+    trimmed: str,
+    city_param: str,
+    city_raw: str,
+    canonical_city: str,
+) -> str:
+    """GPS/lat/lng yok — places:norm:v16:{q}:{city} (redis namespace ayrı)."""
+    q = _norm_key(trimmed)
+    city_part = _norm_key(city_raw or city_param or canonical_city)
+    return f"norm:{_NORM_CACHE_KEY_VER}:{q}:{city_part}"
+
+
+def _is_cacheable_places_payload(payload: dict[str, Any]) -> bool:
+    if not payload.get("success"):
+        return False
+    results = payload.get("results")
+    return isinstance(results, list) and len(results) > 0
+
+
+def _norm_cache_get(key: str) -> Optional[dict[str, Any]]:
+    redis_hit = _redis_cache_get(_PLACES_NORM_CACHE_NS, key)
+    if isinstance(redis_hit, dict):
+        return dict(redis_hit)
+
+    entry = _NORM_CACHE.get(key)
+    if not entry:
+        return None
+    exp_mono, payload = entry
+    if time.monotonic() > exp_mono:
+        try:
+            del _NORM_CACHE[key]
+        except KeyError:
+            pass
+        return None
+    return dict(payload)
+
+
+def _norm_cache_set(key: str, payload: dict[str, Any]) -> None:
+    if not _is_cacheable_places_payload(payload):
+        return
+    body = dict(payload)
+    body["cached"] = False
+    _redis_cache_set(_PLACES_NORM_CACHE_NS, key, body, _NORM_CACHE_TTL_SEC)
+
+    if len(_NORM_CACHE) > _NORM_CACHE_MAX:
+        for k in list(_NORM_CACHE.keys())[:256]:
+            try:
+                del _NORM_CACHE[k]
+            except KeyError:
+                pass
+    exp = time.monotonic() + _NORM_CACHE_TTL_SEC
+    _NORM_CACHE[key] = (exp, body)
+
+
+def _persist_places_search_response(
+    exact_key: str,
+    norm_key: str,
+    payload: dict[str, Any],
+) -> None:
+    """Exact cache (180s) + başarılı yanıtlarda normalize cache (72s)."""
+    _cache_set(exact_key, payload)
+    _norm_cache_set(norm_key, payload)
 
 
 def _fold_city(s: str) -> str:
@@ -1779,6 +1849,7 @@ def _try_fast_city_payload(
     lat: Optional[float],
     lng: Optional[float],
     cache_key_raw: str,
+    norm_cache_key: str,
     *,
     district: str = "",
     provider_used: str = "google_fast_path",
@@ -1802,7 +1873,7 @@ def _try_fast_city_payload(
         "provider_used": provider_used,
         "results": fr_fast_sel,
     }
-    _cache_set(cache_key_raw, payload_fast)
+    _persist_places_search_response(cache_key_raw, norm_cache_key, payload_fast)
     return payload_fast
 
 
@@ -1840,6 +1911,7 @@ async def api_places_search(
             _CACHE_KEY_VER,
         ]
     )
+    norm_cache_key = _build_normalized_cache_key(trimmed, city_param, city_raw, city)
 
     stale = _cache_get(cache_key_raw)
     if stale is not None:
@@ -1847,6 +1919,16 @@ async def api_places_search(
         stale["cached"] = True
         stale.setdefault("success", True)
         return stale
+
+    norm_stale = _norm_cache_get(norm_cache_key)
+    if norm_stale is not None:
+        norm_out = dict(norm_stale)
+        norm_out["cached"] = True
+        norm_out.setdefault("success", True)
+        stored_provider = norm_out.get("provider_used")
+        if not stored_provider:
+            norm_out["provider_used"] = "normalized_cache"
+        return norm_out
 
     seed_rows = lookup_places_seed(
         trimmed,
@@ -1861,7 +1943,7 @@ async def api_places_search(
             "provider_used": "local_seed",
             "results": seed_rows,
         }
-        _cache_set(cache_key_raw, payload_seed)
+        _persist_places_search_response(cache_key_raw, norm_cache_key, payload_seed)
         return payload_seed
 
     candidates = _build_search_candidates(trimmed, city, district=district, city_raw=city_raw)
@@ -1943,6 +2025,7 @@ async def api_places_search(
                 lat,
                 lng,
                 cache_key_raw,
+                norm_cache_key,
                 district=dr,
             )
             if fast_payload is not None:
@@ -1992,6 +2075,7 @@ async def api_places_search(
                 lat,
                 lng,
                 cache_key_raw,
+                norm_cache_key,
                 district=dr,
             )
             if fast_payload is not None:
@@ -2072,7 +2156,7 @@ async def api_places_search(
                         "provider_used": "merged_citywide",
                         "results": fr_box_sel,
                     }
-                    _cache_set(cache_key_raw, payload_box)
+                    _persist_places_search_response(cache_key_raw, norm_cache_key, payload_box)
                     return payload_box
 
             fb_raw = await _collect_turkey_wide_fallback(http, trimmed, lat, lng)
@@ -2085,7 +2169,7 @@ async def api_places_search(
                 "provider_used": "merged_citywide",
                 "results": _filter_selectable_places_for_client(fb_final[:20]),
             }
-            _cache_set(cache_key_raw, payload_fb)
+            _persist_places_search_response(cache_key_raw, norm_cache_key, payload_fb)
             return payload_fb
 
         outbound: Optional[dict[str, Any]] = None
@@ -2119,12 +2203,12 @@ async def api_places_search(
                         fr_sel = _filter_selectable_places_for_client(_dedupe_results(fr))
                         if fr_sel:
                             outbound["results"] = fr_sel
-                            _cache_set(cache_key_raw, outbound)
+                            _persist_places_search_response(cache_key_raw, norm_cache_key, outbound)
                             return outbound
                     rows_sel = _filter_selectable_places_for_client(_dedupe_results(rows_raw)[:20])
                     if rows_sel:
                         outbound["results"] = rows_sel
-                        _cache_set(cache_key_raw, outbound)
+                        _persist_places_search_response(cache_key_raw, norm_cache_key, outbound)
                         return outbound
 
                 if city_trim:
@@ -2150,7 +2234,7 @@ async def api_places_search(
                             fr2_sel = _filter_selectable_places_for_client(_dedupe_results(fr2))
                             if fr2_sel:
                                 gb["results"] = fr2_sel
-                                _cache_set(cache_key_raw, gb)
+                                _persist_places_search_response(cache_key_raw, norm_cache_key, gb)
                                 return gb
                         if raw_geo:
                             raw_geo_sel = _filter_selectable_places_for_client(
@@ -2158,7 +2242,7 @@ async def api_places_search(
                             )
                             if raw_geo_sel:
                                 gb["results"] = raw_geo_sel
-                                _cache_set(cache_key_raw, gb)
+                                _persist_places_search_response(cache_key_raw, norm_cache_key, gb)
                                 return gb
             except httpx.TimeoutException:
                 pass
@@ -2197,7 +2281,7 @@ async def api_places_search(
                             "provider_used": "geoapify",
                             "results": ga_sel,
                         }
-                        _cache_set(cache_key_raw, outbound)
+                        _persist_places_search_response(cache_key_raw, norm_cache_key, outbound)
                         return outbound
             except (httpx.TimeoutException, httpx.RequestError):
                 pass
@@ -2248,7 +2332,7 @@ async def api_places_search(
                     "provider_used": "nominatim",
                     "results": fin_sel,
                 }
-                _cache_set(cache_key_raw, fin)
+                _persist_places_search_response(cache_key_raw, norm_cache_key, fin)
                 return fin
 
         if city_trim:
@@ -2265,7 +2349,7 @@ async def api_places_search(
                         "provider_used": "nominatim",
                         "results": fb2_sel,
                     }
-                    _cache_set(cache_key_raw, payload_fb2)
+                    _persist_places_search_response(cache_key_raw, norm_cache_key, payload_fb2)
                     return payload_fb2
 
     out_final = dict(EMPTY_OK)
