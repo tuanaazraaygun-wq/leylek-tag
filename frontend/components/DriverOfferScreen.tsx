@@ -114,6 +114,84 @@ function selectFieldHeatCellsForZoom(
   return [...grid].sort((a, b) => b.intensity - a.intensity).slice(0, FIELD_ZOOM_NEAR_HEAT_MAX);
 }
 
+function clampFieldHeatIntensity(intensity: number): number {
+  const n = Number(intensity);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
+/** FI-04C — zoom band ile görsel önem (LOD filtresi değişmez) */
+function resolveFieldHeatZoomPresence(band: FieldMapZoomBand): { size: number; alpha: number } {
+  switch (band) {
+    case 'near':
+      return { size: 0.86, alpha: 0.58 };
+    case 'mid':
+      return { size: 1, alpha: 0.78 };
+    default:
+      return { size: 1.2, alpha: 0.94 };
+  }
+}
+
+/** FI-04A/B/E — intensity → yarı saydam operasyon diski (client-only görsel) */
+function resolveFieldHeatCellVisual(intensity: number, zoomBand: FieldMapZoomBand) {
+  const t = clampFieldHeatIntensity(intensity);
+  const presence = resolveFieldHeatZoomPresence(zoomBand);
+
+  const coreBase = 34 + t * 42;
+  const coreSize = Math.round(coreBase * presence.size);
+  const haloSize = Math.round(coreSize * 1.62);
+  const wrapSize = Math.max(haloSize + 8, coreSize + 12);
+
+  let fillRgb: [number, number, number];
+  let strokeRgb: [number, number, number];
+  let fillAlphaBase: number;
+  let strokeAlphaBase: number;
+  let strokeWidth: number;
+
+  if (t < 0.35) {
+    fillRgb = [251, 191, 36];
+    strokeRgb = [217, 119, 6];
+    fillAlphaBase = 0.14 + t * 0.12;
+    strokeAlphaBase = 0.22 + t * 0.15;
+    strokeWidth = 1;
+  } else if (t <= 0.7) {
+    fillRgb = [249, 115, 22];
+    strokeRgb = [234, 88, 12];
+    fillAlphaBase = 0.18 + (t - 0.35) * 0.22;
+    strokeAlphaBase = 0.28 + (t - 0.35) * 0.2;
+    strokeWidth = 1.25;
+  } else if (t <= 0.85) {
+    fillRgb = [251, 146, 60];
+    strokeRgb = [234, 88, 12];
+    fillAlphaBase = 0.26 + (t - 0.7) * 0.18;
+    strokeAlphaBase = 0.38 + (t - 0.7) * 0.15;
+    strokeWidth = 1.5;
+  } else {
+    fillRgb = [251, 146, 60];
+    strokeRgb = [220, 38, 38];
+    fillAlphaBase = 0.32 + (t - 0.85) * 0.12;
+    strokeAlphaBase = 0.42 + (t - 0.85) * 0.1;
+    strokeWidth = 1.75;
+  }
+
+  const fillAlpha = Math.min(0.48, fillAlphaBase * presence.alpha);
+  const strokeAlpha = Math.min(0.58, strokeAlphaBase * presence.alpha);
+  const fillColor = `rgba(${fillRgb[0]}, ${fillRgb[1]}, ${fillRgb[2]}, ${fillAlpha.toFixed(3)})`;
+  const strokeColor = `rgba(${strokeRgb[0]}, ${strokeRgb[1]}, ${strokeRgb[2]}, ${strokeAlpha.toFixed(3)})`;
+  const haloFillColor = `rgba(${fillRgb[0]}, ${fillRgb[1]}, ${fillRgb[2]}, ${(fillAlpha * 0.45).toFixed(3)})`;
+
+  return {
+    wrapSize,
+    coreSize,
+    haloSize,
+    fillColor,
+    haloFillColor,
+    strokeColor,
+    strokeWidth,
+    animate: t >= 0.7,
+  };
+}
+
 type FieldActivityBand = 'Pasif' | 'Sakin' | 'Canlı' | 'Yoğun';
 
 function resolveFieldActivityBand(score: number): FieldActivityBand {
@@ -906,55 +984,49 @@ function RequestCard({
   );
 }
 
-/** Şehir içi talep yoğunluğu — kırmızı dalga (tüm sürücüler aynı API verisini görür) */
+/** Şehir içi talep yoğunluğu — LHIS operasyon alanı diski (API `city_grid.intensity`) */
 const CityHeatCellMarker = memo(function CityHeatCellMarker({
   cell,
-  delayMs,
+  zoomBand,
 }: {
   cell: DriverMapCityGridCell;
-  delayMs: number;
+  zoomBand: FieldMapZoomBand;
 }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.5)).current;
-  const scale2 = useRef(new Animated.Value(1)).current;
-  const opacity2 = useRef(new Animated.Value(0.38)).current;
+  const visual = useMemo(
+    () => resolveFieldHeatCellVisual(cell.intensity, zoomBand),
+    [cell.intensity, zoomBand],
+  );
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    const boost = 0.35 + cell.intensity * 0.55;
-    const dur = 1500;
+    if (!visual.animate) return;
+    const dur = 2800;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.delay(delayMs),
         Animated.parallel([
-          Animated.sequence([
-            Animated.parallel([
-              Animated.timing(scale, {
-                toValue: 1.5 + boost * 0.35,
-                duration: dur,
-                useNativeDriver: true,
-              }),
-              Animated.timing(opacity, { toValue: 0, duration: dur, useNativeDriver: true }),
-            ]),
-            Animated.parallel([
-              Animated.timing(scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-              Animated.timing(opacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
-            ]),
-          ]),
-          Animated.sequence([
-            Animated.delay(480),
-            Animated.parallel([
-              Animated.timing(scale2, {
-                toValue: 1.35 + boost * 0.28,
-                duration: dur,
-                useNativeDriver: true,
-              }),
-              Animated.timing(opacity2, { toValue: 0, duration: dur, useNativeDriver: true }),
-            ]),
-            Animated.parallel([
-              Animated.timing(scale2, { toValue: 1, duration: 0, useNativeDriver: true }),
-              Animated.timing(opacity2, { toValue: 0.38, duration: 0, useNativeDriver: true }),
-            ]),
-          ]),
+          Animated.timing(pulseScale, {
+            toValue: 1.1,
+            duration: dur,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 0.88,
+            duration: dur,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(pulseScale, {
+            toValue: 1,
+            duration: dur,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 1,
+            duration: dur,
+            useNativeDriver: true,
+          }),
         ]),
       ]),
     );
@@ -962,24 +1034,59 @@ const CityHeatCellMarker = memo(function CityHeatCellMarker({
     return () => {
       loop.stop();
     };
-  }, [cell.intensity, delayMs, scale, opacity, scale2, opacity2]);
+  }, [visual.animate, pulseScale, pulseOpacity]);
+
+  const diskBody = (
+    <>
+      <View
+        style={[
+          styles.cityHeatHalo,
+          {
+            width: visual.haloSize,
+            height: visual.haloSize,
+            borderRadius: visual.haloSize / 2,
+            backgroundColor: visual.haloFillColor,
+          },
+        ]}
+        pointerEvents="none"
+      />
+      <View
+        style={[
+          styles.cityHeatDisk,
+          {
+            width: visual.coreSize,
+            height: visual.coreSize,
+            borderRadius: visual.coreSize / 2,
+            backgroundColor: visual.fillColor,
+            borderColor: visual.strokeColor,
+            borderWidth: visual.strokeWidth,
+          },
+        ]}
+        pointerEvents="none"
+      />
+    </>
+  );
 
   return (
-    <View style={styles.cityHeatWrap} collapsable={false}>
-      <Animated.View
-        style={[
-          styles.cityHeatRing,
-          { transform: [{ scale }], opacity },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.cityHeatRing,
-          styles.cityHeatRingOuter,
-          { transform: [{ scale: scale2 }], opacity: opacity2 },
-        ]}
-      />
-      <View style={styles.cityHeatCore} />
+    <View
+      style={[
+        styles.cityHeatWrap,
+        { width: visual.wrapSize, height: visual.wrapSize },
+      ]}
+      collapsable={false}
+    >
+      {visual.animate ? (
+        <Animated.View
+          style={[
+            styles.cityHeatDiskStack,
+            { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+          ]}
+        >
+          {diskBody}
+        </Animated.View>
+      ) : (
+        <View style={styles.cityHeatDiskStack}>{diskBody}</View>
+      )}
     </View>
   );
 });
@@ -1281,7 +1388,7 @@ export default function DriverOfferScreen({
         anchor={{ x: 0.5, y: 0.5 }}
         tracksViewChanges={false}
       >
-        <CityHeatCellMarker cell={cell} delayMs={(idx % 6) * 180} />
+        <CityHeatCellMarker cell={cell} zoomBand={mapZoomBand} />
       </Marker>
     ));
   }, [mapCityGrid, mapZoomBand]);
@@ -2370,36 +2477,19 @@ const styles = StyleSheet.create({
     }),
   },
   cityHeatWrap: {
-    width: 72,
-    height: 72,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cityHeatRing: {
+  cityHeatDiskStack: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cityHeatHalo: {
     position: 'absolute',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: 'rgba(239, 68, 68, 0.95)',
-    backgroundColor: 'transparent',
   },
-  cityHeatRingOuter: {
-    borderColor: 'rgba(220, 38, 38, 0.5)',
-    borderWidth: 1.5,
-  },
-  cityHeatCore: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#EF4444',
-    borderWidth: 2,
-    borderColor: 'rgba(248, 250, 252, 0.95)',
-    shadowColor: '#7f1d1d',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    elevation: 4,
+  cityHeatDisk: {
+    position: 'absolute',
   },
   passengerMarker: {
     backgroundColor: COLORS.secondary,
