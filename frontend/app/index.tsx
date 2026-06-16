@@ -9344,7 +9344,7 @@ function PassengerDashboard({
 
   const quickMatchSessionApiRef = useRef<Pick<
     ReturnType<typeof useQuickMatchPassengerSession>,
-    'clear'
+    'clear' | 'releaseActiveRequest'
   > | null>(null);
 
   const resetPassengerQuickMatchIdleState = useCallback(
@@ -9368,7 +9368,7 @@ function PassengerDashboard({
       if (activeTag) {
         return;
       }
-      resetPassengerQuickMatchIdleState({ clearSession: false });
+      resetPassengerQuickMatchIdleState({ clearSession: true });
     },
     [activeTag, resetPassengerQuickMatchIdleState],
   );
@@ -11188,7 +11188,11 @@ function PassengerDashboard({
         return;
       }
       setQuickMatchRouteContext(ctx);
-      setQuickMatchFlowVisible(true);
+      void quickMatchSessionApiRef.current
+        ?.releaseActiveRequest({ bestEffort: true })
+        .finally(() => {
+          setQuickMatchFlowVisible(true);
+        });
       setPassengerIdleOfferChannel('normal');
       setRoutePickerIntent('normal');
       console.log(
@@ -14182,39 +14186,51 @@ function PassengerDashboard({
         route={quickMatchRouteContext}
         session={quickMatchSession}
         onClose={() => {
-          resetPassengerQuickMatchIdleState({ clearSession: false });
+          void quickMatchSession
+            .releaseActiveRequest({ bestEffort: true })
+            .finally(() => {
+              resetPassengerQuickMatchIdleState({ clearSession: true });
+            });
         }}
         onRetry={() => {
-          const ctx = buildQuickMatchRouteContext();
-          if (ctx) {
-            setQuickMatchRouteContext(ctx);
-            setQuickMatchFlowVisible(true);
-            console.log(
-              '[QM] FLOW_OPEN route_ready',
-              JSON.stringify({
-                source: 'retry',
-                distance_km: ctx.distance_km ?? null,
-                pickup_label: ctx.pickup_label,
-                dropoff_label: ctx.dropoff_label,
-              }),
-            );
-          } else {
-            setQuickMatchFlowVisible(false);
-            reopenQuickMatchRoutePickerForMissingRoute();
-          }
+          void quickMatchSession
+            .releaseActiveRequest({ bestEffort: true })
+            .finally(() => {
+              const ctx = buildQuickMatchRouteContext();
+              if (ctx) {
+                setQuickMatchRouteContext(ctx);
+                setQuickMatchFlowVisible(true);
+                console.log(
+                  '[QM] FLOW_OPEN route_ready',
+                  JSON.stringify({
+                    source: 'retry',
+                    distance_km: ctx.distance_km ?? null,
+                    pickup_label: ctx.pickup_label,
+                    dropoff_label: ctx.dropoff_label,
+                  }),
+                );
+              } else {
+                setQuickMatchFlowVisible(false);
+                reopenQuickMatchRoutePickerForMissingRoute();
+              }
+            });
         }}
         onGoNormalMatch={() => {
-          resetPassengerQuickMatchIdleState({ clearSession: false });
-          if (destination && resolvePassengerPickupCoords(passengerPickup, userLocation)) {
-            void runTagPassengerPriceFlow({
-              dropLat: Number(destination.latitude),
-              dropLng: Number(destination.longitude),
-              playTapSound: true,
-              source: 'call_button',
+          void quickMatchSession
+            .releaseActiveRequest({ bestEffort: true })
+            .finally(() => {
+              resetPassengerQuickMatchIdleState({ clearSession: true });
+              if (destination && resolvePassengerPickupCoords(passengerPickup, userLocation)) {
+                void runTagPassengerPriceFlow({
+                  dropLat: Number(destination.latitude),
+                  dropLng: Number(destination.longitude),
+                  playTapSound: true,
+                  source: 'call_button',
+                });
+              } else {
+                setShowDestinationPicker(true);
+              }
             });
-          } else {
-            setShowDestinationPicker(true);
-          }
         }}
       />
     </SafeAreaView>

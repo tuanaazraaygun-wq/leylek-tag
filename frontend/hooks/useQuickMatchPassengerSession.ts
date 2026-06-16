@@ -64,6 +64,55 @@ function isHardPollStopCode(code: QuickMatchApiErrorCode): boolean {
   );
 }
 
+function isSequencingRequestStatus(status: QuickMatchRequestStatus | null | undefined): boolean {
+  return String(status || '').trim().toLowerCase() === 'sequencing';
+}
+
+function mapCreateErrorMessage(
+  result: Extract<QuickMatchApiResult<unknown>, { ok: false }>,
+): string {
+  const raw = `${result.detail || ''} ${result.message || ''}`.toLowerCase();
+  if (result.code === 'CONFLICT') {
+    if (
+      raw.includes('aktif quick match') ||
+      raw.includes('active_quick_request') ||
+      raw.includes('zaten var')
+    ) {
+      return 'Önceki hızlı eşleşme isteği kapatılamadı. Birkaç saniye sonra tekrar deneyin.';
+    }
+    return 'Hızlı eşleşme isteği şu an gönderilemiyor. Lütfen tekrar deneyin.';
+  }
+  if (result.code === 'NETWORK') {
+    return 'Bağlantı hatası. Lütfen tekrar deneyin.';
+  }
+  if (result.code === 'SERVER' || result.code === 'UNAVAILABLE') {
+    return 'Hızlı eşleşme şu an kullanılamıyor. Lütfen tekrar deneyin.';
+  }
+  return result.message || 'Hızlı eşleşme isteği gönderilemedi.';
+}
+
+function resetLocalSessionState(
+  setters: {
+    setRequest: (v: QuickMatchRequestPublic | null) => void;
+    setErrorMessage: (v: string | null) => void;
+    setValidationHint: (v: QuickMatchPassengerValidationHint | null) => void;
+    setPollErrorMessage: (v: string | null) => void;
+    setStatus: (v: QuickMatchPassengerSessionStatus) => void;
+    setIsCreating: (v: boolean) => void;
+    setIsCancelling: (v: boolean) => void;
+    setIsRestoring: (v: boolean) => void;
+  },
+) {
+  setters.setRequest(null);
+  setters.setErrorMessage(null);
+  setters.setValidationHint(null);
+  setters.setPollErrorMessage(null);
+  setters.setStatus('idle');
+  setters.setIsCreating(false);
+  setters.setIsCancelling(false);
+  setters.setIsRestoring(false);
+}
+
 export type QuickMatchPassengerValidationHint = {
   code?: QuickMatchValidationCode;
   suggestedContributionTl?: number;
@@ -376,53 +425,158 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
     }
   }, [applyRequest, restore, stopPolling]);
 
-  const create = useCallback(async (payload: CreateQuickMatchRequestPayload) => {
-    if (createInFlightRef.current) {
-      return;
-    }
+  const resetLocal = useCallback(() => {
+    resetLocalSessionState({
+      setRequest,
+      setErrorMessage,
+      setValidationHint,
+      setPollErrorMessage,
+      setStatus,
+      setIsCreating,
+      setIsCancelling,
+      setIsRestoring,
+    });
+  }, []);
 
-    createInFlightRef.current = true;
-    generationRef.current += 1;
-    const generation = generationRef.current;
+  const releaseActiveRequest = useCallback(
+    async (opts?: { bestEffort?: boolean }): Promise<boolean> => {
+      const bestEffort = opts?.bestEffort !== false;
 
-    stopPolling();
-    setIsCreating(true);
-    setErrorMessage(null);
-    setValidationHint(null);
-    setPollErrorMessage(null);
-    setStatus('creating');
-
-    const result = await createQuickMatchRequest(payload);
-
-    createInFlightRef.current = false;
-    if (!mountedRef.current || generation !== generationRef.current) {
-      return;
-    }
-
-    setIsCreating(false);
-
-    if (result.ok === false) {
-      setStatus('error');
-      setErrorMessage(result.message);
-      if (
-        result.validationCode ||
-        result.suggestedContributionTl != null ||
-        result.maxContributionTl != null
-      ) {
-        setValidationHint({
-          code: result.validationCode,
-          suggestedContributionTl: result.suggestedContributionTl,
-          maxContributionTl: result.maxContributionTl,
-        });
-      } else {
-        setValidationHint(null);
+      if (cancelInFlightRef.current) {
+        return bestEffort;
       }
-      return;
-    }
 
-    setValidationHint(null);
-    applyRequest(result.data.request, generation);
-  }, [applyRequest, stopPolling]);
+      generationRef.current += 1;
+      const generation = generationRef.current;
+      stopPolling();
+
+      let rid = String(requestRef.current?.request_id || '').trim();
+      let reqStatus = requestRef.current?.status;
+
+      if (!rid || !isSequencingRequestStatus(reqStatus)) {
+        const active = await getActiveQuickMatchRequest();
+        if (!mountedRef.current || generation !== generationRef.current) {
+          return false;
+        }
+        if (active.ok && active.data && isSequencingRequestStatus(active.data.status)) {
+          rid = String(active.data.request_id || '').trim();
+          reqStatus = active.data.status;
+        }
+      }
+
+      if (!rid || !isSequencingRequestStatus(reqStatus)) {
+        resetLocal();
+        return true;
+      }
+
+      cancelInFlightRef.current = true;
+      setIsCancelling(true);
+      setErrorMessage(null);
+
+      const result = await cancelQuickMatchRequest(rid);
+
+      cancelInFlightRef.current = false;
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return false;
+      }
+
+      setIsCancelling(false);
+
+      if (result.ok && !isSequencingRequestStatus(result.data.request.status)) {
+        resetLocal();
+        return true;
+      }
+
+      const statusResult = await getQuickMatchRequestStatus(rid);
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return false;
+      }
+
+      if (statusResult.ok && !isSequencingRequestStatus(statusResult.data.status)) {
+        resetLocal();
+        return true;
+      }
+
+      if (bestEffort) {
+        resetLocal();
+        return false;
+      }
+
+      setErrorMessage('Hızlı eşleşme isteği iptal edilemedi. Lütfen tekrar deneyin.');
+      return false;
+    },
+    [resetLocal, stopPolling],
+  );
+
+  const create = useCallback(
+    async (payload: CreateQuickMatchRequestPayload) => {
+      if (createInFlightRef.current) {
+        return;
+      }
+
+      createInFlightRef.current = true;
+
+      await releaseActiveRequest({ bestEffort: true });
+
+      generationRef.current += 1;
+      const generation = generationRef.current;
+
+      stopPolling();
+      setIsCreating(true);
+      setErrorMessage(null);
+      setValidationHint(null);
+      setPollErrorMessage(null);
+      setStatus('creating');
+
+      const attemptCreate = () => createQuickMatchRequest(payload);
+
+      let result = await attemptCreate();
+
+      if (
+        result.ok === false &&
+        result.code === 'CONFLICT' &&
+        (`${result.detail || ''} ${result.message || ''}`.toLowerCase().includes('aktif quick match') ||
+          `${result.detail || ''} ${result.message || ''}`.toLowerCase().includes('active_quick'))
+      ) {
+        await releaseActiveRequest({ bestEffort: true });
+        if (!mountedRef.current || generation !== generationRef.current) {
+          createInFlightRef.current = false;
+          return;
+        }
+        result = await attemptCreate();
+      }
+
+      createInFlightRef.current = false;
+      if (!mountedRef.current || generation !== generationRef.current) {
+        return;
+      }
+
+      setIsCreating(false);
+
+      if (result.ok === false) {
+        setStatus('error');
+        setErrorMessage(mapCreateErrorMessage(result));
+        if (
+          result.validationCode ||
+          result.suggestedContributionTl != null ||
+          result.maxContributionTl != null
+        ) {
+          setValidationHint({
+            code: result.validationCode,
+            suggestedContributionTl: result.suggestedContributionTl,
+            maxContributionTl: result.maxContributionTl,
+          });
+        } else {
+          setValidationHint(null);
+        }
+        return;
+      }
+
+      setValidationHint(null);
+      applyRequest(result.data.request, generation);
+    },
+    [applyRequest, releaseActiveRequest, stopPolling],
+  );
 
   const cancel = useCallback(async (): Promise<boolean> => {
     const rid = String(requestRef.current?.request_id || '').trim();
@@ -468,15 +622,8 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
   const clear = useCallback(() => {
     generationRef.current += 1;
     stopPolling();
-    setRequest(null);
-    setErrorMessage(null);
-    setValidationHint(null);
-    setPollErrorMessage(null);
-    setStatus('idle');
-    setIsCreating(false);
-    setIsCancelling(false);
-    setIsRestoring(false);
-  }, [stopPolling]);
+    resetLocal();
+  }, [resetLocal, stopPolling]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -582,5 +729,6 @@ export function useQuickMatchPassengerSession(options: UseQuickMatchPassengerSes
     cancel,
     refresh,
     clear,
+    releaseActiveRequest,
   };
 }
