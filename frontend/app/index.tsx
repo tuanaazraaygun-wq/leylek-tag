@@ -17876,13 +17876,10 @@ function DriverDashboard({
                     <View
                       style={dws.cockpitHeaderTitleCol}
                       accessibilityRole="header"
-                      accessibilityLabel="LeylekTAG. Sürücü kokpiti"
+                      accessibilityLabel="LeylekTAG Kokpit"
                     >
                       <PremiumText variant="title" style={dws.cockpitHeaderBrand} numberOfLines={1}>
-                        LeylekTAG
-                      </PremiumText>
-                      <PremiumText variant="caption" muted style={dws.cockpitHeaderCaption} numberOfLines={1}>
-                        Sürücü kokpiti
+                        LeylekTAG · Kokpit
                       </PremiumText>
                     </View>
                     <View style={dws.cockpitHeaderActions}>

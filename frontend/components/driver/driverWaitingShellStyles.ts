@@ -62,17 +62,11 @@ export const driverWaitingShellStyles = StyleSheet.create({
     paddingHorizontal: LDS_SPACING.xxs,
   },
   cockpitHeaderBrand: {
-    letterSpacing: -0.28,
+    letterSpacing: -0.22,
     textAlign: 'center',
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  cockpitHeaderCaption: {
-    letterSpacing: 0.12,
-    textAlign: 'center',
-    lineHeight: 14,
-    fontSize: 11,
-    opacity: 0.82,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '700',
   },
   cockpitPanelPad: {
     paddingHorizontal: LDS_SPACING.xxs,

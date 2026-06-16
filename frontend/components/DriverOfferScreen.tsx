@@ -50,7 +50,10 @@ import {
 } from '../lib/routeLoadingUiConstants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MAP_PREVIEW_HEIGHT = Math.min(80, Math.max(72, Math.round(SCREEN_HEIGHT * 0.1)));
+const MAP_PREVIEW_HEIGHT =
+  SCREEN_HEIGHT < 700
+    ? 64
+    : Math.min(80, Math.max(72, Math.round(SCREEN_HEIGHT * 0.1)));
 
 const MAP_POLL_INTERVAL_MS = 9000;
 
@@ -1304,7 +1307,7 @@ export default function DriverOfferScreen({
                 <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded]}>
                   <Ionicons
                     name="radio-outline"
-                    size={mapExpanded ? 18 : 22}
+                    size={mapExpanded ? 16 : 18}
                     color={isMotor ? 'rgba(134,239,172,0.92)' : 'rgba(34,211,238,0.9)'}
                   />
                 </View>
@@ -1324,7 +1327,7 @@ export default function DriverOfferScreen({
               </View>
 
               <PremiumText
-                variant="headline"
+                variant="title"
                 style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}
               >
                 Teklif bekleniyor
@@ -2293,8 +2296,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: LDS_SPACING.xs,
     alignSelf: 'stretch',
-    marginBottom: LDS_SPACING.sm,
-    paddingBottom: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xs,
+    paddingBottom: LDS_SPACING.xxs,
     borderBottomWidth: LDS_BORDER_WIDTH.hairline,
     borderBottomColor: LDS_BORDER_COLOR.cockpitPanel,
   },
@@ -2328,16 +2331,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   emptyInstrumentOrb: {
-    width: 64,
-    height: 64,
+    width: 52,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: LDS_SPACING.xs,
+    marginBottom: LDS_SPACING.xxs,
   },
   emptyInstrumentOrbMapExpanded: {
-    width: 64,
-    height: 64,
-    marginBottom: LDS_SPACING.xs,
+    width: 48,
+    height: 48,
+    marginBottom: LDS_SPACING.xxs,
   },
   emptyOrbRingOuterMotor: {
     borderColor: 'rgba(134,239,172,0.16)',
@@ -2347,17 +2350,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(134,239,172,0.24)',
   },
   emptyOrbRingOuterMapExpanded: {
-    width: 64,
-    height: 64,
-  },
-  emptyOrbRingMidMapExpanded: {
     width: 48,
     height: 48,
   },
+  emptyOrbRingMidMapExpanded: {
+    width: 36,
+    height: 36,
+  },
   emptyOrbCoreMapExpanded: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
   },
   emptyOrbRing: {
     position: 'absolute',
@@ -2365,21 +2368,21 @@ const styles = StyleSheet.create({
     borderWidth: LDS_BORDER_WIDTH.hairline,
   },
   emptyOrbRingOuter: {
-    width: 76,
-    height: 76,
+    width: 62,
+    height: 62,
     borderColor: 'rgba(34,211,238,0.14)',
     backgroundColor: 'rgba(34,211,238,0.03)',
   },
   emptyOrbRingMid: {
-    width: 56,
-    height: 56,
+    width: 46,
+    height: 46,
     borderColor: 'rgba(34,211,238,0.22)',
     backgroundColor: 'rgba(8,17,31,0.35)',
   },
   emptyOrbCore: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(8,17,31,0.62)',
@@ -2392,14 +2395,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: LDS_SPACING.xs,
-    paddingVertical: LDS_SPACING.xs,
-    paddingHorizontal: LDS_SPACING.md,
+    paddingVertical: LDS_SPACING.xxs,
+    paddingHorizontal: LDS_SPACING.sm,
     borderRadius: LDS_RADIUS.full,
     backgroundColor: 'rgba(34,211,238,0.1)',
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: 'rgba(34,211,238,0.28)',
     borderTopColor: 'rgba(34,211,238,0.42)',
-    marginBottom: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.xs,
   },
   emptyStatusPillMapExpanded: {
     paddingVertical: LDS_SPACING.xxs + 1,
@@ -2426,12 +2429,15 @@ const styles = StyleSheet.create({
   emptyTitle: {
     marginTop: LDS_SPACING.xxs,
     textAlign: 'center',
-    letterSpacing: -0.38,
+    letterSpacing: -0.2,
+    fontWeight: '700',
+    fontSize: 18,
+    lineHeight: 22,
   },
   emptySubtitle: {
     textAlign: 'center',
-    marginTop: LDS_SPACING.sm,
-    lineHeight: 18,
+    marginTop: LDS_SPACING.xs,
+    lineHeight: 17,
     paddingHorizontal: LDS_SPACING.xs,
     maxWidth: 320,
   },
@@ -2441,7 +2447,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: LDS_SPACING.xs,
-    marginTop: LDS_SPACING.md,
+    marginTop: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.xxs,
   },
   emptyChip: {
@@ -2463,8 +2469,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   emptyTitleMapExpanded: {
-    fontSize: 19,
-    marginTop: LDS_SPACING.sm,
+    fontSize: 17,
+    marginTop: LDS_SPACING.xs,
   },
   emptySubtitleMapExpanded: {
     fontSize: 12,
@@ -2650,7 +2656,7 @@ const styles = StyleSheet.create({
   },
   reqAcceptBtn: {
     flex: 2,
-    minHeight: 44,
+    minHeight: 48,
     backgroundColor: 'rgba(8,145,178,0.88)',
     borderRadius: LDS_RADIUS.md,
     alignItems: 'center',

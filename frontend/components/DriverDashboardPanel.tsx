@@ -54,7 +54,7 @@ interface DashboardData {
   };
 }
 
-const PANEL_HEIGHT_COLLAPSED = 124;
+const PANEL_HEIGHT_COLLAPSED = 110;
 const PANEL_HEIGHT_EXPANDED = 208;
 const ONLINE_STRIP_HEIGHT = 52;
 
@@ -316,10 +316,6 @@ export default function DriverDashboardPanel({
       <Animated.View style={[styles.container, { height: panelHeight }]}>
         <GlassSurface variant="panel" style={styles.panelShell} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.collapsedHud}>
-            <PremiumText variant="caption" muted style={styles.cockpitSectionLabel}>
-              Kokpit
-            </PremiumText>
-
             <View style={styles.cockpitGrid}>
               <View
                 style={styles.todayCol}
@@ -576,15 +572,9 @@ const styles = StyleSheet.create({
   },
   collapsedHud: {
     paddingHorizontal: LDS_SPACING.sm,
-    paddingTop: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xs,
     paddingBottom: LDS_SPACING.xs,
-    gap: LDS_SPACING.xs,
-  },
-  cockpitSectionLabel: {
-    letterSpacing: 0.14,
-    textTransform: 'uppercase',
-    fontSize: 10,
-    opacity: 0.72,
+    gap: LDS_SPACING.xxs,
   },
   cockpitGrid: {
     flexDirection: 'row',
