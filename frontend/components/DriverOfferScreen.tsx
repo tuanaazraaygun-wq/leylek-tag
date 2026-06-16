@@ -19,6 +19,7 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  ScrollView,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,6 +59,70 @@ const FIELD_DEFAULT_RADIUS_KM = 10;
 function resolveFieldRadiusKm(radius: number | undefined | null): number {
   const n = Number(radius);
   return Number.isFinite(n) && n > 0 ? Math.round(n) : FIELD_DEFAULT_RADIUS_KM;
+}
+
+type FieldActivityBand = 'Pasif' | 'Sakin' | 'Canlı' | 'Yoğun';
+
+function resolveFieldActivityBand(score: number): FieldActivityBand {
+  const n = Math.max(0, Math.floor(Number(score) || 0));
+  if (n === 0) return 'Pasif';
+  if (n <= 2) return 'Sakin';
+  if (n <= 5) return 'Canlı';
+  return 'Yoğun';
+}
+
+function resolveCardinalBearing(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+): string {
+  const dLng = (toLng - fromLng) * (Math.PI / 180);
+  const lat1 = fromLat * (Math.PI / 180);
+  const lat2 = toLat * (Math.PI / 180);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  let brng = (Math.atan2(y, x) * 180) / Math.PI;
+  brng = (brng + 360) % 360;
+  if (brng >= 315 || brng < 45) return 'Kuzey';
+  if (brng >= 45 && brng < 135) return 'Doğu';
+  if (brng >= 135 && brng < 225) return 'Güney';
+  return 'Batı';
+}
+
+function resolveFieldDensityBand(intensity: number): string {
+  const n = Number(intensity);
+  if (!Number.isFinite(n) || n < 0.35) return 'Düşük yoğunluk';
+  if (n <= 0.7) return 'Orta yoğunluk';
+  return 'Yüksek yoğunluk';
+}
+
+function resolveFieldDenseRegionLabel(
+  grid: DriverMapCityGridCell[],
+  driverLocation: { latitude: number; longitude: number } | null,
+): string {
+  if (!grid.length || !driverLocation) return 'Belirsiz';
+  let best = grid[0];
+  for (const cell of grid) {
+    if (cell.intensity > best.intensity) best = cell;
+  }
+  const dir = resolveCardinalBearing(
+    driverLocation.latitude,
+    driverLocation.longitude,
+    best.center_lat,
+    best.center_lng,
+  );
+  return `${dir} · ${resolveFieldDensityBand(best.intensity)}`;
+}
+
+function resolveMinLightDistanceKm(pins: DriverMapLightPin[]): number | null {
+  let min: number | null = null;
+  for (const p of pins) {
+    const d = Number(p.distance_km);
+    if (!Number.isFinite(d) || d <= 0) continue;
+    min = min == null ? d : Math.min(min, d);
+  }
+  return min;
 }
 
 /** LHIS cockpit — DriverActivityMap ile uyumlu koyu Google Maps stili */
@@ -999,6 +1064,41 @@ export default function DriverOfferScreen({
     return s;
   }, [visibleRequests]);
 
+  const fieldIntelMetrics = useMemo(() => {
+    const scanLabel = `${resolveFieldRadiusKm(mapHud.radius)} km`;
+    const nearRequestsLabel = mapExpanded ? String(mapHud.seeking) : String(visibleRequests.length);
+    const activityScore = mapExpanded ? mapHud.seeking + mapHud.nearby : visibleRequests.length;
+    const fieldStatus = resolveFieldActivityBand(activityScore);
+    const nearSignalLabel = mapExpanded
+      ? (() => {
+          const count = mapHud.nearby;
+          const minKm = resolveMinLightDistanceKm(mapLightPins);
+          if (count <= 0 && minKm == null) return 'Sinyal yok';
+          if (minKm != null) return `${count} · ${minKm.toFixed(1)} km`;
+          return `${count} sinyal`;
+        })()
+      : 'Saha haritasını aç';
+    const denseRegionLabel = mapExpanded
+      ? resolveFieldDenseRegionLabel(mapCityGrid, driverLocation)
+      : 'Saha haritasını aç';
+    return {
+      nearRequestsLabel,
+      scanLabel,
+      fieldStatus,
+      nearSignalLabel,
+      denseRegionLabel,
+    };
+  }, [
+    mapExpanded,
+    mapHud.seeking,
+    mapHud.nearby,
+    mapHud.radius,
+    mapLightPins,
+    mapCityGrid,
+    driverLocation,
+    visibleRequests.length,
+  ]);
+
   // Saha haritası pinleri — yalnızca expanded iken poll (collapsed: dispatch listesi canlı kalır)
   useEffect(() => {
     if (!mapExpanded || !driverId || !driverLocation) {
@@ -1425,71 +1525,87 @@ export default function DriverOfferScreen({
           ]}
         >
           <TouchableOpacity
-            style={[styles.mapMiniHud, mapExpanded && styles.mapMiniHudExpanded]}
+            style={[styles.fieldOpHud, mapExpanded ? styles.fieldOpHudExpanded : styles.fieldOpHudCollapsed]}
             onPress={() => setMapExpanded((v) => !v)}
             activeOpacity={0.88}
             accessibilityRole="button"
             accessibilityLabel={mapExpanded ? 'Saha haritasını gizle' : 'Saha haritasını göster'}
           >
-            <View style={styles.mapMiniHudLeft}>
-              <View
-                style={[
-                  styles.mapMiniHudIconWrap,
-                  mapExpanded && styles.mapMiniHudIconWrapExpanded,
-                  !mapExpanded && styles.mapMiniHudIconWrapCompact,
-                ]}
-              >
+            <View style={styles.fieldOpHudTopRow}>
+              <View style={styles.fieldOpHudBrandCol}>
+                <PremiumText variant="caption" style={styles.fieldOpHudBrand}>
+                  LEYLEKTAG
+                </PremiumText>
+                {mapExpanded ? (
+                  <>
+                    <PremiumText variant="step" style={styles.fieldOpHudTitle} numberOfLines={1}>
+                      Saha Operasyon Merkezi
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.fieldOpHudCaption} numberOfLines={1}>
+                      Field Intelligence
+                    </PremiumText>
+                  </>
+                ) : (
+                  <PremiumText variant="caption" muted style={styles.fieldOpHudCaption} numberOfLines={1}>
+                    Saha Operasyon Merkezi · Field Intelligence
+                  </PremiumText>
+                )}
+              </View>
+              <View style={styles.mapMiniHudChevronWrap}>
                 <Ionicons
-                  name="satellite-outline"
-                  size={mapExpanded ? 16 : 15}
-                  color={PREMIUM_AUTH_CYAN}
+                  name={mapExpanded ? 'chevron-down' : 'chevron-up'}
+                  size={mapExpanded ? 15 : 16}
+                  color="rgba(34,211,238,0.88)"
                 />
               </View>
-              <View style={styles.mapMiniHudTitleCol}>
-                <PremiumText
-                  variant="caption"
-                  style={[
-                    styles.mapMiniHudPhase,
-                    mapExpanded && styles.mapMiniHudPhaseExpanded,
-                    !mapExpanded && styles.mapMiniHudPhaseCompact,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {mapExpanded
-                    ? 'Saha haritası'
-                    : `Saha haritası · ${visibleRequests.length} talep · ${resolveFieldRadiusKm(mapHud.radius)} km`}
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.fieldOpHudMetricsScroll}
+              contentContainerStyle={styles.fieldOpHudMetricsContent}
+            >
+              <View style={styles.fieldOpMetricCell}>
+                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+                  Yakın Talepler
+                </PremiumText>
+                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                  {fieldIntelMetrics.nearRequestsLabel}
                 </PremiumText>
               </View>
-            </View>
-
-            {mapExpanded ? (
-              <View style={styles.mapMiniHudMetrics}>
-                <View style={[styles.mapMiniHudPill, styles.mapMiniHudPillExpanded]}>
-                  <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
-                    {mapHud.seeking}
-                  </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
-                    Talep
-                  </PremiumText>
-                </View>
-                <View style={[styles.mapMiniHudPill, styles.mapMiniHudPillExpanded]}>
-                  <PremiumText variant="step" style={styles.mapMiniHudPillValue}>
-                    {mapHud.radius}
-                  </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.mapMiniHudPillLabel}>
-                    km
-                  </PremiumText>
-                </View>
+              <View style={styles.fieldOpMetricCell}>
+                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+                  Tarama Alanı
+                </PremiumText>
+                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                  {fieldIntelMetrics.scanLabel}
+                </PremiumText>
               </View>
-            ) : null}
-
-            <View style={styles.mapMiniHudChevronWrap}>
-              <Ionicons
-                name={mapExpanded ? 'chevron-down' : 'chevron-up'}
-                size={mapExpanded ? 15 : 16}
-                color="rgba(34,211,238,0.88)"
-              />
-            </View>
+              <View style={styles.fieldOpMetricCell}>
+                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+                  Saha Durumu
+                </PremiumText>
+                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                  {fieldIntelMetrics.fieldStatus}
+                </PremiumText>
+              </View>
+              <View style={styles.fieldOpMetricCell}>
+                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+                  Yakın Sinyal
+                </PremiumText>
+                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                  {fieldIntelMetrics.nearSignalLabel}
+                </PremiumText>
+              </View>
+              <View style={styles.fieldOpMetricCell}>
+                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+                  Yoğun Bölge
+                </PremiumText>
+                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                  {fieldIntelMetrics.denseRegionLabel}
+                </PremiumText>
+              </View>
+            </ScrollView>
           </TouchableOpacity>
         </GlassSurface>
 
@@ -1545,12 +1661,6 @@ export default function DriverOfferScreen({
                   </View>
                   <View style={styles.mapTopSpacer} />
                 </View>
-              <View style={styles.mapHud} pointerEvents="none">
-                <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
-                <PremiumText variant="caption" muted style={styles.mapHudText}>
-                  Talep {mapHud.seeking} · {resolveFieldRadiusKm(mapHud.radius)} km
-                </PremiumText>
-              </View>
             </View>
           </View>
         ) : null}
@@ -1687,6 +1797,85 @@ const styles = StyleSheet.create({
   mapChromeShellExpanded: {
     marginBottom: LDS_SPACING.xs,
     marginHorizontal: 0,
+  },
+  fieldOpHud: {
+    alignSelf: 'stretch',
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  fieldOpHudCollapsed: {
+    maxHeight: 56,
+    paddingVertical: 3,
+    paddingHorizontal: LDS_SPACING.sm,
+    gap: 2,
+  },
+  fieldOpHudExpanded: {
+    maxHeight: 64,
+    paddingVertical: 4,
+    paddingHorizontal: LDS_SPACING.sm,
+    gap: 3,
+  },
+  fieldOpHudTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: LDS_SPACING.xs,
+  },
+  fieldOpHudBrandCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 0,
+  },
+  fieldOpHudBrand: {
+    fontSize: 9,
+    letterSpacing: 0.14,
+    fontWeight: '700',
+    color: PREMIUM_AUTH_CYAN,
+    opacity: 0.88,
+  },
+  fieldOpHudTitle: {
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: '700',
+    letterSpacing: 0.02,
+    color: PREMIUM_TEXT_SOFT,
+  },
+  fieldOpHudCaption: {
+    fontSize: 9,
+    lineHeight: 11,
+    letterSpacing: 0.04,
+  },
+  fieldOpHudMetricsScroll: {
+    flexGrow: 0,
+  },
+  fieldOpHudMetricsContent: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: LDS_SPACING.xxs,
+    paddingRight: LDS_SPACING.xxs,
+  },
+  fieldOpMetricCell: {
+    minWidth: 72,
+    maxWidth: 108,
+    paddingVertical: 2,
+    paddingHorizontal: LDS_SPACING.xs,
+    borderRadius: LDS_RADIUS.sm,
+    backgroundColor: 'rgba(8,17,31,0.52)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanel,
+    gap: 1,
+  },
+  fieldOpMetricLabel: {
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 0.03,
+    fontWeight: '600',
+  },
+  fieldOpMetricValue: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    color: PREMIUM_TEXT_SOFT,
   },
   mapMiniHud: {
     flexDirection: 'row',
