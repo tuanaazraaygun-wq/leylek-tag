@@ -174,6 +174,62 @@ function roundPlacesReplayCoord(n: number | undefined): number | null {
   return Math.round(n * 1e3) / 1e3;
 }
 
+/** Bellek LRU — modal kapat/aç arasında kalır; persist yok */
+const PLACES_SEARCH_CACHE_MAX = 40;
+const PLACES_SEARCH_CACHE_TTL_MS = 3 * 60 * 1000;
+
+type PlacesSearchCacheEntry = { rows: PlaceResult[]; cachedAt: number };
+
+const placesSearchResultCacheLru = new Map<string, PlacesSearchCacheEntry>();
+
+function buildPlacesSearchCacheKey(params: {
+  queryTrim: string;
+  city: string;
+  strictCityBounds: boolean;
+  forceCityInSearch: boolean;
+  widerSearch: boolean;
+  biasLatitude?: number;
+  biasLongitude?: number;
+  biasDeltaDeg: number;
+}): string {
+  return JSON.stringify({
+    q: normalizeText(params.queryTrim),
+    city: normCityNeedle(String(params.city || '').trim()),
+    strict: !!params.strictCityBounds,
+    force: !!params.forceCityInSearch,
+    wider: !!params.widerSearch,
+    biasLat: roundPlacesReplayCoord(params.biasLatitude),
+    biasLng: roundPlacesReplayCoord(params.biasLongitude),
+    biasDeltaDeg: Math.round(params.biasDeltaDeg * 10000) / 10000,
+  });
+}
+
+function placesSearchCacheGet(key: string): PlaceResult[] | null {
+  const entry = placesSearchResultCacheLru.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > PLACES_SEARCH_CACHE_TTL_MS) {
+    placesSearchResultCacheLru.delete(key);
+    return null;
+  }
+  placesSearchResultCacheLru.delete(key);
+  placesSearchResultCacheLru.set(key, entry);
+  return entry.rows.map((r) => ({ ...r }));
+}
+
+function placesSearchCacheSet(key: string, rows: PlaceResult[]): void {
+  if (rows.length === 0) return;
+  if (placesSearchResultCacheLru.has(key)) {
+    placesSearchResultCacheLru.delete(key);
+  } else if (placesSearchResultCacheLru.size >= PLACES_SEARCH_CACHE_MAX) {
+    const oldest = placesSearchResultCacheLru.keys().next().value;
+    if (oldest !== undefined) placesSearchResultCacheLru.delete(oldest);
+  }
+  placesSearchResultCacheLru.set(key, {
+    rows: rows.map((r) => ({ ...r })),
+    cachedAt: Date.now(),
+  });
+}
+
 /** Karşılaştırma için Türkçe toleranslı normalize */
 export function normalizeText(s: string): string {
   return foldTrAscii(String(s || ''))
@@ -1320,6 +1376,18 @@ export default function PlacesAutocomplete({
   const matchesActivePlacesJob = (jobRequestId: number, searchedTrim: string): boolean =>
     jobRequestId === autocompleteRequestIdRef.current && searchedTrim === latestQueryRef.current.trim();
 
+  const placesSearchCacheKeyFor = (qTrim: string): string =>
+    buildPlacesSearchCacheKey({
+      queryTrim: qTrim,
+      city: String(city || '').trim(),
+      strictCityBounds,
+      forceCityInSearch,
+      widerSearch,
+      biasLatitude,
+      biasLongitude,
+      biasDeltaDeg,
+    });
+
   const commitSearchResults = (
     requestId: number,
     searchedTrim: string,
@@ -1347,6 +1415,7 @@ export default function PlacesAutocomplete({
       const rowsCopy = displayRows.map((r) => ({ ...r }));
       lastCommittedNonEmptyRef.current = { key: stableKey, rows: rowsCopy, requestId };
       lastSuccessfulPredictionsRef.current = { key: stableKey, rows: rowsCopy };
+      placesSearchCacheSet(placesSearchCacheKeyFor(searchedTrim), rowsCopy);
       setPredictions(rowsCopy);
       setShowPredictions(true);
       completedSearchRequestIdRef.current = requestId;
@@ -1682,6 +1751,28 @@ export default function PlacesAutocomplete({
 
     lastPlacesQueryContextKeyRef.current = queryContextKey;
     lastPlacesSearchSignatureRef.current = searchSignature;
+
+    const cacheKey = placesSearchCacheKeyFor(trimmed);
+    const cachedRows = placesSearchCacheGet(cacheKey);
+    if (cachedRows && cachedRows.length > 0 && mountedRef.current) {
+      const rowsCopy = cachedRows.map((r) => ({ ...r }));
+      const stableKey = placesSearchStableKey(trimmed, city);
+      lastCommittedNonEmptyRef.current = {
+        key: stableKey,
+        rows: rowsCopy,
+        requestId: autocompleteRequestIdRef.current,
+      };
+      lastSuccessfulPredictionsRef.current = { key: stableKey, rows: rowsCopy };
+      setPredictions(rowsCopy);
+      setShowPredictions(true);
+      setShowPopular(false);
+      setSearchRoundDone(true);
+      placesClientDiag('cache_hit', {
+        query: trimmed,
+        city: String(city || '').trim(),
+        display_count: rowsCopy.length,
+      });
+    }
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
