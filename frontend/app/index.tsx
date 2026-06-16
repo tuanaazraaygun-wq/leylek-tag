@@ -9382,22 +9382,17 @@ function PassengerDashboard({
 
   quickMatchSessionApiRef.current = quickMatchSession;
 
+  /** QM-P0-1: restore arka planda kalır; modal yalnızca explicit user action ile açılır. */
   useEffect(() => {
     if (activeTag) {
-      return;
-    }
-    if (quickMatchSession.status !== 'idle') {
-      setQuickMatchFlowVisible(true);
-    } else {
       setQuickMatchFlowVisible(false);
     }
-  }, [activeTag, quickMatchSession.status]);
+  }, [activeTag]);
 
-  const isQuickMatchPassengerUiActive =
-    quickMatchFlowVisible || quickMatchSession.status !== 'idle';
+  const isQuickMatchPassengerUiActive = quickMatchFlowVisible;
 
   const shouldShowQuickMatchFlow =
-    (quickMatchFlowVisible || quickMatchSession.status !== 'idle') &&
+    quickMatchFlowVisible &&
     !(quickMatchSession.status === 'idle' && !quickMatchRouteContext);
 
   const confirmBoardingViaActiveTagApi = useCallback(async (expectedTagId: string): Promise<boolean> => {
