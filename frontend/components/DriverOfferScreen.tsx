@@ -52,6 +52,13 @@ import {
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const MAP_POLL_INTERVAL_MS = 9000;
+/** Dispatch radius ile hizalı saha tarama yarıçapı (backend `DISPATCH_RADIUS_KM` default) */
+const FIELD_DEFAULT_RADIUS_KM = 10;
+
+function resolveFieldRadiusKm(radius: number | undefined | null): number {
+  const n = Number(radius);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : FIELD_DEFAULT_RADIUS_KM;
+}
 
 /** LHIS cockpit — DriverActivityMap ile uyumlu koyu Google Maps stili */
 const DRIVER_OFFER_DARK_MAP_STYLE = [
@@ -884,7 +891,7 @@ export default function DriverOfferScreen({
   const [mapLightPins, setMapLightPins] = useState<DriverMapLightPin[]>([]);
   const [mapCityGrid, setMapCityGrid] = useState<DriverMapCityGridCell[]>([]);
   const [mapDriverCity, setMapDriverCity] = useState('');
-  const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: 20 });
+  const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: FIELD_DEFAULT_RADIUS_KM });
   const [mapExpanded, setMapExpanded] = useState(false);
   const [mapPinsLoadError, setMapPinsLoadError] = useState<string | null>(null);
   const driverPulseScale = useRef(new Animated.Value(1)).current;
@@ -992,14 +999,9 @@ export default function DriverOfferScreen({
     return s;
   }, [visibleRequests]);
 
-  // Sunucudan 20 km harita pinleri (hareket eden sürücüye göre)
+  // Saha haritası pinleri — yalnızca expanded iken poll (collapsed: dispatch listesi canlı kalır)
   useEffect(() => {
-    if (!driverId || !driverLocation) {
-      setMapSeekingPins([]);
-      setMapLightPins([]);
-      setMapCityGrid([]);
-      setMapDriverCity('');
-      setMapPinsLoadError(null);
+    if (!mapExpanded || !driverId || !driverLocation) {
       return;
     }
     let cancelled = false;
@@ -1009,6 +1011,7 @@ export default function DriverOfferScreen({
           user_id: String(driverId),
           latitude: String(driverLocation.latitude),
           longitude: String(driverLocation.longitude),
+          radius_km: String(FIELD_DEFAULT_RADIUS_KM),
         });
         const res = await fetch(`${API_BASE_URL}/driver/nearby-passengers-map?${q.toString()}`);
         const j = await res.json();
@@ -1026,7 +1029,7 @@ export default function DriverOfferScreen({
         setMapHud({
           seeking: Number(j.seeking_count) || 0,
           nearby: Number(j.nearby_light_count) || 0,
-          radius: Math.round(Number(j.radius_km) || 20),
+          radius: resolveFieldRadiusKm(j.radius_km),
         });
       } catch (e) {
         if (cancelled) return;
@@ -1040,13 +1043,23 @@ export default function DriverOfferScreen({
       cancelled = true;
       clearInterval(id);
     };
+  }, [mapExpanded, driverId, driverLocation?.latitude, driverLocation?.longitude]);
+
+  useEffect(() => {
+    if (!driverId || !driverLocation) {
+      setMapSeekingPins([]);
+      setMapLightPins([]);
+      setMapCityGrid([]);
+      setMapDriverCity('');
+      setMapPinsLoadError(null);
+    }
   }, [driverId, driverLocation?.latitude, driverLocation?.longitude]);
 
   // Harita sınırları: sürücü + yalnızca tarama yarıçapı içindeki pinler (şehir grid zoom’u şişirmez)
   useEffect(() => {
     if (!mapExpanded || !mapReady || !mapRef.current || !driverLocation) return;
 
-    const rk = mapHud.radius || 20;
+    const rk = resolveFieldRadiusKm(mapHud.radius);
     const fitKm = Math.min(45, rk * 1.2);
 
     const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
@@ -1094,7 +1107,7 @@ export default function DriverOfferScreen({
         <View style={styles.mapFallback}>
           <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
           <PremiumText variant="caption" muted style={styles.mapFallbackText}>
-            Talep {mapHud.seeking} · {mapHud.radius} km
+            Talep {mapHud.seeking} · {resolveFieldRadiusKm(mapHud.radius)} km
           </PremiumText>
         </View>
       );
@@ -1134,14 +1147,14 @@ export default function DriverOfferScreen({
           <>
             <Circle
               center={driverLocation}
-              radius={(mapHud.radius || 20) * 1000}
+              radius={resolveFieldRadiusKm(mapHud.radius) * 1000}
               strokeColor="rgba(34,211,238,0.45)"
               fillColor="rgba(34,211,238,0.06)"
               strokeWidth={2}
             />
             <Circle
               center={driverLocation}
-              radius={(mapHud.radius || 20) * 500}
+              radius={resolveFieldRadiusKm(mapHud.radius) * 500}
               strokeColor="rgba(34,211,238,0.22)"
               fillColor="rgba(34,211,238,0.04)"
               strokeWidth={1}
@@ -1199,8 +1212,8 @@ export default function DriverOfferScreen({
             <Marker
               key={`seek-${pin.tag_id}`}
               coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
-              title={pin.label || 'Talep'}
-              description={listed ? 'Listede — kabul edebilirsin' : 'Yolcu talebi'}
+              title={listed ? 'Aktif Talep' : 'Yakın Talep'}
+              description={listed ? 'Dispatch listesinde' : 'Aktif yolcu talebi'}
             >
               <View style={[styles.passengerMarkerSeeking, listed && styles.passengerMarkerSeekingListed]}>
                 <Ionicons name="navigate" size={15} color="#FFF" />
@@ -1213,8 +1226,8 @@ export default function DriverOfferScreen({
           <Marker
             key={`light-${pin.user_id}`}
             coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
-            title={pin.label || 'Yakında'}
-            description="Konum paylaşan kullanıcı"
+            title="Konum Paylaşan Yolcu"
+            description="Yakın çevre sinyali"
           >
             <View style={styles.passengerMarkerLight}>
               <View style={styles.passengerMarkerLightDot} />
@@ -1267,7 +1280,7 @@ export default function DriverOfferScreen({
                 <View style={styles.listHeaderAccentDot} />
               </View>
               <PremiumText variant="step" style={styles.listTitleCompact} numberOfLines={1}>
-                Yakın talepler · {mapHud.radius} km
+                Yakın talepler · {resolveFieldRadiusKm(mapHud.radius)} km
               </PremiumText>
               {visibleRequests.length > 0 ? (
                 <View style={styles.listHeaderCountPill}>
@@ -1351,7 +1364,7 @@ export default function DriverOfferScreen({
                 muted
                 style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
               >
-                {mapHud.radius} km saha çevresinde tarama sürüyor.
+                {resolveFieldRadiusKm(mapHud.radius)} km saha çevresinde tarama sürüyor.
               </PremiumText>
 
               <View style={styles.emptyChipRow}>
@@ -1444,7 +1457,7 @@ export default function DriverOfferScreen({
                 >
                   {mapExpanded
                     ? 'Saha haritası'
-                    : `Saha haritası · ${mapHud.seeking} talep · ${mapHud.radius} km`}
+                    : `Saha haritası · ${visibleRequests.length} talep · ${resolveFieldRadiusKm(mapHud.radius)} km`}
                 </PremiumText>
               </View>
             </View>
@@ -1535,7 +1548,7 @@ export default function DriverOfferScreen({
               <View style={styles.mapHud} pointerEvents="none">
                 <Ionicons name="radio-outline" size={15} color="#94A3B8" style={styles.mapHudRadioIcon} />
                 <PremiumText variant="caption" muted style={styles.mapHudText}>
-                  Talep {mapHud.seeking} · {mapHud.radius} km
+                  Talep {mapHud.seeking} · {resolveFieldRadiusKm(mapHud.radius)} km
                 </PremiumText>
               </View>
             </View>
