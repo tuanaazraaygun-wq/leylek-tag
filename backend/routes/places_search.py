@@ -15,10 +15,12 @@ from typing import Any, Optional
 from urllib.parse import quote_plus
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 # Faz 1: Redis places önbelleği (REDIS_CACHE=0 → yalnız _CACHE bellek)
 from redis_cache import cache_get as _redis_cache_get, cache_set as _redis_cache_set
+from services.places_learned_store import LearnedAddressValidationError, upsert_learned_address
 from services.places_seed_cache import lookup_places_seed
 
 router = APIRouter(prefix="/places", tags=["places"])
@@ -2356,3 +2358,39 @@ async def api_places_search(
     if nominatim_rate_blocked:
         out_final["rate_limited"] = True
     return out_final
+
+
+class PlacesLearnBody(BaseModel):
+    """Anonim öğrenilmiş adres — kişisel alan yok."""
+
+    display_name: str = Field(..., min_length=5, max_length=512)
+    normalized_query: str = Field(..., min_length=2, max_length=128)
+    city: str = Field(default="", max_length=128)
+    district: str = Field(default="", max_length=128)
+    latitude: float
+    longitude: float
+    provider: str = Field(default="learned", max_length=32)
+
+
+@router.post("/learn")
+async def api_places_learn(body: PlacesLearnBody):
+    """
+    ADDR-P0-2B: Onaylanmış adres anonim aggregate olarak kaydedilir.
+    Auth zorunlu değil; body validation + TR bbox + provider sanitize uygulanır.
+    """
+    import server as srv
+
+    sb = getattr(srv, "supabase", None)
+    if sb is None:
+        raise HTTPException(status_code=503, detail="Adres öğrenme servisi hazır değil")
+
+    try:
+        upsert_learned_address(sb, body.model_dump())
+    except LearnedAddressValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Adres kaydı başarısız") from exc
+
+    return {"success": True}
