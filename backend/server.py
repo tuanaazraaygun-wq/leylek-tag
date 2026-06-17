@@ -1480,6 +1480,14 @@ except (TypeError, ValueError):
 SEQUENTIAL_DISPATCH_RADIUS_KM = DISPATCH_RADIUS_KM
 BROADCAST_RADIUS_KM = DISPATCH_RADIUS_KM
 
+# Sürücü bekleme haritası: 0=haversine (default, hızlı); 1=Google DM/OSRM road batch
+NEARBY_MAP_USE_ROAD_DISTANCE = os.getenv("NEARBY_MAP_USE_ROAD_DISTANCE", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # Rolling-wave DB persistence (tag_dispatch_state); default off until wired in a later phase.
 DISPATCH_WAVE_DB_STATE = os.getenv("DISPATCH_WAVE_DB_STATE", "").strip().lower() in (
     "1",
@@ -5972,7 +5980,11 @@ async def resolve_user_id(user_id: str) -> str:
     return None
 
 
-_ACCOUNT_ELIGIBILITY_SELECT = "id, is_active, is_deleted, deleted_at, is_banned"
+_ACCOUNT_ELIGIBILITY_SELECT_FULL = "id, is_active, is_deleted, deleted_at, is_banned"
+_ACCOUNT_ELIGIBILITY_SELECT_MIN = "id, is_active"
+# Geriye uyumluluk
+_ACCOUNT_ELIGIBILITY_SELECT = _ACCOUNT_ELIGIBILITY_SELECT_FULL
+_account_eligibility_select_cached: Optional[str] = None
 
 
 def user_account_is_eligible(row: Optional[dict]) -> bool:
@@ -6012,6 +6024,7 @@ def _user_account_ineligible_reason(row: Optional[dict]) -> str:
 
 async def fetch_user_account_row(user_id) -> Optional[dict]:
     """Kullanıcı hesap durumu satırı (kanonik id)."""
+    global _account_eligibility_select_cached
     if user_id is None or not str(user_id).strip() or not supabase:
         return None
     try:
@@ -6019,12 +6032,16 @@ async def fetch_user_account_row(user_id) -> Optional[dict]:
         canonical = str((resolved or user_id) or "").strip().lower()
         if not canonical:
             return None
-        for sel in (
-            _ACCOUNT_ELIGIBILITY_SELECT,
-            "id, is_active, is_deleted, deleted_at",
-            "id, is_active",
-            "id",
-        ):
+        if _account_eligibility_select_cached:
+            select_candidates = [_account_eligibility_select_cached]
+        else:
+            select_candidates = [
+                _ACCOUNT_ELIGIBILITY_SELECT_MIN,
+                _ACCOUNT_ELIGIBILITY_SELECT_FULL,
+                "id, is_active, is_deleted, deleted_at",
+                "id",
+            ]
+        for sel in select_candidates:
             try:
                 r = (
                     supabase.table("users")
@@ -6034,14 +6051,24 @@ async def fetch_user_account_row(user_id) -> Optional[dict]:
                     .execute()
                 )
                 if r.data:
+                    if not _account_eligibility_select_cached:
+                        _account_eligibility_select_cached = sel
                     return r.data[0]
             except Exception as sel_err:
-                logger.warning(
-                    "fetch_user_account_row select_fallback user_id=%s select=%s err=%s",
-                    _mask_log_id(user_id),
-                    sel,
-                    sel_err,
-                )
+                if _account_eligibility_select_cached and sel == _account_eligibility_select_cached:
+                    logger.warning(
+                        "fetch_user_account_row cached select failed user_id=%s select=%s err=%s",
+                        _mask_log_id(user_id),
+                        sel,
+                        sel_err,
+                    )
+                    _account_eligibility_select_cached = None
+                elif sel == _ACCOUNT_ELIGIBILITY_SELECT_MIN:
+                    logger.warning(
+                        "fetch_user_account_row minimal select failed user_id=%s err=%s",
+                        _mask_log_id(user_id),
+                        sel_err,
+                    )
                 continue
     except Exception as e:
         logger.warning(
@@ -8136,6 +8163,29 @@ async def get_real_route_meta_batch(
         )
     logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_s: %.4f", time.time() - t0)
     return {pid: {"distance_km": float(km), "duration_min": int(dur)} for pid, (km, dur) in legs.items()}
+
+
+def _nearby_map_haversine_meta_batch(
+    anchor_lat: float,
+    anchor_lng: float,
+    points: list[tuple[str, float, float]],
+) -> dict[str, dict]:
+    """Harita pinleri — kuş uçuşu mesafe; Google DM/OSRM yok."""
+    out: dict[str, dict] = {}
+    for pid, la, lo in points:
+        try:
+            plat = float(la)
+            plng = float(lo)
+        except (TypeError, ValueError):
+            continue
+        if not _match_bbox_prefilter_deg(anchor_lat, anchor_lng, plat, plng):
+            continue
+        km = float(haversine_distance(anchor_lat, anchor_lng, plat, plng))
+        out[str(pid)] = {
+            "distance_km": round(km, 3),
+            "duration_min": _eta_minutes(anchor_lat, anchor_lng, plat, plng),
+        }
+    return out
 
 
 async def get_real_route_meta_batch_origins_to_dest(
@@ -13230,6 +13280,12 @@ async def get_driver_nearby_passengers_map(
 
         driver_lat = float(driver_lat)
         driver_lng = float(driver_lng)
+        nearby_map_distance_source = "road" if NEARBY_MAP_USE_ROAD_DISTANCE else "haversine"
+        logger.info(
+            "[MATCH] nearby_map_distance_source=%s user=%s",
+            nearby_map_distance_source,
+            resolved_id,
+        )
 
         blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
         blocked_ids = {r["blocked_user_id"] for r in (blocked_result.data or [])}
@@ -13280,16 +13336,20 @@ async def get_driver_nearby_passengers_map(
             seek_ctx[tid] = {"tag": tag, "passenger_info": passenger_info, "trip_pref": trip_pref, "plat_f": plat_f, "plng_f": plng_f}
 
         _match_t0_seek = time.time()
-        try:
-            seek_meta = await get_real_route_meta_batch(driver_lat, driver_lng, seek_points)
-        except Exception as e:
-            logger.error("[MATCH] nearby_map seek batch failed user=%s: %s", resolved_id, e, exc_info=True)
-            seek_meta = {}
+        if NEARBY_MAP_USE_ROAD_DISTANCE:
+            try:
+                seek_meta = await get_real_route_meta_batch(driver_lat, driver_lng, seek_points)
+            except Exception as e:
+                logger.error("[MATCH] nearby_map seek batch failed user=%s: %s", resolved_id, e, exc_info=True)
+                seek_meta = {}
+        else:
+            seek_meta = _nearby_map_haversine_meta_batch(driver_lat, driver_lng, seek_points)
         logger.info(
-            "[MATCH] MATCH_TIME nearby_map_seeking_batch_s: %.4f user=%s seek_points=%d",
+            "[MATCH] MATCH_TIME nearby_map_seeking_batch_s: %.4f user=%s seek_points=%d nearby_map_distance_source=%s",
             time.time() - _match_t0_seek,
             resolved_id,
             len(seek_points),
+            nearby_map_distance_source,
         )
         for tid, row in seek_meta.items():
             road_km = float(row.get("distance_km", 0))
@@ -13413,16 +13473,20 @@ async def get_driver_nearby_passengers_map(
             light_row_by_id[uid] = row
 
         _match_t0_light = time.time()
-        try:
-            light_meta = await get_real_route_meta_batch(driver_lat, driver_lng, light_points)
-        except Exception as e:
-            logger.error("[MATCH] nearby_map light batch failed user=%s: %s", resolved_id, e, exc_info=True)
-            light_meta = {}
+        if NEARBY_MAP_USE_ROAD_DISTANCE:
+            try:
+                light_meta = await get_real_route_meta_batch(driver_lat, driver_lng, light_points)
+            except Exception as e:
+                logger.error("[MATCH] nearby_map light batch failed user=%s: %s", resolved_id, e, exc_info=True)
+                light_meta = {}
+        else:
+            light_meta = _nearby_map_haversine_meta_batch(driver_lat, driver_lng, light_points)
         logger.info(
-            "[MATCH] MATCH_TIME nearby_map_light_batch_s: %.4f user=%s light_points=%d",
+            "[MATCH] MATCH_TIME nearby_map_light_batch_s: %.4f user=%s light_points=%d nearby_map_distance_source=%s",
             time.time() - _match_t0_light,
             resolved_id,
             len(light_points),
+            nearby_map_distance_source,
         )
         light_candidates: list[tuple[float, dict, float, float, float]] = []
         for uid, row in light_meta.items():
