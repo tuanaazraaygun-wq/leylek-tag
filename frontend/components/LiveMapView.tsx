@@ -378,18 +378,50 @@ function decodeMeetingPolylineFromServerRouteInfo(
 }
 
 /** Google→OSRM (server) — tek bacak; API key istemci dışında. */
-async function fetchBackendRouteMetrics(
-  oLa: number,
-  oLo: number,
-  dLa: number,
-  dLo: number,
-): Promise<{
+type BackendRouteMetricsResult = {
   success: boolean;
   distance_km?: number;
   duration_min?: number;
   overview_polyline?: string;
   source?: string;
-}> {
+};
+
+/** ~11 m grid — destination metrics endpointKey ile uyumlu */
+function routeMetricsStableKey(oLa: number, oLo: number, dLa: number, dLo: number): string {
+  const r4 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 'x');
+  return `${r4(oLa)}|${r4(oLo)}|${r4(dLa)}|${r4(dLo)}`;
+}
+
+const ROUTE_METRICS_CLIENT_CACHE_TTL_MS = 12_000;
+
+type RouteMetricsCacheEntry = {
+  at: number;
+  result: BackendRouteMetricsResult;
+};
+
+const routeMetricsClientCache = new Map<string, RouteMetricsCacheEntry>();
+const routeMetricsInFlight = new Map<string, Promise<BackendRouteMetricsResult>>();
+
+function isRouteMetricsClientCacheable(r: BackendRouteMetricsResult): boolean {
+  if (!r.success) return false;
+  const hasPolyline =
+    typeof r.overview_polyline === 'string' && r.overview_polyline.length > 2;
+  const hasMetrics =
+    r.distance_km != null &&
+    Number.isFinite(r.distance_km) &&
+    r.distance_km > 0 &&
+    r.duration_min != null &&
+    Number.isFinite(r.duration_min) &&
+    r.duration_min > 0;
+  return hasPolyline || hasMetrics;
+}
+
+async function fetchBackendRouteMetricsNetwork(
+  oLa: number,
+  oLo: number,
+  dLa: number,
+  dLo: number,
+): Promise<BackendRouteMetricsResult> {
   const q = new URLSearchParams({
     origin_lat: String(oLa),
     origin_lng: String(oLo),
@@ -428,6 +460,53 @@ async function fetchBackendRouteMetrics(
   } catch {
     logRouteFetchDiag('backend_route_metrics_fail', { httpOk: false, networkError: true });
     return { success: false };
+  }
+}
+
+async function fetchBackendRouteMetrics(
+  oLa: number,
+  oLo: number,
+  dLa: number,
+  dLo: number,
+  opts?: { bypassCache?: boolean },
+): Promise<BackendRouteMetricsResult> {
+  const key = routeMetricsStableKey(oLa, oLo, dLa, dLo);
+  const bypass = opts?.bypassCache === true;
+
+  if (!bypass) {
+    const cached = routeMetricsClientCache.get(key);
+    if (cached && Date.now() - cached.at < ROUTE_METRICS_CLIENT_CACHE_TTL_MS) {
+      if (isRouteMetricsClientCacheable(cached.result)) {
+        logRouteFetchDiag('backend_route_metrics_cache_hit', {
+          cacheAgeMs: Date.now() - cached.at,
+        });
+        return { ...cached.result };
+      }
+    }
+    const inflight = routeMetricsInFlight.get(key);
+    if (inflight) {
+      logRouteFetchDiag('backend_route_metrics_inflight_join', {});
+      return inflight;
+    }
+  }
+
+  const promise = fetchBackendRouteMetricsNetwork(oLa, oLo, dLa, dLo).then((result) => {
+    if (!bypass && isRouteMetricsClientCacheable(result)) {
+      routeMetricsClientCache.set(key, { at: Date.now(), result: { ...result } });
+    }
+    return result;
+  });
+
+  if (!bypass) {
+    routeMetricsInFlight.set(key, promise);
+  }
+
+  try {
+    return await promise;
+  } finally {
+    if (!bypass && routeMetricsInFlight.get(key) === promise) {
+      routeMetricsInFlight.delete(key);
+    }
   }
 }
 
@@ -5122,6 +5201,7 @@ export default function LiveMapView({
       if (forceMeetingOsrmBypass) {
         navForceMeetingOsrmOnceRef.current = false;
       }
+      const routeMetricsBypassOpts = forceMeetingOsrmBypass ? { bypassCache: true } : undefined;
 
       const hasPolylineForLeg =
         meetingRouteCoordinatesRef.current.length >= 2 &&
@@ -5189,6 +5269,7 @@ export default function LiveMapView({
             start.longitude,
             end.latitude,
             end.longitude,
+            routeMetricsBypassOpts,
           );
           if (cancelled) return;
           if (
@@ -5312,6 +5393,7 @@ export default function LiveMapView({
             start.longitude,
             end.latitude,
             end.longitude,
+            routeMetricsBypassOpts,
           );
           if (cancelled) return;
           if (
@@ -5504,6 +5586,7 @@ export default function LiveMapView({
             start.longitude,
             end.latitude,
             end.longitude,
+            routeMetricsBypassOpts,
           );
           if (cancelled) return;
           const polyPax =
