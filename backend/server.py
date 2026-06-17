@@ -1153,6 +1153,92 @@ def _has_active_package_for_dispatch(driver_active_until, now_iso: str) -> bool:
     return bool(driver_active_until and driver_active_until > now_iso)
 
 
+_DISPATCH_ONLINE_DRIVER_SELECT_FULL = (
+    "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
+    "is_active, is_deleted, deleted_at, is_banned"
+)
+_DISPATCH_ONLINE_DRIVER_SELECT_MIN = (
+    "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
+    "is_active"
+)
+_DISPATCH_DRIVER_OFFER_SELECT_FULL = (
+    "id, driver_online, driver_active_until, latitude, longitude, "
+    "is_active, is_deleted, deleted_at, is_banned"
+)
+_DISPATCH_DRIVER_OFFER_SELECT_MIN = (
+    "id, driver_online, driver_active_until, latitude, longitude, is_active"
+)
+
+
+def _fetch_online_users_for_dispatch(now_iso: str) -> list:
+    """Rolling dispatch: 42703 (eksik kolon) → MIN select fallback."""
+    if not supabase:
+        return []
+    last_err: Optional[Exception] = None
+    for sel in (_DISPATCH_ONLINE_DRIVER_SELECT_FULL, _DISPATCH_ONLINE_DRIVER_SELECT_MIN):
+        try:
+            query = (
+                supabase.table("users")
+                .select(sel)
+                .eq("driver_online", True)
+                .eq("is_active", True)
+            )
+            query = _apply_driver_active_until_filter(query, now_iso)
+            result = query.execute()
+            if sel != _DISPATCH_ONLINE_DRIVER_SELECT_FULL:
+                logger.warning(
+                    "find_eligible_drivers select_fallback select=%s",
+                    sel,
+                )
+            return result.data or []
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "find_eligible_drivers select_fallback select=%s err=%s",
+                sel,
+                e,
+            )
+            continue
+    if last_err is not None:
+        raise last_err
+    return []
+
+
+def _fetch_user_row_for_dispatch_offer(uid: str) -> Optional[dict]:
+    """Tek sürücü dispatch guard: 42703 → MIN select fallback."""
+    if not supabase or not uid:
+        return None
+    last_err: Optional[Exception] = None
+    for sel in (_DISPATCH_DRIVER_OFFER_SELECT_FULL, _DISPATCH_DRIVER_OFFER_SELECT_MIN):
+        try:
+            r = (
+                supabase.table("users")
+                .select(sel)
+                .eq("id", uid)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                if sel != _DISPATCH_DRIVER_OFFER_SELECT_FULL:
+                    logger.warning(
+                        "is_driver_eligible_for_dispatch_offer select_fallback select=%s",
+                        sel,
+                    )
+                return r.data[0]
+            return None
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "is_driver_eligible_for_dispatch_offer select_fallback select=%s err=%s",
+                sel,
+                e,
+            )
+            continue
+    if last_err is not None:
+        raise last_err
+    return None
+
+
 async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
     """
     Teklif / push gönderilebilir mi: çevrimiçi, geçerli paket süresi (ücretsiz dönemde yalnızca online),
@@ -1169,19 +1255,9 @@ async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
         except Exception:
             pass
         now_iso = datetime.utcnow().isoformat()
-        r = (
-            supabase.table("users")
-            .select(
-                "id, driver_online, driver_active_until, latitude, longitude, "
-                "is_active, is_deleted, deleted_at, is_banned"
-            )
-            .eq("id", uid)
-            .limit(1)
-            .execute()
-        )
-        if not r.data:
+        row = _fetch_user_row_for_dispatch_offer(uid)
+        if not row:
             return False
-        row = r.data[0]
         if not user_account_is_eligible(row):
             return False
         if row.get("driver_online") is not True:
@@ -1994,15 +2070,9 @@ async def find_eligible_drivers(
 
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
-        query = supabase.table("users").select(
-            "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
-            "is_active, is_deleted, deleted_at, is_banned"
-        ).eq("driver_online", True).eq("is_active", True)
-        query = _apply_driver_active_until_filter(query, now)
+        online_rows = _fetch_online_users_for_dispatch(now)
 
-        result = query.execute()
-
-        if not result.data:
+        if not online_rows:
             logger.warning(
                 "find_eligible_drivers: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
             )
@@ -2010,7 +2080,7 @@ async def find_eligible_drivers(
 
         eligible_drivers = []
         exclude_set = {str(x).strip().lower() for x in (exclude_ids or []) if x is not None}
-        online_count = len(result.data)
+        online_count = len(online_rows)
         logger.info(
             "find_eligible_drivers debug: online_rows=%s pickup=(%.5f,%.5f) r_km=%s pref=%s vehicle_filter=%s",
             online_count,
@@ -2026,7 +2096,7 @@ async def find_eligible_drivers(
         _match_t0 = time.time()
         origin_points: list[tuple[str, float, float]] = []
         driver_by_id: dict[str, dict] = {}
-        for driver in result.data:
+        for driver in online_rows:
             if str(driver["id"]).strip().lower() in exclude_set:
                 excluded += 1
                 continue
