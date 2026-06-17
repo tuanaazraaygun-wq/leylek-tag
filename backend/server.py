@@ -1559,6 +1559,16 @@ def _match_dynamic_radius_shadow_enabled() -> bool:
     )
 
 
+def _trust_radar_enabled() -> bool:
+    """TRUST-RADAR-R1A — default kapalı; açıkken /trusted/connections radar enrichment."""
+    return os.getenv("TRUST_RADAR_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 async def _shadow_count_online_drivers_near_pickup(
     pickup_lat: float,
     pickup_lng: float,
@@ -6264,13 +6274,20 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
     eligibility = _user_eligibility_map_for_ids(peer_ids)
     eligible_ids = [uid for uid in peer_ids if eligibility.get(uid, False)]
 
+    radar_on = _trust_radar_enabled()
+    users_select = (
+        "id, name, first_name, profile_photo, rating, total_trips, driver_details, "
+        "driver_online, latitude, longitude, last_location_update, is_active, "
+        "is_deleted, deleted_at, is_banned"
+        if radar_on
+        else "id, name, first_name, profile_photo, rating, total_trips, driver_details"
+    )
+
     users_by_id: dict[str, dict] = {}
     if eligible_ids:
         user_res = (
             supabase.table("users")
-            .select(
-                "id, name, first_name, profile_photo, rating, total_trips, driver_details"
-            )
+            .select(users_select)
             .in_("id", eligible_ids)
             .execute()
         )
@@ -6278,6 +6295,35 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
             uid = str(u.get("id") or "").strip().lower()
             if uid and user_account_is_eligible(u):
                 users_by_id[uid] = u
+
+    actor_row: Optional[dict] = None
+    busy_driver_ids: set[str] = set()
+    if radar_on and eligible_ids:
+        try:
+            actor_res = (
+                supabase.table("users")
+                .select("id, latitude, longitude")
+                .eq("id", actor_norm)
+                .limit(1)
+                .execute()
+            )
+            if actor_res.data:
+                actor_row = actor_res.data[0]
+            driver_peer_ids = [
+                other_id
+                for _row, other_id, cp_role in staged
+                if cp_role == "driver" and other_id in users_by_id
+            ]
+            if driver_peer_ids:
+                from services.trusted_radar import fetch_busy_driver_ids
+
+                busy_driver_ids = fetch_busy_driver_ids(supabase, driver_peer_ids)
+        except Exception as e:
+            logger.warning(
+                "trusted_radar prefetch actor=%s err=%s",
+                _mask_log_id(actor_norm),
+                e,
+            )
 
     connections: list[dict] = []
     for row, other_id, cp_role in staged:
@@ -6300,6 +6346,24 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
         )
 
     connections.sort(key=lambda item: item.pop("_sort"), reverse=True)
+
+    if radar_on and connections:
+        try:
+            from services.trusted_radar import attach_radar_to_connections
+
+            attach_radar_to_connections(
+                actor_row=actor_row,
+                connections=connections,
+                users_by_id=users_by_id,
+                busy_driver_ids=busy_driver_ids,
+            )
+        except Exception as e:
+            logger.warning(
+                "trusted_radar attach actor=%s err=%s",
+                _mask_log_id(actor_norm),
+                e,
+            )
+
     return {"success": True, "connections": connections}
 
 
