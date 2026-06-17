@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
+  acceptTrustedInvite,
   createTrustedInvite,
   getTrustedStatus,
   TrustedNetworkApiError,
@@ -64,6 +65,11 @@ function maskTrustIdForLog(value: string): string {
   return `${s.slice(0, 4)}***${s.slice(-4)}`;
 }
 
+function normalizeInviteId(value: string | null | undefined): string | null {
+  const id = String(value || '').trim();
+  return id || null;
+}
+
 export function useTrustedCounterpartyStatus({
   counterpartyUserId,
   sourceTagId,
@@ -72,8 +78,10 @@ export function useTrustedCounterpartyStatus({
   pollIntervalMs = 0,
 }: UseTrustedCounterpartyStatusArgs) {
   const [status, setStatus] = useState<TrustedCounterpartyUiStatus>('idle');
+  const [inviteId, setInviteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const cp = String(counterpartyUserId || '').trim();
@@ -85,6 +93,7 @@ export function useTrustedCounterpartyStatus({
   const refresh = useCallback(async () => {
     if (!canRun) {
       setStatus('idle');
+      setInviteId(null);
       setErrorMessage(null);
       setLoading(false);
       return;
@@ -101,6 +110,7 @@ export function useTrustedCounterpartyStatus({
         setStatus((prev) => failSoftStatus(prev));
         setErrorMessage(null);
       }
+      setInviteId(normalizeInviteId(data.invite_id));
     } catch {
       setStatus((prev) => failSoftStatus(prev));
       setErrorMessage(null);
@@ -112,9 +122,11 @@ export function useTrustedCounterpartyStatus({
   useEffect(() => {
     if (!canRun) {
       setStatus('idle');
+      setInviteId(null);
       setErrorMessage(null);
       setLoading(false);
       setCreating(false);
+      setAccepting(false);
       return;
     }
     void refresh();
@@ -174,7 +186,7 @@ export function useTrustedCounterpartyStatus({
   }, [canRun, pollMs, refresh]);
 
   const sendInvite = useCallback(async () => {
-    if (!canRun || creating) return;
+    if (!canRun || creating || accepting) return;
 
     setCreating(true);
     setErrorMessage(null);
@@ -184,6 +196,7 @@ export function useTrustedCounterpartyStatus({
         source_tag_id: tag,
       });
       setStatus('outgoing_pending');
+      setInviteId(null);
     } catch (e) {
       if (e instanceof TrustedNetworkApiError) {
         console.warn(
@@ -199,6 +212,7 @@ export function useTrustedCounterpartyStatus({
         if (e.code === 'already_pending' || e.code === 'already_active') {
           if (e.code === 'already_active') {
             setStatus('active');
+            setInviteId(null);
           } else {
             void refresh();
           }
@@ -206,6 +220,7 @@ export function useTrustedCounterpartyStatus({
         }
         if (e.code === 'blocked' || e.code === 'counterparty_not_eligible') {
           setStatus('blocked');
+          setInviteId(null);
           return;
         }
         setErrorMessage(e.message || 'Davet gönderilemedi');
@@ -225,14 +240,110 @@ export function useTrustedCounterpartyStatus({
     } finally {
       setCreating(false);
     }
-  }, [canRun, cp, tag, creating, refresh]);
+  }, [canRun, cp, tag, creating, accepting, refresh]);
+
+  const acceptIncomingInvite = useCallback(
+    async (targetInviteId?: string | null) => {
+      if (!canRun || accepting || creating) return;
+
+      let resolvedInviteId = normalizeInviteId(targetInviteId ?? inviteId);
+      if (!resolvedInviteId) {
+        try {
+          const data = await getTrustedStatus(cp);
+          const next = String(data.status || '').trim();
+          if (isTrustedPairStatus(next)) {
+            setStatus(next);
+          }
+          resolvedInviteId = normalizeInviteId(data.invite_id);
+          setInviteId(resolvedInviteId);
+        } catch {
+          setErrorMessage('Davet bilgisi bulunamadı. Lütfen tekrar deneyin.');
+          return;
+        }
+        if (!resolvedInviteId) {
+          setErrorMessage('Davet bilgisi bulunamadı. Lütfen tekrar deneyin.');
+          return;
+        }
+      }
+
+      setAccepting(true);
+      setErrorMessage(null);
+      try {
+        await acceptTrustedInvite(resolvedInviteId);
+        setStatus('active');
+        setInviteId(null);
+        void refresh();
+      } catch (e) {
+        if (e instanceof TrustedNetworkApiError) {
+          console.warn(
+            'TRUST_INVITE_ACCEPT_FAIL',
+            JSON.stringify({
+              code: e.code,
+              httpStatus: e.httpStatus,
+              detail: e.message,
+              inviteId: maskTrustIdForLog(resolvedInviteId),
+              counterpartyUserId: maskTrustIdForLog(cp),
+            }),
+          );
+          if (
+            e.code === 'invite_expired' ||
+            e.code === 'invalid_state' ||
+            e.code === 'not_found'
+          ) {
+            void refresh();
+          }
+          setErrorMessage(e.message || 'Davet kabul edilemedi');
+          return;
+        }
+        console.warn(
+          'TRUST_INVITE_ACCEPT_FAIL',
+          JSON.stringify({
+            code: 'unknown',
+            detail: e instanceof Error ? e.message : String(e),
+            inviteId: maskTrustIdForLog(resolvedInviteId),
+            counterpartyUserId: maskTrustIdForLog(cp),
+          }),
+        );
+        setErrorMessage(e instanceof Error ? e.message : 'Davet kabul edilemedi');
+      } finally {
+        setAccepting(false);
+      }
+    },
+    [canRun, accepting, creating, inviteId, cp, refresh],
+  );
+
+  const performTrustedPrimaryAction = useCallback(async () => {
+    if (!canRun || creating || accepting || loading) return;
+
+    if (status === 'incoming_pending') {
+      await acceptIncomingInvite(inviteId);
+      return;
+    }
+
+    if (status === 'none' || status === 'declined' || status === 'error') {
+      await sendInvite();
+    }
+  }, [
+    canRun,
+    creating,
+    accepting,
+    loading,
+    status,
+    inviteId,
+    acceptIncomingInvite,
+    sendInvite,
+  ]);
 
   return {
     status,
+    inviteId,
     loading,
     creating,
+    accepting,
     errorMessage,
     refresh,
     sendInvite,
+    acceptIncomingInvite,
+    performTrustedPrimaryAction,
   };
 }

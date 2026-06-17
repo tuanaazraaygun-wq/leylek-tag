@@ -69,9 +69,10 @@ export default function RatingModal({
     status: trustedAddStatus,
     loading: trustedAddLoading,
     creating: trustedAddCreating,
+    accepting: trustedAddAccepting,
     errorMessage: trustedAddErrorMessage,
     refresh: refreshTrustedAddStatus,
-    sendInvite: sendTrustedAddInvite,
+    performTrustedPrimaryAction,
   } = useTrustedCounterpartyStatus({
     counterpartyUserId: rateUserId || null,
     sourceTagId: tagId || null,
@@ -243,14 +244,14 @@ export default function RatingModal({
                       status={trustedAddStatus}
                       loading={trustedAddLoading}
                       creating={trustedAddCreating}
+                      accepting={trustedAddAccepting}
                       errorMessage={trustedAddErrorMessage}
                       onPress={() => {
-                        void sendTrustedAddInvite();
+                        void performTrustedPrimaryAction();
                       }}
                       onRefresh={() => {
                         void refreshTrustedAddStatus();
                       }}
-                      onOpenTrustedHub={onOpenTrustedHub}
                     />
                   </View>
                 ) : null}

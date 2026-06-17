@@ -132,8 +132,10 @@ export const PENDING_BADGE_OUTGOING = 'Giden davet';
 export const TRUST_INCOMING_LABEL = 'Güven ağı daveti var';
 /** Journey profile modal — Hub köprüsü */
 export const TRUST_INCOMING_HUB_BRIDGE = 'Hub\'da yanıtla';
-/** LiveMap compact chip — gelen davet köprüsü */
+/** LiveMap compact chip — gelen davet köprüsü (legacy Hub) */
 export const TRUST_INCOMING_CHIP_BRIDGE = 'Davet var · Yanıtla';
+/** Journey chip / profile — gelen davet kabul CTA */
+export const TRUST_INCOMING_CHIP_ACCEPT = 'Davet var · Kabul et';
 
 export const ACTION_ACCEPT = 'Kabul Et';
 export const ACTION_DECLINE = 'Reddet';

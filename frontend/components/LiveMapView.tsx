@@ -46,7 +46,7 @@ import {
 } from '../lib/openExternalMapsNavigation';
 import { useTrustedCounterpartyStatus, type TrustedCounterpartyUiStatus } from '../hooks/useTrustedCounterpartyStatus';
 import TrustedAddButton from './trusted/TrustedAddButton';
-import { TRUST_INCOMING_CHIP_BRIDGE } from '../lib/trustedHubCopy';
+import { TRUST_INCOMING_CHIP_ACCEPT } from '../lib/trustedHubCopy';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
@@ -2577,9 +2577,10 @@ export default function LiveMapView({
     status: trustedAddStatus,
     loading: trustedAddLoading,
     creating: trustedAddCreating,
+    accepting: trustedAddAccepting,
     errorMessage: trustedAddErrorMessage,
     refresh: refreshTrustedAddStatus,
-    sendInvite: sendTrustedAddInvite,
+    performTrustedPrimaryAction,
   } = useTrustedCounterpartyStatus({
     counterpartyUserId: trustedCounterpartyId || null,
     sourceTagId: trustedSourceTagId || null,
@@ -2595,12 +2596,6 @@ export default function LiveMapView({
     void refreshTrustedAddStatus();
   }, [trustedInviteRefreshNonce, refreshTrustedAddStatus]);
 
-  const handleOpenTrustedHubPress = useCallback(() => {
-    if (!onOpenTrustedHub) return;
-    void tapButtonHaptic();
-    onOpenTrustedHub();
-  }, [onOpenTrustedHub]);
-
   const handleTrustedAddInvitePress = useCallback(() => {
     void tapButtonHaptic();
     if (!boardingConfirmed) {
@@ -2612,8 +2607,8 @@ export default function LiveMapView({
       );
       return;
     }
-    void sendTrustedAddInvite();
-  }, [boardingConfirmed, sendTrustedAddInvite]);
+    void performTrustedPrimaryAction();
+  }, [boardingConfirmed, performTrustedPrimaryAction]);
 
   const trustedAddPulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -6323,10 +6318,52 @@ export default function LiveMapView({
     const inviteLabel = trustedCompactInviteLabel(isDriver);
     return (
       <View style={styles.trustedAddCompactWrap} pointerEvents="box-none">
-        {trustedAddLoading || trustedAddCreating || trustedAddStatus === 'loading' ? (
+        {trustedAddLoading ||
+        trustedAddCreating ||
+        trustedAddAccepting ||
+        trustedAddStatus === 'loading' ? (
           <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
             <ActivityIndicator size="small" color="#22D3EE" />
           </View>
+        ) : trustedAddStatus === 'incoming_pending' ? (
+          <>
+            <Pressable
+              style={({ pressed }) => [
+                styles.trustedAddCompactChip,
+                !boardingConfirmed ? styles.trustedAddCompactChipLocked : null,
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={handleTrustedAddInvitePress}
+              accessibilityRole="button"
+              accessibilityLabel={TRUST_INCOMING_CHIP_ACCEPT}
+            >
+              <Animated.View
+                style={[styles.trustedAddCompactChipInner, { opacity: trustedAddPulse }]}
+              >
+                <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.95)" />
+                <Text
+                  style={styles.trustedAddCompactChipText}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                >
+                  {TRUST_INCOMING_CHIP_ACCEPT}
+                </Text>
+              </Animated.View>
+            </Pressable>
+            {trustedAddErrorMessage ? (
+              <View style={styles.trustedAddCompactChipError} pointerEvents="none">
+                <Ionicons name="alert-circle-outline" size={13} color="rgba(252,165,165,0.95)" />
+                <Text
+                  style={styles.trustedAddCompactChipErrorText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {trustedAddErrorMessage}
+                </Text>
+              </View>
+            ) : null}
+          </>
         ) : trustedCompactCanInvite(trustedAddStatus) ? (
           <>
             <Pressable
@@ -6369,27 +6406,6 @@ export default function LiveMapView({
               </View>
             ) : null}
           </>
-        ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
-          <Pressable
-            style={({ pressed }) => [
-              styles.trustedAddCompactChip,
-              styles.trustedAddCompactChipBridge,
-              pressed && { opacity: 0.88 },
-            ]}
-            onPress={handleOpenTrustedHubPress}
-            accessibilityRole="button"
-            accessibilityLabel={TRUST_INCOMING_CHIP_BRIDGE}
-          >
-            <Ionicons name="time-outline" size={14} color="rgba(34,211,238,0.82)" />
-            <Text
-              style={styles.trustedAddCompactChipBridgeText}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.82}
-            >
-              {TRUST_INCOMING_CHIP_BRIDGE}
-            </Text>
-          </Pressable>
         ) : (
           <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
             <Ionicons
@@ -8403,6 +8419,7 @@ export default function LiveMapView({
                     status={trustedAddStatus}
                     loading={trustedAddLoading}
                     creating={trustedAddCreating}
+                    accepting={trustedAddAccepting}
                     errorMessage={trustedAddErrorMessage}
                     onPress={() => {
                       handleTrustedAddInvitePress();
@@ -8410,7 +8427,6 @@ export default function LiveMapView({
                     onRefresh={() => {
                       void refreshTrustedAddStatus();
                     }}
-                    onOpenTrustedHub={onOpenTrustedHub}
                   />
                   {trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
                     <PremiumText variant="caption" muted style={styles.infoCardTrustHint}>
