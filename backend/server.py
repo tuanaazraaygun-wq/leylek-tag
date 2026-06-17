@@ -6359,6 +6359,75 @@ def _user_eligibility_map_for_ids(user_ids: set[str]) -> dict[str, bool]:
     return out
 
 
+def _trusted_invite_pg_missing_column(exc: BaseException, *needles: str) -> bool:
+    raw = str(exc)
+    low = raw.lower()
+    if "42703" in raw:
+        return True
+    if "does not exist" in low:
+        return True
+    for n in needles:
+        if n and n.lower() in low:
+            return True
+    return False
+
+
+def _trusted_invite_normalize_user_row(row: dict) -> dict:
+    """Eksik users kolonları — eligibility semantiği için güvenli varsayılanlar."""
+    out = dict(row)
+    if "is_deleted" not in out:
+        out["is_deleted"] = False
+    if "deleted_at" not in out:
+        out["deleted_at"] = None
+    if "is_banned" not in out:
+        out["is_banned"] = False
+    return out
+
+
+def _trusted_invite_user_eligibility_map_for_ids(user_ids: set[str]) -> dict[str, bool]:
+    """Trusted invite eligibility — canlı şemada eksik kolonlarda select fallback."""
+    if not user_ids:
+        return {}
+    ids = list(user_ids)
+    out: dict[str, bool] = {uid: False for uid in user_ids}
+    last_err: Optional[Exception] = None
+    for sel in (_ACCOUNT_ELIGIBILITY_SELECT_FULL, _ACCOUNT_ELIGIBILITY_SELECT_MIN):
+        try:
+            result = (
+                supabase.table("users")
+                .select(sel)
+                .in_("id", ids)
+                .execute()
+            )
+            if sel != _ACCOUNT_ELIGIBILITY_SELECT_FULL:
+                logger.warning(
+                    "trusted_invite eligibility select_fallback select=%s id_count=%s",
+                    sel,
+                    len(ids),
+                )
+            for row in result.data or []:
+                uid = str(row.get("id") or "").strip().lower()
+                if uid:
+                    out[uid] = user_account_is_eligible(_trusted_invite_normalize_user_row(row))
+            return out
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "trusted_invite eligibility select_fallback select=%s id_count=%s err=%s",
+                sel,
+                len(ids),
+                e,
+            )
+            if not _trusted_invite_pg_missing_column(
+                e, "is_deleted", "deleted_at", "is_banned"
+            ):
+                break
+            continue
+    if last_err is not None:
+        raise last_err
+    return out
+
+
 def _trusted_summary_for_actor(actor_id: str) -> dict:
     """Trusted Network read-only özet sayaçları (liste/PII yok)."""
     actor_norm = str(actor_id or "").strip().lower()
@@ -7263,7 +7332,7 @@ def _trusted_invite_create_for_actor(
     if cp in blocked:
         _trusted_invite_reject(403, "blocked", "Bu kullanıcı güven ağına eklenemez.")
 
-    eligibility = _user_eligibility_map_for_ids({cp})
+    eligibility = _trusted_invite_user_eligibility_map_for_ids({cp})
     if not eligibility.get(cp, False):
         _trusted_invite_reject(
             403,
@@ -7399,7 +7468,7 @@ def _trusted_assert_not_blocked_pair(actor: str, row: dict) -> None:
 def _trusted_assert_pair_eligible(actor: str, row: dict) -> None:
     ini = str(row.get("initiator_id") or "").strip().lower()
     cp = str(row.get("counterparty_id") or "").strip().lower()
-    eligibility = _user_eligibility_map_for_ids({ini, cp})
+    eligibility = _trusted_invite_user_eligibility_map_for_ids({ini, cp})
     if not eligibility.get(ini, False) or not eligibility.get(cp, False):
         _trusted_invite_reject(
             403,
