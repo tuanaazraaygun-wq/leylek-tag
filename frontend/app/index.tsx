@@ -9903,7 +9903,7 @@ function PassengerDashboard({
     };
 
     checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 2000);
+    const interval = setInterval(checkTripEndRequest, 6000); // SCALE-P1-C-F-B: check-end poll seyreltildi
     passengerCheckEndIntervalRef.current = interval;
     return () => {
       clearInterval(interval);
@@ -17281,7 +17281,7 @@ function DriverDashboard({
     };
 
     checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 2000);
+    const interval = setInterval(checkTripEndRequest, 6000); // SCALE-P1-C-F-B: check-end poll seyreltildi
     driverCheckEndIntervalRef.current = interval;
     return () => {
       clearInterval(interval);
