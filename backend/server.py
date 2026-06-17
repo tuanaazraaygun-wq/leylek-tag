@@ -1569,6 +1569,18 @@ def _trust_radar_enabled() -> bool:
     )
 
 
+def _tie_enabled() -> bool:
+    """TIE-2BE-A — requires TRUST_RADAR_ENABLED; default kapalı."""
+    if not _trust_radar_enabled():
+        return False
+    return os.getenv("TIE_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 async def _shadow_count_online_drivers_near_pickup(
     pickup_lat: float,
     pickup_lng: float,
@@ -6326,6 +6338,7 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
             )
 
     connections: list[dict] = []
+    connection_meta_by_id: dict[str, dict] = {}
     for row, other_id, cp_role in staged:
         if not eligibility.get(other_id, False):
             continue
@@ -6333,9 +6346,13 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
         if not user_row:
             continue
         since = row.get("responded_at") or row.get("invited_at")
+        connection_id = str(row.get("id") or "")
+        connection_meta_by_id[connection_id] = {
+            "responded_at": row.get("responded_at"),
+        }
         connections.append(
             {
-                "connection_id": str(row.get("id") or ""),
+                "connection_id": connection_id,
                 "role": str(cp_role or "").strip().lower(),
                 "status": "active",
                 "since": since,
@@ -6360,6 +6377,38 @@ def _trusted_connections_for_actor(actor_id: str) -> dict:
         except Exception as e:
             logger.warning(
                 "trusted_radar attach actor=%s err=%s",
+                _mask_log_id(actor_norm),
+                e,
+            )
+
+    tie_on = _tie_enabled()
+    if tie_on and radar_on and connections:
+        try:
+            from services.tie_pair_stats import fetch_pair_stats_for_trusted_drivers
+            from services.trust_intelligence import attach_tie_to_connections
+
+            driver_peer_ids = [
+                str(item.get("counterparty", {}).get("user_id") or "").strip().lower()
+                for item in connections
+                if str(item.get("role") or "").strip().lower() == "driver"
+                and isinstance(item.get("counterparty"), dict)
+                and isinstance(item.get("radar"), dict)
+            ]
+            driver_peer_ids = [did for did in driver_peer_ids if did]
+            pair_stats = fetch_pair_stats_for_trusted_drivers(
+                supabase,
+                actor_norm,
+                driver_peer_ids,
+            )
+            attach_tie_to_connections(
+                connections=connections,
+                users_by_id=users_by_id,
+                pair_stats_by_driver=pair_stats,
+                connection_meta_by_id=connection_meta_by_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "trust_intelligence attach actor=%s err=%s",
                 _mask_log_id(actor_norm),
                 e,
             )
