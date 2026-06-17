@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -16,6 +16,8 @@ import { PREMIUM_AUTH_CYAN } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
+import TrustedAddButton from './trusted/TrustedAddButton';
+import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
 import { API_BASE_URL } from '../lib/backendConfig';
 
 const maskIdForLog = (v: string): string => {
@@ -28,7 +30,8 @@ const maskIdForLog = (v: string): string => {
 interface RatingModalProps {
   visible: boolean;
   onClose: () => void;
-  onRatingComplete?: () => void; // 🆕 Puanlama tamamlandığında çağrılır
+  onRatingComplete?: () => void;
+  viewerRole: 'passenger' | 'driver';
   userId: string;
   tagId: string;
   rateUserId: string;
@@ -39,6 +42,7 @@ export default function RatingModal({
   visible,
   onClose,
   onRatingComplete,
+  viewerRole,
   userId,
   tagId,
   rateUserId,
@@ -49,6 +53,41 @@ export default function RatingModal({
   const [submitted, setSubmitted] = useState(false);
 
   const firstName = rateUserName?.split(' ')[0] || 'Kullanıcı';
+  const trustPhaseEnabled =
+    visible &&
+    submitted &&
+    !!String(rateUserId || '').trim() &&
+    !!String(tagId || '').trim();
+
+  const {
+    status: trustedAddStatus,
+    loading: trustedAddLoading,
+    creating: trustedAddCreating,
+    errorMessage: trustedAddErrorMessage,
+    refresh: refreshTrustedAddStatus,
+    sendInvite: sendTrustedAddInvite,
+  } = useTrustedCounterpartyStatus({
+    counterpartyUserId: rateUserId || null,
+    sourceTagId: tagId || null,
+    enabled: trustPhaseEnabled,
+  });
+
+  useEffect(() => {
+    if (!visible) {
+      setSubmitted(false);
+      setRating(5);
+      setLoading(false);
+    }
+  }, [visible]);
+
+  const handleContinue = useCallback(() => {
+    onClose();
+    if (onRatingComplete) {
+      onRatingComplete();
+    }
+    setSubmitted(false);
+    setRating(5);
+  }, [onClose, onRatingComplete]);
 
   const handleSubmitRating = async () => {
     const t0 = Date.now();
@@ -71,13 +110,8 @@ export default function RatingModal({
 
       if (result.success) {
         if (result.already_rated === true) {
-          setSubmitted(false);
+          setSubmitted(true);
           setRating(5);
-          setLoading(false);
-          onClose();
-          if (onRatingComplete) {
-            onRatingComplete();
-          }
           return;
         }
         console.log(
@@ -90,15 +124,6 @@ export default function RatingModal({
           }),
         );
         setSubmitted(true);
-        setTimeout(() => {
-          onClose();
-          // 🆕 Puanlama tamamlandığında state'leri temizle
-          if (onRatingComplete) {
-            onRatingComplete();
-          }
-          setSubmitted(false);
-          setRating(5);
-        }, 2000);
       } else {
         console.log(
           'RATING_SUBMIT_FAIL',
@@ -195,8 +220,39 @@ export default function RatingModal({
                   Değerlendirmen kaydedildi.
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.successCaption}>
-                  Teşekkür ederiz.
+                  Bu yolculuktan sonra güven ağına ekleyebilirsin.
                 </PremiumText>
+                {trustPhaseEnabled ? (
+                  <View style={styles.trustAddWrap}>
+                    <PremiumText variant="caption" muted style={styles.trustNameHint}>
+                      {firstName}
+                    </PremiumText>
+                    <TrustedAddButton
+                      viewerRole={viewerRole}
+                      status={trustedAddStatus}
+                      loading={trustedAddLoading}
+                      creating={trustedAddCreating}
+                      errorMessage={trustedAddErrorMessage}
+                      onPress={() => {
+                        void sendTrustedAddInvite();
+                      }}
+                      onRefresh={() => {
+                        void refreshTrustedAddStatus();
+                      }}
+                    />
+                  </View>
+                ) : null}
+                <TouchableOpacity
+                  style={styles.continueBtn}
+                  onPress={handleContinue}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Devam et"
+                >
+                  <PremiumText variant="body" style={styles.continueBtnText}>
+                    Devam et
+                  </PremiumText>
+                </TouchableOpacity>
               </View>
             </GlassSurface>
           ) : (
@@ -390,6 +446,7 @@ const styles = StyleSheet.create({
     ...LDS_ELEVATION.panel,
   },
   successContainer: {
+    width: '100%',
     alignItems: 'center',
     gap: LDS_SPACING.xs,
   },
@@ -413,5 +470,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: LDS_SPACING.xs,
+  },
+  trustAddWrap: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginTop: LDS_SPACING.xxs,
+  },
+  trustNameHint: {
+    textAlign: 'center',
+    marginBottom: LDS_SPACING.xxs,
+    fontWeight: '600',
+  },
+  continueBtn: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.lg,
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(16,26,43,0.9)',
+    borderWidth: LDS_BORDER_WIDTH.emphasis,
+    borderColor: LDS_BORDER_COLOR.selected,
+    borderTopColor: LDS_BORDER_COLOR.selectedTop,
+    ...LDS_ELEVATION.cta,
+  },
+  continueBtnText: {
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

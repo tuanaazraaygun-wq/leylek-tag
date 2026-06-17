@@ -14231,6 +14231,7 @@ function PassengerDashboard({
             setRatingModalData(null);
             setActiveTag(null);
           }}
+          viewerRole="passenger"
           userId={user.id}
           tagId={ratingModalData.tagId}
           rateUserId={ratingModalData.rateUserId}
@@ -19195,6 +19196,7 @@ function DriverDashboard({
             setRatingModalData(null);
             setActiveTag(null);
           }}
+          viewerRole="driver"
           userId={user.id}
           tagId={ratingModalData.tagId}
           rateUserId={ratingModalData.rateUserId}
