@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  acceptTrustedInvite,
+  declineTrustedInvite,
   getTrustedConnections,
   getTrustedPending,
+  revokeTrustedConnection,
+  TrustedNetworkApiError,
   type TrustedConnectionItem,
   type TrustedPendingItem,
 } from '../lib/trustedNetworkApi';
+import { ACTION_FAILED, ACTION_SUCCESS } from '../lib/trustedHubCopy';
 
 export type TrustedNetworkHubStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+type LoadOptions = {
+  soft?: boolean;
+};
 
 export function useTrustedNetworkHub() {
   const [status, setStatus] = useState<TrustedNetworkHubStatus>('idle');
@@ -14,13 +23,19 @@ export function useTrustedNetworkHub() {
   const [incoming, setIncoming] = useState<TrustedPendingItem[]>([]);
   const [outgoing, setOutgoing] = useState<TrustedPendingItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const load = useCallback(async (cancelledRef: { current: boolean }) => {
-    setStatus('loading');
-    setErrorMessage(null);
-    setConnections([]);
-    setIncoming([]);
-    setOutgoing([]);
+  const load = useCallback(async (cancelledRef: { current: boolean }, options?: LoadOptions) => {
+    const soft = options?.soft === true;
+    if (!soft) {
+      setStatus('loading');
+      setErrorMessage(null);
+      setConnections([]);
+      setIncoming([]);
+      setOutgoing([]);
+    }
 
     try {
       const [connectionsRes, pendingRes] = await Promise.all([
@@ -39,11 +54,13 @@ export function useTrustedNetworkHub() {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn('[useTrustedNetworkHub] error', e);
       }
-      setConnections([]);
-      setIncoming([]);
-      setOutgoing([]);
-      setErrorMessage(msg);
-      setStatus('error');
+      if (!soft) {
+        setConnections([]);
+        setIncoming([]);
+        setOutgoing([]);
+        setErrorMessage(msg);
+        setStatus('error');
+      }
     }
   }, []);
 
@@ -55,13 +72,65 @@ export function useTrustedNetworkHub() {
     };
   }, [load]);
 
-  const refresh = useCallback(() => {
-    const cancelledRef = { current: false };
-    void load(cancelledRef);
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, [load]);
+  const refresh = useCallback(
+    (options?: LoadOptions) => {
+      const cancelledRef = { current: false };
+      void load(cancelledRef, options);
+      return () => {
+        cancelledRef.current = true;
+      };
+    },
+    [load],
+  );
+
+  const runMutation = useCallback(
+    async (id: string, mutate: () => Promise<unknown>) => {
+      const targetId = String(id || '').trim();
+      if (!targetId || actingId) return;
+
+      setActingId(targetId);
+      setActionError(null);
+      setActionSuccess(null);
+
+      try {
+        await mutate();
+        setActionSuccess(ACTION_SUCCESS);
+        refresh({ soft: true });
+      } catch (e) {
+        const msg =
+          e instanceof TrustedNetworkApiError
+            ? e.message || ACTION_FAILED
+            : e instanceof Error
+              ? e.message
+              : ACTION_FAILED;
+        setActionError(msg.trim() || ACTION_FAILED);
+        refresh({ soft: true });
+      } finally {
+        setActingId(null);
+      }
+    },
+    [actingId, refresh],
+  );
+
+  const acceptInvite = useCallback(
+    (inviteId: string) => runMutation(inviteId, () => acceptTrustedInvite(inviteId)),
+    [runMutation],
+  );
+
+  const declineInvite = useCallback(
+    (inviteId: string) => runMutation(inviteId, () => declineTrustedInvite(inviteId)),
+    [runMutation],
+  );
+
+  const revokeConnection = useCallback(
+    (connectionId: string) => runMutation(connectionId, () => revokeTrustedConnection(connectionId)),
+    [runMutation],
+  );
+
+  const clearActionFeedback = useCallback(() => {
+    setActionError(null);
+    setActionSuccess(null);
+  }, []);
 
   return {
     status,
@@ -69,6 +138,13 @@ export function useTrustedNetworkHub() {
     incoming,
     outgoing,
     errorMessage,
+    actingId,
+    actionError,
+    actionSuccess,
     refresh,
+    acceptInvite,
+    declineInvite,
+    revokeConnection,
+    clearActionFeedback,
   };
 }

@@ -232,3 +232,67 @@ export async function createTrustedInvite(body: {
   const { code, detail } = await readTrustedInviteError(res);
   throw new TrustedNetworkApiError(code, detail || 'Davet gönderilemedi', res.status);
 }
+
+export type TrustedInviteMutationResponse = {
+  success: true;
+  invite_id: string;
+  status: 'active' | 'declined';
+  counterparty_user_id?: string;
+  connection_id?: string;
+  source_tag_id?: string | null;
+  invited_at?: string | null;
+  responded_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type TrustedRevokeMutationResponse = {
+  success: true;
+  connection_id: string;
+  status: 'revoked';
+  counterparty_user_id?: string;
+  revoked_at?: string | null;
+  revoked_by?: string | null;
+  updated_at?: string | null;
+};
+
+async function trustedNetworkPost<T>(path: string): Promise<T> {
+  const headers = await authHeaders();
+  const url = `${API_BASE_URL}${path}`;
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+  });
+  if (!res) {
+    throw new Error('Bağlantı hatası');
+  }
+  if (res.ok) {
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new Error('Yanıt okunamadı');
+    }
+  }
+  const { code, detail } = await readTrustedInviteError(res);
+  throw new TrustedNetworkApiError(code, detail || 'İstek tamamlanamadı', res.status);
+}
+
+/** POST /trusted/invites/{invite_id}/accept — gelen daveti kabul et. */
+export async function acceptTrustedInvite(inviteId: string): Promise<TrustedInviteMutationResponse> {
+  const id = encodeURIComponent(String(inviteId || '').trim());
+  return trustedNetworkPost<TrustedInviteMutationResponse>(`/trusted/invites/${id}/accept`);
+}
+
+/** POST /trusted/invites/{invite_id}/decline — gelen daveti reddet. */
+export async function declineTrustedInvite(inviteId: string): Promise<TrustedInviteMutationResponse> {
+  const id = encodeURIComponent(String(inviteId || '').trim());
+  return trustedNetworkPost<TrustedInviteMutationResponse>(`/trusted/invites/${id}/decline`);
+}
+
+/** POST /trusted/connections/{connection_id}/revoke — aktif bağlantıyı kaldır. */
+export async function revokeTrustedConnection(
+  connectionId: string,
+): Promise<TrustedRevokeMutationResponse> {
+  const id = encodeURIComponent(String(connectionId || '').trim());
+  return trustedNetworkPost<TrustedRevokeMutationResponse>(`/trusted/connections/${id}/revoke`);
+}

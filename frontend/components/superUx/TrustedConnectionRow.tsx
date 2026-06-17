@@ -1,12 +1,25 @@
-import React, { memo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useCallback } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { appAlert } from '../../contexts/AppAlertContext';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
+import {
+  ACTION_CANCEL,
+  ACTION_REMOVE,
+  CONFIRM_REVOKE_TITLE,
+} from '../../lib/trustedHubCopy';
 import type { TrustedConnectionItem } from '../../lib/trustedNetworkApi';
 
 function initialsFromName(name: string): string {
@@ -42,9 +55,17 @@ function TrustedAvatar({
 
 type TrustedConnectionRowProps = {
   item: TrustedConnectionItem;
+  actingId?: string | null;
+  actionsDisabled?: boolean;
+  onRevoke?: (connectionId: string) => void;
 };
 
-function TrustedConnectionRow({ item }: TrustedConnectionRowProps) {
+function TrustedConnectionRow({
+  item,
+  actingId = null,
+  actionsDisabled = false,
+  onRevoke,
+}: TrustedConnectionRowProps) {
   const cp = item.counterparty;
   const displayName = (cp.display_name || '').trim() || 'Kullanıcı';
   const rating =
@@ -56,6 +77,20 @@ function TrustedConnectionRow({ item }: TrustedConnectionRowProps) {
   const showVehicle = item.role === 'driver' && cp.vehicle_kind != null;
   const vehicleIcon =
     cp.vehicle_kind === 'motorcycle' ? 'car-sport-outline' : 'car-outline';
+  const isBusy = actingId === item.connection_id;
+  const disabled = actionsDisabled || (actingId != null && !isBusy);
+
+  const handleRevokePress = useCallback(() => {
+    if (disabled || isBusy || !onRevoke) return;
+    appAlert(CONFIRM_REVOKE_TITLE, undefined, [
+      { text: ACTION_CANCEL, style: 'cancel' },
+      {
+        text: ACTION_REMOVE,
+        style: 'destructive',
+        onPress: () => onRevoke(item.connection_id),
+      },
+    ]);
+  }, [disabled, isBusy, item.connection_id, onRevoke]);
 
   return (
     <View style={styles.row} accessibilityRole="text">
@@ -83,6 +118,28 @@ function TrustedConnectionRow({ item }: TrustedConnectionRowProps) {
           ) : null}
         </View>
       </View>
+      {onRevoke ? (
+        isBusy ? (
+          <View style={styles.removeBusy}>
+            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+          </View>
+        ) : (
+          <Pressable
+            style={({ pressed }) => [
+              styles.removeBtn,
+              disabled && styles.removeBtnDisabled,
+              pressed && !disabled && styles.removeBtnPressed,
+            ]}
+            onPress={handleRevokePress}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={ACTION_REMOVE}
+            accessibilityState={{ disabled }}
+          >
+            <Text style={styles.removeBtnText}>{ACTION_REMOVE}</Text>
+          </Pressable>
+        )
+      ) : null}
     </View>
   );
 }
@@ -157,5 +214,30 @@ const styles = StyleSheet.create({
   },
   star: {
     color: 'rgba(251, 191, 36, 0.92)',
+  },
+  removeBtn: {
+    alignSelf: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(248, 113, 113, 0.35)',
+    backgroundColor: 'rgba(127, 29, 29, 0.18)',
+  },
+  removeBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(252, 165, 165, 0.92)',
+  },
+  removeBtnDisabled: {
+    opacity: 0.55,
+  },
+  removeBtnPressed: {
+    opacity: 0.88,
+  },
+  removeBusy: {
+    width: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

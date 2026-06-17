@@ -66,17 +66,31 @@ function HubSection({
 
 function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
   const router = useRouter();
-  const { status, connections, incoming, outgoing } = useTrustedNetworkHub();
+  const {
+    status,
+    connections,
+    incoming,
+    outgoing,
+    actingId,
+    actionError,
+    actionSuccess,
+    acceptInvite,
+    declineInvite,
+    revokeConnection,
+    clearActionFeedback,
+  } = useTrustedNetworkHub();
 
   const title = hubTitle(role);
   const isReady = status === 'ready';
   const isLoading = status === 'loading' || status === 'idle';
   const isError = status === 'error';
+  const actionsDisabled = actingId != null;
 
   const hasConnections = connections.length > 0;
   const hasIncoming = incoming.length > 0;
   const hasOutgoing = outgoing.length > 0;
   const hasAnyData = hasConnections || hasIncoming || hasOutgoing;
+  const showActionBanner = isReady && (!!actionError || !!actionSuccess);
 
   const subtitle =
     isReady && hasAnyData
@@ -115,6 +129,32 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
         </View>
       </View>
 
+      {showActionBanner ? (
+        <Pressable
+          style={[
+            styles.actionBanner,
+            actionError ? styles.actionBannerError : styles.actionBannerSuccess,
+          ]}
+          onPress={clearActionFeedback}
+          accessibilityRole="text"
+        >
+          <Ionicons
+            name={actionError ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            size={16}
+            color={actionError ? 'rgba(252, 165, 165, 0.95)' : 'rgba(52, 211, 153, 0.95)'}
+          />
+          <Text
+            style={[
+              styles.actionBannerText,
+              actionError ? styles.actionBannerTextError : styles.actionBannerTextSuccess,
+            ]}
+            numberOfLines={2}
+          >
+            {actionError || actionSuccess}
+          </Text>
+        </Pressable>
+      ) : null}
+
       {isLoading ? (
         <HubSkeletonRows />
       ) : isError ? (
@@ -141,7 +181,13 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
           {hasConnections ? (
             <HubSection title={sectionConnectionsTitle(role)}>
               {connections.map((item) => (
-                <TrustedConnectionRow key={item.connection_id} item={item} />
+                <TrustedConnectionRow
+                  key={item.connection_id}
+                  item={item}
+                  actingId={actingId}
+                  actionsDisabled={actionsDisabled}
+                  onRevoke={revokeConnection}
+                />
               ))}
             </HubSection>
           ) : null}
@@ -149,7 +195,15 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
           {hasIncoming ? (
             <HubSection title={SECTION_INCOMING_TITLE}>
               {incoming.map((item) => (
-                <TrustedPendingRow key={item.invite_id} item={item} direction="incoming" />
+                <TrustedPendingRow
+                  key={item.invite_id}
+                  item={item}
+                  direction="incoming"
+                  actingId={actingId}
+                  actionsDisabled={actionsDisabled}
+                  onAccept={acceptInvite}
+                  onDecline={declineInvite}
+                />
               ))}
             </HubSection>
           ) : null}
@@ -157,7 +211,13 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
           {hasOutgoing ? (
             <HubSection title={SECTION_OUTGOING_TITLE}>
               {outgoing.map((item) => (
-                <TrustedPendingRow key={item.invite_id} item={item} direction="outgoing" />
+                <TrustedPendingRow
+                  key={item.invite_id}
+                  item={item}
+                  direction="outgoing"
+                  actingId={actingId}
+                  actionsDisabled={actionsDisabled}
+                />
               ))}
             </HubSection>
           ) : null}
@@ -210,6 +270,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: PREMIUM_TEXT_MUTED,
     lineHeight: 18,
+  },
+  actionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  actionBannerSuccess: {
+    backgroundColor: 'rgba(6, 78, 59, 0.22)',
+    borderColor: 'rgba(52, 211, 153, 0.32)',
+  },
+  actionBannerError: {
+    backgroundColor: 'rgba(127, 29, 29, 0.18)',
+    borderColor: 'rgba(248, 113, 113, 0.32)',
+  },
+  actionBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  actionBannerTextSuccess: {
+    color: 'rgba(167, 243, 208, 0.95)',
+  },
+  actionBannerTextError: {
+    color: 'rgba(252, 165, 165, 0.95)',
   },
   scroll: {
     flex: 1,

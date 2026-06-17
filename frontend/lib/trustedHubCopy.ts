@@ -64,6 +64,15 @@ export const HUB_ERROR_BODY = 'Lütfen daha sonra tekrar deneyin.';
 export const PENDING_BADGE_INCOMING = 'Gelen davet';
 export const PENDING_BADGE_OUTGOING = 'Giden davet';
 
+export const ACTION_ACCEPT = 'Kabul Et';
+export const ACTION_DECLINE = 'Reddet';
+export const ACTION_REMOVE = 'Kaldır';
+export const CONFIRM_DECLINE_TITLE = 'Daveti reddetmek istiyor musunuz?';
+export const CONFIRM_REVOKE_TITLE = 'Bu kişiyi güven ağından kaldırmak istiyor musunuz?';
+export const ACTION_SUCCESS = 'İşlem tamamlandı';
+export const ACTION_FAILED = 'İşlem yapılamadı, tekrar deneyin';
+export const ACTION_CANCEL = 'Vazgeç';
+
 export function formatTrustedHubDate(iso: string | null | undefined): string {
   if (!iso || !String(iso).trim()) return '';
   const d = new Date(String(iso));

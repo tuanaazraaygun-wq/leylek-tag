@@ -1,5 +1,13 @@
-import React, { memo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useCallback } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { appAlert } from '../../contexts/AppAlertContext';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
@@ -7,6 +15,10 @@ import {
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import {
+  ACTION_ACCEPT,
+  ACTION_CANCEL,
+  ACTION_DECLINE,
+  CONFIRM_DECLINE_TITLE,
   formatTrustedExpiresHint,
   formatTrustedHubDate,
   PENDING_BADGE_INCOMING,
@@ -48,15 +60,46 @@ function TrustedAvatar({
 type TrustedPendingRowProps = {
   item: TrustedPendingItem;
   direction: 'incoming' | 'outgoing';
+  actingId?: string | null;
+  actionsDisabled?: boolean;
+  onAccept?: (inviteId: string) => void;
+  onDecline?: (inviteId: string) => void;
 };
 
-function TrustedPendingRow({ item, direction }: TrustedPendingRowProps) {
+function TrustedPendingRow({
+  item,
+  direction,
+  actingId = null,
+  actionsDisabled = false,
+  onAccept,
+  onDecline,
+}: TrustedPendingRowProps) {
   const peer: TrustedCounterparty | undefined =
     direction === 'incoming' ? item.from : item.to;
   const displayName = (peer?.display_name || '').trim() || 'Kullanıcı';
   const badge = direction === 'incoming' ? PENDING_BADGE_INCOMING : PENDING_BADGE_OUTGOING;
   const invitedLabel = formatTrustedHubDate(item.invited_at);
   const expiresHint = formatTrustedExpiresHint(item.expires_at);
+  const isIncoming = direction === 'incoming';
+  const isBusy = actingId === item.invite_id;
+  const disabled = actionsDisabled || (actingId != null && !isBusy);
+
+  const handleAccept = useCallback(() => {
+    if (disabled || isBusy || !onAccept) return;
+    onAccept(item.invite_id);
+  }, [disabled, isBusy, item.invite_id, onAccept]);
+
+  const handleDeclinePress = useCallback(() => {
+    if (disabled || isBusy || !onDecline) return;
+    appAlert(CONFIRM_DECLINE_TITLE, undefined, [
+      { text: ACTION_CANCEL, style: 'cancel' },
+      {
+        text: ACTION_DECLINE,
+        style: 'destructive',
+        onPress: () => onDecline(item.invite_id),
+      },
+    ]);
+  }, [disabled, isBusy, item.invite_id, onDecline]);
 
   return (
     <View style={styles.row} accessibilityRole="text">
@@ -75,6 +118,46 @@ function TrustedPendingRow({ item, direction }: TrustedPendingRowProps) {
             {[invitedLabel, expiresHint].filter(Boolean).join(' · ')}
           </Text>
         ) : null}
+        {isIncoming && onAccept && onDecline ? (
+          <View style={styles.actionsRow}>
+            {isBusy ? (
+              <View style={styles.busyWrap}>
+                <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.actionBtnPrimary,
+                    disabled && styles.actionBtnDisabled,
+                    pressed && !disabled && styles.actionBtnPressed,
+                  ]}
+                  onPress={handleAccept}
+                  disabled={disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={ACTION_ACCEPT}
+                  accessibilityState={{ disabled }}
+                >
+                  <Text style={styles.actionBtnPrimaryText}>{ACTION_ACCEPT}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.actionBtnGhost,
+                    disabled && styles.actionBtnDisabled,
+                    pressed && !disabled && styles.actionBtnPressed,
+                  ]}
+                  onPress={handleDeclinePress}
+                  disabled={disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={ACTION_DECLINE}
+                  accessibilityState={{ disabled }}
+                >
+                  <Text style={styles.actionBtnGhostText}>{ACTION_DECLINE}</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -85,7 +168,7 @@ export default memo(TrustedPendingRow);
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -101,6 +184,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(34, 211, 238, 0.22)',
+    marginTop: 2,
   },
   avatarImage: {
     width: '100%',
@@ -154,5 +238,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: PREMIUM_TEXT_MUTED,
     lineHeight: 16,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  busyWrap: {
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  actionBtnPrimary: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.42)',
+  },
+  actionBtnGhost: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(8, 17, 31, 0.45)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  actionBtnPrimaryText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+  },
+  actionBtnGhostText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_MUTED,
+  },
+  actionBtnDisabled: {
+    opacity: 0.55,
+  },
+  actionBtnPressed: {
+    opacity: 0.88,
   },
 });
