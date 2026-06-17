@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -92,6 +92,29 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
   const hasAnyData = hasConnections || hasIncoming || hasOutgoing;
   const showActionBanner = isReady && (!!actionError || !!actionSuccess);
 
+  const displayConnections = useMemo(() => {
+    if (role !== 'passenger') return connections;
+    const hasAnyRadar = connections.some((c) => c.radar != null);
+    if (!hasAnyRadar) return connections;
+    return [...connections]
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const rankA =
+          a.item.radar?.availability_rank != null &&
+          Number.isFinite(Number(a.item.radar.availability_rank))
+            ? Number(a.item.radar.availability_rank)
+            : -1;
+        const rankB =
+          b.item.radar?.availability_rank != null &&
+          Number.isFinite(Number(b.item.radar.availability_rank))
+            ? Number(b.item.radar.availability_rank)
+            : -1;
+        if (rankB !== rankA) return rankB - rankA;
+        return a.index - b.index;
+      })
+      .map(({ item }) => item);
+  }, [connections, role]);
+
   const subtitle =
     isReady && hasAnyData
       ? hubHeaderSubtitle(role, connections.length, incoming.length, outgoing.length)
@@ -180,10 +203,11 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
         >
           {hasConnections ? (
             <HubSection title={sectionConnectionsTitle(role)}>
-              {connections.map((item) => (
+              {displayConnections.map((item) => (
                 <TrustedConnectionRow
                   key={item.connection_id}
                   item={item}
+                  hubRole={role}
                   actingId={actingId}
                   actionsDisabled={actionsDisabled}
                   onRevoke={revokeConnection}

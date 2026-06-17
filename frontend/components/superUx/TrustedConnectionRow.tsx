@@ -20,7 +20,40 @@ import {
   ACTION_REMOVE,
   CONFIRM_REVOKE_TITLE,
 } from '../../lib/trustedHubCopy';
-import type { TrustedConnectionItem } from '../../lib/trustedNetworkApi';
+import type {
+  TrustedConnectionItem,
+  TrustedConnectionRadarState,
+} from '../../lib/trustedNetworkApi';
+import type { TrustedHubRole } from '../../lib/trustedHubCopy';
+
+function buildRadarInsightLine(radar: NonNullable<TrustedConnectionItem['radar']>): string | null {
+  const parts: string[] = [];
+  const label = (radar.radar_label || '').trim();
+  const subtitle = (radar.radar_subtitle || '').trim();
+  if (label) parts.push(label);
+  if (subtitle) parts.push(subtitle);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function resolveRadarDotStyle(state: TrustedConnectionRadarState | undefined) {
+  switch (state) {
+    case 'TRUST_READY':
+      return styles.radarDotReady;
+    case 'TRUST_ON_TRIP':
+      return styles.radarDotOnTrip;
+    default:
+      return styles.radarDotMuted;
+  }
+}
+
+function shouldShowRadarInsight(
+  hubRole: TrustedHubRole | undefined,
+  item: TrustedConnectionItem,
+): boolean {
+  if (!item.radar) return false;
+  if (hubRole === 'passenger' && item.role === 'driver') return true;
+  return false;
+}
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -55,6 +88,7 @@ function TrustedAvatar({
 
 type TrustedConnectionRowProps = {
   item: TrustedConnectionItem;
+  hubRole?: TrustedHubRole;
   actingId?: string | null;
   actionsDisabled?: boolean;
   onRevoke?: (connectionId: string) => void;
@@ -62,6 +96,7 @@ type TrustedConnectionRowProps = {
 
 function TrustedConnectionRow({
   item,
+  hubRole,
   actingId = null,
   actionsDisabled = false,
   onRevoke,
@@ -79,6 +114,9 @@ function TrustedConnectionRow({
     cp.vehicle_kind === 'motorcycle' ? 'car-sport-outline' : 'car-outline';
   const isBusy = actingId === item.connection_id;
   const disabled = actionsDisabled || (actingId != null && !isBusy);
+  const showRadar = shouldShowRadarInsight(hubRole, item);
+  const radarInsightLine = showRadar && item.radar ? buildRadarInsightLine(item.radar) : null;
+  const radarState = showRadar ? item.radar?.radar_state : undefined;
 
   const handleRevokePress = useCallback(() => {
     if (disabled || isBusy || !onRevoke) return;
@@ -94,7 +132,12 @@ function TrustedConnectionRow({
 
   return (
     <View style={styles.row} accessibilityRole="text">
-      <TrustedAvatar displayName={displayName} photoUri={cp.profile_photo} />
+      <View style={styles.avatarWrap}>
+        <TrustedAvatar displayName={displayName} photoUri={cp.profile_photo} />
+        {showRadar && radarState ? (
+          <View style={[styles.radarDot, resolveRadarDotStyle(radarState)]} />
+        ) : null}
+      </View>
       <View style={styles.body}>
         <View style={styles.titleRow}>
           <Text style={styles.name} numberOfLines={1}>
@@ -117,6 +160,11 @@ function TrustedConnectionRow({
             </Text>
           ) : null}
         </View>
+        {radarInsightLine ? (
+          <Text style={styles.radarInsight} numberOfLines={2}>
+            {radarInsightLine}
+          </Text>
+        ) : null}
       </View>
       {onRevoke ? (
         isBusy ? (
@@ -158,6 +206,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: PREMIUM_BORDER_SLATE,
   },
+  avatarWrap: {
+    position: 'relative',
+  },
   avatarRing: {
     width: 44,
     height: 44,
@@ -165,6 +216,25 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  radarDot: {
+    position: 'absolute',
+    right: -1,
+    bottom: -1,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(11, 18, 32, 0.98)',
+  },
+  radarDotReady: {
+    backgroundColor: 'rgba(52, 211, 153, 0.95)',
+  },
+  radarDotOnTrip: {
+    backgroundColor: 'rgba(251, 191, 36, 0.95)',
+  },
+  radarDotMuted: {
+    backgroundColor: 'rgba(100, 116, 139, 0.75)',
   },
   avatarImage: {
     width: '100%',
@@ -214,6 +284,14 @@ const styles = StyleSheet.create({
   },
   star: {
     color: 'rgba(251, 191, 36, 0.92)',
+  },
+  radarInsight: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(34, 211, 238, 0.82)',
+    lineHeight: 16,
+    letterSpacing: -0.1,
   },
   removeBtn: {
     alignSelf: 'center',

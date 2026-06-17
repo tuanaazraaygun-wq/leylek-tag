@@ -26,6 +26,36 @@ export type TrustedSummaryResponse = {
   online_trusted_count: number;
 };
 
+export type TrustedConnectionRadarState =
+  | 'TRUST_READY'
+  | 'TRUST_ON_TRIP'
+  | 'TRUST_OFFLINE'
+  | 'TRUST_STALE'
+  | 'TRUST_UNKNOWN'
+  | string;
+
+export type TrustedConnectionDistanceBand =
+  | 'VERY_CLOSE'
+  | 'NEARBY'
+  | 'IN_CITY'
+  | 'FAR'
+  | 'UNKNOWN'
+  | string
+  | null;
+
+export type TrustedConnectionRadar = {
+  schema_version?: number;
+  radar_state?: TrustedConnectionRadarState;
+  radar_label?: string | null;
+  radar_subtitle?: string | null;
+  availability_rank?: number | null;
+  distance_band?: TrustedConnectionDistanceBand;
+  available_in_band?: string | null;
+  is_quick_match_ready?: boolean;
+  trust_offer_eligible?: boolean;
+  offer_block_reason?: string | null;
+};
+
 export type TrustedConnectionItem = {
   connection_id: string;
   role: 'driver' | 'passenger';
@@ -33,6 +63,7 @@ export type TrustedConnectionItem = {
   since: string | null;
   last_trip_at: string | null;
   counterparty: TrustedCounterparty;
+  radar?: TrustedConnectionRadar;
 };
 
 export type TrustedConnectionsResponse = {
