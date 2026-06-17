@@ -290,6 +290,13 @@ export default function PassengerWaitingScreen({
   const isDispatchEligibleSearching =
     dispatchEligibleCount === 0 || dispatchStatus.status === 'no_drivers';
   const mapDriverMarkers = nearbyDrivers.slice(0, WAIT_MAP_MAX_DRIVER_MARKERS);
+  const hasOfferedPrice = Number.isFinite(Number(offeredPrice)) && Number(offeredPrice) > 0;
+  const mapStatsLine =
+    hasOfferedPrice && dispatchEligibleCount > 0
+      ? `₺${offeredPrice} · ${dispatchEligibleCount} uygun sürücü`
+      : hasOfferedPrice
+        ? `₺${offeredPrice} · Sürücüler aranıyor`
+        : 'Sürücüler aranıyor';
 
   // Durum mesajı
   const getStatusMessage = () => {
@@ -360,11 +367,6 @@ export default function PassengerWaitingScreen({
             <PremiumText variant="caption" muted style={styles.phaseCaption}>
               LeylekTAG uygun sürücüleri sırayla değerlendiriyor
             </PremiumText>
-            <View style={styles.priceChip}>
-              <PremiumText variant="body" style={styles.priceText}>
-                ₺{offeredPrice}
-              </PremiumText>
-            </View>
           </View>
 
           <GlassSurface variant="stage" style={styles.mapChrome} borderRadius={LDS_RADIUS.lg}>
@@ -467,20 +469,22 @@ export default function PassengerWaitingScreen({
             ) : null}
           </View>
         )}
-        {/* AI: tek merkezi alt-orta LeylekZekaWidget (global) */}
-        
-        {/* Dispatch uygun sürücü rozeti (nearby sayısı değil) */}
-        <View style={styles.driverCountBadge}>
-          <Ionicons name="car" size={20} color={PREMIUM_AUTH_CYAN} />
-          {dispatchEligibleCount > 0 ? (
-            <>
-              <Text style={styles.driverCountText}>{dispatchEligibleCount}</Text>
-              <Text style={styles.driverCountLabel}>uygun sürücü</Text>
-            </>
-          ) : (
-            <Text style={styles.driverCountSearching}>Uygun sürücü aranıyor</Text>
-          )}
-        </View>
+        <GlassSurface
+          variant="plain"
+          borderRadius={LDS_RADIUS.full}
+          style={styles.mapStatsBar}
+          pointerEvents="none"
+        >
+          <Text
+            style={styles.mapStatsBarText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+          >
+            {mapStatsLine}
+          </Text>
+        </GlassSurface>
+        {/* AI: tek merkezi LeylekZekaWidget (global, göz-only) */}
       </View>
           </GlassSurface>
 
@@ -700,20 +704,27 @@ const styles = StyleSheet.create({
   phaseCaption: {
     textAlign: 'center',
   },
-  priceChip: {
-    marginTop: LDS_SPACING.xxs,
+  mapStatsBar: {
+    position: 'absolute',
+    top: LDS_SPACING.sm,
+    left: LDS_SPACING.sm,
+    right: LDS_SPACING.sm,
+    zIndex: 30,
+    alignSelf: 'center',
+    paddingVertical: LDS_SPACING.xs,
     paddingHorizontal: LDS_SPACING.md,
-    paddingVertical: LDS_SPACING.xxs,
-    borderRadius: LDS_RADIUS.full,
-    backgroundColor: 'rgba(5,11,24,0.55)',
+    backgroundColor: 'rgba(5,11,24,0.82)',
     borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.cardTopCyan,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
     ...LDS_ELEVATION.chip,
   },
-  priceText: {
-    fontWeight: '800',
-    color: PREMIUM_AUTH_CYAN,
-    letterSpacing: -0.2,
+  mapStatsBarText: {
+    textAlign: 'center',
+    fontWeight: '700',
+    fontSize: 13,
+    color: PREMIUM_TEXT_SOFT,
+    letterSpacing: -0.1,
   },
   mapChrome: {
     width: '100%',
@@ -748,39 +759,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     textAlign: 'center',
-  },
-  driverCountBadge: {
-    position: 'absolute',
-    top: LDS_SPACING.sm,
-    right: LDS_SPACING.sm,
-    zIndex: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(5,11,24,0.72)',
-    paddingHorizontal: LDS_SPACING.sm,
-    paddingVertical: LDS_SPACING.xs,
-    borderRadius: LDS_RADIUS.full,
-    gap: LDS_SPACING.xxs,
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.card,
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
-    ...LDS_ELEVATION.chip,
-  },
-  driverCountText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
-  },
-  driverCountLabel: {
-    ...LDS_TYPOGRAPHY.caption,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_MUTED,
-  },
-  driverCountSearching: {
-    ...LDS_TYPOGRAPHY.caption,
-    fontWeight: '600',
-    color: PREMIUM_TEXT_SOFT,
-    flexShrink: 1,
   },
   locationCard: {
     width: '100%',

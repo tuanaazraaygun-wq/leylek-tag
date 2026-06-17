@@ -90,9 +90,11 @@ const TYPING_CHAR_MS_MIN = 24;
 const TYPING_CHAR_MS_MAX = 38;
 const TYPING_START_DELAY_MS = 180;
 const BUBBLE_MAX_W = 220;
-const PASSENGER_WATCH_CHIP_LABEL = 'Leylek Gözü izliyor';
-/** Waiting cockpit — compact guardian eye in map chip row (P-WAIT-1A). */
+const PASSENGER_MATCHING_EYE_A11Y_LABEL = 'Leylek Zeka';
+/** Waiting cockpit — compact guardian eye (P-WAIT-1A, P1-UX-B-A: göz-only). */
 const LEYLEK_EYE_WATCHING_SIZE = LDS_SPACING.xxxl - LDS_SPACING.xxs;
+const PASSENGER_MATCHING_EYE_BOTTOM_PX = 72;
+const PASSENGER_MATCHING_EYE_LEFT_PX = 16;
 
 const ORB_ACCENT_CYAN = 'rgba(34, 211, 238, 0.96)';
 const ORB_TEXT_SOFT = 'rgba(224, 246, 255, 0.94)';
@@ -315,6 +317,14 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       top: Math.min(topMax, Math.max(topMin, raw)),
     };
   }, [insets.top, winH]);
+
+  const passengerMatchingEyePos = useMemo(
+    () => ({
+      left: PASSENGER_MATCHING_EYE_LEFT_PX,
+      bottom: PASSENGER_MATCHING_EYE_BOTTOM_PX + insets.bottom,
+    }),
+    [insets.bottom],
+  );
 
   const fabGlowStyle = useMemo(() => {
     if (glowVariant === 'idle') {
@@ -990,7 +1000,11 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[
                 styles.passengerWaitMapAnchor,
                 styles.passengerWatchMapAnchor,
-                { top: passengerWaitOrbOnMap.top, left: passengerWaitOrbOnMap.left },
+                styles.passengerMatchingEyeAnchor,
+                {
+                  left: passengerMatchingEyePos.left,
+                  bottom: passengerMatchingEyePos.bottom,
+                },
               ]}
             >
               <Pressable
@@ -998,10 +1012,11 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 onPressIn={markInteraction}
                 style={({ pressed }) => [
                   styles.passengerWatchGlassChip,
+                  styles.passengerWatchGlassChipEyeOnly,
                   pressed && styles.passengerWatchChipPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={PASSENGER_WATCH_CHIP_LABEL}
+                accessibilityLabel={PASSENGER_MATCHING_EYE_A11Y_LABEL}
                 accessibilityHint="Yardım sohbetini açmak için dokunun."
               >
                 <Animated.View
@@ -1013,12 +1028,9 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                     chromeTone="subtle"
                     motionProfile="guardian"
                     reduceMotion={reduceMotion}
-                    accessibilityLabel={PASSENGER_WATCH_CHIP_LABEL}
+                    accessibilityLabel={PASSENGER_MATCHING_EYE_A11Y_LABEL}
                   />
                 </Animated.View>
-                <Text style={styles.passengerWatchChipText} pointerEvents="none">
-                  {PASSENGER_WATCH_CHIP_LABEL}
-                </Text>
               </Pressable>
             </View>
           ) : (
@@ -1169,6 +1181,10 @@ const styles = StyleSheet.create({
   },
   passengerWatchMapAnchor: {
     zIndex: 5,
+  },
+  passengerMatchingEyeAnchor: {
+    top: undefined,
+    alignItems: 'center',
   },
   fabColumn: {
     alignItems: 'center',
@@ -1333,6 +1349,11 @@ const styles = StyleSheet.create({
     borderLeftColor: LDS_BORDER_COLOR.cockpitPanelLeft,
     maxWidth: 248,
     ...LDS_ELEVATION.chip,
+  },
+  passengerWatchGlassChipEyeOnly: {
+    paddingHorizontal: LDS_SPACING.xxs,
+    paddingVertical: LDS_SPACING.xxs,
+    maxWidth: LEYLEK_EYE_WATCHING_SIZE + LDS_SPACING.xs * 2,
   },
   passengerWatchChipPressed: {
     opacity: 0.9,
