@@ -16496,19 +16496,38 @@ function DriverDashboard({
     return () => subscription.remove();
   }, [user?.id, hydrateIosDriverLocation]);
 
+  /** Matched journey: lastKnown GPS seed for first map paint (Android+iOS, SCALE-P1-C-G-A). */
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !user?.id || !activeTag) return;
+    if (!user?.id || !activeTag) return;
     const st = String(activeTag.status || '').toLowerCase();
     if (st !== 'matched' && st !== 'in_progress' && st !== 'driver_on_the_way') return;
     if (hasValidPassengerPickupCoords(userLocation)) return;
-    hydrateIosDriverLocation('active_tag_seed');
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cur = await Location.getForegroundPermissionsAsync();
+        if (cur.status !== 'granted' || cancelled) return;
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (cancelled || !lastKnown?.coords) return;
+        if (!hasValidPassengerPickupCoords(lastKnown.coords)) return;
+        setUserLocation({
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+        });
+      } catch {
+        /* silent — live GPS watch overrides when ready */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [
     user?.id,
     activeTag?.id,
     activeTag?.status,
     userLocation?.latitude,
     userLocation?.longitude,
-    hydrateIosDriverLocation,
   ]);
 
   useEffect(() => {
