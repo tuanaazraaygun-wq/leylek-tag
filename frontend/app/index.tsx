@@ -16681,8 +16681,8 @@ function DriverDashboard({
       (st === 'matched' || st === 'in_progress' || st === 'driver_on_the_way');
     if (!busy) {
       await loadDispatchPendingOffer();
+      await loadRequests();
     }
-    await loadRequests();
   };
   loadDriverDashboardDataRef.current = loadData;
 
