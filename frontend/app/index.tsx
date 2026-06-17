@@ -13641,13 +13641,6 @@ function PassengerDashboard({
                           Konumunuzu kullanın veya haritadan işaretleyin; adres de arayabilirsiniz.
                         </Text>
                       </View>
-                      <ScrollView
-                        style={styles.routePickerPanelScrollBody}
-                        showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="always"
-                        nestedScrollEnabled={Platform.OS === 'android'}
-                        contentContainerStyle={styles.routePickerPanelScrollContent}
-                      >
                       <View style={styles.pickupPrimaryCtaStack}>
                         <TouchableOpacity
                           style={styles.pickupUseLocationBtnWrap}
@@ -13705,6 +13698,13 @@ function PassengerDashboard({
                           </TouchableOpacity>
                         ) : null}
                       </View>
+                      <ScrollView
+                        style={styles.routePickerPanelScrollBody}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="always"
+                        nestedScrollEnabled={Platform.OS === 'android'}
+                        contentContainerStyle={styles.routePickerPanelScrollContent}
+                      >
                       <View style={styles.destinationSearchShellModern}>
                         <PlacesAutocomplete
                           key={pickupPickerAutocompleteMountKey}
@@ -13882,6 +13882,32 @@ function PassengerDashboard({
                           </Text>
                         ) : null}
                       </View>
+                      <View style={styles.routePickerDestinationSearchBlock}>
+                        <View style={styles.destinationSearchShellModern}>
+                          <PlacesAutocomplete
+                            key={destinationPickerAutocompleteMountKey}
+                            placeholder="Mahalle, sokak veya mekan ara"
+                            city={passengerAddressSearchCityScope}
+                            hidePopularChips
+                            visualVariant="tech"
+                            suggestionsFirst
+                            strictCityBounds={!!passengerAddressSearchCityScope.trim()}
+                            biasLatitude={userLocation?.latitude}
+                            biasLongitude={userLocation?.longitude}
+                            biasDeltaDeg={0.22}
+                            inputSize="large"
+                            predictionMaxHeightBonus={56}
+                            forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
+                            replayOnBiasChange
+                            onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
+                          />
+                        </View>
+                        {isNativeGoogleMapsSupported() ? (
+                          <Text style={styles.destinationSearchFlowHint}>
+                            Listeden seçin veya haritadan işaretleyin.
+                          </Text>
+                        ) : null}
+                      </View>
                       <ScrollView
                         style={styles.routePickerPanelScrollBody}
                         showsVerticalScrollIndicator={false}
@@ -13889,31 +13915,6 @@ function PassengerDashboard({
                         nestedScrollEnabled={Platform.OS === 'android'}
                         contentContainerStyle={styles.routePickerPanelScrollContent}
                       >
-                      <View style={styles.destinationSearchShellModern}>
-                        <PlacesAutocomplete
-                          key={destinationPickerAutocompleteMountKey}
-                          placeholder="Mahalle, sokak veya mekan ara"
-                          city={passengerAddressSearchCityScope}
-                          hidePopularChips
-                          visualVariant="tech"
-                          suggestionsFirst
-                          strictCityBounds={!!passengerAddressSearchCityScope.trim()}
-                          biasLatitude={userLocation?.latitude}
-                          biasLongitude={userLocation?.longitude}
-                          biasDeltaDeg={0.22}
-                          inputSize="large"
-                          predictionMaxHeightBonus={56}
-                          forceCityInSearch={!!passengerAddressSearchCityScope.trim()}
-                          replayOnBiasChange
-                          onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
-                        />
-                      </View>
-                      {isNativeGoogleMapsSupported() ? (
-                        <Text style={styles.destinationSearchFlowHint}>
-                          Listeden seçin veya haritadan işaretleyin.
-                        </Text>
-                      ) : null}
-
                       {savedHomeAddress || savedWorkAddress ? (
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
@@ -26294,7 +26295,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 26, 43, 0.72)',
     borderWidth: StyleSheet.hairlineWidth + 1,
     borderColor: '#1E3A5F',
-    maxHeight: '54%',
+    maxHeight: '62%',
     shadowColor: '#020617',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.32,
@@ -26303,7 +26304,11 @@ const styles = StyleSheet.create({
   },
   pickupRouteFloatingPanel: {
     borderTopColor: 'rgba(34, 211, 238, 0.18)',
-    maxHeight: '60%',
+    maxHeight: '66%',
+  },
+  routePickerDestinationSearchBlock: {
+    flexShrink: 0,
+    marginBottom: 8,
   },
   routePickerPanelShell: {
     flexDirection: 'column',
@@ -26322,7 +26327,8 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   routePickerPanelScrollContent: {
-    paddingBottom: 8,
+    paddingTop: 4,
+    paddingBottom: 12,
   },
   pickupRouteSubtitle: {
     fontSize: 14,
@@ -26334,8 +26340,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   pickupPrimaryCtaStack: {
+    flexShrink: 0,
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   pickupMapPickBtnWrapPrimary: {
     borderRadius: 20,

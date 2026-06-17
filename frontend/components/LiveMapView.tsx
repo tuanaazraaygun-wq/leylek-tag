@@ -6252,12 +6252,6 @@ export default function LiveMapView({
   const compactMatchedLayout =
     IS_COMPACT_MATCHED_SCREEN && !driverNavImmersive && !driverRideUiModern;
 
-  /** Klasik bottom deck — dar ekranda QR + Zorla Bitir alt alta tam genişlik */
-  const narrowBottomDeck =
-    !driverNavImmersive &&
-    !driverRideUiModern &&
-    (SCREEN_WIDTH < 420 || IS_COMPACT_MATCHED_SCREEN);
-
   const matchedMeetingLegMode: MatchedRouteLegMode = showMeetingRouteCalculating
     ? 'calculating'
     : showMeetingRouteUnavailable
@@ -7780,101 +7774,36 @@ export default function LiveMapView({
                 </View>
               ) : null}
 
-              <View
-                style={[
-                  styles.paxBottomActionRow,
-                  narrowBottomDeck ? styles.paxBottomActionRowCompact : null,
-                ]}
-              >
-                {onOpenLeylekZekaSupport ? (
-                  <Pressable
-                    style={({ pressed }) => [styles.paxBottomAiWrap, pressed && { opacity: 0.92 }]}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      onOpenLeylekZekaSupport();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="AI — Leylek Zeka"
-                  >
-                    <View style={styles.paxBottomAiOrb}>
-                      <Ionicons name="sparkles" size={26} color="rgba(243,248,255,0.94)" />
-                    </View>
-                    <PremiumText variant="caption" muted style={styles.paxBottomAiLabel} numberOfLines={1}>
-                      AI
-                    </PremiumText>
-                  </Pressable>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.supportDestekTouch}
-                    onPress={() => {
-                      const phoneNumber = '905326497412';
-                      const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
-                      const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-                      const fallbackUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-                      const canOpen = Linking.canOpenURL;
-                      const openUrl = Linking.openURL;
-                      callCheck('Linking.canOpenURL', canOpen);
-                      callCheck('Linking.openURL', openUrl);
-                      if (typeof canOpen !== 'function' || typeof openUrl !== 'function') {
-                        return;
-                      }
-                      canOpen(whatsappUrl)
-                        .then((supported) => {
-                          if (supported) {
-                            void openUrl(whatsappUrl);
-                          } else {
-                            void openUrl(fallbackUrl);
-                          }
-                        })
-                        .catch(() => {
-                          void openUrl(fallbackUrl);
-                        });
-                    }}
-                    activeOpacity={0.75}
-                    accessibilityLabel="Destek — WhatsApp"
-                  >
-                    <View style={styles.supportSplitIcon} pointerEvents="none">
-                      <View style={styles.supportSplitLeft}>
-                        <Ionicons name="chatbubbles" size={13} color="rgba(243,248,255,0.94)" />
-                      </View>
-                      <View style={styles.supportSplitRight}>
-                        <Ionicons name="alert" size={15} color="rgba(186,201,222,0.82)" />
-                      </View>
-                    </View>
-                    <Text style={styles.supportDestekLabel} numberOfLines={1}>
-                      Destek
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
+              <View style={styles.paxBottomMainActions}>
                 <Animated.View
-                  style={[
-                    {
-                      transform: [
-                        {
-                          scale: pulseAnim.interpolate({
-                            inputRange: [0.6, 1],
-                            outputRange: [0.98, 1.02],
-                          }),
-                        },
-                      ],
-                    },
-                    narrowBottomDeck ? styles.paxBottomQrBtnWrapNarrow : null,
-                  ]}
+                  style={{
+                    transform: [
+                      {
+                        scale: pulseAnim.interpolate({
+                          inputRange: [0.6, 1],
+                          outputRange: [0.98, 1.02],
+                        }),
+                      },
+                    ],
+                  }}
                 >
                   <TouchableOpacity
                     style={[
                       styles.paxBottomQrBtn,
+                      styles.paxBottomQrBtnFull,
                       boardingConfirmed ? styles.paxBottomQrBtnTripEnd : styles.paxBottomQrBtnBoarding,
-                      narrowBottomDeck ? styles.paxBottomQrBtnCompact : null,
                     ]}
                     onPress={() => {
                       void tapButtonHaptic();
                       handlePrimaryTripQrPress();
                     }}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      boardingConfirmed ? 'Yol paylaşımını bitir' : 'Biniş kodunu tara'
+                    }
                   >
-                    <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
+                    <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
                     <PremiumText
                       variant="caption"
                       style={styles.paxBottomQrBtnText}
@@ -7888,10 +7817,7 @@ export default function LiveMapView({
                 </Animated.View>
 
                 <TouchableOpacity
-                  style={[
-                    styles.paxBottomEndBtn,
-                    narrowBottomDeck ? styles.paxBottomEndBtnNarrow : null,
-                  ]}
+                  style={[styles.paxBottomEndBtn, styles.paxBottomEndBtnFull]}
                   onPress={() => {
                     void tapButtonHaptic();
                     if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
@@ -7933,6 +7859,8 @@ export default function LiveMapView({
                     );
                   }}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Zorla bitir"
                 >
                   <Ionicons name="close-circle" size={18} color="rgba(252,165,165,0.92)" />
                   <PremiumText
@@ -8086,104 +8014,38 @@ export default function LiveMapView({
                 </View>
               ) : null}
 
-              <View
-                style={[
-                  styles.drvBottomActionRow,
-                  narrowBottomDeck ? styles.drvBottomActionRowCompact : null,
-                ]}
-              >
-                {onOpenLeylekZekaSupport ? (
-                  <Pressable
-                    style={({ pressed }) => [styles.drvBottomAiWrap, pressed && { opacity: 0.92 }]}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      onOpenLeylekZekaSupport();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Leylek Zeka — Guardian"
-                  >
-                    <View style={styles.drvBottomAiOrb}>
-                      <Ionicons name="sparkles" size={22} color="rgba(148,163,184,0.92)" />
-                    </View>
-                    <PremiumText variant="caption" muted style={styles.drvBottomAiLabel} numberOfLines={1}>
-                      Leylek
-                    </PremiumText>
-                  </Pressable>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.drvBottomAiWrap}
-                    onPress={() => {
-                      const phoneNumber = '905326497412';
-                      const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
-                      const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-                      const fallbackUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-                      const canOpen = Linking.canOpenURL;
-                      const openUrl = Linking.openURL;
-                      callCheck('Linking.canOpenURL', canOpen);
-                      callCheck('Linking.openURL', openUrl);
-                      if (typeof canOpen !== 'function' || typeof openUrl !== 'function') {
-                        return;
-                      }
-                      canOpen(whatsappUrl)
-                        .then((supported) => {
-                          if (supported) {
-                            void openUrl(whatsappUrl);
-                          } else {
-                            void openUrl(fallbackUrl);
-                          }
-                        })
-                        .catch(() => {
-                          void openUrl(fallbackUrl);
-                        });
-                    }}
-                    activeOpacity={0.75}
-                    accessibilityLabel="Destek — WhatsApp"
-                  >
-                    <View style={styles.drvBottomAiOrb}>
-                      <Ionicons name="chatbubbles" size={18} color="rgba(148,163,184,0.88)" />
-                    </View>
-                    <PremiumText variant="caption" muted style={styles.drvBottomAiLabel} numberOfLines={1}>
-                      Destek
-                    </PremiumText>
-                  </TouchableOpacity>
-                )}
-
-                <View style={narrowBottomDeck ? styles.drvBottomQrBtnWrapNarrow : null}>
-                  <TouchableOpacity
-                    style={[
-                      styles.drvBottomQrBtn,
-                      boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
-                      driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
-                      narrowBottomDeck ? styles.drvBottomQrBtnCompact : null,
-                    ]}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      handlePrimaryTripQrPress();
-                    }}
-                    activeOpacity={0.88}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
-                    }
-                  >
-                    <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
-                    <PremiumText
-                      variant="caption"
-                      style={styles.drvBottomQrBtnText}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.82}
-                    >
-                      {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
-                    </PremiumText>
-                  </TouchableOpacity>
-                </View>
-
+              <View style={styles.drvBottomMainActions}>
                 <TouchableOpacity
                   style={[
-                    styles.drvBottomEndBtn,
-                    narrowBottomDeck ? styles.drvBottomEndBtnNarrow : null,
+                    styles.drvBottomQrBtn,
+                    styles.drvBottomQrBtnFull,
+                    boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
+                    driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
                   ]}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    handlePrimaryTripQrPress();
+                  }}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
+                  }
+                >
+                  <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
+                  <PremiumText
+                    variant="caption"
+                    style={styles.drvBottomQrBtnText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
+                  </PremiumText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.drvBottomEndBtn, styles.drvBottomEndBtnFull]}
                   onPress={() => {
                     void tapButtonHaptic();
                     if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
@@ -9873,6 +9735,28 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  paxBottomMainActions: {
+    alignSelf: 'stretch',
+    gap: LDS_SPACING.sm,
+    ...Platform.select({
+      ios: { zIndex: 56 },
+      android: { elevation: 34 },
+      default: {},
+    }),
+  },
+  paxBottomQrBtnFull: {
+    alignSelf: 'stretch',
+    width: '100%',
+    flex: undefined,
+    paddingVertical: LDS_SPACING.md,
+  },
+  paxBottomEndBtnFull: {
+    alignSelf: 'stretch',
+    width: '100%',
+    flex: undefined,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
+  },
   paxBottomActionRow: {
     flexDirection: 'row',
     gap: LDS_SPACING.sm,
@@ -10045,6 +9929,28 @@ const styles = StyleSheet.create({
   drvBottomGuvenBtnText: {
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  drvBottomMainActions: {
+    alignSelf: 'stretch',
+    gap: LDS_SPACING.sm,
+    ...Platform.select({
+      ios: { zIndex: 56 },
+      android: { elevation: 34 },
+      default: {},
+    }),
+  },
+  drvBottomQrBtnFull: {
+    alignSelf: 'stretch',
+    width: '100%',
+    flex: undefined,
+    paddingVertical: LDS_SPACING.md,
+  },
+  drvBottomEndBtnFull: {
+    alignSelf: 'stretch',
+    width: '100%',
+    flex: undefined,
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.md,
   },
   drvBottomActionRow: {
     flexDirection: 'row',
