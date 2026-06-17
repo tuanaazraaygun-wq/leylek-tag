@@ -5,4 +5,8 @@ export { default as BlueprintIllustration, getBlueprintPalette } from './Bluepri
 export type { BlueprintIllustrationProps, BlueprintPalette } from './BlueprintIllustration';
 export { default as PassengerSeatHero } from './PassengerSeatHero';
 export { default as DriverCockpitHero } from './DriverCockpitHero';
+export { default as QuickMatchHero } from './QuickMatchHero';
+export { default as NormalMatchOfferHero } from './NormalMatchOfferHero';
+export { default as ProxyPickupHero } from './ProxyPickupHero';
+export { default as TrustedNetworkHero } from './TrustedNetworkHero';
 export type { RoleHeroIllustrationProps } from './PassengerSeatHero';

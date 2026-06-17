@@ -12877,7 +12877,7 @@ function PassengerDashboard({
                   Eşleşme kararı
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.passengerMatchPhaseCaption}>
-                  Quick veya normal yolu seçin.
+                  Hızlı otomatik eşleşme veya teklif pazarı yolunu seçin.
                 </PremiumText>
               </View>
 

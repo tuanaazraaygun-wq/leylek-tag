@@ -18,8 +18,10 @@ import {
   PremiumText,
   computeRoleCardHeroHeight,
 } from '../../design-system/primitives';
-import DriverCockpitHero from '../../design-system/role-select/DriverCockpitHero';
-import PassengerSeatHero from '../../design-system/role-select/PassengerSeatHero';
+import NormalMatchOfferHero from '../../design-system/role-select/NormalMatchOfferHero';
+import ProxyPickupHero from '../../design-system/role-select/ProxyPickupHero';
+import QuickMatchHero from '../../design-system/role-select/QuickMatchHero';
+import TrustedNetworkHero from '../../design-system/role-select/TrustedNetworkHero';
 import { LDS_BORDER_COLOR } from '../../design-system/tokens/border';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { LDS_TYPOGRAPHY } from '../../design-system/tokens/typography';
@@ -35,10 +37,14 @@ export type PassengerMatchModeCardsProps = {
   onTrustedPress?: () => void;
 };
 
+type CardBadgeTone = 'quick' | 'normal';
+
 type CardDef = {
   id: 'quick' | 'trusted' | 'normal' | 'proxy';
   title: string;
   subtitle: string;
+  badge?: string;
+  badgeTone?: CardBadgeTone;
   enabled: boolean;
   tier: 'primary' | 'secondary';
 };
@@ -47,14 +53,18 @@ const PRIMARY_CARDS: CardDef[] = [
   {
     id: 'quick',
     title: 'Hemen Eşleş',
-    subtitle: 'Yakındaki uygun sürücüleri sırayla ara',
+    subtitle: 'Yakındaki uygun sürücüler sırayla denenir.',
+    badge: 'OTOMATİK',
+    badgeTone: 'quick',
     enabled: false,
     tier: 'primary',
   },
   {
     id: 'normal',
     title: 'Normal Eşleşme',
-    subtitle: 'Rota seç, teklif gönder',
+    subtitle: 'Rotanı seç, teklifini gönder.',
+    badge: 'TEKLİF PAZARI',
+    badgeTone: 'normal',
     enabled: true,
     tier: 'primary',
   },
@@ -76,6 +86,44 @@ const SECONDARY_CARDS: CardDef[] = [
     tier: 'secondary',
   },
 ];
+
+function renderModeBadge(
+  label: string,
+  tone: CardBadgeTone,
+  isVeryCompact: boolean,
+) {
+  return (
+    <View
+      style={[
+        styles.modeBadgePill,
+        tone === 'quick' ? styles.modeBadgePillQuick : styles.modeBadgePillNormal,
+        isVeryCompact && styles.modeBadgePillVeryCompact,
+      ]}
+    >
+      <PremiumText
+        variant="step"
+        style={[
+          styles.modeBadgeText,
+          tone === 'quick' ? styles.modeBadgeTextQuick : styles.modeBadgeTextNormal,
+          isVeryCompact && styles.modeBadgeTextVeryCompact,
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </PremiumText>
+    </View>
+  );
+}
+
+function renderSoonPill() {
+  return (
+    <View style={styles.soonPill}>
+      <PremiumText variant="step" style={styles.soonPillText}>
+        Yakında
+      </PremiumText>
+    </View>
+  );
+}
 
 function PassengerMatchModeCards({
   onNormalPress,
@@ -147,24 +195,31 @@ function PassengerMatchModeCards({
       isNormal && isEnabled && styles.normalSubtitle,
     ];
 
+    const cardAccessory = showSoonPill
+      ? renderSoonPill()
+      : isEnabled && card.badge && card.badgeTone
+        ? renderModeBadge(card.badge, card.badgeTone, layout.isVeryCompact)
+        : undefined;
+
     const heroCard = (
       <PremiumSelectionCard
         selected={false}
         onPress={onPress ?? (() => {})}
         heroHeight={layout.primaryHeroHeight}
         compactCopy={layout.isCompact}
+        subtitleNumberOfLines={2}
         style={cardShellStyle}
         illustration={
           isQuick ? (
-            <PassengerSeatHero
+            <QuickMatchHero
               stageHeight={layout.primaryHeroHeight}
               active={isEnabled}
               isVeryCompact={layout.isVeryCompact}
             />
           ) : (
-            <DriverCockpitHero
+            <NormalMatchOfferHero
               stageHeight={layout.primaryHeroHeight}
-              active={false}
+              active={isEnabled}
               isVeryCompact={layout.isVeryCompact}
             />
           )
@@ -173,15 +228,7 @@ function PassengerMatchModeCards({
         subtitle={showSoonPill ? ' ' : card.subtitle}
         titleStyle={titleStyle}
         subtitleStyle={subtitleStyle}
-        checkmark={
-          showSoonPill ? (
-            <View style={styles.soonPill}>
-              <PremiumText variant="step" style={styles.soonPillText}>
-                Yakında
-              </PremiumText>
-            </View>
-          ) : undefined
-        }
+        checkmark={cardAccessory}
       />
     );
 
@@ -230,7 +277,7 @@ function PassengerMatchModeCards({
     const cardShellStyle = [
       styles.heroCardShell,
       { minHeight: layout.primaryCardMinHeight, maxHeight: layout.primaryCardMinHeight + 16 },
-      isProxy ? styles.proxyHeroCard : styles.normalHeroCard,
+      isProxy ? styles.proxyHeroCard : styles.trustedHeroCard,
       !isEnabled && styles.heroCardDisabledShell,
     ];
 
@@ -255,16 +302,17 @@ function PassengerMatchModeCards({
         onPress={onPress ?? (() => {})}
         heroHeight={layout.primaryHeroHeight}
         compactCopy={layout.isCompact}
+        subtitleNumberOfLines={2}
         style={cardShellStyle}
         illustration={
           isProxy ? (
-            <PassengerSeatHero
+            <ProxyPickupHero
               stageHeight={layout.primaryHeroHeight}
               active={false}
               isVeryCompact={layout.isVeryCompact}
             />
           ) : (
-            <DriverCockpitHero
+            <TrustedNetworkHero
               stageHeight={layout.primaryHeroHeight}
               active={isEnabled}
               isVeryCompact={layout.isVeryCompact}
@@ -275,15 +323,7 @@ function PassengerMatchModeCards({
         subtitle={showSoonPill ? ' ' : displaySubtitle ?? card.subtitle}
         titleStyle={titleStyle}
         subtitleStyle={subtitleStyle}
-        checkmark={
-          showSoonPill ? (
-            <View style={styles.soonPill}>
-              <PremiumText variant="step" style={styles.soonPillText}>
-                Yakında
-              </PremiumText>
-            </View>
-          ) : undefined
-        }
+        checkmark={showSoonPill ? renderSoonPill() : undefined}
       />
     );
 
@@ -387,6 +427,21 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(251, 191, 36, 0.24)',
     backgroundColor: 'rgba(251, 191, 36, 0.04)',
   },
+  trustedHeroCard: {
+    borderTopColor: 'rgba(129, 140, 248, 0.34)',
+    borderLeftColor: 'rgba(129, 140, 248, 0.16)',
+    borderColor: 'rgba(129, 140, 248, 0.24)',
+    backgroundColor: 'rgba(79, 70, 229, 0.05)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.22,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 4 },
+    }),
+  },
   heroCardDisabledShell: {
     opacity: 0.58,
     borderColor: PREMIUM_BORDER_SLATE,
@@ -424,6 +479,43 @@ const styles = StyleSheet.create({
   },
   subtitleMuted: {
     color: PREMIUM_TEXT_MUTED,
+  },
+  modeBadgePill: {
+    alignSelf: 'flex-end',
+    maxWidth: 108,
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs - 1,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  modeBadgePillVeryCompact: {
+    maxWidth: 96,
+    paddingHorizontal: LDS_SPACING.xxs + 1,
+  },
+  modeBadgePillQuick: {
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+  },
+  modeBadgePillNormal: {
+    backgroundColor: 'rgba(30, 58, 95, 0.55)',
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  modeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.35,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  modeBadgeTextVeryCompact: {
+    fontSize: 7,
+    letterSpacing: 0.2,
+  },
+  modeBadgeTextQuick: {
+    color: 'rgba(186, 230, 253, 0.96)',
+  },
+  modeBadgeTextNormal: {
+    color: 'rgba(148, 163, 184, 0.92)',
   },
   soonPill: {
     alignSelf: 'center',

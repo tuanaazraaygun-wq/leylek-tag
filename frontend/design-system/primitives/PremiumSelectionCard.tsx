@@ -37,6 +37,8 @@ export type PremiumSelectionCardProps = {
   testID?: string;
   /** Tighter copy block on small role cards (LDS-4D-I4) */
   compactCopy?: boolean;
+  /** Subtitle line clamp — match-mode cards use 2 lines on compact screens */
+  subtitleNumberOfLines?: number;
 };
 
 function PremiumSelectionCard({
@@ -52,6 +54,7 @@ function PremiumSelectionCard({
   checkmark,
   testID,
   compactCopy = false,
+  subtitleNumberOfLines = 1,
 }: PremiumSelectionCardProps) {
   const motion = useSelectionMotion({ selected });
   const borderRadius = LDS_RADIUS.cardPrimary;
@@ -149,9 +152,9 @@ function PremiumSelectionCard({
           </Text>
           <Text
             style={[styles.subtitleDefault, subtitleStyle]}
-            numberOfLines={1}
+            numberOfLines={subtitleNumberOfLines}
             ellipsizeMode="tail"
-            adjustsFontSizeToFit
+            adjustsFontSizeToFit={subtitleNumberOfLines === 1}
             minimumFontScale={0.78}
           >
             {subtitle}
