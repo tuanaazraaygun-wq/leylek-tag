@@ -7034,6 +7034,99 @@ _TRUSTED_INVITE_TTL_DAYS = 14
 _TRUSTED_DECLINED_COOLDOWN_HOURS = 24
 _TRUSTED_INVITE_DAILY_LIMIT = 10
 _TRUSTED_INVITE_PAIR_DAILY_LIMIT = 2
+_TRUSTED_SCHEMA_MISMATCH_DETAIL = (
+    "Güven ağı altyapısı güncelleniyor. Lütfen biraz sonra tekrar deneyin."
+)
+_TRUSTED_SCHEMA_MISMATCH_CODE = "trusted_schema_mismatch"
+_TRUSTED_INVITE_FAILED_DETAIL = "Güven ağı daveti oluşturulamadı."
+
+
+def _trusted_invite_pg_error_fields(exc: BaseException) -> dict[str, str]:
+    """Supabase/PostgREST/PostgreSQL hata alanları — log için (PII yok)."""
+    out = {"code": "", "message": "", "detail": "", "hint": ""}
+    for attr, key in (
+        ("code", "code"),
+        ("message", "message"),
+        ("details", "detail"),
+        ("detail", "detail"),
+        ("hint", "hint"),
+    ):
+        val = getattr(exc, attr, None)
+        if val is not None and str(val).strip():
+            out[key] = str(val).strip()
+    if not out["message"]:
+        out["message"] = str(exc)[:500]
+    return out
+
+
+def _trusted_invite_is_schema_mismatch(exc: BaseException) -> bool:
+    """Eksik tablo/kolon veya PostgREST şema uyumsuzluğu."""
+    raw = str(exc)
+    low = raw.lower()
+    if "42703" in raw or "42p01" in low or "pgrst204" in low or "pgrst205" in low:
+        return True
+    if "does not exist" in low and (
+        "trusted_connections" in low
+        or "trusted_invites" in low
+        or "pair_key" in low
+    ):
+        return True
+    return _trusted_invite_pg_missing_column(
+        exc,
+        "pair_key",
+        "expires_at",
+        "initiator_role",
+        "counterparty_role",
+        "revoke_reason",
+        "schema_version",
+        "source_tag_id",
+        "trusted_connections",
+    )
+
+
+def _trusted_invite_log_create_fail(
+    phase: str,
+    *,
+    actor: str,
+    counterparty: str,
+    tag: str,
+    err: BaseException,
+) -> None:
+    pg = _trusted_invite_pg_error_fields(err)
+    logger.error(
+        "TRUSTED_INVITE_CREATE_FAIL phase=%s actor=%s counterparty=%s tag=%s "
+        "pg_code=%s pg_message=%s pg_detail=%s pg_hint=%s err=%s",
+        phase,
+        _mask_log_id(actor),
+        _mask_log_id(counterparty),
+        _mask_log_id(tag),
+        pg.get("code") or "n/a",
+        pg.get("message") or "n/a",
+        pg.get("detail") or "n/a",
+        pg.get("hint") or "n/a",
+        err,
+    )
+
+
+def _trusted_invite_reject_db_error(
+    phase: str,
+    *,
+    actor: str,
+    counterparty: str,
+    tag: str,
+    err: BaseException,
+) -> None:
+    """DB/PostgREST hatasını structured log + _TrustedInviteReject ile yüzeye taşı."""
+    _trusted_invite_log_create_fail(
+        phase, actor=actor, counterparty=counterparty, tag=tag, err=err
+    )
+    if _trusted_invite_is_schema_mismatch(err):
+        _trusted_invite_reject(
+            503,
+            _TRUSTED_SCHEMA_MISMATCH_CODE,
+            _TRUSTED_SCHEMA_MISMATCH_DETAIL,
+        )
+    _trusted_invite_reject(500, "trusted_invite_failed", _TRUSTED_INVITE_FAILED_DETAIL)
 
 
 class _TrustedInviteReject(Exception):
@@ -7107,12 +7200,13 @@ def _trusted_invite_validate_tag_eligibility(
             .execute()
         )
     except Exception as e:
-        logger.warning(
-            "trusted_invite tag_query tag=%s err=%s",
-            _mask_log_id(tag_id),
-            e,
+        _trusted_invite_reject_db_error(
+            "tag_query",
+            actor=actor_norm,
+            counterparty=counterparty_norm,
+            tag=tag_id,
+            err=e,
         )
-        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
 
     if not tag_res.data:
         _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
@@ -7155,21 +7249,13 @@ def _trusted_invite_validate_tag_eligibility(
 def _trusted_lazy_expire_stale_pending_for_pair(pair_key: str) -> None:
     """Süresi dolmuş pending → expired (A1'de izinli tek UPDATE)."""
     now_s = _trusted_utc_iso_now()
-    try:
-        res = (
-            supabase.table("trusted_connections")
-            .select("id, expires_at, status")
-            .eq("pair_key", pair_key)
-            .eq("status", "pending")
-            .execute()
-        )
-    except Exception as e:
-        logger.warning(
-            "trusted_invite lazy_expire pair_key=%s err=%s",
-            pair_key[:8] + "…" if pair_key else "",
-            e,
-        )
-        raise
+    res = (
+        supabase.table("trusted_connections")
+        .select("id, expires_at, status")
+        .eq("pair_key", pair_key)
+        .eq("status", "pending")
+        .execute()
+    )
 
     for row in res.data or []:
         if _is_pending_not_expired(row):
@@ -7212,6 +7298,8 @@ def _trusted_invite_check_declined_cooldown(pair_key: str) -> None:
             .execute()
         )
     except Exception as e:
+        if _trusted_invite_is_schema_mismatch(e):
+            raise
         logger.warning("trusted_invite declined_cooldown pair err=%s", e)
         return
 
@@ -7313,12 +7401,13 @@ def _trusted_invite_check_rate_limits(actor_norm: str, counterparty_norm: str) -
     except _TrustedInviteReject:
         raise
     except Exception as e:
-        logger.warning(
-            "trusted_invite rate_limit actor=%s err=%s",
-            _mask_log_id(actor),
-            e,
+        _trusted_invite_reject_db_error(
+            "rate_limit",
+            actor=actor,
+            counterparty=cp,
+            tag="",
+            err=e,
         )
-        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
 
 
 def _trusted_invite_create_for_actor(
@@ -7332,7 +7421,16 @@ def _trusted_invite_create_for_actor(
     if cp in blocked:
         _trusted_invite_reject(403, "blocked", "Bu kullanıcı güven ağına eklenemez.")
 
-    eligibility = _trusted_invite_user_eligibility_map_for_ids({cp})
+    try:
+        eligibility = _trusted_invite_user_eligibility_map_for_ids({cp})
+    except Exception as e:
+        _trusted_invite_reject_db_error(
+            "eligibility",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=e,
+        )
     if not eligibility.get(cp, False):
         _trusted_invite_reject(
             403,
@@ -7343,23 +7441,59 @@ def _trusted_invite_create_for_actor(
     _trusted_invite_validate_tag_eligibility(actor, cp, source_tag_id)
 
     pair_key = _trusted_pair_key(actor, cp)
-    _trusted_lazy_expire_stale_pending_for_pair(pair_key)
+    try:
+        _trusted_lazy_expire_stale_pending_for_pair(pair_key)
+    except Exception as e:
+        _trusted_invite_reject_db_error(
+            "lazy_expire",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=e,
+        )
 
-    open_rows = _trusted_invite_fetch_open_pair_rows(pair_key)
+    try:
+        open_rows = _trusted_invite_fetch_open_pair_rows(pair_key)
+    except Exception as e:
+        _trusted_invite_reject_db_error(
+            "fetch_open_pair",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=e,
+        )
     idempotent = _trusted_invite_resolve_open_rows(actor, cp, source_tag_id, open_rows)
     if idempotent is not None:
         return idempotent, 200
 
-    _trusted_invite_check_declined_cooldown(pair_key)
+    try:
+        _trusted_invite_check_declined_cooldown(pair_key)
+    except Exception as e:
+        _trusted_invite_reject_db_error(
+            "declined_cooldown",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=e,
+        )
     _trusted_invite_check_rate_limits(actor, cp)
 
-    tag_res = (
-        supabase.table("tags")
-        .select("passenger_id, driver_id")
-        .eq("id", source_tag_id)
-        .limit(1)
-        .execute()
-    )
+    try:
+        tag_res = (
+            supabase.table("tags")
+            .select("passenger_id, driver_id")
+            .eq("id", source_tag_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as e:
+        _trusted_invite_reject_db_error(
+            "tag_role_query",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=e,
+        )
     tag_row = (tag_res.data or [{}])[0]
     pid = str(tag_row.get("passenger_id") or "").strip().lower()
     if actor == pid:
@@ -7388,7 +7522,16 @@ def _trusted_invite_create_for_actor(
         ins = supabase.table("trusted_connections").insert(insert_payload).execute()
     except Exception as ins_ex:
         if _is_trusted_pg_unique_violation(ins_ex):
-            open_after = _trusted_invite_fetch_open_pair_rows(pair_key)
+            try:
+                open_after = _trusted_invite_fetch_open_pair_rows(pair_key)
+            except Exception as replay_fetch_ex:
+                _trusted_invite_reject_db_error(
+                    "insert_replay_fetch",
+                    actor=actor,
+                    counterparty=cp,
+                    tag=source_tag_id,
+                    err=replay_fetch_ex,
+                )
             replay = _trusted_invite_resolve_open_rows(actor, cp, source_tag_id, open_after)
             if replay is not None:
                 return replay, 200
@@ -7397,16 +7540,23 @@ def _trusted_invite_create_for_actor(
                 "already_pending",
                 "Bu kişi için bekleyen davet zaten var.",
             )
-        logger.warning(
-            "trusted_invite insert actor=%s counterparty=%s err=%s",
-            _mask_log_id(actor),
-            _mask_log_id(cp),
-            ins_ex,
+        _trusted_invite_reject_db_error(
+            "insert",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=ins_ex,
         )
-        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
 
     if not ins.data:
-        _trusted_invite_reject(500, "trusted_invite_failed", "Güven ağı daveti oluşturulamadı.")
+        _trusted_invite_log_create_fail(
+            "insert_empty",
+            actor=actor,
+            counterparty=cp,
+            tag=source_tag_id,
+            err=RuntimeError("trusted_connections insert returned empty data"),
+        )
+        _trusted_invite_reject(500, "trusted_invite_failed", _TRUSTED_INVITE_FAILED_DETAIL)
 
     row = ins.data[0]
     return (
@@ -11738,18 +11888,28 @@ async def post_trusted_invite(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "trusted_invite_create actor=%s counterparty=%s err=%s",
-            _mask_log_id(actor_id),
-            _mask_log_id(body.counterparty_user_id),
-            e,
+        _trusted_invite_log_create_fail(
+            "unhandled",
+            actor=actor_norm,
+            counterparty=cp_norm,
+            tag=tag_norm,
+            err=e,
         )
+        if _trusted_invite_is_schema_mismatch(e):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "code": _TRUSTED_SCHEMA_MISMATCH_CODE,
+                    "detail": _TRUSTED_SCHEMA_MISMATCH_DETAIL,
+                },
+            )
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
                 "code": "trusted_invite_failed",
-                "detail": "Güven ağı daveti oluşturulamadı.",
+                "detail": _TRUSTED_INVITE_FAILED_DETAIL,
             },
         )
 
