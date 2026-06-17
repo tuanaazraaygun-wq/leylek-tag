@@ -6257,6 +6257,12 @@ export default function LiveMapView({
   const compactMatchedLayout =
     IS_COMPACT_MATCHED_SCREEN && !driverNavImmersive && !driverRideUiModern;
 
+  /** Klasik bottom deck — dar ekranda QR + Zorla Bitir alt alta tam genişlik */
+  const narrowBottomDeck =
+    !driverNavImmersive &&
+    !driverRideUiModern &&
+    (SCREEN_WIDTH < 420 || IS_COMPACT_MATCHED_SCREEN);
+
   const matchedMeetingLegMode: MatchedRouteLegMode = showMeetingRouteCalculating
     ? 'calculating'
     : showMeetingRouteUnavailable
@@ -7761,7 +7767,7 @@ export default function LiveMapView({
               <View
                 style={[
                   styles.paxBottomActionRow,
-                  compactMatchedLayout ? styles.paxBottomActionRowCompact : null,
+                  narrowBottomDeck ? styles.paxBottomActionRowCompact : null,
                 ]}
               >
                 {onOpenLeylekZekaSupport ? (
@@ -7837,14 +7843,14 @@ export default function LiveMapView({
                         },
                       ],
                     },
-                    compactMatchedLayout ? styles.paxBottomQrBtnWrapCompact : null,
+                    narrowBottomDeck ? styles.paxBottomQrBtnWrapNarrow : null,
                   ]}
                 >
                   <TouchableOpacity
                     style={[
                       styles.paxBottomQrBtn,
                       boardingConfirmed ? styles.paxBottomQrBtnTripEnd : styles.paxBottomQrBtnBoarding,
-                      compactMatchedLayout ? styles.paxBottomQrBtnCompact : null,
+                      narrowBottomDeck ? styles.paxBottomQrBtnCompact : null,
                     ]}
                     onPress={() => {
                       void tapButtonHaptic();
@@ -7853,7 +7859,13 @@ export default function LiveMapView({
                     activeOpacity={0.7}
                   >
                     <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
-                    <PremiumText variant="caption" style={styles.paxBottomQrBtnText}>
+                    <PremiumText
+                      variant="caption"
+                      style={styles.paxBottomQrBtnText}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.82}
+                    >
                       {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş Kodunu Tara'}
                     </PremiumText>
                   </TouchableOpacity>
@@ -7862,7 +7874,7 @@ export default function LiveMapView({
                 <TouchableOpacity
                   style={[
                     styles.paxBottomEndBtn,
-                    compactMatchedLayout ? styles.paxBottomEndBtnCompact : null,
+                    narrowBottomDeck ? styles.paxBottomEndBtnNarrow : null,
                   ]}
                   onPress={() => {
                     void tapButtonHaptic();
@@ -7907,7 +7919,13 @@ export default function LiveMapView({
                   activeOpacity={0.7}
                 >
                   <Ionicons name="close-circle" size={18} color="rgba(252,165,165,0.92)" />
-                  <PremiumText variant="caption" style={styles.paxBottomEndBtnText}>
+                  <PremiumText
+                    variant="caption"
+                    style={styles.paxBottomEndBtnText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
                     Zorla Bitir
                   </PremiumText>
                 </TouchableOpacity>
@@ -8055,7 +8073,7 @@ export default function LiveMapView({
               <View
                 style={[
                   styles.drvBottomActionRow,
-                  compactMatchedLayout ? styles.drvBottomActionRowCompact : null,
+                  narrowBottomDeck ? styles.drvBottomActionRowCompact : null,
                 ]}
               >
                 {onOpenLeylekZekaSupport ? (
@@ -8114,33 +8132,41 @@ export default function LiveMapView({
                   </TouchableOpacity>
                 )}
 
-                <TouchableOpacity
-                  style={[
-                    styles.drvBottomQrBtn,
-                    boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
-                    driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
-                    compactMatchedLayout ? styles.drvBottomQrBtnCompact : null,
-                  ]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    handlePrimaryTripQrPress();
-                  }}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
-                  }
-                >
-                  <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
-                  <PremiumText variant="caption" style={styles.drvBottomQrBtnText}>
-                    {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
-                  </PremiumText>
-                </TouchableOpacity>
+                <View style={narrowBottomDeck ? styles.drvBottomQrBtnWrapNarrow : null}>
+                  <TouchableOpacity
+                    style={[
+                      styles.drvBottomQrBtn,
+                      boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
+                      driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
+                      narrowBottomDeck ? styles.drvBottomQrBtnCompact : null,
+                    ]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      handlePrimaryTripQrPress();
+                    }}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
+                    }
+                  >
+                    <Ionicons name="qr-code" size={18} color="rgba(243,248,255,0.94)" />
+                    <PremiumText
+                      variant="caption"
+                      style={styles.drvBottomQrBtnText}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.82}
+                    >
+                      {boardingConfirmed ? 'Yol Paylaşımını Bitir' : 'Biniş QR Göster'}
+                    </PremiumText>
+                  </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
                   style={[
                     styles.drvBottomEndBtn,
-                    compactMatchedLayout ? styles.drvBottomEndBtnCompact : null,
+                    narrowBottomDeck ? styles.drvBottomEndBtnNarrow : null,
                   ]}
                   onPress={() => {
                     void tapButtonHaptic();
@@ -8187,7 +8213,13 @@ export default function LiveMapView({
                   accessibilityLabel="Zorla bitir"
                 >
                   <Ionicons name="close-circle-outline" size={17} color="rgba(252,165,165,0.88)" />
-                  <PremiumText variant="caption" style={styles.drvBottomEndBtnText}>
+                  <PremiumText
+                    variant="caption"
+                    style={styles.drvBottomEndBtnText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
                     Zorla Bitir
                   </PremiumText>
                 </TouchableOpacity>
@@ -9867,6 +9899,10 @@ const styles = StyleSheet.create({
   paxBottomQrBtnWrapCompact: {
     width: '100%',
   },
+  paxBottomQrBtnWrapNarrow: {
+    alignSelf: 'stretch',
+    width: '100%',
+  },
   paxBottomQrBtn: {
     flex: 2,
     flexDirection: 'row',
@@ -9912,6 +9948,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.xs,
+  },
+  paxBottomEndBtnNarrow: {
+    alignSelf: 'stretch',
+    width: '100%',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   paxBottomEndBtnText: {
     fontWeight: '700',
@@ -10056,6 +10098,10 @@ const styles = StyleSheet.create({
     flex: undefined,
     width: '100%',
   },
+  drvBottomQrBtnWrapNarrow: {
+    alignSelf: 'stretch',
+    width: '100%',
+  },
   drvBottomQrBtnText: {
     fontWeight: '800',
   },
@@ -10076,6 +10122,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingVertical: LDS_SPACING.sm,
     paddingHorizontal: LDS_SPACING.xs,
+  },
+  drvBottomEndBtnNarrow: {
+    alignSelf: 'stretch',
+    width: '100%',
+    paddingVertical: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.sm,
   },
   drvBottomEndBtnText: {
     fontWeight: '600',
