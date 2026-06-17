@@ -9044,7 +9044,7 @@ function PassengerDashboard({
       };
       
       fetchDriverLocation();
-      const interval = setInterval(fetchDriverLocation, 2000); // iOS UI yükü — 2s yeterince canlı
+      const interval = setInterval(fetchDriverLocation, 6000); // active-tag + socket yedek; konum poll seyreltildi (SCALE-P1-C-F-A)
 
       return () => clearInterval(interval);
     }
@@ -16388,7 +16388,7 @@ function DriverDashboard({
         } catch (error) {
           console.log('Yolcu konumu alınamadı:', error);
         }
-      }, 5000); // 5 saniyede bir güncelle
+      }, 10000); // active-tag + socket yedek; konum poll seyreltildi (SCALE-P1-C-F-A)
 
       return () => clearInterval(interval);
     }
