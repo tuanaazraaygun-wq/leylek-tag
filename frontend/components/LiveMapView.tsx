@@ -635,7 +635,7 @@ const FORCE_END_ALERT_TITLE = 'Zorla bitir';
 const FORCE_END_ALERT_BODY = 'Bu işlem puan kaybına yol açabilir. Mümkünse QR ile tamamlayın.';
 
 /** Emergency P0: journey hot-path trust UI temporarily disabled */
-const EMERGENCY_TRUST_JOURNEY_UI_DISABLED = true;
+const EMERGENCY_TRUST_JOURNEY_UI_DISABLED = false;
 
 const TRUSTED_PRE_MATCH_STATUSES = new Set([
   'pending',

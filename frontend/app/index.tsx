@@ -12236,6 +12236,12 @@ function PassengerDashboard({
                     await startTripCallAsPassenger(type);
                   }}
                   voiceCallPending={calling}
+                  onTrustRequest={() => {
+                    void sendPassengerTrustRequest();
+                  }}
+                  trustRequestPending={trustOutgoingPending}
+                  trustRequestDisabled={passengerTrustGuvenButtonDisabled}
+                  trustRequestLabel="Sürücüden Güven Al"
                   onOpenTrustedHub={() => {
                     playTapSound();
                     router.push('/trusted-network?role=passenger' as never);
@@ -18379,6 +18385,12 @@ function DriverDashboard({
               await startTripCallAsDriver(type);
             }}
             voiceCallPending={calling}
+            onTrustRequest={() => {
+              void sendDriverTrustRequest();
+            }}
+            trustRequestPending={trustOutgoingPending}
+            trustRequestDisabled={driverTrustGuvenButtonDisabled}
+            trustRequestLabel="Yolcudan Güven Al"
             onOpenTrustedHub={() => {
               void playTapSound();
               router.push('/trusted-network?role=driver' as never);

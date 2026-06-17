@@ -21,7 +21,7 @@ import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartySta
 import { API_BASE_URL } from '../lib/backendConfig';
 
 /** Emergency P0: journey hot-path trust UI temporarily disabled */
-const EMERGENCY_TRUST_JOURNEY_UI_DISABLED = true;
+const EMERGENCY_TRUST_JOURNEY_UI_DISABLED = false;
 
 const maskIdForLog = (v: string): string => {
   const s = String(v || '').trim();
