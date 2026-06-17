@@ -542,6 +542,9 @@ function driverOpsPhaseLabel(
 const FORCE_END_ALERT_TITLE = 'Zorla bitir';
 const FORCE_END_ALERT_BODY = 'Bu işlem puan kaybına yol açabilir. Mümkünse QR ile tamamlayın.';
 
+/** Emergency P0: journey hot-path trust UI temporarily disabled */
+const EMERGENCY_TRUST_JOURNEY_UI_DISABLED = true;
+
 const TRUSTED_PRE_MATCH_STATUSES = new Set([
   'pending',
   'waiting',
@@ -2384,6 +2387,9 @@ export default function LiveMapView({
   modernLeylekOfferUi = false,
   onOpenTrustedHub,
 }: LiveMapViewProps) {
+  const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
+  const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
+
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
 
@@ -2408,7 +2414,7 @@ export default function LiveMapView({
     !!trustedSelfUserId &&
     trustedSelfUserId.toLowerCase() !== trustedCounterpartyId.toLowerCase() &&
     isTrustedLiveMapPhase(trustedJourneyTagStatus, boardingConfirmed);
-  const trustedAddEnabled = trustedJourneyEligible;
+  const trustedAddEnabled = trustedJourneyEligible && journeyTrustUiEnabled;
   const {
     status: trustedAddStatus,
     loading: trustedAddLoading,
@@ -2480,7 +2486,7 @@ export default function LiveMapView({
   /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu) */
   const guvenShieldPulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (!onTrustRequest) return;
+    if (!trustRequestAction) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(guvenShieldPulse, {
@@ -2502,7 +2508,7 @@ export default function LiveMapView({
       loop.stop();
       guvenShieldPulse.setValue(1);
     };
-  }, [onTrustRequest, guvenShieldPulse]);
+  }, [trustRequestAction, guvenShieldPulse]);
   
   // YEŞİL ROTA: Şoför → Yolcu (buluşma) — koordinatlar yalnız OSRM polyline / düz çizgi
   const [meetingRouteCoordinates, setMeetingRouteCoordinates] = useState<
@@ -3854,7 +3860,7 @@ export default function LiveMapView({
 
   const guvenHintOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!isDriver || !navigationMode || !onTrustRequest || guvenNavHintShownRef.current) {
+    if (!isDriver || !navigationMode || !trustRequestAction || guvenNavHintShownRef.current) {
       return;
     }
     guvenNavHintShownRef.current = true;
@@ -3868,7 +3874,7 @@ export default function LiveMapView({
     return () => {
       seq.stop();
     };
-  }, [isDriver, navigationMode, onTrustRequest, guvenHintOpacity]);
+  }, [isDriver, navigationMode, trustRequestAction, guvenHintOpacity]);
 
   /**
    * Normal ride icin kritik driver -> pickup navigation flow.
@@ -5996,11 +6002,7 @@ export default function LiveMapView({
   }, [compactMatchedLayout, insets.bottom, isDriver]);
 
   const showMapLoadingOverlay =
-    !driverRideUiModern &&
-    !driverNavImmersive &&
-    (!mapTilesReady ||
-      showMeetingRouteCalculating ||
-      showMeetingRoutePolylineLoadingHint);
+    !driverRideUiModern && !driverNavImmersive && !mapTilesReady;
 
   const routeValueStyle = [
     styles.routeValueModern,
@@ -6740,7 +6742,7 @@ export default function LiveMapView({
           </View>
         ) : null}
 
-        {driverNavImmersive && MapView && (onCall || onTrustRequest) ? (
+        {driverNavImmersive && MapView && (onCall || trustRequestAction) ? (
           <View style={styles.navImmersiveBelowCard} pointerEvents="box-none">
             <View style={styles.navImmersiveBelowCardRow}>
               {onCall ? (
@@ -6774,7 +6776,7 @@ export default function LiveMapView({
               ) : (
                 <View style={styles.navImmersiveBelowCardSpacer} />
               )}
-              {onTrustRequest ? (
+              {trustRequestAction ? (
                 <View style={styles.navImmersiveBelowCardGuvenCol}>
                   <Animated.Text
                     pointerEvents="none"
@@ -6808,7 +6810,7 @@ export default function LiveMapView({
                         return;
                       }
                       if (trustRequestDisabled || trustRequestPending) return;
-                      onTrustRequest();
+                      trustRequestAction();
                     }}
                     activeOpacity={0.88}
                     disabled={!!trustRequestDisabled || !!trustRequestPending}
@@ -7547,7 +7549,7 @@ export default function LiveMapView({
                         </TouchableOpacity>
                       ) : null}
                     </View>
-                    {onTrustRequest ? (
+                    {trustRequestAction ? (
                       <View style={styles.tripGuvenMirrorWrap}>
                         <TouchableOpacity
                           style={[
@@ -7568,8 +7570,8 @@ export default function LiveMapView({
                               return;
                             }
                             if (trustRequestDisabled || trustRequestPending) return;
-                            logPax('onTrustRequest', onTrustRequest);
-                            onTrustRequest();
+                            logPax('onTrustRequest', trustRequestAction);
+                            trustRequestAction();
                           }}
                           activeOpacity={0.88}
                           disabled={!!trustRequestDisabled || !!trustRequestPending}
@@ -7837,7 +7839,7 @@ export default function LiveMapView({
                         </TouchableOpacity>
                       ) : null}
                     </View>
-                    {onTrustRequest ? (
+                    {trustRequestAction ? (
                       <View style={styles.tripGuvenMirrorWrap}>
                         <TouchableOpacity
                           style={[
@@ -7858,8 +7860,8 @@ export default function LiveMapView({
                               return;
                             }
                             if (trustRequestDisabled || trustRequestPending) return;
-                            logPax('onTrustRequest', onTrustRequest);
-                            onTrustRequest();
+                            logPax('onTrustRequest', trustRequestAction);
+                            trustRequestAction();
                           }}
                           activeOpacity={0.88}
                           disabled={!!trustRequestDisabled || !!trustRequestPending}

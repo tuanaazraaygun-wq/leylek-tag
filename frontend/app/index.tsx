@@ -6845,9 +6845,9 @@ function pickPriceApiDetailMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Biniş QR: API success sonrası active-tag yanıtında in_progress + boarding_confirmed_at teyidi (kısa poll) */
+/** Biniş QR: arka planda active-tag teyidi (UI bloklamaz) */
 const BOARDING_STATE_POLL_MS = 380;
-const BOARDING_STATE_MAX_ATTEMPTS = 8;
+const BOARDING_STATE_MAX_ATTEMPTS = 3;
 
 /** Normal TAG yolcu: socket/poll ile matched — overlay yalnız bu önceki status’tan `matched`’e geçişte */
 const PASSENGER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
@@ -9485,49 +9485,48 @@ function PassengerDashboard({
         return false;
       }
 
-      const confirmed = await confirmBoardingViaActiveTagApi(tid);
-      if (!confirmed) {
-        try {
-          console.log(
-            'BOARDING_VERIFY_STATE_NOT_CONFIRMED',
-            JSON.stringify({ tag_id: tid }),
-          );
-        } catch {
-          /* noop */
-        }
-        appAlert('Biniş', QR_RETRY_MSG, [], {
-          variant: 'warning',
-          cancelable: true,
-        });
-        return false;
-      }
+      const nowIso = new Date().toISOString();
+      const boardingAt =
+        (typeof payload?.boarding_confirmed_at === 'string' && payload.boarding_confirmed_at.trim()) ||
+        nowIso;
+      const startedAt =
+        (typeof payload?.started_at === 'string' && payload.started_at.trim()) || boardingAt;
 
-      try {
-        await loadActiveTag();
-        try {
-          console.log(
-            'BOARDING_VERIFY_REFRESH_DONE',
-            JSON.stringify({ tag_id: tid }),
-          );
-        } catch {
-          /* noop */
-        }
-      } catch (e) {
-        console.warn('BOARDING_VERIFY_REFRESH', e);
-        try {
-          await loadActiveTag();
-        } catch {
-          /* noop */
-        }
-      }
-
+      setActiveTag((prev) => {
+        if (!prev || !tripTagIdsMatch(prev.id, tid)) return prev;
+        return {
+          ...prev,
+          status: 'in_progress',
+          started_at: startedAt,
+          boarding_confirmed_at: boardingAt,
+        };
+      });
       setPassengerBoardingPromptVisible(false);
+      setPassengerBoardingReminderBannerVisible(false);
 
       appAlert('Biniş onaylandı', 'Yolculuk başladı.', [], {
         variant: 'info',
         autoDismissMs: 2600,
         cancelable: true,
       });
+
+      void (async () => {
+        try {
+          await confirmBoardingViaActiveTagApi(tid);
+        } catch {
+          /* background sync */
+        }
+        try {
+          await loadActiveTag();
+          console.log(
+            'BOARDING_VERIFY_REFRESH_DONE',
+            JSON.stringify({ tag_id: tid }),
+          );
+        } catch (e) {
+          console.warn('BOARDING_VERIFY_REFRESH', e);
+        }
+      })();
+
       return true;
     },
     [activeTag, confirmBoardingViaActiveTagApi, loadActiveTag],
@@ -12218,11 +12217,6 @@ function PassengerDashboard({
                     await startTripCallAsPassenger(type);
                   }}
                   voiceCallPending={calling}
-                  trustRequestDisabled={passengerTrustGuvenButtonDisabled}
-                  trustRequestPending={trustOutgoingPending}
-                  onTrustRequest={() => {
-                    void sendPassengerTrustRequest();
-                  }}
                   onOpenTrustedHub={() => {
                     playTapSound();
                     router.push('/trusted-network?role=passenger' as never);
@@ -18366,15 +18360,10 @@ function DriverDashboard({
               await startTripCallAsDriver(type);
             }}
             voiceCallPending={calling}
-            onTrustRequest={() => {
-              void sendDriverTrustRequest();
-            }}
             onOpenTrustedHub={() => {
               void playTapSound();
               router.push('/trusted-network?role=driver' as never);
             }}
-            trustRequestDisabled={driverTrustGuvenButtonDisabled}
-            trustRequestPending={trustOutgoingPending}
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
               setDriverChatVisible(true);

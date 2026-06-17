@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   View,
@@ -17,6 +17,9 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 
+const QR_FETCH_TIMEOUT_MS = 9000;
+const QR_SLOW_RETRY_MS = 5000;
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -27,15 +30,44 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
   const [qrString, setQrString] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSlowRetry, setShowSlowRetry] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const slowRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSlowRetryTimer = useCallback(() => {
+    if (slowRetryTimerRef.current != null) {
+      clearTimeout(slowRetryTimerRef.current);
+      slowRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const abortInFlightFetch = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
 
   const fetchCode = useCallback(async () => {
     if (!tagId) return;
+    abortInFlightFetch();
+    clearSlowRetryTimer();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), QR_FETCH_TIMEOUT_MS);
+
     setLoading(true);
     setError(null);
+    setShowSlowRetry(false);
     setQrString(null);
     console.log('BOARDING_QR_REQUESTED', { tag_id: tagId });
+
+    slowRetryTimerRef.current = setTimeout(() => {
+      setShowSlowRetry(true);
+    }, QR_SLOW_RETRY_MS);
+
     try {
       const tok = await waitForPersistedAccessToken();
+      if (controller.signal.aborted) return;
       if (!tok?.trim()) {
         setError('Oturum bulunamadı; yeniden giriş yapın.');
         return;
@@ -43,7 +75,9 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
       const q = new URLSearchParams({ tag_id: String(tagId) });
       const res = await fetch(`${API_BASE_URL}/qr/boarding-code?${q.toString()}`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${tok.trim()}` },
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const raw = await res.text();
       let json: { success?: boolean; qr_string?: string; detail?: string } = {};
       try {
@@ -61,21 +95,41 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
       } else {
         setError(json.detail || 'Karekod alınamadı');
       }
-    } catch {
-      setError('Ağ hatası');
+    } catch (err) {
+      if (controller.signal.aborted) {
+        setError('Biniş kodu alınamadı (zaman aşımı). Tekrar deneyin.');
+      } else {
+        setError('Ağ hatası');
+      }
     } finally {
+      clearTimeout(timeoutId);
+      clearSlowRetryTimer();
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
       setLoading(false);
+      setShowSlowRetry(false);
     }
-  }, [tagId]);
+  }, [abortInFlightFetch, clearSlowRetryTimer, tagId]);
 
   useEffect(() => {
     if (visible) {
       void fetchCode();
     } else {
+      abortInFlightFetch();
+      clearSlowRetryTimer();
       setQrString(null);
       setError(null);
+      setShowSlowRetry(false);
+      setLoading(false);
     }
-  }, [visible, fetchCode]);
+    return () => {
+      abortInFlightFetch();
+      clearSlowRetryTimer();
+    };
+  }, [visible, fetchCode, abortInFlightFetch, clearSlowRetryTimer]);
+
+  const showSkeleton = !qrString && !error;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -113,14 +167,7 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
           </GlassSurface>
 
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-            {loading ? (
-              <View style={styles.center}>
-                <ActivityIndicator size="large" color="#22D3EE" />
-                <PremiumText variant="caption" muted style={styles.stateText}>
-                  Biniş kodu hazırlanıyor…
-                </PremiumText>
-              </View>
-            ) : error ? (
+            {error ? (
               <View style={styles.center}>
                 <PremiumText variant="body" style={styles.errText}>
                   {error}
@@ -131,7 +178,7 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
                   activeOpacity={0.88}
                 >
                   <PremiumText variant="body" style={styles.retryBtnText}>
-                    Yeniden dene
+                    Tekrar dene
                   </PremiumText>
                 </TouchableOpacity>
               </View>
@@ -158,6 +205,46 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
                 <PremiumText variant="caption" muted style={styles.qrHint}>
                   Kod doğrulandığında yolculuk güvenli şekilde başlar.
                 </PremiumText>
+              </GlassSurface>
+            ) : showSkeleton ? (
+              <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+                <View style={styles.qrCheckpointRow}>
+                  <View style={styles.qrIconRing}>
+                    <Ionicons name="qr-code-outline" size={22} color="rgba(34,211,238,0.55)" />
+                  </View>
+                  <View style={styles.qrCheckpointTextCol}>
+                    <PremiumText variant="body" style={styles.qrCheckpointTitle}>
+                      Biniş kodu hazırlanıyor
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
+                      {showSlowRetry ? 'Bağlantı yavaş — tekrar deneyebilirsin' : 'Kısa süre içinde görünecek'}
+                    </PremiumText>
+                  </View>
+                </View>
+
+                <View style={styles.qrSkeletonBox}>
+                  {loading ? (
+                    <ActivityIndicator size="large" color="#22D3EE" />
+                  ) : (
+                    <Ionicons name="qr-code-outline" size={72} color="rgba(186,201,222,0.28)" />
+                  )}
+                </View>
+
+                {showSlowRetry ? (
+                  <TouchableOpacity
+                    style={styles.retryBtn}
+                    onPress={() => void fetchCode()}
+                    activeOpacity={0.88}
+                  >
+                    <PremiumText variant="body" style={styles.retryBtnText}>
+                      Tekrar dene
+                    </PremiumText>
+                  </TouchableOpacity>
+                ) : (
+                  <PremiumText variant="caption" muted style={styles.qrHint}>
+                    Biniş kodu hazırlanıyor…
+                  </PremiumText>
+                )}
               </GlassSurface>
             ) : null}
           </ScrollView>
@@ -252,10 +339,6 @@ const styles = StyleSheet.create({
     paddingVertical: LDS_SPACING.lg,
     gap: LDS_SPACING.sm,
   },
-  stateText: {
-    marginTop: LDS_SPACING.xs,
-    fontWeight: '600',
-  },
   errText: {
     textAlign: 'center',
     fontWeight: '600',
@@ -325,6 +408,17 @@ const styles = StyleSheet.create({
     borderColor: LDS_BORDER_COLOR.card,
     borderTopColor: 'rgba(34,211,238,0.22)',
     ...LDS_ELEVATION.flat,
+  },
+  qrSkeletonBox: {
+    width: 252,
+    height: 252,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: LDS_RADIUS.md,
+    backgroundColor: 'rgba(8,17,31,0.72)',
+    borderWidth: LDS_BORDER_WIDTH.standard,
+    borderColor: LDS_BORDER_COLOR.card,
+    borderStyle: 'dashed',
   },
   qrHint: {
     marginTop: LDS_SPACING.sm,

@@ -20,6 +20,9 @@ import TrustedAddButton from './trusted/TrustedAddButton';
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
 import { API_BASE_URL } from '../lib/backendConfig';
 
+/** Emergency P0: journey hot-path trust UI temporarily disabled */
+const EMERGENCY_TRUST_JOURNEY_UI_DISABLED = true;
+
 const maskIdForLog = (v: string): string => {
   const s = String(v || '').trim();
   if (!s) return 'n/a';
@@ -56,6 +59,7 @@ export default function RatingModal({
 
   const firstName = rateUserName?.split(' ')[0] || 'Kullanıcı';
   const trustPhaseEnabled =
+    !EMERGENCY_TRUST_JOURNEY_UI_DISABLED &&
     visible &&
     submitted &&
     !!String(rateUserId || '').trim() &&
