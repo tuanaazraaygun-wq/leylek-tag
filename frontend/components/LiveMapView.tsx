@@ -1833,6 +1833,70 @@ function trafficLevelFromDelayRatio(ratio: number | null | undefined): NavTraffi
   return 'heavy';
 }
 
+const DIRECTIONS_TRAFFIC_MIN_FETCH_MS = 45_000;
+
+const directionsTrafficInFlight = new Map<string, Promise<NavTrafficLevel>>();
+let directionsTrafficLastFetchAt = 0;
+let directionsTrafficLastLegKey = '';
+
+function buildNavTrafficLegStableKey(stage: string, dLa: number, dLo: number): string {
+  const r4 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 'x');
+  return `${stage}|${r4(dLa)}|${r4(dLo)}`;
+}
+
+/** null = min-interval skip; caller keeps prior traffic UI level */
+async function fetchNavDirectionsTrafficHint(
+  oLa: number,
+  oLo: number,
+  dLa: number,
+  dLo: number,
+  legKey: string,
+  opts?: { bypassMinInterval?: boolean },
+): Promise<NavTrafficLevel | null> {
+  const now = Date.now();
+  const legChanged = legKey !== directionsTrafficLastLegKey;
+  const bypass = opts?.bypassMinInterval === true || legChanged;
+
+  if (!bypass && now - directionsTrafficLastFetchAt < DIRECTIONS_TRAFFIC_MIN_FETCH_MS) {
+    return null;
+  }
+
+  const routeKey = routeMetricsStableKey(oLa, oLo, dLa, dLo);
+  const inflight = directionsTrafficInFlight.get(routeKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = (async (): Promise<NavTrafficLevel> => {
+    try {
+      const q = new URLSearchParams({
+        origin_lat: String(oLa),
+        origin_lng: String(oLo),
+        dest_lat: String(dLa),
+        dest_lng: String(dLo),
+      });
+      const res = await fetch(`${API_BASE_URL}/directions?${q}`);
+      const data = (await res.json()) as Record<string, unknown>;
+      if (!res.ok || data.success !== true) return 'free';
+      return trafficLevelFromDelayRatio(Number(data.traffic_delay_ratio));
+    } catch {
+      return 'free';
+    }
+  })();
+
+  directionsTrafficInFlight.set(routeKey, promise);
+  try {
+    const level = await promise;
+    directionsTrafficLastFetchAt = Date.now();
+    directionsTrafficLastLegKey = legKey;
+    return level;
+  } finally {
+    if (directionsTrafficInFlight.get(routeKey) === promise) {
+      directionsTrafficInFlight.delete(routeKey);
+    }
+  }
+}
+
 /** Buluşma aşaması — premium cyan rota katmanları (dim / parlak / sıcak vurgu). */
 function pickupNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
   switch (level) {
@@ -2880,6 +2944,41 @@ export default function LiveMapView({
   const [navManeuverUi, setNavManeuverUi] = useState<NavManeuverUi | null>(null);
   /** Google Directions (backend) trafik gecikme oranına göre rota rengi */
   const [navRouteTrafficLevel, setNavRouteTrafficLevel] = useState<NavTrafficLevel>('free');
+  const navTrafficUserLocRef = useRef(userLocation);
+  navTrafficUserLocRef.current = userLocation;
+  const navTrafficOtherLocRef = useRef(otherLocation);
+  navTrafficOtherLocRef.current = otherLocation;
+  const navTrafficDestLocRef = useRef(destinationLocation);
+  navTrafficDestLocRef.current = destinationLocation;
+
+  const navTrafficLegStableKey = useMemo(() => {
+    if (!isDriver || !navigationMode) return '';
+    if (navigationStage === 'pickup') {
+      if (!isValidRouteEndpoint(otherLocation)) return '';
+      return buildNavTrafficLegStableKey(
+        'pickup',
+        otherLocation.latitude,
+        otherLocation.longitude,
+      );
+    }
+    if (navigationStage === 'destination') {
+      if (!isValidRouteEndpoint(destinationLocation)) return '';
+      return buildNavTrafficLegStableKey(
+        'destination',
+        destinationLocation.latitude,
+        destinationLocation.longitude,
+      );
+    }
+    return '';
+  }, [
+    isDriver,
+    navigationMode,
+    navigationStage,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+  ]);
 
   const lastNavCameraAtRef = useRef(0);
 
@@ -3122,52 +3221,51 @@ export default function LiveMapView({
       setNavRouteTrafficLevel('free');
       return;
     }
-    if (!isDriver || !navigationMode || !userLocation) {
-      if (!isDriver || !navigationMode) setNavRouteTrafficLevel('free');
+    if (!isDriver || !navigationMode) {
+      setNavRouteTrafficLevel('free');
       return;
     }
-    const dest =
-      navigationStage === 'pickup'
-        ? otherLocation
-        : navigationStage === 'destination'
-          ? destinationLocation
-          : null;
-    if (!dest) return;
+    if (!navTrafficLegStableKey) return;
 
     let cancelled = false;
-    const fetchTrafficHint = async () => {
-      try {
-        const q = new URLSearchParams({
-          origin_lat: String(userLocation.latitude),
-          origin_lng: String(userLocation.longitude),
-          dest_lat: String(dest.latitude),
-          dest_lng: String(dest.longitude),
-        });
-        const res = await fetch(`${API_BASE_URL}/directions?${q}`);
-        const data = await res.json();
-        if (cancelled || !data?.success) return;
-        setNavRouteTrafficLevel(trafficLevelFromDelayRatio(Number(data.traffic_delay_ratio)));
-      } catch {
-        if (!cancelled) setNavRouteTrafficLevel('free');
+
+    const resolveDest = (): MapLatLng | null => {
+      if (navigationStage === 'pickup') {
+        const ol = navTrafficOtherLocRef.current;
+        return isValidRouteEndpoint(ol) ? ol : null;
       }
+      if (navigationStage === 'destination') {
+        const dl = navTrafficDestLocRef.current;
+        return isValidRouteEndpoint(dl) ? dl : null;
+      }
+      return null;
     };
-    void fetchTrafficHint();
-    const id = setInterval(fetchTrafficHint, 45000);
+
+    const runFetch = (bypassMinInterval: boolean) => {
+      const ul = navTrafficUserLocRef.current;
+      const dest = resolveDest();
+      if (!ul || !dest || !isValidRouteEndpoint(ul)) return;
+      void fetchNavDirectionsTrafficHint(
+        ul.latitude,
+        ul.longitude,
+        dest.latitude,
+        dest.longitude,
+        navTrafficLegStableKey,
+        { bypassMinInterval },
+      ).then((level) => {
+        if (!cancelled && level != null) {
+          setNavRouteTrafficLevel(level);
+        }
+      });
+    };
+
+    runFetch(true);
+    const id = setInterval(() => runFetch(false), DIRECTIONS_TRAFFIC_MIN_FETCH_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [
-    isDriver,
-    navigationMode,
-    navigationStage,
-    userLocation?.latitude,
-    userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    destinationLocation?.latitude,
-    destinationLocation?.longitude,
-  ]);
+  }, [isDriver, navigationMode, navigationStage, navTrafficLegStableKey]);
 
   /** OSRM: buluşma ve hedef rotaları ayrı throttle — aynı anda birbirini iptal etmesin */
   const routeThrottleRef = useRef<{ meeting: number; destination: number }>({
