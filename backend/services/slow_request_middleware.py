@@ -23,6 +23,7 @@ WATCH_PATHS: FrozenSet[str] = frozenset(
         "/api/driver/active-trip",
         "/api/driver/requests",
         "/api/driver/nearby-activity",
+        "/api/driver/nearby-passengers-map",
         "/api/trip/check-end-request",
         "/api/trust/active",
         "/api/qr/boarding-code",
@@ -30,7 +31,21 @@ WATCH_PATHS: FrozenSet[str] = frozenset(
         "/api/trip/complete-qr",
         "/api/trip/force-end",
         "/api/trip/force-end-confirm",
+        "/api/places/search",
+        "/api/price/calculate",
+        "/api/route-metrics",
+        "/api/directions",
+        "/api/trusted/status",
+        "/api/trusted/invites",
     }
+)
+
+# Path prefix watchlist — dynamic segments (driver-location/{id}, quick-match/*, invites/*)
+WATCH_PATH_PREFIXES: tuple[str, ...] = (
+    "/api/passenger/driver-location/",
+    "/api/driver/passenger-location/",
+    "/api/quick-match/",
+    "/api/trusted/invites/",
 )
 
 SAFE_QUERY_KEYS = ("user_id", "driver_id", "passenger_id", "tag_id")
@@ -94,9 +109,11 @@ def _safe_query_fields(request: Request) -> dict[str, str]:
 
 
 def _should_log_path(path: str, watchlist_only: bool) -> bool:
-    if watchlist_only:
-        return path in WATCH_PATHS
-    return True
+    if not watchlist_only:
+        return True
+    if path in WATCH_PATHS:
+        return True
+    return any(path.startswith(prefix) for prefix in WATCH_PATH_PREFIXES)
 
 
 class SlowRequestLoggingMiddleware(BaseHTTPMiddleware):

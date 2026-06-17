@@ -8187,8 +8187,10 @@ async def get_real_route_meta_batch_origins_to_dest(
     return {oid: {"distance_km": float(km), "duration_min": int(dur)} for oid, (km, dur) in legs.items()}
 
 
-async def _enrich_tag_trip_distance_if_missing(tag: dict) -> None:
+async def _enrich_tag_trip_distance_if_missing(tag: dict, *, skip_route_enrichment: bool = False) -> None:
     """Yanıtta distance_km boş/0 ise pickup–dropoff ile yol mesafesini doldur (salt okuma yanıtı)."""
+    if skip_route_enrichment:
+        return
     try:
         plat, plng = tag.get("pickup_lat"), tag.get("pickup_lng")
         dlat, dlng = tag.get("dropoff_lat"), tag.get("dropoff_lng")
@@ -8205,8 +8207,12 @@ async def _enrich_tag_trip_distance_if_missing(tag: dict) -> None:
         pass
 
 
-async def _enrich_tag_pickup_from_driver_if_missing(tag: dict, driver_id: str) -> None:
+async def _enrich_tag_pickup_from_driver_if_missing(
+    tag: dict, driver_id: str, *, skip_route_enrichment: bool = False
+) -> None:
     """Sürücü→pickup buluşma km/dk yoksa users konumu ile doldur (aktif trip yanıtı / harita kartı)."""
+    if skip_route_enrichment:
+        return
     try:
         if not driver_id:
             return
@@ -12410,10 +12416,12 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
 
             # TAG'e driver_location ekle
             tag["driver_location"] = driver_location
-            await _enrich_tag_trip_distance_if_missing(tag)
-            # Yolcu ekranı: sürücü→pickup buluşma km/dk (sürücü active-trip ile aynı kaynak)
+            # Fast path: poll endpoint — route km/dk client veya /route-metrics ile dolar
+            await _enrich_tag_trip_distance_if_missing(tag, skip_route_enrichment=True)
             if tag.get("driver_id"):
-                await _enrich_tag_pickup_from_driver_if_missing(tag, tag["driver_id"])
+                await _enrich_tag_pickup_from_driver_if_missing(
+                    tag, tag["driver_id"], skip_route_enrichment=True
+                )
 
             return {"success": True, "tag": tag}
         
@@ -14212,9 +14220,11 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         
         if result.data:
             tag = result.data[0]
-            # Tam tag satırı: pickup–dropoff yol km eksikse hesapla (sürücü haritası routeInfo için şart)
-            await _enrich_tag_trip_distance_if_missing(tag)
-            await _enrich_tag_pickup_from_driver_if_missing(tag, resolved_id)
+            # Fast path: active-tag poll — Google/OSRM enrichment atlanır (mevcut DB alanları korunur)
+            await _enrich_tag_trip_distance_if_missing(tag, skip_route_enrichment=True)
+            await _enrich_tag_pickup_from_driver_if_missing(
+                tag, resolved_id, skip_route_enrichment=True
+            )
             passenger_info = tag.get("users", {}) or {}
             
             # Yolcu konumu
