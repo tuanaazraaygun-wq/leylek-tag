@@ -5581,6 +5581,7 @@ async def startup():
         "[tag_dispatch_state] enabled=%s",
         "true" if DISPATCH_WAVE_DB_STATE else "false",
     )
+    _start_active_tag_maintenance_background()
 
 # Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
 async def auto_cleanup_inactive_tags():
@@ -5686,6 +5687,137 @@ async def auto_cleanup_inactive_tags():
         )
         logger.error(f"Auto cleanup error: {e}")
         return 0
+
+
+# --- P1-A: Active tag maintenance (background; read path side-effects opt-in) ---
+_force_end_expire_lock = asyncio.Lock()
+_inactive_cleanup_lock = asyncio.Lock()
+_active_tag_maintenance_task: Optional[asyncio.Task] = None
+
+
+def _active_tag_maintenance_env_bool(key: str, default: bool) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _active_tag_maintenance_env_int(key: str, default: int) -> int:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def active_tag_maintenance_background_enabled() -> bool:
+    """ACTIVE_TAG_MAINTENANCE_BACKGROUND=0 → background loop kapalı (rollback)."""
+    return _active_tag_maintenance_env_bool("ACTIVE_TAG_MAINTENANCE_BACKGROUND", True)
+
+
+def active_tag_read_side_effects_enabled() -> bool:
+    """ACTIVE_TAG_READ_SIDE_EFFECTS=1 → eski davranış: bakım active-tag read path'te."""
+    return _active_tag_maintenance_env_bool("ACTIVE_TAG_READ_SIDE_EFFECTS", False)
+
+
+async def _run_force_end_expire_guarded() -> int:
+    async with _force_end_expire_lock:
+        started = time.perf_counter()
+        try:
+            n_done = await expire_stale_pending_force_ends()
+        except Exception as exc:
+            logger.warning(
+                "ACTIVE_TAG_MAINTENANCE_TICK job=force_end_expire error=%s", exc
+            )
+            return 0
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        logger.info(
+            "ACTIVE_TAG_MAINTENANCE_TICK job=force_end_expire duration_ms=%s done=%s",
+            duration_ms,
+            n_done,
+        )
+        return n_done
+
+
+async def _run_inactive_cleanup_guarded() -> int:
+    async with _inactive_cleanup_lock:
+        started = time.perf_counter()
+        try:
+            cleaned = await auto_cleanup_inactive_tags()
+        except Exception as exc:
+            logger.warning(
+                "ACTIVE_TAG_MAINTENANCE_TICK job=inactive_cleanup error=%s", exc
+            )
+            return 0
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        logger.info(
+            "ACTIVE_TAG_MAINTENANCE_TICK job=inactive_cleanup duration_ms=%s cleaned=%s",
+            duration_ms,
+            cleaned,
+        )
+        return cleaned
+
+
+async def _active_tag_maintenance_loop() -> None:
+    force_interval = max(5, _active_tag_maintenance_env_int("FORCE_END_EXPIRE_INTERVAL_SEC", 30))
+    cleanup_interval = max(
+        60, _active_tag_maintenance_env_int("INACTIVE_TAG_CLEANUP_INTERVAL_SEC", 600)
+    )
+    next_force = time.monotonic()
+    next_cleanup = time.monotonic()
+    logger.info(
+        "ACTIVE_TAG_MAINTENANCE_LOOP started force_interval_s=%s cleanup_interval_s=%s "
+        "background=%s read_side_effects=%s",
+        force_interval,
+        cleanup_interval,
+        active_tag_maintenance_background_enabled(),
+        active_tag_read_side_effects_enabled(),
+    )
+    try:
+        while True:
+            now = time.monotonic()
+            if now >= next_force:
+                await _run_force_end_expire_guarded()
+                next_force = time.monotonic() + force_interval
+            if now >= next_cleanup:
+                await _run_inactive_cleanup_guarded()
+                next_cleanup = time.monotonic() + cleanup_interval
+            sleep_for = min(
+                max(0.5, next_force - time.monotonic()),
+                max(0.5, next_cleanup - time.monotonic()),
+                5.0,
+            )
+            await asyncio.sleep(sleep_for)
+    except asyncio.CancelledError:
+        logger.info("ACTIVE_TAG_MAINTENANCE_LOOP cancelled")
+        raise
+
+
+async def _maybe_run_active_tag_read_path_maintenance(source: str) -> None:
+    """Rollback: ACTIVE_TAG_READ_SIDE_EFFECTS=1 iken eski read-path bakımı."""
+    if not active_tag_read_side_effects_enabled():
+        return
+    if str(source).startswith("passenger"):
+        await auto_cleanup_inactive_tags()
+    try:
+        await expire_stale_pending_force_ends()
+    except Exception as exc:
+        logger.warning("expire_stale_pending_force_ends (%s): %s", source, exc)
+
+
+def _start_active_tag_maintenance_background() -> None:
+    global _active_tag_maintenance_task
+    if not active_tag_maintenance_background_enabled():
+        logger.info("ACTIVE_TAG_MAINTENANCE_LOOP disabled (ACTIVE_TAG_MAINTENANCE_BACKGROUND=0)")
+        return
+    if _active_tag_maintenance_task is not None and not _active_tag_maintenance_task.done():
+        return
+    _active_tag_maintenance_task = asyncio.create_task(_active_tag_maintenance_loop())
+    asyncio.create_task(_run_force_end_expire_guarded())
+    asyncio.create_task(_run_inactive_cleanup_guarded())
+
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -12408,12 +12540,7 @@ async def get_trip_status(tag_id: str):
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
     """Aktif TAG getir - önce aktif tag'leri kontrol et"""
     try:
-        # Arka planda inaktif TAG'leri temizle
-        await auto_cleanup_inactive_tags()
-        try:
-            await expire_stale_pending_force_ends()
-        except Exception as _ex:
-            logger.warning("expire_stale_pending_force_ends (passenger active-tag): %s", _ex)
+        await _maybe_run_active_tag_read_path_maintenance("passenger active-tag")
 
         # passenger_id veya user_id kabul et
         uid = passenger_id or user_id
@@ -14256,10 +14383,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         if not did:
             return {"success": True, "trip": None, "tag": None}
 
-        try:
-            await expire_stale_pending_force_ends()
-        except Exception as _ex:
-            logger.warning("expire_stale_pending_force_ends (driver active-trip): %s", _ex)
+        await _maybe_run_active_tag_read_path_maintenance("driver active-trip")
 
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
