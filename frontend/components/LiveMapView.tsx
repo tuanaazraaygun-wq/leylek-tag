@@ -2635,8 +2635,12 @@ export default function LiveMapView({
   }, []);
 
   const [mapTilesReady, setMapTilesReady] = useState(false);
+  const mapReadyHandledRef = useRef(false);
+  /** Driver matched trip — onMapReady Android gap; overlay must not block indefinitely (P1-C-G-C). */
+  const MAP_TILES_READY_DRIVER_FALLBACK_MS = 2800;
   useEffect(() => {
     setMapTilesReady(false);
+    mapReadyHandledRef.current = false;
   }, [tagId]);
 
   /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu) */
@@ -5822,9 +5826,26 @@ export default function LiveMapView({
   ]);
 
   const handleMapReady = useCallback(() => {
+    if (mapReadyHandledRef.current) return;
+    mapReadyHandledRef.current = true;
     setMapTilesReady(true);
     onDriverNavMapReady();
   }, [onDriverNavMapReady]);
+
+  useEffect(() => {
+    if (!isDriver || !tagId) return;
+    const st = String(tagStatus || '').toLowerCase();
+    if (st !== 'matched' && st !== 'in_progress') return;
+
+    const timer = setTimeout(() => {
+      if (mapReadyHandledRef.current) return;
+      mapReadyHandledRef.current = true;
+      setMapTilesReady(true);
+      onDriverNavMapReady();
+    }, MAP_TILES_READY_DRIVER_FALLBACK_MS);
+
+    return () => clearTimeout(timer);
+  }, [isDriver, tagId, tagStatus, onDriverNavMapReady]);
 
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
@@ -6312,6 +6333,7 @@ export default function LiveMapView({
             longitudeDelta: 0.01,
           }}
           onMapReady={handleMapReady}
+          onMapLoaded={Platform.OS === 'android' ? handleMapReady : undefined}
           mapPadding={
             driverNavImmersive
               ? {
