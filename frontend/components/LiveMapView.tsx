@@ -649,9 +649,8 @@ function isTrustedLiveMapPhase(tagStatus: string, boardingConfirmed: boolean): b
   const st = String(tagStatus || '').trim().toLowerCase();
   if (!st || TRUSTED_PRE_MATCH_STATUSES.has(st)) return false;
   if (st === 'completed' || st === 'driver_arriving') return false;
-  if (st === 'matched' && !boardingConfirmed) return false;
+  if (st === 'matched' || st === 'in_progress' || st === 'passenger_onboard') return true;
   if (boardingConfirmed) return true;
-  if (st === 'passenger_onboard' || st === 'in_progress') return true;
   return false;
 }
 
@@ -2590,6 +2589,48 @@ export default function LiveMapView({
     void tapButtonHaptic();
     onOpenTrustedHub();
   }, [onOpenTrustedHub]);
+
+  const handleTrustedAddInvitePress = useCallback(() => {
+    void tapButtonHaptic();
+    if (!boardingConfirmed) {
+      appAlert(
+        'Güven ağı',
+        'Güven ağına ekleme, yolculuk başladıktan sonra aktif olur.',
+        [{ text: 'Tamam' }],
+        { variant: 'info', autoDismissMs: 3200, cancelable: true },
+      );
+      return;
+    }
+    void sendTrustedAddInvite();
+  }, [boardingConfirmed, sendTrustedAddInvite]);
+
+  const trustedAddPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!trustedAddEnabled) return;
+    const toValue = boardingConfirmed ? 0.78 : 0.9;
+    const duration = boardingConfirmed ? 1100 : 1500;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(trustedAddPulse, {
+          toValue,
+          duration,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(trustedAddPulse, {
+          toValue: 1,
+          duration,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      trustedAddPulse.setValue(1);
+    };
+  }, [trustedAddEnabled, boardingConfirmed, trustedAddPulse]);
 
   const mapRef = useRef<any>(null);
   const pickupFallbackLoggedForTagRef = useRef<string | null>(null);
@@ -6260,6 +6301,92 @@ export default function LiveMapView({
       ? driverNavRouteHeadingDeg
       : 0) + getDriverNavRotationOffsetDeg(passMotor ? 'motorcycle' : 'car');
 
+  const renderTrustedAddCompactChip = () => {
+    if (!trustedAddEnabled || (isDriver && driverNavImmersive)) return null;
+    const inviteLabel = trustedCompactInviteLabel(isDriver);
+    return (
+      <View style={styles.trustedAddCompactWrap} pointerEvents="box-none">
+        {trustedAddLoading || trustedAddCreating || trustedAddStatus === 'loading' ? (
+          <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+            <ActivityIndicator size="small" color="#22D3EE" />
+          </View>
+        ) : trustedCompactCanInvite(trustedAddStatus) ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.trustedAddCompactChip,
+              !boardingConfirmed ? styles.trustedAddCompactChipLocked : null,
+              pressed && { opacity: 0.88 },
+            ]}
+            onPress={handleTrustedAddInvitePress}
+            accessibilityRole="button"
+            accessibilityLabel={inviteLabel}
+          >
+            <Animated.View
+              style={[styles.trustedAddCompactChipInner, { opacity: trustedAddPulse }]}
+            >
+              <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
+              <Text
+                style={styles.trustedAddCompactChipText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.82}
+              >
+                {inviteLabel}
+              </Text>
+            </Animated.View>
+          </Pressable>
+        ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.trustedAddCompactChip,
+              styles.trustedAddCompactChipBridge,
+              pressed && { opacity: 0.88 },
+            ]}
+            onPress={handleOpenTrustedHubPress}
+            accessibilityRole="button"
+            accessibilityLabel={TRUST_INCOMING_CHIP_BRIDGE}
+          >
+            <Ionicons name="time-outline" size={14} color="rgba(34,211,238,0.82)" />
+            <Text
+              style={styles.trustedAddCompactChipBridgeText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.82}
+            >
+              {TRUST_INCOMING_CHIP_BRIDGE}
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+            <Ionicons
+              name={
+                trustedAddStatus === 'active' ? 'checkmark-circle-outline' : 'time-outline'
+              }
+              size={14}
+              color="rgba(186,201,222,0.78)"
+            />
+            <Text
+              style={styles.trustedAddCompactChipMutedText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.82}
+            >
+              {trustedAddStatus === 'active'
+                ? 'Güven ağında'
+                : trustedAddStatus === 'incoming_pending'
+                  ? 'Davet var'
+                  : trustedAddStatus === 'outgoing_pending'
+                    ? 'Davet gönderildi'
+                    : trustedAddStatus === 'blocked'
+                      ? 'Eklenemez'
+                      : 'Güven ağı'}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* 🆕 BULUTLU ARKAPLAN - Sadece üst kısım */}
@@ -6753,6 +6880,8 @@ export default function LiveMapView({
           ]}
         >
         {!driverNavImmersive ? (
+        <>
+        {renderTrustedAddCompactChip()}
         <GlassSurface
           variant="header"
           style={[
@@ -6862,81 +6991,7 @@ export default function LiveMapView({
             </View>
           ) : null}
         </GlassSurface>
-        ) : null}
-
-        {trustedAddEnabled && !driverNavImmersive ? (
-          <View
-            style={[
-              styles.trustedAddCompactWrap,
-              { top: Math.max(insets.top, 8) + (compactMatchedLayout ? 2 : 4) },
-            ]}
-            pointerEvents="box-none"
-          >
-            {trustedAddLoading ||
-            trustedAddCreating ||
-            trustedAddStatus === 'loading' ? (
-              <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
-                <ActivityIndicator size="small" color="#22D3EE" />
-              </View>
-            ) : trustedCompactCanInvite(trustedAddStatus) ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.trustedAddCompactChip,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  void sendTrustedAddInvite();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={trustedCompactInviteLabel(isDriver)}
-              >
-                <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
-                <Text style={styles.trustedAddCompactChipText} numberOfLines={2}>
-                  {trustedCompactInviteLabel(isDriver)}
-                </Text>
-              </Pressable>
-            ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.trustedAddCompactChip,
-                  styles.trustedAddCompactChipBridge,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={handleOpenTrustedHubPress}
-                accessibilityRole="button"
-                accessibilityLabel={TRUST_INCOMING_CHIP_BRIDGE}
-              >
-                <Ionicons name="time-outline" size={14} color="rgba(34,211,238,0.82)" />
-                <Text style={styles.trustedAddCompactChipBridgeText} numberOfLines={2}>
-                  {TRUST_INCOMING_CHIP_BRIDGE}
-                </Text>
-              </Pressable>
-            ) : (
-              <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
-                <Ionicons
-                  name={
-                    trustedAddStatus === 'active'
-                      ? 'checkmark-circle-outline'
-                      : 'time-outline'
-                  }
-                  size={14}
-                  color="rgba(186,201,222,0.78)"
-                />
-                <Text style={styles.trustedAddCompactChipMutedText} numberOfLines={1}>
-                  {trustedAddStatus === 'active'
-                    ? 'Güven ağında'
-                    : trustedAddStatus === 'incoming_pending'
-                      ? 'Davet var'
-                      : trustedAddStatus === 'outgoing_pending'
-                        ? 'Davet gönderildi'
-                        : trustedAddStatus === 'blocked'
-                          ? 'Eklenemez'
-                          : 'Güven ağı'}
-                </Text>
-              </View>
-            )}
-          </View>
+        </>
         ) : null}
 
         {driverNavImmersive && MapView && (onCall || trustRequestAction) ? (
@@ -7106,6 +7161,7 @@ export default function LiveMapView({
             compactMatchedLayout ? styles.paxTopInfoPanelCompact : null,
           ]}
         >
+          {renderTrustedAddCompactChip()}
           <GlassSurface
             variant="header"
             style={[
@@ -7198,81 +7254,6 @@ export default function LiveMapView({
               </View>
             ) : null}
           </GlassSurface>
-
-          {trustedAddEnabled ? (
-            <View
-              style={[
-                styles.trustedAddCompactWrap,
-                { top: Math.max(insets.top, 8) + (compactMatchedLayout ? 2 : 4) },
-              ]}
-              pointerEvents="box-none"
-            >
-              {trustedAddLoading ||
-              trustedAddCreating ||
-              trustedAddStatus === 'loading' ? (
-                <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
-                  <ActivityIndicator size="small" color="#22D3EE" />
-                </View>
-              ) : trustedCompactCanInvite(trustedAddStatus) ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.trustedAddCompactChip,
-                    pressed && { opacity: 0.88 },
-                  ]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    void sendTrustedAddInvite();
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={trustedCompactInviteLabel(false)}
-                >
-                  <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
-                  <Text style={styles.trustedAddCompactChipText} numberOfLines={2}>
-                    {trustedCompactInviteLabel(false)}
-                  </Text>
-                </Pressable>
-              ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.trustedAddCompactChip,
-                    styles.trustedAddCompactChipBridge,
-                    pressed && { opacity: 0.88 },
-                  ]}
-                  onPress={handleOpenTrustedHubPress}
-                  accessibilityRole="button"
-                  accessibilityLabel={TRUST_INCOMING_CHIP_BRIDGE}
-                >
-                  <Ionicons name="time-outline" size={14} color="rgba(34,211,238,0.82)" />
-                  <Text style={styles.trustedAddCompactChipBridgeText} numberOfLines={2}>
-                    {TRUST_INCOMING_CHIP_BRIDGE}
-                  </Text>
-                </Pressable>
-              ) : (
-                <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
-                  <Ionicons
-                    name={
-                      trustedAddStatus === 'active'
-                        ? 'checkmark-circle-outline'
-                        : 'time-outline'
-                    }
-                    size={14}
-                    color="rgba(186,201,222,0.78)"
-                  />
-                  <Text style={styles.trustedAddCompactChipMutedText} numberOfLines={1}>
-                    {trustedAddStatus === 'active'
-                      ? 'Güven ağında'
-                      : trustedAddStatus === 'incoming_pending'
-                        ? 'Davet var'
-                        : trustedAddStatus === 'outgoing_pending'
-                          ? 'Davet gönderildi'
-                          : trustedAddStatus === 'blocked'
-                            ? 'Eklenemez'
-                            : 'Güven ağı'}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ) : null}
 
           {matrixStatus ? (
             <GlassSurface variant="plain" style={styles.paxTopStatusChip} borderRadius={LDS_RADIUS.md}>
@@ -9354,7 +9335,7 @@ const styles = StyleSheet.create({
   drvTopRouteShell: {
     alignSelf: 'center',
     width: SCREEN_WIDTH * 0.885,
-    marginTop: 28,
+    marginTop: 10,
     marginBottom: LDS_SPACING.xxs,
     paddingVertical: LDS_SPACING.xs,
     paddingHorizontal: LDS_SPACING.sm,
@@ -9515,7 +9496,7 @@ const styles = StyleSheet.create({
   paxTopRouteShell: {
     alignSelf: 'center',
     width: SCREEN_WIDTH * 0.885,
-    marginTop: 28,
+    marginTop: 10,
     marginBottom: LDS_SPACING.xxs,
     paddingVertical: LDS_SPACING.xs,
     paddingHorizontal: LDS_SPACING.sm,
@@ -10710,27 +10691,41 @@ const styles = StyleSheet.create({
   },
 
   trustedAddCompactWrap: {
-    position: 'absolute',
-    left: 10,
-    zIndex: 96,
-    alignItems: 'flex-start',
-    maxWidth: 172,
+    alignSelf: 'center',
+    width: '92%',
+    maxWidth: 320,
+    marginTop: 2,
+    marginBottom: 6,
+    alignItems: 'center',
   },
   trustedAddCompactChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 999,
     backgroundColor: 'rgba(16,26,43,0.94)',
     borderWidth: 1,
     borderColor: 'rgba(34,211,238,0.38)',
+    maxWidth: '100%',
+  },
+  trustedAddCompactChipLocked: {
+    borderColor: 'rgba(34,211,238,0.28)',
+    backgroundColor: 'rgba(16,26,43,0.88)',
+  },
+  trustedAddCompactChipInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: '100%',
   },
   trustedAddCompactChipText: {
     color: 'rgba(34,211,238,0.95)',
     fontSize: 11,
     fontWeight: '700',
+    flexShrink: 1,
   },
   trustedAddCompactChipBridge: {
     borderColor: 'rgba(34,211,238,0.38)',
