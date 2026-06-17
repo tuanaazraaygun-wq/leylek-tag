@@ -93,6 +93,13 @@ export const HUB_ERROR_BODY = 'Lütfen daha sonra tekrar deneyin.';
 export const PENDING_BADGE_INCOMING = 'Gelen davet';
 export const PENDING_BADGE_OUTGOING = 'Giden davet';
 
+/** Journey / profile — gelen davet pill metni */
+export const TRUST_INCOMING_LABEL = 'Güven ağı daveti var';
+/** Journey profile modal — Hub köprüsü */
+export const TRUST_INCOMING_HUB_BRIDGE = 'Hub\'da yanıtla';
+/** LiveMap compact chip — gelen davet köprüsü */
+export const TRUST_INCOMING_CHIP_BRIDGE = 'Davet var · Yanıtla';
+
 export const ACTION_ACCEPT = 'Kabul Et';
 export const ACTION_DECLINE = 'Reddet';
 export const ACTION_REMOVE = 'Kaldır';

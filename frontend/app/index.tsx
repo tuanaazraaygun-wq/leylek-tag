@@ -12194,6 +12194,10 @@ function PassengerDashboard({
                   onTrustRequest={() => {
                     void sendPassengerTrustRequest();
                   }}
+                  onOpenTrustedHub={() => {
+                    playTapSound();
+                    router.push('/trusted-network?role=passenger' as never);
+                  }}
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
                     setPassengerChatVisible(true);
@@ -18307,6 +18311,10 @@ function DriverDashboard({
             voiceCallPending={calling}
             onTrustRequest={() => {
               void sendDriverTrustRequest();
+            }}
+            onOpenTrustedHub={() => {
+              void playTapSound();
+              router.push('/trusted-network?role=driver' as never);
             }}
             trustRequestDisabled={driverTrustGuvenButtonDisabled}
             trustRequestPending={trustOutgoingPending}

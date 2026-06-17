@@ -46,6 +46,7 @@ import {
 } from '../lib/openExternalMapsNavigation';
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
 import TrustedAddButton from './trusted/TrustedAddButton';
+import { TRUST_INCOMING_CHIP_BRIDGE } from '../lib/trustedHubCopy';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
@@ -306,6 +307,8 @@ interface LiveMapViewProps {
    * Normal ride bu prop’u kullanmaz.
    */
   modernLeylekOfferUi?: boolean;
+  /** Trusted Network — gelen davet Hub köprüsü (accept/decline yalnız Hub'da) */
+  onOpenTrustedHub?: () => void;
 }
 
 /**
@@ -2353,6 +2356,7 @@ export default function LiveMapView({
   onDriverYolcuyaGitAttempt,
   driverYolcuyaGitCoordContext = null,
   modernLeylekOfferUi = false,
+  onOpenTrustedHub,
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -2394,6 +2398,12 @@ export default function LiveMapView({
     sourceTagId: trustedSourceTagId || null,
     enabled: trustedAddEnabled,
   });
+
+  const handleOpenTrustedHubPress = useCallback(() => {
+    if (!onOpenTrustedHub) return;
+    void tapButtonHaptic();
+    onOpenTrustedHub();
+  }, [onOpenTrustedHub]);
 
   const mapRef = useRef<any>(null);
   const pickupFallbackLoggedForTagRef = useRef<string | null>(null);
@@ -6685,6 +6695,22 @@ export default function LiveMapView({
                   Güven ağı
                 </Text>
               </Pressable>
+            ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.trustedAddCompactChip,
+                  styles.trustedAddCompactChipBridge,
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={handleOpenTrustedHubPress}
+                accessibilityRole="button"
+                accessibilityLabel={TRUST_INCOMING_CHIP_BRIDGE}
+              >
+                <Ionicons name="time-outline" size={14} color="rgba(34,211,238,0.82)" />
+                <Text style={styles.trustedAddCompactChipBridgeText} numberOfLines={2}>
+                  {TRUST_INCOMING_CHIP_BRIDGE}
+                </Text>
+              </Pressable>
             ) : (
               <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
                 <Ionicons
@@ -7071,6 +7097,22 @@ export default function LiveMapView({
                   <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
                   <Text style={styles.trustedAddCompactChipText} numberOfLines={1}>
                     Güven ağı
+                  </Text>
+                </Pressable>
+              ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.trustedAddCompactChip,
+                    styles.trustedAddCompactChipBridge,
+                    pressed && { opacity: 0.88 },
+                  ]}
+                  onPress={handleOpenTrustedHubPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={TRUST_INCOMING_CHIP_BRIDGE}
+                >
+                  <Ionicons name="time-outline" size={14} color="rgba(34,211,238,0.82)" />
+                  <Text style={styles.trustedAddCompactChipBridgeText} numberOfLines={2}>
+                    {TRUST_INCOMING_CHIP_BRIDGE}
                   </Text>
                 </Pressable>
               ) : (
@@ -8195,6 +8237,7 @@ export default function LiveMapView({
                     onRefresh={() => {
                       void refreshTrustedAddStatus();
                     }}
+                    onOpenTrustedHub={onOpenTrustedHub}
                   />
                   {trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
                     <PremiumText variant="caption" muted style={styles.infoCardTrustHint}>
@@ -10465,7 +10508,7 @@ const styles = StyleSheet.create({
     right: 10,
     zIndex: 96,
     alignItems: 'flex-end',
-    maxWidth: 112,
+    maxWidth: 148,
   },
   trustedAddCompactChip: {
     flexDirection: 'row',
@@ -10482,6 +10525,16 @@ const styles = StyleSheet.create({
     color: 'rgba(34,211,238,0.95)',
     fontSize: 11,
     fontWeight: '700',
+  },
+  trustedAddCompactChipBridge: {
+    borderColor: 'rgba(34,211,238,0.38)',
+    maxWidth: 148,
+  },
+  trustedAddCompactChipBridgeText: {
+    color: 'rgba(34,211,238,0.82)',
+    fontSize: 10,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   trustedAddCompactChipError: {
     flexDirection: 'row',

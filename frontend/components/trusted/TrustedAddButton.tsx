@@ -8,6 +8,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { TrustedCounterpartyUiStatus } from '../../hooks/useTrustedCounterpartyStatus';
+import {
+  TRUST_INCOMING_HUB_BRIDGE,
+  TRUST_INCOMING_LABEL,
+} from '../../lib/trustedHubCopy';
 
 export type TrustedAddButtonProps = {
   viewerRole: 'passenger' | 'driver';
@@ -17,6 +21,8 @@ export type TrustedAddButtonProps = {
   errorMessage: string | null;
   onPress: () => void;
   onRefresh: () => void;
+  /** incoming_pending — Hub köprüsü (accept/decline Hub'da kalır) */
+  onOpenTrustedHub?: () => void;
 };
 
 type UiConfig = {
@@ -31,6 +37,7 @@ function buildUiConfig(
   status: TrustedCounterpartyUiStatus,
   loading: boolean,
   creating: boolean,
+  incomingHubBridge: boolean,
 ): UiConfig {
   if (loading || status === 'loading') {
     return {
@@ -70,9 +77,9 @@ function buildUiConfig(
       };
     case 'incoming_pending':
       return {
-        label: 'Size güven ağı daveti var',
+        label: TRUST_INCOMING_LABEL,
         icon: 'time-outline',
-        pressable: false,
+        pressable: incomingHubBridge,
         muted: true,
       };
     case 'active':
@@ -121,13 +128,25 @@ function TrustedAddButton({
   errorMessage,
   onPress,
   onRefresh,
+  onOpenTrustedHub,
 }: TrustedAddButtonProps) {
-  const ui = buildUiConfig(viewerRole, status, loading, creating);
+  const incomingHubBridge =
+    status === 'incoming_pending' && typeof onOpenTrustedHub === 'function';
+  const ui = buildUiConfig(viewerRole, status, loading, creating, incomingHubBridge);
   const showSpinner = loading || creating;
-  const accessibilityLabel = errorMessage && status === 'error' ? errorMessage : ui.label;
+  const accessibilityLabel =
+    errorMessage && status === 'error'
+      ? errorMessage
+      : incomingHubBridge
+        ? `${TRUST_INCOMING_LABEL}. ${TRUST_INCOMING_HUB_BRIDGE}`
+        : ui.label;
 
   const handlePress = () => {
     if (!ui.pressable || showSpinner) return;
+    if (status === 'incoming_pending' && onOpenTrustedHub) {
+      onOpenTrustedHub();
+      return;
+    }
     if (status === 'error') {
       onRefresh();
       return;
@@ -141,6 +160,7 @@ function TrustedAddButton({
         style={({ pressed }) => [
           styles.pill,
           ui.muted ? styles.pillMuted : null,
+          incomingHubBridge ? styles.pillIncomingBridge : null,
           ui.pressable && pressed ? styles.pillPressed : null,
           !ui.pressable ? styles.pillDisabled : null,
         ]}
@@ -156,11 +176,21 @@ function TrustedAddButton({
           <Ionicons
             name={ui.icon}
             size={16}
-            color={ui.muted ? 'rgba(186,201,222,0.78)' : 'rgba(34,211,238,0.95)'}
+            color={
+              incomingHubBridge
+                ? 'rgba(34,211,238,0.82)'
+                : ui.muted
+                  ? 'rgba(186,201,222,0.78)'
+                  : 'rgba(34,211,238,0.95)'
+            }
           />
         )}
         <Text
-          style={[styles.label, ui.muted ? styles.labelMuted : null]}
+          style={[
+            styles.label,
+            ui.muted ? styles.labelMuted : null,
+            incomingHubBridge ? styles.labelIncomingBridge : null,
+          ]}
           numberOfLines={2}
           adjustsFontSizeToFit
           minimumFontScale={0.85}
@@ -168,6 +198,11 @@ function TrustedAddButton({
           {ui.label}
         </Text>
       </Pressable>
+      {incomingHubBridge ? (
+        <Text style={styles.bridgeHint} numberOfLines={1}>
+          {TRUST_INCOMING_HUB_BRIDGE}
+        </Text>
+      ) : null}
       {errorMessage && (status === 'none' || status === 'declined') ? (
         <Text style={styles.errorHint} numberOfLines={2}>
           {errorMessage}
@@ -200,6 +235,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(30,58,95,0.55)',
     backgroundColor: 'rgba(8,17,31,0.55)',
   },
+  pillIncomingBridge: {
+    borderColor: 'rgba(34,211,238,0.38)',
+  },
   pillPressed: {
     opacity: 0.88,
     borderColor: 'rgba(34,211,238,0.62)',
@@ -220,6 +258,16 @@ const styles = StyleSheet.create({
   labelMuted: {
     color: 'rgba(186,201,222,0.82)',
     fontWeight: '600',
+  },
+  labelIncomingBridge: {
+    color: 'rgba(186,201,222,0.88)',
+  },
+  bridgeHint: {
+    marginTop: 6,
+    color: 'rgba(34,211,238,0.78)',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   errorHint: {
     marginTop: 6,
