@@ -6311,30 +6311,47 @@ export default function LiveMapView({
             <ActivityIndicator size="small" color="#22D3EE" />
           </View>
         ) : trustedCompactCanInvite(trustedAddStatus) ? (
-          <Pressable
-            style={({ pressed }) => [
-              styles.trustedAddCompactChip,
-              !boardingConfirmed ? styles.trustedAddCompactChipLocked : null,
-              pressed && { opacity: 0.88 },
-            ]}
-            onPress={handleTrustedAddInvitePress}
-            accessibilityRole="button"
-            accessibilityLabel={inviteLabel}
-          >
-            <Animated.View
-              style={[styles.trustedAddCompactChipInner, { opacity: trustedAddPulse }]}
+          <>
+            <Pressable
+              style={({ pressed }) => [
+                styles.trustedAddCompactChip,
+                !boardingConfirmed ? styles.trustedAddCompactChipLocked : null,
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={handleTrustedAddInvitePress}
+              accessibilityRole="button"
+              accessibilityLabel={inviteLabel}
             >
-              <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
-              <Text
-                style={styles.trustedAddCompactChipText}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.82}
+              <Animated.View
+                style={[styles.trustedAddCompactChipInner, { opacity: trustedAddPulse }]}
               >
-                {inviteLabel}
-              </Text>
-            </Animated.View>
-          </Pressable>
+                <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
+                <Text
+                  style={styles.trustedAddCompactChipText}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                >
+                  {inviteLabel}
+                </Text>
+              </Animated.View>
+            </Pressable>
+            {trustedAddErrorMessage &&
+            (trustedAddStatus === 'none' ||
+              trustedAddStatus === 'declined' ||
+              trustedAddStatus === 'error') ? (
+              <View style={styles.trustedAddCompactChipError} pointerEvents="none">
+                <Ionicons name="alert-circle-outline" size={13} color="rgba(252,165,165,0.95)" />
+                <Text
+                  style={styles.trustedAddCompactChipErrorText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {trustedAddErrorMessage}
+                </Text>
+              </View>
+            ) : null}
+          </>
         ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
           <Pressable
             style={({ pressed }) => [
@@ -10741,17 +10758,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: 4,
     paddingVertical: 5,
     paddingHorizontal: 8,
     borderRadius: 999,
     backgroundColor: 'rgba(16,26,43,0.94)',
     borderWidth: 1,
     borderColor: 'rgba(248,113,113,0.38)',
+    maxWidth: '100%',
   },
   trustedAddCompactChipErrorText: {
     color: 'rgba(252,165,165,0.95)',
     fontSize: 11,
     fontWeight: '700',
+    flexShrink: 1,
   },
   trustedAddCompactChipMuted: {
     flexDirection: 'row',

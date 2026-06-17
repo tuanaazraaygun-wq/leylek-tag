@@ -6959,7 +6959,7 @@ def _trusted_status_for_actor_counterparty(actor_norm: str, counterparty_norm: s
     return empty
 
 
-_TRUSTED_INVITE_TAG_STATUSES = frozenset({"matched", "in_progress", "completed"})
+_TRUSTED_INVITE_TAG_STATUSES = frozenset({"matched", "in_progress", "passenger_onboard", "completed"})
 _TRUSTED_COMPLETED_MAX_AGE_DAYS = 30
 _TRUSTED_INVITE_TTL_DAYS = 14
 _TRUSTED_DECLINED_COOLDOWN_HOURS = 24
