@@ -7187,18 +7187,83 @@ def _trusted_invite_success_payload(
     }
 
 
+_TRUSTED_INVITE_TAG_SELECT_FULL = (
+    "id, status, type, passenger_id, driver_id, completed_at, updated_at"
+)
+_TRUSTED_INVITE_TAG_SELECT_FALLBACK = (
+    "id, type, status, passenger_id, driver_id, created_at, matched_at, "
+    "completed_at, boarding_confirmed_at"
+)
+_TRUSTED_INVITE_TAG_SELECT_MIN = (
+    "id, type, status, passenger_id, driver_id, created_at, matched_at, "
+    "boarding_confirmed_at"
+)
+
+
+def _trusted_invite_tag_completed_ref_ts(tag: dict) -> Optional[datetime]:
+    """completed status 30 gün penceresi — canlı şemada updated_at olmayabilir."""
+    for key in ("completed_at", "updated_at", "matched_at", "created_at"):
+        ts = _trusted_parse_iso_ts(tag.get(key))
+        if ts is not None:
+            return ts
+    return None
+
+
+def _trusted_invite_fetch_tag_row_for_eligibility(tag_id: str) -> dict:
+    """Trusted invite tag_query — eksik kolonlarda dar select fallback."""
+    selects = (
+        _TRUSTED_INVITE_TAG_SELECT_FULL,
+        _TRUSTED_INVITE_TAG_SELECT_FALLBACK,
+        _TRUSTED_INVITE_TAG_SELECT_MIN,
+    )
+    last_err: Optional[Exception] = None
+    for sel in selects:
+        try:
+            tag_res = (
+                supabase.table("tags")
+                .select(sel)
+                .eq("id", tag_id)
+                .limit(1)
+                .execute()
+            )
+            if sel != _TRUSTED_INVITE_TAG_SELECT_FULL:
+                logger.warning(
+                    "trusted_invite tag_query select_fallback select=%s tag=%s",
+                    sel,
+                    _mask_log_id(tag_id),
+                )
+            return (tag_res.data or [{}])[0]
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "trusted_invite tag_query select_fallback select=%s tag=%s err=%s",
+                sel,
+                _mask_log_id(tag_id),
+                e,
+            )
+            if sel == selects[-1]:
+                break
+            if not _trusted_invite_pg_missing_column(
+                e,
+                "updated_at",
+                "completed_at",
+                "matched_at",
+                "created_at",
+                "boarding_confirmed_at",
+            ):
+                break
+            continue
+    if last_err is not None:
+        raise last_err
+    return {}
+
+
 def _trusted_invite_validate_tag_eligibility(
     actor_norm: str, counterparty_norm: str, tag_id: str
 ) -> dict:
     """source_tag_id membership + status/type/completed window."""
     try:
-        tag_res = (
-            supabase.table("tags")
-            .select("id, status, type, passenger_id, driver_id, completed_at, updated_at")
-            .eq("id", tag_id)
-            .limit(1)
-            .execute()
-        )
+        tag = _trusted_invite_fetch_tag_row_for_eligibility(tag_id)
     except Exception as e:
         _trusted_invite_reject_db_error(
             "tag_query",
@@ -7208,10 +7273,9 @@ def _trusted_invite_validate_tag_eligibility(
             err=e,
         )
 
-    if not tag_res.data:
+    if not tag or not tag.get("id"):
         _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
 
-    tag = tag_res.data[0]
     typ = str(tag.get("type") or "").strip().lower()
     if typ != TAG_TYPE_NORMAL:
         _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
@@ -7221,9 +7285,7 @@ def _trusted_invite_validate_tag_eligibility(
         _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
 
     if st == "completed":
-        ref_ts = _trusted_parse_iso_ts(tag.get("completed_at")) or _trusted_parse_iso_ts(
-            tag.get("updated_at")
-        )
+        ref_ts = _trusted_invite_tag_completed_ref_ts(tag)
         if ref_ts is None:
             _trusted_invite_reject(403, "no_shared_trip", "Ortak yolculuk bulunamadı.")
         if datetime.now(timezone.utc) - ref_ts > timedelta(days=_TRUSTED_COMPLETED_MAX_AGE_DAYS):
