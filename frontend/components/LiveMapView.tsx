@@ -2582,6 +2582,7 @@ export default function LiveMapView({
     sourceTagId: trustedSourceTagId || null,
     enabled: trustedAddEnabled,
     refetchOnScreenFocus: true,
+    pollIntervalMs: 60_000,
   });
 
   const handleOpenTrustedHubPress = useCallback(() => {

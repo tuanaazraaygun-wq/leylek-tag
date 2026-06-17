@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   acceptTrustedInvite,
   declineTrustedInvite,
@@ -81,6 +82,12 @@ export function useTrustedNetworkHub() {
       };
     },
     [load],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh({ soft: true });
+    }, [refresh]),
   );
 
   const runMutation = useCallback(

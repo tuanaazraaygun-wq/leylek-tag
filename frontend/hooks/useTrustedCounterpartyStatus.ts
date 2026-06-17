@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   createTrustedInvite,
@@ -24,6 +25,8 @@ type UseTrustedCounterpartyStatusArgs = {
   enabled?: boolean;
   /** Hub accept/decline sonrası geri dönüşte GET /trusted/status yenile */
   refetchOnScreenFocus?: boolean;
+  /** Periyodik GET /trusted/status; 0 veya undefined = kapalı */
+  pollIntervalMs?: number;
 };
 
 function isTrustedPairStatus(value: string): value is TrustedPairStatus {
@@ -66,6 +69,7 @@ export function useTrustedCounterpartyStatus({
   sourceTagId,
   enabled = true,
   refetchOnScreenFocus = false,
+  pollIntervalMs = 0,
 }: UseTrustedCounterpartyStatusArgs) {
   const [status, setStatus] = useState<TrustedCounterpartyUiStatus>('idle');
   const [loading, setLoading] = useState(false);
@@ -75,6 +79,8 @@ export function useTrustedCounterpartyStatus({
   const cp = String(counterpartyUserId || '').trim();
   const tag = String(sourceTagId || '').trim();
   const canRun = enabled && !!cp && !!tag;
+  const pollMs =
+    typeof pollIntervalMs === 'number' && pollIntervalMs > 0 ? pollIntervalMs : 0;
 
   const refresh = useCallback(async () => {
     if (!canRun) {
@@ -120,6 +126,52 @@ export function useTrustedCounterpartyStatus({
       void refresh();
     }, [refetchOnScreenFocus, canRun, refresh]),
   );
+
+  useEffect(() => {
+    if (!canRun || pollMs <= 0) {
+      return undefined;
+    }
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let appActive = AppState.currentState === 'active';
+
+    const stopInterval = () => {
+      if (intervalId == null) {
+        return;
+      }
+      clearInterval(intervalId);
+      intervalId = null;
+    };
+
+    const startInterval = () => {
+      if (intervalId != null || !appActive) {
+        return;
+      }
+      intervalId = setInterval(() => {
+        if (!appActive) {
+          return;
+        }
+        void refresh();
+      }, pollMs);
+    };
+
+    const onAppStateChange = (next: AppStateStatus) => {
+      appActive = next === 'active';
+      if (appActive) {
+        startInterval();
+        return;
+      }
+      stopInterval();
+    };
+
+    startInterval();
+    const sub = AppState.addEventListener('change', onAppStateChange);
+
+    return () => {
+      stopInterval();
+      sub.remove();
+    };
+  }, [canRun, pollMs, refresh]);
 
   const sendInvite = useCallback(async () => {
     if (!canRun || creating) return;
