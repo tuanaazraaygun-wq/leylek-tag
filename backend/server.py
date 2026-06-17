@@ -132,6 +132,7 @@ from services.transfer_payment_service import (
     respond_transfer_payment,
     should_reject_complete_qr,
 )
+import services.boarding_qr_store as boarding_qr_store
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
@@ -18486,8 +18487,8 @@ async def check_proximity_for_trip_end(
 
 # ==================== BOARDING QR (finish QR / trip-end akışından ayrı) ====================
 # URI: leylektag://board?t={token}&tag={tag_id} — yalnızca biniş doğrulaması; trip bitirmez.
+# Token store: services.boarding_qr_store (Redis primary, optional memory fallback)
 
-active_boarding_qr_codes: dict = {}
 BOARDING_QR_TTL_SECONDS = 420
 BOARDING_QR_REUSE_MIN_REMAINING_SECONDS = 20
 
@@ -18498,29 +18499,12 @@ def _boarding_uid_eq(a, b) -> bool:
     return str(a).strip().lower() == str(b).strip().lower()
 
 
-def _purge_boarding_tokens_for_tag(tag_id: str) -> None:
-    tid = str(tag_id).strip()
-    to_del = [
-        k
-        for k, v in active_boarding_qr_codes.items()
-        if str(v.get("tag_id") or "").strip() == tid
-    ]
-    for k in to_del:
-        active_boarding_qr_codes.pop(k, None)
-
-
-def _active_boarding_token_for_tag(tag_id: str) -> tuple[str | None, dict | None]:
-    tid = str(tag_id).strip()
-    now_ts = int(time.time())
-    for token, data in list(active_boarding_qr_codes.items()):
-        if str(data.get("tag_id") or "").strip() != tid:
-            continue
-        expires_ts = int(float(data.get("expires") or 0))
-        if expires_ts <= now_ts:
-            active_boarding_qr_codes.pop(token, None)
-            continue
-        return token, data
-    return None, None
+def _boarding_qr_store_guard() -> None:
+    if boarding_qr_store.is_store_unavailable():
+        raise HTTPException(
+            status_code=503,
+            detail="Biniş QR servisi geçici olarak kullanılamıyor (Redis gerekli)",
+        )
 
 
 def generate_boarding_qr_token(tag_id: str, driver_id: str, passenger_id: str) -> str:
@@ -18537,6 +18521,8 @@ async def get_boarding_qr_code(
 ):
     """Binden önce sürücü QR üretir — yolcu /qr/verify-boarding ile doğrular; finish QR değildir."""
     try:
+        _boarding_qr_store_guard()
+
         if not tag_id:
             return {"success": False, "detail": "tag_id gerekli"}
 
@@ -18567,17 +18553,16 @@ async def get_boarding_qr_code(
             return {"success": False, "detail": "Biniş zaten doğrulanmış"}
 
         ts = int(time.time())
-        qr_token, qr_data = _active_boarding_token_for_tag(tid)
-        expires_at_ts = int(float((qr_data or {}).get("expires") or 0))
-        remaining = max(0, expires_at_ts - ts)
+        qr_token, qr_data = boarding_qr_store.get_active_token_for_tag(
+            tid,
+            str(driver_id),
+            str(passenger_id),
+            BOARDING_QR_REUSE_MIN_REMAINING_SECONDS,
+        )
 
-        if (
-            qr_token
-            and qr_data
-            and _boarding_uid_eq(qr_data.get("driver_id"), driver_id)
-            and _boarding_uid_eq(qr_data.get("passenger_id"), passenger_id)
-            and remaining >= BOARDING_QR_REUSE_MIN_REMAINING_SECONDS
-        ):
+        if qr_token and qr_data:
+            expires_at_ts = int(float(qr_data.get("expires") or 0))
+            remaining = max(0, expires_at_ts - ts)
             qr_string = f"leylektag://board?t={qr_token}&tag={tid}"
             logger.info(
                 "BOARDING_QR_REUSED tag_id=%s driver_id=%s remaining_s=%s",
@@ -18596,20 +18581,29 @@ async def get_boarding_qr_code(
                 "reused": True,
             }
 
-        _purge_boarding_tokens_for_tag(tid)
+        boarding_qr_store.purge_boarding_tokens_for_tag(tid)
         qr_token = generate_boarding_qr_token(tid, str(driver_id), str(passenger_id))
         expires_at_ts = ts + BOARDING_QR_TTL_SECONDS
-        active_boarding_qr_codes[qr_token] = {
+        issued_iso = datetime.now(timezone.utc).isoformat()
+        expires_iso = datetime.fromtimestamp(expires_at_ts, timezone.utc).isoformat()
+        qr_payload = {
             "tag_id": tid,
             "driver_id": str(driver_id).strip().lower(),
             "passenger_id": str(passenger_id).strip().lower(),
             "timestamp": ts,
+            "issued_at": issued_iso,
+            "expires_at": expires_iso,
             "expires": expires_at_ts,
+            "used": False,
         }
+        if not boarding_qr_store.put_boarding_token(qr_token, qr_payload, BOARDING_QR_TTL_SECONDS):
+            raise HTTPException(
+                status_code=503,
+                detail="Biniş QR kaydedilemedi (store kullanılamıyor)",
+            )
 
         qr_string = f"leylektag://board?t={qr_token}&tag={tid}"
 
-        issued_iso = datetime.now(timezone.utc).isoformat()
         try:
             supabase.table("tags").update({"boarding_qr_issued_at": issued_iso}).eq("id", tid).execute()
         except Exception as col_err:
@@ -18626,6 +18620,8 @@ async def get_boarding_qr_code(
             "tag_id": tid,
             "reused": False,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Boarding QR oluşturma hatası: {e}")
         return {"success": False, "detail": str(e)}
@@ -18639,6 +18635,7 @@ async def verify_boarding_qr(
     """Yolcu biniş QR tarar — tag matched → in_progress + started_at + boarding_confirmed_at."""
     start_time = time.time()
     try:
+        _boarding_qr_store_guard()
         body = await request.json()
         qr_token = (body.get("qr_token") or body.get("token") or "").strip()
         scanned_data = (body.get("scanned_data") or body.get("data") or "").strip()
@@ -18671,7 +18668,7 @@ async def verify_boarding_qr(
             len(scanned_data or ""),
         )
 
-        qr_data = active_boarding_qr_codes.get(qr_token)
+        qr_data = boarding_qr_store.get_boarding_token(qr_token)
         if not qr_data:
             if tag_from_uri:
                 tag_res = supabase.table("tags").select("*").eq("id", str(tag_from_uri).strip()).limit(1).execute()
@@ -18693,7 +18690,7 @@ async def verify_boarding_qr(
             return {"success": False, "detail": "Geçersiz veya kullanılmış / süresi dolmuş biniş QR"}
 
         if time.time() > float(qr_data.get("expires") or 0):
-            active_boarding_qr_codes.pop(qr_token, None)
+            boarding_qr_store.delete_boarding_token(qr_token)
             return {"success": False, "detail": "Biniş QR süresi dolmuş, sürücüden yenisini isteyin"}
 
         tag_id = str(qr_data.get("tag_id") or "").strip()
@@ -18708,7 +18705,7 @@ async def verify_boarding_qr(
 
         tag_res = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
         if not tag_res.data:
-            active_boarding_qr_codes.pop(qr_token, None)
+            boarding_qr_store.delete_boarding_token(qr_token)
             return {"success": False, "detail": "Yolculuk bulunamadı"}
 
         tag_row = tag_res.data[0]
@@ -18716,7 +18713,7 @@ async def verify_boarding_qr(
         if st == "in_progress" and tag_row.get("boarding_confirmed_at"):
             scanner_ok = _boarding_uid_eq(scanner_user_id, pax)
             if scanner_ok:
-                active_boarding_qr_codes.pop(qr_token, None)
+                boarding_qr_store.delete_boarding_token(qr_token)
                 return {
                     "success": True,
                     "message": "Biniş zaten doğrulanmış",
@@ -18728,17 +18725,17 @@ async def verify_boarding_qr(
                 }
 
         if st != "matched":
-            active_boarding_qr_codes.pop(qr_token, None)
+            boarding_qr_store.delete_boarding_token(qr_token)
             return {"success": False, "detail": "Yolculuk biniş için uygun durumda değil"}
 
         drv = tag_row.get("driver_id")
         pax = tag_row.get("passenger_id")
         if not _boarding_uid_eq(drv, driver_id_mem) or not _boarding_uid_eq(pax, passenger_id_mem):
-            active_boarding_qr_codes.pop(qr_token, None)
+            boarding_qr_store.delete_boarding_token(qr_token)
             return {"success": False, "detail": "QR bu yolculukla eşleşmiyor"}
 
         if tag_row.get("boarding_confirmed_at"):
-            active_boarding_qr_codes.pop(qr_token, None)
+            boarding_qr_store.delete_boarding_token(qr_token)
             return {"success": False, "detail": "Biniş zaten tamamlanmış"}
 
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -18757,14 +18754,14 @@ async def verify_boarding_qr(
         )
 
         if not ur.data:
-            active_boarding_qr_codes.pop(qr_token, None)
+            boarding_qr_store.delete_boarding_token(qr_token)
             return {
                 "success": False,
                 "detail": "Güncelleme yapılamadı (yolculuk başka bir işlemle değişmiş olabilir)",
             }
 
-        active_boarding_qr_codes.pop(qr_token, None)
-        _purge_boarding_tokens_for_tag(tag_id)
+        boarding_qr_store.consume_boarding_token(qr_token)
+        boarding_qr_store.purge_boarding_tokens_for_tag(tag_id)
         invalidate_tag_cache(tag_id, passenger_id=str(pax), driver_id=str(drv))
 
         payload = {
@@ -18830,6 +18827,8 @@ async def verify_boarding_qr(
             **payload,
             "elapsed_ms": round(elapsed),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"verify_boarding_qr error: {e}")
         return {"success": False, "detail": str(e)}

@@ -79,6 +79,11 @@ def _get_redis() -> Any:
     return _redis_client
 
 
+def get_redis_client() -> Any:
+    """Shared Redis client for other modules (None if unavailable or disabled)."""
+    return _get_redis()
+
+
 def cache_get(namespace: str, key: str) -> Optional[Any]:
     """
     Önce Redis (TTL Redis'te), miss/hata → bellek.
