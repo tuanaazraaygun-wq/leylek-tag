@@ -1,4 +1,33 @@
+import type { TrustedConnectionTie } from './trustedNetworkApi';
+
 export type TrustedHubRole = 'passenger' | 'driver';
+
+function normalizeInsightCopy(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** TIE row insight — yalnızca backend insights[0]; radar duplicate ise null. */
+export function formatTieInsightLine(
+  tie: TrustedConnectionTie | null | undefined,
+  radarLine?: string | null,
+): string | null {
+  if (!tie) return null;
+  const insights = tie.insights;
+  if (!Array.isArray(insights) || insights.length === 0) return null;
+  const first = String(insights[0] ?? '').trim();
+  if (!first) return null;
+
+  const radarNorm = radarLine ? normalizeInsightCopy(radarLine) : '';
+  const tieNorm = normalizeInsightCopy(first);
+  if (!tieNorm) return null;
+
+  if (radarNorm) {
+    if (radarNorm === tieNorm) return null;
+    if (radarNorm.includes(tieNorm) || tieNorm.includes(radarNorm)) return null;
+  }
+
+  return first;
+}
 
 export function hubTitle(role: TrustedHubRole): string {
   return role === 'passenger' ? 'Sürücülerim' : 'Yolcularım';

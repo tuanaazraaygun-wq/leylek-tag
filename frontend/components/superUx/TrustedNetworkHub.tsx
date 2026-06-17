@@ -97,7 +97,8 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
   const displayConnections = useMemo(() => {
     if (role !== 'passenger') return connections;
     const hasAnyRadar = connections.some((c) => c.radar != null);
-    if (!hasAnyRadar) return connections;
+    const hasAnyTie = connections.some((c) => c.tie != null);
+    if (!hasAnyRadar && !hasAnyTie) return connections;
     return [...connections]
       .map((item, index) => ({ item, index }))
       .sort((a, b) => {
@@ -112,6 +113,15 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
             ? Number(b.item.radar.availability_rank)
             : -1;
         if (rankB !== rankA) return rankB - rankA;
+        const tieRankA =
+          a.item.tie?.tie_rank != null && Number.isFinite(Number(a.item.tie.tie_rank))
+            ? Number(a.item.tie.tie_rank)
+            : -1;
+        const tieRankB =
+          b.item.tie?.tie_rank != null && Number.isFinite(Number(b.item.tie.tie_rank))
+            ? Number(b.item.tie.tie_rank)
+            : -1;
+        if (tieRankB !== tieRankA) return tieRankB - tieRankA;
         return a.index - b.index;
       })
       .map(({ item }) => item);

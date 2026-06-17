@@ -20,6 +20,7 @@ import {
   ACTION_CANCEL,
   ACTION_REMOVE,
   CONFIRM_REVOKE_TITLE,
+  formatTieInsightLine,
 } from '../../lib/trustedHubCopy';
 import type {
   TrustedConnectionItem,
@@ -118,6 +119,10 @@ function TrustedConnectionRow({
   const showRadar = shouldShowRadarInsight(hubRole, item);
   const radarInsightLine = showRadar && item.radar ? buildRadarInsightLine(item.radar) : null;
   const radarState = showRadar ? item.radar?.radar_state : undefined;
+  const tieInsightLine =
+    showRadar && item.tie
+      ? formatTieInsightLine(item.tie, radarInsightLine)
+      : null;
 
   const handleRevokePress = useCallback(() => {
     if (disabled || isBusy || !onRevoke) return;
@@ -164,6 +169,11 @@ function TrustedConnectionRow({
         {radarInsightLine ? (
           <PremiumText variant="caption" muted style={styles.radarInsight} numberOfLines={2}>
             {radarInsightLine}
+          </PremiumText>
+        ) : null}
+        {tieInsightLine ? (
+          <PremiumText variant="caption" muted style={styles.tieInsight} numberOfLines={2}>
+            {tieInsightLine}
           </PremiumText>
         ) : null}
       </View>
@@ -289,6 +299,11 @@ const styles = StyleSheet.create({
   radarInsight: {
     marginTop: 2,
     lineHeight: 16,
+  },
+  tieInsight: {
+    marginTop: 1,
+    lineHeight: 16,
+    opacity: 0.78,
   },
   removeBtn: {
     alignSelf: 'center',

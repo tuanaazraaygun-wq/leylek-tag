@@ -56,6 +56,30 @@ export type TrustedConnectionRadar = {
   offer_block_reason?: string | null;
 };
 
+export type TrustedConnectionTieInsightCode =
+  | 'TIE_READY_NEARBY'
+  | 'TIE_RECENT_TRUSTED'
+  | 'TIE_FREQUENT_TRAVEL'
+  | 'TIE_HIGH_RATED'
+  | 'TIE_ON_TRIP'
+  | 'TIE_OFFLINE'
+  | 'TIE_INSUFFICIENT_DATA'
+  | string;
+
+export type TrustedConnectionTieConfidence = 'high' | 'medium' | 'low' | string;
+
+export type TrustedConnectionTie = {
+  schema_version?: number;
+  tie_rank?: number | null;
+  confidence?: TrustedConnectionTieConfidence;
+  primary_insight_code?: TrustedConnectionTieInsightCode;
+  insights?: string[];
+  pair_completed_trips?: number;
+  days_since_last_trip?: number | null;
+  suggested_action?: null;
+  action_block_reason?: string | null;
+};
+
 export type TrustedConnectionItem = {
   connection_id: string;
   role: 'driver' | 'passenger';
@@ -64,6 +88,7 @@ export type TrustedConnectionItem = {
   last_trip_at: string | null;
   counterparty: TrustedCounterparty;
   radar?: TrustedConnectionRadar;
+  tie?: TrustedConnectionTie;
 };
 
 export type TrustedConnectionsResponse = {
