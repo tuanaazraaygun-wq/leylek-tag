@@ -9,4 +9,6 @@ export { default as QuickMatchHero } from './QuickMatchHero';
 export { default as NormalMatchOfferHero } from './NormalMatchOfferHero';
 export { default as ProxyPickupHero } from './ProxyPickupHero';
 export { default as TrustedNetworkHero } from './TrustedNetworkHero';
+export { default as CarHero } from './CarHero';
+export { default as MotorcycleHero } from './MotorcycleHero';
 export type { RoleHeroIllustrationProps } from './PassengerSeatHero';

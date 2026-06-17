@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AdminPanel from '../AdminPanel';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
@@ -18,6 +18,8 @@ import {
   PREMIUM_TEXT_SOFT,
   premiumAuthStyles as pap,
 } from '../auth/premiumAuthStyles';
+import CarHero from '../../design-system/role-select/CarHero';
+import MotorcycleHero from '../../design-system/role-select/MotorcycleHero';
 import PassengerSeatHero from '../../design-system/role-select/PassengerSeatHero';
 import DriverCockpitHero from '../../design-system/role-select/DriverCockpitHero';
 import {
@@ -26,7 +28,6 @@ import {
   PremiumSelectionCard,
   PremiumText,
   computeRoleCardHeroHeight,
-  computeRoleIllustrationHeroSize,
 } from '../../design-system/primitives';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
@@ -217,48 +218,19 @@ export function RoleSelectScreen({
     rs.isVeryCompact,
     rs.isCompact && !rs.isVeryCompact,
   );
-  const vehicleHeroOrbSize = computeRoleIllustrationHeroSize(
-    vehicleCardHeroHeight,
-    rs.isVeryCompact,
-  );
 
-  const renderVehicleIconHero = (
-    iconName: 'car-side' | 'motorbike',
+  const renderVehicleBlueprintHero = (
+    kind: 'car' | 'motorcycle',
     selected: boolean,
-  ) => (
-    <View style={[styles.roleVehicleHeroStage, selected && styles.roleVehicleHeroStageSelected]}>
-      <LinearGradient
-        colors={
-          selected
-            ? ['rgba(34,211,238,0.14)', 'rgba(8,17,31,0)', 'rgba(34,211,238,0.08)']
-            : ['rgba(34,211,238,0.06)', 'rgba(8,17,31,0)', 'rgba(34,211,238,0.03)']
-        }
-        locations={[0, 0.55, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        pointerEvents="none"
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View
-        style={[
-          styles.roleVehicleHeroOrb,
-          selected && styles.roleVehicleHeroOrbSelected,
-          rs.isVeryCompact && styles.roleVehicleHeroOrbVery,
-          {
-            width: vehicleHeroOrbSize,
-            height: vehicleHeroOrbSize,
-            borderRadius: Math.round(vehicleHeroOrbSize * 0.28),
-          },
-        ]}
-      >
-        <MaterialCommunityIcons
-          name={iconName}
-          size={vehicleHeroIconSize}
-          color={selected ? 'rgba(243,248,255,0.96)' : 'rgba(118,180,238,0.92)'}
-        />
-      </View>
-    </View>
-  );
+  ) => {
+    const heroProps = {
+      stageHeight: vehicleCardHeroHeight,
+      active: selected,
+      isVeryCompact: rs.isVeryCompact,
+    };
+
+    return kind === 'car' ? <CarHero {...heroProps} /> : <MotorcycleHero {...heroProps} />;
+  };
 
   return (
     <View style={styles.roleSelectionContainer}>
@@ -718,7 +690,7 @@ export function RoleSelectScreen({
                               minHeight: vehicleCardMinHeight,
                             },
                           ]}
-                          illustration={renderVehicleIconHero('car-side', rideVehicleKind === 'car')}
+                          illustration={renderVehicleBlueprintHero('car', rideVehicleKind === 'car')}
                           title="Araba"
                           subtitle={showPassengerVehicleCall ? 'Eşleşmesi' : 'Yolculuk modu'}
                           titleStyle={[
@@ -767,7 +739,7 @@ export function RoleSelectScreen({
                               minHeight: vehicleCardMinHeight,
                             },
                           ]}
-                          illustration={renderVehicleIconHero('motorbike', rideVehicleKind === 'motorcycle')}
+                          illustration={renderVehicleBlueprintHero('motorcycle', rideVehicleKind === 'motorcycle')}
                           title="Motor"
                           subtitle={showPassengerVehicleCall ? 'Eşleşmesi' : 'Yolculuk modu'}
                           titleStyle={[
