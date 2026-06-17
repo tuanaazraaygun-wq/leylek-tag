@@ -550,19 +550,13 @@ const TRUSTED_PRE_MATCH_STATUSES = new Set([
   'expired',
 ]);
 
-function isTrustedJourneyPhase(tagStatus: string, boardingConfirmed: boolean): boolean {
+function isTrustedLiveMapPhase(tagStatus: string, boardingConfirmed: boolean): boolean {
   const st = String(tagStatus || '').trim().toLowerCase();
   if (!st || TRUSTED_PRE_MATCH_STATUSES.has(st)) return false;
-  if (
-    st === 'matched' ||
-    st === 'driver_arriving' ||
-    st === 'passenger_onboard' ||
-    st === 'in_progress' ||
-    st === 'completed'
-  ) {
-    return true;
-  }
-  if (boardingConfirmed && st === 'matched') return true;
+  if (st === 'completed' || st === 'driver_arriving') return false;
+  if (st === 'matched' && !boardingConfirmed) return false;
+  if (boardingConfirmed) return true;
+  if (st === 'passenger_onboard' || st === 'in_progress') return true;
   return false;
 }
 
@@ -2413,7 +2407,7 @@ export default function LiveMapView({
     !!trustedSourceTagId &&
     !!trustedSelfUserId &&
     trustedSelfUserId.toLowerCase() !== trustedCounterpartyId.toLowerCase() &&
-    isTrustedJourneyPhase(trustedJourneyTagStatus, boardingConfirmed);
+    isTrustedLiveMapPhase(trustedJourneyTagStatus, boardingConfirmed);
   const trustedAddEnabled = trustedJourneyEligible;
   const {
     status: trustedAddStatus,

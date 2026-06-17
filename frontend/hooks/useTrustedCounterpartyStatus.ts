@@ -54,6 +54,13 @@ function failSoftStatus(prev: TrustedCounterpartyUiStatus): TrustedCounterpartyU
   return 'none';
 }
 
+function maskTrustIdForLog(value: string): string {
+  const s = String(value || '').trim();
+  if (!s) return 'n/a';
+  if (s.length <= 8) return `***${s.slice(-2)}`;
+  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+}
+
 export function useTrustedCounterpartyStatus({
   counterpartyUserId,
   sourceTagId,
@@ -127,6 +134,16 @@ export function useTrustedCounterpartyStatus({
       setStatus('outgoing_pending');
     } catch (e) {
       if (e instanceof TrustedNetworkApiError) {
+        console.warn(
+          'TRUST_INVITE_POST_FAIL',
+          JSON.stringify({
+            code: e.code,
+            httpStatus: e.httpStatus,
+            detail: e.message,
+            sourceTagId: maskTrustIdForLog(tag),
+            counterpartyUserId: maskTrustIdForLog(cp),
+          }),
+        );
         if (e.code === 'already_pending' || e.code === 'already_active') {
           if (e.code === 'already_active') {
             setStatus('active');
@@ -142,6 +159,16 @@ export function useTrustedCounterpartyStatus({
         setErrorMessage(e.message || 'Davet gönderilemedi');
         return;
       }
+      console.warn(
+        'TRUST_INVITE_POST_FAIL',
+        JSON.stringify({
+          code: 'unknown',
+          httpStatus: null,
+          detail: e instanceof Error ? e.message : String(e),
+          sourceTagId: maskTrustIdForLog(tag),
+          counterpartyUserId: maskTrustIdForLog(cp),
+        }),
+      );
       setErrorMessage(e instanceof Error ? e.message : 'Davet gönderilemedi');
     } finally {
       setCreating(false);

@@ -8874,7 +8874,9 @@ function PassengerDashboard({
       setMatchingInProgress(false);
       setCurrentRequestId(null);
 
-      setRatingModalData(null);
+      if (!ratingModalVisibleRef.current) {
+        setRatingModalData(null);
+      }
       setPassengerDriverForceReview(null);
       passengerForceEndModalHandledTagIdsRef.current.clear();
       passengerForceEndLastRequestKeyRef.current = null;
@@ -8898,7 +8900,9 @@ function PassengerDashboard({
       pricePrefetchRef.current = null;
       setPriceLoading(false);
       clearPassengerTrustState();
-      setScreen('role-select');
+      if (!ratingModalVisibleRef.current) {
+        setScreen('role-select');
+      }
 
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
       const eid = enderId.toLowerCase();
@@ -15764,7 +15768,9 @@ function DriverDashboard({
         driverCheckEndIntervalRef.current = null;
       }
 
-      setRatingModalData(null);
+      if (!ratingModalVisibleRef.current) {
+        setRatingModalData(null);
+      }
       setDriverPassengerForceEndReview(null);
       driverForceEndModalHandledTagIdsRef.current.clear();
       driverForceEndLastRequestKeyRef.current = null;
@@ -15781,7 +15787,9 @@ function DriverDashboard({
       setDriverFirstChatTapBanner(null);
       setShowQRModal(false);
       clearDriverTrustState();
-      setScreen('role-select');
+      if (!ratingModalVisibleRef.current) {
+        setScreen('role-select');
+      }
 
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
       const eid = enderId.toLowerCase();
@@ -16896,6 +16904,10 @@ function DriverDashboard({
               tagId: _dt.id,
               status: _dt.status,
             });
+            if (driverDataPollingIntervalRef.current) {
+              clearInterval(driverDataPollingIntervalRef.current);
+              driverDataPollingIntervalRef.current = null;
+            }
             return;
           }
           

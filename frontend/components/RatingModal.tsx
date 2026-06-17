@@ -196,6 +196,10 @@ export default function RatingModal({
       visible={visible}
       animationType="slide"
       transparent
+      onRequestClose={() => {
+        if (submitted) return;
+        onClose();
+      }}
       {...(Platform.OS === 'ios' ? { presentationStyle: 'overFullScreen' as const } : {})}
     >
       <View style={styles.overlay}>
