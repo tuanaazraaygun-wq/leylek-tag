@@ -8345,7 +8345,7 @@ export default function LiveMapView({
                     creating={trustedAddCreating}
                     errorMessage={trustedAddErrorMessage}
                     onPress={() => {
-                      void sendTrustedAddInvite();
+                      handleTrustedAddInvitePress();
                     }}
                     onRefresh={() => {
                       void refreshTrustedAddStatus();
