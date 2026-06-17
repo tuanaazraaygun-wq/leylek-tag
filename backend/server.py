@@ -133,6 +133,7 @@ from services.transfer_payment_service import (
     should_reject_complete_qr,
 )
 import services.boarding_qr_store as boarding_qr_store
+import services.journey_snapshot_store as journey_snap
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
@@ -12626,6 +12627,10 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         )
         if disabled_resp:
             return disabled_resp
+
+        cached_passenger = journey_snap.try_get_passenger_active_tag(resolved_id or uid)
+        if cached_passenger is not None:
+            return cached_passenger
         
         # ÖNCELİK 1: Aktif tag'leri ara (waiting, matched, in_progress)
         result = (
@@ -12671,7 +12676,9 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
                     tag, tag["driver_id"], skip_route_enrichment=True
                 )
 
-            return {"success": True, "tag": tag}
+            resp = {"success": True, "tag": tag}
+            journey_snap.populate_from_passenger_path(resolved_id or uid, resp)
+            return resp
         
         # ÖNCELİK 2: Aktif tag yoksa, son 10 saniyede cancelled olmuş TAG kontrol et
         # (Sadece trip bittiğinde bir kez uyarı göstermek için)
@@ -12693,9 +12700,13 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         if cancelled_result.data:
             cancelled_tag = cancelled_result.data[0]
             logger.info(f"🛑 Cancelled TAG bulundu (10sn içinde): {cancelled_tag['id']}")
-            return {"success": True, "tag": cancelled_tag, "was_cancelled": True}
+            resp = {"success": True, "tag": cancelled_tag, "was_cancelled": True}
+            journey_snap.populate_from_passenger_path(resolved_id or uid, resp)
+            return resp
         
-        return {"success": True, "tag": None}
+        resp = {"success": True, "tag": None}
+        journey_snap.populate_from_passenger_path(resolved_id or uid, resp)
+        return resp
     except Exception as e:
         logger.error(f"Get active tag error: {e}")
         return {"success": False, "tag": None}
@@ -14464,6 +14475,10 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         )
         if disabled_resp:
             return disabled_resp
+
+        cached_driver = journey_snap.try_get_driver_active_tag(resolved_id or did)
+        if cached_driver is not None:
+            return cached_driver
         
         # ÖNCELİK 1: Aktif tag'leri ara (matched veya in_progress)
         result = (
@@ -14579,11 +14594,13 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "end_request": tag.get("end_request"),
             }
             
-            return {
+            resp = {
                 "success": True,
                 "trip": tag_data,
                 "tag": tag_data
             }
+            journey_snap.populate_from_driver_path(resolved_id or did, resp)
+            return resp
         
         # ÖNCELİK 2: Aktif tag yoksa, son 10 saniyede cancelled olmuş TAG kontrol et
         from datetime import timedelta
@@ -14614,9 +14631,13 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
             }
             
             logger.info(f"🛑 Sürücü için cancelled TAG bulundu: {cancelled_tag['id']}")
-            return {"success": True, "trip": tag_data, "tag": tag_data, "was_cancelled": True}
+            resp = {"success": True, "trip": tag_data, "tag": tag_data, "was_cancelled": True}
+            journey_snap.populate_from_driver_path(resolved_id or did, resp)
+            return resp
         
-        return {"success": True, "trip": None, "tag": None}
+        resp = {"success": True, "trip": None, "tag": None}
+        journey_snap.populate_from_driver_path(resolved_id or did, resp)
+        return resp
     except Exception as e:
         logger.error(f"Get driver active trip error: {e}")
         return {"success": False, "trip": None, "tag": None}
