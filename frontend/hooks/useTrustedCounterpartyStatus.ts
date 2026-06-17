@@ -37,6 +37,23 @@ function isTrustedPairStatus(value: string): value is TrustedPairStatus {
   );
 }
 
+function isKnownTrustedUiStatus(status: TrustedCounterpartyUiStatus): boolean {
+  return (
+    status === 'active' ||
+    status === 'outgoing_pending' ||
+    status === 'incoming_pending' ||
+    status === 'blocked'
+  );
+}
+
+/** GET fail — bilinen pair state korunur; aksi halde invite CTA için none. */
+function failSoftStatus(prev: TrustedCounterpartyUiStatus): TrustedCounterpartyUiStatus {
+  if (isKnownTrustedUiStatus(prev)) {
+    return prev;
+  }
+  return 'none';
+}
+
 export function useTrustedCounterpartyStatus({
   counterpartyUserId,
   sourceTagId,
@@ -68,12 +85,12 @@ export function useTrustedCounterpartyStatus({
       if (isTrustedPairStatus(next)) {
         setStatus(next);
       } else {
-        setStatus('error');
-        setErrorMessage('Güven ağı durumu okunamadı');
+        setStatus((prev) => failSoftStatus(prev));
+        setErrorMessage(null);
       }
-    } catch (e) {
-      setStatus('error');
-      setErrorMessage(e instanceof Error ? e.message : 'Yüklenemedi');
+    } catch {
+      setStatus((prev) => failSoftStatus(prev));
+      setErrorMessage(null);
     } finally {
       setLoading(false);
     }
@@ -116,6 +133,10 @@ export function useTrustedCounterpartyStatus({
           } else {
             void refresh();
           }
+          return;
+        }
+        if (e.code === 'blocked' || e.code === 'counterparty_not_eligible') {
+          setStatus('blocked');
           return;
         }
         setErrorMessage(e.message || 'Davet gönderilemedi');

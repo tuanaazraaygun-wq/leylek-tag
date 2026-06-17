@@ -105,8 +105,11 @@ function buildUiConfig(
       };
     case 'error':
       return {
-        label: 'Yüklenemedi · Tekrar dene',
-        icon: 'refresh-outline',
+        label:
+          viewerRole === 'passenger'
+            ? '+ Sürücüyü güven ağına ekle'
+            : '+ Yolcuyu güven ağına ekle',
+        icon: 'person-add-outline',
         pressable: true,
         muted: false,
       };
@@ -134,12 +137,9 @@ function TrustedAddButton({
     status === 'incoming_pending' && typeof onOpenTrustedHub === 'function';
   const ui = buildUiConfig(viewerRole, status, loading, creating, incomingHubBridge);
   const showSpinner = loading || creating;
-  const accessibilityLabel =
-    errorMessage && status === 'error'
-      ? errorMessage
-      : incomingHubBridge
-        ? `${TRUST_INCOMING_LABEL}. ${TRUST_INCOMING_HUB_BRIDGE}`
-        : ui.label;
+  const accessibilityLabel = incomingHubBridge
+    ? `${TRUST_INCOMING_LABEL}. ${TRUST_INCOMING_HUB_BRIDGE}`
+    : ui.label;
 
   const handlePress = () => {
     if (!ui.pressable || showSpinner) return;
@@ -148,8 +148,7 @@ function TrustedAddButton({
       return;
     }
     if (status === 'error') {
-      onRefresh();
-      return;
+      void onRefresh();
     }
     onPress();
   };

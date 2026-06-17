@@ -7639,6 +7639,17 @@ function PassengerDashboard({
     rateUserId: string;
     rateUserName: string;
   } | null>(null);
+  const ratingModalVisibleRef = useRef(false);
+  ratingModalVisibleRef.current = ratingModalData?.visible === true;
+
+  const finalizePassengerJourneyAfterRating = useCallback(() => {
+    setRatingModalData(null);
+    setActiveTag(null);
+    setDestination(null);
+    setPassengerChatVisible(false);
+    onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
+    setScreen('role-select');
+  }, [onShowTripEndedBanner, setScreen]);
 
   const handlePassengerTripEndComplete = useCallback(
     (showRating: boolean, rateUserId: string, rateUserName: string) => {
@@ -9167,6 +9178,20 @@ function PassengerDashboard({
             tagId: _t.id,
             nextScreen: 'role-select',
           });
+
+          if (ratingModalVisibleRef.current) {
+            console.log('RATING_MODAL_DEFER_TERMINAL_NAV', {
+              role: 'passenger',
+              tagId: _t.id,
+              status: _t.status,
+            });
+            isPollingActiveRef.current = false;
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+            return;
+          }
           
           // 🔥 POLLING'İ DURDUR - sonsuz döngüyü engelle
           isPollingActiveRef.current = false;
@@ -14229,12 +14254,8 @@ function PassengerDashboard({
       {ratingModalData && (
         <RatingModal
           visible={ratingModalData.visible}
-          onClose={() => setRatingModalData(null)}
-          onRatingComplete={() => {
-            // 🆕 Puanlama tamamlandı - tüm state'leri temizle
-            setRatingModalData(null);
-            setActiveTag(null);
-          }}
+          onClose={finalizePassengerJourneyAfterRating}
+          onRatingComplete={finalizePassengerJourneyAfterRating}
           viewerRole="passenger"
           userId={user.id}
           tagId={ratingModalData.tagId}
@@ -14942,6 +14963,17 @@ function DriverDashboard({
     rateUserId: string;
     rateUserName: string;
   } | null>(null);
+  const ratingModalVisibleRef = useRef(false);
+  ratingModalVisibleRef.current = ratingModalData?.visible === true;
+
+  const finalizeDriverJourneyAfterRating = useCallback(() => {
+    setRatingModalData(null);
+    setActiveTag(null);
+    setRequests([]);
+    setDriverChatVisible(false);
+    onShowTripEndedBanner?.(ROLE_SELECT_JOURNEY_CLOSURE_BANNER);
+    setScreen('role-select');
+  }, [onShowTripEndedBanner, setScreen]);
 
   const [transferPaymentConfirmVisible, setTransferPaymentConfirmVisible] = useState(false);
   const [transferPaymentPassengerName, setTransferPaymentPassengerName] = useState('');
@@ -16857,6 +16889,15 @@ function DriverDashboard({
             tagId: _dt.id,
             nextScreen: 'role-select',
           });
+
+          if (ratingModalVisibleRef.current) {
+            console.log('RATING_MODAL_DEFER_TERMINAL_NAV', {
+              role: 'driver',
+              tagId: _dt.id,
+              status: _dt.status,
+            });
+            return;
+          }
           
           // 🔥 Alert'i sadece bir kez göster - aynı tag için tekrar gösterme
           const shouldShowAlert = data.tag.status === 'cancelled' && 
@@ -19202,12 +19243,8 @@ function DriverDashboard({
       {ratingModalData && (
         <RatingModal
           visible={ratingModalData.visible}
-          onClose={() => setRatingModalData(null)}
-          onRatingComplete={() => {
-            // 🆕 Puanlama tamamlandı - tüm state'leri temizle
-            setRatingModalData(null);
-            setActiveTag(null);
-          }}
+          onClose={finalizeDriverJourneyAfterRating}
+          onRatingComplete={finalizeDriverJourneyAfterRating}
           viewerRole="driver"
           userId={user.id}
           tagId={ratingModalData.tagId}

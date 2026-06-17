@@ -44,7 +44,7 @@ import {
   openExternalMapsNavigation,
   type ExternalMapsProvider,
 } from '../lib/openExternalMapsNavigation';
-import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
+import { useTrustedCounterpartyStatus, type TrustedCounterpartyUiStatus } from '../hooks/useTrustedCounterpartyStatus';
 import TrustedAddButton from './trusted/TrustedAddButton';
 import { TRUST_INCOMING_CHIP_BRIDGE } from '../lib/trustedHubCopy';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
@@ -541,6 +541,38 @@ function driverOpsPhaseLabel(
 
 const FORCE_END_ALERT_TITLE = 'Zorla bitir';
 const FORCE_END_ALERT_BODY = 'Bu işlem puan kaybına yol açabilir. Mümkünse QR ile tamamlayın.';
+
+const TRUSTED_PRE_MATCH_STATUSES = new Set([
+  'pending',
+  'waiting',
+  'offers_received',
+  'searching',
+  'expired',
+]);
+
+function isTrustedJourneyPhase(tagStatus: string, boardingConfirmed: boolean): boolean {
+  const st = String(tagStatus || '').trim().toLowerCase();
+  if (!st || TRUSTED_PRE_MATCH_STATUSES.has(st)) return false;
+  if (
+    st === 'matched' ||
+    st === 'driver_arriving' ||
+    st === 'passenger_onboard' ||
+    st === 'in_progress' ||
+    st === 'completed'
+  ) {
+    return true;
+  }
+  if (boardingConfirmed && st === 'matched') return true;
+  return false;
+}
+
+function trustedCompactInviteLabel(isDriver: boolean): string {
+  return isDriver ? 'Yolcuyu güven ağına ekle' : 'Sürücüyü güven ağına ekle';
+}
+
+function trustedCompactCanInvite(status: TrustedCounterpartyUiStatus): boolean {
+  return status === 'none' || status === 'declined' || status === 'error';
+}
 
 function formatDriverMatrixDisplay(matrixStatus: string): string {
   const raw = matrixStatus.replace(/^>\s*/, '').trim().toUpperCase();
@@ -2377,15 +2409,12 @@ export default function LiveMapView({
   const trustedSelfUserId = String(userId || '').trim();
   const trustedJourneyTagStatus = String(tagStatus || '').trim().toLowerCase();
   const trustedJourneyEligible =
-    trustedJourneyTagStatus === 'matched' ||
-    trustedJourneyTagStatus === 'in_progress' ||
-    trustedJourneyTagStatus === 'completed';
-  const trustedAddEnabled =
     !!trustedCounterpartyId &&
     !!trustedSourceTagId &&
     !!trustedSelfUserId &&
     trustedSelfUserId.toLowerCase() !== trustedCounterpartyId.toLowerCase() &&
-    trustedJourneyEligible;
+    isTrustedJourneyPhase(trustedJourneyTagStatus, boardingConfirmed);
+  const trustedAddEnabled = trustedJourneyEligible;
   const {
     status: trustedAddStatus,
     loading: trustedAddLoading,
@@ -6642,7 +6671,7 @@ export default function LiveMapView({
           ) : null}
         </GlassSurface>
 
-        {!driverRideUiModern && trustedAddEnabled && !driverNavImmersive ? (
+        {trustedAddEnabled && !driverNavImmersive ? (
           <View
             style={[
               styles.trustedAddCompactWrap,
@@ -6656,27 +6685,7 @@ export default function LiveMapView({
               <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
                 <ActivityIndicator size="small" color="#22D3EE" />
               </View>
-            ) : trustedAddStatus === 'error' ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.trustedAddCompactChipError,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  void refreshTrustedAddStatus();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  trustedAddErrorMessage || 'Güven ağı durumu yeniden yüklensin'
-                }
-              >
-                <Ionicons name="refresh-outline" size={14} color="rgba(252,165,165,0.95)" />
-                <Text style={styles.trustedAddCompactChipErrorText} numberOfLines={1}>
-                  Tekrar dene
-                </Text>
-              </Pressable>
-            ) : trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
+            ) : trustedCompactCanInvite(trustedAddStatus) ? (
               <Pressable
                 style={({ pressed }) => [
                   styles.trustedAddCompactChip,
@@ -6687,13 +6696,11 @@ export default function LiveMapView({
                   void sendTrustedAddInvite();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  isDriver ? 'Yolcuyu güven ağına ekle' : 'Sürücüyü güven ağına ekle'
-                }
+                accessibilityLabel={trustedCompactInviteLabel(isDriver)}
               >
                 <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
-                <Text style={styles.trustedAddCompactChipText} numberOfLines={1}>
-                  Güven ağı
+                <Text style={styles.trustedAddCompactChipText} numberOfLines={2}>
+                  {trustedCompactInviteLabel(isDriver)}
                 </Text>
               </Pressable>
             ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
@@ -7048,7 +7055,7 @@ export default function LiveMapView({
             ) : null}
           </GlassSurface>
 
-          {!driverRideUiModern && trustedAddEnabled ? (
+          {trustedAddEnabled ? (
             <View
               style={[
                 styles.trustedAddCompactWrap,
@@ -7062,27 +7069,7 @@ export default function LiveMapView({
                 <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
                   <ActivityIndicator size="small" color="#22D3EE" />
                 </View>
-              ) : trustedAddStatus === 'error' ? (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.trustedAddCompactChipError,
-                    pressed && { opacity: 0.88 },
-                  ]}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    void refreshTrustedAddStatus();
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    trustedAddErrorMessage || 'Güven ağı durumu yeniden yüklensin'
-                  }
-                >
-                  <Ionicons name="refresh-outline" size={14} color="rgba(252,165,165,0.95)" />
-                  <Text style={styles.trustedAddCompactChipErrorText} numberOfLines={1}>
-                    Tekrar dene
-                  </Text>
-                </Pressable>
-              ) : trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
+              ) : trustedCompactCanInvite(trustedAddStatus) ? (
                 <Pressable
                   style={({ pressed }) => [
                     styles.trustedAddCompactChip,
@@ -7093,11 +7080,11 @@ export default function LiveMapView({
                     void sendTrustedAddInvite();
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel="Sürücüyü güven ağına ekle"
+                  accessibilityLabel={trustedCompactInviteLabel(false)}
                 >
                   <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
-                  <Text style={styles.trustedAddCompactChipText} numberOfLines={1}>
-                    Güven ağı
+                  <Text style={styles.trustedAddCompactChipText} numberOfLines={2}>
+                    {trustedCompactInviteLabel(false)}
                   </Text>
                 </Pressable>
               ) : trustedAddStatus === 'incoming_pending' && onOpenTrustedHub ? (
@@ -10506,10 +10493,10 @@ const styles = StyleSheet.create({
 
   trustedAddCompactWrap: {
     position: 'absolute',
-    right: 10,
+    left: 10,
     zIndex: 96,
-    alignItems: 'flex-end',
-    maxWidth: 148,
+    alignItems: 'flex-start',
+    maxWidth: 172,
   },
   trustedAddCompactChip: {
     flexDirection: 'row',
