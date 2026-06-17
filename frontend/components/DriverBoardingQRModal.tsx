@@ -18,7 +18,7 @@ import { API_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 
 const QR_FETCH_TIMEOUT_MS = 9000;
-const QR_SLOW_RETRY_MS = 5000;
+const QR_SLOW_RETRY_MS = 8000;
 
 type Props = {
   visible: boolean;
@@ -46,7 +46,7 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
     abortRef.current = null;
   }, []);
 
-  const fetchCode = useCallback(async () => {
+  const fetchCode = useCallback(async (isRetry = false) => {
     if (!tagId) return;
     abortInFlightFetch();
     clearSlowRetryTimer();
@@ -58,8 +58,10 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
     setLoading(true);
     setError(null);
     setShowSlowRetry(false);
-    setQrString(null);
-    console.log('BOARDING_QR_REQUESTED', { tag_id: tagId });
+    if (!isRetry) {
+      setQrString(null);
+    }
+    console.log('BOARDING_QR_REQUESTED', { tag_id: tagId, retry: isRetry });
 
     slowRetryTimerRef.current = setTimeout(() => {
       setShowSlowRetry(true);
@@ -83,15 +85,25 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
       try {
         json = raw ? JSON.parse(raw) : {};
       } catch {
-        setError('Sunucu yanıtı okunamadı');
+        if (res.status === 504) {
+          setError('Sunucu yanıtı okunamadı (504). Tekrar deneyin.');
+        } else {
+          setError('Sunucu yanıtı okunamadı');
+        }
         return;
       }
       if (res.status === 401) {
         setError(json.detail || 'Oturum doğrulanamadı');
         return;
       }
+      if (res.status === 504) {
+        setError('Sunucu yanıtı okunamadı (504). Tekrar deneyin.');
+        return;
+      }
       if (json.success && json.qr_string) {
         setQrString(json.qr_string);
+        setShowSlowRetry(false);
+        clearSlowRetryTimer();
       } else {
         setError(json.detail || 'Karekod alınamadı');
       }
@@ -114,7 +126,8 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
 
   useEffect(() => {
     if (visible) {
-      void fetchCode();
+      void waitForPersistedAccessToken();
+      void fetchCode(false);
     } else {
       abortInFlightFetch();
       clearSlowRetryTimer();
@@ -174,7 +187,7 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
                 </PremiumText>
                 <TouchableOpacity
                   style={styles.retryBtn}
-                  onPress={() => void fetchCode()}
+                  onPress={() => void fetchCode(true)}
                   activeOpacity={0.88}
                 >
                   <PremiumText variant="body" style={styles.retryBtnText}>
@@ -233,7 +246,7 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
                 {showSlowRetry ? (
                   <TouchableOpacity
                     style={styles.retryBtn}
-                    onPress={() => void fetchCode()}
+                    onPress={() => void fetchCode(true)}
                     activeOpacity={0.88}
                   >
                     <PremiumText variant="body" style={styles.retryBtnText}>

@@ -18770,6 +18770,50 @@ async def check_proximity_for_trip_end(
 
 BOARDING_QR_TTL_SECONDS = 420
 BOARDING_QR_REUSE_MIN_REMAINING_SECONDS = 20
+BOARDING_QR_TAG_SELECT = "id, status, driver_id, passenger_id, boarding_confirmed_at, started_at"
+
+
+def _boarding_qr_fetch_tag_row(tag_id: str):
+    """Sync Supabase read — asyncio.to_thread ile event loop bloklanmaz."""
+    return (
+        supabase.table("tags")
+        .select(BOARDING_QR_TAG_SELECT)
+        .eq("id", tag_id)
+        .limit(1)
+        .execute()
+    )
+
+
+def _boarding_qr_confirm_matched_to_in_progress(tag_id: str, now_iso: str):
+    """Sync optimistic tag update — verify path (mantık değişmez)."""
+    return (
+        supabase.table("tags")
+        .update(
+            {
+                "status": "in_progress",
+                "started_at": now_iso,
+                "boarding_confirmed_at": now_iso,
+            }
+        )
+        .eq("id", tag_id)
+        .eq("status", "matched")
+        .execute()
+    )
+
+
+async def _boarding_qr_audit_issued_at(tag_id: str, issued_iso: str) -> None:
+    """Audit kolonu — QR response sonrası arka planda (fire-and-forget)."""
+    try:
+        await asyncio.to_thread(
+            lambda: supabase.table("tags")
+            .update({"boarding_qr_issued_at": issued_iso})
+            .eq("id", tag_id)
+            .execute()
+        )
+    except Exception as col_err:
+        logger.warning(
+            "boarding_qr_issued_at güncellenemedi (kolon yok olabilir): %s", col_err
+        )
 
 
 def _boarding_uid_eq(a, b) -> bool:
@@ -18805,10 +18849,11 @@ async def get_boarding_qr_code(
         if not tag_id:
             return {"success": False, "detail": "tag_id gerekli"}
 
-        resolved_driver = await resolve_user_id(str(authed_user_id).strip())
+        # Auth dependency zaten resolve_user_id + canonical lower UUID döndürür.
+        resolved_driver = str(authed_user_id).strip().lower()
         tid = str(tag_id).strip()
 
-        tag_res = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+        tag_res = await asyncio.to_thread(_boarding_qr_fetch_tag_row, tid)
         if not tag_res.data:
             return {"success": False, "detail": "Yolculuk bulunamadı"}
 
@@ -18883,10 +18928,7 @@ async def get_boarding_qr_code(
 
         qr_string = f"leylektag://board?t={qr_token}&tag={tid}"
 
-        try:
-            supabase.table("tags").update({"boarding_qr_issued_at": issued_iso}).eq("id", tid).execute()
-        except Exception as col_err:
-            logger.warning(f"boarding_qr_issued_at güncellenemedi (kolon yok olabilir): {col_err}")
+        asyncio.create_task(_boarding_qr_audit_issued_at(tid, issued_iso))
 
         logger.info("BOARDING_QR_ISSUED tag_id=%s driver_id=%s", tid, resolved_driver)
         return {
@@ -18936,7 +18978,8 @@ async def verify_boarding_qr(
         else:
             tag_from_uri = None
 
-        scanner_user_id = await resolve_user_id(str(scanner_user_id_auth).strip())
+        # Auth dependency zaten resolve_user_id + canonical lower UUID döndürür.
+        scanner_user_id = str(scanner_user_id_auth).strip().lower()
 
         if not qr_token:
             return {"success": False, "detail": "qr_token veya geçerli scanned_data gerekli"}
@@ -18950,7 +18993,9 @@ async def verify_boarding_qr(
         qr_data = boarding_qr_store.get_boarding_token(qr_token)
         if not qr_data:
             if tag_from_uri:
-                tag_res = supabase.table("tags").select("*").eq("id", str(tag_from_uri).strip()).limit(1).execute()
+                tag_res = await asyncio.to_thread(
+                    _boarding_qr_fetch_tag_row, str(tag_from_uri).strip()
+                )
                 if tag_res.data:
                     tag_row = tag_res.data[0]
                     st_now = str(tag_row.get("status") or "").strip().lower()
@@ -18982,7 +19027,7 @@ async def verify_boarding_qr(
         if not _boarding_uid_eq(scanner_user_id, passenger_id_mem):
             return {"success": False, "detail": "Sadece yolcu biniş QR doğrulayabilir"}
 
-        tag_res = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
+        tag_res = await asyncio.to_thread(_boarding_qr_fetch_tag_row, tag_id)
         if not tag_res.data:
             boarding_qr_store.delete_boarding_token(qr_token)
             return {"success": False, "detail": "Yolculuk bulunamadı"}
@@ -18990,7 +19035,7 @@ async def verify_boarding_qr(
         tag_row = tag_res.data[0]
         st = str(tag_row.get("status") or "").strip().lower()
         if st == "in_progress" and tag_row.get("boarding_confirmed_at"):
-            scanner_ok = _boarding_uid_eq(scanner_user_id, pax)
+            scanner_ok = _boarding_uid_eq(scanner_user_id, tag_row.get("passenger_id"))
             if scanner_ok:
                 boarding_qr_store.delete_boarding_token(qr_token)
                 return {
@@ -19018,18 +19063,8 @@ async def verify_boarding_qr(
             return {"success": False, "detail": "Biniş zaten tamamlanmış"}
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        ur = (
-            supabase.table("tags")
-            .update(
-                {
-                    "status": "in_progress",
-                    "started_at": now_iso,
-                    "boarding_confirmed_at": now_iso,
-                }
-            )
-            .eq("id", tag_id)
-            .eq("status", "matched")
-            .execute()
+        ur = await asyncio.to_thread(
+            _boarding_qr_confirm_matched_to_in_progress, tag_id, now_iso
         )
 
         if not ur.data:

@@ -6845,9 +6845,9 @@ function pickPriceApiDetailMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Biniş QR: arka planda active-tag teyidi (UI bloklamaz) */
+/** Biniş QR: verify cevabı eksikse tek active-tag yedek (socket birincil) */
 const BOARDING_STATE_POLL_MS = 380;
-const BOARDING_STATE_MAX_ATTEMPTS = 3;
+const BOARDING_STATE_MAX_ATTEMPTS = 1;
 
 /** Normal TAG yolcu: socket/poll ile matched — overlay yalnız bu önceki status’tan `matched`’e geçişte */
 const PASSENGER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
@@ -9510,21 +9510,40 @@ function PassengerDashboard({
         cancelable: true,
       });
 
+      const verifyResponseAlreadyConfirmed =
+        String(payload?.status ?? '').trim().toLowerCase() === 'in_progress' &&
+        typeof payload?.boarding_confirmed_at === 'string' &&
+        payload.boarding_confirmed_at.trim().length > 0;
+
       void (async () => {
-        try {
-          await confirmBoardingViaActiveTagApi(tid);
-        } catch {
-          /* background sync */
+        if (!verifyResponseAlreadyConfirmed) {
+          try {
+            await confirmBoardingViaActiveTagApi(tid);
+          } catch {
+            /* background sync */
+          }
+          try {
+            await loadActiveTag();
+            console.log(
+              'BOARDING_VERIFY_REFRESH_DONE',
+              JSON.stringify({ tag_id: tid }),
+            );
+          } catch (e) {
+            console.warn('BOARDING_VERIFY_REFRESH', e);
+          }
+          return;
         }
-        try {
-          await loadActiveTag();
-          console.log(
-            'BOARDING_VERIFY_REFRESH_DONE',
-            JSON.stringify({ tag_id: tid }),
-          );
-        } catch (e) {
-          console.warn('BOARDING_VERIFY_REFRESH', e);
-        }
+        // Verify cevabı yeterli — socket birincil; tek gecikmeli active-tag yedek senkron
+        setTimeout(() => {
+          void loadActiveTag().then(() => {
+            console.log(
+              'BOARDING_VERIFY_REFRESH_DONE',
+              JSON.stringify({ tag_id: tid, deferred: true }),
+            );
+          }).catch((e) => {
+            console.warn('BOARDING_VERIFY_REFRESH', e);
+          });
+        }, 2500);
       })();
 
       return true;
