@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   createTrustedInvite,
   getTrustedStatus,
@@ -21,6 +22,8 @@ type UseTrustedCounterpartyStatusArgs = {
   counterpartyUserId: string | null | undefined;
   sourceTagId: string | null | undefined;
   enabled?: boolean;
+  /** Hub accept/decline sonrası geri dönüşte GET /trusted/status yenile */
+  refetchOnScreenFocus?: boolean;
 };
 
 function isTrustedPairStatus(value: string): value is TrustedPairStatus {
@@ -38,6 +41,7 @@ export function useTrustedCounterpartyStatus({
   counterpartyUserId,
   sourceTagId,
   enabled = true,
+  refetchOnScreenFocus = false,
 }: UseTrustedCounterpartyStatusArgs) {
   const [status, setStatus] = useState<TrustedCounterpartyUiStatus>('idle');
   const [loading, setLoading] = useState(false);
@@ -86,6 +90,13 @@ export function useTrustedCounterpartyStatus({
     void refresh();
   }, [canRun, cp, tag, refresh]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!refetchOnScreenFocus || !canRun) return;
+      void refresh();
+    }, [refetchOnScreenFocus, canRun, refresh]),
+  );
+
   const sendInvite = useCallback(async () => {
     if (!canRun || creating) return;
 
@@ -100,7 +111,11 @@ export function useTrustedCounterpartyStatus({
     } catch (e) {
       if (e instanceof TrustedNetworkApiError) {
         if (e.code === 'already_pending' || e.code === 'already_active') {
-          setStatus(e.code === 'already_active' ? 'active' : 'outgoing_pending');
+          if (e.code === 'already_active') {
+            setStatus('active');
+          } else {
+            void refresh();
+          }
           return;
         }
         setErrorMessage(e.message || 'Davet gönderilemedi');
@@ -110,7 +125,7 @@ export function useTrustedCounterpartyStatus({
     } finally {
       setCreating(false);
     }
-  }, [canRun, cp, tag, creating]);
+  }, [canRun, cp, tag, creating, refresh]);
 
   return {
     status,

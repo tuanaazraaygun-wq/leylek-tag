@@ -2,6 +2,14 @@ import type { TrustedConnectionTie } from './trustedNetworkApi';
 
 export type TrustedHubRole = 'passenger' | 'driver';
 
+export type TrustStructuralContext = 'hub' | 'dashboard';
+
+export type TrustStructuralCounts = {
+  active: number;
+  incoming: number;
+  outgoing: number;
+};
+
 function normalizeInsightCopy(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -33,19 +41,21 @@ export function hubTitle(role: TrustedHubRole): string {
   return role === 'passenger' ? 'Sürücülerim' : 'Yolcularım';
 }
 
-export function hubHeaderSubtitle(
+/** Yapısal trust özeti — Hub header ve dashboard paylaşır. */
+export function formatTrustStructuralSubtitle(
   role: TrustedHubRole,
-  active: number,
-  incoming: number,
-  outgoing: number,
+  counts: TrustStructuralCounts,
+  context: TrustStructuralContext = 'hub',
 ): string {
-  const a = Math.max(0, active);
-  const inc = Math.max(0, incoming);
-  const out = Math.max(0, outgoing);
+  const a = Math.max(0, Math.floor(Number(counts.active) || 0));
+  const inc = Math.max(0, Math.floor(Number(counts.incoming) || 0));
+  const out = Math.max(0, Math.floor(Number(counts.outgoing) || 0));
 
   if (role === 'passenger') {
     if (a === 0 && inc === 0 && out === 0) {
-      return 'Güven ağınız burada görünür';
+      return context === 'dashboard'
+        ? 'Henüz güvenilir sürücünüz yok'
+        : 'Güven ağınız burada görünür';
     }
     if (a > 0 && inc === 0 && out === 0) {
       return `${a} güvenilir sürücü`;
@@ -66,6 +76,31 @@ export function hubHeaderSubtitle(
     return `${a} güvenilir yolcu`;
   }
   return `${a} yolcu · ${inc} gelen · ${out} giden davet`;
+}
+
+export function hubHeaderSubtitle(
+  role: TrustedHubRole,
+  active: number,
+  incoming: number,
+  outgoing: number,
+): string {
+  return formatTrustStructuralSubtitle(
+    role,
+    { active, incoming, outgoing },
+    'hub',
+  );
+}
+
+/** TRUST_READY presence — dashboard + briefing aynı dil. */
+export function formatTrustedReadyPresenceLine(readyCount: number): string | null {
+  const ready = Math.max(0, Math.floor(Number(readyCount) || 0));
+  if (ready === 1) {
+    return '1 sürücün şu anda müsait';
+  }
+  if (ready > 1) {
+    return `${ready} sürücün şu anda müsait`;
+  }
+  return null;
 }
 
 export function sectionConnectionsTitle(role: TrustedHubRole): string {
@@ -152,10 +187,9 @@ export function formatTrustedRadarBriefing(input: TrustedRadarBriefingCounts): s
 
   const parts: string[] = [];
 
-  if (ready === 1) {
-    parts.push('1 sürücün şu anda müsait');
-  } else if (ready > 1) {
-    parts.push(`${ready} sürücün şu anda müsait`);
+  const readyLine = formatTrustedReadyPresenceLine(ready);
+  if (readyLine) {
+    parts.push(readyLine);
   }
 
   if (onTrip === 1) {

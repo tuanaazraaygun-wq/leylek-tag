@@ -2397,6 +2397,7 @@ export default function LiveMapView({
     counterpartyUserId: trustedCounterpartyId || null,
     sourceTagId: trustedSourceTagId || null,
     enabled: trustedAddEnabled,
+    refetchOnScreenFocus: true,
   });
 
   const handleOpenTrustedHubPress = useCallback(() => {

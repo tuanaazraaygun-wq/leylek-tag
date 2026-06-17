@@ -36,6 +36,7 @@ interface RatingModalProps {
   tagId: string;
   rateUserId: string;
   rateUserName: string;
+  onOpenTrustedHub?: () => void;
 }
 
 export default function RatingModal({
@@ -47,6 +48,7 @@ export default function RatingModal({
   tagId,
   rateUserId,
   rateUserName,
+  onOpenTrustedHub,
 }: RatingModalProps) {
   const [rating, setRating] = useState(5);
   const [loading, setLoading] = useState(false);
@@ -70,6 +72,7 @@ export default function RatingModal({
     counterpartyUserId: rateUserId || null,
     sourceTagId: tagId || null,
     enabled: trustPhaseEnabled,
+    refetchOnScreenFocus: true,
   });
 
   useEffect(() => {
@@ -239,6 +242,7 @@ export default function RatingModal({
                       onRefresh={() => {
                         void refreshTrustedAddStatus();
                       }}
+                      onOpenTrustedHub={onOpenTrustedHub}
                     />
                   </View>
                 ) : null}

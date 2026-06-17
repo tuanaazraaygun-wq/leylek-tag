@@ -14240,6 +14240,10 @@ function PassengerDashboard({
           tagId={ratingModalData.tagId}
           rateUserId={ratingModalData.rateUserId}
           rateUserName={ratingModalData.rateUserName}
+          onOpenTrustedHub={() => {
+            playTapSound();
+            router.push('/trusted-network?role=passenger' as never);
+          }}
         />
       )}
 
@@ -19209,6 +19213,10 @@ function DriverDashboard({
           tagId={ratingModalData.tagId}
           rateUserId={ratingModalData.rateUserId}
           rateUserName={ratingModalData.rateUserName}
+          onOpenTrustedHub={() => {
+            playTapSound();
+            router.push('/trusted-network?role=driver' as never);
+          }}
         />
       )}
       
