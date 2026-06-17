@@ -6135,7 +6135,9 @@ def _trusted_summary_for_actor(actor_id: str) -> dict:
 
     active_res = (
         supabase.table("trusted_connections")
-        .select("id, initiator_id, counterparty_id")
+        .select(
+            "id, initiator_id, counterparty_id, initiator_role, counterparty_role"
+        )
         .eq("status", "active")
         .or_(f"initiator_id.eq.{actor_norm},counterparty_id.eq.{actor_norm}")
         .execute()
@@ -6185,12 +6187,57 @@ def _trusted_summary_for_actor(actor_id: str) -> dict:
     incoming_pending_count = sum(1 for uid in incoming_initiators if eligibility.get(uid, False))
     outgoing_pending_count = sum(1 for uid in outgoing_counterparties if eligibility.get(uid, False))
 
+    online_trusted_count = 0
+    if _trust_radar_enabled():
+        try:
+            driver_peer_ids: set[str] = set()
+            for row in active_res.data or []:
+                other_id, cp_role = _trusted_counterparty_user_id(actor_norm, row)
+                if not other_id or other_id in blocked:
+                    continue
+                if not eligibility.get(other_id, False):
+                    continue
+                ini = str(row.get("initiator_id") or "").strip().lower()
+                if ini == actor_norm:
+                    actor_role = str(row.get("initiator_role") or "").strip().lower()
+                else:
+                    actor_role = str(row.get("counterparty_role") or "").strip().lower()
+                if actor_role != "passenger" or str(cp_role or "").strip().lower() != "driver":
+                    continue
+                driver_peer_ids.add(other_id)
+
+            if driver_peer_ids:
+                from services.trusted_radar import count_ready_trusted_drivers
+
+                user_res = (
+                    supabase.table("users")
+                    .select("id, driver_online, latitude, longitude, last_location_update, is_active, is_deleted, deleted_at, is_banned")
+                    .in_("id", list(driver_peer_ids))
+                    .execute()
+                )
+                driver_rows = [
+                    u
+                    for u in user_res.data or []
+                    if user_account_is_eligible(u)
+                ]
+                online_trusted_count = count_ready_trusted_drivers(
+                    supabase,
+                    driver_rows=driver_rows,
+                )
+        except Exception as e:
+            logger.warning(
+                "trusted_summary online_trusted_count actor=%s err=%s",
+                _mask_log_id(actor_norm),
+                e,
+            )
+            online_trusted_count = 0
+
     return {
         "success": True,
         "active_count": active_count,
         "incoming_pending_count": incoming_pending_count,
         "outgoing_pending_count": outgoing_pending_count,
-        "online_trusted_count": 0,
+        "online_trusted_count": online_trusted_count,
     }
 
 

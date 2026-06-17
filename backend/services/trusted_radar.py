@@ -126,6 +126,29 @@ def fetch_busy_driver_ids(supabase: Any, driver_ids: list[str]) -> set[str]:
         return set()
 
 
+def count_ready_trusted_drivers(
+    supabase: Any,
+    *,
+    driver_rows: list[dict],
+) -> int:
+    """TRUST_READY count — same state rules as build_driver_connection_radar."""
+    rows = [r for r in driver_rows if isinstance(r, dict)]
+    if not rows:
+        return 0
+    ids = [str(r.get("id") or "").strip().lower() for r in rows if str(r.get("id") or "").strip()]
+    busy_ids = fetch_busy_driver_ids(supabase, ids)
+    ready = 0
+    for row in rows:
+        uid = str(row.get("id") or "").strip().lower()
+        if not uid:
+            continue
+        peer_stale = _is_location_stale(row.get("last_location_update"))
+        state = _radar_state_for_driver(row, busy=uid in busy_ids, peer_stale=peer_stale)
+        if state == "TRUST_READY":
+            ready += 1
+    return ready
+
+
 def _distance_band_from_coords(
     actor_coords: Optional[tuple[float, float]],
     peer_coords: Optional[tuple[float, float]],
