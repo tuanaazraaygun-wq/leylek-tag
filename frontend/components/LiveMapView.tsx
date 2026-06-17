@@ -45,6 +45,7 @@ import {
   type ExternalMapsProvider,
 } from '../lib/openExternalMapsNavigation';
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
+import TrustedAddButton from './trusted/TrustedAddButton';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
@@ -2369,7 +2370,18 @@ export default function LiveMapView({
 
   const trustedCounterpartyId = String(otherUserId || '').trim();
   const trustedSourceTagId = String(tagId || '').trim();
-  const trustedAddEnabled = !!trustedCounterpartyId && !!trustedSourceTagId;
+  const trustedSelfUserId = String(userId || '').trim();
+  const trustedJourneyTagStatus = String(tagStatus || '').trim().toLowerCase();
+  const trustedJourneyEligible =
+    trustedJourneyTagStatus === 'matched' ||
+    trustedJourneyTagStatus === 'in_progress' ||
+    trustedJourneyTagStatus === 'completed';
+  const trustedAddEnabled =
+    !!trustedCounterpartyId &&
+    !!trustedSourceTagId &&
+    !!trustedSelfUserId &&
+    trustedSelfUserId.toLowerCase() !== trustedCounterpartyId.toLowerCase() &&
+    trustedJourneyEligible;
   const {
     status: trustedAddStatus,
     loading: trustedAddLoading,
@@ -8169,6 +8181,29 @@ export default function LiveMapView({
                 </View>
               </View>
 
+              {trustedAddEnabled ? (
+                <View style={styles.infoCardTrustWrap}>
+                  <TrustedAddButton
+                    viewerRole={isDriver ? 'driver' : 'passenger'}
+                    status={trustedAddStatus}
+                    loading={trustedAddLoading}
+                    creating={trustedAddCreating}
+                    errorMessage={trustedAddErrorMessage}
+                    onPress={() => {
+                      void sendTrustedAddInvite();
+                    }}
+                    onRefresh={() => {
+                      void refreshTrustedAddStatus();
+                    }}
+                  />
+                  {trustedAddStatus === 'none' || trustedAddStatus === 'declined' ? (
+                    <PremiumText variant="caption" muted style={styles.infoCardTrustHint}>
+                      Karşı taraf kabul ederse güven ağınıza eklenir.
+                    </PremiumText>
+                  ) : null}
+                </View>
+              ) : null}
+
               {/* Alt Bilgi */}
               <View style={styles.infoCardFooter}>
                 <Text style={styles.infoCardFooterText}>
@@ -10625,6 +10660,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#22D3EE',
     marginLeft: 8,
+  },
+  infoCardTrustWrap: {
+    marginTop: 12,
+    alignSelf: 'stretch',
+    paddingHorizontal: 4,
+  },
+  infoCardTrustHint: {
+    marginTop: 6,
+    textAlign: 'center',
+    lineHeight: 16,
   },
   infoCardFooter: {
     marginTop: 8,
