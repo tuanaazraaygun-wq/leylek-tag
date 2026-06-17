@@ -11524,6 +11524,92 @@ class TrustedInviteCreateBody(BaseModel):
     source_tag_id: str
 
 
+def _trusted_invite_socket_payload(
+    *,
+    invite_id: str,
+    initiator_id: str,
+    counterparty_id: str,
+    source_tag_id: str,
+    status: str,
+    actor_user_id: Optional[str] = None,
+    updated_at=None,
+) -> dict:
+    body: dict = {
+        "invite_id": str(invite_id or "").strip(),
+        "initiator_id": str(initiator_id or "").strip().lower(),
+        "counterparty_id": str(counterparty_id or "").strip().lower(),
+        "source_tag_id": str(source_tag_id or "").strip(),
+        "status": str(status or "").strip().lower(),
+    }
+    actor = str(actor_user_id or "").strip().lower()
+    if actor:
+        body["actor_user_id"] = actor
+    if updated_at is not None:
+        body["updated_at"] = updated_at
+    return body
+
+
+async def _trusted_try_emit_invite_received(
+    payload: dict,
+    *,
+    initiator_id: str,
+    counterparty_id: str,
+    source_tag_id: str,
+) -> None:
+    invite_id = str(payload.get("invite_id") or "").strip()
+    if not invite_id:
+        return
+    body = _trusted_invite_socket_payload(
+        invite_id=invite_id,
+        initiator_id=initiator_id,
+        counterparty_id=counterparty_id,
+        source_tag_id=source_tag_id,
+        status="pending",
+        updated_at=payload.get("invited_at"),
+    )
+    cp = str(counterparty_id or "").strip().lower()
+    try:
+        await emit_socket_event_to_user(cp, "trusted_invite_received", body)
+    except Exception as e:
+        logger.warning(
+            "trusted_invite_received emit failed counterparty=%s err=%s",
+            _mask_log_id(cp),
+            e,
+        )
+
+
+async def _trusted_try_emit_invite_updated(
+    payload: dict,
+    actor_norm: str,
+    status: str,
+) -> None:
+    invite_id = str(payload.get("invite_id") or payload.get("connection_id") or "").strip()
+    if not invite_id:
+        return
+    row = _trusted_connection_row_by_id(invite_id)
+    if not row:
+        return
+    ini = str(row.get("initiator_id") or "").strip().lower()
+    cp = str(row.get("counterparty_id") or "").strip().lower()
+    body = _trusted_invite_socket_payload(
+        invite_id=invite_id,
+        initiator_id=ini,
+        counterparty_id=cp,
+        source_tag_id=str(row.get("source_tag_id") or ""),
+        status=status,
+        actor_user_id=actor_norm,
+        updated_at=row.get("updated_at") or row.get("responded_at"),
+    )
+    try:
+        await emit_socket_event_to_user(ini, "trusted_invite_updated", body)
+    except Exception as e:
+        logger.warning(
+            "trusted_invite_updated emit failed initiator=%s err=%s",
+            _mask_log_id(ini),
+            e,
+        )
+
+
 @api_router.post("/trusted/invites")
 async def post_trusted_invite(
     body: TrustedInviteCreateBody,
@@ -11567,6 +11653,13 @@ async def post_trusted_invite(
 
     try:
         payload, http_status = _trusted_invite_create_for_actor(actor_norm, cp_norm, tag_norm)
+        if http_status == 201 and isinstance(payload, dict) and payload.get("success"):
+            await _trusted_try_emit_invite_received(
+                payload,
+                initiator_id=actor_norm,
+                counterparty_id=cp_norm,
+                source_tag_id=tag_norm,
+            )
         return JSONResponse(status_code=http_status, content=payload)
     except _TrustedInviteReject as rej:
         return JSONResponse(
@@ -11598,6 +11691,7 @@ async def _trusted_mutation_route(
     action: str,
     resource_id: str,
     mutate_fn,
+    invite_updated_status: Optional[str] = None,
 ) -> JSONResponse:
     """Trusted accept/decline/revoke — ortak auth + hata zarfı."""
     try:
@@ -11616,6 +11710,13 @@ async def _trusted_mutation_route(
 
     try:
         payload, http_status = mutate_fn(actor_norm, resource_id)
+        if (
+            invite_updated_status
+            and 200 <= http_status < 300
+            and isinstance(payload, dict)
+            and payload.get("success")
+        ):
+            await _trusted_try_emit_invite_updated(payload, actor_norm, invite_updated_status)
         return JSONResponse(status_code=http_status, content=payload)
     except _TrustedInviteReject as rej:
         return JSONResponse(
@@ -11653,6 +11754,7 @@ async def post_trusted_invite_accept(
         action="trusted_invite_accept",
         resource_id=invite_id,
         mutate_fn=_trusted_invite_accept_for_actor,
+        invite_updated_status="active",
     )
 
 
@@ -11667,6 +11769,7 @@ async def post_trusted_invite_decline(
         action="trusted_invite_decline",
         resource_id=invite_id,
         mutate_fn=_trusted_invite_decline_for_actor,
+        invite_updated_status="declined",
     )
 
 

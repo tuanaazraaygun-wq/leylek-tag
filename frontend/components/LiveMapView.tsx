@@ -309,6 +309,8 @@ interface LiveMapViewProps {
   modernLeylekOfferUi?: boolean;
   /** Trusted Network — gelen davet Hub köprüsü (accept/decline yalnız Hub'da) */
   onOpenTrustedHub?: () => void;
+  /** Socket trusted_invite_* → GET /trusted/status yenileme tetikleyicisi */
+  trustedInviteRefreshNonce?: number;
 }
 
 /**
@@ -2541,6 +2543,7 @@ export default function LiveMapView({
   driverYolcuyaGitCoordContext = null,
   modernLeylekOfferUi = false,
   onOpenTrustedHub,
+  trustedInviteRefreshNonce = 0,
 }: LiveMapViewProps) {
   const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
   const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
@@ -2584,6 +2587,13 @@ export default function LiveMapView({
     refetchOnScreenFocus: true,
     pollIntervalMs: 60_000,
   });
+
+  useEffect(() => {
+    if (!trustedInviteRefreshNonce) {
+      return;
+    }
+    void refreshTrustedAddStatus();
+  }, [trustedInviteRefreshNonce, refreshTrustedAddStatus]);
 
   const handleOpenTrustedHubPress = useCallback(() => {
     if (!onOpenTrustedHub) return;

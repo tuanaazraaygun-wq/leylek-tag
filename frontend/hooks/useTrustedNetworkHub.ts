@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { getOrCreateSocket } from '../contexts/SocketContext';
+import {
+  subscribeTrustedInviteHubRefresh,
+  type TrustedInviteSocketPayload,
+} from '../lib/trustedInviteRealtimeEvents';
 import {
   acceptTrustedInvite,
   declineTrustedInvite,
@@ -89,6 +94,41 @@ export function useTrustedNetworkHub() {
       refresh({ soft: true });
     }, [refresh]),
   );
+
+  useEffect(() => {
+    return subscribeTrustedInviteHubRefresh(() => {
+      refresh({ soft: true });
+    });
+  }, [refresh]);
+
+  useEffect(() => {
+    const socket = getOrCreateSocket();
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = () => {
+      if (debounceId) {
+        clearTimeout(debounceId);
+      }
+      debounceId = setTimeout(() => {
+        refresh({ soft: true });
+      }, 400);
+    };
+
+    const onTrustedInviteSocket = (_data: TrustedInviteSocketPayload) => {
+      scheduleRefresh();
+    };
+
+    socket.on('trusted_invite_received', onTrustedInviteSocket);
+    socket.on('trusted_invite_updated', onTrustedInviteSocket);
+
+    return () => {
+      if (debounceId) {
+        clearTimeout(debounceId);
+      }
+      socket.off('trusted_invite_received', onTrustedInviteSocket);
+      socket.off('trusted_invite_updated', onTrustedInviteSocket);
+    };
+  }, [refresh]);
 
   const runMutation = useCallback(
     async (id: string, mutate: () => Promise<unknown>) => {

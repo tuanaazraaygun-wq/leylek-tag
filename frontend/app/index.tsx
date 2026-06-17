@@ -171,6 +171,11 @@ import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers'
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
+import {
+  publishTrustedInviteHubRefresh,
+  trustedInviteEventMatchesTrip,
+  type TrustedInviteSocketPayload,
+} from '../lib/trustedInviteRealtimeEvents';
 import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound } from '../utils/sound';
 import {
   isActiveTripTagStatus,
@@ -8473,6 +8478,48 @@ function PassengerDashboard({
   };
 
   // ==================== SOCKET.IO HOOK - YOLCU ====================
+  const [trustedInviteRefreshNonce, setTrustedInviteRefreshNonce] = useState(0);
+  const trustedInviteRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passengerTrustedInviteTripRef = useRef({
+    tagId: '',
+    counterpartyId: '',
+  });
+  useEffect(() => {
+    passengerTrustedInviteTripRef.current = {
+      tagId: String(activeTag?.id || '').trim(),
+      counterpartyId: String(activeTag?.driver_id || '').trim(),
+    };
+  }, [activeTag?.id, activeTag?.driver_id]);
+  useEffect(() => {
+    return () => {
+      if (trustedInviteRefreshDebounceRef.current) {
+        clearTimeout(trustedInviteRefreshDebounceRef.current);
+      }
+    };
+  }, []);
+  const handlePassengerTrustedInviteSocketEvent = useCallback(
+    (payload: TrustedInviteSocketPayload) => {
+      const trip = passengerTrustedInviteTripRef.current;
+      if (
+        !trustedInviteEventMatchesTrip(payload, {
+          selfUserId: user.id,
+          activeTagId: trip.tagId,
+          counterpartyUserId: trip.counterpartyId,
+        })
+      ) {
+        return;
+      }
+      if (trustedInviteRefreshDebounceRef.current) {
+        clearTimeout(trustedInviteRefreshDebounceRef.current);
+      }
+      trustedInviteRefreshDebounceRef.current = setTimeout(() => {
+        setTrustedInviteRefreshNonce((n) => n + 1);
+        publishTrustedInviteHubRefresh();
+      }, 400);
+    },
+    [user.id],
+  );
+
   const {
     socket: passengerSocket,
     isConnected: socketConnected,
@@ -8969,6 +9016,8 @@ function PassengerDashboard({
       );
     },
     ...passengerTrustSocketHandlers,
+    onTrustedInviteReceived: handlePassengerTrustedInviteSocketEvent,
+    onTrustedInviteUpdated: handlePassengerTrustedInviteSocketEvent,
   });
 
   useEffect(() => {
@@ -12246,6 +12295,7 @@ function PassengerDashboard({
                     playTapSound();
                     router.push('/trusted-network?role=passenger' as never);
                   }}
+                  trustedInviteRefreshNonce={trustedInviteRefreshNonce}
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
                     setPassengerChatVisible(true);
@@ -15279,6 +15329,48 @@ function DriverDashboard({
   };
 
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
+  const [driverTrustedInviteRefreshNonce, setDriverTrustedInviteRefreshNonce] = useState(0);
+  const driverTrustedInviteRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driverTrustedInviteTripRef = useRef({
+    tagId: '',
+    counterpartyId: '',
+  });
+  useEffect(() => {
+    driverTrustedInviteTripRef.current = {
+      tagId: String(activeTag?.id || '').trim(),
+      counterpartyId: String(activeTag?.passenger_id || '').trim(),
+    };
+  }, [activeTag?.id, activeTag?.passenger_id]);
+  useEffect(() => {
+    return () => {
+      if (driverTrustedInviteRefreshDebounceRef.current) {
+        clearTimeout(driverTrustedInviteRefreshDebounceRef.current);
+      }
+    };
+  }, []);
+  const handleDriverTrustedInviteSocketEvent = useCallback(
+    (payload: TrustedInviteSocketPayload) => {
+      const trip = driverTrustedInviteTripRef.current;
+      if (
+        !trustedInviteEventMatchesTrip(payload, {
+          selfUserId: user.id,
+          activeTagId: trip.tagId,
+          counterpartyUserId: trip.counterpartyId,
+        })
+      ) {
+        return;
+      }
+      if (driverTrustedInviteRefreshDebounceRef.current) {
+        clearTimeout(driverTrustedInviteRefreshDebounceRef.current);
+      }
+      driverTrustedInviteRefreshDebounceRef.current = setTimeout(() => {
+        setDriverTrustedInviteRefreshNonce((n) => n + 1);
+        publishTrustedInviteHubRefresh();
+      }, 400);
+    },
+    [user.id],
+  );
+
   const {
     isConnected: socketConnected,
     isRegistered: socketRegistered,
@@ -15856,6 +15948,8 @@ function DriverDashboard({
       setDriverBoardingNearBanner(false);
     },
     ...driverTrustSocketHandlers,
+    onTrustedInviteReceived: handleDriverTrustedInviteSocketEvent,
+    onTrustedInviteUpdated: handleDriverTrustedInviteSocketEvent,
   });
 
   useEffect(() => {
@@ -18414,6 +18508,7 @@ function DriverDashboard({
               void playTapSound();
               router.push('/trusted-network?role=driver' as never);
             }}
+            trustedInviteRefreshNonce={driverTrustedInviteRefreshNonce}
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
               setDriverChatVisible(true);

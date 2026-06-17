@@ -203,6 +203,25 @@ interface UseSocketProps {
     end_reason?: string;
     rejected_by?: string;
   }) => void;
+  /** Güven Ağı daveti — video trust değil */
+  onTrustedInviteReceived?: (data: {
+    invite_id?: string;
+    initiator_id?: string;
+    counterparty_id?: string;
+    source_tag_id?: string;
+    status?: string;
+    actor_user_id?: string;
+    updated_at?: string;
+  }) => void;
+  onTrustedInviteUpdated?: (data: {
+    invite_id?: string;
+    initiator_id?: string;
+    counterparty_id?: string;
+    source_tag_id?: string;
+    status?: string;
+    actor_user_id?: string;
+    updated_at?: string;
+  }) => void;
 }
 
 export default function useSocket({
@@ -245,6 +264,8 @@ export default function useSocket({
   onTrustSocketRequest,
   onTrustSessionReady,
   onTrustSessionEnded,
+  onTrustedInviteReceived,
+  onTrustedInviteUpdated,
 }: UseSocketProps) {
   
   // ════════════════════════════════════════════════════════════════════
@@ -284,6 +305,7 @@ export default function useSocket({
     onPassengerDestinationNavHint,
     onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
     onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
+    onTrustedInviteReceived, onTrustedInviteUpdated,
   });
   
   // Callback'leri güncelle
@@ -297,6 +319,7 @@ export default function useSocket({
       onPassengerDestinationNavHint,
       onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
       onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
+      onTrustedInviteReceived, onTrustedInviteUpdated,
     };
   });
 
@@ -609,6 +632,16 @@ export default function useSocket({
       callbackRefs.current.onTrustSessionEnded?.(data);
     };
 
+    const handleTrustedInviteReceived = (data: any) => {
+      console.log('🤝 [useSocket] trusted_invite_received:', data);
+      callbackRefs.current.onTrustedInviteReceived?.(data);
+    };
+
+    const handleTrustedInviteUpdated = (data: any) => {
+      console.log('🤝 [useSocket] trusted_invite_updated:', data);
+      callbackRefs.current.onTrustedInviteUpdated?.(data);
+    };
+
     const handleBoardingConfirmed = (data: any) => {
       console.log('🚌 [useSocket] boarding_confirmed:', data);
       callbackRefs.current.onBoardingConfirmed?.(data);
@@ -679,6 +712,8 @@ export default function useSocket({
     socket.on('trust_request', handleTrustRequest);
     socket.on('trust_session_ready', handleTrustSessionReady);
     socket.on('trust_session_ended', handleTrustSessionEnded);
+    socket.on('trusted_invite_received', handleTrustedInviteReceived);
+    socket.on('trusted_invite_updated', handleTrustedInviteUpdated);
 
     // Cleanup - listener'ları kaldır
     return () => {
@@ -738,6 +773,8 @@ export default function useSocket({
       socket.off('trust_request', handleTrustRequest);
       socket.off('trust_session_ready', handleTrustSessionReady);
       socket.off('trust_session_ended', handleTrustSessionEnded);
+      socket.off('trusted_invite_received', handleTrustedInviteReceived);
+      socket.off('trusted_invite_updated', handleTrustedInviteUpdated);
     };
   }, [socket, userRole]);
 
