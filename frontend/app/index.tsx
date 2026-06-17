@@ -7793,7 +7793,7 @@ function PassengerDashboard({
 
   const routePickerPanelMaxHeight =
     showDestinationPicker && routePickerKeyboardHeight > 0
-      ? Math.max(320, paxWindowHeight - routePickerKeyboardHeight - insets.top - 64)
+      ? Math.max(320, paxWindowHeight - routePickerKeyboardHeight - insets.top - 112)
       : undefined;
 
   useEffect(() => {
@@ -7911,22 +7911,6 @@ function PassengerDashboard({
     }
     prevHadActiveTagRef.current = !!activeTag;
   }, [activeTag]);
-
-  useEffect(() => {
-    if (postLoginTagResumePending) return;
-    if (showDestinationPicker) return;
-    if (activeTag || destination) return;
-    if (passengerDestinationAutoOpenedRef.current) return;
-    /** İlk çizim sonrası: pickup adımıyla modal açılsın */
-    const id = requestAnimationFrame(() => {
-      setRoutePickerIntent('normal');
-      setShowDestinationPicker(true);
-      setRoutePickerStep('pickup');
-      setDestinationPickerPhase('search');
-      passengerDestinationAutoOpenedRef.current = true;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [activeTag, destination, postLoginTagResumePending, setShowDestinationPicker, showDestinationPicker]);
 
   /** Aktif TAG varken hedef/fiyat modalı açık kalmasın (resume sonrası activeTag geç dolunca auto-open yarışı) */
   useEffect(() => {
@@ -12936,12 +12920,16 @@ function PassengerDashboard({
                   playTapSound();
                   setPassengerIdleOfferChannel('normal');
                   setRoutePickerIntent('normal');
+                  setRoutePickerStep('pickup');
+                  setDestinationPickerPhase('search');
                   setShowDestinationPicker(true);
                 }}
                 onQuickPress={() => {
                   playTapSound();
                   setPassengerIdleOfferChannel('quick_match');
                   setRoutePickerIntent('quick_match');
+                  setRoutePickerStep('pickup');
+                  setDestinationPickerPhase('search');
                   setShowDestinationPicker(true);
                 }}
                 onTrustedPress={() => {
@@ -12957,6 +12945,9 @@ function PassengerDashboard({
                 onPress={() => {
                   playTapSound();
                   setRoutePickerIntent('normal');
+                  setPassengerIdleOfferChannel('normal');
+                  setRoutePickerStep('pickup');
+                  setDestinationPickerPhase('search');
                   setShowDestinationPicker(true);
                 }}
                 activeOpacity={0.88}
@@ -13628,26 +13619,35 @@ function PassengerDashboard({
                       style={[
                         styles.destinationFloatingPanel,
                         styles.pickupRouteFloatingPanel,
+                        styles.routePickerPanelShell,
                         routePickerPanelMaxHeight != null ? { maxHeight: routePickerPanelMaxHeight } : null,
                       ]}
                       pointerEvents="auto"
                     >
+                      <View style={styles.routePickerStepHeader}>
+                        <Animated.View
+                          style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
+                        >
+                          <Text
+                            style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.82}
+                          >
+                            Adım 1 · Sürücü nereye gelsin?
+                          </Text>
+                        </Animated.View>
+                        <Text style={[styles.pickupRouteSubtitle, styles.routePickerStepHeaderSubtitle]}>
+                          Konumunuzu kullanın veya haritadan işaretleyin; adres de arayabilirsiniz.
+                        </Text>
+                      </View>
                       <ScrollView
+                        style={styles.routePickerPanelScrollBody}
                         showsVerticalScrollIndicator={false}
                         keyboardShouldPersistTaps="always"
                         nestedScrollEnabled={Platform.OS === 'android'}
                         contentContainerStyle={styles.routePickerPanelScrollContent}
                       >
-                      <Animated.View
-                        style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 10 }}
-                      >
-                        <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
-                          Adım 1 · Sürücü nereye gelsin?
-                        </Text>
-                      </Animated.View>
-                      <Text style={styles.pickupRouteSubtitle}>
-                        Konumunuzu kullanın veya haritadan işaretleyin; adres de arayabilirsiniz.
-                      </Text>
                       <View style={styles.pickupPrimaryCtaStack}>
                         <TouchableOpacity
                           style={styles.pickupUseLocationBtnWrap}
@@ -13853,36 +13853,42 @@ function PassengerDashboard({
                     <View
                       style={[
                         styles.destinationFloatingPanel,
+                        styles.routePickerPanelShell,
                         routePickerPanelMaxHeight != null ? { maxHeight: routePickerPanelMaxHeight } : null,
                       ]}
                       pointerEvents="auto"
                     >
+                      <View style={styles.routePickerStepHeader}>
+                        <Animated.View
+                          style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 6 }}
+                        >
+                          <Text
+                            style={[
+                              styles.destinationHeroTitle,
+                              styles.destinationHeroTitleAnimated,
+                              styles.destinationStepHeroTitle,
+                            ]}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.82}
+                          >
+                            Adım 2 · Nereye gitmek istiyorsunuz?
+                          </Text>
+                        </Animated.View>
+                        {!isNativeGoogleMapsSupported() ? (
+                          <Text style={[styles.destinationNoGmsHint, styles.routePickerStepHeaderSubtitle]}>
+                            Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
+                            kaydedilir.
+                          </Text>
+                        ) : null}
+                      </View>
                       <ScrollView
+                        style={styles.routePickerPanelScrollBody}
                         showsVerticalScrollIndicator={false}
                         keyboardShouldPersistTaps="always"
                         nestedScrollEnabled={Platform.OS === 'android'}
                         contentContainerStyle={styles.routePickerPanelScrollContent}
                       >
-                      <Animated.View
-                        style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
-                      >
-                        <Text
-                          style={[
-                            styles.destinationHeroTitle,
-                            styles.destinationHeroTitleAnimated,
-                            styles.destinationStepHeroTitle,
-                          ]}
-                        >
-                          Adım 2 · Nereye gitmek istiyorsunuz?
-                        </Text>
-                      </Animated.View>
-                      {!isNativeGoogleMapsSupported() ? (
-                        <Text style={styles.destinationNoGmsHint}>
-                          Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
-                          kaydedilir.
-                        </Text>
-                      ) : null}
-
                       <View style={styles.destinationSearchShellModern}>
                         <PlacesAutocomplete
                           key={destinationPickerAutocompleteMountKey}
@@ -26298,6 +26304,22 @@ const styles = StyleSheet.create({
   pickupRouteFloatingPanel: {
     borderTopColor: 'rgba(34, 211, 238, 0.18)',
     maxHeight: '60%',
+  },
+  routePickerPanelShell: {
+    flexDirection: 'column',
+    alignSelf: 'stretch',
+  },
+  routePickerStepHeader: {
+    flexShrink: 0,
+    paddingBottom: 8,
+  },
+  routePickerStepHeaderSubtitle: {
+    marginBottom: 0,
+  },
+  routePickerPanelScrollBody: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minHeight: 0,
   },
   routePickerPanelScrollContent: {
     paddingBottom: 8,
