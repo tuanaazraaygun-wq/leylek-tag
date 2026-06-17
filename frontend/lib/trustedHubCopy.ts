@@ -99,6 +99,42 @@ export function formatTrustedHubDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 }
 
+export type TrustedRadarBriefingCounts = {
+  hasRadarData: boolean;
+  readyCount: number;
+  onTripCount: number;
+  staleCount: number;
+  offlineCount: number;
+};
+
+/** Anlık radar özeti — radar yoksa null; iddialı/AI copy yok. */
+export function formatTrustedRadarBriefing(input: TrustedRadarBriefingCounts): string | null {
+  if (!input.hasRadarData) return null;
+
+  const ready = Math.max(0, Math.floor(Number(input.readyCount) || 0));
+  const onTrip = Math.max(0, Math.floor(Number(input.onTripCount) || 0));
+
+  const parts: string[] = [];
+
+  if (ready === 1) {
+    parts.push('1 sürücün şu anda müsait');
+  } else if (ready > 1) {
+    parts.push(`${ready} sürücün şu anda müsait`);
+  }
+
+  if (onTrip === 1) {
+    parts.push('1 sürücü yolculukta');
+  } else if (onTrip > 1) {
+    parts.push(`${onTrip} sürücü yolculukta`);
+  }
+
+  if (parts.length > 0) {
+    return parts.join(' · ');
+  }
+
+  return 'Güven ağında anlık müsait sürücü görünmüyor';
+}
+
 export function formatTrustedExpiresHint(iso: string | null | undefined): string {
   if (!iso || !String(iso).trim()) return '';
   const d = new Date(String(iso));

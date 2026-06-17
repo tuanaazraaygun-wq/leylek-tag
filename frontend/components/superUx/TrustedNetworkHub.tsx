@@ -24,10 +24,12 @@ import {
   SECTION_INCOMING_TITLE,
   SECTION_OUTGOING_TITLE,
   sectionConnectionsTitle,
+  formatTrustedRadarBriefing,
   type TrustedHubRole,
 } from '../../lib/trustedHubCopy';
 import TrustedConnectionRow from './TrustedConnectionRow';
 import TrustedPendingRow from './TrustedPendingRow';
+import TrustedRadarBriefingStrip from './TrustedRadarBriefingStrip';
 
 export type TrustedNetworkHubProps = {
   role: TrustedHubRole;
@@ -113,6 +115,33 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
         return a.index - b.index;
       })
       .map(({ item }) => item);
+  }, [connections, role]);
+
+  const radarBriefingText = useMemo(() => {
+    if (role !== 'passenger') return null;
+    const withRadar = connections.filter((c) => c.role === 'driver' && c.radar != null);
+    if (withRadar.length === 0) return null;
+
+    let readyCount = 0;
+    let onTripCount = 0;
+    let staleCount = 0;
+    let offlineCount = 0;
+
+    for (const item of withRadar) {
+      const state = String(item.radar?.radar_state || '').trim();
+      if (state === 'TRUST_READY') readyCount += 1;
+      else if (state === 'TRUST_ON_TRIP') onTripCount += 1;
+      else if (state === 'TRUST_STALE') staleCount += 1;
+      else if (state === 'TRUST_OFFLINE') offlineCount += 1;
+    }
+
+    return formatTrustedRadarBriefing({
+      hasRadarData: true,
+      readyCount,
+      onTripCount,
+      staleCount,
+      offlineCount,
+    });
   }, [connections, role]);
 
   const subtitle =
@@ -203,6 +232,9 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
         >
           {hasConnections ? (
             <HubSection title={sectionConnectionsTitle(role)}>
+              {radarBriefingText ? (
+                <TrustedRadarBriefingStrip text={radarBriefingText} />
+              ) : null}
               {displayConnections.map((item) => (
                 <TrustedConnectionRow
                   key={item.connection_id}

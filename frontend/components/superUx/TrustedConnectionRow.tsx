@@ -15,6 +15,7 @@ import {
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
+import { PremiumText } from '../../design-system/primitives';
 import {
   ACTION_CANCEL,
   ACTION_REMOVE,
@@ -161,9 +162,9 @@ function TrustedConnectionRow({
           ) : null}
         </View>
         {radarInsightLine ? (
-          <Text style={styles.radarInsight} numberOfLines={2}>
+          <PremiumText variant="caption" muted style={styles.radarInsight} numberOfLines={2}>
             {radarInsightLine}
-          </Text>
+          </PremiumText>
         ) : null}
       </View>
       {onRevoke ? (
@@ -287,11 +288,7 @@ const styles = StyleSheet.create({
   },
   radarInsight: {
     marginTop: 2,
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(34, 211, 238, 0.82)',
     lineHeight: 16,
-    letterSpacing: -0.1,
   },
   removeBtn: {
     alignSelf: 'center',
