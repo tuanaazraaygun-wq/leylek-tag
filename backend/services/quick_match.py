@@ -138,15 +138,15 @@ def get_quick_match_radius_km() -> float:
 
 
 def get_quick_match_request_ttl_seconds() -> int:
-    return _env_int("QUICK_MATCH_REQUEST_TTL_SECONDS", 180)
+    return _env_int("QUICK_MATCH_REQUEST_TTL_SECONDS", 240)
 
 
 def get_quick_match_invite_timeout_seconds() -> int:
-    return _env_int("QUICK_MATCH_INVITE_TIMEOUT_SECONDS", 18)
+    return _env_int("QUICK_MATCH_INVITE_TIMEOUT_SECONDS", 60)
 
 
 def get_quick_match_max_attempts() -> int:
-    return _env_int("QUICK_MATCH_MAX_ATTEMPTS", 8)
+    return _env_int("QUICK_MATCH_MAX_ATTEMPTS", 3)
 
 
 def get_quick_match_max_eta_min() -> int:
@@ -897,9 +897,10 @@ async def _advance_quick_match_request(
     if attempt_count >= get_quick_match_max_attempts():
         logger.warning(
             "quick_match_exhausted request_id=%s reason=max_attempts attempt_count=%d "
-            "pickup=(%.5f,%.5f) vehicle_pref=%s",
+            "max_attempts=%d pickup=(%.5f,%.5f) vehicle_pref=%s",
             _short_id(rid),
             attempt_count,
+            get_quick_match_max_attempts(),
             pickup_lat,
             pickup_lng,
             vehicle_pref,
@@ -1067,7 +1068,7 @@ async def create_quick_match_request(
     request_id = str(ins.data[0].get("id") or "")
     logger.info(
         "quick_match_create request_id=%s passenger=%s pickup=(%.5f,%.5f) dropoff=(%.5f,%.5f) "
-        "vehicle_pref=%s distance_km=%s offered=%s suggested=%s",
+        "vehicle_pref=%s distance_km=%s offered=%s suggested=%s request_ttl_sec=%d invite_timeout_sec=%d",
         _short_id(request_id),
         _short_id(actor),
         validated["pickup_lat"],
@@ -1078,6 +1079,8 @@ async def create_quick_match_request(
         validated["distance_km"],
         validated["offered_contribution_tl"],
         suggested,
+        get_quick_match_request_ttl_seconds(),
+        get_quick_match_invite_timeout_seconds(),
     )
     invite_row = await _advance_quick_match_request(
         supabase,
