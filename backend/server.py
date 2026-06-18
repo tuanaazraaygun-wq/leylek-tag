@@ -1203,35 +1203,50 @@ _DISPATCH_DRIVER_OFFER_SELECT_MIN = (
 )
 
 
-def _fetch_online_users_for_dispatch(now_iso: str) -> list:
+def _fetch_online_users_for_dispatch(
+    now_iso: str,
+    pickup_lat: Optional[float] = None,
+    pickup_lng: Optional[float] = None,
+) -> list:
     """Rolling dispatch: 42703 (eksik kolon) → MIN select fallback."""
     if not supabase:
         return []
+    use_sql_bbox = SCALE1A_SQL_BBOX and not SCALE1A_SQL_BBOX_SHADOW
     last_err: Optional[Exception] = None
     for sel in (_DISPATCH_ONLINE_DRIVER_SELECT_FULL, _DISPATCH_ONLINE_DRIVER_SELECT_MIN):
-        try:
-            query = (
-                supabase.table("users")
-                .select(sel)
-                .eq("driver_online", True)
-                .eq("is_active", True)
-            )
-            query = _apply_driver_active_until_filter(query, now_iso)
-            result = query.execute()
-            if sel != _DISPATCH_ONLINE_DRIVER_SELECT_FULL:
-                logger.warning(
-                    "find_eligible_drivers select_fallback select=%s",
-                    sel,
+        for with_bbox in ((True, False) if use_sql_bbox else (False,)):
+            try:
+                query = (
+                    supabase.table("users")
+                    .select(sel)
+                    .eq("driver_online", True)
+                    .eq("is_active", True)
                 )
-            return result.data or []
-        except Exception as e:
-            last_err = e
-            logger.warning(
-                "find_eligible_drivers select_fallback select=%s err=%s",
-                sel,
-                e,
-            )
-            continue
+                query = _apply_driver_active_until_filter(query, now_iso)
+                if with_bbox:
+                    query = _apply_sql_bbox_to_online_driver_query(query, pickup_lat, pickup_lng)
+                result = query.execute()
+                if sel != _DISPATCH_ONLINE_DRIVER_SELECT_FULL:
+                    logger.warning(
+                        "find_eligible_drivers select_fallback select=%s",
+                        sel,
+                    )
+                return result.data or []
+            except Exception as e:
+                last_err = e
+                if with_bbox:
+                    logger.warning(
+                        "scale_sql_bbox fetch_fallback mode=normal select=%s err=%s",
+                        sel,
+                        e,
+                    )
+                    continue
+                logger.warning(
+                    "find_eligible_drivers select_fallback select=%s err=%s",
+                    sel,
+                    e,
+                )
+                break
     if last_err is not None:
         raise last_err
     return []
@@ -1631,6 +1646,21 @@ NM_SUITABILITY_LOGS = os.getenv("NM_SUITABILITY_LOGS", "").strip().lower() in (
 
 # MATCH-REL-1C-C: Quick Match suitability shadow logs only (no sort/filter behavior change).
 QM_SUITABILITY_LOGS = os.getenv("QM_SUITABILITY_LOGS", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+# SCALE-1A-2: SQL bbox on online-driver fetch (default off; Python bbox prefilter unchanged).
+SCALE1A_SQL_BBOX = os.getenv("SCALE1A_SQL_BBOX", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+# SCALE-1A-2: shadow — full fetch + log bbox_count from Python bbox on result (no extra DB query).
+SCALE1A_SQL_BBOX_SHADOW = os.getenv("SCALE1A_SQL_BBOX_SHADOW", "").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -2318,7 +2348,9 @@ async def find_eligible_drivers(
 
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
-        online_rows = _fetch_online_users_for_dispatch(now)
+        online_rows = _fetch_online_users_for_dispatch(now, pickup_lat, pickup_lng)
+        if SCALE1A_SQL_BBOX_SHADOW:
+            _scale_sql_bbox_shadow_log("normal", online_rows, pickup_lat, pickup_lng)
 
         if not online_rows:
             logger.warning(
@@ -2517,35 +2549,50 @@ _QM_ONLINE_DRIVER_SELECT_FALLBACK = (
 )
 
 
-def _fetch_online_users_for_quick_match(now_iso: str) -> list:
+def _fetch_online_users_for_quick_match(
+    now_iso: str,
+    pickup_lat: Optional[float] = None,
+    pickup_lng: Optional[float] = None,
+) -> list:
     """QM-only: canlı şemada eksik kolonlarda 42703 olursa dar select ile yeniden dene."""
     if not supabase:
         return []
+    use_sql_bbox = SCALE1A_SQL_BBOX and not SCALE1A_SQL_BBOX_SHADOW
     last_err: Optional[Exception] = None
     for sel in (_QM_ONLINE_DRIVER_SELECT_FULL, _QM_ONLINE_DRIVER_SELECT_FALLBACK):
-        try:
-            query = (
-                supabase.table("users")
-                .select(sel)
-                .eq("driver_online", True)
-                .eq("is_active", True)
-            )
-            query = _apply_driver_active_until_filter(query, now_iso)
-            result = query.execute()
-            if sel != _QM_ONLINE_DRIVER_SELECT_FULL:
-                logger.warning(
-                    "find_eligible_drivers_qm select_fallback select=%s",
-                    sel,
+        for with_bbox in ((True, False) if use_sql_bbox else (False,)):
+            try:
+                query = (
+                    supabase.table("users")
+                    .select(sel)
+                    .eq("driver_online", True)
+                    .eq("is_active", True)
                 )
-            return result.data or []
-        except Exception as e:
-            last_err = e
-            logger.warning(
-                "find_eligible_drivers_qm select_fallback select=%s err=%s",
-                sel,
-                e,
-            )
-            continue
+                query = _apply_driver_active_until_filter(query, now_iso)
+                if with_bbox:
+                    query = _apply_sql_bbox_to_online_driver_query(query, pickup_lat, pickup_lng)
+                result = query.execute()
+                if sel != _QM_ONLINE_DRIVER_SELECT_FULL:
+                    logger.warning(
+                        "find_eligible_drivers_qm select_fallback select=%s",
+                        sel,
+                    )
+                return result.data or []
+            except Exception as e:
+                last_err = e
+                if with_bbox:
+                    logger.warning(
+                        "scale_sql_bbox fetch_fallback mode=quick select=%s err=%s",
+                        sel,
+                        e,
+                    )
+                    continue
+                logger.warning(
+                    "find_eligible_drivers_qm select_fallback select=%s err=%s",
+                    sel,
+                    e,
+                )
+                break
     if last_err is not None:
         raise last_err
     return []
@@ -2578,7 +2625,9 @@ async def _find_eligible_drivers_for_quick_match(
     try:
         pref = _canonical_vehicle_kind(passenger_vehicle_kind) or "car"
         now = datetime.utcnow().isoformat()
-        result_data = _fetch_online_users_for_quick_match(now)
+        result_data = _fetch_online_users_for_quick_match(now, pickup_lat, pickup_lng)
+        if SCALE1A_SQL_BBOX_SHADOW:
+            _scale_sql_bbox_shadow_log("quick", result_data, pickup_lat, pickup_lng)
         if not result_data:
             logger.warning(
                 "find_eligible_drivers_qm: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
@@ -8551,6 +8600,60 @@ def _match_route_cache_key(
 
 def _match_bbox_prefilter_deg(ala: float, alo: float, bla: float, blo: float) -> bool:
     return abs(ala - bla) <= _MATCH_ROUTE_BBOX_DEG and abs(alo - blo) <= _MATCH_ROUTE_BBOX_DEG
+
+
+def _apply_sql_bbox_to_online_driver_query(query, pickup_lat, pickup_lng):
+    """SCALE-1A-2: PostgREST latitude/longitude gte/lte bbox; invalid pickup → query unchanged."""
+    if not _user_coords_valid(pickup_lat, pickup_lng):
+        return query
+    plat = float(pickup_lat)
+    plng = float(pickup_lng)
+    delta = _MATCH_ROUTE_BBOX_DEG
+    return (
+        query.gte("latitude", plat - delta)
+        .lte("latitude", plat + delta)
+        .gte("longitude", plng - delta)
+        .lte("longitude", plng + delta)
+    )
+
+
+def _scale_sql_bbox_shadow_log(
+    mode: str,
+    full_rows: list,
+    pickup_lat: float,
+    pickup_lng: float,
+) -> None:
+    """SCALE-1A-2 shadow: bbox_count from Python prefilter on full fetch (no extra DB query)."""
+    try:
+        full_count = len(full_rows)
+        bbox_count = 0
+        if _user_coords_valid(pickup_lat, pickup_lng):
+            plat_f, plng_f = float(pickup_lat), float(pickup_lng)
+            for driver in full_rows:
+                if driver.get("latitude") is None or driver.get("longitude") is None:
+                    continue
+                try:
+                    d_la = float(driver["latitude"])
+                    d_lo = float(driver["longitude"])
+                except (TypeError, ValueError):
+                    continue
+                if _match_bbox_prefilter_deg(plat_f, plng_f, d_la, d_lo):
+                    bbox_count += 1
+            pickup_lat_r, pickup_lng_r = round(plat_f, 5), round(plng_f, 5)
+        else:
+            pickup_lat_r, pickup_lng_r = pickup_lat, pickup_lng
+        payload = {
+            "event": "scale_sql_bbox_shadow",
+            "mode": mode,
+            "full_count": full_count,
+            "bbox_count": bbox_count,
+            "delta_deg": _MATCH_ROUTE_BBOX_DEG,
+            "pickup_lat": pickup_lat_r,
+            "pickup_lng": pickup_lng_r,
+        }
+        logger.info("[scale_sql_bbox] %s", json.dumps(payload, ensure_ascii=False, default=str))
+    except Exception as exc:
+        logger.warning("[scale_sql_bbox] shadow_log_error mode=%s exc=%s", mode, repr(exc))
 
 
 def _match_approx_sort_metric(ala: float, alo: float, bla: float, blo: float) -> float:
