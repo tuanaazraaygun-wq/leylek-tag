@@ -418,7 +418,7 @@ export default function LeylekTripLiveRideChrome({
                 {paymentText ? (
                   <View style={styles.paymentPill}>
                     <Ionicons name={paymentMethod === 'card' ? 'card-outline' : 'cash-outline'} size={15} color="#0F766E" />
-                    <Text style={styles.paymentPillText}>Ödeme: {paymentText}</Text>
+                    <Text style={styles.paymentPillText}>Katkı yöntemi: {paymentText}</Text>
                   </View>
                 ) : null}
               </View>

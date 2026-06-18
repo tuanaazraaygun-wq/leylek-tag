@@ -4608,7 +4608,7 @@ function TikTokOfferCard({
 
               {/* Fiyat - Sağda */}
               <View style={uberCardStyles.priceContainer}>
-                <Text style={uberCardStyles.priceLabel}>Teklif</Text>
+                <Text style={uberCardStyles.priceLabel}>Katkı teklifi</Text>
                 <Text style={uberCardStyles.priceAmount}>₺{offer.price || '?'}</Text>
               </View>
             </View>
@@ -4761,7 +4761,7 @@ function TikTokOfferCard({
 
           {/* Fiyat Girişi - +/- Butonları ile */}
           <View style={driverViewStyles.priceSection}>
-            <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.priceSectionTitle}>💰 Teklif Tutarını Belirle</Text>
+            <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.priceSectionTitle}>💰 Katkı tutarını belirle</Text>
             
             <View style={driverViewStyles.priceInputRow}>
               {/* Eksi Butonu */}
@@ -6805,7 +6805,7 @@ function FullScreenOfferCard({
             {/* Fiyat */}
             <View style={styles.priceSection}>
               <View style={styles.priceBox}>
-                <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
+                <Text style={styles.priceLabelLarge}>Katkı teklifim</Text>
                 <Text style={styles.priceLarge}>₺{offer.price}</Text>
               </View>
             </View>
@@ -10376,7 +10376,7 @@ function PassengerDashboard({
           afterForceEnd: passengerPostForceEndRef.current,
         });
         throw new Error(
-          pickPriceApiDetailMessage(data, typeof data?.error === 'string' ? data.error : 'Fiyat hesaplanamadı'),
+          pickPriceApiDetailMessage(data, typeof data?.error === 'string' ? data.error : 'Katkı önerisi hesaplanamadı'),
         );
       }
     } catch (error) {
@@ -10392,12 +10392,12 @@ function PassengerDashboard({
         afterForceEnd: passengerPostForceEndRef.current,
       });
       appAlert(
-        'Fiyat alınamadı',
+        'Katkı önerisi alınamadı',
         networkLike
           ? 'Sunucuya bağlanılamadı. Bağlantınızı kontrol edip tekrar deneyin.'
           : raw.length > 0
             ? raw
-            : 'Fiyat hesaplanamadı. Biraz sonra tekrar deneyin.',
+            : 'Katkı önerisi hesaplanamadı. Biraz sonra tekrar deneyin.',
       );
     } finally {
       passengerPriceCalculateInFlightRef.current = false;
@@ -10531,7 +10531,7 @@ function PassengerDashboard({
         setSelectedPrice(data.suggested_price);
       } else {
         throw new Error(
-          pickPriceApiDetailMessage(data, typeof data?.error === 'string' ? data.error : 'Fiyat güncellenemedi'),
+          pickPriceApiDetailMessage(data, typeof data?.error === 'string' ? data.error : 'Katkı önerisi güncellenemedi'),
         );
       }
     } catch (e) {
@@ -10546,12 +10546,12 @@ function PassengerDashboard({
         networkLike,
       });
       appAlert(
-        'Fiyat güncellenemedi',
+        'Katkı önerisi güncellenemedi',
         networkLike
           ? 'Sunucuya ulaşılamadı. Biraz sonra tekrar deneyin.'
           : raw.length > 0
             ? raw
-            : 'Fiyat güncellenemedi.',
+            : 'Katkı önerisi güncellenemedi.',
       );
     } finally {
       setPriceLoading(false);
@@ -10679,7 +10679,7 @@ function PassengerDashboard({
           rideCreateLastError: 'invalid_price',
           rideCreatePassengerUiState: 'blocked_invalid_price',
         });
-        appAlert('Hata', 'Geçerli bir fiyat seçin.');
+        appAlert('Hata', 'Geçerli bir katkı tutarı seçin.');
         return;
       }
 
@@ -13136,7 +13136,7 @@ function PassengerDashboard({
                 <View
                   style={[styles.priceModalContent, { maxHeight: priceModalSheetMaxHeight }]}
                 >
-                  <Text style={styles.priceModalTitle}>Fiyat teklifiniz</Text>
+                  <Text style={styles.priceModalTitle}>Önerilen yol paylaşım katkınız</Text>
 
                   {priceInfo && (
                     <>
@@ -13228,12 +13228,12 @@ function PassengerDashboard({
 
                         <View style={styles.priceRangeContainer}>
                           <Text style={styles.priceRangeSingle}>
-                            Önerilen aralık: {priceInfo.min_price} - {priceInfo.max_price} TL
+                            Önerilen katkı aralığı: {priceInfo.min_price} - {priceInfo.max_price} TL
                           </Text>
                         </View>
 
                         <View style={styles.selectedPriceContainer}>
-                          <Text style={styles.selectedPriceLabel}>Teklifiniz:</Text>
+                          <Text style={styles.selectedPriceLabel}>Önerilen katkı:</Text>
                           <Text
                             style={[
                               styles.selectedPriceValue,
@@ -13296,18 +13296,18 @@ function PassengerDashboard({
                         <View style={styles.priceModalPayScrollHint}>
                           <Ionicons name="chevron-down" size={16} color="rgba(186,201,222,0.72)" />
                           <PremiumText variant="caption" muted style={styles.priceModalPayScrollHintText}>
-                            Ödeme seçenekleri için aşağı kaydır
+                            Katkı yöntemi seçenekleri için aşağı kaydır
                           </PremiumText>
                         </View>
 
                         <View style={styles.priceModalPayLockHeader}>
                           <Ionicons name="lock-closed-outline" size={18} color="rgba(34,211,238,0.85)" />
                           <PremiumText variant="step" style={styles.priceModalPayLockTitle}>
-                            Ödeme yöntemini seç
+                            Katkı yöntemini seç
                           </PremiumText>
                         </View>
                         <PremiumText variant="caption" muted style={styles.priceModalPaySubtitle}>
-                          Ücret yolculuk sonunda tahsil edilir.
+                          Katkı taraflar arasında netleşir; LeylekTAG katkıyı tahsil etmez.
                         </PremiumText>
 
                         <TouchableOpacity
@@ -13329,7 +13329,7 @@ function PassengerDashboard({
                             <View style={styles.priceModalPayOptionBody}>
                               <View style={styles.priceModalPayOptionTitleRow}>
                                 <PremiumText variant="body" style={styles.priceModalPayOptionTitle}>
-                                  Nakit ödeme
+                                  Nakit katkı
                                 </PremiumText>
                                 <GlassSurface
                                   variant="plain"
@@ -13342,7 +13342,7 @@ function PassengerDashboard({
                                 </GlassSurface>
                               </View>
                               <PremiumText variant="caption" muted style={styles.priceModalPayOptionDesc}>
-                                Yolculuk sonunda sürücüye nakit ödersin.
+                                Yolculuk sonunda katkıyı sürücüye nakit olarak iletirsiniz.
                               </PremiumText>
                             </View>
                             <View style={styles.priceModalPayRadioOuterActive}>
@@ -13358,7 +13358,7 @@ function PassengerDashboard({
                         >
                           <Ionicons name="information-circle-outline" size={17} color="rgba(186,201,222,0.72)" />
                           <PremiumText variant="caption" muted style={styles.priceModalPayDefaultNoteText}>
-                            Seçim yapmazsan varsayılan nakit ödeme uygulanır.
+                            Seçim yapmazsan varsayılan nakit katkı uygulanır.
                           </PremiumText>
                         </GlassSurface>
                       </ScrollView>
@@ -13445,10 +13445,10 @@ function PassengerDashboard({
                     style={styles.priceOfferPaymentWarnIcon}
                   />
                   <PremiumText variant="title" style={styles.priceOfferPaymentWarnTitle}>
-                    Ödeme yöntemini seç
+                    Katkı yöntemini seç
                   </PremiumText>
                   <PremiumText variant="body" muted style={styles.priceOfferPaymentWarnBody}>
-                    Seçim yapmazsan yolculuk sonunda varsayılan olarak nakit ödeme uygulanır.
+                    Seçim yapmazsan varsayılan olarak nakit katkı uygulanır.
                   </PremiumText>
                   <TouchableOpacity
                     style={styles.priceOfferPaymentWarnPrimary}
@@ -19193,7 +19193,7 @@ function DriverDashboard({
                 <Ionicons name="cash" size={32} color="#FFF" />
               </LinearGradient>
               <Text style={styles.modernModalTitle}>Teklif Gönder</Text>
-              <Text style={styles.modernModalSubtitle}>Fiyat teklifinizi belirleyin</Text>
+              <Text style={styles.modernModalSubtitle}>Katkı teklifinizi belirleyin</Text>
             </View>
             
             {/* Price Input */}

@@ -320,10 +320,10 @@ export default function DriverDashboardPanel({
               <View
                 style={styles.todayCol}
                 accessibilityRole="summary"
-                accessibilityLabel={`Bugün ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
+                accessibilityLabel={`Bugünkü katkılar ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
               >
                 <PremiumText variant="caption" muted style={styles.instrumentLabel}>
-                  Bugün
+                  Bugünkü katkılar
                 </PremiumText>
                 <PremiumText variant="title" style={styles.instrumentAmount}>
                   {data.today.earnings} ₺
@@ -426,7 +426,7 @@ export default function DriverDashboardPanel({
                     {data.weekly.earnings} ₺
                   </PremiumText>
                   <PremiumText variant="caption" muted style={styles.statLabel}>
-                    Haftalık kazanç
+                    Haftalık paylaşım katkıları
                   </PremiumText>
                 </View>
 

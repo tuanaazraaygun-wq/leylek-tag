@@ -89,7 +89,7 @@ export default function DriverRequestMap({
   const handleSendOffer = async (request: Request) => {
     const price = parseInt(offerPrice);
     if (isNaN(price) || price < 10) {
-      Alert.alert('Hata', 'Geçerli bir fiyat girin (min ₺10)');
+      Alert.alert('Hata', 'Geçerli bir katkı tutarı girin (min ₺10)');
       return;
     }
 

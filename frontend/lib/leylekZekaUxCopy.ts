@@ -112,7 +112,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
     intentScope: 'passenger_offer_review_guide',
     emptyTitle: 'Gelen teklifleri birlikte okuyalım',
     emptyBody:
-      'Teklif kartındaki ücret, araç tipi, sürücü bilgisi, Muhabbet/chat ve QR adımlarını açıklayabilirim. Karar vermeden önce hangi bilgileri kontrol edeceğini özetlerim.',
+      'Teklif kartındaki katkı tutarı, araç tipi, sürücü bilgisi, Muhabbet/chat ve QR adımlarını açıklayabilirim. Karar vermeden önce hangi bilgileri kontrol edeceğini özetlerim.',
     placeholder: 'Örn. Gelen teklifleri nasıl karşılaştırmalıyım?',
     starterPrompts: [
       'Gelen teklifleri nasıl karşılaştırmalıyım?',
@@ -121,7 +121,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
       'QR biniş ve bitiş nasıl çalışır?',
     ],
     idleHints: [
-      'Teklif kartında araç tipi, ücret ve sürücü bilgilerini birlikte okuyabiliriz.',
+      'Teklif kartında araç tipi, katkı tutarı ve sürücü bilgilerini birlikte okuyabiliriz.',
       'Eşleşme sonrası Muhabbet, QR ve destek adımlarını anlatabilirim.',
       'Şehir dışı tekliflerde yolculuk detaylarını uygulama içinde netleştirmek önemlidir.',
     ],
@@ -180,7 +180,7 @@ const FLOW_COPY: Record<Exclude<LeylekZekaFlowHint, null>, LeylekZekaBaseCopy> =
     idleHints: [
       'Açık taleplerde rota, araç tercihi ve yolcu bilgilerini kontrol ederek ilerleyebilirsin.',
       'Yoğunluk iddiası vermeden teklif ekranındaki adımları açıklayabilirim.',
-      'Şehir dışı taleplerde fiyat ve iletişim adımlarını uygulama içinden takip etmek önemlidir.',
+      'Şehir dışı tekliflerde katkı önerisi ve iletişim adımlarını uygulama içinden takip etmek önemlidir.',
     ],
   },
   driver_offer_compose: {
@@ -265,7 +265,7 @@ function operationForIntent(intentScope: string): Omit<
         safeChecklist: [
           'Konum, hedef ve araç tercihini kontrol et.',
           'Bildirimlerin açık olduğundan emin ol.',
-          'Teklif gelirse karttaki ücret, araç ve sürücü bilgilerine bak.',
+          'Teklif gelirse karttaki katkı tutarı, araç ve sürücü bilgilerine bak.',
         ],
         knownSignals: ['homeFlowScreen', 'flowHint', 'isWaitingMatch'],
       };
@@ -273,9 +273,9 @@ function operationForIntent(intentScope: string): Omit<
       return {
         operationAwarenessTitle: 'Teklif kontrol listesi',
         operationAwarenessBody:
-          'Gelen tekliflerde ekrandaki güncel kart bilgisi esas alınır; fiyat veya seçim kararı vermem.',
+          'Gelen tekliflerde ekrandaki güncel kart bilgisi esas alınır; katkı veya seçim kararı vermem.',
         safeChecklist: [
-          'Teklif kartındaki ücret, araç tipi ve sürücü bilgilerine bak.',
+          'Teklif kartındaki katkı tutarı, araç tipi ve sürücü bilgilerine bak.',
           'Muhabbet/chat, QR ve destek adımlarını uygulama içinde takip et.',
           'Ekrandaki güncel durum değişirse kart bilgilerini yeniden kontrol et.',
         ],
@@ -321,7 +321,7 @@ function operationForIntent(intentScope: string): Omit<
       return {
         operationAwarenessTitle: 'Teklif hazırlama kontrolü',
         operationAwarenessBody:
-          'Teklif öncesi görünen bilgileri netleştirmeye yardım ederim; fiyat kararı veya rota talimatı vermem.',
+          'Teklif öncesi görünen bilgileri netleştirmeye yardım ederim; katkı kararı veya rota talimatı vermem.',
         safeChecklist: [
           'Teklif vermeden önce rota, zaman ve iletişim detaylarını netleştir.',
           'Şehir dışı tekliflerde rota, tarih ve rol bilgisini kontrol et.',

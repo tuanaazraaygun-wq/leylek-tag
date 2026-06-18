@@ -212,7 +212,7 @@ function OfferCard({
               <View style={styles.recommendedInfo}>
                 <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
                 <Text style={styles.recommendedInfoText}>
-                  Sana en yakın, makul fiyatlı teklif
+                  Sana en yakın, makul katkılı teklif
                 </Text>
               </View>
             )}
