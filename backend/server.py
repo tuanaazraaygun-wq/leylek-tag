@@ -14580,8 +14580,8 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         if not did:
             return {"success": False, "requests": [], "detail": "driver_id veya user_id gerekli"}
         
-        # MongoDB ID'yi UUID'ye çevir
-        resolved_id = await resolve_user_id(did)
+        raw_did = str(did).strip()
+        resolved_id = None
         
         # 10 DAKİKADAN ESKİ TAG'LERİ OTOMATİK İPTAL ET
         ten_min_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
@@ -14598,7 +14598,26 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             pass  # Hata olursa devam et
         
         # Sürücü konumu (query veya profil) — şehir alanı eşleştirmede kullanılmaz
-        driver_result = supabase.table("users").select("latitude, longitude, driver_details").eq("id", resolved_id).execute()
+        # Lokal lookup: önce users.id, bulunamazsa users.auth_id (ek bir round trip olmadan sonucu yeniden kullan)
+        driver_result = type("DriverLookupResult", (), {"data": []})()
+        if raw_did:
+            driver_result = (
+                supabase.table("users")
+                .select("id, latitude, longitude, driver_details")
+                .eq("id", raw_did)
+                .limit(1)
+                .execute()
+            )
+            if not driver_result.data:
+                driver_result = (
+                    supabase.table("users")
+                    .select("id, latitude, longitude, driver_details")
+                    .eq("auth_id", raw_did)
+                    .limit(1)
+                    .execute()
+                )
+            if driver_result.data:
+                resolved_id = str(driver_result.data[0].get("id", "")).strip().lower() or None
         driver_lat = latitude
         driver_lng = longitude
         
