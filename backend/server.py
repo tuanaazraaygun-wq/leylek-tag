@@ -1187,8 +1187,8 @@ def _has_active_package_for_dispatch(driver_active_until, now_iso: str) -> bool:
 
 
 _DISPATCH_ONLINE_DRIVER_SELECT_FULL = (
-    "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
-    "is_active, is_deleted, deleted_at, is_banned"
+    "id, name, rating, latitude, longitude, last_location_update, driver_active_until, driver_online, "
+    "driver_details, is_active, is_deleted, deleted_at, is_banned"
 )
 _DISPATCH_ONLINE_DRIVER_SELECT_MIN = (
     "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
@@ -1613,6 +1613,22 @@ DISPATCH_SCORE_LOGS = os.getenv("DISPATCH_SCORE_LOGS", "").strip().lower() in (
     "on",
 )
 
+# MATCH-REL-1F-A1: Normal Match stale-location shadow logs only (no filter behavior change).
+NM_LOCATION_FRESHNESS_LOGS = os.getenv("NM_LOCATION_FRESHNESS_LOGS", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+# MATCH-REL-1F-A1: Normal Match suitability shadow logs only (no sort/filter behavior change).
+NM_SUITABILITY_LOGS = os.getenv("NM_SUITABILITY_LOGS", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # MATCH-REL-1C-C: Quick Match suitability shadow logs only (no sort/filter behavior change).
 QM_SUITABILITY_LOGS = os.getenv("QM_SUITABILITY_LOGS", "").strip().lower() in (
     "1",
@@ -1649,6 +1665,11 @@ def _tag_dispatch_obs_log(
     radius_km: Optional[float] = None,
     timeout_s: Optional[Any] = None,
     reason: Optional[str] = None,
+    wave_reason: Optional[str] = None,
+    eligible_total: Optional[int] = None,
+    sent_slots: Optional[int] = None,
+    cycle_reset: Optional[bool] = None,
+    is_rolling_batch: Optional[bool] = None,
 ) -> None:
     """
     Phase 0 — Normal TAG dispatch/matching structured logs (JSON tek satır).
@@ -1669,6 +1690,11 @@ def _tag_dispatch_obs_log(
             "radius_km": radius_km,
             "timeout_s": timeout_s,
             "reason": reason,
+            "wave_reason": wave_reason,
+            "eligible_total": eligible_total,
+            "sent_slots": sent_slots,
+            "cycle_reset": cycle_reset,
+            "is_rolling_batch": is_rolling_batch,
         }
         logger.info("[tag_dispatch] %s", json.dumps(payload, ensure_ascii=False, default=str))
     except Exception as _obs_e:
@@ -2195,6 +2221,80 @@ def _qm_suitability_score_log(
         logger.warning("[quick_match_suitability] log_error exc=%s", repr(exc))
 
 
+def _nm_suitability_score_log(
+    *,
+    eligible_drivers: list,
+    driver_by_id: dict,
+    tag_id: Optional[str] = None,
+) -> None:
+    """MATCH-REL-1F-A1 — shadow suitability logging; ordering unchanged."""
+    if not NM_SUITABILITY_LOGS or not eligible_drivers:
+        return
+    try:
+        max_age_sec = get_location_max_age_seconds()
+        max_eta_min = max(
+            (float(row.get("duration_min") or 1) for row in eligible_drivers),
+            default=30.0,
+        )
+        scored: list[dict] = []
+        for rank_current, row in enumerate(eligible_drivers, start=1):
+            did = row.get("driver_id")
+            drv = driver_by_id.get(did) or {}
+            metrics = compute_qm_suitability_score(
+                drv,
+                {
+                    "duration_min": row.get("duration_min"),
+                    "distance_km": row.get("distance_km"),
+                },
+                max_eta_min=max_eta_min,
+                max_age_sec=max_age_sec,
+            )
+            components = {
+                "eta_norm": round(metrics["eta_norm"], 6),
+                "distance_norm": round(metrics["distance_norm"], 6),
+                "freshness_norm": round(metrics["freshness_norm"], 6),
+                "rating_norm": round(metrics["rating_norm"], 6),
+                "vehicle_norm": round(metrics["vehicle_norm"], 6),
+            }
+            scored.append(
+                {
+                    "row": row,
+                    "rank_current": rank_current,
+                    "score": metrics["score"],
+                    "components": components,
+                }
+            )
+
+        scored_by_score = sorted(
+            scored,
+            key=lambda item: (-item["score"], item["rank_current"]),
+        )
+        rank_score_by_driver = {
+            item["row"]["driver_id"]: idx + 1 for idx, item in enumerate(scored_by_score)
+        }
+
+        for item in scored[:10]:
+            row = item["row"]
+            did = row.get("driver_id")
+            rank_score = rank_score_by_driver.get(did, item["rank_current"])
+            payload = {
+                "event": "normal_match_suitability_score",
+                "tag_id": tag_id,
+                "driver_id": did,
+                "score": round(item["score"], 6),
+                "components": item["components"],
+                "rank_current": item["rank_current"],
+                "rank_score": rank_score,
+                "rank_delta": rank_score - item["rank_current"],
+            }
+            logger.info(
+                "[normal_match_suitability] %s",
+                json.dumps(payload, ensure_ascii=False, default=str),
+            )
+    except Exception as exc:
+        logger.warning("[normal_match_suitability] log_error exc=%s", repr(exc))
+
+
 async def find_eligible_drivers(
     pickup_lat: float,
     pickup_lng: float,
@@ -2239,6 +2339,8 @@ async def find_eligible_drivers(
             vehicle_filter,
         )
         no_loc = excluded = vehicle_mismatch = too_far = 0
+        max_age_sec = get_location_max_age_seconds()
+        stale_location_log_count = 0
 
         plat_f, plng_f = float(pickup_lat), float(pickup_lng)
         _match_t0 = time.time()
@@ -2280,6 +2382,22 @@ async def find_eligible_drivers(
                 continue
 
             did = str(driver["id"]).strip().lower()
+            if (
+                NM_LOCATION_FRESHNESS_LOGS
+                and max_age_sec > 0
+                and not is_driver_location_fresh(driver)
+                and stale_location_log_count < 10
+            ):
+                age_sec = location_age_seconds(driver)
+                stale_location_log_count += 1
+                logger.info(
+                    "normal_match_gate_rejected reason=stale_location would_reject=1 "
+                    "tag_id=%s driver_id=%s age_sec=%s max_age_sec=%s",
+                    tag_id,
+                    did,
+                    age_sec,
+                    max_age_sec,
+                )
             origin_points.append((did, d_la, d_lo))
             driver_by_id[did] = driver
 
@@ -2330,6 +2448,11 @@ async def find_eligible_drivers(
             vehicle_filter=vehicle_filter,
             eligible_drivers=eligible_drivers,
             top_slice=eligible_drivers[:20],
+        )
+        _nm_suitability_score_log(
+            eligible_drivers=eligible_drivers,
+            driver_by_id=driver_by_id,
+            tag_id=tag_id,
         )
         logger.info(
             "[MATCH] final_included driver_ids=%s count=%d pickup=(%.5f,%.5f)",
@@ -2909,6 +3032,9 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Off
             is_rolling_batch=bool(offer_data.get("is_rolling_batch")),
             is_broadcast=bool(offer_data.get("is_broadcast")),
             is_dispatch=bool(offer_data.get("is_dispatch")),
+            batch_seq=offer_data.get("batch_seq"),
+            wave_reason=offer_data.get("wave_reason"),
+            slot_priority=offer_data.get("slot_priority"),
         )
         return OfferEmitResult(True, delivery_id)
     except Exception as e:
@@ -4378,12 +4504,23 @@ async def _dispatch_queue_insert_after_emit(
     driver_id: str,
     priority: int,
     delivery_id: Optional[str] = None,
+    *,
+    batch_seq: Optional[Any] = None,
+    wave_reason: Optional[str] = None,
+    slot_priority: Optional[int] = None,
+    is_rolling_batch: Optional[bool] = None,
 ) -> bool:
     """
     Socket emit sonrası tek sürücü satırı — /driver/dispatch-pending-offer ile uyum.
     Log satırı deploy doğrulaması için sabit: 'dispatch_queue rolling sync'
     """
     did = str(driver_id).strip().lower() if driver_id else ""
+    _queue_obs_extra = {
+        "batch_seq": batch_seq,
+        "wave_reason": wave_reason,
+        "slot_priority": slot_priority,
+        "is_rolling_batch": is_rolling_batch,
+    }
     if not did:
         logger.warning("dispatch_queue rolling sync tag=%s driver=(boş) ok=0", tag_id)
         _offer_delivery_obs_log(
@@ -4396,6 +4533,7 @@ async def _dispatch_queue_insert_after_emit(
             queue_row_id=None,
             priority=int(priority),
             queue_error_reason="empty_driver_id",
+            **_queue_obs_extra,
         )
         return False
     now = datetime.utcnow().isoformat()
@@ -4426,6 +4564,7 @@ async def _dispatch_queue_insert_after_emit(
             queue_insert_ok=1,
             queue_row_id=row["id"],
             priority=int(priority),
+            **_queue_obs_extra,
         )
         return True
     except Exception as e:
@@ -4446,6 +4585,7 @@ async def _dispatch_queue_insert_after_emit(
             queue_row_id=row["id"],
             priority=int(priority),
             queue_error_reason="insert_failed",
+            **_queue_obs_extra,
         )
         return False
 
@@ -4864,18 +5004,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             excluded_driver_ids=sorted(excluded),
         )
 
-    _tag_dispatch_obs_log(
-        "rolling_dispatch_batch",
-        tag_id=str(tag_id),
-        passenger_id=tag_data.get("passenger_id"),
-        batch_seq=bseq,
-        driver_ids=list(next_batch_ids),
-        current_batch=list(next_batch_ids),
-        offered_count=len(offered_driver_ids),
-        radius_km=float(DISPATCH_RADIUS_KM),
-        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
-        reason=("cycle_reset_wave" if cycle_reset_this_wave else "wave_selected"),
-    )
+    wave_reason = "cycle_reset_wave" if cycle_reset_this_wave else "wave_selected"
 
     logger.info(
         "[DISPATCH_BATCH] tag=%s event=batch_start batch_seq=%s driver_ids=%s eligible_total=%s "
@@ -4909,6 +5038,8 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         or tag_data.get("estimated_minutes", 0),
         "dispatch_timeout": DISPATCH_TIMEOUT,
         "is_rolling_batch": True,
+        "batch_seq": bseq,
+        "wave_reason": wave_reason,
         "passenger_vehicle_kind": pref,
         "passenger_payment_method": tag_data.get("passenger_payment_method"),
     }
@@ -4932,6 +5063,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             "pickup_distance_km": round(float(pk_km), 1) if pk_km else None,
             "pickup_eta_min": int(pk_min) if pk_min is not None else None,
             "time_to_passenger_min": int(pk_min) if pk_min is not None else None,
+            "slot_priority": slot_i + 1,
         }
         emit_res = await emit_new_passenger_offer_to_driver(d_id, offer_data)
         if not emit_res:
@@ -4944,7 +5076,14 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         slot_i += 1
         # Push: emit_new_passenger_offer_to_driver içinde FCM (send_trip_push_and_log).
         if await _dispatch_queue_insert_after_emit(
-            tag_id, d_id, slot_i, delivery_id=emit_res.delivery_id
+            tag_id,
+            d_id,
+            slot_i,
+            delivery_id=emit_res.delivery_id,
+            batch_seq=bseq,
+            wave_reason=wave_reason,
+            slot_priority=slot_i,
+            is_rolling_batch=True,
         ):
             n_queue_ok += 1
 
@@ -4969,6 +5108,24 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         len(eligible),
         n_queue_ok,
         use_relaxed_vehicle,
+    )
+
+    _tag_dispatch_obs_log(
+        "rolling_dispatch_batch",
+        tag_id=str(tag_id),
+        passenger_id=tag_data.get("passenger_id"),
+        batch_seq=bseq,
+        driver_ids=list(next_batch_ids),
+        current_batch=list(next_batch_ids),
+        offered_count=len(offered_driver_ids),
+        radius_km=float(DISPATCH_RADIUS_KM),
+        timeout_s=float(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS),
+        reason=wave_reason,
+        wave_reason=wave_reason,
+        eligible_total=len(eligible),
+        sent_slots=n_queue_ok,
+        cycle_reset=cycle_reset_this_wave,
+        is_rolling_batch=True,
     )
 
     async def _timeout_tick():
