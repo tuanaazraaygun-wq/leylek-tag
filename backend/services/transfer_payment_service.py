@@ -135,7 +135,7 @@ def _normalize_transfer_method(raw: Optional[str], *, default: str = TRANSFER_ME
     method = str(raw or default).strip().lower()
     if method not in ALLOWED_TRANSFER_METHODS:
         raise TransferPaymentBadRequestError(
-            f"Geçersiz ödeme yöntemi: {raw!r}. Desteklenen: iban, cash."
+            f"Geçersiz katkı yöntemi: {raw!r}. Desteklenen: iban, cash."
         )
     return method
 

@@ -20294,12 +20294,12 @@ async def complete_trip_with_qr(request: Request):
             if confirmed_pm not in ("cash", "card"):
                 return {
                     "success": False,
-                    "detail": "Yolculuğu bitirmek için ödeme yöntemini onaylamanız gerekir.",
+                    "detail": "Yolculuğu bitirmek için katkı yöntemini onaylamanız gerekir.",
                 }
             if confirmed_pm != booked_pm:
                 return {
                     "success": False,
-                    "detail": "Onay, teklifte seçtiğiniz ödeme ile aynı olmalı.",
+                    "detail": "Onay, teklifte seçtiğiniz katkı yöntemi ile aynı olmalı.",
                 }
 
         reject_msg = should_reject_complete_qr(tag, booked_pm, confirmed_pm)

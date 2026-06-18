@@ -261,7 +261,7 @@ export default function QRTripEndModal({
     if (!legacyPaymentPick || !pendingDriverId) {
       appAlert(
         'Seçim gerekli',
-        'Nakit ödeme veya kart seçeneğini işaretleyin.',
+        'Nakit katkı veya kart seçeneğini işaretleyin.',
         [{ text: 'Tamam', style: 'default' }],
         { variant: 'info' },
       );
@@ -283,19 +283,19 @@ export default function QRTripEndModal({
 
   const paymentTitle =
     effectiveBookingPaymentMethod === 'cash'
-      ? 'Nakit ödeme'
+      ? 'Nakit katkı'
       : effectiveBookingPaymentMethod === 'card'
         ? 'Kart (yakında)'
-        : 'Ödeme yöntemini seç';
+        : 'Katkı yöntemini seç';
 
   const paymentSubtitle =
     effectiveBookingPaymentMethod === 'cash'
-      ? 'Teklifinizde nakit seçmiştiniz. Ücreti nakit olarak ödediğinizi onaylayın.'
+      ? 'Teklifinizde nakit seçmiştiniz. Yol paylaşım katkısını nakit olarak ilettiğinizi onaylayın.'
       : effectiveBookingPaymentMethod === 'card'
-        ? 'Kart ödemesi yakında. Şimdilik ödeme kaydını onaylayarak yolculuğu tamamlayın.'
+        ? 'Kart yakında. Şimdilik katkı bildirimini onaylayarak yolculuğu tamamlayın.'
         : isTrustedDirect
           ? 'Ücreti nakit olarak ödediğinizi onaylayın.'
-          : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
+          : 'Bu yolculuk için teklifte katkı tercihi kayıtlı değil. Katkıyı nasıl ilettiğinizi seçin.';
 
   const phaseStep = isTrustedDirect
     ? isDriver
@@ -304,7 +304,7 @@ export default function QRTripEndModal({
     : isDriver
       ? 'Yolculuk tamamlandı'
       : passengerStep === 'choose' || passengerStep === 'payment'
-        ? 'Ödeme yöntemini seç'
+        ? 'Katkı yöntemini seç'
         : 'Yolculuk tamamlandı';
 
   const phaseCaption = isTrustedDirect
@@ -316,7 +316,7 @@ export default function QRTripEndModal({
       : passengerStep === 'choose'
         ? 'Yolculuğu güvenli şekilde tamamlamak için yöntemi seç.'
         : passengerStep === 'payment'
-          ? 'Ödeme bilgisini kontrol ederek tamamla.'
+          ? 'Katkı bilgisini kontrol ederek tamamla.'
           : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
 
   return (
@@ -511,7 +511,7 @@ export default function QRTripEndModal({
                         Sürücü QR kodunu tara
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
-                        Nakit ödeme ile tamamla
+                        Nakit katkı ile tamamla
                       </PremiumText>
                     </View>
                     <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
@@ -578,7 +578,7 @@ export default function QRTripEndModal({
                 )}
 
                 <PremiumText variant="caption" muted style={styles.hint}>
-                  Ardından ödeme yöntemini onaylayacaksın
+                  Ardından katkı yöntemini onaylayacaksın
                 </PremiumText>
               </View>
             ) : (
@@ -603,7 +603,7 @@ export default function QRTripEndModal({
                     >
                       <Ionicons name="cash-outline" size={24} color="rgba(34,211,238,0.92)" />
                       <PremiumText variant="body" style={styles.primaryPayText}>
-                        Nakit ödemeyi onayla
+                        Nakit katkıyı ilettiğimi onayla
                       </PremiumText>
                     </TouchableOpacity>
                   )}
@@ -617,7 +617,7 @@ export default function QRTripEndModal({
                     >
                       <Ionicons name="card-outline" size={24} color="rgba(34,211,238,0.92)" />
                       <PremiumText variant="body" style={styles.primaryPayText}>
-                        Kart ödemesini onayla
+                        Kart ile katkıyı ilettiğimi onayla
                       </PremiumText>
                     </TouchableOpacity>
                   )}
@@ -626,7 +626,7 @@ export default function QRTripEndModal({
                     <>
                       {!isTrustedDirect ? (
                         <PremiumText variant="caption" muted style={styles.legacyPickLabel}>
-                          Nasıl ödediniz?
+                          Katkıyı nasıl ilettiniz?
                         </PremiumText>
                       ) : null}
                       <View style={styles.legacyRow}>
@@ -659,7 +659,7 @@ export default function QRTripEndModal({
                                 legacyPaymentPick === 'cash' && styles.legacyChipTextActive,
                               ]}
                             >
-                              Nakit ödeme
+                              Nakit katkı
                             </PremiumText>
                           </GlassSurface>
                         </TouchableOpacity>
