@@ -2350,7 +2350,13 @@ async def find_eligible_drivers(
         now = datetime.utcnow().isoformat()
         online_rows = _fetch_online_users_for_dispatch(now, pickup_lat, pickup_lng)
         if SCALE1A_SQL_BBOX_SHADOW:
-            _scale_sql_bbox_shadow_log("normal", online_rows, pickup_lat, pickup_lng)
+            _scale_sql_bbox_shadow_log(
+                "normal",
+                online_rows,
+                pickup_lat,
+                pickup_lng,
+                tag_id=tag_id,
+            )
 
         if not online_rows:
             logger.warning(
@@ -2627,7 +2633,14 @@ async def _find_eligible_drivers_for_quick_match(
         now = datetime.utcnow().isoformat()
         result_data = _fetch_online_users_for_quick_match(now, pickup_lat, pickup_lng)
         if SCALE1A_SQL_BBOX_SHADOW:
-            _scale_sql_bbox_shadow_log("quick", result_data, pickup_lat, pickup_lng)
+            _scale_sql_bbox_shadow_log(
+                "quick",
+                result_data,
+                pickup_lat,
+                pickup_lng,
+                tag_id=tag_id,
+                request_id=qm_request_id,
+            )
         if not result_data:
             logger.warning(
                 "find_eligible_drivers_qm: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
@@ -8622,12 +8635,16 @@ def _scale_sql_bbox_shadow_log(
     full_rows: list,
     pickup_lat: float,
     pickup_lng: float,
+    *,
+    tag_id: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> None:
     """SCALE-1A-2 shadow: bbox_count from Python prefilter on full fetch (no extra DB query)."""
     try:
         full_count = len(full_rows)
         bbox_count = 0
-        if _user_coords_valid(pickup_lat, pickup_lng):
+        pickup_valid = _user_coords_valid(pickup_lat, pickup_lng)
+        if pickup_valid:
             plat_f, plng_f = float(pickup_lat), float(pickup_lng)
             for driver in full_rows:
                 if driver.get("latitude") is None or driver.get("longitude") is None:
@@ -8642,6 +8659,8 @@ def _scale_sql_bbox_shadow_log(
             pickup_lat_r, pickup_lng_r = round(plat_f, 5), round(plng_f, 5)
         else:
             pickup_lat_r, pickup_lng_r = pickup_lat, pickup_lng
+        full_count_zero = full_count == 0
+        bbox_count_zero = bbox_count == 0
         payload = {
             "event": "scale_sql_bbox_shadow",
             "mode": mode,
@@ -8650,6 +8669,15 @@ def _scale_sql_bbox_shadow_log(
             "delta_deg": _MATCH_ROUTE_BBOX_DEG,
             "pickup_lat": pickup_lat_r,
             "pickup_lng": pickup_lng_r,
+            "tag_id": tag_id,
+            "request_id": request_id,
+            "reduction_ratio": (bbox_count / full_count) if full_count > 0 else None,
+            "pickup_valid": pickup_valid,
+            "full_count_zero": full_count_zero,
+            "bbox_count_zero": bbox_count_zero,
+            "capped_over_top_n": bbox_count > _MATCH_ROUTE_TOP_N,
+            "top_n": _MATCH_ROUTE_TOP_N,
+            "shadow_version": "1A-3A",
         }
         logger.info("[scale_sql_bbox] %s", json.dumps(payload, ensure_ascii=False, default=str))
     except Exception as exc:
