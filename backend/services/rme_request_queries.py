@@ -7,8 +7,8 @@ Write helpers are invoked only when RME_ENABLED + TDM_ENABLED (orchestrator guar
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 TABLE_RELATIONSHIP_MATCH_REQUESTS = "relationship_match_requests"
 TABLE_RELATIONSHIP_MATCH_INVITES = "relationship_match_invites"
@@ -46,6 +46,34 @@ _INVITE_SELECT = (
     "id, request_id, responder_id, status, expires_at, responded_at, "
     "decline_reason, created_at, updated_at"
 )
+
+TDM_MIN_TRIP_KM = 0.8
+TDM_MAX_TRIP_KM = 20.0
+
+
+def _env_int(name: str, default: int) -> int:
+    import os
+
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_tdm_request_ttl_seconds() -> int:
+    return _env_int("TDM_REQUEST_TTL_SECONDS", 180)
+
+
+def get_tdm_invite_ttl_seconds() -> int:
+    return _env_int("TDM_INVITE_TTL_SECONDS", 180)
+
+
+def _is_unique_violation(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "duplicate key" in msg or "unique constraint" in msg or "23505" in msg
 
 
 def _utcnow_iso() -> str:
@@ -170,6 +198,171 @@ def load_invite_by_id(supabase, invite_id: str) -> Optional[Dict[str, Any]]:
     return row if isinstance(row, dict) else None
 
 
+def get_pending_invite_for_request(
+    supabase,
+    request_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Return pending_responder invite for a request, if any."""
+    rid = _norm_id(request_id)
+    if not rid:
+        return None
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_INVITES)
+        .select(_INVITE_SELECT)
+        .eq("request_id", rid)
+        .eq("status", RME_INVITE_STATUS_PENDING)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
+def load_request_by_idempotency_key(
+    supabase,
+    requester_id: str,
+    idempotency_key: str,
+) -> Optional[Dict[str, Any]]:
+    """Load relationship_match_requests row by requester + idempotency key."""
+    requester_norm = _norm_user_id(requester_id)
+    key = str(idempotency_key or "").strip()
+    if not requester_norm or not key:
+        return None
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS)
+        .select(_REQUEST_SELECT)
+        .eq("requester_id", requester_norm)
+        .eq("idempotency_key", key)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
+def expire_stale_pending_for_requester(
+    supabase,
+    requester_id: str,
+    match_module: str = MATCH_MODULE_TRUSTED_DIRECT,
+) -> List[str]:
+    """
+    Lazy-expire all pending_responder requests for requester + module past TTL.
+    Returns list of expired request ids.
+    """
+    requester_norm = _norm_user_id(requester_id)
+    module_norm = _norm_module(match_module)
+    if not requester_norm:
+        return []
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS)
+        .select("id, status, expires_at")
+        .eq("requester_id", requester_norm)
+        .eq("match_module", module_norm)
+        .eq("status", RME_REQUEST_STATUS_PENDING)
+        .execute()
+    )
+    expired_ids: List[str] = []
+    for row in result.data or []:
+        if isinstance(row, dict) and expire_pending_request_if_needed(supabase, row):
+            rid = _norm_id(row.get("id"))
+            if rid:
+                expired_ids.append(rid)
+    return expired_ids
+
+
+def expire_stale_pending_invites_for_responder(
+    supabase,
+    responder_id: str,
+) -> List[str]:
+    """Lazy-expire pending invites for responder past TTL. Returns expired invite ids."""
+    responder_norm = _norm_user_id(responder_id)
+    if not responder_norm:
+        return []
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_INVITES)
+        .select(_INVITE_SELECT)
+        .eq("responder_id", responder_norm)
+        .eq("status", RME_INVITE_STATUS_PENDING)
+        .execute()
+    )
+    expired_ids: List[str] = []
+    for row in result.data or []:
+        if isinstance(row, dict) and expire_pending_invite_if_needed(supabase, row):
+            iid = _norm_id(row.get("id"))
+            if iid:
+                expired_ids.append(iid)
+    return expired_ids
+
+
+def insert_relationship_match_request(
+    supabase,
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Insert relationship_match_requests; returns inserted row."""
+    result = supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS).insert(row).execute()
+    rows = result.data or []
+    if not rows:
+        raise RuntimeError("relationship_match_requests insert returned empty data")
+    inserted = rows[0]
+    if not isinstance(inserted, dict):
+        raise RuntimeError("relationship_match_requests insert returned invalid row")
+    return inserted
+
+
+def insert_relationship_match_invite(
+    supabase,
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Insert relationship_match_invites; returns inserted row."""
+    result = supabase.table(TABLE_RELATIONSHIP_MATCH_INVITES).insert(row).execute()
+    rows = result.data or []
+    if not rows:
+        raise RuntimeError("relationship_match_invites insert returned empty data")
+    inserted = rows[0]
+    if not isinstance(inserted, dict):
+        raise RuntimeError("relationship_match_invites insert returned invalid row")
+    return inserted
+
+
+def get_latest_invite_for_request(
+    supabase,
+    request_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Return the most recent invite for a request (any status)."""
+    rid = _norm_id(request_id)
+    if not rid:
+        return None
+
+    pending = get_pending_invite_for_request(supabase, rid)
+    if pending:
+        return pending
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_INVITES)
+        .select(_INVITE_SELECT)
+        .eq("request_id", rid)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
 def get_pending_invite_for_responder(
     supabase,
     responder_id: str,
@@ -219,7 +412,7 @@ def cancel_pending_invites_for_request(
 
 def expire_pending_request_if_needed(supabase, request_row: dict) -> bool:
     """
-    Expire a pending_responder request past TTL; cancel pending invite.
+    Expire a pending_responder request past TTL; cancel pending invites.
     Returns True if the row was expired.
     """
     status = str(request_row.get("status") or "").strip().lower()
@@ -248,10 +441,28 @@ def expire_pending_request_if_needed(supabase, request_row: dict) -> bool:
     return True
 
 
+def _expire_parent_request_if_pending(
+    supabase,
+    request_id: str,
+) -> None:
+    """Mark parent request expired when still pending_responder (TDM single-invite cascade)."""
+    rid = _norm_id(request_id)
+    if not rid:
+        return
+    now_iso = _utcnow_iso()
+    supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS).update(
+        {
+            "status": RME_REQUEST_STATUS_EXPIRED,
+            "responded_at": now_iso,
+            "updated_at": now_iso,
+        }
+    ).eq("id", rid).eq("status", RME_REQUEST_STATUS_PENDING).execute()
+
+
 def expire_pending_invite_if_needed(supabase, invite_row: dict) -> bool:
     """
-    Expire a pending_responder invite past TTL.
-    Returns True if the row was expired.
+    Expire a pending_responder invite past TTL; cascade parent request to expired.
+    Returns True if the invite row was expired.
     """
     status = str(invite_row.get("status") or "").strip().lower()
     if status != RME_INVITE_STATUS_PENDING:
@@ -272,6 +483,10 @@ def expire_pending_invite_if_needed(supabase, invite_row: dict) -> bool:
             "updated_at": now_iso,
         }
     ).eq("id", iid).eq("status", RME_INVITE_STATUS_PENDING).execute()
+
+    request_id = _norm_id(invite_row.get("request_id"))
+    if request_id:
+        _expire_parent_request_if_pending(supabase, request_id)
     return True
 
 

@@ -1,36 +1,62 @@
 """
-Relationship Match Engine — Trusted Direct Match orchestrator skeleton (RME-3B).
+Relationship Match Engine — Trusted Direct Match orchestrator (RME-3C core).
 
 Feature flags RME_ENABLED + TDM_ENABLED default OFF. When OFF, no DB writes.
-Full create/accept orchestration deferred to RME-4+ (tag insert, socket, push).
+Accept / tag insert deferred to RME-4. Socket/push deferred to RME-4.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from services.block_safety import assert_pair_not_blocked
-from services.match_intent_guard import assert_passenger_no_active_match_intent
+from services.match_intent_guard import ActiveMatchIntentError, assert_passenger_no_active_match_intent
+from services.quick_match import (
+    QuickMatchValidationError,
+    _compute_unified_contribution_bounds,
+    _haversine_km,
+    _is_unique_violation,
+    _quick_match_distance_band,
+    _quick_match_trip_metrics,
+    _quick_match_vehicle_kind,
+    _validate_lat_lng,
+    _validate_offered_contribution_tl,
+)
 from services.rme_request_queries import (
     MATCH_MODULE_TRUSTED_DIRECT,
-    RME_INVITE_STATUS_CANCELLED,
-    RME_INVITE_STATUS_DECLINED,
     RME_INVITE_STATUS_PENDING,
     RME_REQUEST_STATUS_CANCELLED,
     RME_REQUEST_STATUS_DECLINED,
     RME_REQUEST_STATUS_PENDING,
+    TDM_MAX_TRIP_KM,
+    TDM_MIN_TRIP_KM,
     cancel_pending_invites_for_request,
     expire_pending_invite_if_needed,
     expire_pending_request_if_needed,
+    expire_stale_pending_for_requester,
+    expire_stale_pending_invites_for_responder,
+    get_latest_invite_for_request,
     get_pending_invite_for_responder,
     get_pending_relationship_match_request,
+    get_tdm_invite_ttl_seconds,
+    get_tdm_request_ttl_seconds,
+    insert_relationship_match_invite,
+    insert_relationship_match_request,
     load_invite_by_id,
     load_request_by_id,
+    load_request_by_idempotency_key,
     update_invite_status_terminal,
     update_request_status_terminal,
+)
+from services.rme_trusted_connection import (
+    RmeConnectionNotActiveError,
+    RmeTrustedFieldError,
+    assert_active_trusted_connection_for_direct_match,
+    assert_responder_eligible,
+    assert_vehicle_preference_compatible,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +65,11 @@ TABLE_RELATIONSHIP_MATCH_EVENTS = "relationship_match_events"
 
 _ENV_RME_ENABLED = "RME_ENABLED"
 _ENV_TDM_ENABLED = "TDM_ENABLED"
+
+RouteTripMetricsFn = Callable[[float, float, float, float], Awaitable[Dict[str, Any]]]
+DriverBusyFn = Callable[[str], bool]
+
+_COORD_DECIMALS = 5
 
 
 class RmeFeatureDisabledError(Exception):
@@ -81,6 +112,30 @@ class RmeValidationError(ValueError):
         super().__init__(message or self.message)
 
 
+class RmeIdempotencyConflictError(Exception):
+    code = "idempotency_conflict"
+    message = "Aynı idempotency anahtarı farklı istekle kullanılamaz."
+
+    def __init__(self, message: Optional[str] = None) -> None:
+        super().__init__(message or self.message)
+
+
+class RmeDriverBusyError(Exception):
+    code = "driver_busy"
+    message = "Sürücü şu an müsait değil."
+
+    def __init__(self, message: Optional[str] = None) -> None:
+        super().__init__(message or self.message)
+
+
+class RmeDriverInvitePendingError(Exception):
+    code = "driver_invite_pending"
+    message = "Sürücünün bekleyen bir daveti var."
+
+    def __init__(self, message: Optional[str] = None) -> None:
+        super().__init__(message or self.message)
+
+
 def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -102,8 +157,12 @@ def _require_rme_tdm_enabled() -> None:
         raise RmeFeatureDisabledError()
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return _utcnow().replace(microsecond=0).isoformat()
 
 
 def _norm_user_id(value: Any) -> str:
@@ -112,6 +171,10 @@ def _norm_user_id(value: Any) -> str:
 
 def _norm_id(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _round_coord(value: float) -> float:
+    return round(float(value), _COORD_DECIMALS)
 
 
 def _validate_create_payload(payload: Dict[str, Any]) -> None:
@@ -130,6 +193,121 @@ def _validate_create_payload(payload: Dict[str, Any]) -> None:
         raise RmeValidationError(f"Eksik alanlar: {', '.join(missing)}")
 
 
+def _normalize_label(raw: Any, *, max_len: int = 200) -> Optional[str]:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if len(text) > max_len:
+        raise RmeValidationError(f"Etiket en fazla {max_len} karakter olabilir.")
+    return text
+
+
+async def _validate_tdm_trip_fields(
+    payload: Dict[str, Any],
+    *,
+    route_trip_metrics_fn: RouteTripMetricsFn,
+) -> Dict[str, Any]:
+    try:
+        pickup_lat, pickup_lng = _validate_lat_lng(
+            payload.get("pickup_lat"), payload.get("pickup_lng"), label="Alış"
+        )
+        dropoff_lat, dropoff_lng = _validate_lat_lng(
+            payload.get("dropoff_lat"), payload.get("dropoff_lng"), label="Varış"
+        )
+    except QuickMatchValidationError as exc:
+        raise RmeValidationError(str(exc)) from exc
+
+    pickup_label = _normalize_label(payload.get("pickup_label"))
+    dropoff_label = _normalize_label(payload.get("dropoff_label"))
+
+    air_km = _haversine_km(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    if air_km < 0.8:
+        raise RmeValidationError("Alış ve varış noktası çok yakın")
+
+    trip_metrics = await _quick_match_trip_metrics(
+        route_trip_metrics_fn,
+        pickup_lat,
+        pickup_lng,
+        dropoff_lat,
+        dropoff_lng,
+    )
+    distance_km = float(trip_metrics.get("distance_km") or 0.0)
+    if distance_km <= TDM_MIN_TRIP_KM:
+        raise RmeValidationError("Yolculuk mesafesi çok kısa")
+    if distance_km > TDM_MAX_TRIP_KM:
+        raise RmeValidationError("Trusted Direct en fazla 20 km mesafede kullanılabilir")
+
+    vehicle_kind = _quick_match_vehicle_kind(payload.get("vehicle_preference"))
+    if vehicle_kind not in ("car", "motorcycle"):
+        raise RmeValidationError("Geçersiz araç tercihi.")
+
+    suggested, max_contribution = _compute_unified_contribution_bounds(
+        distance_km=distance_km,
+        duration_min=int(trip_metrics.get("duration_min") or 5),
+        traffic_ratio=float(trip_metrics.get("traffic_ratio") or 1.0),
+        vehicle_kind=vehicle_kind,
+        peak=bool(trip_metrics.get("peak")),
+    )
+
+    try:
+        offered = _validate_offered_contribution_tl(
+            payload.get("offered_contribution_tl"),
+            suggested_contribution_tl=suggested,
+            max_contribution_tl=max_contribution,
+        )
+    except QuickMatchValidationError as exc:
+        raise RmeValidationError(str(exc)) from exc
+
+    return {
+        "pickup_lat": pickup_lat,
+        "pickup_lng": pickup_lng,
+        "pickup_label": pickup_label,
+        "dropoff_lat": dropoff_lat,
+        "dropoff_lng": dropoff_lng,
+        "dropoff_label": dropoff_label,
+        "distance_km": round(distance_km, 2),
+        "distance_band": _quick_match_distance_band(distance_km),
+        "suggested_contribution_tl": suggested,
+        "offered_contribution_tl": offered,
+        "vehicle_preference": vehicle_kind,
+    }
+
+
+def _idempotency_semantic_key(
+    *,
+    responder_id: str,
+    relationship_connection_id: str,
+    validated: Dict[str, Any],
+) -> Tuple[Any, ...]:
+    return (
+        _norm_user_id(responder_id),
+        _norm_id(relationship_connection_id),
+        _round_coord(validated["pickup_lat"]),
+        _round_coord(validated["pickup_lng"]),
+        _round_coord(validated["dropoff_lat"]),
+        _round_coord(validated["dropoff_lng"]),
+        validated.get("pickup_label"),
+        validated.get("dropoff_label"),
+        int(validated["offered_contribution_tl"]),
+        str(validated["vehicle_preference"]),
+    )
+
+
+def _existing_idempotency_semantic_key(row: dict) -> Tuple[Any, ...]:
+    return (
+        _norm_user_id(row.get("responder_id")),
+        _norm_id(row.get("relationship_connection_id")),
+        _round_coord(row.get("pickup_lat") or 0),
+        _round_coord(row.get("pickup_lng") or 0),
+        _round_coord(row.get("dropoff_lat") or 0),
+        _round_coord(row.get("dropoff_lng") or 0),
+        row.get("pickup_label"),
+        row.get("dropoff_label"),
+        int(row.get("offered_contribution_tl") or 0),
+        str(row.get("vehicle_preference") or ""),
+    )
+
+
 def _insert_audit_event(
     supabase,
     *,
@@ -140,9 +318,6 @@ def _insert_audit_event(
     invite_id: Optional[str] = None,
     payload_json: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """
-    Append-only audit insert. Caller must ensure RME/TDM flags are ON.
-    """
     rid = _norm_id(request_id)
     if not rid:
         return
@@ -163,8 +338,47 @@ def _insert_audit_event(
     supabase.table(TABLE_RELATIONSHIP_MATCH_EVENTS).insert(row).execute()
 
 
+def _audit_request_expired(
+    supabase,
+    request_row: dict,
+    *,
+    reason: str = "ttl",
+) -> None:
+    rid = _norm_id(request_row.get("id"))
+    if not rid:
+        return
+    _insert_audit_event(
+        supabase,
+        request_id=rid,
+        match_module=str(request_row.get("match_module") or MATCH_MODULE_TRUSTED_DIRECT),
+        event_type="request_expired",
+        payload_json={"reason": reason},
+    )
+
+
+def _audit_invite_expired(
+    supabase,
+    invite_row: dict,
+    request_row: Optional[dict],
+    *,
+    reason: str = "ttl",
+) -> None:
+    request_id = _norm_id((request_row or {}).get("id") or invite_row.get("request_id"))
+    if not request_id:
+        return
+    _insert_audit_event(
+        supabase,
+        request_id=request_id,
+        invite_id=str(invite_row.get("id") or ""),
+        match_module=str((request_row or {}).get("match_module") or MATCH_MODULE_TRUSTED_DIRECT),
+        event_type="invite_expired",
+        payload_json={"reason": reason},
+    )
+
+
 def _lazy_expire_request_row(supabase, request_row: dict) -> dict:
     if expire_pending_request_if_needed(supabase, request_row):
+        _audit_request_expired(supabase, request_row)
         refreshed = load_request_by_id(supabase, str(request_row.get("id") or ""))
         return refreshed or {**request_row, "status": "expired"}
     return request_row
@@ -172,6 +386,11 @@ def _lazy_expire_request_row(supabase, request_row: dict) -> dict:
 
 def _lazy_expire_invite_row(supabase, invite_row: dict) -> dict:
     if expire_pending_invite_if_needed(supabase, invite_row):
+        request_id = _norm_id(invite_row.get("request_id"))
+        request_row = load_request_by_id(supabase, request_id) if request_id else None
+        _audit_invite_expired(supabase, invite_row, request_row)
+        if request_row and str(request_row.get("status") or "").lower() == "expired":
+            _audit_request_expired(supabase, request_row, reason="invite_ttl")
         refreshed = load_invite_by_id(supabase, str(invite_row.get("id") or ""))
         return refreshed or {**invite_row, "status": "expired"}
     return invite_row
@@ -193,25 +412,86 @@ def _assert_invite_pending_or_raise(invite_row: dict) -> None:
         raise RmeInvalidStateError()
 
 
-def create_request(
+def _build_create_replay_response(
+    supabase,
+    request_row: dict,
+) -> Dict[str, Any]:
+    request_id = _norm_id(request_row.get("id"))
+    invite_row = (
+        get_latest_invite_for_request(supabase, request_id) if request_id else None
+    )
+    return {
+        "request": request_row,
+        "invite": invite_row,
+        "idempotent_replay": True,
+    }
+
+
+def _assert_driver_available_for_create(
+    supabase,
+    responder_id: str,
+    *,
+    driver_busy_fn: DriverBusyFn,
+) -> None:
+    expire_stale_pending_invites_for_responder(supabase, responder_id)
+    if driver_busy_fn(responder_id):
+        raise RmeDriverBusyError()
+    pending_invite = get_pending_invite_for_responder(supabase, responder_id)
+    if pending_invite:
+        pending_invite = _lazy_expire_invite_row(supabase, pending_invite)
+        if str(pending_invite.get("status") or "").lower() == RME_INVITE_STATUS_PENDING:
+            raise RmeDriverInvitePendingError()
+
+
+async def create_request(
     supabase,
     requester_id: str,
     payload: Dict[str, Any],
     *,
     match_module: str = MATCH_MODULE_TRUSTED_DIRECT,
+    route_trip_metrics_fn: RouteTripMetricsFn,
+    driver_busy_fn: DriverBusyFn,
 ) -> Dict[str, Any]:
-    """
-    Trusted Direct create skeleton — validates guards; insert deferred to RME-4.
-    """
+    """Trusted Direct create — request + single invite + audit."""
     _require_rme_tdm_enabled()
     _validate_create_payload(payload)
 
     requester_norm = _norm_user_id(requester_id)
     responder_norm = _norm_user_id(payload.get("responder_id"))
+    connection_id = _norm_id(payload.get("relationship_connection_id"))
     if not requester_norm or not responder_norm:
         raise RmeValidationError("Geçersiz kullanıcı kimliği.")
     if requester_norm == responder_norm:
         raise RmeValidationError("Kendinize istek gönderemezsiniz.")
+
+    for expired_id in expire_stale_pending_for_requester(
+        supabase, requester_norm, match_module=match_module
+    ):
+        expired_row = load_request_by_id(supabase, expired_id)
+        if expired_row:
+            _audit_request_expired(supabase, expired_row)
+
+    idempotency_key = str(payload.get("idempotency_key") or "").strip() or None
+    validated = await _validate_tdm_trip_fields(
+        payload,
+        route_trip_metrics_fn=route_trip_metrics_fn,
+    )
+
+    if idempotency_key:
+        existing = load_request_by_idempotency_key(
+            supabase, requester_norm, idempotency_key
+        )
+        if existing:
+            existing = _lazy_expire_request_row(supabase, existing)
+            expected = _idempotency_semantic_key(
+                responder_id=responder_norm,
+                relationship_connection_id=connection_id,
+                validated=validated,
+            )
+            actual = _existing_idempotency_semantic_key(existing)
+            if expected != actual:
+                raise RmeIdempotencyConflictError()
+            return _build_create_replay_response(supabase, existing)
 
     assert_passenger_no_active_match_intent(
         supabase,
@@ -220,9 +500,126 @@ def create_request(
     )
     assert_pair_not_blocked(supabase, requester_norm, responder_norm)
 
-    raise RmeInvalidStateError(
-        "Trusted Direct create orchestration is not yet available (RME-4)."
+    try:
+        assert_active_trusted_connection_for_direct_match(
+            supabase,
+            requester_id=requester_norm,
+            responder_id=responder_norm,
+            relationship_connection_id=connection_id,
+        )
+    except RmeTrustedFieldError as exc:
+        raise RmeValidationError(str(exc)) from exc
+
+    assert_responder_eligible(supabase, responder_norm)
+    assert_vehicle_preference_compatible(
+        supabase,
+        responder_norm,
+        validated["vehicle_preference"],
     )
+    _assert_driver_available_for_create(
+        supabase,
+        responder_norm,
+        driver_busy_fn=driver_busy_fn,
+    )
+
+    now = _utcnow()
+    request_expires = (
+        now + timedelta(seconds=get_tdm_request_ttl_seconds())
+    ).replace(microsecond=0).isoformat()
+    invite_expires = (
+        now + timedelta(seconds=get_tdm_invite_ttl_seconds())
+    ).replace(microsecond=0).isoformat()
+
+    insert_request = {
+        "match_module": match_module,
+        "relationship_type": "trusted",
+        "requester_id": requester_norm,
+        "responder_id": responder_norm,
+        "relationship_connection_id": connection_id,
+        "vehicle_preference": validated["vehicle_preference"],
+        "pickup_lat": validated["pickup_lat"],
+        "pickup_lng": validated["pickup_lng"],
+        "pickup_label": validated["pickup_label"],
+        "dropoff_lat": validated["dropoff_lat"],
+        "dropoff_lng": validated["dropoff_lng"],
+        "dropoff_label": validated["dropoff_label"],
+        "distance_km": validated["distance_km"],
+        "distance_band": validated["distance_band"],
+        "suggested_contribution_tl": validated["suggested_contribution_tl"],
+        "offered_contribution_tl": validated["offered_contribution_tl"],
+        "status": RME_REQUEST_STATUS_PENDING,
+        "expires_at": request_expires,
+        "idempotency_key": idempotency_key,
+    }
+
+    try:
+        request_row = insert_relationship_match_request(supabase, insert_request)
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            if idempotency_key:
+                replay = load_request_by_idempotency_key(
+                    supabase, requester_norm, idempotency_key
+                )
+                if replay:
+                    return _build_create_replay_response(supabase, replay)
+            raise ActiveMatchIntentError() from exc
+        raise
+
+    request_id = _norm_id(request_row.get("id"))
+    invite_insert = {
+        "request_id": request_id,
+        "responder_id": responder_norm,
+        "status": RME_INVITE_STATUS_PENDING,
+        "expires_at": invite_expires,
+    }
+
+    try:
+        invite_row = insert_relationship_match_invite(supabase, invite_insert)
+    except Exception as exc:
+        logger.error(
+            "tdm_create invite_insert_failed request_id=%s err=%s",
+            request_id[:36] if request_id else "",
+            exc,
+        )
+        if request_id:
+            update_request_status_terminal(
+                supabase,
+                request_id,
+                from_status=RME_REQUEST_STATUS_PENDING,
+                to_status=RME_REQUEST_STATUS_CANCELLED,
+                extra_fields={
+                    "cancel_reason": "system_error",
+                    "cancelled_at": _utcnow_iso(),
+                    "responded_at": _utcnow_iso(),
+                },
+            )
+        raise
+
+    _insert_audit_event(
+        supabase,
+        request_id=request_id,
+        match_module=match_module,
+        event_type="request_created",
+        actor_id=requester_norm,
+        payload_json={
+            "responder_id": responder_norm,
+            "relationship_connection_id": connection_id,
+        },
+    )
+    _insert_audit_event(
+        supabase,
+        request_id=request_id,
+        invite_id=str(invite_row.get("id") or ""),
+        match_module=match_module,
+        event_type="invite_created",
+        actor_id=requester_norm,
+        payload_json={"responder_id": responder_norm},
+    )
+
+    return {
+        "request": load_request_by_id(supabase, request_id) or request_row,
+        "invite": invite_row,
+    }
 
 
 def cancel_request(
@@ -314,6 +711,9 @@ def decline_invite(
     request_row = _lazy_expire_request_row(supabase, request_row)
     _assert_request_pending_or_raise(request_row)
 
+    requester_norm = _norm_user_id(request_row.get("requester_id"))
+    assert_pair_not_blocked(supabase, requester_norm, responder_norm)
+
     now_iso = _utcnow_iso()
     invite_updated = update_invite_status_terminal(
         supabase,
@@ -326,7 +726,11 @@ def decline_invite(
         },
     )
     if not invite_updated:
-        raise RmeInvalidStateError()
+        refreshed_invite = load_invite_by_id(supabase, iid)
+        if refreshed_invite and str(refreshed_invite.get("status") or "").lower() == "declined":
+            invite_row = refreshed_invite
+        else:
+            raise RmeInvalidStateError()
 
     request_updated = update_request_status_terminal(
         supabase,
@@ -339,7 +743,11 @@ def decline_invite(
         },
     )
     if not request_updated:
-        raise RmeInvalidStateError()
+        refreshed_request = load_request_by_id(supabase, request_id)
+        if refreshed_request and str(refreshed_request.get("status") or "").lower() == "declined":
+            request_row = refreshed_request
+        else:
+            raise RmeInvalidStateError()
 
     _insert_audit_event(
         supabase,
@@ -410,6 +818,13 @@ def get_active_request(
     if not requester_norm:
         return None
 
+    for expired_id in expire_stale_pending_for_requester(
+        supabase, requester_norm, match_module=match_module
+    ):
+        expired_row = load_request_by_id(supabase, expired_id)
+        if expired_row:
+            _audit_request_expired(supabase, expired_row)
+
     request_row = get_pending_relationship_match_request(
         supabase,
         requester_norm,
@@ -435,6 +850,8 @@ def get_current_invite(
     responder_norm = _norm_user_id(responder_id)
     if not responder_norm:
         return None
+
+    expire_stale_pending_invites_for_responder(supabase, responder_norm)
 
     invite_row = get_pending_invite_for_responder(supabase, responder_norm)
     if not invite_row:

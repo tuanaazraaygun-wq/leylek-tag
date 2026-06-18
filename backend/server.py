@@ -122,8 +122,11 @@ from services.quick_match import (
 from services.block_safety import BlockedPairError
 from services.match_intent_guard import ActiveMatchIntentError
 from services.relationship_match_engine import (
+    RmeDriverBusyError,
+    RmeDriverInvitePendingError,
     RmeExpiredError,
     RmeFeatureDisabledError,
+    RmeIdempotencyConflictError,
     RmeInvalidStateError,
     RmeNotFoundError,
     RmeValidationError,
@@ -135,6 +138,7 @@ from services.relationship_match_engine import (
     get_current_invite as get_trusted_direct_current_invite,
     is_trusted_direct_match_enabled,
 )
+from services.rme_trusted_connection import RmeConnectionNotActiveError
 from services.transfer_payment_service import (
     TransferPaymentDisabledError,
     TransferPaymentForbiddenError,
@@ -12473,6 +12477,38 @@ def _raise_trusted_direct_match_http(exc: Exception) -> None:
                 "message": str(exc) or RmeValidationError.message,
             },
         ) from exc
+    if isinstance(exc, RmeIdempotencyConflictError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": str(exc) or RmeIdempotencyConflictError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeConnectionNotActiveError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "connection_not_active",
+                "message": str(exc) or RmeConnectionNotActiveError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeDriverBusyError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "driver_busy",
+                "message": str(exc) or RmeDriverBusyError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeDriverInvitePendingError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "driver_invite_pending",
+                "message": str(exc) or RmeDriverInvitePendingError.message,
+            },
+        ) from exc
     raise HTTPException(
         status_code=500,
         detail="Trusted Direct Match işlemi tamamlanamadı",
@@ -12498,16 +12534,22 @@ async def post_trusted_direct_request_http(
     body: TrustedDirectCreateRequest,
     actor_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Trusted Direct Match — yolcu istek oluştur (RME-3B skeleton)."""
+    """Trusted Direct Match — yolcu istek oluştur (RME-3C)."""
     _require_trusted_direct_match_http()
     await require_eligible_user(actor_id, action="trusted_direct_request_create")
     try:
-        result = create_trusted_direct_request(
+        result = await create_trusted_direct_request(
             supabase,
             actor_id,
             body.model_dump(exclude_none=True),
+            route_trip_metrics_fn=_quick_match_route_trip_metrics,
+            driver_busy_fn=_driver_busy_for_quick_match,
         )
-        return {"success": True, **result}
+        idempotent = bool(result.pop("idempotent_replay", False))
+        payload = {"success": True, **result}
+        if idempotent:
+            return JSONResponse(status_code=200, content=payload)
+        return JSONResponse(status_code=201, content=payload)
     except (
         RmeFeatureDisabledError,
         BlockedPairError,
@@ -12516,6 +12558,10 @@ async def post_trusted_direct_request_http(
         RmeExpiredError,
         RmeInvalidStateError,
         RmeValidationError,
+        RmeIdempotencyConflictError,
+        RmeConnectionNotActiveError,
+        RmeDriverBusyError,
+        RmeDriverInvitePendingError,
     ) as exc:
         _raise_trusted_direct_match_http(exc)
     except HTTPException:
