@@ -6495,48 +6495,75 @@ async def get_authenticated_user_id_from_authorization(
             status_code=401,
             detail="Authorization: Bearer <token> formatında olmalı",
         )
-    uid = verify_access_token(parts[1].strip())
-    if not uid:
-        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
     try:
-        resolved_uid = await resolve_user_id(uid)
-    except Exception as resolve_err:
-        logger.warning(
-            "AUTH_GUARD_RESOLVE_ERROR user_id=%s err=%s",
-            _mask_log_id(uid),
-            resolve_err,
+        uid = verify_access_token(parts[1].strip())
+        if not uid:
+            raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+        try:
+            resolved_uid = await resolve_user_id(uid)
+        except Exception as resolve_err:
+            logger.exception(
+                "event=[500_traceback] auth_dependency_unexpected_error "
+                "function=get_authenticated_user_id_from_authorization "
+                "phase=resolve_user_id_lookup user_id=%s supabase_is_none=%s "
+                "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
+                _mask_log_id(uid),
+                supabase is None,
+                SCALE1A_SQL_BBOX,
+                SCALE1A_SQL_BBOX_SHADOW,
+                resolve_err,
+            )
+            raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+        canonical_uid = str((resolved_uid or uid) or "").strip().lower()
+        if not canonical_uid:
+            raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+        try:
+            user_row = (
+                supabase.table("users")
+                .select("id, is_active")
+                .eq("id", canonical_uid)
+                .limit(1)
+                .execute()
+            )
+        except Exception as user_fetch_err:
+            logger.exception(
+                "event=[500_traceback] auth_dependency_unexpected_error "
+                "function=get_authenticated_user_id_from_authorization "
+                "phase=users_lookup user_id=%s supabase_is_none=%s "
+                "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
+                _mask_log_id(canonical_uid),
+                supabase is None,
+                SCALE1A_SQL_BBOX,
+                SCALE1A_SQL_BBOX_SHADOW,
+                user_fetch_err,
+            )
+            raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+        if not user_row.data:
+            raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+
+        is_active = bool((user_row.data[0] or {}).get("is_active", True))
+        if not is_active:
+            logger.info("AUTH_GUARD_ACCOUNT_DISABLED user_id=%s", _mask_log_id(canonical_uid))
+            raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
+
+        return canonical_uid
+    except HTTPException:
+        raise
+    except Exception as unexpected_err:
+        logger.exception(
+            "event=[500_traceback] auth_dependency_unexpected_error "
+            "function=get_authenticated_user_id_from_authorization "
+            "phase=unexpected endpoint_hint=auth_dependency "
+            "supabase_is_none=%s SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
+            supabase is None,
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
+            unexpected_err,
         )
-        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
-
-    canonical_uid = str((resolved_uid or uid) or "").strip().lower()
-    if not canonical_uid:
-        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
-
-    try:
-        user_row = (
-            supabase.table("users")
-            .select("id, is_active")
-            .eq("id", canonical_uid)
-            .limit(1)
-            .execute()
-        )
-    except Exception as user_fetch_err:
-        logger.warning(
-            "AUTH_GUARD_USER_FETCH_ERROR user_id=%s err=%s",
-            _mask_log_id(canonical_uid),
-            user_fetch_err,
-        )
-        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
-
-    if not user_row.data:
-        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
-
-    is_active = bool((user_row.data[0] or {}).get("is_active", True))
-    if not is_active:
-        logger.info("AUTH_GUARD_ACCOUNT_DISABLED user_id=%s", _mask_log_id(canonical_uid))
-        raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
-
-    return canonical_uid
+        raise
 
 
 async def resolve_user_id(user_id: str) -> str:
@@ -6561,7 +6588,16 @@ async def resolve_user_id(user_id: str) -> str:
             logger.info("[resolve_user_id] raw=%s resolved=%s via=id", raw[:96], rid[:96])
             return rid
     except Exception as e:
-        logger.warning("resolve_user_id id lookup error: %s", e)
+        logger.exception(
+            "event=[500_traceback] resolve_user_id_error "
+            "function=resolve_user_id phase=id_lookup user_id=%s supabase_is_none=%s "
+            "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
+            _mask_log_id(raw),
+            supabase is None,
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
+            e,
+        )
 
     try:
         result = supabase.table("users").select("id").eq("auth_id", raw).limit(1).execute()
@@ -6570,7 +6606,16 @@ async def resolve_user_id(user_id: str) -> str:
             logger.info("[resolve_user_id] raw=%s resolved=%s via=auth_id", raw[:96], rid[:96])
             return rid
     except Exception as e:
-        logger.warning("resolve_user_id auth_id lookup error: %s", e)
+        logger.exception(
+            "event=[500_traceback] resolve_user_id_error "
+            "function=resolve_user_id phase=auth_id_lookup user_id=%s supabase_is_none=%s "
+            "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
+            _mask_log_id(raw),
+            supabase is None,
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
+            e,
+        )
 
     logger.info("[resolve_user_id] raw=%s resolved= via=none", raw[:96])
     return None
@@ -6652,24 +6697,43 @@ async def fetch_user_account_row(user_id) -> Optional[dict]:
                     return r.data[0]
             except Exception as sel_err:
                 if _account_eligibility_select_cached and sel == _account_eligibility_select_cached:
-                    logger.warning(
-                        "fetch_user_account_row cached select failed user_id=%s select=%s err=%s",
+                    logger.exception(
+                        "event=[500_traceback] fetch_user_account_row_error "
+                        "function=fetch_user_account_row phase=cached_select_failed "
+                        "user_id=%s select=%s supabase_is_none=%s "
+                        "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
                         _mask_log_id(user_id),
                         sel,
+                        supabase is None,
+                        SCALE1A_SQL_BBOX,
+                        SCALE1A_SQL_BBOX_SHADOW,
                         sel_err,
                     )
                     _account_eligibility_select_cached = None
                 elif sel == _ACCOUNT_ELIGIBILITY_SELECT_MIN:
-                    logger.warning(
-                        "fetch_user_account_row minimal select failed user_id=%s err=%s",
+                    logger.exception(
+                        "event=[500_traceback] fetch_user_account_row_error "
+                        "function=fetch_user_account_row phase=minimal_select_failed "
+                        "user_id=%s select=%s supabase_is_none=%s "
+                        "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
                         _mask_log_id(user_id),
+                        sel,
+                        supabase is None,
+                        SCALE1A_SQL_BBOX,
+                        SCALE1A_SQL_BBOX_SHADOW,
                         sel_err,
                     )
                 continue
     except Exception as e:
-        logger.warning(
-            "fetch_user_account_row user_id=%s err=%s",
+        logger.exception(
+            "event=[500_traceback] fetch_user_account_row_error "
+            "function=fetch_user_account_row phase=unexpected "
+            "user_id=%s supabase_is_none=%s SCALE1A_SQL_BBOX=%s "
+            "SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
             _mask_log_id(user_id),
+            supabase is None,
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
             e,
         )
     return None
@@ -6677,17 +6741,33 @@ async def fetch_user_account_row(user_id) -> Optional[dict]:
 
 async def require_eligible_user(user_id, *, action: str) -> str:
     """Aktif hesap zorunlu; değilse 403."""
-    row = await fetch_user_account_row(user_id)
-    if not user_account_is_eligible(row):
-        reason = _user_account_ineligible_reason(row)
-        logger.info(
-            "ACCOUNT_GUARD_BLOCK action=%s user_id=%s reason=%s",
+    try:
+        row = await fetch_user_account_row(user_id)
+        if not user_account_is_eligible(row):
+            reason = _user_account_ineligible_reason(row)
+            logger.info(
+                "ACCOUNT_GUARD_BLOCK action=%s user_id=%s reason=%s",
+                action,
+                _mask_log_id(user_id),
+                reason,
+            )
+            raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
+        return str(row["id"]).strip().lower()
+    except HTTPException:
+        raise
+    except Exception as unexpected_err:
+        logger.exception(
+            "event=[500_traceback] require_eligible_user_unexpected_error "
+            "function=require_eligible_user action=%s user_id=%s supabase_is_none=%s "
+            "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s exc=%r",
             action,
             _mask_log_id(user_id),
-            reason,
+            supabase is None,
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
+            unexpected_err,
         )
-        raise HTTPException(status_code=403, detail="Hesabınız devre dışı bırakılmıştır.")
-    return str(row["id"]).strip().lower()
+        raise
 
 
 def _get_bilateral_blocked_user_ids(actor_id: str) -> set[str]:
