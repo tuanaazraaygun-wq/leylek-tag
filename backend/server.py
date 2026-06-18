@@ -121,6 +121,7 @@ from services.quick_match import (
 )
 from services.block_safety import BlockedPairError
 from services.match_intent_guard import ActiveMatchIntentError
+from services.driver_suitability import compute_qm_suitability_score
 from services.match_location_freshness import (
     get_location_max_age_seconds,
     is_driver_location_fresh,
@@ -1612,6 +1613,14 @@ DISPATCH_SCORE_LOGS = os.getenv("DISPATCH_SCORE_LOGS", "").strip().lower() in (
     "on",
 )
 
+# MATCH-REL-1C-C: Quick Match suitability shadow logs only (no sort/filter behavior change).
+QM_SUITABILITY_LOGS = os.getenv("QM_SUITABILITY_LOGS", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # Phase 2B: sort eligible drivers by composite score (same weights as Phase 2A shadow); default off.
 DISPATCH_SCORE_SORT = os.getenv("DISPATCH_SCORE_SORT", "").strip().lower() in (
     "1",
@@ -2122,6 +2131,70 @@ def _dispatch_score_log_phase2a(
         logger.warning("[dispatch_score] log_error phase=%s exc=%s", phase, repr(exc))
 
 
+def _qm_suitability_score_log(
+    *,
+    eligible_drivers: list,
+    driver_by_id: dict,
+    max_eta_min: float,
+    max_age_sec: int,
+    request_id: Optional[str] = None,
+) -> None:
+    """MATCH-REL-1C-C — shadow suitability logging; ordering unchanged."""
+    if not QM_SUITABILITY_LOGS or not eligible_drivers:
+        return
+    try:
+        scored: list[dict] = []
+        for rank_eta, row in enumerate(eligible_drivers, start=1):
+            did = row.get("driver_id")
+            drv = driver_by_id.get(did) or {}
+            metrics = compute_qm_suitability_score(
+                drv,
+                {
+                    "duration_min": row.get("duration_min"),
+                    "distance_km": row.get("distance_km"),
+                },
+                max_eta_min=max_eta_min,
+                max_age_sec=max_age_sec,
+            )
+            scored.append({"row": row, "rank_eta": rank_eta, **metrics})
+
+        scored_by_score = sorted(
+            scored,
+            key=lambda item: (-item["score"], item["rank_eta"]),
+        )
+        rank_score_by_driver = {
+            item["row"]["driver_id"]: idx + 1 for idx, item in enumerate(scored_by_score)
+        }
+
+        for item in scored[:10]:
+            row = item["row"]
+            did = row.get("driver_id")
+            rank_score = rank_score_by_driver.get(did, item["rank_eta"])
+            payload = {
+                "event": "quick_match_suitability_score",
+                "driver_id": did,
+                "duration_min": row.get("duration_min"),
+                "distance_km": row.get("distance_km"),
+                "age_sec": item["age_sec"],
+                "score": round(item["score"], 6),
+                "rank_eta": item["rank_eta"],
+                "rank_score": rank_score,
+                "rank_delta": rank_score - item["rank_eta"],
+                "eta_norm": round(item["eta_norm"], 6),
+                "distance_norm": round(item["distance_norm"], 6),
+                "freshness_norm": round(item["freshness_norm"], 6),
+                "rating_norm": round(item["rating_norm"], 6),
+            }
+            if request_id:
+                payload["request_id"] = request_id
+            logger.info(
+                "[quick_match_suitability] %s",
+                json.dumps(payload, ensure_ascii=False, default=str),
+            )
+    except Exception as exc:
+        logger.warning("[quick_match_suitability] log_error exc=%s", repr(exc))
+
+
 async def find_eligible_drivers(
     pickup_lat: float,
     pickup_lng: float,
@@ -2369,7 +2442,8 @@ async def _find_eligible_drivers_for_quick_match(
     Quick Match only — ETA gate (duration_min <= QUICK_MATCH_MAX_ETA_MIN), no road_km radius filter.
     Normal find_eligible_drivers unchanged; bbox prefilter + route top_n=25 for QM.
     """
-    del radius_km, tag_id  # QM ETA mode; signature matches FindEligibleDriversFn for wiring
+    del radius_km  # QM ETA mode; signature matches FindEligibleDriversFn for wiring
+    qm_request_id = tag_id
     max_eta_min = get_quick_match_max_eta_min()
     qm_route_top_n = 25
     qm_use_traffic = os.getenv("QUICK_MATCH_TRAFFIC_ETA", "1").strip().lower() in (
@@ -2495,6 +2569,13 @@ async def _find_eligible_drivers_for_quick_match(
             qm_use_traffic,
         )
         eligible_drivers.sort(key=lambda x: (x["duration_min"], x["distance_km"]))
+        _qm_suitability_score_log(
+            eligible_drivers=eligible_drivers,
+            driver_by_id=driver_by_id,
+            max_eta_min=max_eta_min,
+            max_age_sec=max_age_sec,
+            request_id=qm_request_id,
+        )
         logger.info(
             "[MATCH] final_included_qm driver_ids=%s count=%d pickup=(%.5f,%.5f) sort=duration_min_asc",
             [e["driver_id"] for e in eligible_drivers],
