@@ -46,6 +46,8 @@ interface QRTripEndModalProps {
   /** Yolcu: eşleşmede IBAN snapshot varsa bitiş ekranında seçenek göster */
   showIbanOption?: boolean;
   onChooseDriverIban?: () => void;
+  /** Trusted Direct: nakit katkı bildirimi (claim cash) — QR complete kullanılmaz */
+  onTrustedPaymentClaim?: (method: 'cash') => void | Promise<void>;
   onComplete: (showRating: boolean, rateUserId: string, rateUserName: string) => void;
 }
 
@@ -64,6 +66,7 @@ export default function QRTripEndModal({
   matchChannel = null,
   showIbanOption = false,
   onChooseDriverIban,
+  onTrustedPaymentClaim,
   onComplete,
 }: QRTripEndModalProps) {
   const isTrustedDirect = String(matchChannel || '').trim().toLowerCase() === 'trusted';
@@ -89,12 +92,12 @@ export default function QRTripEndModal({
     if (visible) {
       setScanned(false);
       setProcessing(false);
-      setPassengerStep(!isDriver && showIbanOption ? 'choose' : 'scan');
+      setPassengerStep(!isDriver && (isTrustedDirect || showIbanOption) ? 'choose' : 'scan');
       setPendingDriverId(null);
       setLegacyPaymentPick(null);
       lastScannedValueRef.current = { data: '', ts: 0 };
     }
-  }, [visible, isDriver, showIbanOption]);
+  }, [visible, isDriver, showIbanOption, isTrustedDirect]);
 
   /** Yolcu scan adımına girince kamera oturumunu yenile (visible+scan — IBAN choose sonrası dahil) */
   useEffect(() => {
@@ -109,6 +112,7 @@ export default function QRTripEndModal({
   }, [visible, isDriver, passengerStep, hasPermission?.granted, requestPermission]);
 
   const scannerActive =
+    !isTrustedDirect &&
     !isDriver &&
     passengerStep === 'scan' &&
     cameraReady &&
@@ -178,7 +182,7 @@ export default function QRTripEndModal({
 
   const handleBarCodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
-      if (isDriver) return;
+      if (isDriver || isTrustedDirect) return;
       if (!cameraReady || scanned || processing) return;
       const raw = (data || '').trim();
       if (!raw.startsWith('leylektag://end?')) {
@@ -229,8 +233,16 @@ export default function QRTripEndModal({
       setPassengerStep('payment');
       setScanned(false);
     },
-    [isDriver, cameraReady, scanned, processing, tagId],
+    [isDriver, isTrustedDirect, cameraReady, scanned, processing, tagId],
   );
+
+  const handleTrustedCashClaim = () => {
+    if (processing) return;
+    setProcessing(true);
+    void Promise.resolve(onTrustedPaymentClaim?.('cash')).finally(() => {
+      setProcessing(false);
+    });
+  };
 
   const handlePassengerPaymentConfirm = (method: PaymentMethod) => {
     if (!pendingDriverId) {
@@ -262,7 +274,7 @@ export default function QRTripEndModal({
     setScanned(false);
     setProcessing(false);
     setCameraReady(false);
-    setPassengerStep(!isDriver && showIbanOption ? 'choose' : 'scan');
+    setPassengerStep(!isDriver && (isTrustedDirect || showIbanOption) ? 'choose' : 'scan');
     setPendingDriverId(null);
     setLegacyPaymentPick(null);
     lastScannedValueRef.current = { data: '', ts: 0 };
@@ -285,19 +297,27 @@ export default function QRTripEndModal({
           ? 'Ücreti nakit olarak ödediğinizi onaylayın.'
           : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
 
-  const phaseStep = isDriver
-    ? 'Yolculuk tamamlandı'
-    : passengerStep === 'choose' || passengerStep === 'payment'
-      ? 'Ödeme yöntemini seç'
-      : 'Yolculuk tamamlandı';
+  const phaseStep = isTrustedDirect
+    ? isDriver
+      ? 'Ödeme onayı bekleniyor'
+      : 'Yol paylaşımını bitir'
+    : isDriver
+      ? 'Yolculuk tamamlandı'
+      : passengerStep === 'choose' || passengerStep === 'payment'
+        ? 'Ödeme yöntemini seç'
+        : 'Yolculuk tamamlandı';
 
-  const phaseCaption = isDriver
-    ? `${firstName} bu kodu tarasın`
-    : passengerStep === 'choose'
-      ? 'Yolculuğu güvenli şekilde tamamlamak için yöntemi seç.'
-      : passengerStep === 'payment'
-        ? 'Ödeme bilgisini kontrol ederek tamamla.'
-        : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
+  const phaseCaption = isTrustedDirect
+    ? isDriver
+      ? 'Yolcu ödeme bildirimi gönderdiğinde onayınızla yolculuk kapanır.'
+      : 'Katkınızı nasıl ilettiğinizi bildirin; sürücü onayından sonra yolculuk tamamlanır.'
+    : isDriver
+      ? `${firstName} bu kodu tarasın`
+      : passengerStep === 'choose'
+        ? 'Yolculuğu güvenli şekilde tamamlamak için yöntemi seç.'
+        : passengerStep === 'payment'
+          ? 'Ödeme bilgisini kontrol ederek tamamla.'
+          : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -330,12 +350,34 @@ export default function QRTripEndModal({
             <View style={styles.guardianLiveDot} />
             <Ionicons name="checkmark-done-outline" size={14} color="rgba(34,211,238,0.88)" />
             <PremiumText variant="caption" style={styles.guardianChipText}>
-              Yolculuk tamamlandı
+              {isTrustedDirect ? 'Ödeme bildirimi' : 'Yolculuk tamamlandı'}
             </PremiumText>
           </GlassSurface>
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             {isDriver ? (
+              isTrustedDirect ? (
+                <View style={styles.qrContainer}>
+                  <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+                    <View style={styles.qrCheckpointRow}>
+                      <View style={styles.qrIconRing}>
+                        <Ionicons name="hourglass-outline" size={22} color="rgba(34,211,238,0.92)" />
+                      </View>
+                      <View style={styles.qrCheckpointTextCol}>
+                        <PremiumText variant="body" style={styles.qrCheckpointTitle}>
+                          Yolcu ödeme bildirimi bekleniyor
+                        </PremiumText>
+                        <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
+                          {firstName} nakit veya havale bildirimi gönderecek
+                        </PremiumText>
+                      </View>
+                    </View>
+                    <PremiumText variant="caption" muted style={styles.hint}>
+                      Onayınızla yolculuk tamamlanır ve değerlendirme açılır.
+                    </PremiumText>
+                  </GlassSurface>
+                </View>
+              ) : (
               <View style={styles.qrContainer}>
                 <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
                   <View style={styles.qrCheckpointRow}>
@@ -364,6 +406,67 @@ export default function QRTripEndModal({
                     Yolcu kodu taradığında yolculuk güvenli şekilde tamamlanır.
                   </PremiumText>
                 </GlassSurface>
+              </View>
+              )
+            ) : isTrustedDirect ? (
+              <View style={styles.choosePanel}>
+                <PremiumText variant="body" style={styles.chooseQuestion}>
+                  Yol paylaşımını nasıl bitirmek istersiniz?
+                </PremiumText>
+                <TouchableOpacity
+                  style={styles.chooseOptionWrap}
+                  onPress={handleTrustedCashClaim}
+                  activeOpacity={0.88}
+                  disabled={processing}
+                  accessibilityRole="button"
+                  accessibilityLabel="Nakit olarak ilettim"
+                >
+                  <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
+                    <View style={styles.chooseOptionIconWrap}>
+                      <Ionicons name="cash-outline" size={24} color="rgba(34,211,238,0.92)" />
+                    </View>
+                    <View style={styles.chooseOptionTextCol}>
+                      <PremiumText variant="body" style={styles.chooseOptionTitle}>
+                        Nakit olarak ilettim
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
+                        Sürücü onayından sonra yolculuk tamamlanır
+                      </PremiumText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                  </GlassSurface>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.chooseOptionWrap}
+                  onPress={() => onChooseDriverIban?.()}
+                  activeOpacity={0.88}
+                  disabled={processing}
+                  accessibilityRole="button"
+                  accessibilityLabel="Havale EFT ile ilettim"
+                >
+                  <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
+                    <View style={styles.chooseOptionIconWrap}>
+                      <Ionicons name="card-outline" size={24} color="rgba(34,211,238,0.92)" />
+                    </View>
+                    <View style={styles.chooseOptionTextCol}>
+                      <PremiumText variant="body" style={styles.chooseOptionTitle}>
+                        Havale/EFT ile ilettim
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
+                        Sürücü hesap bilgilerini görüntüle
+                      </PremiumText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(186,201,222,0.72)" />
+                  </GlassSurface>
+                </TouchableOpacity>
+                {processing ? (
+                  <View style={styles.processingRow}>
+                    <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                    <PremiumText variant="caption" muted style={styles.processingInlineText}>
+                      Bildirim gönderiliyor
+                    </PremiumText>
+                  </View>
+                ) : null}
               </View>
             ) : passengerStep === 'choose' ? (
               <View style={styles.choosePanel}>

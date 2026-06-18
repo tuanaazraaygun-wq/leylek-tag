@@ -20,9 +20,12 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DISPUTE_NOTE_MAX = 500;
 
+export type TransferPaymentConfirmMethod = 'cash' | 'iban';
+
 export type TransferPaymentConfirmModalProps = {
   visible: boolean;
   passengerName?: string;
+  paymentMethod?: TransferPaymentConfirmMethod;
   loading?: boolean;
   onApprove: () => void | Promise<void>;
   onReject: (note: string) => void | Promise<void>;
@@ -32,6 +35,7 @@ export type TransferPaymentConfirmModalProps = {
 export default function TransferPaymentConfirmModal({
   visible,
   passengerName,
+  paymentMethod = 'iban',
   loading = false,
   onApprove,
   onReject,
@@ -66,9 +70,21 @@ export default function TransferPaymentConfirmModal({
 
   if (!visible) return null;
 
-  const nameLine = passengerName?.trim()
-    ? `${passengerName.trim()} IBAN/Havale-EFT ile ödeme yaptığını bildirdi.`
-    : 'Yolcu IBAN/Havale-EFT ile ödeme yaptığını bildirdi.';
+  const isCash = paymentMethod === 'cash';
+  const phaseStep = isCash ? 'Nakit katkı onayı' : 'Ödeme teyidi';
+  const phaseCaption = isCash
+    ? 'Yolcunun nakit katkı bildirimini güvenli şekilde onayla.'
+    : 'Yolcunun ödeme yaptığını güvenli şekilde onayla.';
+  const questionText = isCash
+    ? 'Yol paylaşım katkısını nakit olarak aldınız mı?'
+    : 'Yol paylaşım ücretini aldınız mı?';
+  const nameLine = isCash
+    ? passengerName?.trim()
+      ? `${passengerName.trim()} nakit katkıyı ilettiğini bildirdi.`
+      : 'Yolcu nakit katkıyı ilettiğini bildirdi.'
+    : passengerName?.trim()
+      ? `${passengerName.trim()} IBAN/Havale-EFT ile ödeme yaptığını bildirdi.`
+      : 'Yolcu IBAN/Havale-EFT ile ödeme yaptığını bildirdi.';
 
   return (
     <Modal
@@ -103,15 +119,15 @@ export default function TransferPaymentConfirmModal({
               <>
                 <View style={styles.phaseBlock}>
                   <PremiumText variant="step" style={styles.phaseStep}>
-                    Ödeme teyidi
+                    {phaseStep}
                   </PremiumText>
                   <PremiumText variant="caption" muted style={styles.phaseCaption}>
-                    Yolcunun ödeme yaptığını güvenli şekilde onayla.
+                    {phaseCaption}
                   </PremiumText>
                 </View>
 
                 <PremiumText variant="body" style={styles.questionText}>
-                  Yol paylaşım ücretini aldınız mı?
+                  {questionText}
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.description}>
                   {nameLine}

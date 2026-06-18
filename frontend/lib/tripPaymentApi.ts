@@ -25,10 +25,13 @@ export type TripPaymentDetailsResponse = {
   label?: string | null;
 };
 
+export type TransferPaymentClaimMethod = 'cash' | 'iban';
+
 export type TransferPaymentClaimResponse = {
   success?: boolean;
   idempotent?: boolean;
   status?: string;
+  method?: TransferPaymentClaimMethod | string;
   tag_id?: string;
   claimed_at?: string;
 };
@@ -37,6 +40,7 @@ export type TransferPaymentStatusResponse = {
   success?: boolean;
   tag_id?: string;
   status?: string;
+  method?: TransferPaymentClaimMethod | string;
   claimed_at?: string;
   confirmed_at?: string;
   disputed_at?: string;
@@ -176,6 +180,7 @@ export async function fetchTripPaymentDetails(
 export async function claimTransferPayment(
   tagId: string,
   userId: string,
+  options?: { method?: TransferPaymentClaimMethod },
 ): Promise<TripPaymentApiResult<TransferPaymentClaimResponse>> {
   const tid = String(tagId || '').trim();
   const uid = String(userId || '').trim();
@@ -186,6 +191,7 @@ export async function claimTransferPayment(
     return { ok: false, code: 'FORBIDDEN', message: 'Giriş yapmanız gerekiyor' };
   }
 
+  const method = options?.method ?? 'iban';
   const headers = await authHeaders();
   const qTag = encodeURIComponent(tid);
   const url = `${API_BASE_URL}/trip/${qTag}/transfer-payment/claim?user_id=${userQuery(uid)}`;
@@ -193,7 +199,7 @@ export async function claimTransferPayment(
   const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({}),
+    body: JSON.stringify({ method }),
     timeoutMs: 15000,
   });
   if (!res) {

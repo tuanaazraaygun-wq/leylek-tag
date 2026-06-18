@@ -7575,6 +7575,8 @@ function PassengerDashboard({
   const [driverPaymentSheetMode, setDriverPaymentSheetMode] = useState<'info' | 'trip_end'>('info');
   const tripEndIbanCompleteInFlightRef = useRef(false);
 
+  const TRUSTED_PAYMENT_PENDING_ALERT = 'Yol paylaşım katkısı sürücü onayı bekleniyor.';
+
   const canOpenDriverPaymentDetails = useMemo(() => {
     if (!user?.id || !activeTag?.id) return false;
     if (!activeTag.boarding_confirmed_at) return false;
@@ -7733,14 +7735,22 @@ function PassengerDashboard({
       appAlert('Hata', 'Eşleşme bilgisi bulunamadı.');
       return;
     }
+    const isTrusted =
+      String(activeTag?.match_channel || '').trim().toLowerCase() === 'trusted';
     tripEndIbanCompleteInFlightRef.current = true;
     try {
-      const result = await claimTransferPayment(tagId, uid);
+      const result = await claimTransferPayment(tagId, uid, { method: 'iban' });
       if (result.ok) {
         setDriverPaymentSheetVisible(false);
         setDriverPaymentSheetMode('info');
         tripPaymentDetails.clear();
-        appAlert('IBAN', 'Sürücü ödeme onayı bekleniyor.');
+        appAlert(
+          'Bilgi',
+          isTrusted ? TRUSTED_PAYMENT_PENDING_ALERT : 'Sürücü ödeme onayı bekleniyor.',
+        );
+        if (isTrusted) {
+          setShowQRModal(false);
+        }
         return;
       }
       appAlert('Hata', result.message);
@@ -7749,7 +7759,31 @@ function PassengerDashboard({
     } finally {
       tripEndIbanCompleteInFlightRef.current = false;
     }
-  }, [activeTag?.id, user?.id, tripPaymentDetails]);
+  }, [activeTag?.id, activeTag?.match_channel, user?.id, tripPaymentDetails]);
+
+  const handlePassengerTrustedCashClaim = useCallback(async () => {
+    if (tripEndIbanCompleteInFlightRef.current) return;
+    const tagId = activeTag?.id ? String(activeTag.id) : '';
+    const uid = user?.id ? String(user.id) : '';
+    if (!tagId || !uid) {
+      appAlert('Hata', 'Eşleşme bilgisi bulunamadı.');
+      return;
+    }
+    tripEndIbanCompleteInFlightRef.current = true;
+    try {
+      const result = await claimTransferPayment(tagId, uid, { method: 'cash' });
+      if (result.ok) {
+        setShowQRModal(false);
+        appAlert('Bilgi', TRUSTED_PAYMENT_PENDING_ALERT);
+        return;
+      }
+      appAlert('Hata', result.message);
+    } catch {
+      appAlert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
+    } finally {
+      tripEndIbanCompleteInFlightRef.current = false;
+    }
+  }, [activeTag?.id, user?.id]);
   
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -14387,6 +14421,7 @@ function PassengerDashboard({
         otherLongitude={activeTag?.driver_longitude}
         showIbanOption={canOpenDriverPaymentDetails}
         onChooseDriverIban={handleOpenTripEndDriverIban}
+        onTrustedPaymentClaim={handlePassengerTrustedCashClaim}
         onComplete={handlePassengerTripEndComplete}
       />
 
@@ -15149,6 +15184,7 @@ function DriverDashboard({
 
   const [transferPaymentConfirmVisible, setTransferPaymentConfirmVisible] = useState(false);
   const [transferPaymentPassengerName, setTransferPaymentPassengerName] = useState('');
+  const [transferPaymentMethod, setTransferPaymentMethod] = useState<'cash' | 'iban'>('iban');
   const [transferPaymentSubmitting, setTransferPaymentSubmitting] = useState(false);
   const transferPaymentAwaitingShownRef = useRef<Set<string>>(new Set());
   const transferPaymentConfirmVisibleRef = useRef(false);
@@ -16059,29 +16095,42 @@ function DriverDashboard({
     if (activeTag?.id) return;
     setTransferPaymentConfirmVisible(false);
     setTransferPaymentPassengerName('');
+    setTransferPaymentMethod('iban');
     setTransferPaymentSubmitting(false);
   }, [activeTag?.id]);
 
   const tryOpenTransferPaymentConfirm = useCallback(
-    (payload: { tag_id?: string; passenger_name?: string; claimed_at?: string }) => {
+    (payload: {
+      tag_id?: string;
+      passenger_name?: string;
+      claimed_at?: string;
+      method?: string;
+    }) => {
       const tagId = String(payload.tag_id || '').trim();
       if (!tagId || !user?.id) return;
       const tag = driverActiveTagRef.current;
       if (!tag?.id || String(tag.id) !== tagId) return;
       const st = String(tag.status || '').trim().toLowerCase();
       if (st !== 'matched' && st !== 'in_progress') return;
-      if (!String(tag.matched_bank_account_id || '').trim()) return;
+
+      const methodRaw = String(payload.method || 'iban').trim().toLowerCase();
+      const paymentMethod: 'cash' | 'iban' = methodRaw === 'cash' ? 'cash' : 'iban';
+      const isTrustedCash =
+        String(tag.match_channel || '').trim().toLowerCase() === 'trusted' &&
+        paymentMethod === 'cash';
+      if (!isTrustedCash && !String(tag.matched_bank_account_id || '').trim()) return;
       if (transferPaymentConfirmVisibleRef.current) return;
 
       const claimKey = payload.claimed_at
-        ? `${tagId}:${String(payload.claimed_at).trim()}`
-        : `${tagId}:awaiting`;
+        ? `${tagId}:${String(payload.claimed_at).trim()}:${paymentMethod}`
+        : `${tagId}:awaiting:${paymentMethod}`;
       if (transferPaymentAwaitingShownRef.current.has(claimKey)) return;
 
       transferPaymentAwaitingShownRef.current.add(claimKey);
       setTransferPaymentPassengerName(
         displayFirstName(payload.passenger_name || tag.passenger_name, 'Yolcu'),
       );
+      setTransferPaymentMethod(paymentMethod);
       setTransferPaymentConfirmVisible(true);
     },
     [user?.id],
@@ -16094,6 +16143,7 @@ function DriverDashboard({
       tryOpenTransferPaymentConfirm({
         tag_id: typeof d.tag_id === 'string' ? d.tag_id : String(d.tag_id || ''),
         passenger_name: typeof d.passenger_name === 'string' ? d.passenger_name : undefined,
+        method: typeof d.method === 'string' ? d.method : undefined,
       });
     };
     socket.on('transfer_payment_claimed', handler);
@@ -16118,6 +16168,7 @@ function DriverDashboard({
         tag_id: tagId,
         passenger_name: driverActiveTagRef.current?.passenger_name,
         claimed_at: result.data.claimed_at,
+        method: result.data.method,
       });
     };
 
@@ -16142,6 +16193,7 @@ function DriverDashboard({
       if (result.ok) {
         setTransferPaymentConfirmVisible(false);
         setTransferPaymentPassengerName('');
+        setTransferPaymentMethod('iban');
         return;
       }
       appAlert('Hata', result.message);
@@ -16170,6 +16222,7 @@ function DriverDashboard({
         if (result.ok) {
           setTransferPaymentConfirmVisible(false);
           setTransferPaymentPassengerName('');
+          setTransferPaymentMethod('iban');
           appAlert('Bildirim', 'Bildiriminiz alındı. Destek ekibi inceleyecek.');
           return;
         }
@@ -19366,6 +19419,7 @@ function DriverDashboard({
       <TransferPaymentConfirmModal
         visible={transferPaymentConfirmVisible}
         passengerName={transferPaymentPassengerName}
+        paymentMethod={transferPaymentMethod}
         loading={transferPaymentSubmitting}
         onApprove={handleTransferPaymentApprove}
         onReject={handleTransferPaymentReject}
