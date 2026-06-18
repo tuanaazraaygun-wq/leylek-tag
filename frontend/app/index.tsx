@@ -747,6 +747,8 @@ interface Tag {
   passenger_vehicle_kind?: 'car' | 'motorcycle';
   /** Yolcu teklifte seçtiği ödeme (sunucu: cash | card) */
   passenger_payment_method?: 'cash' | 'card';
+  /** normal | quick | trusted — tags.match_channel */
+  match_channel?: string;
   /** Sürücü haritası: yolcu cinsiyeti (marker PNG) */
   passenger_gender?: string;
   /** Yolcu haritasında sürücü marker (PNG): araç / motor */
@@ -14377,6 +14379,7 @@ function PassengerDashboard({
         tagId={activeTag?.id || ''}
         isDriver={false}
         otherUserName={displayFirstName(activeTag?.driver_name, 'Sürücü')}
+        matchChannel={activeTag?.match_channel}
         bookingPaymentMethod={normalizePassengerPaymentMethod(activeTag?.passenger_payment_method)}
         myLatitude={userLocation?.latitude}
         myLongitude={userLocation?.longitude}
@@ -19526,6 +19529,7 @@ function DriverDashboard({
         tagId={activeTag?.id || ''}
         isDriver={true}
         otherUserName={displayFirstName(activeTag?.passenger_name, 'Yolcu')}
+        matchChannel={activeTag?.match_channel}
         myLatitude={userLocation?.latitude}
         myLongitude={userLocation?.longitude}
         otherLatitude={activeTag?.passenger_latitude}

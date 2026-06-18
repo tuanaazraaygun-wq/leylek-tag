@@ -41,6 +41,8 @@ interface QRTripEndModalProps {
   otherLongitude?: number;
   /** Teklifte yolcunun seçtiği ödeme (yalnızca yolcu QR akışında) */
   bookingPaymentMethod?: PaymentMethod | null;
+  /** tags.match_channel — trusted direct ödeme UI kısıtları */
+  matchChannel?: string | null;
   /** Yolcu: eşleşmede IBAN snapshot varsa bitiş ekranında seçenek göster */
   showIbanOption?: boolean;
   onChooseDriverIban?: () => void;
@@ -59,10 +61,15 @@ export default function QRTripEndModal({
   otherLatitude,
   otherLongitude,
   bookingPaymentMethod = null,
+  matchChannel = null,
   showIbanOption = false,
   onChooseDriverIban,
   onComplete,
 }: QRTripEndModalProps) {
+  const isTrustedDirect = String(matchChannel || '').trim().toLowerCase() === 'trusted';
+  const effectiveBookingPaymentMethod: PaymentMethod | null =
+    isTrustedDirect && bookingPaymentMethod === 'card' ? null : bookingPaymentMethod;
+  const showCardPaymentOption = !isTrustedDirect;
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -263,18 +270,20 @@ export default function QRTripEndModal({
   };
 
   const paymentTitle =
-    bookingPaymentMethod === 'cash'
+    effectiveBookingPaymentMethod === 'cash'
       ? 'Nakit ödeme'
-      : bookingPaymentMethod === 'card'
+      : effectiveBookingPaymentMethod === 'card'
         ? 'Kart (yakında)'
         : 'Ödeme yöntemini seç';
 
   const paymentSubtitle =
-    bookingPaymentMethod === 'cash'
+    effectiveBookingPaymentMethod === 'cash'
       ? 'Teklifinizde nakit seçmiştiniz. Ücreti nakit olarak ödediğinizi onaylayın.'
-      : bookingPaymentMethod === 'card'
+      : effectiveBookingPaymentMethod === 'card'
         ? 'Kart ödemesi yakında. Şimdilik ödeme kaydını onaylayarak yolculuğu tamamlayın.'
-        : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
+        : isTrustedDirect
+          ? 'Ücreti nakit olarak ödediğinizi onaylayın.'
+          : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
 
   const phaseStep = isDriver
     ? 'Yolculuk tamamlandı'
@@ -482,7 +491,7 @@ export default function QRTripEndModal({
                     {paymentSubtitle}
                   </PremiumText>
 
-                  {bookingPaymentMethod === 'cash' && (
+                  {effectiveBookingPaymentMethod === 'cash' && (
                     <TouchableOpacity
                       style={styles.primaryPayBtn}
                       onPress={() => handlePassengerPaymentConfirm('cash')}
@@ -496,7 +505,7 @@ export default function QRTripEndModal({
                     </TouchableOpacity>
                   )}
 
-                  {bookingPaymentMethod === 'card' && (
+                  {showCardPaymentOption && effectiveBookingPaymentMethod === 'card' && (
                     <TouchableOpacity
                       style={styles.primaryPayBtn}
                       onPress={() => handlePassengerPaymentConfirm('card')}
@@ -510,11 +519,13 @@ export default function QRTripEndModal({
                     </TouchableOpacity>
                   )}
 
-                  {!bookingPaymentMethod && (
+                  {!effectiveBookingPaymentMethod && (
                     <>
-                      <PremiumText variant="caption" muted style={styles.legacyPickLabel}>
-                        Nasıl ödediniz?
-                      </PremiumText>
+                      {!isTrustedDirect ? (
+                        <PremiumText variant="caption" muted style={styles.legacyPickLabel}>
+                          Nasıl ödediniz?
+                        </PremiumText>
+                      ) : null}
                       <View style={styles.legacyRow}>
                         <TouchableOpacity
                           style={styles.legacyChipWrap}
@@ -549,39 +560,41 @@ export default function QRTripEndModal({
                             </PremiumText>
                           </GlassSurface>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.legacyChipWrap}
-                          onPress={() => setLegacyPaymentPick('card')}
-                          activeOpacity={0.88}
-                        >
-                          <GlassSurface
-                            variant="plain"
-                            borderRadius={LDS_RADIUS.md}
-                            style={[
-                              styles.legacyChip,
-                              legacyPaymentPick === 'card' && styles.legacyChipActive,
-                            ]}
+                        {showCardPaymentOption ? (
+                          <TouchableOpacity
+                            style={styles.legacyChipWrap}
+                            onPress={() => setLegacyPaymentPick('card')}
+                            activeOpacity={0.88}
                           >
-                            <Ionicons
-                              name="card-outline"
-                              size={22}
-                              color={
-                                legacyPaymentPick === 'card'
-                                  ? 'rgba(243,248,255,0.94)'
-                                  : 'rgba(34,211,238,0.92)'
-                              }
-                            />
-                            <PremiumText
-                              variant="body"
+                            <GlassSurface
+                              variant="plain"
+                              borderRadius={LDS_RADIUS.md}
                               style={[
-                                styles.legacyChipText,
-                                legacyPaymentPick === 'card' && styles.legacyChipTextActive,
+                                styles.legacyChip,
+                                legacyPaymentPick === 'card' && styles.legacyChipActive,
                               ]}
                             >
-                              Kart (yakında)
-                            </PremiumText>
-                          </GlassSurface>
-                        </TouchableOpacity>
+                              <Ionicons
+                                name="card-outline"
+                                size={22}
+                                color={
+                                  legacyPaymentPick === 'card'
+                                    ? 'rgba(243,248,255,0.94)'
+                                    : 'rgba(34,211,238,0.92)'
+                                }
+                              />
+                              <PremiumText
+                                variant="body"
+                                style={[
+                                  styles.legacyChipText,
+                                  legacyPaymentPick === 'card' && styles.legacyChipTextActive,
+                                ]}
+                              >
+                                Kart (yakında)
+                              </PremiumText>
+                            </GlassSurface>
+                          </TouchableOpacity>
+                        ) : null}
                       </View>
                       <TouchableOpacity
                         style={[

@@ -15370,6 +15370,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "passenger_preferred_vehicle": tag.get("passenger_preferred_vehicle"),
                 "passenger_payment_method": tag.get("passenger_payment_method"),
                 "matched_bank_account_id": tag.get("matched_bank_account_id"),
+                "match_channel": tag.get("match_channel"),
                 "end_request": tag.get("end_request"),
             }
             
@@ -20186,11 +20187,30 @@ async def complete_trip_with_qr(request: Request):
         
         if not _uid_eq(scanned_user_id, driver_id):
             return {"success": False, "detail": "QR kod bu yolculuğun sürücüsüne ait değil"}
-        
+
+        match_channel_row = (
+            supabase.table("tags")
+            .select("match_channel")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        match_channel = str(
+            ((match_channel_row.data or [{}])[0]).get("match_channel") or ""
+        ).strip().lower()
+
         booked_pm = _canonical_passenger_payment_method(tag.get("passenger_payment_method"))
         confirmed_pm = _canonical_passenger_payment_method(
             body.get("payment_confirmed_method") or body.get("payment_confirmed")
         )
+        if match_channel == "trusted" and confirmed_pm == "card":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "trusted_direct_card_not_supported",
+                    "message": "Bu yol paylaşımında kartla ödeme desteklenmiyor.",
+                },
+            )
         if booked_pm in ("cash", "card"):
             if confirmed_pm not in ("cash", "card"):
                 return {
