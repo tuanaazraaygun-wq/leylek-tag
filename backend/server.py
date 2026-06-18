@@ -121,6 +121,11 @@ from services.quick_match import (
 )
 from services.block_safety import BlockedPairError
 from services.match_intent_guard import ActiveMatchIntentError
+from services.match_location_freshness import (
+    get_location_max_age_seconds,
+    is_driver_location_fresh,
+    location_age_seconds,
+)
 from services.relationship_match_engine import (
     RmeDriverBusyError,
     RmeDriverInvitePendingError,
@@ -2308,11 +2313,11 @@ async def find_eligible_drivers(
 
 
 _QM_ONLINE_DRIVER_SELECT_FULL = (
-    "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details, "
-    "is_active, is_deleted, deleted_at, is_banned"
+    "id, name, rating, latitude, longitude, last_location_update, driver_active_until, driver_online, "
+    "driver_details, is_active, is_deleted, deleted_at, is_banned"
 )
 _QM_ONLINE_DRIVER_SELECT_FALLBACK = (
-    "id, name, rating, latitude, longitude, driver_online, is_active, driver_details"
+    "id, name, rating, latitude, longitude, last_location_update, driver_online, is_active, driver_details"
 )
 
 
@@ -2397,7 +2402,8 @@ async def _find_eligible_drivers_for_quick_match(
             qm_route_top_n,
             qm_use_traffic,
         )
-        no_loc = excluded = vehicle_mismatch = too_far = 0
+        no_loc = excluded = vehicle_mismatch = too_far = stale_location = 0
+        max_age_sec = get_location_max_age_seconds()
         _match_t0 = time.time()
         origin_points: list[tuple[str, float, float]] = []
         driver_by_id: dict[str, dict] = {}
@@ -2431,6 +2437,15 @@ async def _find_eligible_drivers_for_quick_match(
                 too_far += 1
                 continue
             did = str(driver["id"]).strip().lower()
+            if max_age_sec > 0 and not is_driver_location_fresh(driver):
+                age_sec = location_age_seconds(driver)
+                stale_location += 1
+                logger.info(
+                    "quick_match_gate_rejected reason=stale_location would_reject=1 driver_id=%s age_sec=%s max_age_sec=%s",
+                    did,
+                    age_sec,
+                    max_age_sec,
+                )
             origin_points.append((did, d_la, d_lo))
             driver_by_id[did] = driver
 
@@ -2506,12 +2521,13 @@ async def _find_eligible_drivers_for_quick_match(
                 )
             logger.warning(
                 "find_eligible_drivers_qm: 0 uygun — online=%s no_latlng=%s excluded=%s vehicle_mismatch=%s "
-                "too_far=%s pref=%s max_eta_min=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
+                "too_far=%s stale_location=%s pref=%s max_eta_min=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
                 online_count,
                 no_loc,
                 excluded,
                 vehicle_mismatch,
                 too_far,
+                stale_location,
                 pref,
                 max_eta_min,
                 plat_f,
@@ -2520,12 +2536,13 @@ async def _find_eligible_drivers_for_quick_match(
             )
         else:
             logger.info(
-                "find_eligible_drivers_qm: eligible=%s / online=%s pref=%s max_eta_min=%s vehicle_filter=%s",
+                "find_eligible_drivers_qm: eligible=%s / online=%s pref=%s max_eta_min=%s vehicle_filter=%s stale_location=%s",
                 len(eligible_drivers),
                 online_count,
                 pref,
                 max_eta_min,
                 vehicle_filter,
+                stale_location,
             )
         return eligible_drivers
     except Exception as e:
