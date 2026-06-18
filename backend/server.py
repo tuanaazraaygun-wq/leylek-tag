@@ -2515,7 +2515,9 @@ async def _find_eligible_drivers_for_quick_match(
                 age_sec = location_age_seconds(driver)
                 stale_location += 1
                 logger.info(
-                    "quick_match_gate_rejected reason=stale_location would_reject=1 driver_id=%s age_sec=%s max_age_sec=%s",
+                    "quick_match_gate_rejected reason=stale_location would_reject=1 "
+                    "request_id=%s driver_id=%s age_sec=%s max_age_sec=%s",
+                    qm_request_id,
                     did,
                     age_sec,
                     max_age_sec,

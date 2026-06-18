@@ -781,7 +781,7 @@ async def _quick_match_pick_next_driver(
         exclude_ids=exclude_ids,
         passenger_vehicle_kind=vehicle_pref,
         vehicle_filter=True,
-        tag_id=None,
+        tag_id=request_id,
     )
     eligible_count = len(eligible)
     busy_skipped_count = 0
@@ -811,6 +811,15 @@ async def _quick_match_pick_next_driver(
             max_eta_min,
         )
         return candidate
+    if eligible_count > 0 and busy_skipped_count == eligible_count:
+        logger.info(
+            "quick_match_all_busy request_id=%s candidate_count=%d busy_skipped_count=%d "
+            "max_attempts=%d reason=all_candidates_busy",
+            _short_id(request_id),
+            eligible_count,
+            busy_skipped_count,
+            get_quick_match_max_attempts(),
+        )
     logger.warning(
         "quick_match_pick_driver_none request_id=%s pickup=(%.5f,%.5f) vehicle_pref=%s "
         "exclude_count=%d eligible=%d busy_skipped=%d max_eta_min=%d "
