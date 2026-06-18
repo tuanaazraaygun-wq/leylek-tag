@@ -2813,8 +2813,13 @@ async def _find_eligible_drivers_for_quick_match(
                 stale_location,
             )
         return eligible_drivers
-    except Exception as e:
-        logger.error("find_eligible_drivers_qm error: %s", e)
+    except Exception:
+        logger.exception(
+            "event=[500_traceback] find_eligible_drivers_qm_error "
+            "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s",
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
+        )
         return []
 
 
@@ -10912,8 +10917,15 @@ async def auth_supabase_session_refresh(
         a, r = mint_supabase_session_tokens(uid)
         if not a or not r:
             logger.error(
-                "[supabase_token_mint_failed] user_id=%s path=/auth/supabase-session/refresh error=no_tokens_from_mint",
-                uid,
+                "event=[500_traceback] supabase_token_mint_failed "
+                "endpoint=%s user_id=%s supabase_is_none=%s auth_session_client_available=%s "
+                "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s error=no_tokens_from_mint",
+                "/auth/supabase-session/refresh",
+                _mask_log_id(uid),
+                supabase is None,
+                _supabase_core.get_supabase_auth_session_client() is not None,
+                SCALE1A_SQL_BBOX,
+                SCALE1A_SQL_BBOX_SHADOW,
             )
             raise HTTPException(
                 status_code=500,
@@ -12842,10 +12854,16 @@ async def get_quick_match_invite_current_http(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "quick_match_invite_current actor=%s err=%s",
+        logger.exception(
+            "event=[500_traceback] quick_match_invite_current_error "
+            "endpoint=%s actor_id=%s supabase_is_none=%s auth_session_client_available=%s "
+            "SCALE1A_SQL_BBOX=%s SCALE1A_SQL_BBOX_SHADOW=%s",
+            "/quick-match/invites/current",
             _mask_log_id(actor_id),
-            e,
+            supabase is None,
+            _supabase_core.get_supabase_auth_session_client() is not None,
+            SCALE1A_SQL_BBOX,
+            SCALE1A_SQL_BBOX_SHADOW,
         )
         raise HTTPException(status_code=500, detail="Quick Match davet alınamadı") from e
 
