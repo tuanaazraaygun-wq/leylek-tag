@@ -119,6 +119,22 @@ from services.quick_match import (
     get_quick_match_max_eta_min,
     get_quick_match_request_status,
 )
+from services.block_safety import BlockedPairError
+from services.match_intent_guard import ActiveMatchIntentError
+from services.relationship_match_engine import (
+    RmeExpiredError,
+    RmeFeatureDisabledError,
+    RmeInvalidStateError,
+    RmeNotFoundError,
+    RmeValidationError,
+    accept_invite as accept_trusted_direct_invite,
+    cancel_request as cancel_trusted_direct_request,
+    create_request as create_trusted_direct_request,
+    decline_invite as decline_trusted_direct_invite,
+    get_active_request as get_trusted_direct_active_request,
+    get_current_invite as get_trusted_direct_current_invite,
+    is_trusted_direct_match_enabled,
+)
 from services.transfer_payment_service import (
     TransferPaymentDisabledError,
     TransferPaymentForbiddenError,
@@ -12387,6 +12403,309 @@ async def get_quick_match_invite_current_http(
             e,
         )
         raise HTTPException(status_code=500, detail="Quick Match davet alınamadı") from e
+
+
+def _require_trusted_direct_match_http() -> None:
+    if not is_trusted_direct_match_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "feature_disabled",
+                "message": "Trusted Direct Match is not available",
+            },
+        )
+
+
+def _raise_trusted_direct_match_http(exc: Exception) -> None:
+    if isinstance(exc, RmeFeatureDisabledError):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "feature_disabled",
+                "message": str(exc) or RmeFeatureDisabledError.message,
+            },
+        ) from exc
+    if isinstance(exc, BlockedPairError):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "blocked_pair",
+                "message": str(exc) or BlockedPairError.message,
+            },
+        ) from exc
+    if isinstance(exc, ActiveMatchIntentError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "active_match_intent_exists",
+                "message": str(exc) or ActiveMatchIntentError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeNotFoundError):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "not_found",
+                "message": str(exc) or RmeNotFoundError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeExpiredError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "expired",
+                "message": str(exc) or RmeExpiredError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeInvalidStateError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_state",
+                "message": str(exc) or RmeInvalidStateError.message,
+            },
+        ) from exc
+    if isinstance(exc, RmeValidationError):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "validation_error",
+                "message": str(exc) or RmeValidationError.message,
+            },
+        ) from exc
+    raise HTTPException(
+        status_code=500,
+        detail="Trusted Direct Match işlemi tamamlanamadı",
+    ) from exc
+
+
+class TrustedDirectCreateRequest(BaseModel):
+    responder_id: str
+    relationship_connection_id: str
+    pickup_lat: float
+    pickup_lng: float
+    pickup_label: Optional[str] = None
+    dropoff_lat: float
+    dropoff_lng: float
+    dropoff_label: Optional[str] = None
+    offered_contribution_tl: int
+    vehicle_preference: str
+    idempotency_key: Optional[str] = None
+
+
+@api_router.post("/trusted-direct/request")
+async def post_trusted_direct_request_http(
+    body: TrustedDirectCreateRequest,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — yolcu istek oluştur (RME-3B skeleton)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_request_create")
+    try:
+        result = create_trusted_direct_request(
+            supabase,
+            actor_id,
+            body.model_dump(exclude_none=True),
+        )
+        return {"success": True, **result}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_request_create actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match isteği oluşturulamadı",
+        ) from e
+
+
+@api_router.get("/trusted-direct/request/active")
+async def get_trusted_direct_request_active_http(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — yolcunun aktif pending isteği (RME-3B skeleton)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_request_active")
+    try:
+        request = get_trusted_direct_active_request(supabase, actor_id)
+        return {"success": True, "request": request}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_request_active actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match aktif istek alınamadı",
+        ) from e
+
+
+@api_router.post("/trusted-direct/request/{request_id}/cancel")
+async def post_trusted_direct_request_cancel_http(
+    request_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — yolcu iptal (RME-3B skeleton)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_cancel")
+    try:
+        result = cancel_trusted_direct_request(supabase, actor_id, request_id)
+        return {"success": True, **result}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_cancel actor=%s request_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(request_id or "")[:36],
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match isteği iptal edilemedi",
+        ) from e
+
+
+@api_router.get("/trusted-direct/invites/current")
+async def get_trusted_direct_invite_current_http(
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — sürücünün aktif daveti (RME-3B skeleton)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_invite_current")
+    try:
+        invite = get_trusted_direct_current_invite(supabase, actor_id)
+        return {"success": True, "invite": invite}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_invite_current actor=%s err=%s",
+            _mask_log_id(actor_id),
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match davet alınamadı",
+        ) from e
+
+
+@api_router.post("/trusted-direct/invites/{invite_id}/accept")
+async def post_trusted_direct_invite_accept_http(
+    invite_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — sürücü kabul (RME-3B skeleton)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_accept")
+    try:
+        result = accept_trusted_direct_invite(supabase, actor_id, invite_id)
+        return {"success": True, **result}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_accept actor=%s invite_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(invite_id or "")[:36],
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match davet kabul edilemedi",
+        ) from e
+
+
+@api_router.post("/trusted-direct/invites/{invite_id}/decline")
+async def post_trusted_direct_invite_decline_http(
+    invite_id: str,
+    actor_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Trusted Direct Match — sürücü red (RME-3B skeleton)."""
+    _require_trusted_direct_match_http()
+    await require_eligible_user(actor_id, action="trusted_direct_decline")
+    try:
+        result = decline_trusted_direct_invite(supabase, actor_id, invite_id)
+        return {"success": True, **result}
+    except (
+        RmeFeatureDisabledError,
+        BlockedPairError,
+        ActiveMatchIntentError,
+        RmeNotFoundError,
+        RmeExpiredError,
+        RmeInvalidStateError,
+        RmeValidationError,
+    ) as exc:
+        _raise_trusted_direct_match_http(exc)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "trusted_direct_decline actor=%s invite_id=%s err=%s",
+            _mask_log_id(actor_id),
+            str(invite_id or "")[:36],
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Trusted Direct Match davet reddedilemedi",
+        ) from e
 
 
 @api_router.get("/admin/reports")
