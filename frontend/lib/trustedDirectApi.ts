@@ -7,6 +7,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/
 export const TDM_GET_TIMEOUT_MS = 8000;
 export const TDM_MUTATION_TIMEOUT_MS = 12000;
 export const TDM_POLL_INTERVAL_MS = 2500;
+export const TDM_DRIVER_IDLE_REFRESH_MS = 3500;
 export const TDM_MATCHING_TIMEOUT_MS = 60_000;
 export const TDM_DEFAULT_TTL_MS = 180_000;
 export const TDM_GENERIC_USER_ERROR = 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
@@ -87,6 +88,51 @@ export type TrustedDirectCancelResponse = {
   request: TrustedDirectRequestRow | null;
 };
 
+export type TrustedDirectInviteStatus =
+  | 'pending_responder'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'cancelled';
+
+export type TrustedDirectDriverRequestPublic = {
+  id: string;
+  status: string;
+  pickup_label: string | null;
+  dropoff_label: string | null;
+  distance_km: number;
+  distance_band: string | null;
+  offered_contribution_tl: number;
+  vehicle_preference: TrustedDirectVehiclePreference | string;
+  created_at: string | null;
+};
+
+export type TrustedDirectDriverInvitePublic = {
+  id: string;
+  status: TrustedDirectInviteStatus | string;
+  expires_at: string | null;
+  invite_expires_in_sec: number;
+  request: TrustedDirectDriverRequestPublic;
+};
+
+export type TrustedDirectCurrentInviteResponse = {
+  success: true;
+  invite: Record<string, unknown> | null;
+};
+
+export type TrustedDirectAcceptResponse = {
+  success: true;
+  tag: { id: string; status?: string; match_channel?: string };
+  request?: Record<string, unknown>;
+  invite?: Record<string, unknown>;
+};
+
+export type TrustedDirectDeclineResponse = {
+  success: true;
+  invite?: Record<string, unknown> | null;
+  request?: Record<string, unknown> | null;
+};
+
 export type CreateTrustedDirectRequestPayload = {
   responder_id: string;
   relationship_connection_id: string;
@@ -144,6 +190,75 @@ function fail(
   detail?: string,
 ): TrustedDirectApiResult<never> {
   return { ok: false, code, message, ...(detail ? { detail } : {}) };
+}
+
+function normalizeDriverRequestPublic(
+  raw: Record<string, unknown> | null | undefined,
+): TrustedDirectDriverRequestPublic | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = String(raw.id || '').trim();
+  if (!id) return null;
+
+  const distanceRaw = raw.distance_km;
+  let distance_km = 0;
+  if (distanceRaw != null) {
+    const parsed = Number(distanceRaw);
+    distance_km = Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  const contributionRaw = raw.offered_contribution_tl;
+  let offered_contribution_tl = 0;
+  if (contributionRaw != null) {
+    const parsed = Number(contributionRaw);
+    offered_contribution_tl = Number.isFinite(parsed) ? Math.round(parsed) : 0;
+  }
+
+  const vehicleRaw = String(raw.vehicle_preference || '').trim().toLowerCase();
+  const vehicle_preference: TrustedDirectVehiclePreference | string =
+    vehicleRaw === 'motorcycle' ? 'motorcycle' : vehicleRaw === 'car' ? 'car' : vehicleRaw;
+
+  return {
+    id,
+    status: String(raw.status || ''),
+    pickup_label: raw.pickup_label != null ? String(raw.pickup_label) : null,
+    dropoff_label: raw.dropoff_label != null ? String(raw.dropoff_label) : null,
+    distance_km,
+    distance_band: raw.distance_band != null ? String(raw.distance_band) : null,
+    offered_contribution_tl,
+    vehicle_preference,
+    created_at: raw.created_at != null ? String(raw.created_at) : null,
+  };
+}
+
+function normalizeDriverInvitePublic(
+  raw: Record<string, unknown> | null | undefined,
+): TrustedDirectDriverInvitePublic | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = String(raw.id || '').trim();
+  if (!id) return null;
+
+  const status = String(raw.status || '').trim().toLowerCase();
+  if (status !== 'pending_responder') return null;
+
+  const requestRaw = raw.request;
+  if (!requestRaw || typeof requestRaw !== 'object') return null;
+  const request = normalizeDriverRequestPublic(requestRaw as Record<string, unknown>);
+  if (!request) return null;
+
+  const expiresInRaw = raw.invite_expires_in_sec;
+  let invite_expires_in_sec = 0;
+  if (expiresInRaw != null) {
+    const parsed = Number(expiresInRaw);
+    invite_expires_in_sec = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+  }
+
+  return {
+    id,
+    status,
+    expires_at: raw.expires_at != null ? String(raw.expires_at) : null,
+    invite_expires_in_sec,
+    request,
+  };
 }
 
 function normalizeRequestRow(raw: Record<string, unknown> | null | undefined): TrustedDirectRequestRow | null {
@@ -248,6 +363,15 @@ function userMessageFromParsedError(
     return { code: 'NOT_FOUND', message: 'Kayıt bulunamadı' };
   }
   if (status === 409) {
+    if (code === 'driver_busy' || rawLower.includes('driver_busy')) {
+      return { code: 'CONFLICT', message: 'Aktif yolculuğunuz varken davet kabul edilemez' };
+    }
+    if (code === 'passenger_busy' || rawLower.includes('passenger_busy')) {
+      return { code: 'CONFLICT', message: 'Yolcu şu an başka bir eşleşmede' };
+    }
+    if (code === 'invalid_state' || rawLower.includes('invalid_state')) {
+      return { code: 'CONFLICT', message: 'Bu davet artık geçerli değil' };
+    }
     if (
       code === 'active_match_intent_exists' ||
       rawLower.includes('active_match') ||
@@ -374,6 +498,43 @@ export async function probeTrustedDirectAvailable(): Promise<boolean> {
   const res = await tdmGet<TrustedDirectActiveResponse>('/trusted-direct/request/active');
   if (res.ok) return true;
   return res.code !== 'UNAVAILABLE';
+}
+
+/** Probe TDM driver invite path (404 feature_disabled → unavailable). */
+export async function probeTrustedDirectDriverAvailable(): Promise<boolean> {
+  const res = await tdmGet<TrustedDirectCurrentInviteResponse>('/trusted-direct/invites/current');
+  if (res.ok) return true;
+  return res.code !== 'UNAVAILABLE';
+}
+
+export async function getCurrentTrustedDirectInvite(): Promise<
+  TrustedDirectApiResult<TrustedDirectDriverInvitePublic | null>
+> {
+  const res = await tdmGet<TrustedDirectCurrentInviteResponse>('/trusted-direct/invites/current');
+  if (res.ok === false) return res;
+  if (!res.data.invite) return ok(null);
+  const invite = normalizeDriverInvitePublic(res.data.invite as Record<string, unknown>);
+  return ok(invite);
+}
+
+export async function acceptTrustedDirectInvite(
+  inviteId: string,
+): Promise<TrustedDirectApiResult<TrustedDirectAcceptResponse>> {
+  const id = encodeURIComponent(String(inviteId || '').trim());
+  if (!id) return fail('NOT_FOUND', 'Davet bulunamadı');
+  const res = await tdmPost<TrustedDirectAcceptResponse>(`/trusted-direct/invites/${id}/accept`);
+  if (res.ok === false) return res;
+  const tagId = String(res.data.tag?.id || '').trim();
+  if (!tagId) return fail('PARSE', TDM_GENERIC_USER_ERROR);
+  return ok(res.data);
+}
+
+export async function declineTrustedDirectInvite(
+  inviteId: string,
+): Promise<TrustedDirectApiResult<TrustedDirectDeclineResponse>> {
+  const id = encodeURIComponent(String(inviteId || '').trim());
+  if (!id) return fail('NOT_FOUND', 'Davet bulunamadı');
+  return tdmPost<TrustedDirectDeclineResponse>(`/trusted-direct/invites/${id}/decline`);
 }
 
 export async function getActiveTrustedDirectRequest(): Promise<

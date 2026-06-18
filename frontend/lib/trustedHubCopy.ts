@@ -239,6 +239,46 @@ export const TDM_ORPHAN_CLOSE = 'Kapat';
 export const TDM_PENDING_ROW_HINT = 'Başka bir istek bekleniyor.';
 export const TDM_GENERIC_ERROR = 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
 
+export const TDM_DRIVER_INVITE_TITLE = 'Güven ağından doğrudan istek';
+export const TDM_DRIVER_INVITE_SUBTITLE = 'Güvenilir bağlantınızdan gelen istek.';
+export const TDM_DRIVER_INVITE_POLL_WARNING = 'Bağlantı zayıf, yeniden deneniyor.';
+export const TDM_CONTRIBUTION_DISCLAIMER = 'LeylekTAG katkıyı tahsil etmez.';
+
+export function formatTdmVehiclePreference(
+  value: string | null | undefined,
+): string {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'motorcycle') return 'Motosiklet';
+  if (raw === 'car') return 'Otomobil';
+  if (!raw) return 'Belirtilmedi';
+  return raw;
+}
+
+export function formatTdmDriverDistanceLabel(
+  distanceKm: number | null | undefined,
+  distanceBand: string | null | undefined,
+): string {
+  const km = Number(distanceKm);
+  if (Number.isFinite(km) && km > 0) {
+    const rounded = km >= 10 ? Math.round(km) : Math.round(km * 10) / 10;
+    return `${rounded} km`;
+  }
+
+  const band = String(distanceBand || '').trim();
+  switch (band) {
+    case '0_5':
+      return '0–5 km';
+    case '5_10':
+      return '5–10 km';
+    case '10_20':
+      return '10–20 km';
+    default:
+      if (band.includes('-')) return `${band} km`;
+      if (band) return band;
+      return 'Yakın mesafe';
+  }
+}
+
 export function formatTrustedExpiresHint(iso: string | null | undefined): string {
   if (!iso || !String(iso).trim()) return '';
   const d = new Date(String(iso));

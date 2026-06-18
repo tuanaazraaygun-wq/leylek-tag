@@ -60,12 +60,16 @@ import {
   type QuickMatchPassengerTerminalStatus,
 } from '../hooks/useQuickMatchPassengerSession';
 import {
+  probeTrustedDirectDriverAvailable,
   registerTrustedDirectBootstrapHandler,
   setTrustedDirectRouteContext,
+  TDM_DRIVER_IDLE_REFRESH_MS,
   type TrustedDirectRouteContext,
 } from '../lib/trustedDirectApi';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
+import DriverTrustedDirectInviteCard from '../components/superUx/DriverTrustedDirectInviteCard';
 import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession';
+import { useTrustedDirectDriverSession } from '../hooks/useTrustedDirectDriverSession';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
@@ -17211,6 +17215,27 @@ function DriverDashboard({
     !activeTag &&
     kycStatus?.status !== 'pending';
 
+  const [trustedDirectDriverFeatureAvailable, setTrustedDirectDriverFeatureAvailable] =
+    useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void probeTrustedDirectDriverAvailable().then((available) => {
+      if (!cancelled) {
+        setTrustedDirectDriverFeatureAvailable(available);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const trustedDirectDriverEnabled =
+    trustedDirectDriverFeatureAvailable === true &&
+    !driverHasActiveTripForQuickMatch &&
+    !activeTag &&
+    kycStatus?.status !== 'pending';
+
   const handleQuickMatchDriverMatched = useCallback(async (_tagId?: string) => {
     try {
       await loadActiveTag();
@@ -17219,10 +17244,24 @@ function DriverDashboard({
     }
   }, [loadActiveTag]);
 
+  const handleTrustedDirectDriverMatched = useCallback(async (_tagId?: string) => {
+    try {
+      await loadActiveTag();
+    } catch (error) {
+      console.warn('[TrustedDirectDriver] loadActiveTag after match failed', error);
+    }
+  }, [loadActiveTag]);
+
   const quickMatchDriverSession = useQuickMatchDriverSession({
     enabled: quickMatchDriverEnabled,
     hasActiveTag: Boolean(activeTag),
     onMatched: handleQuickMatchDriverMatched,
+  });
+
+  const trustedDirectDriverSession = useTrustedDirectDriverSession({
+    enabled: trustedDirectDriverEnabled,
+    hasActiveTag: Boolean(activeTag),
+    onMatched: handleTrustedDirectDriverMatched,
   });
 
   useEffect(() => {
@@ -17236,6 +17275,21 @@ function DriverDashboard({
     return () => clearInterval(timer);
   }, [quickMatchDriverEnabled, quickMatchDriverSession.status, quickMatchDriverSession.refresh]);
 
+  useEffect(() => {
+    if (!trustedDirectDriverEnabled) return;
+    if (trustedDirectDriverSession.status !== 'idle') return;
+
+    const timer = setInterval(() => {
+      void trustedDirectDriverSession.refresh();
+    }, TDM_DRIVER_IDLE_REFRESH_MS);
+
+    return () => clearInterval(timer);
+  }, [
+    trustedDirectDriverEnabled,
+    trustedDirectDriverSession.status,
+    trustedDirectDriverSession.refresh,
+  ]);
+
   const quickMatchDriverOverlayVisible =
     quickMatchDriverEnabled &&
     (quickMatchDriverSession.status === 'pending' ||
@@ -17243,6 +17297,18 @@ function DriverDashboard({
       quickMatchDriverSession.status === 'matched' ||
       (quickMatchDriverSession.status === 'error' &&
         !!quickMatchDriverSession.invite));
+
+  const trustedDirectDriverOverlayVisible =
+    trustedDirectDriverEnabled &&
+    !quickMatchDriverOverlayVisible &&
+    (trustedDirectDriverSession.status === 'pending' ||
+      trustedDirectDriverSession.status === 'accepting' ||
+      trustedDirectDriverSession.status === 'matched' ||
+      (trustedDirectDriverSession.status === 'error' &&
+        !!trustedDirectDriverSession.invite));
+
+  const driverInviteDeckDimVisible =
+    quickMatchDriverOverlayVisible || trustedDirectDriverOverlayVisible;
 
   useEffect(() => {
     driverBoardingStableSinceRef.current = null;
@@ -18242,9 +18308,9 @@ function DriverDashboard({
           <View
             style={[
               dws.cockpitOfferGround,
-              quickMatchDriverOverlayVisible && { opacity: 0.38 },
+              driverInviteDeckDimVisible && { opacity: 0.38 },
             ]}
-            pointerEvents={quickMatchDriverOverlayVisible ? 'none' : 'auto'}
+            pointerEvents={driverInviteDeckDimVisible ? 'none' : 'auto'}
           >
             <DriverOfferScreen
               embedded
@@ -18418,6 +18484,19 @@ function DriverDashboard({
           }}
           onClose={() => {
             quickMatchDriverSession.clear();
+          }}
+        />
+        <DriverTrustedDirectInviteCard
+          visible={trustedDirectDriverOverlayVisible}
+          session={trustedDirectDriverSession}
+          onAccept={() => {
+            void trustedDirectDriverSession.accept();
+          }}
+          onDecline={() => {
+            void trustedDirectDriverSession.decline();
+          }}
+          onClose={() => {
+            trustedDirectDriverSession.clear();
           }}
         />
       </>
