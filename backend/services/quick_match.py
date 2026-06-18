@@ -39,14 +39,14 @@ QUICK_MATCH_MAX_TRIP_KM = 20.0
 QUICK_MATCH_MIN_AIR_KM_SAME_POINT = 0.8
 
 _REQUEST_SELECT_COLS = (
-    "id, status, attempt_count, expires_at, matched_tag_id, matched_at, "
+    "id, status, attempt_count, expires_at, updated_at, matched_tag_id, matched_at, "
     "cancelled_at, exhausted_at, expired_at, distance_km, distance_band, "
     "suggested_contribution_tl, offered_contribution_tl, vehicle_preference, "
     "pickup_label, dropoff_label, passenger_id"
 )
 
 _REQUEST_ADVANCE_SELECT_COLS = (
-    "id, status, attempt_count, expires_at, passenger_id, pickup_lat, pickup_lng, "
+    "id, status, attempt_count, expires_at, updated_at, passenger_id, pickup_lat, pickup_lng, "
     "vehicle_preference"
 )
 
@@ -151,6 +151,20 @@ def get_quick_match_max_attempts() -> int:
 
 def get_quick_match_max_eta_min() -> int:
     return _env_int("QUICK_MATCH_MAX_ETA_MIN", 10)
+
+
+def get_quick_match_all_busy_retry_seconds() -> int:
+    """Seconds to wait before re-picking when every eligible driver is busy.
+
+    Default 15. Values <= 0 disable deferral (all-busy exhausts immediately).
+    Values 1–4 are clamped to 5 to avoid overly aggressive passenger polling.
+    """
+    raw = _env_int("QUICK_MATCH_ALL_BUSY_RETRY_SECONDS", 15)
+    if raw <= 0:
+        return 0
+    if raw < 5:
+        return 5
+    return raw
 
 
 def _utcnow() -> datetime:
@@ -757,13 +771,55 @@ async def _maybe_advance_after_invite_expire(
     )
 
 
+async def _maybe_advance_all_busy_retry(
+    supabase,
+    request_id: str,
+    *,
+    find_eligible_drivers_fn: FindEligibleDriversFn,
+    driver_busy_fn: DriverBusyFn,
+) -> None:
+    """Re-attempt driver pick after all-busy deferral throttle (passenger poll path)."""
+    rid = str(request_id or "").strip()
+    if not rid:
+        return
+
+    req = _load_request_row_for_advance(supabase, rid)
+    if not req:
+        return
+    if str(req.get("status") or "").strip().lower() != REQUEST_STATUS_SEQUENCING:
+        return
+    if _is_expired(req.get("expires_at")):
+        _expire_request_if_needed(supabase, req)
+        return
+    if _fetch_pending_invite_for_request(supabase, rid):
+        return
+
+    retry_seconds = get_quick_match_all_busy_retry_seconds()
+    if retry_seconds <= 0:
+        return
+
+    updated_at = _parse_iso(req.get("updated_at"))
+    if updated_at is None:
+        return
+    elapsed = (_utcnow() - updated_at).total_seconds()
+    if elapsed < retry_seconds:
+        return
+
+    await _advance_quick_match_request(
+        supabase,
+        rid,
+        find_eligible_drivers_fn=find_eligible_drivers_fn,
+        driver_busy_fn=driver_busy_fn,
+    )
+
+
 async def _quick_match_pick_next_driver(
     request_row: dict,
     *,
     attempted_driver_ids: List[str],
     find_eligible_drivers_fn: FindEligibleDriversFn,
     driver_busy_fn: DriverBusyFn,
-) -> Optional[dict]:
+) -> Tuple[Optional[dict], str]:
     request_id = str(request_row.get("id") or "").strip()
     passenger_id = _norm_actor_id(request_row.get("passenger_id"))
     exclude_ids = list(attempted_driver_ids)
@@ -810,7 +866,7 @@ async def _quick_match_pick_next_driver(
             pickup_eta_min,
             max_eta_min,
         )
-        return candidate
+        return candidate, "selected"
     if eligible_count > 0 and busy_skipped_count == eligible_count:
         logger.info(
             "quick_match_all_busy request_id=%s candidate_count=%d busy_skipped_count=%d "
@@ -820,10 +876,10 @@ async def _quick_match_pick_next_driver(
             busy_skipped_count,
             get_quick_match_max_attempts(),
         )
+        return None, "all_busy"
     logger.warning(
         "quick_match_pick_driver_none request_id=%s pickup=(%.5f,%.5f) vehicle_pref=%s "
-        "exclude_count=%d eligible=%d busy_skipped=%d max_eta_min=%d "
-        "reason=no_eligible_or_all_busy",
+        "exclude_count=%d eligible=%d busy_skipped=%d max_eta_min=%d reason=no_eligible",
         _short_id(request_id),
         pickup_lat,
         pickup_lng,
@@ -833,7 +889,7 @@ async def _quick_match_pick_next_driver(
         busy_skipped_count,
         max_eta_min,
     )
-    return None
+    return None, "no_eligible"
 
 
 def _guard_active_sequencing_request(supabase, passenger_id: str) -> None:
@@ -981,13 +1037,32 @@ async def _advance_quick_match_request(
         return None
 
     attempted_ids = _quick_match_attempted_driver_ids(supabase, rid)
-    candidate = await _quick_match_pick_next_driver(
+    candidate, pick_reason = await _quick_match_pick_next_driver(
         request_row,
         attempted_driver_ids=attempted_ids,
         find_eligible_drivers_fn=find_eligible_drivers_fn,
         driver_busy_fn=driver_busy_fn,
     )
-    if not candidate:
+    if pick_reason == "all_busy":
+        retry_sec = get_quick_match_all_busy_retry_seconds()
+        if retry_sec > 0:
+            now_iso = _utcnow_iso()
+            supabase.table(TABLE_QUICK_MATCH_REQUESTS).update(
+                {"updated_at": now_iso}
+            ).eq("id", rid).eq("status", REQUEST_STATUS_SEQUENCING).execute()
+            logger.info(
+                "quick_match_all_busy_deferred request_id=%s retry_after_sec=%d "
+                "expires_at=%s attempt_count=%d max_attempts=%d",
+                _short_id(rid),
+                retry_sec,
+                request_row.get("expires_at"),
+                attempt_count,
+                get_quick_match_max_attempts(),
+            )
+            return None
+        pick_reason = "no_eligible"
+
+    if pick_reason != "selected" or not candidate:
         logger.warning(
             "quick_match_exhausted request_id=%s reason=no_candidate attempt_count=%d "
             "pickup=(%.5f,%.5f) vehicle_pref=%s",
@@ -1578,7 +1653,13 @@ async def get_quick_match_request_status(
                 find_eligible_drivers_fn=find_eligible_drivers_fn,
                 driver_busy_fn=driver_busy_fn,
             )
-            row = _load_request_row(supabase, rid) or row
+        await _maybe_advance_all_busy_retry(
+            supabase,
+            rid,
+            find_eligible_drivers_fn=find_eligible_drivers_fn,
+            driver_busy_fn=driver_busy_fn,
+        )
+        row = _load_request_row(supabase, rid) or row
 
     pending = _fetch_pending_invite_for_request(supabase, rid)
     return _public_request_payload(row, pending)
@@ -1622,9 +1703,15 @@ async def get_active_quick_match_request(
             find_eligible_drivers_fn=find_eligible_drivers_fn,
             driver_busy_fn=driver_busy_fn,
         )
-        row = _load_request_row(supabase, rid)
-        if not row or str(row.get("status") or "").strip().lower() != REQUEST_STATUS_SEQUENCING:
-            return _public_request_payload(row, None) if row else None
+    await _maybe_advance_all_busy_retry(
+        supabase,
+        rid,
+        find_eligible_drivers_fn=find_eligible_drivers_fn,
+        driver_busy_fn=driver_busy_fn,
+    )
+    row = _load_request_row(supabase, rid)
+    if not row or str(row.get("status") or "").strip().lower() != REQUEST_STATUS_SEQUENCING:
+        return _public_request_payload(row, None) if row else None
 
     pending = _fetch_pending_invite_for_request(supabase, rid) if rid else None
     return _public_request_payload(row, pending)
