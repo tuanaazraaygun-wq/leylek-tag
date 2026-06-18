@@ -347,12 +347,50 @@ function _mergePassengerMatchSocketDriverVehicleKind(
   return 'car';
 }
 
+function _canonicalDriverVehicleKindForGuard(value: unknown): 'car' | 'motorcycle' | null {
+  if (value == null || value === '') return null;
+  const s = String(value).trim().toLowerCase();
+  if (s === 'car') return 'car';
+  if (s === 'motorcycle' || s === 'motor' || s === 'moto') return 'motorcycle';
+  return null;
+}
+
+function _approvedVehicleKindsFromDriverDetails(dd: Record<string, unknown>): ('car' | 'motorcycle')[] {
+  const raw = dd.approved_vehicle_kinds;
+  let items: unknown[] = [];
+  if (Array.isArray(raw)) {
+    items = raw;
+  } else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) items = parsed;
+    } catch {
+      /* ignore */
+    }
+  }
+  const out: ('car' | 'motorcycle')[] = [];
+  for (const item of items) {
+    const k = _canonicalDriverVehicleKindForGuard(item);
+    if (k && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
 /** Onaylı sürücü kaydı (yolcu modunda TDM «Sürücülerim» kartı guard). */
 function userHasDriverRegistration(user: User | null | undefined): boolean {
   const dd = user?.driver_details;
-  if (!dd || typeof dd !== 'object') return false;
-  const vk = String((dd as { vehicle_kind?: string }).vehicle_kind || '').trim().toLowerCase();
-  return vk === 'car' || vk === 'motorcycle';
+  if (!dd || typeof dd !== 'object' || Array.isArray(dd)) return false;
+  const d = dd as Record<string, unknown>;
+
+  if (_approvedVehicleKindsFromDriverDetails(d).length > 0) return true;
+
+  const kycStatus = String(d.kyc_status ?? '').trim().toLowerCase();
+  if (kycStatus !== 'approved' || d.is_verified !== true) return false;
+
+  const kycVk = _canonicalDriverVehicleKindForGuard(d.kyc_vehicle_kind);
+  if (kycVk) return true;
+
+  return _canonicalDriverVehicleKindForGuard(d.vehicle_kind) != null;
 }
 
 function alertTrustedDirectPassengerOnlyBlocked(onGoToDriverPanel?: () => void): void {
