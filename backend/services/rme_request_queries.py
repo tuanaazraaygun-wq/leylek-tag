@@ -42,6 +42,11 @@ _PENDING_REQUEST_SELECT = (
     "relationship_connection_id, status, expires_at, created_at, updated_at"
 )
 
+_REQUEST_PUBLIC_SELECT = (
+    "id, status, pickup_label, dropoff_label, distance_km, distance_band, "
+    "offered_contribution_tl, vehicle_preference, created_at"
+)
+
 _INVITE_SELECT = (
     "id, request_id, responder_id, status, expires_at, responded_at, "
     "decline_reason, created_at, updated_at"
@@ -167,6 +172,26 @@ def load_request_by_id(supabase, request_id: str) -> Optional[Dict[str, Any]]:
     result = (
         supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS)
         .select(_REQUEST_SELECT)
+        .eq("id", rid)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
+def load_request_public_by_id(supabase, request_id: str) -> Optional[Dict[str, Any]]:
+    """Load PII-safe request summary for driver current-invite card (no coords/ids)."""
+    rid = _norm_id(request_id)
+    if not rid:
+        return None
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_REQUESTS)
+        .select(_REQUEST_PUBLIC_SELECT)
         .eq("id", rid)
         .limit(1)
         .execute()

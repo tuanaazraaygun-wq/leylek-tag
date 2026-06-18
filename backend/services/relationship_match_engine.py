@@ -53,6 +53,7 @@ from services.rme_request_queries import (
     load_invite_by_id,
     load_request_by_id,
     load_request_by_idempotency_key,
+    load_request_public_by_id,
     load_tag_for_accept_replay,
     update_invite_status_terminal,
     update_request_accept_with_matched_tag,
@@ -184,6 +185,65 @@ def _utcnow() -> datetime:
 
 def _utcnow_iso() -> str:
     return _utcnow().replace(microsecond=0).isoformat()
+
+
+def _parse_iso(dt_raw: Any) -> Optional[datetime]:
+    if dt_raw is None:
+        return None
+    if isinstance(dt_raw, datetime):
+        return dt_raw if dt_raw.tzinfo else dt_raw.replace(tzinfo=timezone.utc)
+    text = str(dt_raw).strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _public_tdm_request_payload(request_row: dict) -> Dict[str, Any]:
+    distance_raw = request_row.get("distance_km")
+    try:
+        distance_km = float(distance_raw) if distance_raw is not None else 0.0
+    except (TypeError, ValueError):
+        distance_km = 0.0
+
+    contribution_raw = request_row.get("offered_contribution_tl")
+    try:
+        offered_contribution_tl = int(contribution_raw) if contribution_raw is not None else 0
+    except (TypeError, ValueError):
+        offered_contribution_tl = 0
+
+    return {
+        "id": str(request_row.get("id") or ""),
+        "status": str(request_row.get("status") or ""),
+        "pickup_label": request_row.get("pickup_label"),
+        "dropoff_label": request_row.get("dropoff_label"),
+        "distance_km": distance_km,
+        "distance_band": request_row.get("distance_band"),
+        "offered_contribution_tl": offered_contribution_tl,
+        "vehicle_preference": str(request_row.get("vehicle_preference") or ""),
+        "created_at": request_row.get("created_at"),
+    }
+
+
+def _public_tdm_current_invite_payload(
+    invite_row: dict,
+    request_row: dict,
+) -> Dict[str, Any]:
+    expires_at = invite_row.get("expires_at")
+    exp_dt = _parse_iso(expires_at)
+    expires_in = max(0, int((exp_dt - _utcnow()).total_seconds())) if exp_dt else 0
+    return {
+        "id": str(invite_row.get("id") or ""),
+        "status": str(invite_row.get("status") or ""),
+        "expires_at": expires_at,
+        "invite_expires_in_sec": expires_in,
+        "request": _public_tdm_request_payload(request_row),
+    }
 
 
 def _norm_user_id(value: Any) -> str:
@@ -1181,7 +1241,7 @@ def get_current_invite(
     supabase,
     responder_id: str,
 ) -> Optional[Dict[str, Any]]:
-    """Return driver's pending Trusted Direct invite (read-only + lazy expire)."""
+    """Return driver's pending Trusted Direct invite (PII-safe public payload + lazy expire)."""
     _require_rme_tdm_enabled()
 
     responder_norm = _norm_user_id(responder_id)
@@ -1198,4 +1258,24 @@ def get_current_invite(
     status = str(invite_row.get("status") or "").strip().lower()
     if status != RME_INVITE_STATUS_PENDING:
         return None
-    return invite_row
+
+    request_id = _norm_id(invite_row.get("request_id"))
+    if not request_id:
+        logger.warning(
+            "tdm_current_invite missing request_id invite_id=%s responder=%s",
+            str(invite_row.get("id") or "")[:36],
+            responder_norm[:36],
+        )
+        return None
+
+    request_row = load_request_public_by_id(supabase, request_id)
+    if not request_row:
+        logger.warning(
+            "tdm_current_invite request not found invite_id=%s request_id=%s responder=%s",
+            str(invite_row.get("id") or "")[:36],
+            request_id[:36],
+            responder_norm[:36],
+        )
+        return None
+
+    return _public_tdm_current_invite_payload(invite_row, request_row)
