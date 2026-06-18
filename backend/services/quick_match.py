@@ -630,17 +630,60 @@ def _expire_pending_invite_if_needed(supabase, invite_row: dict) -> bool:
     return True
 
 
-def _mark_driver_seen_if_needed(supabase, invite_row: dict) -> None:
-    """Set driver_seen_at on first active poll; idempotent on repeat polls."""
+def _compute_seen_extended_expires_at(
+    *,
+    existing_expires_at: Any,
+    request_expires_at: Any,
+    seen_at: datetime,
+    invite_timeout_seconds: int,
+) -> Optional[str]:
+    """Extend invite TTL on first seen; capped by request TTL. None if no extension."""
+    if request_expires_at is None or _is_expired(request_expires_at, now=seen_at):
+        return None
+    existing_dt = _parse_iso(existing_expires_at)
+    request_dt = _parse_iso(request_expires_at)
+    if existing_dt is None or request_dt is None:
+        return None
+    seen_plus = seen_at.replace(microsecond=0) + timedelta(
+        seconds=invite_timeout_seconds
+    )
+    new_dt = min(
+        request_dt.replace(microsecond=0),
+        max(existing_dt.replace(microsecond=0), seen_plus),
+    )
+    if new_dt <= existing_dt.replace(microsecond=0):
+        return None
+    return new_dt.isoformat()
+
+
+def _mark_driver_seen_if_needed(
+    supabase,
+    invite_row: dict,
+    *,
+    request_expires_at: Any = None,
+) -> None:
+    """Set driver_seen_at on first active poll; extend invite TTL once; idempotent on repeat polls."""
     if invite_row.get("driver_seen_at") is not None:
         return
     iid = str(invite_row.get("id") or "").strip()
     if not iid:
         return
-    now_iso = _utcnow_iso()
+    now = _utcnow().replace(microsecond=0)
+    now_iso = now.isoformat()
+    invite_timeout_sec = get_quick_match_invite_timeout_seconds()
+    old_expires_at = invite_row.get("expires_at")
+    new_expires_at = _compute_seen_extended_expires_at(
+        existing_expires_at=old_expires_at,
+        request_expires_at=request_expires_at,
+        seen_at=now,
+        invite_timeout_seconds=invite_timeout_sec,
+    )
+    update_payload: Dict[str, Any] = {"driver_seen_at": now_iso, "updated_at": now_iso}
+    if new_expires_at is not None:
+        update_payload["expires_at"] = new_expires_at
     upd = (
         supabase.table(TABLE_QUICK_MATCH_INVITES)
-        .update({"driver_seen_at": now_iso, "updated_at": now_iso})
+        .update(update_payload)
         .eq("id", iid)
         .eq("status", INVITE_STATUS_PENDING)
         .is_("driver_seen_at", "null")
@@ -649,6 +692,19 @@ def _mark_driver_seen_if_needed(supabase, invite_row: dict) -> None:
     if not upd.data:
         return
     invite_row["driver_seen_at"] = now_iso
+    if new_expires_at is not None:
+        invite_row["expires_at"] = new_expires_at
+        logger.info(
+            "quick_match_invite_seen_extended invite_id=%s request_id=%s driver_id=%s "
+            "old_expires_at=%s new_expires_at=%s request_expires_at=%s invite_timeout_sec=%d",
+            _short_id(iid),
+            _short_id(invite_row.get("request_id")),
+            _short_id(invite_row.get("driver_id")),
+            old_expires_at,
+            new_expires_at,
+            request_expires_at,
+            invite_timeout_sec,
+        )
     logger.info(
         "quick_match_invite_seen invite_id=%s request_id=%s driver=%s sequence_no=%s",
         _short_id(iid),
@@ -1621,5 +1677,10 @@ async def get_current_quick_match_invite(
     if not req_res.data:
         return None
 
-    _mark_driver_seen_if_needed(supabase, invite)
+    request_expires_at = (
+        request_row.get("expires_at") if request_row else None
+    )
+    _mark_driver_seen_if_needed(
+        supabase, invite, request_expires_at=request_expires_at
+    )
     return _public_invite_payload(invite, req_res.data[0])
