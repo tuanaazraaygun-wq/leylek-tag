@@ -9550,8 +9550,11 @@ function PassengerDashboard({
   );
 
   const handleQuickMatchTerminal = useCallback(
-    (_status: QuickMatchPassengerTerminalStatus) => {
+    (status: QuickMatchPassengerTerminalStatus) => {
       if (activeTag) {
+        return;
+      }
+      if (status === 'exhausted' || status === 'expired') {
         return;
       }
       resetPassengerQuickMatchIdleState({ clearSession: true });
