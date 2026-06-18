@@ -244,6 +244,12 @@ export const TDM_DRIVER_INVITE_SUBTITLE = 'Güvenilir bağlantınızdan gelen is
 export const TDM_DRIVER_INVITE_POLL_WARNING = 'Bağlantı zayıf, yeniden deneniyor.';
 export const TDM_CONTRIBUTION_DISCLAIMER = 'LeylekTAG katkıyı tahsil etmez.';
 
+export const TDM_DRIVER_ROLE_BLOCK_TITLE = 'Zaten sürücüsünüz';
+export const TDM_DRIVER_ROLE_BLOCK_BODY =
+  'Bu özellik, yolcuların güvenilir sürücülerine doğrudan yol paylaşımı isteği göndermesi içindir. Size gelen yol paylaşımı isteklerini sürücü panelinizden kabul edebilirsiniz.';
+export const TDM_DRIVER_ROLE_BLOCK_OK = 'Tamam';
+export const TDM_DRIVER_ROLE_BLOCK_GO_DRIVER = 'Sürücü paneline git';
+
 export function formatTdmVehiclePreference(
   value: string | null | undefined,
 ): string {

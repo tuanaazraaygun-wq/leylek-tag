@@ -52,6 +52,12 @@ import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü K
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import PassengerMatchModeCards from '../components/superUx/PassengerMatchModeCards';
+import {
+  TDM_DRIVER_ROLE_BLOCK_BODY,
+  TDM_DRIVER_ROLE_BLOCK_GO_DRIVER,
+  TDM_DRIVER_ROLE_BLOCK_OK,
+  TDM_DRIVER_ROLE_BLOCK_TITLE,
+} from '../lib/trustedHubCopy';
 import QuickMatchPassengerFlow, {
   type QuickMatchRouteContext,
 } from '../components/superUx/QuickMatchPassengerFlow';
@@ -339,6 +345,28 @@ function _mergePassengerMatchSocketDriverVehicleKind(
   if (pvStr === 'motorcycle' || pvStr === 'motor' || pvStr === 'moto') return 'motorcycle';
   if (/motor/i.test(String(pv ?? ''))) return 'motorcycle';
   return 'car';
+}
+
+/** Onaylı sürücü kaydı (yolcu modunda TDM «Sürücülerim» kartı guard). */
+function userHasDriverRegistration(user: User | null | undefined): boolean {
+  const dd = user?.driver_details;
+  if (!dd || typeof dd !== 'object') return false;
+  const vk = String((dd as { vehicle_kind?: string }).vehicle_kind || '').trim().toLowerCase();
+  return vk === 'car' || vk === 'motorcycle';
+}
+
+function alertTrustedDirectPassengerOnlyBlocked(onGoToDriverPanel?: () => void): void {
+  const buttons: Array<{ text: string; style?: 'default' | 'cancel'; onPress?: () => void }> = [];
+  if (onGoToDriverPanel) {
+    buttons.push({
+      text: TDM_DRIVER_ROLE_BLOCK_GO_DRIVER,
+      onPress: onGoToDriverPanel,
+    });
+  }
+  buttons.push({ text: TDM_DRIVER_ROLE_BLOCK_OK, style: 'cancel' });
+  appAlert(TDM_DRIVER_ROLE_BLOCK_TITLE, TDM_DRIVER_ROLE_BLOCK_BODY, buttons, {
+    cancelable: true,
+  });
 }
 
 /** Sürücü rolünde araç tipi sunucuda onaylı değilken (403): KYC\'ye gönder; yerel mode / persist yok (yalnızca ekran). */
@@ -11344,6 +11372,11 @@ function PassengerDashboard({
     }
 
     if (routePickerIntent === 'trusted_direct' && !activeTag) {
+      if (userHasDriverRegistration(user)) {
+        setRoutePickerIntent('normal');
+        alertTrustedDirectPassengerOnlyBlocked(() => setScreen('role-select'));
+        return;
+      }
       const ctx = buildTrustedDirectRouteContext(newDestination);
       if (!ctx) {
         reopenTrustedDirectRoutePickerForMissingRoute();
@@ -12982,6 +13015,10 @@ function PassengerDashboard({
                 }}
                 onTrustedPress={() => {
                   playTapSound();
+                  if (userHasDriverRegistration(user)) {
+                    alertTrustedDirectPassengerOnlyBlocked(() => setScreen('role-select'));
+                    return;
+                  }
                   setPassengerIdleOfferChannel('normal');
                   setRoutePickerIntent('trusted_direct');
                   setRoutePickerStep('pickup');
