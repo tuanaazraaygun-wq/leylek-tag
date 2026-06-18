@@ -56,7 +56,9 @@ _REQUEST_ACCEPT_SELECT_COLS = (
     "offered_contribution_tl, suggested_contribution_tl"
 )
 
-_INVITE_SELECT_COLS = "id, request_id, sequence_no, status, expires_at, driver_id"
+_INVITE_SELECT_COLS = (
+    "id, request_id, sequence_no, status, expires_at, driver_id, driver_seen_at"
+)
 
 _REQUEST_JOIN_COLS = "id, distance_band, offered_contribution_tl, pickup_label"
 
@@ -597,6 +599,7 @@ def _expire_pending_invite_if_needed(supabase, invite_row: dict) -> bool:
     if not iid:
         return False
 
+    driver_seen_at = invite_row.get("driver_seen_at")
     now_iso = _utcnow_iso()
     supabase.table(TABLE_QUICK_MATCH_INVITES).update(
         {
@@ -606,7 +609,53 @@ def _expire_pending_invite_if_needed(supabase, invite_row: dict) -> bool:
             "updated_at": now_iso,
         }
     ).eq("id", iid).eq("status", INVITE_STATUS_PENDING).execute()
+    if driver_seen_at is None:
+        logger.info(
+            "quick_match_invite_expired_unseen invite_id=%s request_id=%s driver=%s sequence_no=%s",
+            _short_id(iid),
+            _short_id(invite_row.get("request_id")),
+            _short_id(invite_row.get("driver_id")),
+            invite_row.get("sequence_no"),
+        )
+    else:
+        logger.info(
+            "quick_match_invite_expired_seen_no_response invite_id=%s request_id=%s "
+            "driver=%s sequence_no=%s driver_seen_at=%s",
+            _short_id(iid),
+            _short_id(invite_row.get("request_id")),
+            _short_id(invite_row.get("driver_id")),
+            invite_row.get("sequence_no"),
+            driver_seen_at,
+        )
     return True
+
+
+def _mark_driver_seen_if_needed(supabase, invite_row: dict) -> None:
+    """Set driver_seen_at on first active poll; idempotent on repeat polls."""
+    if invite_row.get("driver_seen_at") is not None:
+        return
+    iid = str(invite_row.get("id") or "").strip()
+    if not iid:
+        return
+    now_iso = _utcnow_iso()
+    upd = (
+        supabase.table(TABLE_QUICK_MATCH_INVITES)
+        .update({"driver_seen_at": now_iso, "updated_at": now_iso})
+        .eq("id", iid)
+        .eq("status", INVITE_STATUS_PENDING)
+        .is_("driver_seen_at", "null")
+        .execute()
+    )
+    if not upd.data:
+        return
+    invite_row["driver_seen_at"] = now_iso
+    logger.info(
+        "quick_match_invite_seen invite_id=%s request_id=%s driver=%s sequence_no=%s",
+        _short_id(iid),
+        _short_id(invite_row.get("request_id")),
+        _short_id(invite_row.get("driver_id")),
+        invite_row.get("sequence_no"),
+    )
 
 
 def _expire_stale_pending_invites_for_request(supabase, request_id: str) -> bool:
@@ -1257,6 +1306,25 @@ def accept_quick_match_invite(
         )
 
     accepted_invite = invite_upd.data[0]
+    seen_at = invite.get("driver_seen_at")
+    if seen_at is not None:
+        logger.info(
+            "quick_match_invite_accepted invite_id=%s request_id=%s driver=%s "
+            "sequence_no=%s driver_seen_at=%s",
+            _short_id(iid),
+            _short_id(request_id),
+            _short_id(actor),
+            invite.get("sequence_no"),
+            seen_at,
+        )
+    else:
+        logger.info(
+            "quick_match_invite_accepted invite_id=%s request_id=%s driver=%s sequence_no=%s",
+            _short_id(iid),
+            _short_id(request_id),
+            _short_id(actor),
+            invite.get("sequence_no"),
+        )
 
     vehicle_pref = request_row.get("vehicle_preference") or "car"
     tag_row: Dict[str, Any] = {
@@ -1549,4 +1617,6 @@ async def get_current_quick_match_invite(
         raise
     if not req_res.data:
         return None
+
+    _mark_driver_seen_if_needed(supabase, invite)
     return _public_invite_payload(invite, req_res.data[0])
