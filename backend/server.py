@@ -141,15 +141,20 @@ from services.relationship_match_engine import (
 )
 from services.rme_trusted_connection import RmeConnectionNotActiveError
 from services.transfer_payment_service import (
+    TransferPaymentBadRequestError,
     TransferPaymentDisabledError,
     TransferPaymentForbiddenError,
     TransferPaymentNotFoundError,
     TransferPaymentStateError,
     TransferPaymentValidationError,
+    TRANSFER_METHOD_CASH,
+    TRANSFER_METHOD_IBAN,
     claim_transfer_payment,
     fetch_tag_for_transfer,
     get_transfer_payment_status_public,
     is_iban_transfer_confirm_required,
+    is_trusted_direct_tag,
+    parse_transfer_payment,
     respond_transfer_payment,
     should_reject_complete_qr,
 )
@@ -1886,6 +1891,8 @@ def _require_iban_transfer_confirm_http() -> None:
 
 
 def _raise_transfer_payment_http(exc: Exception) -> None:
+    if isinstance(exc, TransferPaymentBadRequestError):
+        raise HTTPException(status_code=400, detail=str(exc) or "Geçersiz istek") from exc
     if isinstance(exc, TransferPaymentDisabledError):
         raise HTTPException(status_code=404, detail="IBAN transfer confirmation not available") from exc
     if isinstance(exc, TransferPaymentForbiddenError):
@@ -1913,13 +1920,39 @@ async def _transfer_payment_safe_passenger_name(user_id: str, fallback: str = "Y
     return parts[0] if parts else fallback
 
 
-async def _emit_transfer_payment_claimed(driver_id: str, tag_id: str, passenger_id: str) -> None:
+def _require_transfer_payment_http(tag_row: dict) -> None:
+    """IBAN flags for iban respond/status; Trusted Direct + cash uses TDM gate only."""
+    tp = parse_transfer_payment(tag_row.get("transfer_payment"))
+    method = str(tp.get("method") or TRANSFER_METHOD_IBAN).strip().lower()
+    if method == TRANSFER_METHOD_CASH and is_trusted_direct_tag(tag_row):
+        _require_trusted_direct_match_http()
+        return
+    _require_iban_transfer_confirm_http()
+
+
+def _require_transfer_payment_claim_http(tag_row: dict, method: str) -> None:
+    method_norm = str(method or TRANSFER_METHOD_IBAN).strip().lower()
+    if method_norm == TRANSFER_METHOD_CASH and is_trusted_direct_tag(tag_row):
+        _require_trusted_direct_match_http()
+        return
+    _require_iban_transfer_confirm_http()
+
+
+async def _emit_transfer_payment_claimed(
+    driver_id: str,
+    tag_id: str,
+    passenger_id: str,
+    *,
+    method: str = TRANSFER_METHOD_IBAN,
+) -> None:
     passenger_name = await _transfer_payment_safe_passenger_name(passenger_id)
+    method_norm = str(method or TRANSFER_METHOD_IBAN).strip().lower()
     payload = {
         "tag_id": str(tag_id),
         "passenger_id": str(passenger_id),
         "driver_id": str(driver_id),
         "passenger_name": passenger_name,
+        "method": method_norm,
         "message": "Yol paylaşım ücretini aldınız mı?",
         "request_kind": "transfer_payment",
     }
@@ -1937,15 +1970,23 @@ async def _emit_transfer_payment_claimed(driver_id: str, tag_id: str, passenger_
                 "type": "transfer_payment_claimed",
                 "tag_id": str(tag_id),
                 "passenger_name": passenger_name,
+                "method": method_norm,
             },
         )
     except Exception as push_err:
         logger.warning("transfer_payment_claimed push: %s", push_err)
 
 
-async def _emit_transfer_payment_confirmed(passenger_id: str, tag_id: str) -> None:
+async def _emit_transfer_payment_confirmed(
+    passenger_id: str,
+    tag_id: str,
+    *,
+    method: str = TRANSFER_METHOD_IBAN,
+) -> None:
+    method_norm = str(method or TRANSFER_METHOD_IBAN).strip().lower()
     payload = {
         "tag_id": str(tag_id),
+        "method": method_norm,
         "message": "Sürücü ödemeyi onayladı. Yolculuk tamamlandı.",
         "request_kind": "transfer_payment",
     }
@@ -1959,15 +2000,22 @@ async def _emit_transfer_payment_confirmed(passenger_id: str, tag_id: str) -> No
             "transfer_payment_confirmed",
             "Ödeme onaylandı",
             "Sürücü ödemeyi aldığını onayladı.",
-            {"type": "transfer_payment_confirmed", "tag_id": str(tag_id)},
+            {"type": "transfer_payment_confirmed", "tag_id": str(tag_id), "method": method_norm},
         )
     except Exception as push_err:
         logger.warning("transfer_payment_confirmed push: %s", push_err)
 
 
-async def _emit_transfer_payment_disputed(passenger_id: str, tag_id: str) -> None:
+async def _emit_transfer_payment_disputed(
+    passenger_id: str,
+    tag_id: str,
+    *,
+    method: str = TRANSFER_METHOD_IBAN,
+) -> None:
+    method_norm = str(method or TRANSFER_METHOD_IBAN).strip().lower()
     payload = {
         "tag_id": str(tag_id),
+        "method": method_norm,
         "message": "Sürücü ödeme almadığını bildirdi. Destek inceleyecek.",
         "request_kind": "transfer_payment",
     }
@@ -1981,7 +2029,7 @@ async def _emit_transfer_payment_disputed(passenger_id: str, tag_id: str) -> Non
             "transfer_payment_disputed",
             "Ödeme uyuşmazlığı",
             "Sürücü ödeme almadığını bildirdi.",
-            {"type": "transfer_payment_disputed", "tag_id": str(tag_id)},
+            {"type": "transfer_payment_disputed", "tag_id": str(tag_id), "method": method_norm},
         )
     except Exception as push_err:
         logger.warning("transfer_payment_disputed push: %s", push_err)
@@ -11199,6 +11247,10 @@ class DriverBankAccountUpdateBody(BaseModel):
     is_default: Optional[bool] = None
 
 
+class TransferPaymentClaimBody(BaseModel):
+    method: Optional[str] = None
+
+
 class TransferPaymentRespondBody(BaseModel):
     approved: bool
     dispute_note: Optional[str] = None
@@ -13283,22 +13335,38 @@ async def get_trip_payment_details_http(
 @api_router.post("/trip/{tag_id}/transfer-payment/claim")
 async def transfer_payment_claim_http(
     tag_id: str,
+    body: Optional[TransferPaymentClaimBody] = None,
+    method: str = None,
     user_id: str = None,
     passenger_id: str = None,
     http_request: Request = None,
 ):
-    """Yolcu: havale/EFT ödedim — sürücü onayı bekler (completed yok)."""
-    _require_iban_transfer_confirm_http()
+    """Yolcu: ödeme bildirimi — sürücü onayı bekler (completed yok). method: iban (default) | cash (trusted only)."""
     try:
         pid = passenger_id or user_id
         viewer_id = await _resolve_iban_http_user_id(user_id=pid, http_request=http_request)
-        result = claim_transfer_payment(supabase, tag_id, viewer_id)
+        claim_method = TRANSFER_METHOD_IBAN
+        if body and body.method:
+            claim_method = str(body.method).strip().lower()
+        elif method:
+            claim_method = str(method).strip().lower()
+        tag_pre = fetch_tag_for_transfer(supabase, tag_id)
+        if not tag_pre:
+            raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
+        _require_transfer_payment_claim_http(tag_pre, claim_method)
+        result = claim_transfer_payment(
+            supabase,
+            tag_id,
+            viewer_id,
+            method=claim_method,
+        )
         invalidate_tag_cache(tag_id, result.get("passenger_id"), result.get("driver_id"))
         if not result.get("idempotent"):
             await _emit_transfer_payment_claimed(
                 str(result.get("driver_id") or ""),
                 tag_id,
                 str(result.get("passenger_id") or viewer_id),
+                method=str(result.get("method") or claim_method),
             )
         return result
     except HTTPException:
@@ -13316,10 +13384,13 @@ async def transfer_payment_respond_http(
     http_request: Request = None,
 ):
     """Sürücü: ödemeyi aldım / almadım."""
-    _require_iban_transfer_confirm_http()
     try:
         did = driver_id or user_id
         viewer_id = await _resolve_iban_http_user_id(user_id=did, http_request=http_request)
+        tag_pre = fetch_tag_for_transfer(supabase, tag_id)
+        if not tag_pre:
+            raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
+        _require_transfer_payment_http(tag_pre)
         result = respond_transfer_payment(
             supabase,
             tag_id,
@@ -13328,13 +13399,18 @@ async def transfer_payment_respond_http(
             dispute_note=body.dispute_note,
         )
         invalidate_tag_cache(tag_id, result.get("passenger_id"), result.get("driver_id"))
+        pay_method = str(result.get("method") or TRANSFER_METHOD_IBAN)
         if result.get("approved"):
             await _emit_show_rating_modals_for_normal_tag_complete(
                 tag_id,
                 str(result.get("passenger_id") or ""),
                 str(result.get("driver_id") or ""),
             )
-            await _emit_transfer_payment_confirmed(str(result.get("passenger_id") or ""), tag_id)
+            await _emit_transfer_payment_confirmed(
+                str(result.get("passenger_id") or ""),
+                tag_id,
+                method=pay_method,
+            )
             asyncio.create_task(
                 log_trip_completion(
                     tag_id,
@@ -13343,11 +13419,15 @@ async def transfer_payment_respond_http(
                     0,
                     0,
                     str(result.get("completed_at") or datetime.utcnow().isoformat()),
-                    "iban_transfer",
+                    str(result.get("end_method") or "iban_transfer"),
                 )
             )
         else:
-            await _emit_transfer_payment_disputed(str(result.get("passenger_id") or ""), tag_id)
+            await _emit_transfer_payment_disputed(
+                str(result.get("passenger_id") or ""),
+                tag_id,
+                method=pay_method,
+            )
         return result
     except HTTPException:
         raise
@@ -13362,12 +13442,20 @@ async def transfer_payment_status_http(
     http_request: Request = None,
 ):
     """Yolcu veya sürücü — güvenli transfer_payment durumu (IBAN yok)."""
-    _require_iban_transfer_confirm_http()
     try:
         viewer_id = await _resolve_iban_http_user_id(user_id=user_id, http_request=http_request)
         tag_row = fetch_tag_for_transfer(supabase, tag_id)
         if not tag_row:
             raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
+        tp = parse_transfer_payment(tag_row.get("transfer_payment"))
+        method = str(tp.get("method") or TRANSFER_METHOD_IBAN).strip().lower()
+        st = str(tp.get("status") or "").strip().lower()
+        if method == TRANSFER_METHOD_CASH and is_trusted_direct_tag(tag_row):
+            _require_trusted_direct_match_http()
+        elif st in ("awaiting_driver", "confirmed", "disputed"):
+            _require_transfer_payment_http(tag_row)
+        else:
+            _require_iban_transfer_confirm_http()
         return get_transfer_payment_status_public(tag_row, viewer_id)
     except HTTPException:
         raise
@@ -20188,27 +20276,18 @@ async def complete_trip_with_qr(request: Request):
         if not _uid_eq(scanned_user_id, driver_id):
             return {"success": False, "detail": "QR kod bu yolculuğun sürücüsüne ait değil"}
 
-        match_channel_row = (
-            supabase.table("tags")
-            .select("match_channel")
-            .eq("id", tag_id)
-            .limit(1)
-            .execute()
-        )
-        match_channel = str(
-            ((match_channel_row.data or [{}])[0]).get("match_channel") or ""
-        ).strip().lower()
+        match_channel = str(tag.get("match_channel") or "").strip().lower()
 
         booked_pm = _canonical_passenger_payment_method(tag.get("passenger_payment_method"))
         confirmed_pm = _canonical_passenger_payment_method(
             body.get("payment_confirmed_method") or body.get("payment_confirmed")
         )
-        if match_channel == "trusted" and confirmed_pm == "card":
+        if match_channel == "trusted":
             raise HTTPException(
-                status_code=403,
+                status_code=409,
                 detail={
-                    "code": "trusted_direct_card_not_supported",
-                    "message": "Bu yol paylaşımında kartla ödeme desteklenmiyor.",
+                    "code": "trusted_direct_requires_driver_payment_confirmation",
+                    "message": "Bu yol paylaşımında ödeme sürücü onayıyla tamamlanır.",
                 },
             )
         if booked_pm in ("cash", "card"):

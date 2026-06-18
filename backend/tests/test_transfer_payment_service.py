@@ -20,6 +20,7 @@ from services.transfer_payment_service import (
     TRANSFER_STATUS_AWAITING,
     TRANSFER_STATUS_CONFIRMED,
     TRANSFER_STATUS_DISPUTED,
+    TransferPaymentBadRequestError,
     TransferPaymentForbiddenError,
     TransferPaymentStateError,
     claim_transfer_payment,
@@ -87,6 +88,8 @@ class MockQuery:
 def enable_transfer_flags(monkeypatch):
     monkeypatch.setenv("IBAN_PAYMENTS_ENABLED", "1")
     monkeypatch.setenv("IBAN_TRANSFER_CONFIRM_REQUIRED", "1")
+    monkeypatch.setenv("RME_ENABLED", "1")
+    monkeypatch.setenv("TDM_ENABLED", "1")
 
 
 def test_should_reject_complete_qr_blocks_iban_snapshot():
@@ -247,3 +250,86 @@ def test_is_cash_qr_complete_allowed():
 
 def test_is_iban_transfer_confirm_required():
     assert is_iban_transfer_confirm_required() is True
+
+
+def test_claim_invalid_method_raises():
+    sb = MagicMock()
+    sb.table.side_effect = lambda name: MockQuery([_tag_row()]) if name == "tags" else MockQuery([])
+
+    with pytest.raises(TransferPaymentBadRequestError):
+        claim_transfer_payment(sb, TAG_ID, PASSENGER_ID, method="wallet")
+
+
+def test_claim_cash_forbidden_on_normal_match():
+    sb = MagicMock()
+    sb.table.side_effect = lambda name: MockQuery([_tag_row(match_channel="normal")]) if name == "tags" else MockQuery([])
+
+    with pytest.raises(TransferPaymentForbiddenError):
+        claim_transfer_payment(sb, TAG_ID, PASSENGER_ID, method="cash")
+
+
+def test_claim_trusted_cash_without_iban_snapshot():
+    row = _tag_row(match_channel="trusted", matched_bank_account_id=None)
+    fetch_q = MockQuery([row])
+    update_q = MockQuery([])
+
+    class TagsTable:
+        def select(self, *a, **k):
+            return fetch_q
+
+        def eq(self, *a, **k):
+            return self
+
+        def limit(self, *a, **k):
+            return fetch_q
+
+        def update(self, *a, **k):
+            body = a[0] if a else {}
+            assert body.get("transfer_payment", {}).get("method") == "cash"
+            return update_q
+
+    sb = MagicMock()
+    sb.table.side_effect = lambda name: TagsTable() if name == "tags" else MockQuery([])
+
+    out = claim_transfer_payment(sb, TAG_ID, PASSENGER_ID, method="cash")
+    assert out["success"] is True
+    assert out["status"] == TRANSFER_STATUS_AWAITING
+    assert out["method"] == "cash"
+
+
+def test_respond_trusted_cash_uses_trusted_cash_end_method():
+    row = _tag_row(
+        match_channel="trusted",
+        matched_bank_account_id=None,
+        transfer_payment={
+            "method": "cash",
+            "status": TRANSFER_STATUS_AWAITING,
+            "claimed_at": "2026-01-01T11:00:00+00:00",
+        },
+    )
+    fetch_q = MockQuery([row])
+    update_q = MockQuery([])
+
+    class TagsTable:
+        def select(self, *a, **k):
+            return fetch_q
+
+        def eq(self, *a, **k):
+            return self
+
+        def limit(self, *a, **k):
+            return fetch_q
+
+        def update(self, *a, **k):
+            body = a[0] if a else {}
+            assert body.get("end_method") == "trusted_cash"
+            assert body.get("status") == "completed"
+            return update_q
+
+    sb = MagicMock()
+    sb.table.side_effect = lambda name: TagsTable() if name == "tags" else MockQuery([])
+
+    out = respond_transfer_payment(sb, TAG_ID, DRIVER_ID, approved=True)
+    assert out["approved"] is True
+    assert out["method"] == "cash"
+    assert out["end_method"] == "trusted_cash"
