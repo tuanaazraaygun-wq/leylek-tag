@@ -526,6 +526,125 @@ def update_request_status_terminal(
     return bool(rows)
 
 
+ORPHAN_TAG_LOOKBACK_SECONDS = 120
+
+
+def load_tag_for_accept_replay(supabase, tag_id: str) -> Optional[Dict[str, Any]]:
+    """Minimal tag row for accept idempotent replay."""
+    tid = _norm_id(tag_id)
+    if not tid:
+        return None
+
+    result = (
+        supabase.table("tags")
+        .select("id, status, match_channel")
+        .eq("id", tid)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
+def find_orphan_matched_tag_for_accept(
+    supabase,
+    *,
+    requester_id: str,
+    responder_id: str,
+    lookback_seconds: int = ORPHAN_TAG_LOOKBACK_SECONDS,
+) -> Optional[Dict[str, Any]]:
+    """
+    Half-accept recovery: invite accepted, request still pending, tag insert succeeded
+    but request update failed — locate recent matched trusted tag for the pair.
+    """
+    requester_norm = _norm_user_id(requester_id)
+    responder_norm = _norm_user_id(responder_id)
+    if not requester_norm or not responder_norm:
+        return None
+
+    since = (
+        datetime.now(timezone.utc) - timedelta(seconds=max(30, lookback_seconds))
+    ).replace(microsecond=0).isoformat()
+
+    result = (
+        supabase.table("tags")
+        .select("id, status, match_channel, matched_at")
+        .eq("type", "normal")
+        .eq("match_channel", "trusted")
+        .eq("status", "matched")
+        .eq("passenger_id", requester_norm)
+        .eq("driver_id", responder_norm)
+        .gte("matched_at", since)
+        .order("matched_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
+def accept_invite_optimistic(
+    supabase,
+    invite_id: str,
+    responder_id: str,
+    *,
+    responded_at: str,
+) -> Optional[Dict[str, Any]]:
+    """Optimistic pending_responder → accepted for a single responder invite."""
+    iid = _norm_id(invite_id)
+    responder_norm = _norm_user_id(responder_id)
+    if not iid or not responder_norm:
+        return None
+
+    result = (
+        supabase.table(TABLE_RELATIONSHIP_MATCH_INVITES)
+        .update(
+            {
+                "status": RME_INVITE_STATUS_ACCEPTED,
+                "responded_at": responded_at,
+                "updated_at": responded_at,
+            }
+        )
+        .eq("id", iid)
+        .eq("responder_id", responder_norm)
+        .eq("status", RME_INVITE_STATUS_PENDING)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    return row if isinstance(row, dict) else None
+
+
+def update_request_accept_with_matched_tag(
+    supabase,
+    request_id: str,
+    matched_tag_id: str,
+    *,
+    matched_at: str,
+    responded_at: str,
+) -> bool:
+    """Optimistic pending_responder → accepted with matched_tag_id anchor."""
+    return update_request_status_terminal(
+        supabase,
+        request_id,
+        from_status=RME_REQUEST_STATUS_PENDING,
+        to_status=RME_REQUEST_STATUS_ACCEPTED,
+        extra_fields={
+            "matched_tag_id": matched_tag_id,
+            "matched_at": matched_at,
+            "responded_at": responded_at,
+        },
+    )
+
+
 def update_invite_status_terminal(
     supabase,
     invite_id: str,

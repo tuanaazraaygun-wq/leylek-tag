@@ -129,6 +129,7 @@ from services.relationship_match_engine import (
     RmeIdempotencyConflictError,
     RmeInvalidStateError,
     RmeNotFoundError,
+    RmePassengerBusyError,
     RmeValidationError,
     accept_invite as accept_trusted_direct_invite,
     cancel_request as cancel_trusted_direct_request,
@@ -12501,6 +12502,14 @@ def _raise_trusted_direct_match_http(exc: Exception) -> None:
                 "message": str(exc) or RmeDriverBusyError.message,
             },
         ) from exc
+    if isinstance(exc, RmePassengerBusyError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "passenger_busy",
+                "message": str(exc) or RmePassengerBusyError.message,
+            },
+        ) from exc
     if isinstance(exc, RmeDriverInvitePendingError):
         raise HTTPException(
             status_code=409,
@@ -12687,11 +12696,19 @@ async def post_trusted_direct_invite_accept_http(
     invite_id: str,
     actor_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Trusted Direct Match — sürücü kabul (RME-3B skeleton)."""
+    """Trusted Direct Match — sürücü kabul + matched tag (RME-4B)."""
     _require_trusted_direct_match_http()
     await require_eligible_user(actor_id, action="trusted_direct_accept")
     try:
-        result = accept_trusted_direct_invite(supabase, actor_id, invite_id)
+        result = accept_trusted_direct_invite(
+            supabase,
+            actor_id,
+            invite_id,
+            tags_insert_fn=tags_insert_with_type_required,
+            driver_busy_checker_fn=_driver_busy_for_quick_match,
+            passenger_busy_checker_fn=_passenger_blocking_tag_for_quick_match,
+            build_snapshot_fn=build_snapshot_fields_for_tag_update,
+        )
         return {"success": True, **result}
     except (
         RmeFeatureDisabledError,
@@ -12701,6 +12718,9 @@ async def post_trusted_direct_invite_accept_http(
         RmeExpiredError,
         RmeInvalidStateError,
         RmeValidationError,
+        RmeConnectionNotActiveError,
+        RmeDriverBusyError,
+        RmePassengerBusyError,
     ) as exc:
         _raise_trusted_direct_match_http(exc)
     except HTTPException:

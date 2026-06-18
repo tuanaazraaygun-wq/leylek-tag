@@ -1,8 +1,8 @@
 """
-Relationship Match Engine — Trusted Direct Match orchestrator (RME-3C core).
+Relationship Match Engine — Trusted Direct Match orchestrator (RME-3C + RME-4B accept).
 
 Feature flags RME_ENABLED + TDM_ENABLED default OFF. When OFF, no DB writes.
-Accept / tag insert deferred to RME-4. Socket/push deferred to RME-4.
+Socket/push deferred to post-commit server delegate (optional).
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from services.quick_match import (
     _compute_unified_contribution_bounds,
     _haversine_km,
     _is_unique_violation,
+    _matched_tag_contribution_tl,
     _quick_match_distance_band,
     _quick_match_trip_metrics,
     _quick_match_vehicle_kind,
@@ -27,17 +28,21 @@ from services.quick_match import (
 )
 from services.rme_request_queries import (
     MATCH_MODULE_TRUSTED_DIRECT,
+    RME_INVITE_STATUS_ACCEPTED,
     RME_INVITE_STATUS_PENDING,
+    RME_REQUEST_STATUS_ACCEPTED,
     RME_REQUEST_STATUS_CANCELLED,
     RME_REQUEST_STATUS_DECLINED,
     RME_REQUEST_STATUS_PENDING,
     TDM_MAX_TRIP_KM,
     TDM_MIN_TRIP_KM,
+    accept_invite_optimistic,
     cancel_pending_invites_for_request,
     expire_pending_invite_if_needed,
     expire_pending_request_if_needed,
     expire_stale_pending_for_requester,
     expire_stale_pending_invites_for_responder,
+    find_orphan_matched_tag_for_accept,
     get_latest_invite_for_request,
     get_pending_invite_for_responder,
     get_pending_relationship_match_request,
@@ -48,7 +53,9 @@ from services.rme_request_queries import (
     load_invite_by_id,
     load_request_by_id,
     load_request_by_idempotency_key,
+    load_tag_for_accept_replay,
     update_invite_status_terminal,
+    update_request_accept_with_matched_tag,
     update_request_status_terminal,
 )
 from services.rme_trusted_connection import (
@@ -68,6 +75,12 @@ _ENV_TDM_ENABLED = "TDM_ENABLED"
 
 RouteTripMetricsFn = Callable[[float, float, float, float], Awaitable[Dict[str, Any]]]
 DriverBusyFn = Callable[[str], bool]
+PassengerBlockingTagFn = Callable[[str], bool]
+TagsInsertFn = Callable[..., Any]
+BuildSnapshotFn = Callable[[Any, str], Dict[str, Any]]
+
+TAG_TYPE_NORMAL = "normal"
+MATCH_CHANNEL_TRUSTED = "trusted"
 
 _COORD_DECIMALS = 5
 
@@ -123,6 +136,14 @@ class RmeIdempotencyConflictError(Exception):
 class RmeDriverBusyError(Exception):
     code = "driver_busy"
     message = "Sürücü şu an müsait değil."
+
+    def __init__(self, message: Optional[str] = None) -> None:
+        super().__init__(message or self.message)
+
+
+class RmePassengerBusyError(Exception):
+    code = "passenger_busy"
+    message = "Yolcu başka bir yolculukta."
 
     def __init__(self, message: Optional[str] = None) -> None:
         super().__init__(message or self.message)
@@ -410,6 +431,169 @@ def _assert_invite_pending_or_raise(invite_row: dict) -> None:
         raise RmeExpiredError()
     if status != RME_INVITE_STATUS_PENDING:
         raise RmeInvalidStateError()
+
+
+def _public_accept_tag_payload(tag_row: dict) -> Dict[str, Any]:
+    return {
+        "id": str(tag_row.get("id") or ""),
+        "status": str(tag_row.get("status") or ""),
+        "match_channel": str(tag_row.get("match_channel") or ""),
+    }
+
+
+def _public_accept_request_payload(request_row: dict) -> Dict[str, Any]:
+    return {
+        "id": str(request_row.get("id") or ""),
+        "status": str(request_row.get("status") or ""),
+        "matched_tag_id": request_row.get("matched_tag_id"),
+        "matched_at": request_row.get("matched_at"),
+    }
+
+
+def _public_accept_invite_payload(invite_row: dict) -> Dict[str, Any]:
+    return {
+        "id": str(invite_row.get("id") or ""),
+        "status": str(invite_row.get("status") or RME_INVITE_STATUS_ACCEPTED),
+        "responded_at": invite_row.get("responded_at"),
+    }
+
+
+def _accept_response(
+    invite_row: dict,
+    request_row: dict,
+    tag_row: dict,
+) -> Dict[str, Any]:
+    return {
+        "tag": _public_accept_tag_payload(tag_row),
+        "request": _public_accept_request_payload(request_row),
+        "invite": _public_accept_invite_payload(invite_row),
+    }
+
+
+def _try_full_accept_replay(
+    supabase,
+    invite_row: dict,
+    request_row: dict,
+) -> Optional[Dict[str, Any]]:
+    invite_status = str(invite_row.get("status") or "").strip().lower()
+    if invite_status != RME_INVITE_STATUS_ACCEPTED:
+        return None
+
+    req_status = str(request_row.get("status") or "").strip().lower()
+    matched_tag_id = _norm_id(request_row.get("matched_tag_id"))
+    if req_status != RME_REQUEST_STATUS_ACCEPTED or not matched_tag_id:
+        return None
+
+    tag_row = load_tag_for_accept_replay(supabase, matched_tag_id)
+    if not tag_row:
+        return None
+
+    return _accept_response(invite_row, request_row, tag_row)
+
+
+def _try_half_accept_orphan_recovery(
+    supabase,
+    invite_row: dict,
+    request_row: dict,
+    *,
+    requester_id: str,
+    responder_id: str,
+) -> Optional[Dict[str, Any]]:
+    invite_status = str(invite_row.get("status") or "").strip().lower()
+    if invite_status != RME_INVITE_STATUS_ACCEPTED:
+        return None
+
+    req_status = str(request_row.get("status") or "").strip().lower()
+    if req_status != RME_REQUEST_STATUS_PENDING:
+        return None
+    if _norm_id(request_row.get("matched_tag_id")):
+        return None
+
+    orphan_tag = find_orphan_matched_tag_for_accept(
+        supabase,
+        requester_id=requester_id,
+        responder_id=responder_id,
+    )
+    if not orphan_tag:
+        return None
+
+    tag_id = _norm_id(orphan_tag.get("id"))
+    if not tag_id:
+        return None
+
+    request_id = _norm_id(request_row.get("id"))
+    matched_at = str(orphan_tag.get("matched_at") or _utcnow_iso())
+    responded_at = str(invite_row.get("responded_at") or matched_at)
+
+    updated = update_request_accept_with_matched_tag(
+        supabase,
+        request_id,
+        tag_id,
+        matched_at=matched_at,
+        responded_at=responded_at,
+    )
+    if not updated:
+        refreshed = load_request_by_id(supabase, request_id)
+        if refreshed:
+            replay = _try_full_accept_replay(supabase, invite_row, refreshed)
+            if replay:
+                return replay
+        return None
+
+    logger.info(
+        "tdm_accept orphan_recovery request_id=%s invite_id=%s tag_id=%s",
+        request_id[:36] if request_id else "",
+        str(invite_row.get("id") or "")[:36],
+        tag_id[:36],
+    )
+
+    refreshed_request = load_request_by_id(supabase, request_id) or {
+        **request_row,
+        "status": RME_REQUEST_STATUS_ACCEPTED,
+        "matched_tag_id": tag_id,
+        "matched_at": matched_at,
+    }
+    return _accept_response(invite_row, refreshed_request, orphan_tag)
+
+
+def _audit_accept_success(
+    supabase,
+    *,
+    request_id: str,
+    invite_id: str,
+    match_module: str,
+    actor_id: str,
+    matched_tag_id: str,
+) -> None:
+    module = str(match_module or MATCH_MODULE_TRUSTED_DIRECT)
+    tag_id_short = matched_tag_id[:36] if matched_tag_id else ""
+    _insert_audit_event(
+        supabase,
+        request_id=request_id,
+        invite_id=invite_id,
+        match_module=module,
+        event_type="invite_accepted",
+        actor_id=actor_id,
+        payload_json={"matched_tag_id": tag_id_short},
+    )
+    _insert_audit_event(
+        supabase,
+        request_id=request_id,
+        invite_id=invite_id,
+        match_module=module,
+        event_type="request_accepted",
+        actor_id=actor_id,
+        payload_json={"matched_tag_id": tag_id_short},
+    )
+    _insert_audit_event(
+        supabase,
+        request_id=request_id,
+        invite_id=invite_id,
+        match_module=module,
+        event_type="matched_tag_created",
+        actor_id=actor_id,
+        payload_json={"matched_tag_id": tag_id_short},
+    )
 
 
 def _build_create_replay_response(
@@ -769,10 +953,13 @@ def accept_invite(
     supabase,
     responder_id: str,
     invite_id: str,
+    *,
+    tags_insert_fn: TagsInsertFn,
+    driver_busy_checker_fn: DriverBusyFn,
+    passenger_busy_checker_fn: PassengerBlockingTagFn,
+    build_snapshot_fn: Optional[BuildSnapshotFn] = None,
 ) -> Dict[str, Any]:
-    """
-    Driver accept skeleton — validation only; tag insert deferred to RME-4.
-    """
+    """Driver accepts Trusted Direct invite; creates matched tag (match_channel=trusted)."""
     _require_rme_tdm_enabled()
 
     responder_norm = _norm_user_id(responder_id)
@@ -787,7 +974,6 @@ def accept_invite(
         raise RmeNotFoundError()
 
     invite_row = _lazy_expire_invite_row(supabase, invite_row)
-    _assert_invite_pending_or_raise(invite_row)
 
     request_id = _norm_id(invite_row.get("request_id"))
     request_row = load_request_by_id(supabase, request_id) if request_id else None
@@ -795,14 +981,165 @@ def accept_invite(
         raise RmeNotFoundError()
 
     request_row = _lazy_expire_request_row(supabase, request_row)
+    requester_norm = _norm_user_id(request_row.get("requester_id"))
+    match_module = str(request_row.get("match_module") or MATCH_MODULE_TRUSTED_DIRECT)
+
+    full_replay = _try_full_accept_replay(supabase, invite_row, request_row)
+    if full_replay:
+        return full_replay
+
+    half_replay = _try_half_accept_orphan_recovery(
+        supabase,
+        invite_row,
+        request_row,
+        requester_id=requester_norm,
+        responder_id=responder_norm,
+    )
+    if half_replay:
+        return half_replay
+
+    _assert_invite_pending_or_raise(invite_row)
     _assert_request_pending_or_raise(request_row)
 
-    requester_norm = _norm_user_id(request_row.get("requester_id"))
     assert_pair_not_blocked(supabase, requester_norm, responder_norm)
 
-    raise RmeInvalidStateError(
-        "Trusted Direct accept orchestration is not yet available (RME-4)."
+    connection_id = _norm_id(request_row.get("relationship_connection_id"))
+    try:
+        assert_active_trusted_connection_for_direct_match(
+            supabase,
+            requester_id=requester_norm,
+            responder_id=responder_norm,
+            relationship_connection_id=connection_id,
+        )
+    except RmeTrustedFieldError as exc:
+        raise RmeValidationError(str(exc)) from exc
+
+    if driver_busy_checker_fn(responder_norm):
+        raise RmeDriverBusyError()
+
+    if passenger_busy_checker_fn(requester_norm):
+        raise RmePassengerBusyError()
+
+    now_iso = _utcnow_iso()
+    accepted_invite = accept_invite_optimistic(
+        supabase,
+        iid,
+        responder_norm,
+        responded_at=now_iso,
     )
+    if not accepted_invite:
+        refreshed_invite = load_invite_by_id(supabase, iid)
+        if refreshed_invite:
+            refreshed_request = load_request_by_id(supabase, request_id) or request_row
+            race_replay = _try_full_accept_replay(
+                supabase, refreshed_invite, refreshed_request
+            )
+            if race_replay:
+                return race_replay
+            half_race = _try_half_accept_orphan_recovery(
+                supabase,
+                refreshed_invite,
+                refreshed_request,
+                requester_id=requester_norm,
+                responder_id=responder_norm,
+            )
+            if half_race:
+                return half_race
+        raise RmeInvalidStateError()
+
+    invite_row = accepted_invite
+    vehicle_pref = request_row.get("vehicle_preference") or "car"
+    tag_row: Dict[str, Any] = {
+        "type": TAG_TYPE_NORMAL,
+        "match_channel": MATCH_CHANNEL_TRUSTED,
+        "status": "matched",
+        "passenger_id": requester_norm,
+        "driver_id": responder_norm,
+        "pickup_lat": request_row.get("pickup_lat"),
+        "pickup_lng": request_row.get("pickup_lng"),
+        "dropoff_lat": request_row.get("dropoff_lat"),
+        "dropoff_lng": request_row.get("dropoff_lng"),
+        "pickup_location": request_row.get("pickup_label"),
+        "dropoff_location": request_row.get("dropoff_label"),
+        "passenger_preferred_vehicle": vehicle_pref,
+        "distance_km": request_row.get("distance_km"),
+        "matched_at": now_iso,
+    }
+
+    if tag_row.get("match_channel") != MATCH_CHANNEL_TRUSTED:
+        raise RuntimeError("trusted_direct tag insert: match_channel must be 'trusted'")
+
+    matched_contribution_tl = _matched_tag_contribution_tl(request_row)
+    if matched_contribution_tl is not None:
+        tag_row["final_price"] = matched_contribution_tl
+        tag_row["offered_price"] = matched_contribution_tl
+    else:
+        offered = request_row.get("offered_contribution_tl")
+        if offered is not None:
+            tag_row["final_price"] = offered
+            tag_row["offered_price"] = offered
+        else:
+            logger.warning(
+                "tdm_accept missing valid contribution request_id=%s offered=%r suggested=%r",
+                request_id[:36] if request_id else "",
+                request_row.get("offered_contribution_tl"),
+                request_row.get("suggested_contribution_tl"),
+            )
+
+    if build_snapshot_fn:
+        tag_row.update(build_snapshot_fn(supabase, responder_norm))
+
+    tag_ins = tags_insert_fn(supabase, tag_row, source="trusted_direct_accept")
+    if not tag_ins.data:
+        logger.error(
+            "tdm_accept tag_insert_empty request_id=%s invite_id=%s",
+            request_id[:36] if request_id else "",
+            iid[:36],
+        )
+        raise RuntimeError("trusted_direct tag insert returned empty data")
+
+    tag_created = tag_ins.data[0]
+    tag_id = _norm_id(tag_created.get("id"))
+    if not tag_id:
+        logger.error(
+            "tdm_accept tag_insert_missing_id request_id=%s invite_id=%s",
+            request_id[:36] if request_id else "",
+            iid[:36],
+        )
+        raise RuntimeError("trusted_direct tag insert missing id")
+
+    req_updated = update_request_accept_with_matched_tag(
+        supabase,
+        request_id,
+        tag_id,
+        matched_at=now_iso,
+        responded_at=now_iso,
+    )
+    if not req_updated:
+        logger.error(
+            "tdm_accept request_update_failed orphan_tag=true request_id=%s invite_id=%s tag_id=%s",
+            request_id[:36] if request_id else "",
+            iid[:36],
+            tag_id[:36],
+        )
+        raise RuntimeError("trusted_direct request update after tag insert failed")
+
+    _audit_accept_success(
+        supabase,
+        request_id=request_id,
+        invite_id=iid,
+        match_module=match_module,
+        actor_id=responder_norm,
+        matched_tag_id=tag_id,
+    )
+
+    final_request = load_request_by_id(supabase, request_id) or {
+        **request_row,
+        "status": RME_REQUEST_STATUS_ACCEPTED,
+        "matched_tag_id": tag_id,
+        "matched_at": now_iso,
+    }
+    return _accept_response(invite_row, final_request, tag_created)
 
 
 def get_active_request(
