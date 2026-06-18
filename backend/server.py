@@ -1953,7 +1953,7 @@ async def _emit_transfer_payment_claimed(
         "driver_id": str(driver_id),
         "passenger_name": passenger_name,
         "method": method_norm,
-        "message": "Yol paylaşım ücretini aldınız mı?",
+        "message": "Yol paylaşım katkısını aldınız mı?",
         "request_kind": "transfer_payment",
     }
     try:
@@ -1964,8 +1964,8 @@ async def _emit_transfer_payment_claimed(
         await send_trip_push_and_log(
             str(driver_id),
             "transfer_payment_claimed",
-            "Ödeme onayı",
-            f"{passenger_name} ödeme yaptığını bildirdi. Onaylayın.",
+            "Katkı onayı",
+            f"{passenger_name} yol paylaşım katkısını ilettiğini bildirdi. Onaylayın.",
             {
                 "type": "transfer_payment_claimed",
                 "tag_id": str(tag_id),
@@ -1987,7 +1987,7 @@ async def _emit_transfer_payment_confirmed(
     payload = {
         "tag_id": str(tag_id),
         "method": method_norm,
-        "message": "Sürücü ödemeyi onayladı. Yolculuk tamamlandı.",
+        "message": "Sürücü yol paylaşım katkısını onayladı. Yolculuk tamamlandı.",
         "request_kind": "transfer_payment",
     }
     try:
@@ -1998,8 +1998,8 @@ async def _emit_transfer_payment_confirmed(
         await send_trip_push_and_log(
             str(passenger_id),
             "transfer_payment_confirmed",
-            "Ödeme onaylandı",
-            "Sürücü ödemeyi aldığını onayladı.",
+            "Katkı onaylandı",
+            "Sürücü yol paylaşım katkısını aldığını onayladı.",
             {"type": "transfer_payment_confirmed", "tag_id": str(tag_id), "method": method_norm},
         )
     except Exception as push_err:
@@ -2016,7 +2016,7 @@ async def _emit_transfer_payment_disputed(
     payload = {
         "tag_id": str(tag_id),
         "method": method_norm,
-        "message": "Sürücü ödeme almadığını bildirdi. Destek inceleyecek.",
+        "message": "Sürücü katkı almadığını bildirdi. Destek inceleyecek.",
         "request_kind": "transfer_payment",
     }
     try:
@@ -2027,8 +2027,8 @@ async def _emit_transfer_payment_disputed(
         await send_trip_push_and_log(
             str(passenger_id),
             "transfer_payment_disputed",
-            "Ödeme uyuşmazlığı",
-            "Sürücü ödeme almadığını bildirdi.",
+            "Katkı uyuşmazlığı",
+            "Sürücü katkı almadığını bildirdi.",
             {"type": "transfer_payment_disputed", "tag_id": str(tag_id), "method": method_norm},
         )
     except Exception as push_err:
@@ -20287,7 +20287,7 @@ async def complete_trip_with_qr(request: Request):
                 status_code=409,
                 detail={
                     "code": "trusted_direct_requires_driver_payment_confirmation",
-                    "message": "Bu yol paylaşımında ödeme sürücü onayıyla tamamlanır.",
+                    "message": "Bu yol paylaşımında katkı sürücü onayıyla tamamlanır.",
                 },
             )
         if booked_pm in ("cash", "card"):

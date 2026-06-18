@@ -7575,7 +7575,8 @@ function PassengerDashboard({
   const [driverPaymentSheetMode, setDriverPaymentSheetMode] = useState<'info' | 'trip_end'>('info');
   const tripEndIbanCompleteInFlightRef = useRef(false);
 
-  const TRUSTED_PAYMENT_PENDING_ALERT = 'Yol paylaşım katkısı sürücü onayı bekleniyor.';
+  const TRUSTED_PAYMENT_PENDING_ALERT =
+    'Yol paylaşım katkısı için sürücü onayı bekleniyor.';
 
   const canOpenDriverPaymentDetails = useMemo(() => {
     if (!user?.id || !activeTag?.id) return false;
@@ -7746,7 +7747,7 @@ function PassengerDashboard({
         tripPaymentDetails.clear();
         appAlert(
           'Bilgi',
-          isTrusted ? TRUSTED_PAYMENT_PENDING_ALERT : 'Sürücü ödeme onayı bekleniyor.',
+          isTrusted ? TRUSTED_PAYMENT_PENDING_ALERT : 'Katkı onayı bekleniyor.',
         );
         if (isTrusted) {
           setShowQRModal(false);

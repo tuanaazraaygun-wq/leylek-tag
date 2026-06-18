@@ -71,20 +71,20 @@ export default function TransferPaymentConfirmModal({
   if (!visible) return null;
 
   const isCash = paymentMethod === 'cash';
-  const phaseStep = isCash ? 'Nakit katkı onayı' : 'Ödeme teyidi';
+  const phaseStep = isCash ? 'Nakit katkı onayı' : 'Katkı onayı';
   const phaseCaption = isCash
     ? 'Yolcunun nakit katkı bildirimini güvenli şekilde onayla.'
-    : 'Yolcunun ödeme yaptığını güvenli şekilde onayla.';
+    : 'Yolcunun katkı bildirimini güvenli şekilde onayla.';
   const questionText = isCash
     ? 'Yol paylaşım katkısını nakit olarak aldınız mı?'
-    : 'Yol paylaşım ücretini aldınız mı?';
+    : 'Yol paylaşım katkısını aldınız mı?';
   const nameLine = isCash
     ? passengerName?.trim()
       ? `${passengerName.trim()} nakit katkıyı ilettiğini bildirdi.`
       : 'Yolcu nakit katkıyı ilettiğini bildirdi.'
     : passengerName?.trim()
-      ? `${passengerName.trim()} IBAN/Havale-EFT ile ödeme yaptığını bildirdi.`
-      : 'Yolcu IBAN/Havale-EFT ile ödeme yaptığını bildirdi.';
+      ? `${passengerName.trim()} Havale/EFT ile yol paylaşım katkısını ilettiğini bildirdi.`
+      : 'Yolcu Havale/EFT ile yol paylaşım katkısını ilettiğini bildirdi.';
 
   return (
     <Modal
@@ -141,7 +141,7 @@ export default function TransferPaymentConfirmModal({
                     disabled={loading}
                   >
                     <PremiumText variant="body" style={styles.primaryBtnText}>
-                      {loading ? 'Gönderiliyor…' : 'Evet, ödemeyi aldım'}
+                      {loading ? 'Gönderiliyor…' : 'Evet, katkıyı aldım'}
                     </PremiumText>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -151,7 +151,7 @@ export default function TransferPaymentConfirmModal({
                     disabled={loading}
                   >
                     <PremiumText variant="caption" style={styles.disputeBtnText}>
-                      Hayır, ödeme almadım / sorun bildir
+                      Hayır, katkı almadım / sorun bildir
                     </PremiumText>
                   </TouchableOpacity>
                 </View>
@@ -162,7 +162,7 @@ export default function TransferPaymentConfirmModal({
                   Sorun bildir
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.description}>
-                  Ödeme almadıysanız kısaca açıklayın. Destek ekibi inceleyecek.
+                  Katkı almadıysanız kısaca açıklayın. Destek ekibi inceleyecek.
                 </PremiumText>
                 <TextInput
                   style={styles.noteInput}

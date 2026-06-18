@@ -102,7 +102,7 @@ function mapHttpError(status: number, detail: string): TripPaymentApiResult<neve
     ) {
       return { ok: false, code: 'UNAVAILABLE', message: 'Sürücü IBAN bilgisi bulunamadı' };
     }
-    return { ok: false, code: 'NOT_FOUND', message: raw || 'Ödeme bilgisi bulunamadı' };
+    return { ok: false, code: 'NOT_FOUND', message: raw || 'Katkı bilgisi bulunamadı' };
   }
 
   if (status === 409) {
@@ -118,7 +118,7 @@ function mapHttpError(status: number, detail: string): TripPaymentApiResult<neve
       };
     }
     if (lower.includes('trip status') || lower.includes('does not allow')) {
-      return { ok: false, code: 'FORBIDDEN', message: 'Bu aşamada ödeme bilgisi görüntülenemez' };
+      return { ok: false, code: 'FORBIDDEN', message: 'Bu aşamada katkı bilgisi görüntülenemez' };
     }
     return { ok: false, code: 'FORBIDDEN', message: 'Bu bilgilere erişim yetkiniz yok' };
   }
@@ -216,7 +216,7 @@ export async function claimTransferPayment(
   try {
     const json = (await res.json()) as TransferPaymentClaimResponse;
     if (json?.success === false) {
-      return { ok: false, code: 'UNKNOWN', message: 'Ödeme bildirimi gönderilemedi' };
+      return { ok: false, code: 'UNKNOWN', message: 'Katkı bildirimi gönderilemedi' };
     }
     return { ok: true, data: json ?? {} };
   } catch {

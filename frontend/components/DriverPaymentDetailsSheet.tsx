@@ -94,7 +94,7 @@ export default function DriverPaymentDetailsSheet({
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
               <PremiumText variant="step" style={styles.phaseStep}>
-                Ödeme bilgileri
+                Havale / EFT bilgileri
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
                 Transfer bilgilerini dikkatlice kontrol et.
@@ -116,7 +116,7 @@ export default function DriverPaymentDetailsSheet({
               <View style={styles.centerBlock}>
                 <ActivityIndicator size="small" color="#22D3EE" />
                 <PremiumText variant="caption" muted style={styles.loadingText}>
-                  Ödeme bilgileri yükleniyor…
+                  Havale / EFT bilgileri yükleniyor…
                 </PremiumText>
               </View>
             ) : null}
@@ -173,7 +173,7 @@ export default function DriverPaymentDetailsSheet({
                 </Pressable>
 
                 <PremiumText variant="caption" muted style={styles.hint}>
-                  Havale/EFT ile ödeme yapıyorsanız bilgileri kontrol edip sürücüye gönderin.
+                  Yol paylaşım katkısını Havale/EFT ile ilettiyseniz bilgileri kontrol edip sürücüye gönderin.
                 </PremiumText>
               </>
             ) : null}
@@ -185,7 +185,7 @@ export default function DriverPaymentDetailsSheet({
             onPress={handlePrimary}
           >
             <PremiumText variant="body" style={styles.primaryText}>
-              {mode === 'trip_end' ? 'Ödemeyi yaptım' : 'Tamam'}
+              {mode === 'trip_end' ? 'Yol paylaşım katkısını ilettim' : 'Tamam'}
             </PremiumText>
           </Pressable>
         </GlassSurface>

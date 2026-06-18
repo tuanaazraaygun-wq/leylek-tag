@@ -94,7 +94,7 @@ def enable_transfer_flags(monkeypatch):
 
 def test_should_reject_complete_qr_blocks_iban_snapshot():
     msg = should_reject_complete_qr(_tag_row(), None, "cash")
-    assert msg == "IBAN/havale yolculuğu sürücü ödeme onayı ile tamamlanır."
+    assert msg == "Havale/EFT ile iletilen yol paylaşım katkısı sürücü onayı ile tamamlanır."
 
 
 def test_should_reject_complete_qr_allows_cash_qr():

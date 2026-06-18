@@ -169,7 +169,7 @@ def should_reject_complete_qr(
     st = transfer_payment_status(tag_row)
     if st == TRANSFER_STATUS_CONFIRMED:
         return None
-    return "IBAN/havale yolculuğu sürücü ödeme onayı ile tamamlanır."
+    return "Havale/EFT ile iletilen yol paylaşım katkısı sürücü onayı ile tamamlanır."
 
 
 def fetch_tag_for_transfer(supabase, tag_id: str) -> Optional[dict]:
@@ -204,7 +204,7 @@ def _assert_active_tag_with_snapshot(tag_row: dict) -> Tuple[str, str]:
 def _assert_claim_preconditions(tag_row: dict, method: str) -> Tuple[str, str]:
     if method == TRANSFER_METHOD_CASH:
         if not is_trusted_direct_tag(tag_row):
-            raise TransferPaymentForbiddenError("Nakit ödeme bildirimi bu yolculuk için kullanılamaz")
+            raise TransferPaymentForbiddenError("Nakit katkı bildirimi bu yolculuk için kullanılamaz")
         return _assert_active_tag_base(tag_row)
     return _assert_active_tag_with_snapshot(tag_row)
 
@@ -213,7 +213,7 @@ def _assert_respond_preconditions(tag_row: dict, existing: Dict[str, Any]) -> Tu
     method = _transfer_method_from_payload(existing)
     if method == TRANSFER_METHOD_CASH:
         if not is_trusted_direct_tag(tag_row):
-            raise TransferPaymentStateError("Bekleyen ödeme onayı yok")
+            raise TransferPaymentStateError("Bekleyen katkı onayı yok")
         return _assert_active_tag_base(tag_row)
     return _assert_active_tag_with_snapshot(tag_row)
 
@@ -296,13 +296,13 @@ def claim_transfer_payment(
     _require_transfer_feature_for_claim(tag_row, method_norm)
     pid, did = _assert_claim_preconditions(tag_row, method_norm)
     if _norm_uid(passenger_id) != pid:
-        raise TransferPaymentForbiddenError("Sadece yolcu ödeme bildirimi yapabilir")
+        raise TransferPaymentForbiddenError("Sadece yolcu katkı bildirimi yapabilir")
 
     cur = transfer_payment_status(tag_row)
     if cur == TRANSFER_STATUS_CONFIRMED:
-        raise TransferPaymentStateError("Ödeme zaten onaylandı")
+        raise TransferPaymentStateError("Katkı zaten onaylandı")
     if cur == TRANSFER_STATUS_DISPUTED:
-        raise TransferPaymentStateError("Ödeme uyuşmazlığı kayıtlı")
+        raise TransferPaymentStateError("Katkı uyuşmazlığı kayıtlı")
 
     now = _utcnow_iso()
     if cur == TRANSFER_STATUS_AWAITING:
@@ -429,7 +429,7 @@ def respond_transfer_payment(
 
     cur = transfer_payment_status(tag_row)
     if cur != TRANSFER_STATUS_AWAITING:
-        raise TransferPaymentStateError("Bekleyen ödeme onayı yok")
+        raise TransferPaymentStateError("Bekleyen katkı onayı yok")
 
     method = _transfer_method_from_payload(existing)
     now = _utcnow_iso()

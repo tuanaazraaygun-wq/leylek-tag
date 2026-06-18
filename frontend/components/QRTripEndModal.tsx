@@ -299,7 +299,7 @@ export default function QRTripEndModal({
 
   const phaseStep = isTrustedDirect
     ? isDriver
-      ? 'Ödeme onayı bekleniyor'
+      ? 'Katkı onayı bekleniyor'
       : 'Yol paylaşımını bitir'
     : isDriver
       ? 'Yolculuk tamamlandı'
@@ -309,7 +309,7 @@ export default function QRTripEndModal({
 
   const phaseCaption = isTrustedDirect
     ? isDriver
-      ? 'Yolcu ödeme bildirimi gönderdiğinde onayınızla yolculuk kapanır.'
+      ? 'Yolcu katkı bildirimi gönderdiğinde onayınızla yolculuk kapanır.'
       : 'Katkınızı nasıl ilettiğinizi bildirin; sürücü onayından sonra yolculuk tamamlanır.'
     : isDriver
       ? `${firstName} bu kodu tarasın`
@@ -350,7 +350,7 @@ export default function QRTripEndModal({
             <View style={styles.guardianLiveDot} />
             <Ionicons name="checkmark-done-outline" size={14} color="rgba(34,211,238,0.88)" />
             <PremiumText variant="caption" style={styles.guardianChipText}>
-              {isTrustedDirect ? 'Ödeme bildirimi' : 'Yolculuk tamamlandı'}
+              {isTrustedDirect ? 'Katkı bildirimi' : 'Yolculuk tamamlandı'}
             </PremiumText>
           </GlassSurface>
 
@@ -365,10 +365,10 @@ export default function QRTripEndModal({
                       </View>
                       <View style={styles.qrCheckpointTextCol}>
                         <PremiumText variant="body" style={styles.qrCheckpointTitle}>
-                          Yolcu ödeme bildirimi bekleniyor
+                          Yolcu katkı bildirimi bekleniyor
                         </PremiumText>
                         <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
-                          {firstName} nakit veya havale bildirimi gönderecek
+                          {firstName} nakit veya havale katkısı bildirecek
                         </PremiumText>
                       </View>
                     </View>
@@ -419,7 +419,7 @@ export default function QRTripEndModal({
                   activeOpacity={0.88}
                   disabled={processing}
                   accessibilityRole="button"
-                  accessibilityLabel="Nakit olarak ilettim"
+                  accessibilityLabel="Yol paylaşım katkısını nakit olarak ilettim"
                 >
                   <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
                     <View style={styles.chooseOptionIconWrap}>
@@ -427,7 +427,7 @@ export default function QRTripEndModal({
                     </View>
                     <View style={styles.chooseOptionTextCol}>
                       <PremiumText variant="body" style={styles.chooseOptionTitle}>
-                        Nakit olarak ilettim
+                        Yol paylaşım katkısını nakit olarak ilettim
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
                         Sürücü onayından sonra yolculuk tamamlanır
@@ -442,7 +442,7 @@ export default function QRTripEndModal({
                   activeOpacity={0.88}
                   disabled={processing}
                   accessibilityRole="button"
-                  accessibilityLabel="Havale EFT ile ilettim"
+                  accessibilityLabel="Yol paylaşım katkısını Havale EFT ile ilettim"
                 >
                   <GlassSurface variant="plain" style={styles.chooseOption} borderRadius={LDS_RADIUS.md}>
                     <View style={styles.chooseOptionIconWrap}>
@@ -450,7 +450,7 @@ export default function QRTripEndModal({
                     </View>
                     <View style={styles.chooseOptionTextCol}>
                       <PremiumText variant="body" style={styles.chooseOptionTitle}>
-                        Havale/EFT ile ilettim
+                        Yol paylaşım katkısını Havale/EFT ile ilettim
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
                         Sürücü hesap bilgilerini görüntüle
