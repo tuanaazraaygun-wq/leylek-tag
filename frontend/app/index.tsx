@@ -6934,6 +6934,28 @@ const BOARDING_STATE_MAX_ATTEMPTS = 1;
 /** Normal TAG yolcu: socket/poll ile matched — overlay yalnız bu önceki status’tan `matched`’e geçişte */
 const PASSENGER_MATCH_OVERLAY_FROM_STATUSES = new Set(['pending', 'offers_received', 'waiting']);
 
+/** matched/in_progress: geçici boş active-tag yanıtında stale tag koruma + yeniden dene */
+const ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK = 3;
+const ACTIVE_JOURNEY_RECOVERY_RETRY_MS = 750;
+const ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS = 800;
+const ACTIVE_JOURNEY_MATCHED_IN_PROGRESS = new Set(['matched', 'in_progress']);
+
+function activeJourneyRecoveryWindowUntilMs(): number {
+  return (
+    Date.now() +
+    ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK * ACTIVE_JOURNEY_RECOVERY_RETRY_MS +
+    ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS +
+    400
+  );
+}
+
+function isActiveJourneyMatchedOrInProgress(status: unknown): boolean {
+  const st = String(status ?? '')
+    .trim()
+    .toLowerCase();
+  return ACTIVE_JOURNEY_MATCHED_IN_PROGRESS.has(st);
+}
+
 /** Yolcu adres araması: ters geokod sıklığını düşürmek için ~110m grid */
 function roundPassengerGpsCoordForSearch(n: number | undefined): number | null {
   if (n == null || !Number.isFinite(n)) return null;
@@ -7330,8 +7352,12 @@ function PassengerDashboard({
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   /** loadActiveTag yarışları için güncel tag (koruma dalında kullanılır) */
   const passengerActiveTagSnapshotRef = useRef<Tag | null>(null);
-  /** GET active-tag geçici null: 1. vuruşta ertele + 500ms retry; 2. vuruşta temizle */
+  /** GET active-tag geçici null: matched/in_progress için sınırlı retry, sonra temizle */
   const passengerActiveTagNullStreakRef = useRef(0);
+  /** Socket/poll recovery: bu süre dolana kadar matched/in_progress temizlenmez */
+  const passengerJourneyRecoveryWindowUntilRef = useRef(0);
+  const passengerFirstActiveTagLoadRef = useRef(false);
+  const [activeJourneyHydrationPending, setActiveJourneyHydrationPending] = useState(true);
   useEffect(() => {
     passengerActiveTagSnapshotRef.current = activeTag;
   }, [activeTag]);
@@ -8784,7 +8810,22 @@ function PassengerDashboard({
       
       // Backend'den de çek (ekstra bilgiler için)
       setScreen('dashboard');
-      setTimeout(() => loadActiveTag(), 1000);
+      passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        role: 'passenger',
+        source: 'tag_matched',
+        phase: 'immediate',
+      });
+      void loadActiveTag();
+      setTimeout(() => {
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'passenger',
+          source: 'tag_matched',
+          phase: 'delayed',
+          delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+        });
+        void loadActiveTag();
+      }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
     },
     // Backend accept_ride: doğrudan eşleşme socket’i (yolcu)
     onRideAccepted: (data) => {
@@ -8838,7 +8879,22 @@ function PassengerDashboard({
         }) as Tag);
       }
       setScreen('dashboard');
-      setTimeout(() => loadActiveTag(), 1000);
+      passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        role: 'passenger',
+        source: 'ride_accepted',
+        phase: 'immediate',
+      });
+      void loadActiveTag();
+      setTimeout(() => {
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'passenger',
+          source: 'ride_accepted',
+          phase: 'delayed',
+          delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+        });
+        void loadActiveTag();
+      }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
     },
     // Sürücü HTTP/socket eşleşmesi — ride_matched (tag_matched ile aynı yük)
     onRideMatched: (data) => {
@@ -8892,13 +8948,42 @@ function PassengerDashboard({
         }) as Tag);
       }
       setScreen('dashboard');
-      setTimeout(() => loadActiveTag(), 1000);
+      passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        role: 'passenger',
+        source: 'ride_matched',
+        phase: 'immediate',
+      });
+      void loadActiveTag();
+      setTimeout(() => {
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'passenger',
+          source: 'ride_matched',
+          phase: 'delayed',
+          delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+        });
+        void loadActiveTag();
+      }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
     },
     // 🆕 TEKLİF KABUL EDİLDİ - Ack (backend confirmation)
     onOfferAccepted: (data) => {
       console.log('✅ YOLCU - TEKLİF KABUL EDILDI (Socket Ack):', data);
-      // Backend'den onay geldi - tag'i yenile
-      loadActiveTag();
+      passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        role: 'passenger',
+        source: 'offer_accepted',
+        phase: 'immediate',
+      });
+      void loadActiveTag();
+      setTimeout(() => {
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'passenger',
+          source: 'offer_accepted',
+          phase: 'delayed',
+          delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+        });
+        void loadActiveTag();
+      }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
     },
     onFirstChatMessage: (data) => {
       if (!data?.tag_id) return;
@@ -9421,40 +9506,41 @@ function PassengerDashboard({
           logPollingSkippedForceEndLock('passenger', 'loadActiveTag_else_branch');
           return;
         }
-        const PASSENGER_ACTIVE_TAG_NULL_GUARD = new Set([
-          'waiting',
-          'pending',
-          'offers_received',
-          'matched',
-          'in_progress',
-        ]);
         const prevSnap = passengerActiveTagSnapshotRef.current;
         const prevSt = String(prevSnap?.status ?? '')
           .trim()
           .toLowerCase();
-        const nullGuardActive =
-          !!prevSnap && PASSENGER_ACTIVE_TAG_NULL_GUARD.has(prevSt);
-        if (data.success === true && !data.tag && nullGuardActive) {
+        const journeyRecoveryEligible =
+          !!prevSnap && isActiveJourneyMatchedOrInProgress(prevSt);
+        const inRecoveryWindow = Date.now() < passengerJourneyRecoveryWindowUntilRef.current;
+
+        const shouldDeferEmpty =
+          journeyRecoveryEligible || (inRecoveryWindow && !!prevSnap);
+
+        if (data.success === true && !data.tag && shouldDeferEmpty) {
           passengerActiveTagNullStreakRef.current += 1;
-          if (passengerActiveTagNullStreakRef.current === 1) {
-            console.log('PASSENGER_ACTIVE_TAG_NULL_DEFERRED', {
+          if (passengerActiveTagNullStreakRef.current < ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK) {
+            console.log('PASSENGER_ACTIVE_TAG_EMPTY_DEFERRED', {
               priorTagId: prevSnap?.id ?? null,
               priorStatus: prevSnap?.status ?? null,
               streak: passengerActiveTagNullStreakRef.current,
+              maxStreak: ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK,
+              inRecoveryWindow,
               userId: user?.id ?? null,
             });
             setTimeout(() => {
               void loadActiveTag();
-            }, 500);
+            }, ACTIVE_JOURNEY_RECOVERY_RETRY_MS);
             return;
           }
-          console.log('PASSENGER_ACTIVE_TAG_NULL_CONFIRMED_CLEAR', {
+          console.log('PASSENGER_ACTIVE_TAG_EMPTY_CONFIRMED_CLEAR', {
             priorTagId: prevSnap?.id ?? null,
             priorStatus: prevSnap?.status ?? null,
             streak: passengerActiveTagNullStreakRef.current,
             userId: user?.id ?? null,
           });
           passengerActiveTagNullStreakRef.current = 0;
+          passengerJourneyRecoveryWindowUntilRef.current = 0;
         } else {
           passengerActiveTagNullStreakRef.current = 0;
         }
@@ -9510,6 +9596,11 @@ function PassengerDashboard({
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
+    } finally {
+      if (!passengerFirstActiveTagLoadRef.current) {
+        passengerFirstActiveTagLoadRef.current = true;
+        setActiveJourneyHydrationPending(false);
+      }
     }
   };
 
@@ -11309,8 +11400,23 @@ function PassengerDashboard({
 
         void playMatchChimeSound();
         
-        // API'den tam veriyi çek (arka planda)
-        loadActiveTag();
+        // API'den tam veriyi çek (arka planda) + recovery penceresi
+        passengerJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'passenger',
+          source: 'accept_offer',
+          phase: 'immediate',
+        });
+        void loadActiveTag();
+        setTimeout(() => {
+          console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+            role: 'passenger',
+            source: 'accept_offer',
+            phase: 'delayed',
+            delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+          });
+          void loadActiveTag();
+        }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
       } else {
         setMatchingInProgress(false);
         appAlert('Hata', 'Teklif kabul edilemedi');
@@ -12113,6 +12219,23 @@ function PassengerDashboard({
   // 🆕 SEARCHING PHASE - HARİTA + TEKLİF LİSTESİ (YENİ UI)
   // Üstte harita (tüm sürücüler) + Altta scrollable teklif listesi
   // ═══════════════════════════════════════════════════════════════════════════
+  if (
+    activeJourneyHydrationPending &&
+    !activeTag &&
+    !matchingInProgress &&
+    !postLoginTagResumePending
+  ) {
+    return (
+      <View style={{ flex: 1 }}>
+        <CockpitBackground />
+        <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#3FA9F5" />
+        </SafeAreaView>
+        <TagMatchTransitionOverlay active={matchingInProgress} />
+      </View>
+    );
+  }
+
   if (activeTag && activeTag.status !== 'matched' && activeTag.status !== 'in_progress') {
     const isSearching = activeTag.status === 'pending' || activeTag.status === 'offers_received';
     
@@ -14808,6 +14931,15 @@ function DriverDashboard({
   const isMotorDriverUi = driverVehicleKind === 'motorcycle';
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
+  const driverActiveTagSnapshotRef = useRef<Tag | null>(null);
+  const driverActiveTagNullStreakRef = useRef(0);
+  const driverJourneyRecoveryWindowUntilRef = useRef(0);
+  const driverFirstActiveTagLoadRef = useRef(false);
+  const [driverActiveJourneyHydrationPending, setDriverActiveJourneyHydrationPending] =
+    useState(true);
+  useEffect(() => {
+    driverActiveTagSnapshotRef.current = activeTag;
+  }, [activeTag]);
   const [requests, setRequests] = useState<any[]>([]);
   const requestsSnapshotRef = useRef<any[]>([]);
   requestsSnapshotRef.current = requests;
@@ -15502,7 +15634,22 @@ function DriverDashboard({
     }
     setActiveTag(matchedTag as Tag);
     setScreen('dashboard');
-    setTimeout(() => void loadDriverDashboardDataRef.current?.(), 1000);
+    driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+    console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+      role: 'driver',
+      source: event,
+      phase: 'immediate',
+    });
+    void loadDriverDashboardDataRef.current?.();
+    setTimeout(() => {
+      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        role: 'driver',
+        source: event,
+        phase: 'delayed',
+        delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+      });
+      void loadDriverDashboardDataRef.current?.();
+    }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
   };
 
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
@@ -15920,7 +16067,22 @@ function DriverDashboard({
       }
       
       // Backend'den de çek (ekstra bilgiler için)
-      setTimeout(() => void loadDriverDashboardDataRef.current?.(), 1000);
+      driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+      console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+        role: 'driver',
+        source: 'tag_matched',
+        phase: 'immediate',
+      });
+      void loadDriverDashboardDataRef.current?.();
+      setTimeout(() => {
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'driver',
+          source: 'tag_matched',
+          phase: 'delayed',
+          delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+        });
+        void loadDriverDashboardDataRef.current?.();
+      }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
     },
     // Backend accept_ride + `_emit_driver_on_the_way_route`: `ride_matched` / `driver_on_the_way`
     onRideMatched: (data) => {
@@ -17157,6 +17319,42 @@ function DriverDashboard({
           return null;
         }
 
+        const prevSnap = driverActiveTagSnapshotRef.current;
+        const prevSt = String(prevSnap?.status ?? '')
+          .trim()
+          .toLowerCase();
+        const journeyRecoveryEligible =
+          !!prevSnap && isActiveJourneyMatchedOrInProgress(prevSt);
+        const inRecoveryWindow = Date.now() < driverJourneyRecoveryWindowUntilRef.current;
+
+        if (journeyRecoveryEligible || (inRecoveryWindow && !!prevSnap)) {
+          driverActiveTagNullStreakRef.current += 1;
+          if (driverActiveTagNullStreakRef.current < ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK) {
+            console.log('DRIVER_ACTIVE_TAG_EMPTY_DEFERRED', {
+              priorTagId: prevSnap?.id ?? null,
+              priorStatus: prevSnap?.status ?? null,
+              streak: driverActiveTagNullStreakRef.current,
+              maxStreak: ACTIVE_JOURNEY_RECOVERY_EMPTY_MAX_STREAK,
+              inRecoveryWindow,
+              userId: user?.id ?? null,
+            });
+            setTimeout(() => {
+              void loadActiveTag();
+            }, ACTIVE_JOURNEY_RECOVERY_RETRY_MS);
+            return prevSnap as Record<string, unknown> | null;
+          }
+          console.log('DRIVER_ACTIVE_TAG_EMPTY_CONFIRMED_CLEAR', {
+            priorTagId: prevSnap?.id ?? null,
+            priorStatus: prevSnap?.status ?? null,
+            streak: driverActiveTagNullStreakRef.current,
+            userId: user?.id ?? null,
+          });
+          driverActiveTagNullStreakRef.current = 0;
+          driverJourneyRecoveryWindowUntilRef.current = 0;
+        } else {
+          driverActiveTagNullStreakRef.current = 0;
+        }
+
         console.log('DRIVER_WAITING_EXIT_REASON', {
           source: 'loadActiveTag',
           outcome: 'stay_dashboard',
@@ -17192,6 +17390,7 @@ function DriverDashboard({
       }
       
       if (data.success && data.tag) {
+        driverActiveTagNullStreakRef.current = 0;
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
           if (forceEndLockRef.current) {
@@ -17338,6 +17537,11 @@ function DriverDashboard({
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
       return null;
+    } finally {
+      if (!driverFirstActiveTagLoadRef.current) {
+        driverFirstActiveTagLoadRef.current = true;
+        setDriverActiveJourneyHydrationPending(false);
+      }
     }
   };
 
@@ -18576,7 +18780,22 @@ function DriverDashboard({
                   } as Tag);
                 }
                 setScreen('dashboard');
-                setTimeout(() => loadData(), 800);
+                driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+                console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+                  role: 'driver',
+                  source: 'accept_offer',
+                  phase: 'immediate',
+                });
+                void loadData();
+                setTimeout(() => {
+                  console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+                    role: 'driver',
+                    source: 'accept_offer',
+                    phase: 'delayed',
+                    delayMs: ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS,
+                  });
+                  void loadData();
+                }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
 
                 if (data?.tag_id) {
                   if (driverMatchTransitionTimerRef.current) {
@@ -18635,6 +18854,21 @@ function DriverDashboard({
           }}
         />
       </>
+    );
+  }
+
+  if (
+    driverActiveJourneyHydrationPending &&
+    !activeTag &&
+    !driverMatchTransitionVisible
+  ) {
+    return (
+      <View style={{ flex: 1 }}>
+        <CockpitBackground />
+        <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#3FA9F5" />
+        </SafeAreaView>
+      </View>
     );
   }
 
