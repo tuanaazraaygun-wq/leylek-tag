@@ -50,6 +50,7 @@ def expire_stale_sessions(supabase) -> List[Dict[str, Any]]:
             supabase.table("trust_sessions")
             .select("*")
             .eq("status", "pending")
+            .lte("request_ttl_expires_at", now_s)
             .execute()
         )
         for row in res.data or []:
@@ -82,6 +83,7 @@ def expire_stale_sessions(supabase) -> List[Dict[str, Any]]:
             supabase.table("trust_sessions")
             .select("*")
             .eq("status", "accepted")
+            .lte("session_hard_deadline_at", now_s)
             .execute()
         )
         for row in res2.data or []:
