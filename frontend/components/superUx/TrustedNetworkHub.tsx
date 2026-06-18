@@ -1,5 +1,13 @@
-import React, { memo, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +22,18 @@ import {
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import { useTrustedNetworkHub } from '../../hooks/useTrustedNetworkHub';
+import { PremiumText } from '../../design-system/primitives';
+import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
+import {
+  cancelTrustedDirectRequest,
+  fetchSuggestedContributionTl,
+  getActiveTrustedDirectRequest,
+  isDriverVehicleCompatibleWithPreference,
+  type TrustedDirectRequestRow,
+  type TrustedDirectRouteContext,
+} from '../../lib/trustedDirectApi';
+import type { useTrustedDirectPassengerSession } from '../../hooks/useTrustedDirectPassengerSession';
+import type { TrustedConnectionItem } from '../../lib/trustedNetworkApi';
 import {
   globalEmptyBody,
   globalEmptyTitle,
@@ -25,6 +45,21 @@ import {
   SECTION_OUTGOING_TITLE,
   sectionConnectionsTitle,
   formatTrustedRadarBriefing,
+  TDM_ACTIVE_TAG_BLOCK,
+  TDM_CONTRIBUTION_CANCEL,
+  TDM_CONTRIBUTION_CONFIRM,
+  TDM_CONTRIBUTION_TITLE,
+  TDM_NO_ROUTE_HINT,
+  TDM_PENDING_BANNER,
+  TDM_ROUTE_BANNER_TITLE,
+  TDM_ORPHAN_CANCEL,
+  TDM_ORPHAN_CLOSE,
+  TDM_ORPHAN_PENDING_BODY,
+  TDM_ORPHAN_PENDING_TITLE,
+  TDM_ORPHAN_PICK_ROUTE,
+  TDM_PENDING_ROW_HINT,
+  TDM_UNAVAILABLE_HINT,
+  TDM_VEHICLE_MISMATCH,
   type TrustedHubRole,
 } from '../../lib/trustedHubCopy';
 import TrustedConnectionRow from './TrustedConnectionRow';
@@ -33,7 +68,32 @@ import TrustedRadarBriefingStrip from './TrustedRadarBriefingStrip';
 
 export type TrustedNetworkHubProps = {
   role: TrustedHubRole;
+  tdmEnabled?: boolean | null;
+  routeContext?: TrustedDirectRouteContext | null;
+  hasActiveTag?: boolean;
+  tdmSession?: Pick<
+    ReturnType<typeof useTrustedDirectPassengerSession>,
+    'hasPendingRequest' | 'isCreating' | 'errorMessage' | 'create' | 'dismissError'
+  > | null;
 };
+
+function isPendingResponderRequest(row: TrustedDirectRequestRow | null | undefined): boolean {
+  return String(row?.status || '').trim().toLowerCase() === 'pending_responder';
+}
+
+function RouteContextBanner({ route }: { route: TrustedDirectRouteContext }) {
+  return (
+    <View style={styles.routeBanner}>
+      <Text style={styles.routeBannerTitle}>{TDM_ROUTE_BANNER_TITLE}</Text>
+      <Text style={styles.routeBannerLine} numberOfLines={1}>
+        {route.pickup_label} → {route.dropoff_label}
+      </Text>
+      {route.distance_km != null ? (
+        <Text style={styles.routeBannerMeta}>{route.distance_km} km</Text>
+      ) : null}
+    </View>
+  );
+}
 
 function HubSkeletonRows() {
   return (
@@ -66,7 +126,13 @@ function HubSection({
   );
 }
 
-function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
+function TrustedNetworkHub({
+  role,
+  tdmEnabled = null,
+  routeContext = null,
+  hasActiveTag = false,
+  tdmSession = null,
+}: TrustedNetworkHubProps) {
   const router = useRouter();
   const {
     status,
@@ -81,6 +147,154 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
     revokeConnection,
     clearActionFeedback,
   } = useTrustedNetworkHub();
+
+  const [contributionTarget, setContributionTarget] = useState<TrustedConnectionItem | null>(
+    null,
+  );
+  const [contributionTl, setContributionTl] = useState(0);
+  const [minContributionTl, setMinContributionTl] = useState(0);
+  const [maxContributionTl, setMaxContributionTl] = useState(0);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [orphanPending, setOrphanPending] = useState<TrustedDirectRequestRow | null>(null);
+  const [orphanCancelling, setOrphanCancelling] = useState(false);
+
+  const showTdmUi =
+    role === 'passenger' && tdmEnabled === true && !!routeContext && !hasActiveTag;
+  const tdmGloballyBlocked =
+    role === 'passenger' && tdmEnabled === false && !!routeContext && !hasActiveTag;
+  const tdmPendingBlocked = !!tdmSession?.hasPendingRequest;
+  const showOrphanPendingPanel =
+    role === 'passenger' &&
+    !routeContext &&
+    !hasActiveTag &&
+    tdmEnabled !== false &&
+    orphanPending != null &&
+    !tdmPendingBlocked;
+
+  useEffect(() => {
+    if (
+      role !== 'passenger' ||
+      routeContext ||
+      hasActiveTag ||
+      tdmEnabled === false ||
+      tdmPendingBlocked
+    ) {
+      setOrphanPending(null);
+      return;
+    }
+    let cancelled = false;
+    void getActiveTrustedDirectRequest().then((res) => {
+      if (cancelled) return;
+      if (res.ok && res.data && isPendingResponderRequest(res.data)) {
+        setOrphanPending(res.data);
+      } else {
+        setOrphanPending(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasActiveTag, role, routeContext, tdmEnabled, tdmPendingBlocked]);
+
+  const handleOrphanCancel = useCallback(async () => {
+    const rid = String(orphanPending?.id || '').trim();
+    if (!rid || orphanCancelling) return;
+    setOrphanCancelling(true);
+    const result = await cancelTrustedDirectRequest(rid);
+    setOrphanCancelling(false);
+    if (result.ok) {
+      setOrphanPending(null);
+    }
+  }, [orphanCancelling, orphanPending?.id]);
+
+  const handleLeaveHubForRoute = useCallback(() => {
+    router.back();
+  }, [router]);
+
+  useEffect(() => {
+    if (!contributionTarget || !routeContext) {
+      return;
+    }
+    let cancelled = false;
+    setPriceLoading(true);
+    setPriceError(null);
+    void fetchSuggestedContributionTl(routeContext)
+      .then((quote) => {
+        if (cancelled) return;
+        if (!quote) {
+          setPriceError('Katkı payı hesaplanamadı.');
+          setContributionTl(0);
+          setMinContributionTl(0);
+          setMaxContributionTl(0);
+          return;
+        }
+        setContributionTl(quote.suggested);
+        setMinContributionTl(quote.suggested);
+        setMaxContributionTl(quote.max);
+      })
+      .finally(() => {
+        if (!cancelled) setPriceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contributionTarget, routeContext]);
+
+  const handleRequestDirectPress = useCallback((item: TrustedConnectionItem) => {
+    if (tdmPendingBlocked || !routeContext || !tdmSession) return;
+    setContributionTarget(item);
+  }, [routeContext, tdmPendingBlocked, tdmSession]);
+
+  const closeContributionModal = useCallback(() => {
+    setContributionTarget(null);
+    setPriceError(null);
+  }, []);
+
+  const handleConfirmContribution = useCallback(async () => {
+    if (!contributionTarget || !routeContext || !tdmSession) return;
+    const responderId = String(contributionTarget.counterparty.user_id || '').trim();
+    const connectionId = String(contributionTarget.connection_id || '').trim();
+    if (!responderId || !connectionId) return;
+
+    const vehiclePref = routeContext.vehicle_preference ?? 'car';
+    await tdmSession.create(
+      {
+        responder_id: responderId,
+        relationship_connection_id: connectionId,
+        pickup_lat: routeContext.pickup_lat,
+        pickup_lng: routeContext.pickup_lng,
+        pickup_label: routeContext.pickup_label,
+        dropoff_lat: routeContext.dropoff_lat,
+        dropoff_lng: routeContext.dropoff_lng,
+        dropoff_label: routeContext.dropoff_label,
+        offered_contribution_tl: contributionTl,
+        vehicle_preference: vehiclePref,
+        idempotency_key: `tdm-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      },
+      {
+        responderLabel:
+          (contributionTarget.counterparty.display_name || '').trim() || 'Sürücü',
+      },
+    );
+    closeContributionModal();
+  }, [closeContributionModal, contributionTarget, contributionTl, routeContext, tdmSession]);
+
+  const resolveTdmRowDisabled = useCallback(
+    (item: TrustedConnectionItem): { disabled: boolean; reason: string | null } => {
+      if (!showTdmUi) return { disabled: true, reason: null };
+      if (tdmPendingBlocked) {
+        return { disabled: true, reason: TDM_PENDING_ROW_HINT };
+      }
+      const vehiclePref = routeContext?.vehicle_preference ?? 'car';
+      const driverKind = item.counterparty.vehicle_kind;
+      if (!isDriverVehicleCompatibleWithPreference(driverKind, vehiclePref)) {
+        return { disabled: true, reason: TDM_VEHICLE_MISMATCH };
+      }
+      return { disabled: false, reason: null };
+    },
+    [routeContext?.vehicle_preference, showTdmUi, tdmPendingBlocked],
+  );
 
   const title = hubTitle(role);
   const isReady = status === 'ready';
@@ -217,6 +431,75 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
         </Pressable>
       ) : null}
 
+      {tdmSession?.errorMessage ? (
+        <Pressable
+          style={[styles.actionBanner, styles.actionBannerError]}
+          onPress={() => tdmSession.dismissError?.()}
+          accessibilityRole="text"
+        >
+          <Ionicons name="alert-circle-outline" size={16} color="rgba(252, 165, 165, 0.95)" />
+          <Text style={[styles.actionBannerText, styles.actionBannerTextError]} numberOfLines={3}>
+            {tdmSession.errorMessage}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {showOrphanPendingPanel ? (
+        <View style={styles.orphanPanel}>
+          <Text style={styles.orphanTitle}>{TDM_ORPHAN_PENDING_TITLE}</Text>
+          <Text style={styles.orphanBody}>{TDM_ORPHAN_PENDING_BODY}</Text>
+          <View style={styles.orphanActions}>
+            <Pressable
+              style={[styles.orphanBtn, styles.orphanBtnPrimary]}
+              onPress={() => void handleOrphanCancel()}
+              disabled={orphanCancelling}
+            >
+              {orphanCancelling ? (
+                <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+              ) : (
+                <Text style={styles.orphanBtnPrimaryText}>{TDM_ORPHAN_CANCEL}</Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={styles.orphanBtn}
+              onPress={handleLeaveHubForRoute}
+            >
+              <Text style={styles.orphanBtnText}>{TDM_ORPHAN_PICK_ROUTE}</Text>
+            </Pressable>
+            <Pressable style={styles.orphanBtn} onPress={() => router.back()}>
+              <Text style={styles.orphanBtnText}>{TDM_ORPHAN_CLOSE}</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {showTdmUi && tdmPendingBlocked ? (
+        <View style={styles.tdmPendingBanner}>
+          <Ionicons name="time-outline" size={16} color={PREMIUM_AUTH_CYAN} />
+          <Text style={styles.tdmPendingBannerText}>{TDM_PENDING_BANNER}</Text>
+        </View>
+      ) : null}
+
+      {tdmGloballyBlocked ? (
+        <View style={styles.tdmHintBanner}>
+          <Text style={styles.tdmHintBannerText}>{TDM_UNAVAILABLE_HINT}</Text>
+        </View>
+      ) : null}
+
+      {role === 'passenger' && !routeContext && tdmEnabled !== false && !showOrphanPendingPanel ? (
+        <View style={styles.tdmHintBanner}>
+          <Text style={styles.tdmHintBannerText}>{TDM_NO_ROUTE_HINT}</Text>
+        </View>
+      ) : null}
+
+      {hasActiveTag && role === 'passenger' && routeContext ? (
+        <View style={styles.tdmHintBanner}>
+          <Text style={styles.tdmHintBannerText}>{TDM_ACTIVE_TAG_BLOCK}</Text>
+        </View>
+      ) : null}
+
+      {showTdmUi && routeContext ? <RouteContextBanner route={routeContext} /> : null}
+
       {isLoading ? (
         <HubSkeletonRows />
       ) : isError ? (
@@ -245,16 +528,30 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
               {radarBriefingText ? (
                 <TrustedRadarBriefingStrip text={radarBriefingText} />
               ) : null}
-              {displayConnections.map((item) => (
-                <TrustedConnectionRow
-                  key={item.connection_id}
-                  item={item}
-                  hubRole={role}
-                  actingId={actingId}
-                  actionsDisabled={actionsDisabled}
-                  onRevoke={revokeConnection}
-                />
-              ))}
+              {displayConnections.map((item) => {
+                const tdmRow = resolveTdmRowDisabled(item);
+                return (
+                  <View key={item.connection_id} style={styles.connectionWrap}>
+                    <TrustedConnectionRow
+                      item={item}
+                      hubRole={role}
+                      actingId={actingId}
+                      actionsDisabled={actionsDisabled || tdmPendingBlocked}
+                      onRevoke={revokeConnection}
+                      tdmRequestVisible={showTdmUi && item.role === 'driver'}
+                      tdmRequestDisabled={tdmRow.disabled}
+                      tdmRequestBusy={tdmSession?.isCreating === true}
+                      onRequestDirect={showTdmUi ? handleRequestDirectPress : undefined}
+                    />
+                    {showTdmUi &&
+                    item.role === 'driver' &&
+                    tdmRow.disabled &&
+                    tdmRow.reason ? (
+                      <Text style={styles.tdmRowHint}>{tdmRow.reason}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
             </HubSection>
           ) : null}
 
@@ -289,6 +586,66 @@ function TrustedNetworkHub({ role }: TrustedNetworkHubProps) {
           ) : null}
         </ScrollView>
       )}
+
+      <Modal
+        visible={contributionTarget != null}
+        animationType="slide"
+        transparent
+        onRequestClose={closeContributionModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{TDM_CONTRIBUTION_TITLE}</Text>
+            {priceLoading ? (
+              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+            ) : (
+              <>
+                <View style={styles.stepperRow}>
+                  <Pressable
+                    style={styles.stepperBtn}
+                    onPress={() => setContributionTl((v) => Math.max(minContributionTl, v - 10))}
+                    disabled={contributionTl <= minContributionTl}
+                  >
+                    <Ionicons name="remove" size={22} color={PREMIUM_AUTH_CYAN} />
+                  </Pressable>
+                  <Text style={styles.stepperValue}>{contributionTl} ₺</Text>
+                  <Pressable
+                    style={styles.stepperBtn}
+                    onPress={() => setContributionTl((v) => Math.min(maxContributionTl, v + 10))}
+                    disabled={contributionTl >= maxContributionTl}
+                  >
+                    <Ionicons name="add" size={22} color={PREMIUM_AUTH_CYAN} />
+                  </Pressable>
+                </View>
+                {priceError ? (
+                  <PremiumText variant="caption" style={styles.modalError}>
+                    {priceError}
+                  </PremiumText>
+                ) : null}
+                {tdmSession?.errorMessage ? (
+                  <PremiumText variant="caption" style={styles.modalError}>
+                    {tdmSession.errorMessage}
+                  </PremiumText>
+                ) : null}
+              </>
+            )}
+            <PremiumGradientCtaButton
+              label={TDM_CONTRIBUTION_CONFIRM}
+              onPress={() => void handleConfirmContribution()}
+              disabled={
+                priceLoading ||
+                contributionTl <= 0 ||
+                tdmSession?.isCreating === true ||
+                !!priceError
+              }
+              busy={tdmSession?.isCreating === true}
+            />
+            <Pressable style={styles.modalCancelBtn} onPress={closeContributionModal}>
+              <Text style={styles.modalCancelText}>{TDM_CONTRIBUTION_CANCEL}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -390,6 +747,66 @@ const styles = StyleSheet.create({
   sectionList: {
     gap: 8,
   },
+  connectionWrap: {
+    gap: 4,
+  },
+  tdmRowHint: {
+    marginLeft: 14,
+    marginRight: 14,
+    fontSize: 11,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 15,
+  },
+  orphanPanel: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(8, 47, 73, 0.28)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(251, 191, 36, 0.28)',
+    gap: 10,
+  },
+  orphanTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: PREMIUM_TEXT_SOFT,
+  },
+  orphanBody: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 18,
+  },
+  orphanActions: {
+    gap: 8,
+  },
+  orphanBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+    backgroundColor: 'rgba(16, 26, 43, 0.72)',
+  },
+  orphanBtnPrimary: {
+    borderColor: 'rgba(248, 113, 113, 0.35)',
+    backgroundColor: 'rgba(127, 29, 29, 0.18)',
+  },
+  orphanBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_MUTED,
+  },
+  orphanBtnPrimaryText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(252, 165, 165, 0.92)',
+  },
   skeletonWrap: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -485,5 +902,126 @@ const styles = StyleSheet.create({
     color: PREMIUM_TEXT_MUTED,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  routeBanner: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(8, 47, 73, 0.28)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+    gap: 4,
+  },
+  routeBannerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(148, 163, 184, 0.95)',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  routeBannerLine: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+  },
+  routeBannerMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+  },
+  tdmPendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(8, 47, 73, 0.28)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  tdmPendingBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_SOFT,
+    lineHeight: 18,
+  },
+  tdmHintBanner: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16, 26, 43, 0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  tdmHintBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PREMIUM_TEXT_MUTED,
+    lineHeight: 18,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(5, 11, 24, 0.72)',
+  },
+  modalCard: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 28,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: PREMIUM_NAVY_CARD,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    gap: 14,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: PREMIUM_TEXT_SOFT,
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 18,
+  },
+  stepperBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: PREMIUM_BORDER_SLATE,
+    backgroundColor: 'rgba(16, 26, 43, 0.88)',
+  },
+  stepperValue: {
+    minWidth: 88,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+  },
+  modalError: {
+    color: 'rgba(252, 165, 165, 0.92)',
+    textAlign: 'center',
+  },
+  modalCancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: PREMIUM_TEXT_MUTED,
   },
 });

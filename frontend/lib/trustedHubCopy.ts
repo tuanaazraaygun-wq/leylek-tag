@@ -207,6 +207,38 @@ export function formatTrustedRadarBriefing(input: TrustedRadarBriefingCounts): s
   return 'Güven ağında anlık müsait sürücü görünmüyor';
 }
 
+export const TDM_REQUEST_CTA = 'İstek gönder';
+export const TDM_REQUEST_BUSY = 'İstek bekleniyor…';
+export const TDM_ROUTE_BANNER_TITLE = 'Seçilen rota';
+export const TDM_PENDING_BANNER = 'Doğrudan eşleşme isteğiniz sürücüye iletildi.';
+export const TDM_UNAVAILABLE_HINT = 'Doğrudan eşleşme şu an kullanılamıyor.';
+export const TDM_NO_ROUTE_HINT = 'Önce rota seçerek Sürücülerim üzerinden istek gönderebilirsiniz.';
+export const TDM_VEHICLE_MISMATCH = 'Araç tercihiniz bu sürücüyle uyumlu değil.';
+export const TDM_ACTIVE_TAG_BLOCK = 'Aktif yolculuğunuz varken yeni istek gönderilemez.';
+export const TDM_CONTRIBUTION_TITLE = 'Katkı payı';
+export const TDM_CONTRIBUTION_CONFIRM = 'İsteği gönder';
+export const TDM_CONTRIBUTION_CANCEL = 'Vazgeç';
+export const TDM_WAITING_SENDING_TITLE = 'İstek gönderiliyor';
+export const TDM_WAITING_PENDING_TITLE = 'Sürücü yanıtı bekleniyor';
+export const TDM_WAITING_PENDING_BODY = '{name} yanıt verene kadar bekleyin.';
+export const TDM_WAITING_MATCHING_TITLE = 'Sürücü yanıt verdi, eşleşme doğrulanıyor…';
+export const TDM_WAITING_MATCHING_BODY =
+  'Eşleşme oluştuysa yolculuk ekranı açılacak. Yanıt alınmadıysa kısa süre içinde kapanır.';
+export const TDM_WAITING_MATCHING_HINT =
+  'Doğrulama tamamlanınca otomatik devam edeceksiniz.';
+export const TDM_WAITING_CREATING_HINT = 'İstek hazırlanıyor…';
+export const TDM_WAITING_CANCEL = 'İsteği iptal et';
+export const TDM_MATCHING_TIMEOUT =
+  'Bu istek için eşleşme doğrulanamadı. Sürücü reddetmiş veya süre dolmuş olabilir.';
+export const TDM_ORPHAN_PENDING_TITLE = 'Bekleyen doğrudan istek';
+export const TDM_ORPHAN_PENDING_BODY =
+  'Bekleyen bir doğrudan eşleşme isteğiniz olabilir. Rota bilgisi bu oturumda bulunamadı.';
+export const TDM_ORPHAN_CANCEL = 'İsteği iptal et';
+export const TDM_ORPHAN_PICK_ROUTE = 'Yeni rota seç';
+export const TDM_ORPHAN_CLOSE = 'Kapat';
+export const TDM_PENDING_ROW_HINT = 'Başka bir istek bekleniyor.';
+export const TDM_GENERIC_ERROR = 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
+
 export function formatTrustedExpiresHint(iso: string | null | undefined): string {
   if (!iso || !String(iso).trim()) return '';
   const d = new Date(String(iso));

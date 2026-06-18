@@ -21,6 +21,8 @@ import {
   ACTION_REMOVE,
   CONFIRM_REVOKE_TITLE,
   formatTieInsightLine,
+  TDM_REQUEST_BUSY,
+  TDM_REQUEST_CTA,
 } from '../../lib/trustedHubCopy';
 import type {
   TrustedConnectionItem,
@@ -94,6 +96,10 @@ type TrustedConnectionRowProps = {
   actingId?: string | null;
   actionsDisabled?: boolean;
   onRevoke?: (connectionId: string) => void;
+  tdmRequestVisible?: boolean;
+  tdmRequestDisabled?: boolean;
+  tdmRequestBusy?: boolean;
+  onRequestDirect?: (item: TrustedConnectionItem) => void;
 };
 
 function TrustedConnectionRow({
@@ -102,6 +108,10 @@ function TrustedConnectionRow({
   actingId = null,
   actionsDisabled = false,
   onRevoke,
+  tdmRequestVisible = false,
+  tdmRequestDisabled = false,
+  tdmRequestBusy = false,
+  onRequestDirect,
 }: TrustedConnectionRowProps) {
   const cp = item.counterparty;
   const displayName = (cp.display_name || '').trim() || 'Kullanıcı';
@@ -135,6 +145,18 @@ function TrustedConnectionRow({
       },
     ]);
   }, [disabled, isBusy, item.connection_id, onRevoke]);
+
+  const showTdmCta =
+    tdmRequestVisible &&
+    hubRole === 'passenger' &&
+    item.role === 'driver' &&
+    typeof onRequestDirect === 'function';
+  const tdmDisabled = disabled || tdmRequestDisabled || tdmRequestBusy;
+
+  const handleRequestPress = useCallback(() => {
+    if (tdmDisabled || !onRequestDirect) return;
+    onRequestDirect(item);
+  }, [item, onRequestDirect, tdmDisabled]);
 
   return (
     <View style={styles.row} accessibilityRole="text">
@@ -177,28 +199,54 @@ function TrustedConnectionRow({
           </PremiumText>
         ) : null}
       </View>
-      {onRevoke ? (
-        isBusy ? (
-          <View style={styles.removeBusy}>
-            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-          </View>
-        ) : (
-          <Pressable
-            style={({ pressed }) => [
-              styles.removeBtn,
-              disabled && styles.removeBtnDisabled,
-              pressed && !disabled && styles.removeBtnPressed,
-            ]}
-            onPress={handleRevokePress}
-            disabled={disabled}
-            accessibilityRole="button"
-            accessibilityLabel={ACTION_REMOVE}
-            accessibilityState={{ disabled }}
-          >
-            <Text style={styles.removeBtnText}>{ACTION_REMOVE}</Text>
-          </Pressable>
-        )
-      ) : null}
+      <View style={styles.actionsCol}>
+        {showTdmCta ? (
+          tdmRequestBusy ? (
+            <View style={styles.tdmBusy}>
+              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.tdmBtn,
+                tdmDisabled && styles.tdmBtnDisabled,
+                pressed && !tdmDisabled && styles.tdmBtnPressed,
+              ]}
+              onPress={handleRequestPress}
+              disabled={tdmDisabled}
+              accessibilityRole="button"
+              accessibilityLabel={tdmRequestBusy ? TDM_REQUEST_BUSY : TDM_REQUEST_CTA}
+              accessibilityState={{ disabled: tdmDisabled }}
+            >
+              <Text style={styles.tdmBtnText}>
+                {tdmRequestBusy ? TDM_REQUEST_BUSY : TDM_REQUEST_CTA}
+              </Text>
+            </Pressable>
+          )
+        ) : null}
+        {onRevoke ? (
+          isBusy ? (
+            <View style={styles.removeBusy}>
+              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.removeBtn,
+                disabled && styles.removeBtnDisabled,
+                pressed && !disabled && styles.removeBtnPressed,
+              ]}
+              onPress={handleRevokePress}
+              disabled={disabled}
+              accessibilityRole="button"
+              accessibilityLabel={ACTION_REMOVE}
+              accessibilityState={{ disabled }}
+            >
+              <Text style={styles.removeBtnText}>{ACTION_REMOVE}</Text>
+            </Pressable>
+          )
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -304,6 +352,35 @@ const styles = StyleSheet.create({
     marginTop: 1,
     lineHeight: 16,
     opacity: 0.78,
+  },
+  actionsCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  tdmBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(34, 211, 238, 0.35)',
+    backgroundColor: 'rgba(8, 47, 73, 0.35)',
+  },
+  tdmBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: PREMIUM_AUTH_CYAN,
+  },
+  tdmBtnDisabled: {
+    opacity: 0.5,
+  },
+  tdmBtnPressed: {
+    opacity: 0.88,
+  },
+  tdmBusy: {
+    width: 92,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   removeBtn: {
     alignSelf: 'center',

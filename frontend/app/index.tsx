@@ -59,6 +59,11 @@ import {
   useQuickMatchPassengerSession,
   type QuickMatchPassengerTerminalStatus,
 } from '../hooks/useQuickMatchPassengerSession';
+import {
+  registerTrustedDirectBootstrapHandler,
+  setTrustedDirectRouteContext,
+  type TrustedDirectRouteContext,
+} from '../lib/trustedDirectApi';
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
 import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
@@ -7756,7 +7761,7 @@ function PassengerDashboard({
   const [pickupPickerAutocompleteMountKey, setPickupPickerAutocompleteMountKey] = useState(0);
   /** Faz 1A: pickup → destination iki adımlı rota seçimi */
   const [routePickerStep, setRoutePickerStep] = useState<'pickup' | 'destination'>('pickup');
-  type RoutePickerIntent = 'normal' | 'quick_match';
+  type RoutePickerIntent = 'normal' | 'quick_match' | 'trusted_direct';
   const [routePickerIntent, setRoutePickerIntent] = useState<RoutePickerIntent>('normal');
   const [passengerIdleOfferChannel, setPassengerIdleOfferChannel] = useState<
     'normal' | 'quick_match' | null
@@ -9410,6 +9415,12 @@ function PassengerDashboard({
     [loadActiveTag],
   );
 
+  useEffect(() => {
+    return registerTrustedDirectBootstrapHandler(() => {
+      void loadActiveTag();
+    });
+  }, [loadActiveTag]);
+
   const quickMatchSessionApiRef = useRef<Pick<
     ReturnType<typeof useQuickMatchPassengerSession>,
     'clear' | 'releaseActiveRequest'
@@ -10385,6 +10396,26 @@ function PassengerDashboard({
     [passengerPickup, userLocation, destination, rideVehiclePreference],
   );
 
+  const buildTrustedDirectRouteContext = useCallback(
+    (
+      dropoffOverride?: { address: string; latitude: number; longitude: number } | null,
+    ): TrustedDirectRouteContext | null => {
+      return buildQuickMatchRouteContext(dropoffOverride);
+    },
+    [buildQuickMatchRouteContext],
+  );
+
+  const reopenTrustedDirectRoutePickerForMissingRoute = useCallback(() => {
+    setPassengerIdleOfferChannel('normal');
+    setRoutePickerIntent('trusted_direct');
+    if (!resolvePassengerPickupCoords(passengerPickup, userLocation)) {
+      setRoutePickerStep('pickup');
+    } else {
+      setRoutePickerStep('destination');
+    }
+    setShowDestinationPicker(true);
+  }, [passengerPickup, userLocation]);
+
   const reopenQuickMatchRoutePickerForMissingRoute = useCallback(() => {
     setQuickMatchFlowVisible(false);
     setPassengerIdleOfferChannel('quick_match');
@@ -11305,6 +11336,19 @@ function PassengerDashboard({
           dropoff_label: ctx.dropoff_label,
         }),
       );
+      return;
+    }
+
+    if (routePickerIntent === 'trusted_direct' && !activeTag) {
+      const ctx = buildTrustedDirectRouteContext(newDestination);
+      if (!ctx) {
+        reopenTrustedDirectRoutePickerForMissingRoute();
+        return;
+      }
+      setTrustedDirectRouteContext(ctx);
+      setPassengerIdleOfferChannel('normal');
+      setRoutePickerIntent('normal');
+      router.push('/trusted-network?role=passenger' as never);
       return;
     }
 
@@ -12934,7 +12978,11 @@ function PassengerDashboard({
                 }}
                 onTrustedPress={() => {
                   playTapSound();
-                  router.push('/trusted-network?role=passenger' as never);
+                  setPassengerIdleOfferChannel('normal');
+                  setRoutePickerIntent('trusted_direct');
+                  setRoutePickerStep('pickup');
+                  setDestinationPickerPhase('search');
+                  setShowDestinationPicker(true);
                 }}
               />
             </GlassSurface>
