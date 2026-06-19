@@ -601,6 +601,19 @@ async def disconnect(sid):
     else:
         logger.info("🔌 Socket ayrıldı: %s", _mask_log_sid(sid))
 
+    uids_for_presence: set[str] = set()
+    for key in mapped_keys:
+        if isinstance(key, str) and key.strip():
+            uids_for_presence.add(key.strip())
+    for uid in to_remove:
+        if isinstance(uid, str) and uid.strip():
+            uids_for_presence.add(uid.strip())
+    for uid in uids_for_presence:
+        try:
+            driver_presence.clear_socket_id(uid, reason="socket-disconnect")
+        except Exception:
+            pass
+
 def _normalize_user_room(user_id: str) -> str:
     """UUID/user_id için tutarlı room adı (büyük/küçük harf uyumsuzluğunu önler)."""
     if not user_id:
@@ -797,6 +810,22 @@ async def register(sid, data):
     if role == "driver":
         try:
             asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_uid))
+        except Exception:
+            pass
+        try:
+            ur = (
+                supabase.table("users")
+                .select("driver_online, latitude, longitude, driver_details, last_location_update")
+                .eq("id", resolved_uid)
+                .limit(1)
+                .execute()
+            )
+            if ur.data:
+                driver_presence.upsert_driver_presence_from_user_row(
+                    resolved_uid,
+                    {**ur.data[0], "socket_id": sid},
+                    reason="socket-register",
+                )
         except Exception:
             pass
 
@@ -13801,7 +13830,9 @@ async def set_ride_vehicle_kind(user_id: str, role: str, vehicle_kind: str):
         if role not in ("passenger", "driver"):
             raise HTTPException(status_code=422, detail="role: passenger veya driver olmalı")
         resolved_id = await resolve_user_id(user_id)
-        res = supabase.table("users").select("driver_details").eq("id", resolved_id).execute()
+        res = supabase.table("users").select(
+            "driver_details, driver_online, latitude, longitude, last_location_update"
+        ).eq("id", resolved_id).execute()
         if not res.data:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         row = res.data[0]
@@ -13835,6 +13866,14 @@ async def set_ride_vehicle_kind(user_id: str, role: str, vehicle_kind: str):
         if role == "driver":
             try:
                 asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_id))
+            except Exception:
+                pass
+            try:
+                driver_presence.upsert_driver_presence_from_user_row(
+                    resolved_id,
+                    {**row, "driver_details": dd},
+                    reason="set-vehicle-kind",
+                )
             except Exception:
                 pass
 
@@ -40693,6 +40732,11 @@ async def delete_user_account(
 
         logger.warning("ACCOUNT_DELETE_DONE user_id=%s", _mask_log_id(user_id))
 
+        try:
+            driver_presence.clear_driver_presence(user_id, reason="account-delete")
+        except Exception:
+            pass
+
         return {
             "success": True,
             "message": "Hesabınız silinmiştir.",
@@ -41100,6 +41144,15 @@ async def activate_driver_package(user_id: str, package_id: str):
             "driver_online": True,
             "updated_at": now.isoformat()
         }).eq("id", user_id).execute()
+
+        try:
+            driver_presence.upsert_driver_presence_from_user_row(
+                user_id,
+                {**user, "driver_online": True},
+                reason="activate-package",
+            )
+        except Exception:
+            pass
         
         # Paket satın alma logunu kaydet
         try:
@@ -41141,6 +41194,15 @@ async def driver_go_offline(user_id: str, request: Request = None):
             "driver_online": False,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
+
+        try:
+            driver_presence.upsert_driver_presence(
+                user_id,
+                driver_online=False,
+                reason="go-offline-tombstone",
+            )
+        except Exception:
+            pass
         
         logger.info(f"🔴 Sürücü offline oldu: {user_id}")
         return {"success": True, "message": "Offline oldunuz"}
@@ -41205,6 +41267,15 @@ async def driver_go_online(user_id: str, request: Request = None):
             "driver_online": True,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
+
+        try:
+            driver_presence.upsert_driver_presence_from_user_row(
+                user_id,
+                {**user, "driver_online": True},
+                reason="go-online",
+            )
+        except Exception:
+            pass
 
         resolved_driver_id = str(resolved_go or user_id).strip()
         try:
@@ -41522,6 +41593,11 @@ async def admin_soft_delete_user(admin_phone: str, user_id: str, reason: str = "
             "is_active": False,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
+
+        try:
+            driver_presence.clear_driver_presence(user_id, reason="admin-soft-delete")
+        except Exception:
+            pass
         
         logger.info(f"🗑️ Kullanıcı silindi (soft): {user_id} - Sebep: {reason}")
         return {"success": True, "message": "Kullanıcı silindi (soft delete)"}
@@ -41541,6 +41617,15 @@ async def admin_set_driver_offline(admin_phone: str, driver_id: str):
             "driver_online": False,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", driver_id).execute()
+
+        try:
+            driver_presence.upsert_driver_presence(
+                driver_id,
+                driver_online=False,
+                reason="admin-offline-tombstone",
+            )
+        except Exception:
+            pass
         
         return {"success": True, "message": "Sürücü offline yapıldı"}
     except Exception as e:

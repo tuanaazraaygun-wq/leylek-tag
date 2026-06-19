@@ -133,6 +133,30 @@ def upsert_driver_presence(
         pass
 
 
+def clear_socket_id(driver_id: Any, reason: str = "") -> None:
+    """Yalnızca socket_id alanını temizler; driver_online değişmez."""
+    if not presence_write_enabled():
+        return
+    did = normalize_driver_id(driver_id)
+    if not did:
+        return
+    try:
+        r = get_redis_client()
+        if r is None:
+            return
+        key = _presence_key(did)
+        if not r.exists(key):
+            return
+        r.hset(key, mapping={"socket_id": "", "updated_at": _utc_now_iso()})
+        logger.info(
+            "DRIVER_PRESENCE_SOCKET_CLEAR driver_id=%s reason=%s",
+            _short_driver_id(did),
+            str(reason or "").strip() or "n/a",
+        )
+    except Exception:
+        pass
+
+
 def clear_driver_presence(driver_id: Any, reason: str = "") -> None:
     """DEL presence key; tüm Redis hataları yutulur."""
     if not presence_write_enabled():
