@@ -14700,6 +14700,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             pickup_meta = {}
         req_r_km = float(DISPATCH_RADIUS_KM)
         requests = []
+        eligible_rows = []
         for tid, meta_row in pickup_meta.items():
             road_pick_km = float(meta_row.get("distance_km", 0))
             if road_pick_km > req_r_km:
@@ -14708,31 +14709,59 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             if not ctx:
                 continue
             tag, passenger_info, trip_pref = ctx
-            passenger_city = passenger_info.get("city")
-            pk_km = round(road_pick_km, 1)
-            pk_min = int(max(1, round(float(meta_row.get("duration_min", 1)))))
+            eligible_rows.append((tid, meta_row, tag, passenger_info, trip_pref))
 
-            trip_distance_km = None
-            trip_duration_min = None
-            if tag.get("pickup_lat") and tag.get("dropoff_lat"):
-                try:
+        trip_leg_semaphore = asyncio.Semaphore(6)
+
+        async def _fetch_trip_leg_meta(tid: str, tag: dict):
+            if not (tag.get("pickup_lat") and tag.get("dropoff_lat")):
+                return None, None
+            try:
+                async with trip_leg_semaphore:
                     trip_route = await get_route_info(
                         float(tag["pickup_lat"]),
                         float(tag["pickup_lng"]),
                         float(tag["dropoff_lat"]),
                         float(tag["dropoff_lng"]),
                     )
-                except Exception as e:
-                    logger.error(
-                        "[MATCH] get_route_info trip_leg error tag_id=%s: %s",
-                        tid,
-                        e,
-                        exc_info=True,
-                    )
-                    trip_route = None
-                if trip_route:
-                    trip_distance_km = trip_route["distance_km"]
-                    trip_duration_min = trip_route["duration_min"]
+            except Exception as e:
+                logger.error(
+                    "[MATCH] get_route_info trip_leg error tag_id=%s: %s",
+                    tid,
+                    e,
+                    exc_info=True,
+                )
+                return None, None
+            if trip_route:
+                return trip_route["distance_km"], trip_route["duration_min"]
+            return None, None
+
+        trip_leg_tasks = [
+            _fetch_trip_leg_meta(tid, tag) for tid, _meta_row, tag, _passenger_info, _trip_pref in eligible_rows
+        ]
+        trip_leg_results = (
+            await asyncio.gather(*trip_leg_tasks, return_exceptions=True)
+            if trip_leg_tasks
+            else []
+        )
+
+        for (tid, meta_row, tag, passenger_info, trip_pref), trip_result in zip(eligible_rows, trip_leg_results):
+            passenger_city = passenger_info.get("city")
+            road_pick_km = float(meta_row.get("distance_km", 0))
+            pk_km = round(road_pick_km, 1)
+            pk_min = int(max(1, round(float(meta_row.get("duration_min", 1)))))
+
+            trip_distance_km = None
+            trip_duration_min = None
+            if isinstance(trip_result, Exception):
+                logger.error(
+                    "[MATCH] get_route_info trip_leg gather error tag_id=%s: %s",
+                    tid,
+                    trip_result,
+                    exc_info=True,
+                )
+            else:
+                trip_distance_km, trip_duration_min = trip_result
 
             tr_km = round(trip_distance_km, 1) if trip_distance_km else None
             tr_min = int(round(trip_duration_min)) if trip_duration_min else None
