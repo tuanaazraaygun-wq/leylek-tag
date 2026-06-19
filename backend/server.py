@@ -3476,13 +3476,8 @@ async def emit_passenger_offer_revoked(
 ):
     """Önceki sürücü teklifi artık göremesin (sıralı dispatch timeout / iptal vb.)."""
     try:
-        raw = str(driver_id).strip().lower() if driver_id else ""
-        sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip()) if driver_id else None
         payload = {"tag_id": tag_id, "revoke_reason": str(revoke_reason or "unknown")}
-        if sid:
-            await sio.emit("passenger_offer_revoked", payload, to=sid)
-        else:
-            await sio.emit("passenger_offer_revoked", payload, room=_normalize_user_room(raw or str(driver_id)))
+        await emit_socket_event_to_user(driver_id, "passenger_offer_revoked", payload)
     except Exception as e:
         logger.warning(f"passenger_offer_revoked emit hatası: {e}")
 
@@ -3648,7 +3643,7 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
     print("[ROUTE_ACCEPT] driver_to_pickup=", pickup_distance_km, pickup_eta_min)
     print("[ROUTE_ACCEPT] pickup_to_dropoff=", trip_distance_km, trip_duration_min)
     print("[ROUTE_ACCEPT] emit_driver_id=", did, "tag_id=", tag_row.get("id"))
-    room = f"user_{did}"
+    room = _normalize_user_room(did)
     print("ROUTE TO DRIVER:", did, route_out)
     print("ROOM:", room)
     try:
@@ -3659,7 +3654,7 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
 
 
 async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> Optional[dict]:
-    """Kullanıcıya socket event: connected_users’daki tüm sid’lere to=emit; yoksa user_<uuid> odası."""
+    """Kullanıcıya socket event: canonical user_<uuid> odasına tek emit (sid fan-out yok)."""
     _empty_stats = {"sid_count": 0, "room_member_count": 0}
     try:
         if user_id is None:
@@ -3768,30 +3763,17 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 _mask_log_room(room),
             )
 
-        if all_sids:
-            for sid in all_sids:
-                try:
-                    await sio.emit(event_name, payload, to=sid)
-                except Exception as em:
-                    logger.warning("%s emit to=sid sid=%s err=%s", event_name, _mask_log_sid(sid), em)
-            try:
-                await sio.emit(event_name, payload, room=room)
-            except Exception as em:
-                logger.warning("%s emit room=%s err=%s", event_name, _mask_log_room(room), em)
-            if event_name == "message_ack":
-                logger.info(
-                    "[muhabbet_ack] sent user=%s sid_count=%s room=%s",
-                    _mask_log_id(canonical_lo),
-                    len(all_sids),
-                    _mask_log_room(room),
-                )
-        else:
-            try:
-                await sio.emit(event_name, payload, room=room)
-            except Exception as em:
-                logger.warning("%s emit room_fallback_failed room=%s err=%s", event_name, room, em)
-            if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", canonical_lo, room)
+        try:
+            await sio.emit(event_name, payload, room=room)
+        except Exception as em:
+            logger.warning("%s emit room=%s err=%s", event_name, _mask_log_room(room), em)
+        if event_name == "message_ack":
+            logger.info(
+                "[muhabbet_ack] sent user=%s sid_count=%s room=%s",
+                _mask_log_id(canonical_lo),
+                sid_count,
+                _mask_log_room(room),
+            )
         return {"sid_count": sid_count, "room_member_count": room_member_count}
     except Exception as e:
         logger.warning("%s emit hatası: %s", event_name, e)
@@ -22923,8 +22905,7 @@ async def handle_driver_accept_offer(sid, data):
         if driver_target:
             await sio.emit("offer_accepted_success", payload, room=driver_target)
             await sio.emit("tag_matched", payload, room=driver_target)
-        # İstenen net match event: sürücü room'una ride_matched
-        await sio.emit("ride_matched", payload, room=f"user_{str(resolved_driver_id).strip().lower()}")
+            await sio.emit("ride_matched", payload, room=driver_target)
         if passenger_id:
             passenger_sids = _all_sids_for_registered_user(str(passenger_id))
             passenger_sid = connected_users.get(str(passenger_id).strip().lower()) or connected_users.get(passenger_id)
@@ -22936,8 +22917,7 @@ async def handle_driver_accept_offer(sid, data):
                 logger.info("[emit] sending ride_matched")
                 await sio.emit("driver_matched", payload, room=passenger_target)
                 await sio.emit("tag_matched", payload, room=passenger_target)
-            # İstenen net match event: yolcu room'una ride_matched
-            await sio.emit("ride_matched", payload, room=f"user_{str(passenger_id).strip().lower()}")
+                await sio.emit("ride_matched", payload, room=passenger_target)
             if not passenger_target:
                 logger.error("[emit] passenger_sid_empty passenger_id=%s", str(passenger_id)[:96])
         logger.info("SOCKET EMIT DONE driver_accept_offer")
