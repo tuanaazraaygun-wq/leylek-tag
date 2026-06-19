@@ -235,6 +235,13 @@ def _short_log_id(value: Any) -> str:
         return s
     return f"{s[:6]}…{s[-4:]}"
 
+
+def _log_timing_safe(code: str, **fields) -> None:
+    try:
+        logger.info("%s %s", code, json.dumps(fields, ensure_ascii=False, default=str))
+    except Exception:
+        pass
+
 # tags.type: Martı yolculuğu vs Muhabbet (aktif yolculuk/dispatch yalnız TAG_TYPE_NORMAL)
 TAG_TYPE_NORMAL = "normal"
 TAG_TYPE_MUHABBET = "muhabbet"
@@ -3660,6 +3667,9 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
 async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> Optional[dict]:
     """Kullanıcıya socket event: canonical user_<uuid> odasına tek emit (sid fan-out yok)."""
     _empty_stats = {"sid_count": 0, "room_member_count": 0}
+    _t_total = time.monotonic()
+    _resolve_ms = 0.0
+    _emit_ms = 0.0
     try:
         if user_id is None:
             return _empty_stats
@@ -3671,6 +3681,7 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         keys_to_try.add(raw_in)
         keys_to_try.add(canonical_lo)
         resolved_uid = None
+        _t_resolve = time.monotonic()
         try:
             resolved_uid = await resolve_user_id(raw_in)
             if resolved_uid:
@@ -3707,6 +3718,7 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         room = _normalize_user_room(str(resolved_uid or canonical_lo))
         sid_count = len(all_sids)
         room_member_count = _socketio_room_member_count(room)
+        _resolve_ms = (time.monotonic() - _t_resolve) * 1000.0
         payload_dict = payload if isinstance(payload, dict) else {}
         call_id = payload_dict.get("call_id")
         session_id = payload_dict.get("session_id")
@@ -3767,10 +3779,12 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 _mask_log_room(room),
             )
 
+        _t_emit = time.monotonic()
         try:
             await sio.emit(event_name, payload, room=room)
         except Exception as em:
             logger.warning("%s emit room=%s err=%s", event_name, _mask_log_room(room), em)
+        _emit_ms = (time.monotonic() - _t_emit) * 1000.0
         if event_name == "message_ack":
             logger.info(
                 "[muhabbet_ack] sent user=%s sid_count=%s room=%s",
@@ -3778,6 +3792,16 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 sid_count,
                 _mask_log_room(room),
             )
+        _log_timing_safe(
+            "SOCKET_EMIT_TIMING",
+            event_name=event_name,
+            user_id_masked=_mask_log_id(canonical_lo),
+            resolve_ms=round(_resolve_ms, 2),
+            emit_ms=round(_emit_ms, 2),
+            total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+            room_member_count=room_member_count,
+            sid_count=sid_count,
+        )
         return {"sid_count": sid_count, "room_member_count": room_member_count}
     except Exception as e:
         logger.warning("%s emit hatası: %s", event_name, e)
@@ -3982,6 +4006,8 @@ async def emit_trip_force_ended_to_party(
     Zorla bitir sonrası trip_force_ended: önce user room, sonra sid map (room boş / üyelik drift ihtimali).
     Dönüş: en az bir alıcı yolu (oda dolu veya sid biliniyor) varsa ve emit'ler exception vermediyse True.
     """
+    _t_total = time.monotonic()
+    _emit_ms = 0.0
     raw_display = str(target_user_id).strip()
     raw_l = raw_display.lower()
     room = _normalize_user_room(raw_l)
@@ -3989,11 +4015,13 @@ async def emit_trip_force_ended_to_party(
     # room_n < 0: sayım başarısız — room emit yine denendiği için iyimser kabul
     had_recipient = (room_n > 0) or (room_n < 0)
     err = False
+    _t_emit = time.monotonic()
     try:
         await sio.emit("trip_force_ended", payload, room=room)
     except Exception as ex:
         err = True
         logger.warning("%s room_emit_fail tag_id=%s room=%s err=%s", log_label, tag_id, room, ex)
+    _emit_ms = (time.monotonic() - _t_emit) * 1000.0
     logger.info(
         "%s tag_id=%s target_user=%s room=%s room_member_count=%s",
         log_label,
@@ -4001,6 +4029,18 @@ async def emit_trip_force_ended_to_party(
         raw_display,
         room,
         room_n,
+    )
+    _actor_raw = payload.get("ended_by") or payload.get("ender_id") if isinstance(payload, dict) else None
+    _log_timing_safe(
+        "FORCE_END_TIMING",
+        phase=log_label,
+        tag_id=_short_log_id(tag_id),
+        actor_id_masked=_mask_log_id(_actor_raw),
+        target_id_masked=_mask_log_id(raw_display),
+        db_ms=0.0,
+        emit_ms=round(_emit_ms, 2),
+        push_ms=0.0,
+        total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
     )
     return bool(had_recipient and not err)
 
@@ -4015,6 +4055,9 @@ async def resolve_force_end_counterparty(
     approved: bool,
 ) -> dict:
     """Zorla bitirmede karşı taraf onayı: onay=0 ceza, red=zorla bitirene -5. end_request.status resolved ise idempotent."""
+    _t_total = time.monotonic()
+    _db_ms = 0.0
+    _emit_ms = 0.0
     tid = str(tag_id).strip()
     try:
         rr = await resolve_user_id(str(responder_id).strip())
@@ -4035,7 +4078,9 @@ async def resolve_force_end_counterparty(
         ir = str(initiator_id).strip()
 
     try:
+        _t_db = time.monotonic()
         tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as e:
         logger.error(f"resolve_force_end_counterparty: tag okunamadı: {e}")
         return {"success": False, "error": "TAG okunamadı"}
@@ -4113,6 +4158,7 @@ async def resolve_force_end_counterparty(
         "responder_approved": approved,
     }
     try:
+        _t_db = time.monotonic()
         supabase.table("tags").update(
             {
                 "status": "completed",
@@ -4122,12 +4168,15 @@ async def resolve_force_end_counterparty(
                 "end_request": resolved_req,
             }
         ).eq("id", tid).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as e:
         logger.error(f"resolve_force_end_counterparty: tag güncellenemedi: {e}")
         return {"success": False, "error": str(e)}
 
     try:
+        _t_db = time.monotonic()
         supabase.table("chat_messages").delete().eq("tag_id", tid).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as chat_err:
         logger.error(
             "resolve_force_end_counterparty: sohbet silinemedi, tag tamamlanması geri alınıyor: %s",
@@ -4152,7 +4201,9 @@ async def resolve_force_end_counterparty(
 
     ender_name = ""
     try:
+        _t_db = time.monotonic()
         _en = supabase.table("users").select("name").eq("id", ini_r).limit(1).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
         if _en.data:
             ender_name = (str(_en.data[0].get("name") or "")).strip()
     except Exception:
@@ -4194,7 +4245,9 @@ async def resolve_force_end_counterparty(
             "new_rating": new_rating if (is_initiator and not approved) else None,
         }
         try:
+            _t_emit = time.monotonic()
             ok = await emit_trip_force_ended_to_party(uid, pl, _emit_label, tid)
+            _emit_ms += (time.monotonic() - _t_emit) * 1000.0
         except Exception as emit_err:
             ok = False
             logger.warning("resolve_force_end_counterparty trip_force_ended: %s", emit_err)
@@ -4208,6 +4261,18 @@ async def resolve_force_end_counterparty(
         tid,
         passenger_emit_ok,
         driver_emit_ok,
+    )
+
+    _log_timing_safe(
+        "FORCE_END_TIMING",
+        phase="resolve_force_end_counterparty",
+        tag_id=_short_log_id(tid),
+        actor_id_masked=_mask_log_id(ini_r),
+        target_id_masked=_mask_log_id(counterparty),
+        db_ms=round(_db_ms, 2),
+        emit_ms=round(_emit_ms, 2),
+        push_ms=0.0,
+        total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
     )
 
     return {
@@ -4296,6 +4361,10 @@ async def apply_force_end_trip_and_notify(
     Zorla bitir — istek aşaması: tag status matched/in_progress kalır, yalnızca end_request (pending).
     Karşı tarafa force_end_counterparty_prompt. trip_force_ended yalnızca resolve_force_end_counterparty sonrası gider.
     """
+    _t_total = time.monotonic()
+    _db_ms = 0.0
+    _emit_ms = 0.0
+    _push_ms = 0.0
     if not tag_id or not ender_id:
         return {"success": False, "error": "tag_id ve ender_id gerekli"}
     tid = str(tag_id).strip()
@@ -4309,7 +4378,9 @@ async def apply_force_end_trip_and_notify(
         resolved_ender = str(ender_id).strip()
 
     try:
+        _t_db = time.monotonic()
         tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as e:
         logger.error(f"apply_force_end_trip: tag okunamadı: {e}")
         return {"success": False, "error": "TAG okunamadı"}
@@ -4386,7 +4457,9 @@ async def apply_force_end_trip_and_notify(
         "requested_at": now_iso,
     }
     try:
+        _t_db = time.monotonic()
         supabase.table("tags").update({"end_request": end_request_payload}).eq("id", tid).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
     except Exception as e:
         logger.error(f"apply_force_end_trip: tag güncellenemedi: {e}")
         return {"success": False, "error": str(e)}
@@ -4395,7 +4468,9 @@ async def apply_force_end_trip_and_notify(
 
     ender_name = ""
     try:
+        _t_db = time.monotonic()
         _en = supabase.table("users").select("name").eq("id", resolved_ender).limit(1).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
         if _en.data:
             ender_name = (str(_en.data[0].get("name") or "")).strip()
     except Exception:
@@ -4412,6 +4487,7 @@ async def apply_force_end_trip_and_notify(
             )
             if len(_fe_body) > 72:
                 _fe_body = _fe_body[:69] + "…"
+            _t_push = time.monotonic()
             asyncio.create_task(
                 send_push_notification(
                     other_user_id,
@@ -4425,12 +4501,14 @@ async def apply_force_end_trip_and_notify(
                     },
                 )
             )
+            _push_ms += (time.monotonic() - _t_push) * 1000.0
         except Exception as push_err:
             logger.warning(f"apply_force_end_trip push: {push_err}")
 
     counterparty_id = passenger_id if et == "driver" else driver_id
     if counterparty_id:
         try:
+            _t_emit = time.monotonic()
             await emit_socket_event_to_user(
                 counterparty_id,
                 "force_end_counterparty_prompt",
@@ -4441,10 +4519,22 @@ async def apply_force_end_trip_and_notify(
                     "initiator_name": ender_name,
                 },
             )
+            _emit_ms += (time.monotonic() - _t_emit) * 1000.0
         except Exception as prompt_err:
             logger.warning(f"apply_force_end_trip force_end_counterparty_prompt: {prompt_err}")
 
     logger.info(f"✅ apply_force_end_trip: tag={tid} ender_type={et} ender={resolved_ender[:12]}…")
+    _log_timing_safe(
+        "FORCE_END_TIMING",
+        phase="apply_force_end_trip_and_notify",
+        tag_id=_short_log_id(tid),
+        actor_id_masked=_mask_log_id(resolved_ender),
+        target_id_masked=_mask_log_id(counterparty_id),
+        db_ms=round(_db_ms, 2),
+        emit_ms=round(_emit_ms, 2),
+        push_ms=round(_push_ms, 2),
+        total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+    )
     return {
         "success": True,
         "new_points": None,
@@ -19158,6 +19248,13 @@ async def start_call(
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """Arama başlat - Supabase'e kaydet"""
+    _voice_t0 = time.monotonic()
+    _voice_db_ms = 0.0
+    _voice_agora_ms = 0.0
+    _voice_emit_ms = 0.0
+    _voice_call_id = None
+    _voice_caller = None
+    _voice_receiver = None
     try:
         caller_resolved = authenticated_user_id
         if request.caller_id is not None and str(request.caller_id).strip():
@@ -19166,7 +19263,8 @@ async def start_call(
 
         call_id = f"call_{secrets.token_urlsafe(8)}"
         channel_name = f"leylek_{call_id}"
-        
+        _voice_call_id = call_id
+        _voice_caller = caller_resolved
         # Son 5 saniyede arama yapılmış mı kontrol et (cooldown)
         five_seconds_ago = (datetime.utcnow() - timedelta(seconds=5)).isoformat()
         try:
@@ -19193,6 +19291,7 @@ async def start_call(
         
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
+        _voice_receiver = receiver_id
 
         _tag_id_call = str(request.tag_id or "").strip()
         if _tag_id_call:
@@ -19326,8 +19425,10 @@ async def start_call(
             logger.warning(f"Voice busy check skipped: {busy_err}")
         
         # Agora: arayan ve alıcı için ayrı uid + token
+        _t_agora = time.monotonic()
         caller_token = generate_agora_token(channel_name, user_id=caller_resolved)
         receiver_token = generate_agora_token(channel_name, user_id=receiver_id)
+        _voice_agora_ms = (time.monotonic() - _t_agora) * 1000.0
         
         # Arayan bilgisi
         caller_name = request.caller_name
@@ -19350,7 +19451,9 @@ async def start_call(
             "agora_token": receiver_token
         }
         
+        _t_db = time.monotonic()
         result = supabase.table("calls").insert(call_data).execute()
+        _voice_db_ms = (time.monotonic() - _t_db) * 1000.0
         
         if not result.data:
             return {"success": False, "detail": "Arama kaydedilemedi"}
@@ -19405,13 +19508,26 @@ async def start_call(
             if request.tag_id:
                 incoming_payload["tag_id"] = request.tag_id
             try:
+                _t_emit = time.monotonic()
                 await emit_socket_event_to_user(str(receiver_id).strip(), "incoming_call", incoming_payload)
+                _voice_emit_ms = (time.monotonic() - _t_emit) * 1000.0
                 logger.info("📲 incoming_call → target_user_id=%s", _mask_log_id(receiver_id))
             except Exception as _ice2:
                 logger.warning(f"⚠️ incoming_call emit_socket_event_to_user: {_ice2}")
         except Exception as sock_err:
             logger.warning(f"⚠️ incoming_call socket gönderilemedi: {sock_err}")
         
+        _log_timing_safe(
+            "VOICE_TIMING",
+            phase="start_call",
+            call_id=_short_log_id(_voice_call_id or call_id),
+            caller_id_masked=_mask_log_id(_voice_caller or caller_resolved),
+            receiver_id_masked=_mask_log_id(_voice_receiver or receiver_id),
+            db_ms=round(_voice_db_ms, 2),
+            agora_ms=round(_voice_agora_ms, 2),
+            emit_ms=round(_voice_emit_ms, 2),
+            total_ms=round((time.monotonic() - _voice_t0) * 1000.0, 2),
+        )
         return {
             "success": True,
             "call_id": call_id,
@@ -19961,6 +20077,9 @@ async def api_trust_request(
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """Eşleşmiş tag üzerinden karşı tarafa güven isteği gönder."""
+    _t_total = time.monotonic()
+    _db_ms = 0.0
+    _emit_ms = 0.0
     try:
         ended = _trust_service.expire_stale_sessions(supabase)
         if ended:
@@ -19984,7 +20103,9 @@ async def api_trust_request(
         uid = await resolve_user_id(authenticated_user_id)
         if not uid:
             return {"success": False, "error": "user_not_found"}
+        _t_db = time.monotonic()
         r = _trust_service.create_trust_request(supabase, uid, body.tag_id.strip())
+        _db_ms = (time.monotonic() - _t_db) * 1000.0
         if not r.get("success"):
             return r
         target_id = r["target_id"]
@@ -20013,7 +20134,20 @@ async def api_trust_request(
             )
         except Exception as _trust_emit_log_e:
             logger.warning("TRUST_DIAG_TRUST_REQUEST_EMIT log skipped: %s", _trust_emit_log_e)
+        _t_emit = time.monotonic()
         await emit_socket_event_to_user(target_id, "trust_request", payload)
+        _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+        _log_timing_safe(
+            "TRUST_TIMING",
+            phase="request",
+            requester_id_masked=_mask_log_id(r.get("requester_id")),
+            target_id_masked=_mask_log_id(target_id),
+            session_id=_short_log_id(r.get("trust_id")),
+            db_ms=round(_db_ms, 2),
+            token_ms=0.0,
+            emit_ms=round(_emit_ms, 2),
+            total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+        )
         return {
             "success": True,
             "trust_id": r["trust_id"],
@@ -20031,6 +20165,10 @@ async def api_trust_respond(
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """Güven Ver / Verme."""
+    _t_total = time.monotonic()
+    _db_ms = 0.0
+    _token_ms = 0.0
+    _emit_ms = 0.0
     try:
         ended = _trust_service.expire_stale_sessions(supabase)
         if ended:
@@ -20038,7 +20176,9 @@ async def api_trust_respond(
         uid = await resolve_user_id(authenticated_user_id)
         if not uid:
             return {"success": False, "error": "user_not_found"}
+        _t_db = time.monotonic()
         r = _trust_service.respond_trust(supabase, uid, body.trust_id.strip(), bool(body.accept))
+        _db_ms = (time.monotonic() - _t_db) * 1000.0
         if not r.get("success"):
             if r.get("emit_ended"):
                 ep = {
@@ -20046,8 +20186,21 @@ async def api_trust_respond(
                     "tag_id": r.get("tag_id", ""),
                     "end_reason": "expired",
                 }
+                _t_emit = time.monotonic()
                 await emit_socket_event_to_user(r.get("requester_id"), "trust_session_ended", ep)
                 await emit_socket_event_to_user(r.get("target_id"), "trust_session_ended", ep)
+                _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+                _log_timing_safe(
+                    "TRUST_TIMING",
+                    phase="respond_expired",
+                    requester_id_masked=_mask_log_id(r.get("requester_id")),
+                    target_id_masked=_mask_log_id(r.get("target_id")),
+                    session_id=_short_log_id(r.get("trust_id")),
+                    db_ms=round(_db_ms, 2),
+                    token_ms=0.0,
+                    emit_ms=round(_emit_ms, 2),
+                    total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+                )
             return r
         if r.get("action") == "rejected":
             ep = {
@@ -20056,8 +20209,21 @@ async def api_trust_respond(
                 "end_reason": "rejected",
                 "rejected_by": str(uid),
             }
+            _t_emit = time.monotonic()
             await emit_socket_event_to_user(r["requester_id"], "trust_session_ended", ep)
             await emit_socket_event_to_user(r["target_id"], "trust_session_ended", ep)
+            _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+            _log_timing_safe(
+                "TRUST_TIMING",
+                phase="respond_rejected",
+                requester_id_masked=_mask_log_id(r.get("requester_id")),
+                target_id_masked=_mask_log_id(r.get("target_id")),
+                session_id=_short_log_id(r.get("trust_id")),
+                db_ms=round(_db_ms, 2),
+                token_ms=0.0,
+                emit_ms=round(_emit_ms, 2),
+                total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+            )
             return {"success": True, "action": "rejected"}
         ch = r.get("channel_name")
         deadline = r.get("session_hard_deadline_at")
@@ -20065,8 +20231,10 @@ async def api_trust_respond(
         tag_id = r["tag_id"]
         req_id = r["requester_id"]
         tgt_id = r["target_id"]
+        _t_token = time.monotonic()
         tok_req = generate_agora_token(ch, user_id=req_id)
         tok_tgt = generate_agora_token(ch, user_id=tgt_id)
+        _token_ms = (time.monotonic() - _t_token) * 1000.0
         base = {
             "trust_id": tid,
             "tag_id": tag_id,
@@ -20074,6 +20242,7 @@ async def api_trust_respond(
             "agora_app_id": AGORA_APP_ID,
             "session_hard_deadline_at": deadline,
         }
+        _t_emit = time.monotonic()
         await emit_socket_event_to_user(
             req_id,
             "trust_session_ready",
@@ -20083,6 +20252,18 @@ async def api_trust_respond(
             tgt_id,
             "trust_session_ready",
             {**base, "agora_token": tok_tgt, "peer_user_id": req_id},
+        )
+        _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+        _log_timing_safe(
+            "TRUST_TIMING",
+            phase="respond_accepted",
+            requester_id_masked=_mask_log_id(req_id),
+            target_id_masked=_mask_log_id(tgt_id),
+            session_id=_short_log_id(tid),
+            db_ms=round(_db_ms, 2),
+            token_ms=round(_token_ms, 2),
+            emit_ms=round(_emit_ms, 2),
+            total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
         )
         return {"success": True, "action": "accepted", "trust_id": tid, "channel_name": ch}
     except Exception as e:
@@ -20095,6 +20276,9 @@ async def api_trust_end(
     body: TrustEndBody,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
+    _t_total = time.monotonic()
+    _db_ms = 0.0
+    _emit_ms = 0.0
     try:
         ended = _trust_service.expire_stale_sessions(supabase)
         if ended:
@@ -20102,7 +20286,9 @@ async def api_trust_end(
         uid = await resolve_user_id(authenticated_user_id)
         if not uid:
             return {"success": False, "error": "user_not_found"}
+        _t_db = time.monotonic()
         r = _trust_service.end_trust_session(supabase, uid, body.trust_id.strip(), "user_ended")
+        _db_ms = (time.monotonic() - _t_db) * 1000.0
         if not r.get("success"):
             return r
         ep = {
@@ -20110,8 +20296,21 @@ async def api_trust_end(
             "tag_id": r.get("tag_id", ""),
             "end_reason": r.get("end_reason") or "user_ended",
         }
+        _t_emit = time.monotonic()
         await emit_socket_event_to_user(r["requester_id"], "trust_session_ended", ep)
         await emit_socket_event_to_user(r["target_id"], "trust_session_ended", ep)
+        _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+        _log_timing_safe(
+            "TRUST_TIMING",
+            phase="end",
+            requester_id_masked=_mask_log_id(r.get("requester_id")),
+            target_id_masked=_mask_log_id(r.get("target_id")),
+            session_id=_short_log_id(r.get("trust_id")),
+            db_ms=round(_db_ms, 2),
+            token_ms=0.0,
+            emit_ms=round(_emit_ms, 2),
+            total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+        )
         return {"success": True}
     except Exception as e:
         logger.exception("trust end: %s", e)
