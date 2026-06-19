@@ -1079,7 +1079,7 @@ interface DriverOfferScreenProps {
   /** POST /driver/accept-offer başarılı olunca (optimistic harita / LiveMapView) */
   onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
   /** Kabul POST başlamadan / bittiğinde — parent prune sırasında tag'ı korar */
-  onAcceptFlowStart?: (tagId: string) => void;
+  onAcceptFlowStart?: (tagId: string) => void | Promise<void>;
   onAcceptFlowEnd?: (tagId: string) => void;
   /** 409 veya teklif artık yok — parent listeden düşürsün */
   onOfferUnavailable?: (info: { tagId: string; requestId?: string }) => void;
@@ -1116,7 +1116,7 @@ function RequestCard({
   playTapSound?: () => void;
   onDismiss: () => void;
   onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
-  onAcceptFlowStart?: (tagId: string) => void;
+  onAcceptFlowStart?: (tagId: string) => void | Promise<void>;
   onAcceptFlowEnd?: (tagId: string) => void;
   onOfferUnavailable?: (info: { tagId: string; requestId?: string }) => void;
   index: number;
@@ -1454,7 +1454,7 @@ function RequestCard({
 
               setGlobalAcceptFrozen(true);
               setAccepting(true);
-              onAcceptFlowStart?.(tagIdForAccept);
+              await Promise.resolve(onAcceptFlowStart?.(tagIdForAccept));
               try {
                 playTapSound?.();
                 const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
