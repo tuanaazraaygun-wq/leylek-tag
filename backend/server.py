@@ -1116,6 +1116,14 @@ async def respond_trip_end_socket(sid, data):
                 "end_request": None,
                 "end_type": "mutual"
             }).eq("id", tag_id).execute()
+
+            tag_row = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).limit(1).execute()
+            passenger_id = None
+            driver_id = None
+            if tag_row.data:
+                passenger_id = tag_row.data[0].get("passenger_id")
+                driver_id = tag_row.data[0].get("driver_id")
+            invalidate_tag_cache(tag_id, passenger_id, driver_id)
             
             # Her iki tarafa da bildir
             for user_id in [responder_id, requester_id]:
@@ -12910,6 +12918,15 @@ async def post_quick_match_invite_accept_http(
             passenger_busy_checker_fn=_passenger_blocking_tag_for_quick_match,
             build_snapshot_fn=build_snapshot_fields_for_tag_update,
         )
+        tag_id = (result.get("tag") or {}).get("tag_id")
+        if tag_id:
+            tag_row = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).limit(1).execute()
+            passenger_id = None
+            driver_id = None
+            if tag_row.data:
+                passenger_id = tag_row.data[0].get("passenger_id")
+                driver_id = tag_row.data[0].get("driver_id")
+            invalidate_tag_cache(tag_id, passenger_id, driver_id or actor_id)
         return {"success": True, **result}
     except QuickMatchNotFoundError as exc:
         raise HTTPException(status_code=404, detail=exc.detail) from exc
@@ -13338,6 +13355,15 @@ async def post_trusted_direct_invite_accept_http(
             passenger_busy_checker_fn=_passenger_blocking_tag_for_quick_match,
             build_snapshot_fn=build_snapshot_fields_for_tag_update,
         )
+        tag_id = (result.get("tag") or {}).get("id")
+        if tag_id:
+            tag_row = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).limit(1).execute()
+            passenger_id = None
+            driver_id = None
+            if tag_row.data:
+                passenger_id = tag_row.data[0].get("passenger_id")
+                driver_id = tag_row.data[0].get("driver_id")
+            invalidate_tag_cache(tag_id, passenger_id, driver_id or actor_id)
         return {"success": True, **result}
     except (
         RmeFeatureDisabledError,
@@ -20793,7 +20819,7 @@ async def verify_trip_qr(
         }).eq("id", tag_id).execute()
         
         # Cache temizle
-        invalidate_tag_cache(tag_id)
+        invalidate_tag_cache(tag_id, passenger_id, driver_id)
         del active_trip_qr_codes[qr_token]
         
         # 6. Kullanıcı isimlerini al (boş adlarda güvenli)
@@ -21131,7 +21157,7 @@ async def scan_qr_for_trip_end(
         }).eq("id", tag_id).execute()
         
         # Cache temizle
-        invalidate_tag_cache(tag_id)
+        invalidate_tag_cache(tag_id, passenger_id, driver_id)
         
         # 3. QR tamamlama logunu kaydet (Admin için)
         try:
