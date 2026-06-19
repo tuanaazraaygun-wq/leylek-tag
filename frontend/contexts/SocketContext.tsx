@@ -103,6 +103,20 @@ let registeredListenerAttached = false;
 const REGISTER_SCHEDULE_DEBOUNCE_MS = 220;
 const REGISTER_RETRY_MAX_ATTEMPTS = 80;
 const REGISTER_RETRY_DELAY_MS = 400;
+/** Kritik HTTP öncesi register: debounce yok, en fazla bu kadar bekle (UI bloklamadan). */
+const CRITICAL_REGISTER_WAIT_MS = 400;
+const CRITICAL_ACTION_REASON_PREFIX = 'critical_action:';
+
+function isCriticalActionReason(reason: string): boolean {
+  return reason.startsWith(CRITICAL_ACTION_REASON_PREFIX);
+}
+
+function criticalActionFromReason(reason: string): string {
+  if (reason.startsWith(CRITICAL_ACTION_REASON_PREFIX)) {
+    return reason.slice(CRITICAL_ACTION_REASON_PREFIX.length) || reason;
+  }
+  return reason;
+}
 
 type RegisteredAckHandler = (data: unknown, socket: Socket) => void;
 let registeredAckHandler: RegisteredAckHandler | null = null;
@@ -348,7 +362,10 @@ interface SocketContextType {
    */
   syncSocketSessionFromApp: (patch: { userId?: string | null; role?: string | null }) => void;
   /** Muhabbet trip/chat ve kök: throttle + force ile merkezi register planla */
-  ensureSocketRegistered: (reason?: string, opts?: { force?: boolean }) => void;
+  ensureSocketRegistered: (
+    reason?: string,
+    opts?: { force?: boolean; critical?: boolean },
+  ) => void | Promise<void>;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -414,7 +431,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, [isRegistered]);
 
   const executeSocketRegister = useCallback((reason: string, opts?: { force?: boolean }) => {
-    const forceFlag = opts?.force === true || REGISTER_EMIT_FORCE_REASONS.has(reason);
+    const forceFlag =
+      opts?.force === true ||
+      REGISTER_EMIT_FORCE_REASONS.has(reason) ||
+      isCriticalActionReason(reason);
     console.log(
       'SOCKET_REGISTER_ENSURE',
       JSON.stringify({
@@ -553,7 +573,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
         const uidLo = String(uid).trim().toLowerCase();
         const regSid = lastRegisteredSocketSid;
         const regUidLo = String(lastRegisteredSocketUserId ?? '').trim().toLowerCase();
-        const forceEmit = opts?.force === true || REGISTER_EMIT_FORCE_REASONS.has(reason);
+        const forceEmit =
+          opts?.force === true ||
+          REGISTER_EMIT_FORCE_REASONS.has(reason) ||
+          isCriticalActionReason(reason);
         const msSinceEmit = Date.now() - lastRegisterEmitAtMsRef.current;
         if (
           !forceEmit &&
@@ -616,7 +639,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, []);
 
   const scheduleSocketRegister = useCallback((reason: string, opts?: { force?: boolean }) => {
-    const forceFlag = opts?.force === true || REGISTER_EMIT_FORCE_REASONS.has(reason);
+    const forceFlag =
+      opts?.force === true ||
+      REGISTER_EMIT_FORCE_REASONS.has(reason) ||
+      isCriticalActionReason(reason);
     const prev = pendingScheduleRef.current;
     pendingScheduleRef.current = {
       reason,
@@ -1384,10 +1410,56 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, []);
 
   const ensureSocketRegisteredFn = useCallback(
-    (reason?: string, opts?: { force?: boolean }) => {
-      scheduleSocketRegister(reason ?? 'socket_context_ensure', opts);
+    (reason?: string, opts?: { force?: boolean; critical?: boolean }) => {
+      const scheduleReason = reason ?? 'socket_context_ensure';
+      const isCritical = opts?.critical === true || isCriticalActionReason(scheduleReason);
+
+      if (!isCritical) {
+        scheduleSocketRegister(scheduleReason, opts);
+        return;
+      }
+
+      const action = criticalActionFromReason(scheduleReason);
+      const uid = userIdRef.current;
+      console.log(
+        'SOCKET_REGISTER_BEFORE_CRITICAL_ACTION',
+        JSON.stringify({
+          action,
+          userId: maskIdForLog(uid),
+          isConnected: socketRef.current?.connected ?? false,
+          isRegistered: isRegisteredRef.current,
+        }),
+      );
+
+      if (registerScheduleDebounceRef.current) {
+        clearTimeout(registerScheduleDebounceRef.current);
+        registerScheduleDebounceRef.current = null;
+      }
+      pendingScheduleRef.current = null;
+      executeSocketRegister(scheduleReason, { force: true });
+
+      return (async () => {
+        const deadline = Date.now() + CRITICAL_REGISTER_WAIT_MS;
+        while (Date.now() < deadline) {
+          if (isRegisteredRef.current && registerAckOkRef.current) {
+            break;
+          }
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 50);
+          });
+        }
+        console.log(
+          'SOCKET_REGISTER_CRITICAL_ACTION_DONE',
+          JSON.stringify({
+            action,
+            userId: maskIdForLog(uid),
+            isConnected: socketRef.current?.connected ?? false,
+            isRegistered: isRegisteredRef.current,
+          }),
+        );
+      })();
     },
-    [scheduleSocketRegister],
+    [scheduleSocketRegister, executeSocketRegister],
   );
 
   // ══════════════════════════════════════════════════════════════════

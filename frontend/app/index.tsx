@@ -1000,6 +1000,21 @@ function logPollingSkippedForceEndLock(role: 'passenger' | 'driver', where: stri
   console.log('POLLING_SKIPPED_FORCE_END_LOCK', { role, where });
 }
 
+/** Kritik HTTP öncesi socket register — en fazla ~400ms, başarısız olsa da HTTP devam eder. */
+async function awaitSocketRegisterBeforeCriticalAction(
+  ensureSocketRegistered: (
+    reason?: string,
+    opts?: { force?: boolean; critical?: boolean },
+  ) => void | Promise<void>,
+  action: string,
+): Promise<void> {
+  try {
+    await ensureSocketRegistered(`critical_action:${action}`, { critical: true, force: true });
+  } catch {
+    /* best-effort */
+  }
+}
+
 type AppScreen =
   | 'login'
   | 'test-password'
@@ -7525,6 +7540,7 @@ function PassengerDashboard({
     clearIncomingCall,
     getIncomingCallData,
     incomingCallPresentToken,
+    ensureSocketRegistered,
   } = useSocketContext();
   
   // 🆕 Chat State'leri (Yolcu)
@@ -11151,6 +11167,7 @@ function PassengerDashboard({
     );
     setCalling(true);
     try {
+      await awaitSocketRegisterBeforeCriticalAction(ensureSocketRegistered, 'voice_start_call');
       console.log(
         'TAG_CALL_START_REQUEST',
         JSON.stringify({ role: 'passenger', tag_id: _tagPress, receiver_id: receiverId }),
@@ -11363,6 +11380,7 @@ function PassengerDashboard({
     );
 
     try {
+      await awaitSocketRegisterBeforeCriticalAction(ensureSocketRegistered, 'passenger_accept_offer');
       // 🚀 ÖNCE Socket ile anında bildir (hızlı feedback)
       if (socketAcceptOffer) {
         socketAcceptOffer({
@@ -12575,7 +12593,13 @@ function PassengerDashboard({
                   }}
                   voiceCallPending={calling}
                   onTrustRequest={() => {
-                    void sendPassengerTrustRequest();
+                    void (async () => {
+                      await awaitSocketRegisterBeforeCriticalAction(
+                        ensureSocketRegistered,
+                        'trust_request',
+                      );
+                      void sendPassengerTrustRequest();
+                    })();
                   }}
                   trustRequestPending={trustOutgoingPending}
                   trustRequestDisabled={passengerTrustGuvenButtonDisabled}
@@ -12591,6 +12615,10 @@ function PassengerDashboard({
                   }}
                   onOpenLeylekZekaSupport={openLeylekZekaFromMap}
                   onInRideComplaintForceEnd={async ({ reasonKey, details }) => {
+                    await awaitSocketRegisterBeforeCriticalAction(
+                      ensureSocketRegistered,
+                      'force_end_request',
+                    );
                     if (!activeTag?.id || !user?.id) {
                       return { ok: false, message: 'Eşleşme bilgisi bulunamadı.' };
                     }
@@ -12810,6 +12838,10 @@ function PassengerDashboard({
                   }}
                   onForceEnd={async () => {
                     console.log('⚡ YOLCU - ZORLA BİTİR başlatılıyor...');
+                    await awaitSocketRegisterBeforeCriticalAction(
+                      ensureSocketRegistered,
+                      'force_end_request',
+                    );
                     
                     if (!activeTag?.id) {
                       appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
@@ -12887,6 +12919,10 @@ function PassengerDashboard({
                     console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
+                      await awaitSocketRegisterBeforeCriticalAction(
+                        ensureSocketRegistered,
+                        'force_end_confirm',
+                      );
                       console.log('FRONTEND_FORCE_END_CONFIRM_START', {
                         tag_id: tid,
                         user_id: user.id,
@@ -12957,6 +12993,10 @@ function PassengerDashboard({
                     console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
+                      await awaitSocketRegisterBeforeCriticalAction(
+                        ensureSocketRegistered,
+                        'force_end_confirm',
+                      );
                       console.log('FRONTEND_FORCE_END_CONFIRM_START', {
                         tag_id: tid,
                         user_id: user.id,
@@ -13114,6 +13154,10 @@ function PassengerDashboard({
                       appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
                       return;
                     }
+                    await awaitSocketRegisterBeforeCriticalAction(
+                      ensureSocketRegistered,
+                      'force_end_request',
+                    );
                     try {
                       const response = await fetch(
                         `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`,
@@ -14445,14 +14489,20 @@ function PassengerDashboard({
           receiverOffline={receiverOffline}
           skipOutgoingMicPermission={callScreenData.mode === 'caller' && Platform.OS === 'android'}
           onAccept={() => {
-            if (callScreenData) {
-              socketAcceptCall({
-                call_id: callScreenData.callId,
-                caller_id: callScreenData.remoteUserId,
-                receiver_id: user.id
-              });
-              clearIncomingCall();
-            }
+            void (async () => {
+              await awaitSocketRegisterBeforeCriticalAction(
+                ensureSocketRegistered,
+                'voice_accept_call',
+              );
+              if (callScreenData) {
+                socketAcceptCall({
+                  call_id: callScreenData.callId,
+                  caller_id: callScreenData.remoteUserId,
+                  receiver_id: user.id
+                });
+                clearIncomingCall();
+              }
+            })();
           }}
           onReject={() => {
             if (callScreenData) {
@@ -15083,12 +15133,6 @@ function DriverDashboard({
     }, delay);
   }
 
-  const handleDriverAcceptFlowStart = useCallback((tagId: string) => {
-    void stopDriverOfferAlarmPlayback();
-    const t = String(tagId || '').trim();
-    if (t) driverPendingAcceptTagIdsRef.current.add(t);
-  }, []);
-
   const handleDriverAcceptFlowEnd = useCallback((tagId: string) => {
     const t = String(tagId || '').trim();
     if (t) driverPendingAcceptTagIdsRef.current.delete(t);
@@ -15169,7 +15213,18 @@ function DriverDashboard({
     clearIncomingCall: driverClearIncomingCall,
     getIncomingCallData: driverGetIncomingCallData,
     incomingCallPresentToken: driverIncomingCallPresentToken,
+    ensureSocketRegistered: driverEnsureSocketRegistered,
   } = useSocketContext();
+
+  const handleDriverAcceptFlowStart = useCallback(async (tagId: string) => {
+    await awaitSocketRegisterBeforeCriticalAction(
+      driverEnsureSocketRegistered,
+      'driver_accept_offer',
+    );
+    void stopDriverOfferAlarmPlayback();
+    const t = String(tagId || '').trim();
+    if (t) driverPendingAcceptTagIdsRef.current.add(t);
+  }, [driverEnsureSocketRegistered]);
 
   // Sürücü ekranına girince socket room'a tekrar yazılır (teklif kaçmasın)
   useEffect(() => {
@@ -16521,6 +16576,7 @@ function DriverDashboard({
     );
     setCalling(true);
     try {
+      await awaitSocketRegisterBeforeCriticalAction(driverEnsureSocketRegistered, 'voice_start_call');
       console.log(
         'TAG_CALL_START_REQUEST',
         JSON.stringify({ role: 'driver', tag_id: _tagPressD, receiver_id: receiverId }),
@@ -19036,7 +19092,13 @@ function DriverDashboard({
             }}
             voiceCallPending={calling}
             onTrustRequest={() => {
-              void sendDriverTrustRequest();
+              void (async () => {
+                await awaitSocketRegisterBeforeCriticalAction(
+                  driverEnsureSocketRegistered,
+                  'trust_request',
+                );
+                void sendDriverTrustRequest();
+              })();
             }}
             trustRequestPending={trustOutgoingPending}
             trustRequestDisabled={driverTrustGuvenButtonDisabled}
@@ -19052,6 +19114,10 @@ function DriverDashboard({
             }}
             onOpenLeylekZekaSupport={openLeylekZekaFromMapDriver}
             onInRideComplaintForceEnd={async ({ reasonKey, details }) => {
+              await awaitSocketRegisterBeforeCriticalAction(
+                driverEnsureSocketRegistered,
+                'force_end_request',
+              );
               if (!activeTag?.id || !user?.id) {
                 return { ok: false, message: 'Eşleşme bilgisi bulunamadı.' };
               }
@@ -19153,6 +19219,10 @@ function DriverDashboard({
             }}
             onForceEnd={async () => {
               console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
+              await awaitSocketRegisterBeforeCriticalAction(
+                driverEnsureSocketRegistered,
+                'force_end_request',
+              );
 
               if (!activeTag?.id) {
                 appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
@@ -19437,6 +19507,10 @@ function DriverDashboard({
                 appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
                 return;
               }
+              await awaitSocketRegisterBeforeCriticalAction(
+                driverEnsureSocketRegistered,
+                'force_end_request',
+              );
               try {
                 const response = await fetch(
                   `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`,
@@ -19589,14 +19663,20 @@ function DriverDashboard({
           receiverOffline={receiverOffline}
           skipOutgoingMicPermission={callScreenData.mode === 'caller' && Platform.OS === 'android'}
           onAccept={() => {
-            if (callScreenData) {
-              socketAcceptCall({
-                call_id: callScreenData.callId,
-                caller_id: callScreenData.remoteUserId,
-                receiver_id: user.id
-              });
-              driverClearIncomingCall();
-            }
+            void (async () => {
+              await awaitSocketRegisterBeforeCriticalAction(
+                driverEnsureSocketRegistered,
+                'voice_accept_call',
+              );
+              if (callScreenData) {
+                socketAcceptCall({
+                  call_id: callScreenData.callId,
+                  caller_id: callScreenData.remoteUserId,
+                  receiver_id: user.id
+                });
+                driverClearIncomingCall();
+              }
+            })();
           }}
           onReject={() => {
             if (callScreenData) {
@@ -19749,6 +19829,10 @@ function DriverDashboard({
           console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
+            await awaitSocketRegisterBeforeCriticalAction(
+              driverEnsureSocketRegistered,
+              'force_end_confirm',
+            );
             console.log('FRONTEND_FORCE_END_CONFIRM_START', {
               tag_id: tid,
               user_id: user.id,
@@ -19819,6 +19903,10 @@ function DriverDashboard({
           console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
+            await awaitSocketRegisterBeforeCriticalAction(
+              driverEnsureSocketRegistered,
+              'force_end_confirm',
+            );
             console.log('FRONTEND_FORCE_END_CONFIRM_START', {
               tag_id: tid,
               user_id: user.id,
