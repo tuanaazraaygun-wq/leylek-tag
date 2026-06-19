@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import AliasChoices, BaseModel, Field, ValidationError, field_validator
 from dataclasses import dataclass
-from typing import Annotated, Any, List, Literal, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
 try:
     from zoneinfo import ZoneInfo
@@ -8508,6 +8508,7 @@ async def passenger_location_for_driver_socket(
 _ROUTE_INFO_CACHE_TTL_SEC = 300.0
 _ROUTE_INFO_CACHE_MAX = 512
 _ROUTE_INFO_CACHE: dict[str, tuple[float, dict]] = {}
+_ROUTE_INFO_INFLIGHT: Dict[str, asyncio.Task] = {}
 
 
 def _route_info_cache_key(ola: float, olo: float, dla: float, dlo: float) -> str:
@@ -8545,21 +8546,7 @@ def _route_info_cache_set(key: str, payload: dict) -> None:
     )
 
 
-async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
-    """Rota bilgisi al: Google Directions tek kaynak, OSRM sadece backend fallback."""
-    try:
-        ola = float(origin_lat)
-        olo = float(origin_lng)
-        dla = float(dest_lat)
-        dlo = float(dest_lng)
-    except (TypeError, ValueError):
-        return None
-
-    ck = _route_info_cache_key(ola, olo, dla, dlo)
-    hit = _route_info_cache_get(ck)
-    if hit is not None:
-        return hit
-
+async def _compute_route_info_uncached(ola: float, olo: float, dla: float, dlo: float, ck: str) -> dict:
     try:
         # 1) Google Directions (tek kaynak)
         road_info = await get_road_distance(ola, olo, dla, dlo)
@@ -8643,6 +8630,36 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     }
     _route_info_cache_set(ck, out)
     return out
+
+
+async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
+    """Rota bilgisi al: Google Directions tek kaynak, OSRM sadece backend fallback."""
+    try:
+        ola = float(origin_lat)
+        olo = float(origin_lng)
+        dla = float(dest_lat)
+        dlo = float(dest_lng)
+    except (TypeError, ValueError):
+        return None
+
+    ck = _route_info_cache_key(ola, olo, dla, dlo)
+    hit = _route_info_cache_get(ck)
+    if hit is not None:
+        return hit
+
+    inflight = _ROUTE_INFO_INFLIGHT.get(ck)
+    if inflight is not None:
+        logger.debug("[route_info] inflight_hit key=%s", ck)
+        return await inflight
+
+    task = asyncio.create_task(_compute_route_info_uncached(ola, olo, dla, dlo, ck))
+    _ROUTE_INFO_INFLIGHT[ck] = task
+    logger.debug("[route_info] inflight_start key=%s", ck)
+    try:
+        return await task
+    finally:
+        if _ROUTE_INFO_INFLIGHT.get(ck) is task:
+            _ROUTE_INFO_INFLIGHT.pop(ck, None)
 
 
 @api_router.get("/route-metrics")
