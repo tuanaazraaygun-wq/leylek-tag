@@ -14647,7 +14647,11 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
         result = (
             supabase.table("tags")
-            .select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)")
+            .select(
+                "id, passenger_id, pickup_location, pickup_lat, pickup_lng, dropoff_location, dropoff_lat, dropoff_lng, "
+                "status, notes, offered_price, final_price, passenger_preferred_vehicle, passenger_payment_method, "
+                "created_at, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)"
+            )
             .eq("type", TAG_TYPE_NORMAL)
             .in_("status", ["waiting", "pending", "offers_received"])
             .gte("created_at", ten_min_ago)
