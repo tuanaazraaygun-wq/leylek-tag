@@ -2,10 +2,12 @@
 SCALE-3A-1 — Driver presence Redis write foundation (no read path).
 SCALE-3B-1 — Shadow compare after write (HGETALL vs expected DB tuple).
 SCALE-3B-2 — Dispatch cohort shadow (DB online_rows vs Redis HGETALL; read-only).
+SCALE-3C-1 — Passenger driver-location read canary (HGETALL; GET endpoint only).
 
 DRIVER_PRESENCE_REDIS=0 (default) → yazma kapalı.
 DRIVER_PRESENCE_SHADOW=1 → shadow yazma (default kapalı).
 DRIVER_PRESENCE_COHORT_SHADOW=0 (default) → dispatch cohort shadow kapalı.
+DRIVER_PRESENCE_READ_SAMPLE=0.0 (default) → read canary kapalı.
 Redis hata/miss → sessiz; DB source of truth kalır.
 """
 
@@ -80,6 +82,30 @@ def shadow_sample_rate() -> float:
 def should_shadow_sample_driver(driver_id: Any) -> bool:
     """Actor-hash örnekleme — sürücü başına deterministik; istek başına random yok."""
     rate = shadow_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    did = normalize_driver_id(driver_id)
+    if not did:
+        return False
+    bucket = int(hashlib.md5(did.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+def presence_read_enabled() -> bool:
+    """DRIVER_PRESENCE_REDIS=1 → presence read path açık (default kapalı)."""
+    return _env_bool("DRIVER_PRESENCE_REDIS", False)
+
+
+def read_sample_rate() -> float:
+    """DRIVER_PRESENCE_READ_SAMPLE — actor-hash read örnekleme oranı (default 0.0)."""
+    return _env_float("DRIVER_PRESENCE_READ_SAMPLE", 0.0)
+
+
+def should_read_sample_driver(driver_id: Any) -> bool:
+    """Actor-hash örnekleme — read path için deterministik; istek başına random yok."""
+    rate = read_sample_rate()
     if rate >= 1.0:
         return True
     if rate <= 0.0:
@@ -166,8 +192,26 @@ def _decode_redis_hash(raw: Any) -> dict[str, str]:
     return out
 
 
+def _coords_valid(lat: Optional[float], lng: Optional[float]) -> bool:
+    if lat is None or lng is None:
+        return False
+    if lat < -90.0 or lat > 90.0:
+        return False
+    if lng < -180.0 or lng > 180.0:
+        return False
+    return True
+
+
+def _is_presence_stale(last_seen: Any, *, driver_online: bool) -> bool:
+    ts = _parse_iso_ts(last_seen)
+    if ts is None:
+        return True
+    ttl = ttl_online_sec() if driver_online else ttl_offline_sec()
+    return (time.time() - ts) > float(max(1, ttl))
+
+
 def _redis_hgetall_presence(driver_id: str) -> Optional[dict[str, str]]:
-    """Shadow-only HGETALL; production read/dispatch path değil."""
+    """HGETALL presence hash; shadow + read canary."""
     try:
         r = get_redis_client()
         if r is None:
@@ -278,6 +322,78 @@ def _shadow_log_throttled(code: str, driver_id: Any, **extra: Any) -> None:
         logger.info("%s driver_id=%s %s", code, did, parts)
     else:
         logger.info("%s driver_id=%s", code, did)
+
+
+def _read_log_throttled(code: str, driver_id: Any, **extra: Any) -> None:
+    _shadow_log_throttled(code, driver_id, **extra)
+
+
+def _validate_presence_for_read(raw: dict[str, str], driver_id: str) -> Optional[dict[str, Any]]:
+    did = normalize_driver_id(driver_id)
+    if str(raw.get("schema_version") or "") != str(SCHEMA_VERSION):
+        return None
+    if normalize_driver_id(raw.get("driver_id")) != did:
+        return None
+
+    driver_online_raw = raw.get("driver_online")
+    if driver_online_raw is None or str(driver_online_raw).strip() == "":
+        return None
+    driver_online = _redis_online_bool(driver_online_raw)
+
+    last_seen = str(raw.get("last_seen") or "")
+    if not last_seen or _parse_iso_ts(last_seen) is None:
+        return None
+    if _is_presence_stale(last_seen, driver_online=driver_online):
+        return None
+
+    lat = _parse_coord(raw.get("latitude"))
+    lng = _parse_coord(raw.get("longitude"))
+    if not _coords_valid(lat, lng):
+        return None
+
+    return {
+        "latitude": lat,
+        "longitude": lng,
+        "last_seen": last_seen,
+        "driver_online": driver_online,
+        "vehicle_kind": str(raw.get("vehicle_kind") or ""),
+    }
+
+
+def try_get_driver_presence_for_read(driver_id: Any) -> Optional[dict[str, Any]]:
+    """Redis hit → sürücü presence okuma; miss/hata/stale → None."""
+    if not presence_read_enabled():
+        return None
+    did = normalize_driver_id(driver_id)
+    if not did or not should_read_sample_driver(did):
+        return None
+    try:
+        redis_raw = _redis_hgetall_presence(did)
+        if not redis_raw:
+            _read_log_throttled("DRIVER_PRESENCE_READ_MISS", did)
+            return None
+
+        validated = _validate_presence_for_read(redis_raw, did)
+        if validated is None:
+            _read_log_throttled("DRIVER_PRESENCE_READ_INVALID", did)
+            return None
+
+        _read_log_throttled(
+            "DRIVER_PRESENCE_READ_HIT",
+            did,
+            online=validated.get("driver_online"),
+        )
+        return validated
+    except Exception:
+        try:
+            _read_log_throttled(
+                "DRIVER_PRESENCE_READ_ERROR",
+                did or driver_id,
+                reason="exception",
+            )
+        except Exception:
+            pass
+        return None
 
 
 def _shadow_compare_and_log(

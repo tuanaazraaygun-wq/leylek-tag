@@ -20047,6 +20047,30 @@ async def api_trust_active(
 async def get_driver_location(driver_id: str):
     """Şoför konumunu getir"""
     try:
+        presence = driver_presence.try_get_driver_presence_for_read(driver_id)
+        if presence is not None:
+            driver_name = None
+            try:
+                name_result = (
+                    supabase.table("users")
+                    .select("name")
+                    .eq("id", driver_id)
+                    .execute()
+                )
+                if name_result.data:
+                    driver_name = name_result.data[0].get("name")
+            except Exception:
+                pass
+            return {
+                "success": True,
+                "location": {
+                    "latitude": presence["latitude"],
+                    "longitude": presence["longitude"],
+                    "updated_at": presence["last_seen"],
+                    "driver_name": driver_name,
+                },
+            }
+
         result = supabase.table("users").select("latitude, longitude, last_location_update, name").eq("id", driver_id).execute()
         
         if result.data:
