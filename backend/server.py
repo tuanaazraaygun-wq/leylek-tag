@@ -966,12 +966,14 @@ async def accept_call(sid, data):
     logger.info("✅ Arama kabul edildi: %s", _short_log_id(call_id))
     
     # Arayana bildir
-    caller_sid = connected_users.get(caller_id)
-    if caller_sid:
-        await sio.emit('call_accepted', {
-            'call_id': call_id,
-            'accepted_by': receiver_id
-        }, room=caller_sid)
+    if caller_id:
+        try:
+            await emit_socket_event_to_user(str(caller_id).strip(), 'call_accepted', {
+                'call_id': call_id,
+                'accepted_by': receiver_id
+            })
+        except Exception as _cae:
+            logger.warning("accept_call call_accepted emit failed: %s", _cae)
     try:
         _started = {
             "call_id": call_id,
@@ -1125,13 +1127,16 @@ async def request_trip_end_socket(sid, data):
         logger.error(f"Trip end request save error: {e}")
     
     # Karşı tarafa ANINDA bildirim gönder
-    target_sid = connected_users.get(target_user_id)
-    if target_sid:
-        await sio.emit('trip_end_request', {
-            'tag_id': tag_id,
-            'requester_id': requester_id,
-            'requester_type': requester_type
-        }, room=target_sid)
+    trip_end_payload = {
+        'tag_id': tag_id,
+        'requester_id': requester_id,
+        'requester_type': requester_type
+    }
+    stats = await emit_socket_event_to_user(target_user_id, 'trip_end_request', trip_end_payload)
+    sid_count = (stats or {}).get("sid_count", 0)
+    room_member_count = (stats or {}).get("room_member_count", 0)
+    had_target = sid_count > 0 or room_member_count > 0 or room_member_count < 0
+    if had_target:
         logger.info(f"📲 Trip end request sent to: {target_user_id}")
         await sio.emit('trip_end_request_sent', {'success': True}, room=sid)
     else:
@@ -1167,14 +1172,14 @@ async def respond_trip_end_socket(sid, data):
             invalidate_tag_cache(tag_id, passenger_id, driver_id)
             
             # Her iki tarafa da bildir
+            trip_completed_payload = {
+                'tag_id': tag_id,
+                'completed_at': datetime.utcnow().isoformat(),
+                'mutual': True
+            }
             for user_id in [responder_id, requester_id]:
-                user_sid = connected_users.get(user_id)
-                if user_sid:
-                    await sio.emit('trip_completed', {
-                        'tag_id': tag_id,
-                        'completed_at': datetime.utcnow().isoformat(),
-                        'mutual': True
-                    }, room=user_sid)
+                if user_id:
+                    await emit_socket_event_to_user(user_id, 'trip_completed', trip_completed_payload)
             
             logger.info(f"✅ Trip completed via socket (mutual): {tag_id}")
         else:
@@ -1186,12 +1191,11 @@ async def respond_trip_end_socket(sid, data):
                 supabase.table("tags").update({"end_request": end_request}).eq("id", tag_id).execute()
             
             # İsteği yapana reddi bildir
-            requester_sid = connected_users.get(requester_id)
-            if requester_sid:
-                await sio.emit('trip_end_rejected', {
+            if requester_id:
+                await emit_socket_event_to_user(requester_id, 'trip_end_rejected', {
                     'tag_id': tag_id,
                     'rejected_by': responder_id
-                }, room=requester_sid)
+                })
             
             logger.info(f"❌ Trip end rejected: {tag_id}")
     except Exception as e:
@@ -3982,29 +3986,21 @@ async def emit_trip_force_ended_to_party(
     raw_l = raw_display.lower()
     room = _normalize_user_room(raw_l)
     room_n = _socketio_room_member_count(room)
-    sid_hit = _connected_sid_for_user(raw_display) or _connected_sid_for_user(raw_l)
     # room_n < 0: sayım başarısız — room emit yine denendiği için iyimser kabul
-    had_recipient = bool(sid_hit) or (room_n > 0) or (room_n < 0)
+    had_recipient = (room_n > 0) or (room_n < 0)
     err = False
     try:
         await sio.emit("trip_force_ended", payload, room=room)
     except Exception as ex:
         err = True
         logger.warning("%s room_emit_fail tag_id=%s room=%s err=%s", log_label, tag_id, room, ex)
-    if sid_hit:
-        try:
-            await sio.emit("trip_force_ended", payload, to=sid_hit)
-        except Exception as ex:
-            err = True
-            logger.warning("%s sid_emit_fail tag_id=%s sid=%s err=%s", log_label, tag_id, sid_hit, ex)
     logger.info(
-        "%s tag_id=%s target_user=%s room=%s room_member_count=%s sid=%s",
+        "%s tag_id=%s target_user=%s room=%s room_member_count=%s",
         log_label,
         tag_id,
         raw_display,
         room,
         room_n,
-        sid_hit or "none",
     )
     return bool(had_recipient and not err)
 
@@ -14725,22 +14721,14 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         except Exception as _plm:
             logger.warning(f"passenger_location (accept-offer socket): {_plm}")
 
-        # Eşleşme bildirimini her iki tarafa da socket ile anında gönder (sid veya normalized room)
+        # Eşleşme bildirimini her iki tarafa da socket ile anında gönder (user room)
         try:
-            driver_room = _normalize_user_room(driver_id_final)
-            driver_sid = connected_users.get(str(driver_id_final).strip().lower()) or connected_users.get(driver_id_final)
-            driver_target = driver_sid if driver_sid else driver_room
-            passenger_target = None
-            if driver_target:
-                await sio.emit("offer_accepted", match_payload, room=driver_target)
-                await sio.emit("tag_matched", match_payload, room=driver_target)
+            if driver_id_final:
+                await emit_socket_event_to_user(driver_id_final, "offer_accepted", match_payload)
+                await emit_socket_event_to_user(driver_id_final, "tag_matched", match_payload)
             if passenger_id_final:
-                passenger_room = _normalize_user_room(passenger_id_final)
-                passenger_sid = connected_users.get(str(passenger_id_final).strip().lower()) or connected_users.get(passenger_id_final)
-                passenger_target = passenger_sid if passenger_sid else passenger_room
-                if passenger_target:
-                    await sio.emit("tag_matched", match_payload, room=passenger_target)
-            logger.info(f"✅ Eşleşme socket: driver={driver_target or 'yok'}, passenger={passenger_target or 'yok'}")
+                await emit_socket_event_to_user(passenger_id_final, "tag_matched", match_payload)
+            logger.info(f"✅ Eşleşme socket: driver={driver_id_final or 'yok'}, passenger={passenger_id_final or 'yok'}")
         except Exception as socket_err:
             logger.warning(f"⚠️ Eşleşme socket emit hatası: {socket_err}")
 
@@ -16147,29 +16135,16 @@ async def driver_accept_offer_http(
         except Exception as _dotw:
             logger.warning("driver_on_the_way HTTP (non-fatal): %s", _dotw)
         try:
-            driver_sid = connected_users.get(
-                str(resolved_driver_id).strip().lower()
-            ) or connected_users.get(resolved_driver_id)
-            driver_room = _normalize_user_room(resolved_driver_id)
-            driver_target = driver_sid or driver_room
-            if driver_target:
-                await sio.emit("tag_matched", payload, room=driver_target)
-                await sio.emit("ride_matched", payload, room=driver_target)
+            if resolved_driver_id:
+                await emit_socket_event_to_user(resolved_driver_id, "tag_matched", payload)
+                await emit_socket_event_to_user(resolved_driver_id, "ride_matched", payload)
             if passenger_id:
                 passenger_sids = _all_sids_for_registered_user(str(passenger_id))
-                passenger_sid = connected_users.get(
-                    str(passenger_id).strip().lower()
-                ) or connected_users.get(passenger_id)
-                passenger_room = _normalize_user_room(passenger_id)
-                passenger_target = passenger_sid or passenger_room
                 logger.info("[emit] passenger_id=%s", str(passenger_id)[:96])
                 logger.info("[emit] passenger_sids=%s", passenger_sids)
-                if passenger_target:
-                    logger.info("[emit] sending ride_matched")
-                    await sio.emit("tag_matched", payload, room=passenger_target)
-                    await sio.emit("ride_matched", payload, room=passenger_target)
-                else:
-                    logger.error("[emit] passenger_sid_empty passenger_id=%s", str(passenger_id)[:96])
+                logger.info("[emit] sending ride_matched")
+                await emit_socket_event_to_user(passenger_id, "tag_matched", payload)
+                await emit_socket_event_to_user(passenger_id, "ride_matched", payload)
         except Exception as sock_e:
             logger.warning(f"driver/accept-offer HTTP socket emit: {sock_e}")
 
@@ -22897,29 +22872,18 @@ async def handle_driver_accept_offer(sid, data):
             await _emit_driver_on_the_way_route(tag, resolved_driver_id)
         except Exception as _dotw_sock:
             logger.warning("driver_on_the_way socket (non-fatal): %s", _dotw_sock)
-        driver_sid = connected_users.get(str(resolved_driver_id).strip().lower()) or connected_users.get(
-            resolved_driver_id
-        )
-        driver_room = _normalize_user_room(resolved_driver_id)
-        driver_target = driver_sid or driver_room
-        if driver_target:
-            await sio.emit("offer_accepted_success", payload, room=driver_target)
-            await sio.emit("tag_matched", payload, room=driver_target)
-            await sio.emit("ride_matched", payload, room=driver_target)
+        if resolved_driver_id:
+            await emit_socket_event_to_user(resolved_driver_id, "offer_accepted_success", payload)
+            await emit_socket_event_to_user(resolved_driver_id, "tag_matched", payload)
+            await emit_socket_event_to_user(resolved_driver_id, "ride_matched", payload)
         if passenger_id:
             passenger_sids = _all_sids_for_registered_user(str(passenger_id))
-            passenger_sid = connected_users.get(str(passenger_id).strip().lower()) or connected_users.get(passenger_id)
-            passenger_room = _normalize_user_room(passenger_id)
-            passenger_target = passenger_sid or passenger_room
             logger.info("[emit] passenger_id=%s", str(passenger_id)[:96])
             logger.info("[emit] passenger_sids=%s", passenger_sids)
-            if passenger_target:
-                logger.info("[emit] sending ride_matched")
-                await sio.emit("driver_matched", payload, room=passenger_target)
-                await sio.emit("tag_matched", payload, room=passenger_target)
-                await sio.emit("ride_matched", payload, room=passenger_target)
-            if not passenger_target:
-                logger.error("[emit] passenger_sid_empty passenger_id=%s", str(passenger_id)[:96])
+            logger.info("[emit] sending ride_matched")
+            await emit_socket_event_to_user(passenger_id, "driver_matched", payload)
+            await emit_socket_event_to_user(passenger_id, "tag_matched", payload)
+            await emit_socket_event_to_user(passenger_id, "ride_matched", payload)
         logger.info("SOCKET EMIT DONE driver_accept_offer")
     except Exception as e:
         logger.warning(f"driver_accept_offer post-match (non-fatal): {e}")
