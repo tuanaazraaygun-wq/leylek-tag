@@ -173,6 +173,7 @@ from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
 # Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
+_route_http_client: Optional[httpx.AsyncClient] = None
 
 
 def _mask_log_id(value: Any) -> str:
@@ -5994,11 +5995,20 @@ last_cleanup_time = None
 
 @app.on_event("startup")
 async def startup():
-    global last_cleanup_time
+    global last_cleanup_time, _route_http_client
     clear_dispatch_in_memory_state()
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()
     init_supabase()
+    _route_http_client = httpx.AsyncClient(
+        http2=False,
+        limits=httpx.Limits(
+            max_connections=20,
+            max_keepalive_connections=10,
+            keepalive_expiry=10.0,
+        ),
+        timeout=httpx.Timeout(15.0),
+    )
     try:
         await _tag_dispatch_state_recover_on_startup()
     except Exception:
@@ -6046,6 +6056,14 @@ async def startup():
         "true" if DISPATCH_WAVE_DB_STATE else "false",
     )
     _start_active_tag_maintenance_background()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    global _route_http_client
+    if _route_http_client is not None:
+        await _route_http_client.aclose()
+        _route_http_client = None
 
 # Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
 async def auto_cleanup_inactive_tags():
@@ -8576,35 +8594,40 @@ async def _compute_route_info_uncached(ola: float, olo: float, dla: float, dlo: 
             f"https://router.project-osrm.org/route/v1/driving/"
             f"{olo},{ola};{dlo},{dla}?overview=full&geometries=polyline"
         )
-        async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
-            response = await client.get(url)
+        client = _route_http_client
+        if client is None:
+            async with httpx.AsyncClient(http2=False) as client:
+                response = await client.get(url, timeout=5.0)
+                data = response.json()
+        else:
+            response = await client.get(url, timeout=5.0)
             data = response.json()
-            if data.get("code") == "Ok" and data.get("routes"):
-                route = data["routes"][0]
-                distance_m = route.get("distance", 0)
-                duration_s = route.get("duration", 0)
-                distance_km = distance_m / 1000
-                duration_min = duration_s / 60
-                logger.warning(
-                    f"⚠️ Google başarısız, OSRM fallback kullanıldı: "
-                    f"{distance_km:.1f} km, {duration_min:.0f} dk"
-                )
-                dur_osrm = int(round(duration_min, 0))
-                out = {
-                    "distance_km": round(distance_km, 1),
-                    "duration_min": dur_osrm,
-                    "distance_text": f"{round(distance_km, 1)} km",
-                    "duration_text": f"{dur_osrm} dk",
-                    "source": "osrm",
-                    "used_traffic": False,
-                    "duration_min_no_traffic": None,
-                    "traffic_ratio": 1.0,
-                }
-                geom = route.get("geometry")
-                if isinstance(geom, str) and len(geom) > 2:
-                    out["overview_polyline"] = geom
-                _route_info_cache_set(ck, out)
-                return out
+        if data.get("code") == "Ok" and data.get("routes"):
+            route = data["routes"][0]
+            distance_m = route.get("distance", 0)
+            duration_s = route.get("duration", 0)
+            distance_km = distance_m / 1000
+            duration_min = duration_s / 60
+            logger.warning(
+                f"⚠️ Google başarısız, OSRM fallback kullanıldı: "
+                f"{distance_km:.1f} km, {duration_min:.0f} dk"
+            )
+            dur_osrm = int(round(duration_min, 0))
+            out = {
+                "distance_km": round(distance_km, 1),
+                "duration_min": dur_osrm,
+                "distance_text": f"{round(distance_km, 1)} km",
+                "duration_text": f"{dur_osrm} dk",
+                "source": "osrm",
+                "used_traffic": False,
+                "duration_min_no_traffic": None,
+                "traffic_ratio": 1.0,
+            }
+            geom = route.get("geometry")
+            if isinstance(geom, str) and len(geom) > 2:
+                out["overview_polyline"] = geom
+            _route_info_cache_set(ck, out)
+            return out
     except Exception as e:
         logger.warning(f"Route info error: {e}")
 
@@ -8842,8 +8865,13 @@ async def _osrm_road_leg_km_min(
             f"https://router.project-osrm.org/route/v1/driving/"
             f"{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
         )
-        async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
-            response = await client.get(url)
+        client = _route_http_client
+        if client is None:
+            async with httpx.AsyncClient(http2=False) as client:
+                response = await client.get(url, timeout=5.0)
+                data = response.json()
+        else:
+            response = await client.get(url, timeout=5.0)
             data = response.json()
         if data.get("code") == "Ok" and data.get("routes"):
             route = data["routes"][0]
@@ -8907,8 +8935,13 @@ async def _google_dm_one_origin_many_dests(
             "key": api_key,
         }
         try:
-            async with httpx.AsyncClient(http2=False, timeout=12.0) as client:
-                r = await client.get(url, params=params)
+            client = _route_http_client
+            if client is None:
+                async with httpx.AsyncClient(http2=False) as client:
+                    r = await client.get(url, params=params, timeout=12.0)
+                    data = r.json()
+            else:
+                r = await client.get(url, params=params, timeout=12.0)
                 data = r.json()
         except Exception as e:
             logger.error("[MATCH] Distance Matrix (1→N) HTTP error: %s", e, exc_info=True)
@@ -8965,8 +8998,13 @@ async def _google_dm_many_origins_one_dest(
             params["departure_time"] = "now"
             params["traffic_model"] = "best_guess"
         try:
-            async with httpx.AsyncClient(http2=False, timeout=12.0) as client:
-                r = await client.get(url, params=params)
+            client = _route_http_client
+            if client is None:
+                async with httpx.AsyncClient(http2=False) as client:
+                    r = await client.get(url, params=params, timeout=12.0)
+                    data = r.json()
+            else:
+                r = await client.get(url, params=params, timeout=12.0)
                 data = r.json()
         except Exception as e:
             logger.error("[MATCH] Distance Matrix (N→1) HTTP error: %s", e, exc_info=True)
@@ -22941,14 +22979,38 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
             "key": api_key,
         }
 
-        async with httpx.AsyncClient(http2=False, timeout=10.0) as client:
-            # 1) Trafik tahmini (bazı API kısıtlarında INVALID_REQUEST döner)
-            traffic_params = {
-                **base_params,
-                "departure_time": "now",
-                "traffic_model": "best_guess",
-            }
-            response = await client.get(url, params=traffic_params)
+        # 1) Trafik tahmini (bazı API kısıtlarında INVALID_REQUEST döner)
+        traffic_params = {
+            **base_params,
+            "departure_time": "now",
+            "traffic_model": "best_guess",
+        }
+        client = _route_http_client
+        if client is None:
+            async with httpx.AsyncClient(http2=False) as client:
+                response = await client.get(url, params=traffic_params, timeout=10.0)
+                data = response.json()
+                if data.get("status") == "OK" and data.get("routes"):
+                    r0 = data["routes"][0]
+                    ld = _directions_leg_to_road_dict(r0["legs"][0])
+                    return _attach_overview_polyline(r0, ld)
+                logger.warning(
+                    "⚠️ Google Directions (trafikli) başarısız: %s — trafiksiz yeniden deneniyor",
+                    data.get("status"),
+                )
+
+                response2 = await client.get(url, params=base_params, timeout=10.0)
+                data2 = response2.json()
+                if data2.get("status") == "OK" and data2.get("routes"):
+                    logger.info("📍 Google Directions: trafik parametresiz rota kullanıldı")
+                    r0b = data2["routes"][0]
+                    ld2 = _directions_leg_to_road_dict(r0b["legs"][0])
+                    return _attach_overview_polyline(r0b, ld2)
+
+                logger.warning(f"⚠️ Google Directions API hatası: {data2.get('status')}")
+                return None
+        else:
+            response = await client.get(url, params=traffic_params, timeout=10.0)
             data = response.json()
             if data.get("status") == "OK" and data.get("routes"):
                 r0 = data["routes"][0]
@@ -22959,7 +23021,7 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
                 data.get("status"),
             )
 
-            response2 = await client.get(url, params=base_params)
+            response2 = await client.get(url, params=base_params, timeout=10.0)
             data2 = response2.json()
             if data2.get("status") == "OK" and data2.get("routes"):
                 logger.info("📍 Google Directions: trafik parametresiz rota kullanıldı")
@@ -41689,7 +41751,12 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
             "key": GOOGLE_MAPS_API_KEY,
         }
         
-        async with httpx.AsyncClient(http2=False, timeout=30) as client:
+        client = _route_http_client
+        if client is None:
+            async with httpx.AsyncClient(http2=False) as client:
+                response = await client.get(url, params=params, timeout=10.0)
+                data = response.json()
+        else:
             response = await client.get(url, params=params, timeout=10.0)
             data = response.json()
         
