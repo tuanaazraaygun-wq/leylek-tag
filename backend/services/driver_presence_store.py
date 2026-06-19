@@ -1,9 +1,11 @@
 """
 SCALE-3A-1 — Driver presence Redis write foundation (no read path).
 SCALE-3B-1 — Shadow compare after write (HGETALL vs expected DB tuple).
+SCALE-3B-2 — Dispatch cohort shadow (DB online_rows vs Redis HGETALL; read-only).
 
 DRIVER_PRESENCE_REDIS=0 (default) → yazma kapalı.
 DRIVER_PRESENCE_SHADOW=1 → shadow yazma (default kapalı).
+DRIVER_PRESENCE_COHORT_SHADOW=0 (default) → dispatch cohort shadow kapalı.
 Redis hata/miss → sessiz; DB source of truth kalır.
 """
 
@@ -86,6 +88,35 @@ def should_shadow_sample_driver(driver_id: Any) -> bool:
     if not did:
         return False
     bucket = int(hashlib.md5(did.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+def cohort_shadow_enabled() -> bool:
+    """DRIVER_PRESENCE_COHORT_SHADOW=1 → dispatch cohort shadow (default kapalı)."""
+    return _env_bool("DRIVER_PRESENCE_COHORT_SHADOW", False)
+
+
+def cohort_shadow_sample_rate() -> float:
+    """DRIVER_PRESENCE_COHORT_SHADOW_SAMPLE — istek/tag hash örnekleme (default 0.01)."""
+    return _env_float("DRIVER_PRESENCE_COHORT_SHADOW_SAMPLE", 0.01)
+
+
+def cohort_shadow_max_rows() -> int:
+    """DRIVER_PRESENCE_COHORT_SHADOW_MAX_ROWS — cohort başına max satır (default 25)."""
+    return _env_int("DRIVER_PRESENCE_COHORT_SHADOW_MAX_ROWS", 25)
+
+
+def should_cohort_shadow_sample(sample_key: Any) -> bool:
+    """İstek/tag-hash örnekleme — deterministik; should_shadow_sample_driver ile aynı desen."""
+    rate = cohort_shadow_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    key = str(sample_key or "").strip()
+    if not key:
+        return False
+    bucket = int(hashlib.md5(key.encode()).hexdigest()[:8], 16) % 10000
     return bucket < int(rate * 10000)
 
 
@@ -378,6 +409,181 @@ def _shadow_compare_and_log(
                 driver_id,
                 op=operation,
                 reason="exception",
+            )
+        except Exception:
+            pass
+
+
+def _extract_db_presence_from_dispatch_row(row: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Dispatch online_rows satırından presence tuple; socket_id karşılaştırılmaz."""
+    if not isinstance(row, dict):
+        return None
+    did = normalize_driver_id(row.get("id"))
+    if not did:
+        return None
+
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    try:
+        if row.get("latitude") is not None:
+            lat = float(row["latitude"])
+    except (TypeError, ValueError):
+        pass
+    try:
+        if row.get("longitude") is not None:
+            lng = float(row["longitude"])
+    except (TypeError, ValueError):
+        pass
+
+    last_seen_raw = row.get("last_location_update") or row.get("last_seen")
+    last_seen = str(last_seen_raw) if last_seen_raw is not None else ""
+
+    vehicle_kind: Optional[str] = None
+    driver_details = row.get("driver_details")
+    if isinstance(driver_details, dict):
+        raw_vk = driver_details.get("vehicle_kind")
+        if raw_vk is not None:
+            vehicle_kind = str(raw_vk)
+
+    return _extract_db_presence_tuple(
+        did,
+        driver_online=bool(row.get("driver_online")),
+        last_seen=last_seen,
+        latitude=lat,
+        longitude=lng,
+        vehicle_kind=vehicle_kind,
+        socket_id=None,
+        socket_id_relevant=False,
+    )
+
+
+def _cohort_shadow_compare_dispatch_row(row: dict[str, Any], *, reason: str = "") -> None:
+    """Tek dispatch satırı HGETALL vs DB; hata yutulur."""
+    try:
+        expected = _extract_db_presence_from_dispatch_row(row)
+        if expected is None:
+            return
+
+        did = expected["driver_id"]
+        redis_raw = _redis_hgetall_presence(did)
+        if redis_raw is None:
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_MISS",
+                did,
+                dispatch_reason=reason,
+            )
+            return
+
+        redis_tuple = _extract_redis_presence_tuple(redis_raw)
+
+        if expected.get("driver_online") != redis_tuple.get("driver_online"):
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_STATUS_DIVERGE",
+                did,
+                dispatch_reason=reason,
+                field="driver_online",
+                db=expected.get("driver_online"),
+                redis=redis_tuple.get("driver_online"),
+            )
+            return
+
+        if not _coords_close(expected.get("latitude"), redis_tuple.get("latitude")) or not _coords_close(
+            expected.get("longitude"), redis_tuple.get("longitude")
+        ):
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_LOCATION_DIVERGE",
+                did,
+                dispatch_reason=reason,
+                db_lat=expected.get("latitude"),
+                db_lng=expected.get("longitude"),
+                redis_lat=redis_tuple.get("latitude"),
+                redis_lng=redis_tuple.get("longitude"),
+            )
+            return
+
+        if not _last_seen_close(expected.get("last_seen"), redis_tuple.get("last_seen")):
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_STATUS_DIVERGE",
+                did,
+                dispatch_reason=reason,
+                field="last_seen",
+                db=expected.get("last_seen"),
+                redis=redis_tuple.get("last_seen"),
+            )
+            return
+
+        db_vk = str(expected.get("vehicle_kind") or "")
+        redis_vk = str(redis_tuple.get("vehicle_kind") or "")
+        if db_vk != redis_vk:
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_VEHICLE_DIVERGE",
+                did,
+                dispatch_reason=reason,
+                db=db_vk or "n/a",
+                redis=redis_vk or "n/a",
+            )
+            return
+
+        if "is_active" in redis_raw:
+            db_is_active = bool(row.get("is_active"))
+            redis_is_active = _redis_online_bool(redis_raw.get("is_active"))
+            if db_is_active != redis_is_active:
+                _shadow_log_throttled(
+                    "DRIVER_PRESENCE_COHORT_SHADOW_STATUS_DIVERGE",
+                    did,
+                    dispatch_reason=reason,
+                    field="is_active",
+                    db=db_is_active,
+                    redis=redis_is_active,
+                )
+                return
+
+        _shadow_log_throttled(
+            "DRIVER_PRESENCE_COHORT_SHADOW_AGREE",
+            did,
+            dispatch_reason=reason,
+            online=expected.get("driver_online"),
+        )
+    except Exception:
+        try:
+            did = normalize_driver_id(row.get("id") if isinstance(row, dict) else "")
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_ERROR",
+                did or "n/a",
+                dispatch_reason=reason,
+                err="row",
+            )
+        except Exception:
+            pass
+
+
+def shadow_compare_dispatch_rows(
+    rows: Any,
+    *,
+    reason: str = "",
+    sample_key: Any = "",
+    max_rows: Optional[int] = None,
+) -> None:
+    """Dispatch cohort shadow: DB online_rows vs Redis HGETALL; dispatch davranışını değiştirmez."""
+    try:
+        if not cohort_shadow_enabled():
+            return
+        if not should_cohort_shadow_sample(sample_key):
+            return
+        if not rows or not isinstance(rows, list):
+            return
+
+        cap = max_rows if max_rows is not None else cohort_shadow_max_rows()
+        for row in rows[: max(0, cap)]:
+            if isinstance(row, dict):
+                _cohort_shadow_compare_dispatch_row(row, reason=reason)
+    except Exception:
+        try:
+            _shadow_log_throttled(
+                "DRIVER_PRESENCE_COHORT_SHADOW_ERROR",
+                sample_key,
+                dispatch_reason=reason,
+                err="batch",
             )
         except Exception:
             pass

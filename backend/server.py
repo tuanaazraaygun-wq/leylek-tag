@@ -2396,6 +2396,14 @@ async def find_eligible_drivers(
                 pickup_lng,
                 tag_id=tag_id,
             )
+        try:
+            driver_presence.shadow_compare_dispatch_rows(
+                online_rows,
+                reason="normal",
+                sample_key=str(tag_id or pickup_lat or ""),
+            )
+        except Exception:
+            pass
 
         if not online_rows:
             logger.warning(
@@ -2680,6 +2688,14 @@ async def _find_eligible_drivers_for_quick_match(
                 tag_id=tag_id,
                 request_id=qm_request_id,
             )
+        try:
+            driver_presence.shadow_compare_dispatch_rows(
+                result_data,
+                reason="quick_match",
+                sample_key=str(tag_id or qm_request_id or pickup_lat or ""),
+            )
+        except Exception:
+            pass
         if not result_data:
             logger.warning(
                 "find_eligible_drivers_qm: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
