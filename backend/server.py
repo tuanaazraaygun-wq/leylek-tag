@@ -166,6 +166,7 @@ from services.transfer_payment_service import (
 )
 import services.boarding_qr_store as boarding_qr_store
 import services.journey_snapshot_store as journey_snap
+from services import driver_presence_store as driver_presence
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
@@ -11188,7 +11189,7 @@ async def update_location(
         try:
             br = (
                 supabase.table("users")
-                .select("driver_online, latitude, longitude")
+                .select("driver_online, latitude, longitude, driver_details")
                 .eq("id", resolved_id)
                 .limit(1)
                 .execute()
@@ -11198,11 +11199,30 @@ async def update_location(
         except Exception:
             before_row = None
 
+        location_updated_at = datetime.utcnow().isoformat()
         supabase.table("users").update({
             "latitude": latitude,
             "longitude": longitude,
-            "last_location_update": datetime.utcnow().isoformat()
+            "last_location_update": location_updated_at
         }).eq("id", resolved_id).execute()
+
+        try:
+            if resolved_id and before_row and (
+                before_row.get("driver_online") is True
+                or isinstance(before_row.get("driver_details"), dict)
+            ):
+                driver_presence.upsert_driver_presence_from_user_row(
+                    resolved_id,
+                    {
+                        **before_row,
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "last_location_update": location_updated_at,
+                    },
+                    reason="update-location",
+                )
+        except Exception:
+            pass
 
         if (
             resolved_id
@@ -24443,6 +24463,15 @@ async def toggle_driver_online(user_id: str, is_online: bool):
             update_data["driver_activated_at"] = None
         
         supabase.table("users").update(update_data).eq("id", user_id).execute()
+
+        try:
+            driver_presence.upsert_driver_presence_from_user_row(
+                user_id,
+                {**user, "driver_online": is_online},
+                reason="toggle-offline-tombstone" if not is_online else "toggle-online",
+            )
+        except Exception:
+            pass
         
         status_text = "aktif" if is_online else "pasif"
         logger.info(f"🚗 Sürücü {status_text}: {user_id}")
