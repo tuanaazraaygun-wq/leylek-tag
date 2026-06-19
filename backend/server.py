@@ -14461,6 +14461,11 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
             update_query = update_query.eq("passenger_id", resolved_id)
         
         update_query.execute()
+        journey_snap.invalidate_journey_snapshot(
+            tag_id=tag_id,
+            passenger_id=resolved_id or pid,
+            reason="passenger_cancel_tag_delete",
+        )
 
         try:
             q_mem = dispatch_queues.get(tag_id, [])
@@ -14525,6 +14530,11 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
             update_query = update_query.eq("passenger_id", resolved_id)
         
         update_query.execute()
+        journey_snap.invalidate_journey_snapshot(
+            tag_id=tid,
+            passenger_id=resolved_id or pid,
+            reason="passenger_cancel_tag_post",
+        )
         
         # 2. Aktif teklifleri de iptal et
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tid).eq("status", "pending").execute()
@@ -16158,10 +16168,19 @@ async def start_trip(driver_id: str = None, user_id: str = None, tag_id: str = N
         }).eq("id", tag_id).eq("driver_id", resolved_id).execute()
         
         # Trip lifecycle push: TRIP_STARTED → yolcu + sürücü
+        p_id = None
+        d_id = resolved_id
         tag_row = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).limit(1).execute()
         if tag_row.data:
             p_id = tag_row.data[0].get("passenger_id")
-            d_id = tag_row.data[0].get("driver_id")
+            d_id = tag_row.data[0].get("driver_id") or d_id
+        journey_snap.invalidate_journey_snapshot(
+            tag_id=tag_id,
+            passenger_id=p_id,
+            driver_id=d_id,
+            reason="driver_start_trip",
+        )
+        if tag_row.data:
             try:
                 if p_id:
                     asyncio.create_task(send_trip_push_and_log(
@@ -16263,6 +16282,12 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
                 "code": "no_rows_updated",
                 "detail": "completion_update_had_no_effect",
             }
+        journey_snap.invalidate_journey_snapshot(
+            tag_id=tag_id,
+            passenger_id=passenger_id,
+            driver_id=drv_id,
+            reason="driver_complete_trip",
+        )
 
         # Her iki kullanıcının trip sayısını artır (sürücü veya yolcu tamamlasa da aynı çift)
         for uid in {u for u in (drv_id, passenger_id) if u}:
@@ -20055,6 +20080,12 @@ def invalidate_tag_cache(tag_id: str, passenger_id: Optional[str] = None, driver
         uk = f"user:{str(uid).strip()}"
         if uk in _user_cache:
             del _user_cache[uk]
+    journey_snap.invalidate_journey_snapshot(
+        tag_id=tag_id,
+        passenger_id=passenger_id,
+        driver_id=driver_id,
+        reason="invalidate_tag_cache",
+    )
 
 def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """İki konum arasındaki mesafeyi metre olarak hesapla (Haversine)"""

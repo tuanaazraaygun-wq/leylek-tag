@@ -157,6 +157,35 @@ def clear_user_active(user_id: str) -> None:
     _redis_delete(_user_active_key(uid))
 
 
+def invalidate_journey_snapshot(
+    tag_id: Optional[str] = None,
+    passenger_id: Optional[str] = None,
+    driver_id: Optional[str] = None,
+    reason: str = "",
+) -> None:
+    try:
+        tid = str(tag_id or "").strip()
+        pid = _normalize_user_id(passenger_id) if passenger_id else ""
+        did = _normalize_user_id(driver_id) if driver_id else ""
+
+        if tid:
+            _redis_delete(_snapshot_key(tid))
+        if pid:
+            clear_user_active(pid)
+        if did:
+            clear_user_active(did)
+
+        logger.info(
+            "JOURNEY_SNAPSHOT_INVALIDATE tag_id=%s passenger_id=%s driver_id=%s reason=%s",
+            _short_tag_id(tid) if tid else "n/a",
+            pid or "n/a",
+            did or "n/a",
+            str(reason or "").strip() or "n/a",
+        )
+    except Exception:
+        pass
+
+
 def _get_snapshot(tag_id: str) -> Optional[dict[str, Any]]:
     raw = _redis_get(_snapshot_key(tag_id))
     if not raw:
