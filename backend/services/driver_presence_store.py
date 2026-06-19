@@ -11,6 +11,7 @@ DRIVER_PRESENCE_COHORT_SHADOW=0 (default) → dispatch cohort shadow kapalı.
 DRIVER_PRESENCE_READ_SAMPLE=0.0 (default) → read canary kapalı.
 DRIVER_GEO_REDIS=0 (default) → GEO yazma kapalı.
 DRIVER_GEO_SHADOW=0 (default) → GEO shadow kapalı.
+DRIVER_GEO_DISPATCH_SHADOW=0 (default) → dispatch GEO cohort shadow kapalı.
 Redis hata/miss → sessiz; DB source of truth kalır.
 """
 
@@ -24,6 +25,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from redis_cache import get_redis_client
+from services.operation_snapshot import _driver_is_allowed_for_trip_vehicle, haversine_km
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +201,35 @@ def should_geo_shadow_sample_driver(driver_id: Any) -> bool:
     if not did:
         return False
     bucket = int(hashlib.md5(did.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+def geo_dispatch_shadow_enabled() -> bool:
+    """DRIVER_GEO_DISPATCH_SHADOW=1 → dispatch GEO cohort shadow (default kapalı)."""
+    return _env_bool("DRIVER_GEO_DISPATCH_SHADOW", False)
+
+
+def geo_dispatch_shadow_sample_rate() -> float:
+    """DRIVER_GEO_DISPATCH_SHADOW_SAMPLE — istek/tag hash örnekleme (default 0.01)."""
+    return _env_float("DRIVER_GEO_DISPATCH_SHADOW_SAMPLE", 0.01)
+
+
+def geo_dispatch_shadow_max_rows() -> int:
+    """DRIVER_GEO_DISPATCH_SHADOW_MAX_ROWS — GEO cohort başına max satır (default 50)."""
+    return _env_int("DRIVER_GEO_DISPATCH_SHADOW_MAX_ROWS", 50)
+
+
+def should_geo_dispatch_shadow_sample(sample_key: Any) -> bool:
+    """İstek/tag-hash örnekleme — deterministik; should_cohort_shadow_sample ile aynı desen."""
+    rate = geo_dispatch_shadow_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    key = str(sample_key or "").strip()
+    if not key:
+        return False
+    bucket = int(hashlib.md5(key.encode()).hexdigest()[:8], 16) % 10000
     return bucket < int(rate * 10000)
 
 
@@ -774,6 +805,266 @@ def shadow_compare_dispatch_rows(
                 sample_key,
                 dispatch_reason=reason,
                 err="batch",
+            )
+        except Exception:
+            pass
+
+
+def _geo_dispatch_shadow_key(vehicle_filter: bool, passenger_vehicle_kind: Any) -> str:
+    if not vehicle_filter:
+        return _GEO_KEY_ALL
+    return _geo_key_for_vehicle_kind(_effective_geo_vehicle_kind(passenger_vehicle_kind))
+
+
+def _decode_geo_member(member: Any) -> str:
+    if isinstance(member, bytes):
+        return normalize_driver_id(member.decode())
+    return normalize_driver_id(member)
+
+
+def _redis_georadius_driver_ids(
+    geo_key: str,
+    *,
+    pickup_lng: float,
+    pickup_lat: float,
+    radius_km: float,
+    max_rows: int,
+) -> Optional[list[str]]:
+    """GEOSEARCH veya GEORADIUS ile üye listesi; hata → None."""
+    try:
+        r = get_redis_client()
+        if r is None:
+            return None
+        count = max(1, int(max_rows))
+        radius = max(0.001, float(radius_km))
+        try:
+            if hasattr(r, "geosearch"):
+                raw = r.geosearch(
+                    name=geo_key,
+                    longitude=pickup_lng,
+                    latitude=pickup_lat,
+                    radius=radius,
+                    unit="km",
+                    count=count,
+                    sort="ASC",
+                )
+                return [_decode_geo_member(m) for m in (raw or []) if m]
+        except Exception:
+            pass
+        raw = r.georadius(
+            geo_key,
+            pickup_lng,
+            pickup_lat,
+            radius,
+            unit="km",
+            sort="ASC",
+            count=count,
+        )
+        return [_decode_geo_member(m) for m in (raw or []) if m]
+    except Exception:
+        return None
+
+
+def _build_db_geodesic_cohort(
+    rows: list,
+    *,
+    pickup_lat: float,
+    pickup_lng: float,
+    radius_km: float,
+    passenger_vehicle_kind: Any,
+    vehicle_filter: bool,
+) -> dict[str, dict[str, Any]]:
+    """online_rows içinden haversine ≤ radius_km DB kohortu; dispatch filtrelemesi yapmaz."""
+    out: dict[str, dict[str, Any]] = {}
+    rk = max(0.001, float(radius_km))
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        did = normalize_driver_id(row.get("id"))
+        if not did:
+            continue
+        lat = _parse_coord(row.get("latitude"))
+        lng = _parse_coord(row.get("longitude"))
+        if not _coords_valid(lat, lng):
+            continue
+        try:
+            dist = haversine_km(pickup_lat, pickup_lng, float(lat), float(lng))
+        except (TypeError, ValueError):
+            continue
+        if dist > rk:
+            continue
+        if vehicle_filter and not _driver_is_allowed_for_trip_vehicle(row, passenger_vehicle_kind):
+            continue
+        out[did] = row
+    return out
+
+
+def _vehicle_kind_from_dispatch_row(row: dict[str, Any]) -> str:
+    driver_details = row.get("driver_details")
+    if isinstance(driver_details, dict):
+        return _effective_geo_vehicle_kind(driver_details.get("vehicle_kind"))
+    return "car"
+
+
+def shadow_compare_dispatch_geo_cohort(
+    rows: Any,
+    *,
+    pickup_lat: float,
+    pickup_lng: float,
+    radius_km: float,
+    passenger_vehicle_kind: Any,
+    vehicle_filter: bool,
+    reason: str = "",
+    sample_key: Any = "",
+    max_rows: Optional[int] = None,
+) -> None:
+    """Dispatch GEO cohort shadow: DB haversine kohort vs Redis GEORADIUS; dispatch değiştirmez."""
+    try:
+        if not geo_dispatch_shadow_enabled():
+            return
+        if not should_geo_dispatch_shadow_sample(sample_key):
+            return
+        if not rows or not isinstance(rows, list):
+            return
+
+        try:
+            plat = float(pickup_lat)
+            plng = float(pickup_lng)
+            rk = max(0.001, float(radius_km))
+        except (TypeError, ValueError):
+            return
+
+        cap = max_rows if max_rows is not None else geo_dispatch_shadow_max_rows()
+        geo_key = _geo_dispatch_shadow_key(vehicle_filter, passenger_vehicle_kind)
+
+        db_cohort = _build_db_geodesic_cohort(
+            rows,
+            pickup_lat=plat,
+            pickup_lng=plng,
+            radius_km=rk,
+            passenger_vehicle_kind=passenger_vehicle_kind,
+            vehicle_filter=vehicle_filter,
+        )
+        db_ids = set(db_cohort.keys())
+
+        geo_raw = _redis_georadius_driver_ids(
+            geo_key,
+            pickup_lng=plng,
+            pickup_lat=plat,
+            radius_km=rk,
+            max_rows=cap,
+        )
+        if geo_raw is None:
+            _shadow_log_throttled(
+                "DRIVER_GEO_DISPATCH_SHADOW_ERROR",
+                sample_key,
+                dispatch_reason=reason,
+                err="geo_query",
+                geo_key=geo_key,
+            )
+            return
+
+        geo_ids = {normalize_driver_id(x) for x in geo_raw if x}
+        overlap = db_ids & geo_ids
+        missing_in_geo = db_ids - geo_ids
+        extra_in_geo = geo_ids - db_ids
+
+        stale_count = 0
+        kind_diverge_count = 0
+
+        for did in overlap:
+            row = db_cohort.get(did)
+            if row is None:
+                continue
+            redis_raw = _redis_hgetall_presence(did)
+            if redis_raw is None:
+                stale_count += 1
+                _shadow_log_throttled(
+                    "DRIVER_GEO_DISPATCH_SHADOW_STALE",
+                    did,
+                    dispatch_reason=reason,
+                    side="presence_missing",
+                )
+                continue
+            driver_online = bool(row.get("driver_online"))
+            last_seen = row.get("last_location_update") or row.get("last_seen")
+            if _is_presence_stale(last_seen, driver_online=driver_online):
+                stale_count += 1
+                _shadow_log_throttled(
+                    "DRIVER_GEO_DISPATCH_SHADOW_STALE",
+                    did,
+                    dispatch_reason=reason,
+                    side="presence_stale",
+                )
+            db_kind = _vehicle_kind_from_dispatch_row(row)
+            redis_kind = _effective_geo_vehicle_kind(redis_raw.get("vehicle_kind"))
+            if db_kind != redis_kind:
+                kind_diverge_count += 1
+                _shadow_log_throttled(
+                    "DRIVER_GEO_DISPATCH_SHADOW_KIND_DIVERGE",
+                    did,
+                    dispatch_reason=reason,
+                    db=db_kind,
+                    redis=redis_kind,
+                )
+
+        for did in sorted(missing_in_geo)[:cap]:
+            _shadow_log_throttled(
+                "DRIVER_GEO_DISPATCH_SHADOW_MISS",
+                did,
+                dispatch_reason=reason,
+                side="geo",
+            )
+
+        for did in sorted(extra_in_geo)[:cap]:
+            _shadow_log_throttled(
+                "DRIVER_GEO_DISPATCH_SHADOW_EXTRA",
+                did,
+                dispatch_reason=reason,
+                side="geo",
+            )
+
+        agree = (
+            len(db_ids) == len(geo_ids)
+            and not missing_in_geo
+            and not extra_in_geo
+            and stale_count == 0
+            and kind_diverge_count == 0
+        )
+
+        logger.info(
+            "DRIVER_GEO_DISPATCH_SHADOW_SUMMARY dispatch_reason=%s geo_key=%s "
+            "db_count=%s geo_count=%s overlap=%s missing_in_geo=%s extra_in_geo=%s "
+            "stale=%s kind_diverge=%s radius_km=%.3f vehicle_filter=%s agree=%s",
+            str(reason or "").strip() or "n/a",
+            geo_key,
+            len(db_ids),
+            len(geo_ids),
+            len(overlap),
+            len(missing_in_geo),
+            len(extra_in_geo),
+            stale_count,
+            kind_diverge_count,
+            rk,
+            vehicle_filter,
+            agree,
+        )
+
+        if agree:
+            _shadow_log_throttled(
+                "DRIVER_GEO_DISPATCH_SHADOW_AGREE",
+                sample_key,
+                dispatch_reason=reason,
+                geo_key=geo_key,
+                db_count=len(db_ids),
+            )
+    except Exception:
+        try:
+            _shadow_log_throttled(
+                "DRIVER_GEO_DISPATCH_SHADOW_ERROR",
+                sample_key,
+                dispatch_reason=reason,
+                err="exception",
             )
         except Exception:
             pass

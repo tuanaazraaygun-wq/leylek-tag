@@ -2404,6 +2404,19 @@ async def find_eligible_drivers(
             )
         except Exception:
             pass
+        try:
+            driver_presence.shadow_compare_dispatch_geo_cohort(
+                online_rows,
+                pickup_lat=float(pickup_lat),
+                pickup_lng=float(pickup_lng),
+                radius_km=r_km,
+                passenger_vehicle_kind=pref,
+                vehicle_filter=vehicle_filter,
+                reason="normal",
+                sample_key=str(tag_id or pickup_lat or ""),
+            )
+        except Exception:
+            pass
 
         if not online_rows:
             logger.warning(
@@ -2691,6 +2704,19 @@ async def _find_eligible_drivers_for_quick_match(
         try:
             driver_presence.shadow_compare_dispatch_rows(
                 result_data,
+                reason="quick_match",
+                sample_key=str(tag_id or qm_request_id or pickup_lat or ""),
+            )
+        except Exception:
+            pass
+        try:
+            driver_presence.shadow_compare_dispatch_geo_cohort(
+                result_data,
+                pickup_lat=float(pickup_lat),
+                pickup_lng=float(pickup_lng),
+                radius_km=float(SEQUENTIAL_DISPATCH_RADIUS_KM),
+                passenger_vehicle_kind=pref,
+                vehicle_filter=vehicle_filter,
                 reason="quick_match",
                 sample_key=str(tag_id or qm_request_id or pickup_lat or ""),
             )
