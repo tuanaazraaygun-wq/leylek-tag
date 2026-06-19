@@ -14426,6 +14426,7 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             passenger_id=passenger_id_res,
             offer_id=real_offer_id,
         )
+        invalidate_tag_cache(tag_id_final, passenger_id_final, driver_id_final)
 
         try:
             await rolling_dispatch_stop(
@@ -15746,6 +15747,8 @@ async def driver_accept_offer_http(
                 driver_id=resolved_driver_id,
             )
 
+        invalidate_tag_cache(tid, passenger_id_busy, resolved_driver_id)
+
         _tag_dispatch_obs_log(
             "driver_accept_success",
             tag_id=str(tid),
@@ -16288,12 +16291,7 @@ async def start_trip(driver_id: str = None, user_id: str = None, tag_id: str = N
         if tag_row.data:
             p_id = tag_row.data[0].get("passenger_id")
             d_id = tag_row.data[0].get("driver_id") or d_id
-        journey_snap.invalidate_journey_snapshot(
-            tag_id=tag_id,
-            passenger_id=p_id,
-            driver_id=d_id,
-            reason="driver_start_trip",
-        )
+        invalidate_tag_cache(tag_id, p_id, d_id)
         if tag_row.data:
             try:
                 if p_id:
@@ -16396,12 +16394,7 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
                 "code": "no_rows_updated",
                 "detail": "completion_update_had_no_effect",
             }
-        journey_snap.invalidate_journey_snapshot(
-            tag_id=tag_id,
-            passenger_id=passenger_id,
-            driver_id=drv_id,
-            reason="driver_complete_trip",
-        )
+        invalidate_tag_cache(tag_id, passenger_id, drv_id)
 
         # Her iki kullanıcının trip sayısını artır (sürücü veya yolcu tamamlasa da aynı çift)
         for uid in {u for u in (drv_id, passenger_id) if u}:
@@ -20995,7 +20988,7 @@ async def complete_trip_with_qr(request: Request):
             supabase.table("tags").update(update_data).eq("id", tag_id).execute()
         
         # Cache temizle
-        invalidate_tag_cache(tag_id)
+        invalidate_tag_cache(tag_id, passenger_id, driver_id)
         
         # 4. İsimleri al
         driver_user = await get_cached_user(driver_id)
@@ -22353,6 +22346,8 @@ async def handle_driver_accept_offer(sid, data):
                 tag_id=tid,
                 driver_id=resolved_driver_id,
             )
+
+        invalidate_tag_cache(tid, passenger_id_busy, resolved_driver_id)
 
         _tag_dispatch_obs_log(
             "driver_accept_success",
@@ -24022,6 +24017,7 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
             driver_id=resolved_driver_id,
             passenger_id=passenger_id,
         )
+        invalidate_tag_cache(tag_id, passenger_id, resolved_driver_id)
 
         try:
             await rolling_dispatch_stop(
