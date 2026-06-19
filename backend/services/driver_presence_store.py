@@ -3,11 +3,14 @@ SCALE-3A-1 — Driver presence Redis write foundation (no read path).
 SCALE-3B-1 — Shadow compare after write (HGETALL vs expected DB tuple).
 SCALE-3B-2 — Dispatch cohort shadow (DB online_rows vs Redis HGETALL; read-only).
 SCALE-3C-1 — Passenger driver-location read canary (HGETALL; GET endpoint only).
+SCALE-4A-1 — Driver GEO Redis write foundation (no dispatch read path).
 
 DRIVER_PRESENCE_REDIS=0 (default) → yazma kapalı.
 DRIVER_PRESENCE_SHADOW=1 → shadow yazma (default kapalı).
 DRIVER_PRESENCE_COHORT_SHADOW=0 (default) → dispatch cohort shadow kapalı.
 DRIVER_PRESENCE_READ_SAMPLE=0.0 (default) → read canary kapalı.
+DRIVER_GEO_REDIS=0 (default) → GEO yazma kapalı.
+DRIVER_GEO_SHADOW=0 (default) → GEO shadow kapalı.
 Redis hata/miss → sessiz; DB source of truth kalır.
 """
 
@@ -146,6 +149,59 @@ def should_cohort_shadow_sample(sample_key: Any) -> bool:
     return bucket < int(rate * 10000)
 
 
+def geo_redis_enabled() -> bool:
+    """DRIVER_GEO_REDIS=1 → GEO yazma açık (default kapalı)."""
+    return _env_bool("DRIVER_GEO_REDIS", False)
+
+
+def geo_shadow_enabled() -> bool:
+    """DRIVER_GEO_SHADOW=1 → GEO shadow doğrulama (default kapalı)."""
+    return _env_bool("DRIVER_GEO_SHADOW", False)
+
+
+def geo_write_enabled() -> bool:
+    """GEO yazma: redis veya shadow açıkken."""
+    return geo_redis_enabled() or geo_shadow_enabled()
+
+
+def geo_write_sample_rate() -> float:
+    """DRIVER_GEO_WRITE_SAMPLE — actor-hash GEO yazma örnekleme (default 1.0)."""
+    return _env_float("DRIVER_GEO_WRITE_SAMPLE", 1.0)
+
+
+def should_geo_write_sample_driver(driver_id: Any) -> bool:
+    """Actor-hash örnekleme — GEO yazma için deterministik."""
+    rate = geo_write_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    did = normalize_driver_id(driver_id)
+    if not did:
+        return False
+    bucket = int(hashlib.md5(did.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+def geo_shadow_sample_rate() -> float:
+    """DRIVER_GEO_SHADOW_SAMPLE — actor-hash GEO shadow örnekleme (default 0.01)."""
+    return _env_float("DRIVER_GEO_SHADOW_SAMPLE", 0.01)
+
+
+def should_geo_shadow_sample_driver(driver_id: Any) -> bool:
+    """Actor-hash örnekleme — GEO shadow için deterministik."""
+    rate = geo_shadow_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    did = normalize_driver_id(driver_id)
+    if not did:
+        return False
+    bucket = int(hashlib.md5(did.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
 def ttl_online_sec() -> int:
     """DRIVER_PRESENCE_TTL_ONLINE_SEC — online TTL (default 180)."""
     return _env_int("DRIVER_PRESENCE_TTL_ONLINE_SEC", 180)
@@ -175,6 +231,24 @@ def _utc_now_iso() -> str:
 
 def _presence_key(driver_id: str) -> str:
     return f"leylek:presence:driver:{driver_id}"
+
+
+_GEO_KEY_ALL = "leylek:geo:driver:all"
+_GEO_KEY_CAR = "leylek:geo:driver:car"
+_GEO_KEY_MOTORCYCLE = "leylek:geo:driver:motorcycle"
+
+
+def _geo_key_for_vehicle_kind(kind: str) -> str:
+    if kind == "motorcycle":
+        return _GEO_KEY_MOTORCYCLE
+    return _GEO_KEY_CAR
+
+
+def _effective_geo_vehicle_kind(raw: Any) -> str:
+    vk = str(raw or "").strip().lower()
+    if vk == "motorcycle":
+        return "motorcycle"
+    return "car"
 
 
 def _decode_redis_hash(raw: Any) -> dict[str, str]:
@@ -705,6 +779,173 @@ def shadow_compare_dispatch_rows(
             pass
 
 
+def _geo_clear_driver(driver_id: Any, reason: str = "") -> None:
+    """ZREM from all GEO keys; hata yutulur."""
+    try:
+        did = normalize_driver_id(driver_id)
+        if not did:
+            return
+        r = get_redis_client()
+        if r is None:
+            return
+        for key in (_GEO_KEY_ALL, _GEO_KEY_CAR, _GEO_KEY_MOTORCYCLE):
+            r.zrem(key, did)
+    except Exception:
+        pass
+
+
+def _geo_upsert_driver(
+    driver_id: Any,
+    *,
+    online: bool,
+    latitude: Optional[float],
+    longitude: Optional[float],
+    vehicle_kind: Optional[str],
+    reason: str = "",
+) -> None:
+    """GEOADD / ZREM driver GEO keys; hata yutulur."""
+    try:
+        if not geo_write_enabled():
+            return
+        did = normalize_driver_id(driver_id)
+        if not did or not should_geo_write_sample_driver(did):
+            return
+
+        r = get_redis_client()
+        if r is None:
+            return
+
+        effective_kind = _effective_geo_vehicle_kind(vehicle_kind)
+
+        if not online or not _coords_valid(latitude, longitude):
+            _geo_clear_driver(did, reason=reason)
+            return
+
+        old_kind: Optional[str] = None
+        try:
+            presence_raw = _redis_hgetall_presence(did)
+            if presence_raw:
+                old_kind = _effective_geo_vehicle_kind(presence_raw.get("vehicle_kind"))
+        except Exception:
+            pass
+
+        if old_kind is not None and old_kind != effective_kind:
+            r.zrem(_geo_key_for_vehicle_kind(old_kind), did)
+
+        lng = float(longitude)  # type: ignore[arg-type]
+        lat = float(latitude)  # type: ignore[arg-type]
+
+        r.geoadd(_GEO_KEY_ALL, (lng, lat, did))
+        kind_key = _geo_key_for_vehicle_kind(effective_kind)
+        r.geoadd(kind_key, (lng, lat, did))
+
+        opposite_key = (
+            _GEO_KEY_CAR if effective_kind == "motorcycle" else _GEO_KEY_MOTORCYCLE
+        )
+        r.zrem(opposite_key, did)
+
+        _geo_shadow_compare(
+            did,
+            expected_lat=lat,
+            expected_lng=lng,
+            effective_kind=effective_kind,
+            reason=reason,
+        )
+    except Exception:
+        pass
+
+
+def _geo_shadow_compare(
+    driver_id: Any,
+    *,
+    expected_lat: float,
+    expected_lng: float,
+    effective_kind: str,
+    reason: str = "",
+) -> None:
+    """Yazma sonrası GEOPOS doğrulama; hata yutulur."""
+    try:
+        if not geo_shadow_enabled():
+            return
+        did = normalize_driver_id(driver_id)
+        if not did or not should_geo_shadow_sample_driver(did):
+            return
+
+        r = get_redis_client()
+        if r is None:
+            return
+
+        all_pos = r.geopos(_GEO_KEY_ALL, did)
+        if not all_pos or all_pos[0] is None:
+            _shadow_log_throttled(
+                "DRIVER_GEO_SHADOW_MISS",
+                did,
+                reason=str(reason or "").strip() or "n/a",
+                key="all",
+            )
+            return
+
+        redis_lng, redis_lat = all_pos[0]
+        if not _coords_close(redis_lat, expected_lat) or not _coords_close(
+            redis_lng, expected_lng
+        ):
+            _shadow_log_throttled(
+                "DRIVER_GEO_SHADOW_LOCATION_DIVERGE",
+                did,
+                reason=str(reason or "").strip() or "n/a",
+                expected_lat=expected_lat,
+                expected_lng=expected_lng,
+                redis_lat=redis_lat,
+                redis_lng=redis_lng,
+            )
+            return
+
+        kind_key = _geo_key_for_vehicle_kind(effective_kind)
+        kind_pos = r.geopos(kind_key, did)
+        if not kind_pos or kind_pos[0] is None:
+            _shadow_log_throttled(
+                "DRIVER_GEO_SHADOW_KIND_DIVERGE",
+                did,
+                reason=str(reason or "").strip() or "n/a",
+                expected_kind=effective_kind,
+                side="kind_missing",
+            )
+            return
+
+        opposite_key = (
+            _GEO_KEY_CAR if effective_kind == "motorcycle" else _GEO_KEY_MOTORCYCLE
+        )
+        try:
+            opposite_score = r.zscore(opposite_key, did)
+            if opposite_score is not None:
+                _shadow_log_throttled(
+                    "DRIVER_GEO_SHADOW_KIND_DIVERGE",
+                    did,
+                    reason=str(reason or "").strip() or "n/a",
+                    expected_kind=effective_kind,
+                    side="opposite_present",
+                )
+                return
+        except Exception:
+            pass
+
+        logger.debug(
+            "DRIVER_GEO_SHADOW_AGREE driver_id=%s kind=%s reason=%s",
+            _short_driver_id(did),
+            effective_kind,
+            str(reason or "").strip() or "n/a",
+        )
+    except Exception:
+        try:
+            _shadow_log_throttled(
+                "DRIVER_GEO_SHADOW_ERROR",
+                driver_id,
+                reason=str(reason or "").strip() or "n/a",
+            )
+        except Exception:
+            pass
+
+
 def upsert_driver_presence(
     driver_id: Any,
     *,
@@ -717,55 +958,64 @@ def upsert_driver_presence(
     reason: str = "",
 ) -> None:
     """HSET + EXPIRE; tüm Redis hataları yutulur."""
-    if not presence_write_enabled():
+    if not presence_write_enabled() and not geo_write_enabled():
         return
     did = normalize_driver_id(driver_id)
     if not did:
         return
     try:
-        now_iso = _utc_now_iso()
-        last_seen_written = str(last_seen or now_iso)
-        fields = {
-            "driver_id": did,
-            "driver_online": "1" if driver_online else "0",
-            "last_seen": last_seen_written,
-            "latitude": str(latitude) if latitude is not None else "",
-            "longitude": str(longitude) if longitude is not None else "",
-            "vehicle_kind": str(vehicle_kind or ""),
-            "socket_id": str(socket_id or ""),
-            "updated_at": now_iso,
-            "schema_version": str(SCHEMA_VERSION),
-        }
-        ttl = ttl_online_sec() if driver_online else ttl_offline_sec()
+        if presence_write_enabled():
+            now_iso = _utc_now_iso()
+            last_seen_written = str(last_seen or now_iso)
+            fields = {
+                "driver_id": did,
+                "driver_online": "1" if driver_online else "0",
+                "last_seen": last_seen_written,
+                "latitude": str(latitude) if latitude is not None else "",
+                "longitude": str(longitude) if longitude is not None else "",
+                "vehicle_kind": str(vehicle_kind or ""),
+                "socket_id": str(socket_id or ""),
+                "updated_at": now_iso,
+                "schema_version": str(SCHEMA_VERSION),
+            }
+            ttl = ttl_online_sec() if driver_online else ttl_offline_sec()
 
-        r = get_redis_client()
-        if r is None:
-            return
-        key = _presence_key(did)
-        r.hset(key, mapping=fields)
-        r.expire(key, max(1, int(ttl)))
+            r = get_redis_client()
+            if r is not None:
+                key = _presence_key(did)
+                r.hset(key, mapping=fields)
+                r.expire(key, max(1, int(ttl)))
 
-        logger.info(
-            "DRIVER_PRESENCE_UPSERT driver_id=%s online=%s ttl_s=%s reason=%s",
-            _short_driver_id(did),
-            driver_online,
-            ttl,
-            str(reason or "").strip() or "n/a",
-        )
+                logger.info(
+                    "DRIVER_PRESENCE_UPSERT driver_id=%s online=%s ttl_s=%s reason=%s",
+                    _short_driver_id(did),
+                    driver_online,
+                    ttl,
+                    str(reason or "").strip() or "n/a",
+                )
 
-        _shadow_compare_and_log(
+                _shadow_compare_and_log(
+                    did,
+                    operation="upsert",
+                    expected=_extract_db_presence_tuple(
+                        did,
+                        driver_online=driver_online,
+                        last_seen=last_seen_written,
+                        latitude=latitude,
+                        longitude=longitude,
+                        vehicle_kind=vehicle_kind,
+                        socket_id=socket_id,
+                        socket_id_relevant=True,
+                    ),
+                )
+
+        _geo_upsert_driver(
             did,
-            operation="upsert",
-            expected=_extract_db_presence_tuple(
-                did,
-                driver_online=driver_online,
-                last_seen=last_seen_written,
-                latitude=latitude,
-                longitude=longitude,
-                vehicle_kind=vehicle_kind,
-                socket_id=socket_id,
-                socket_id_relevant=True,
-            ),
+            online=driver_online,
+            latitude=latitude,
+            longitude=longitude,
+            vehicle_kind=vehicle_kind,
+            reason=reason,
         )
     except Exception:
         pass
@@ -817,27 +1067,29 @@ def clear_socket_id(driver_id: Any, reason: str = "") -> None:
 
 def clear_driver_presence(driver_id: Any, reason: str = "") -> None:
     """DEL presence key; tüm Redis hataları yutulur."""
-    if not presence_write_enabled():
+    if not presence_write_enabled() and not geo_write_enabled():
         return
     did = normalize_driver_id(driver_id)
     if not did:
         return
     try:
-        r = get_redis_client()
-        if r is None:
-            return
-        r.delete(_presence_key(did))
-        logger.info(
-            "DRIVER_PRESENCE_CLEAR driver_id=%s reason=%s",
-            _short_driver_id(did),
-            str(reason or "").strip() or "n/a",
-        )
+        if presence_write_enabled():
+            r = get_redis_client()
+            if r is not None:
+                r.delete(_presence_key(did))
+                logger.info(
+                    "DRIVER_PRESENCE_CLEAR driver_id=%s reason=%s",
+                    _short_driver_id(did),
+                    str(reason or "").strip() or "n/a",
+                )
 
-        _shadow_compare_and_log(
-            did,
-            operation="clear",
-            expect_missing=True,
-        )
+                _shadow_compare_and_log(
+                    did,
+                    operation="clear",
+                    expect_missing=True,
+                )
+
+        _geo_clear_driver(did, reason=reason)
     except Exception:
         pass
 
