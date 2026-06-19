@@ -6124,6 +6124,7 @@ async def auto_cleanup_inactive_tags():
                             "cancelled_at": datetime.utcnow().isoformat(),
                             "cancel_reason": "inactivity_timeout"
                         }).eq("id", tag["id"]).execute()
+                        invalidate_tag_cache(tag["id"], tag.get("passenger_id"), tag.get("driver_id"))
                         
                         cleaned_count += 1
                         logger.info(
@@ -14531,9 +14532,10 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(pid) if pid else None
 
-        tag_check = supabase.table("tags").select("created_at").eq("id", tag_id).limit(1).execute()
+        tag_check = supabase.table("tags").select("created_at,driver_id").eq("id", tag_id).limit(1).execute()
         tag = tag_check.data[0] if tag_check.data else {}
         created_at = tag.get("created_at")
+        driver_id = tag.get("driver_id")
         if created_at:
             created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
@@ -14551,11 +14553,7 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
             update_query = update_query.eq("passenger_id", resolved_id)
         
         update_query.execute()
-        journey_snap.invalidate_journey_snapshot(
-            tag_id=tag_id,
-            passenger_id=resolved_id or pid,
-            reason="passenger_cancel_tag_delete",
-        )
+        invalidate_tag_cache(tag_id, resolved_id or pid, driver_id)
 
         try:
             q_mem = dispatch_queues.get(tag_id, [])
@@ -14599,9 +14597,10 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(pid) if pid else None
 
-        tag_check = supabase.table("tags").select("created_at").eq("id", tid).limit(1).execute()
+        tag_check = supabase.table("tags").select("created_at,driver_id").eq("id", tid).limit(1).execute()
         tag = tag_check.data[0] if tag_check.data else {}
         created_at = tag.get("created_at")
+        driver_id = tag.get("driver_id")
         if created_at:
             created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
@@ -14620,11 +14619,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
             update_query = update_query.eq("passenger_id", resolved_id)
         
         update_query.execute()
-        journey_snap.invalidate_journey_snapshot(
-            tag_id=tid,
-            passenger_id=resolved_id or pid,
-            reason="passenger_cancel_tag_post",
-        )
+        invalidate_tag_cache(tid, resolved_id or pid, driver_id)
         
         # 2. Aktif teklifleri de iptal et
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tid).eq("status", "pending").execute()
@@ -20088,12 +20083,21 @@ async def respond_end_request(tag_id: str, user_id: str, approved: bool = True):
     """Sonlandırma isteğine cevap ver"""
     try:
         if approved:
+            tag_result = (
+                supabase.table("tags")
+                .select("id,passenger_id,driver_id")
+                .eq("id", tag_id)
+                .limit(1)
+                .execute()
+            )
+            tag_row = (tag_result.data or [{}])[0]
             # Trip'i tamamla ve end_request'i temizle
             supabase.table("tags").update({
                 "status": "completed",
                 "completed_at": datetime.utcnow().isoformat(),
                 "end_request": None
             }).eq("id", tag_id).execute()
+            invalidate_tag_cache(tag_id, tag_row.get("passenger_id"), tag_row.get("driver_id"))
             
             logger.info(f"✅ Yolculuk tamamlandı (karşılıklı): {tag_id}")
             return {"success": True, "approved": True, "message": "Yolculuk tamamlandı"}
@@ -20116,12 +20120,21 @@ async def approve_trip_end(tag_id: str, user_id: str):
     try:
         if tag_id in trip_end_requests:
             del trip_end_requests[tag_id]
+        tag_result = (
+            supabase.table("tags")
+            .select("id,passenger_id,driver_id")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        tag_row = (tag_result.data or [{}])[0]
         
         # Trip'i tamamla
         supabase.table("tags").update({
             "status": "completed",
             "completed_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id).execute()
+        invalidate_tag_cache(tag_id, tag_row.get("passenger_id"), tag_row.get("driver_id"))
         
         return {"success": True, "message": "Yolculuk tamamlandı"}
     except Exception as e:
