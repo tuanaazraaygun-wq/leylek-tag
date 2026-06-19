@@ -71,6 +71,11 @@ def shadow_sample_rate() -> float:
     return _env_float("JOURNEY_SNAPSHOT_SHADOW_SAMPLE", 0.01)
 
 
+def read_sample_rate() -> float:
+    """JOURNEY_SNAPSHOT_READ_SAMPLE — actor-hash read örnekleme oranı (default 0.0)."""
+    return _env_float("JOURNEY_SNAPSHOT_READ_SAMPLE", 0.0)
+
+
 def journey_snapshot_write_enabled() -> bool:
     """Redis yazma: read path veya shadow açıkken."""
     return journey_snapshot_enabled() or journey_snapshot_shadow_enabled()
@@ -79,6 +84,20 @@ def journey_snapshot_write_enabled() -> bool:
 def should_shadow_sample_user(user_id: Any) -> bool:
     """Actor-hash örnekleme — kullanıcı başına deterministik; istek başına random yok."""
     rate = shadow_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    uid = _normalize_user_id(user_id)
+    if not uid:
+        return False
+    bucket = int(hashlib.md5(uid.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+def should_read_sample_user(user_id: Any) -> bool:
+    """Actor-hash örnekleme — read path için deterministik; istek başına random yok."""
+    rate = read_sample_rate()
     if rate >= 1.0:
         return True
     if rate <= 0.0:
@@ -311,6 +330,7 @@ def _load_snapshot_for_user(
         return None
 
     if snap.get("schema_version") != SCHEMA_VERSION:
+        clear_user_active(uid)
         _log_miss(role, "schema_mismatch", tag_id)
         return None
 
@@ -322,6 +342,7 @@ def _load_snapshot_for_user(
     ptr_status = str(pointer.get("status") or "").strip().lower()
     snap_status = str(snap.get("status") or "").strip().lower()
     if ptr_status and snap_status and ptr_status != snap_status:
+        clear_user_active(uid)
         _log_miss(role, "pointer_status_mismatch", tag_id)
         return None
 
@@ -449,6 +470,10 @@ def _extract_compare_tuple_from_snap(snap: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _read_log_throttled(code: str, role: str, tag_id: Any, **extra: Any) -> None:
+    _shadow_log_throttled(code, role, tag_id, **extra)
+
+
 def _shadow_log_throttled(code: str, role: str, tag_id: Any, **extra: Any) -> None:
     tid = _short_tag_id(tag_id)
     key = f"{code}:{role}:{tid}"
@@ -568,15 +593,24 @@ def try_get_passenger_active_tag(resolved_user_id: str) -> Optional[dict[str, An
     """Redis hit → yolcu active-tag yanıtı; miss/hata → None."""
     if not journey_snapshot_enabled():
         return None
+    if not should_read_sample_user(resolved_user_id):
+        return None
     try:
         loaded = _load_snapshot_for_user(resolved_user_id, role="passenger")
         if not loaded:
+            _read_log_throttled("JOURNEY_SNAPSHOT_READ_MISS", "passenger", "n/a")
             return None
         _, snap = loaded
         uid = _normalize_user_id(resolved_user_id)
 
         if not _uid_eq(snap.get("passenger_id"), uid):
             _log_miss("passenger", "passenger_id_mismatch", snap.get("tag_id"))
+            _read_log_throttled(
+                "JOURNEY_SNAPSHOT_READ_INVALID",
+                "passenger",
+                snap.get("tag_id"),
+                reason="passenger_id_mismatch",
+            )
             return None
 
         status = str(snap.get("status") or "").strip().lower()
@@ -599,6 +633,12 @@ def try_get_passenger_active_tag(resolved_user_id: str) -> Optional[dict[str, An
         if tag is None:
             if resp.get("success") is True:
                 _log_hit("passenger", snap.get("tag_id", ""), "null")
+                _read_log_throttled(
+                    "JOURNEY_SNAPSHOT_READ_HIT",
+                    "passenger",
+                    snap.get("tag_id", ""),
+                    status="null",
+                )
                 return copy.deepcopy(resp)
             _log_miss("passenger", "invalid_null_response", snap.get("tag_id"))
             return None
@@ -617,9 +657,16 @@ def try_get_passenger_active_tag(resolved_user_id: str) -> Optional[dict[str, An
             return None
 
         _log_hit("passenger", snap.get("tag_id", ""), tag_st)
+        _read_log_throttled(
+            "JOURNEY_SNAPSHOT_READ_HIT",
+            "passenger",
+            snap.get("tag_id", ""),
+            status=tag_st,
+        )
         return copy.deepcopy(resp)
     except Exception:
         _log_miss("passenger", "exception")
+        _read_log_throttled("JOURNEY_SNAPSHOT_READ_ERROR", "passenger", "n/a", reason="exception")
         return None
 
 
@@ -627,9 +674,12 @@ def try_get_driver_active_tag(resolved_user_id: str) -> Optional[dict[str, Any]]
     """Redis hit → sürücü active-tag/active-trip yanıtı; miss/hata → None."""
     if not journey_snapshot_enabled():
         return None
+    if not should_read_sample_user(resolved_user_id):
+        return None
     try:
         loaded = _load_snapshot_for_user(resolved_user_id, role="driver")
         if not loaded:
+            _read_log_throttled("JOURNEY_SNAPSHOT_READ_MISS", "driver", "n/a")
             return None
         _, snap = loaded
         uid = _normalize_user_id(resolved_user_id)
@@ -640,6 +690,12 @@ def try_get_driver_active_tag(resolved_user_id: str) -> Optional[dict[str, Any]]
             return None
         if not _uid_eq(driver_id, uid):
             _log_miss("driver", "driver_id_mismatch", snap.get("tag_id"))
+            _read_log_throttled(
+                "JOURNEY_SNAPSHOT_READ_INVALID",
+                "driver",
+                snap.get("tag_id"),
+                reason="driver_id_mismatch",
+            )
             return None
 
         status = str(snap.get("status") or "").strip().lower()
@@ -663,6 +719,12 @@ def try_get_driver_active_tag(resolved_user_id: str) -> Optional[dict[str, Any]]
         if tag_data is None and trip_data is None:
             if resp.get("success") is True:
                 _log_hit("driver", snap.get("tag_id", ""), "null")
+                _read_log_throttled(
+                    "JOURNEY_SNAPSHOT_READ_HIT",
+                    "driver",
+                    snap.get("tag_id", ""),
+                    status="null",
+                )
                 return copy.deepcopy(resp)
             _log_miss("driver", "invalid_null_response", snap.get("tag_id"))
             return None
@@ -687,9 +749,16 @@ def try_get_driver_active_tag(resolved_user_id: str) -> Optional[dict[str, Any]]
                 return None
 
         _log_hit("driver", snap.get("tag_id", ""), tag_st)
+        _read_log_throttled(
+            "JOURNEY_SNAPSHOT_READ_HIT",
+            "driver",
+            snap.get("tag_id", ""),
+            status=tag_st,
+        )
         return copy.deepcopy(resp)
     except Exception:
         _log_miss("driver", "exception")
+        _read_log_throttled("JOURNEY_SNAPSHOT_READ_ERROR", "driver", "n/a", reason="exception")
         return None
 
 
