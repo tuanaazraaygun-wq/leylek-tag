@@ -14642,11 +14642,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         _match_t0 = time.time()
         
         # Engellenen kullanıcıları al
-        blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
-        blocked_ids = [r["blocked_user_id"] for r in blocked_result.data]
-        blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", resolved_id).execute()
-        blocked_by_ids = [r["user_id"] for r in blocked_by_result.data]
-        all_blocked = list(set(blocked_ids + blocked_by_ids))
+        all_blocked = _get_bilateral_blocked_user_ids(resolved_id)
         
         # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
         result = (
