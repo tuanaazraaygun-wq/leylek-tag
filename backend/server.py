@@ -3789,12 +3789,18 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                 ensure_ascii=False,
             ),
         )
-        if sid_count == 0:
+        if room_member_count == 0 and sid_count == 0:
             logger.warning(
                 "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
                 event_name,
                 _mask_log_id(canonical_lo),
                 _mask_log_room(room),
+            )
+            _log_timing_safe(
+                "SOCKET_EMIT_NO_TARGET",
+                event_name=event_name,
+                user_id_masked=_mask_log_id(canonical_lo),
+                room=_mask_log_room(room),
             )
 
         _t_emit = time.monotonic()
@@ -3803,6 +3809,21 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         except Exception as em:
             logger.warning("%s emit room=%s err=%s", event_name, _mask_log_room(room), em)
         _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+
+        if room_member_count == 0 and sid_count > 0:
+            for sid in sorted(all_sids):
+                try:
+                    await sio.emit(event_name, payload, room=sid)
+                except Exception as em:
+                    logger.warning("%s emit sid=%s err=%s", event_name, _mask_log_sid(sid), em)
+            _log_timing_safe(
+                "SOCKET_EMIT_SID_FALLBACK",
+                event_name=event_name,
+                user_id_masked=_mask_log_id(canonical_lo),
+                sid_count=sid_count,
+                room_member_count=room_member_count,
+            )
+
         if event_name == "message_ack":
             logger.info(
                 "[muhabbet_ack] sent user=%s sid_count=%s room=%s",
