@@ -911,19 +911,42 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   }
   const incRi = (incoming as { route_info?: unknown }).route_info;
   const prevRi = (prev as { route_info?: unknown }).route_info;
-  const incRiEmpty =
-    incRi == null ||
-    (typeof incRi === 'object' &&
-      !Array.isArray(incRi) &&
-      Object.keys(incRi as Record<string, unknown>).length === 0);
+  const prevRiObj =
+    prevRi && typeof prevRi === 'object' && !Array.isArray(prevRi)
+      ? (prevRi as Record<string, unknown>)
+      : null;
+  const incRiObj =
+    incRi && typeof incRi === 'object' && !Array.isArray(incRi)
+      ? (incRi as Record<string, unknown>)
+      : null;
+  const incRiEmpty = incRi == null || (incRiObj != null && Object.keys(incRiObj).length === 0);
   if (
     incRiEmpty &&
-    prevRi &&
-    typeof prevRi === 'object' &&
-    !Array.isArray(prevRi) &&
-    Object.keys(prevRi as Record<string, unknown>).length > 0
+    prevRiObj &&
+    Object.keys(prevRiObj).length > 0
   ) {
     (base as { route_info?: unknown }).route_info = prevRi as Tag['route_info'];
+  } else if (prevRiObj && incRiObj) {
+    const mergedRi: Record<string, unknown> = { ...prevRiObj, ...incRiObj };
+    const preserveRouteField = (key: string, isMissing: (v: unknown) => boolean) => {
+      if (isMissing(incRiObj[key]) && !isMissing(prevRiObj[key])) {
+        mergedRi[key] = prevRiObj[key];
+      }
+    };
+    const isPolylineMissing = (v: unknown) => typeof v !== 'string' || v.length <= 2;
+    const isCoordsMissing = (v: unknown) => !Array.isArray(v) || v.length < 2;
+    const isNestedRouteMissing = (v: unknown) =>
+      v == null ||
+      (typeof v === 'object' &&
+        !Array.isArray(v) &&
+        Object.keys(v as Record<string, unknown>).length === 0);
+    preserveRouteField('overview_polyline', isPolylineMissing);
+    preserveRouteField('route_polyline', isPolylineMissing);
+    preserveRouteField('polyline', isPolylineMissing);
+    preserveRouteField('route_coordinates', isCoordsMissing);
+    preserveRouteField('coordinates', isCoordsMissing);
+    preserveRouteField('driver_to_pickup_route_info', isNestedRouteMissing);
+    (base as { route_info?: unknown }).route_info = mergedRi as Tag['route_info'];
   }
   if (!('matched_bank_account_id' in incoming)) {
     base.matched_bank_account_id = prev.matched_bank_account_id;
@@ -16031,6 +16054,16 @@ function DriverDashboard({
             socketPlOnly.passenger_location = { latitude: la, longitude: lo };
           }
         }
+        const tagObj =
+          d.tag && typeof d.tag === 'object' ? (d.tag as Record<string, unknown>) : null;
+        const rawRouteInfo = d.route_info ?? tagObj?.route_info;
+        const routeInfoFromSocket =
+          rawRouteInfo &&
+          typeof rawRouteInfo === 'object' &&
+          !Array.isArray(rawRouteInfo) &&
+          Object.keys(rawRouteInfo as Record<string, unknown>).length > 0
+            ? { ...(rawRouteInfo as Record<string, unknown>) }
+            : undefined;
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -16053,6 +16086,7 @@ function DriverDashboard({
             Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
           time_to_passenger_min:
             Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          route_info: routeInfoFromSocket,
           status: 'matched',
           matched_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
@@ -16063,7 +16097,7 @@ function DriverDashboard({
           ...socketPlOnly,
         };
         console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
-        setActiveTag(matchedTag as Tag);
+        setActiveTag((prev) => mergeTripTagState(prev, matchedTag as Tag));
       }
       
       // Backend'den de çek (ekstra bilgiler için)
