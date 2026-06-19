@@ -3493,7 +3493,12 @@ async def emit_passenger_offer_revoked(
         logger.warning(f"passenger_offer_revoked emit hatası: {e}")
 
 
-async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) -> None:
+async def _emit_driver_on_the_way_route(
+    tag_row: dict,
+    resolved_driver_id: str,
+    pickup_route_info: Optional[dict] = None,
+    trip_route_info: Optional[dict] = None,
+) -> None:
     """Eşleşme sonrası: sürücü konumu → alış rotası; driver_on_the_way + ride_matched (sürücü navigasyon uyumu)."""
     if not supabase or not isinstance(tag_row, dict):
         return
@@ -3511,39 +3516,44 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
         logger.warning("driver_on_the_way skip: invalid pickup coords tag_id=%s", tag_row.get("id"))
         return
 
-    dlat: Any = None
-    dlng: Any = None
-    try:
-        udrv = (
-            supabase.table("users")
-            .select("latitude, longitude")
-            .eq("id", did)
-            .limit(1)
-            .execute()
-        )
-        if not udrv.data and "-" in did:
+    use_precomputed_routes = isinstance(pickup_route_info, dict) and isinstance(trip_route_info, dict)
+
+    d_la: Optional[float] = None
+    d_lo: Optional[float] = None
+    if not use_precomputed_routes:
+        dlat: Any = None
+        dlng: Any = None
+        try:
             udrv = (
                 supabase.table("users")
                 .select("latitude, longitude")
-                .eq("id", did.lower())
+                .eq("id", did)
                 .limit(1)
                 .execute()
             )
-        if udrv.data:
-            dlat = udrv.data[0].get("latitude")
-            dlng = udrv.data[0].get("longitude")
-    except Exception as ex_udrv:
-        logger.warning("driver_on_the_way users lookup (non-fatal): %s", ex_udrv)
+            if not udrv.data and "-" in did:
+                udrv = (
+                    supabase.table("users")
+                    .select("latitude, longitude")
+                    .eq("id", did.lower())
+                    .limit(1)
+                    .execute()
+                )
+            if udrv.data:
+                dlat = udrv.data[0].get("latitude")
+                dlng = udrv.data[0].get("longitude")
+        except Exception as ex_udrv:
+            logger.warning("driver_on_the_way users lookup (non-fatal): %s", ex_udrv)
 
-    if dlat is None or dlng is None:
-        logger.warning("driver_on_the_way skip: missing driver coords driver_id=%s", did[:96])
-        return
-    try:
-        d_la = float(dlat)
-        d_lo = float(dlng)
-    except (TypeError, ValueError):
-        logger.warning("driver_on_the_way skip: invalid driver coords driver_id=%s", did[:96])
-        return
+        if dlat is None or dlng is None:
+            logger.warning("driver_on_the_way skip: missing driver coords driver_id=%s", did[:96])
+            return
+        try:
+            d_la = float(dlat)
+            d_lo = float(dlng)
+        except (TypeError, ValueError):
+            logger.warning("driver_on_the_way skip: invalid driver coords driver_id=%s", did[:96])
+            return
 
     droplat, droplng = tag_row.get("dropoff_lat"), tag_row.get("dropoff_lng")
     if droplat is None or droplng is None:
@@ -3556,8 +3566,16 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
         logger.warning("driver_on_the_way skip: invalid dropoff coords tag_id=%s", tag_row.get("id"))
         return
 
-    pickup_route = await get_route_info(d_la, d_lo, p_la, p_lo)
-    trip_route = await get_route_info(p_la, p_lo, d2_la, d2_lo)
+    if isinstance(pickup_route_info, dict):
+        pickup_route = pickup_route_info
+    elif d_la is not None and d_lo is not None:
+        pickup_route = await get_route_info(d_la, d_lo, p_la, p_lo)
+    else:
+        pickup_route = None
+    if isinstance(trip_route_info, dict):
+        trip_route = trip_route_info
+    else:
+        trip_route = await get_route_info(p_la, p_lo, d2_la, d2_lo)
     if (
         not isinstance(pickup_route, dict)
         or not isinstance(trip_route, dict)
@@ -16113,6 +16131,10 @@ async def driver_accept_offer_http(
         trip_distance_km = None
         trip_duration_min = None
         route_info_payload: dict[str, Any] = {}
+        ri_pk: Any = None
+        ri_trip: Any = None
+        _match_post_t0 = time.monotonic()
+        _route_ms = 0.0
         try:
             udrv = (
                 supabase.table("users")
@@ -16132,12 +16154,31 @@ async def driver_accept_offer_http(
             ):
                 dlat, dlng = udrv.data[0].get("latitude"), udrv.data[0].get("longitude")
                 if dlat is not None and dlng is not None:
-                    ri_pk = await get_route_info(
-                        float(dlat), float(dlng), float(plat), float(plng)
+                    _t_route = time.monotonic()
+                    _ri_results = await asyncio.gather(
+                        get_route_info(
+                            float(dlat), float(dlng), float(plat), float(plng)
+                        ),
+                        get_route_info(
+                            float(plat), float(plng), float(dplat), float(dplng)
+                        ),
+                        return_exceptions=True,
                     )
-                    ri_trip = await get_route_info(
-                        float(plat), float(plng), float(dplat), float(dplng)
-                    )
+                    _route_ms = (time.monotonic() - _t_route) * 1000.0
+                    if isinstance(_ri_results[0], Exception):
+                        logger.warning(
+                            "driver/accept-offer pickup route leg: %s", _ri_results[0]
+                        )
+                        ri_pk = None
+                    else:
+                        ri_pk = _ri_results[0]
+                    if isinstance(_ri_results[1], Exception):
+                        logger.warning(
+                            "driver/accept-offer trip route leg: %s", _ri_results[1]
+                        )
+                        ri_trip = None
+                    else:
+                        ri_trip = _ri_results[1]
                     if (
                         ri_pk
                         and ri_trip
@@ -16220,8 +16261,16 @@ async def driver_accept_offer_http(
                 payload["passenger_location"] = pl_http
         except Exception as _plh:
             logger.warning(f"passenger_location (driver/accept-offer HTTP): {_plh}")
+        _dotw_emit_ms = 0.0
         try:
-            await _emit_driver_on_the_way_route(updated_tag, resolved_driver_id)
+            _t_dotw = time.monotonic()
+            await _emit_driver_on_the_way_route(
+                updated_tag,
+                resolved_driver_id,
+                pickup_route_info=ri_pk if isinstance(ri_pk, dict) else None,
+                trip_route_info=ri_trip if isinstance(ri_trip, dict) else None,
+            )
+            _dotw_emit_ms = (time.monotonic() - _t_dotw) * 1000.0
         except Exception as _dotw:
             logger.warning("driver_on_the_way HTTP (non-fatal): %s", _dotw)
         try:
@@ -16237,6 +16286,15 @@ async def driver_accept_offer_http(
                 await emit_socket_event_to_user(passenger_id, "ride_matched", payload)
         except Exception as sock_e:
             logger.warning(f"driver/accept-offer HTTP socket emit: {sock_e}")
+
+        _log_timing_safe(
+            "MATCH_ACCEPT_ROUTE_TIMING",
+            path="driver_http_accept",
+            tag_id=tid,
+            route_ms=round(_route_ms, 2),
+            dotw_emit_ms=round(_dotw_emit_ms, 2),
+            total_post_match_ms=round((time.monotonic() - _match_post_t0) * 1000.0, 2),
+        )
 
         return {
             "success": True,
@@ -22902,48 +22960,58 @@ async def handle_driver_accept_offer(sid, data):
         if len(_match_pass_body) > 72:
             _match_pass_body = _match_pass_body[:69] + "…"
 
-        print("📲 SENDING PUSH DRIVER")
-        push_driver_ok = await send_push_notification(
-            resolved_driver_id,
-            "Eşleşme sağlandı",
-            _match_driver_body,
-            match_data,
-        )
-        if not push_driver_ok and driver_phone and _looks_like_phone(driver_phone):
-            push_driver_ok = await send_push_notification(
-                driver_phone,
-                "Eşleşme sağlandı",
-                _match_driver_body,
-                match_data,
-            )
-            if push_driver_ok:
-                logger.info("PUSH DRIVER SENT (retry by phone)")
-        logger.info("PUSH DRIVER SENT" if push_driver_ok else "PUSH DRIVER FAILED")
-
-        if passenger_id:
-            print("📲 SENDING PUSH PASSENGER")
-            push_p_ok = await send_push_notification(
-                passenger_id,
-                "Eşleşme sağlandı",
-                _match_pass_body,
-                match_data,
-            )
-            if not push_p_ok and passenger_phone and _looks_like_phone(passenger_phone):
-                push_p_ok = await send_push_notification(
-                    passenger_phone,
+        async def _defer_match_accept_push() -> None:
+            try:
+                print("📲 SENDING PUSH DRIVER")
+                push_driver_ok = await send_push_notification(
+                    resolved_driver_id,
                     "Eşleşme sağlandı",
-                    _match_pass_body,
+                    _match_driver_body,
                     match_data,
                 )
-                if push_p_ok:
-                    logger.info("PUSH PASSENGER SENT (retry by phone)")
-            logger.info("PUSH PASSENGER SENT" if push_p_ok else "PUSH PASSENGER FAILED")
+                if not push_driver_ok and driver_phone and _looks_like_phone(driver_phone):
+                    push_driver_ok = await send_push_notification(
+                        driver_phone,
+                        "Eşleşme sağlandı",
+                        _match_driver_body,
+                        match_data,
+                    )
+                    if push_driver_ok:
+                        logger.info("PUSH DRIVER SENT (retry by phone)")
+                logger.info("PUSH DRIVER SENT" if push_driver_ok else "PUSH DRIVER FAILED")
+
+                if passenger_id:
+                    print("📲 SENDING PUSH PASSENGER")
+                    push_p_ok = await send_push_notification(
+                        passenger_id,
+                        "Eşleşme sağlandı",
+                        _match_pass_body,
+                        match_data,
+                    )
+                    if not push_p_ok and passenger_phone and _looks_like_phone(passenger_phone):
+                        push_p_ok = await send_push_notification(
+                            passenger_phone,
+                            "Eşleşme sağlandı",
+                            _match_pass_body,
+                            match_data,
+                        )
+                        if push_p_ok:
+                            logger.info("PUSH PASSENGER SENT (retry by phone)")
+                    logger.info("PUSH PASSENGER SENT" if push_p_ok else "PUSH PASSENGER FAILED")
+            except Exception as _push_defer_err:
+                logger.warning("driver_accept_offer deferred push (non-fatal): %s", _push_defer_err)
+
+        asyncio.create_task(_defer_match_accept_push())
 
         pickup_distance_km = None
         pickup_eta_min = None
         trip_distance_km = None
         trip_duration_min = None
         route_info_payload: dict[str, Any] = {}
+        ri_sock: Any = None
+        ri_trip_sock: Any = None
+        _match_post_t0 = time.monotonic()
+        _route_ms = 0.0
         try:
             udrv_sock = (
                 supabase.table("users")
@@ -22965,12 +23033,31 @@ async def handle_driver_accept_offer(sid, data):
                     "longitude"
                 )
                 if dlat_s is not None and dlng_s is not None:
-                    ri_sock = await get_route_info(
-                        float(dlat_s), float(dlng_s), float(plat_s), float(plng_s)
+                    _t_route = time.monotonic()
+                    _ri_sock_results = await asyncio.gather(
+                        get_route_info(
+                            float(dlat_s), float(dlng_s), float(plat_s), float(plng_s)
+                        ),
+                        get_route_info(
+                            float(plat_s), float(plng_s), float(dplat_s), float(dplng_s)
+                        ),
+                        return_exceptions=True,
                     )
-                    ri_trip_sock = await get_route_info(
-                        float(plat_s), float(plng_s), float(dplat_s), float(dplng_s)
-                    )
+                    _route_ms = (time.monotonic() - _t_route) * 1000.0
+                    if isinstance(_ri_sock_results[0], Exception):
+                        logger.warning(
+                            "driver_accept_offer pickup route leg: %s", _ri_sock_results[0]
+                        )
+                        ri_sock = None
+                    else:
+                        ri_sock = _ri_sock_results[0]
+                    if isinstance(_ri_sock_results[1], Exception):
+                        logger.warning(
+                            "driver_accept_offer trip route leg: %s", _ri_sock_results[1]
+                        )
+                        ri_trip_sock = None
+                    else:
+                        ri_trip_sock = _ri_sock_results[1]
                     if (
                         ri_sock
                         and ri_trip_sock
@@ -23067,8 +23154,16 @@ async def handle_driver_accept_offer(sid, data):
         }
         if passenger_location_sock:
             payload["passenger_location"] = passenger_location_sock
+        _dotw_emit_ms = 0.0
         try:
-            await _emit_driver_on_the_way_route(tag, resolved_driver_id)
+            _t_dotw = time.monotonic()
+            await _emit_driver_on_the_way_route(
+                tag,
+                resolved_driver_id,
+                pickup_route_info=ri_sock if isinstance(ri_sock, dict) else None,
+                trip_route_info=ri_trip_sock if isinstance(ri_trip_sock, dict) else None,
+            )
+            _dotw_emit_ms = (time.monotonic() - _t_dotw) * 1000.0
         except Exception as _dotw_sock:
             logger.warning("driver_on_the_way socket (non-fatal): %s", _dotw_sock)
         if resolved_driver_id:
@@ -23083,6 +23178,14 @@ async def handle_driver_accept_offer(sid, data):
             await emit_socket_event_to_user(passenger_id, "driver_matched", payload)
             await emit_socket_event_to_user(passenger_id, "tag_matched", payload)
             await emit_socket_event_to_user(passenger_id, "ride_matched", payload)
+        _log_timing_safe(
+            "MATCH_ACCEPT_ROUTE_TIMING",
+            path="driver_socket_accept",
+            tag_id=tid,
+            route_ms=round(_route_ms, 2),
+            dotw_emit_ms=round(_dotw_emit_ms, 2),
+            total_post_match_ms=round((time.monotonic() - _match_post_t0) * 1000.0, 2),
+        )
         logger.info("SOCKET EMIT DONE driver_accept_offer")
     except Exception as e:
         logger.warning(f"driver_accept_offer post-match (non-fatal): {e}")
