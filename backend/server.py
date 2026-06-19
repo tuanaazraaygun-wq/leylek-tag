@@ -8524,6 +8524,13 @@ async def passenger_location_for_driver_socket(
 
 # Google/OSRM route bilgisi — kısa TTL ile tekrar çağrıları azaltır (Directions/OSRM maliyeti)
 _ROUTE_INFO_CACHE_TTL_SEC = 300.0
+from redis_cache import (
+    cache_get as _ri_cache_get,
+    cache_set as _ri_cache_set,
+    trim_memory_namespace as _ri_trim_memory,
+)
+_ROUTE_INFO_REDIS_NS = "ri"
+_ROUTE_INFO_REDIS_TTL_SEC = int(_ROUTE_INFO_CACHE_TTL_SEC)
 _ROUTE_INFO_CACHE_MAX = 512
 _ROUTE_INFO_CACHE: dict[str, tuple[float, dict]] = {}
 _ROUTE_INFO_INFLIGHT: Dict[str, asyncio.Task] = {}
@@ -8670,6 +8677,16 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     if hit is not None:
         return hit
 
+    try:
+        redis_hit = await asyncio.to_thread(_ri_cache_get, _ROUTE_INFO_REDIS_NS, ck)
+        if isinstance(redis_hit, dict):
+            logger.debug("[route_info] redis_hit key=%s", ck)
+            _route_info_cache_set(ck, redis_hit)
+            return dict(redis_hit)
+        logger.debug("[route_info] redis_miss key=%s", ck)
+    except Exception as e:
+        logger.debug("[route_info] redis_read_error key=%s err=%s", ck, e)
+
     inflight = _ROUTE_INFO_INFLIGHT.get(ck)
     if inflight is not None:
         logger.debug("[route_info] inflight_hit key=%s", ck)
@@ -8679,7 +8696,25 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     _ROUTE_INFO_INFLIGHT[ck] = task
     logger.debug("[route_info] inflight_start key=%s", ck)
     try:
-        return await task
+        result = await task
+        if isinstance(result, dict):
+            try:
+                await asyncio.to_thread(
+                    _ri_cache_set,
+                    _ROUTE_INFO_REDIS_NS,
+                    ck,
+                    result,
+                    _ROUTE_INFO_REDIS_TTL_SEC,
+                )
+                await asyncio.to_thread(
+                    _ri_trim_memory,
+                    _ROUTE_INFO_REDIS_NS,
+                    _ROUTE_INFO_CACHE_MAX,
+                    max(1, _ROUTE_INFO_CACHE_MAX // 8),
+                )
+            except Exception as e:
+                logger.debug("[route_info] redis_write_error key=%s err=%s", ck, e)
+        return result
     finally:
         if _ROUTE_INFO_INFLIGHT.get(ck) is task:
             _ROUTE_INFO_INFLIGHT.pop(ck, None)
