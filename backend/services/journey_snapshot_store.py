@@ -1,16 +1,19 @@
 """
 P1-B — Active journey Redis snapshot (read cache for active-tag endpoints).
 
-JOURNEY_SNAPSHOT_REDIS=0 (default) → tamamen devre dışı; Supabase path değişmez.
+JOURNEY_SNAPSHOT_REDIS=0 (default) → read path kapalı; Supabase yanıtı değişmez.
+JOURNEY_SNAPSHOT_SHADOW=1 → populate sırasında Redis ile DB karşılaştırma (log only).
 Redis hata/miss → sessiz miss; kullanıcıya yansımaz.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -43,9 +46,52 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
+def _env_float(key: str, default: float) -> float:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    try:
+        return max(0.0, min(1.0, float(str(raw).strip())))
+    except (TypeError, ValueError):
+        return default
+
+
 def journey_snapshot_enabled() -> bool:
     """JOURNEY_SNAPSHOT_REDIS=1 → active-tag read cache açık (default kapalı)."""
     return _env_bool("JOURNEY_SNAPSHOT_REDIS", False)
+
+
+def journey_snapshot_shadow_enabled() -> bool:
+    """JOURNEY_SNAPSHOT_SHADOW=1 → populate sırasında shadow karşılaştırma (default kapalı)."""
+    return _env_bool("JOURNEY_SNAPSHOT_SHADOW", False)
+
+
+def shadow_sample_rate() -> float:
+    """JOURNEY_SNAPSHOT_SHADOW_SAMPLE — actor-hash örnekleme oranı (default 0.01)."""
+    return _env_float("JOURNEY_SNAPSHOT_SHADOW_SAMPLE", 0.01)
+
+
+def journey_snapshot_write_enabled() -> bool:
+    """Redis yazma: read path veya shadow açıkken."""
+    return journey_snapshot_enabled() or journey_snapshot_shadow_enabled()
+
+
+def should_shadow_sample_user(user_id: Any) -> bool:
+    """Actor-hash örnekleme — kullanıcı başına deterministik; istek başına random yok."""
+    rate = shadow_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    uid = _normalize_user_id(user_id)
+    if not uid:
+        return False
+    bucket = int(hashlib.md5(uid.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+_shadow_log_last: dict[str, float] = {}
+_SHADOW_LOG_THROTTLE_SEC = 300.0
 
 
 def _normalize_user_id(user_id: Any) -> str:
@@ -282,6 +328,242 @@ def _load_snapshot_for_user(
     return pointer, snap
 
 
+def _load_snapshot_for_shadow(
+    resolved_user_id: str,
+    *,
+    role: str,
+) -> Optional[tuple[dict[str, Any], dict[str, Any]]]:
+    """Shadow read — read-enable gate yok; miss logları yok."""
+    try:
+        uid = _normalize_user_id(resolved_user_id)
+        if not uid:
+            return None
+
+        pointer = _get_user_active(uid)
+        if not pointer:
+            return None
+
+        tag_id = str(pointer.get("tag_id") or "").strip()
+        if not tag_id:
+            return None
+
+        snap = _get_snapshot(tag_id)
+        if not snap:
+            return None
+
+        if snap.get("schema_version") != SCHEMA_VERSION:
+            return None
+
+        if str(snap.get("tag_id") or "").strip() != tag_id:
+            return None
+
+        return pointer, snap
+    except Exception:
+        return None
+
+
+def _nested_status(tag: Any, field: str) -> Optional[str]:
+    if not isinstance(tag, dict):
+        return None
+    nested = tag.get(field)
+    if not isinstance(nested, dict):
+        return None
+    raw = nested.get("status")
+    if raw is None:
+        return None
+    out = str(raw).strip().lower()
+    return out if out else None
+
+
+def _extract_compare_tuple(
+    role: str,
+    response: dict[str, Any],
+    *,
+    resolved_user_id: str = "",
+) -> Optional[dict[str, Any]]:
+    tag = response.get("tag")
+    if tag is None:
+        return {
+            "tag_id": None,
+            "passenger_id": None,
+            "driver_id": None,
+            "status": None,
+            "end_request_status": None,
+            "transfer_payment_status": None,
+            "was_cancelled_grace": False,
+        }
+    if not isinstance(tag, dict):
+        return None
+
+    tag_id = str(tag.get("id") or "").strip() or None
+    status = str(tag.get("status") or "").strip().lower() or None
+    passenger_id = (
+        _normalize_user_id(tag.get("passenger_id")) if tag.get("passenger_id") else None
+    )
+    driver_id = _normalize_user_id(tag.get("driver_id")) if tag.get("driver_id") else None
+    uid = _normalize_user_id(resolved_user_id)
+    if role == "passenger" and uid and not passenger_id:
+        passenger_id = uid
+    if role == "driver" and uid and not driver_id:
+        driver_id = uid
+
+    was_cancelled_grace = bool(response.get("was_cancelled")) and status == "cancelled"
+
+    return {
+        "tag_id": tag_id,
+        "passenger_id": passenger_id,
+        "driver_id": driver_id,
+        "status": status,
+        "end_request_status": _nested_status(tag, "end_request"),
+        "transfer_payment_status": _nested_status(tag, "transfer_payment"),
+        "was_cancelled_grace": was_cancelled_grace,
+    }
+
+
+def _extract_compare_tuple_from_snap(snap: dict[str, Any]) -> dict[str, Any]:
+    tag_id = str(snap.get("tag_id") or "").strip() or None
+    status = str(snap.get("status") or "").strip().lower() or None
+    passenger_id = (
+        _normalize_user_id(snap.get("passenger_id")) if snap.get("passenger_id") else None
+    )
+    driver_id = _normalize_user_id(snap.get("driver_id")) if snap.get("driver_id") else None
+    was_cancelled_grace = bool(snap.get("was_cancelled_grace"))
+
+    end_request_status: Optional[str] = None
+    transfer_payment_status: Optional[str] = None
+    resp = snap.get("passenger_response")
+    if not isinstance(resp, dict):
+        resp = snap.get("driver_response")
+    if isinstance(resp, dict):
+        end_request_status = _nested_status(resp.get("tag"), "end_request")
+        transfer_payment_status = _nested_status(resp.get("tag"), "transfer_payment")
+
+    return {
+        "tag_id": tag_id,
+        "passenger_id": passenger_id,
+        "driver_id": driver_id,
+        "status": status,
+        "end_request_status": end_request_status,
+        "transfer_payment_status": transfer_payment_status,
+        "was_cancelled_grace": was_cancelled_grace,
+    }
+
+
+def _shadow_log_throttled(code: str, role: str, tag_id: Any, **extra: Any) -> None:
+    tid = _short_tag_id(tag_id)
+    key = f"{code}:{role}:{tid}"
+    now = time.monotonic()
+    last = _shadow_log_last.get(key, 0.0)
+    if now - last < _SHADOW_LOG_THROTTLE_SEC:
+        return
+    _shadow_log_last[key] = now
+    parts = " ".join(f"{k}={v}" for k, v in extra.items() if v is not None)
+    if parts:
+        logger.info("%s role=%s tag_id=%s %s", code, role, tid, parts)
+    else:
+        logger.info("%s role=%s tag_id=%s", code, role, tid)
+
+
+def _shadow_compare_and_log(role: str, resolved_user_id: str, db_response: dict[str, Any]) -> None:
+    """DB yanıtını mevcut Redis snapshot ile karşılaştır; hata yutulur."""
+    try:
+        if not journey_snapshot_shadow_enabled():
+            return
+
+        uid = _normalize_user_id(resolved_user_id)
+        if not uid or not should_shadow_sample_user(uid):
+            return
+
+        db_tuple = _extract_compare_tuple(role, db_response, resolved_user_id=uid)
+        if db_tuple is None:
+            _shadow_log_throttled("JOURNEY_SNAPSHOT_SHADOW_ERROR", role, "n/a", reason="extract_db")
+            return
+
+        loaded = _load_snapshot_for_shadow(uid, role=role)
+        db_tag_id = db_tuple.get("tag_id")
+
+        if loaded is None:
+            if db_tag_id:
+                _shadow_log_throttled("JOURNEY_SNAPSHOT_SHADOW_MISS", role, db_tag_id, side="redis")
+            else:
+                logger.debug(
+                    "JOURNEY_SNAPSHOT_SHADOW_AGREE role=%s tag_id=n/a reason=both_empty",
+                    role,
+                )
+            return
+
+        _, snap = loaded
+        redis_tuple = _extract_compare_tuple_from_snap(snap)
+        redis_tag_id = redis_tuple.get("tag_id")
+
+        if not db_tag_id and redis_tag_id:
+            _shadow_log_throttled(
+                "JOURNEY_SNAPSHOT_SHADOW_STALE",
+                role,
+                redis_tag_id,
+                redis_status=redis_tuple.get("status"),
+            )
+            return
+
+        if db_tag_id and not redis_tag_id:
+            _shadow_log_throttled("JOURNEY_SNAPSHOT_SHADOW_MISS", role, db_tag_id, side="redis_tag")
+            return
+
+        id_fields = ("tag_id", "passenger_id", "driver_id")
+        if any(db_tuple.get(f) != redis_tuple.get(f) for f in id_fields):
+            _shadow_log_throttled(
+                "JOURNEY_SNAPSHOT_SHADOW_ID_DIVERGE",
+                role,
+                db_tag_id or redis_tag_id,
+                db_tag_id=db_tuple.get("tag_id"),
+                redis_tag_id=redis_tuple.get("tag_id"),
+                db_passenger_id=db_tuple.get("passenger_id"),
+                redis_passenger_id=redis_tuple.get("passenger_id"),
+                db_driver_id=db_tuple.get("driver_id"),
+                redis_driver_id=redis_tuple.get("driver_id"),
+            )
+            return
+
+        if db_tuple.get("status") != redis_tuple.get("status"):
+            _shadow_log_throttled(
+                "JOURNEY_SNAPSHOT_SHADOW_STATUS_DIVERGE",
+                role,
+                db_tag_id or redis_tag_id,
+                field="status",
+                db=db_tuple.get("status"),
+                redis=redis_tuple.get("status"),
+            )
+            return
+
+        for field in ("end_request_status", "transfer_payment_status", "was_cancelled_grace"):
+            db_val = db_tuple.get(field)
+            redis_val = redis_tuple.get(field)
+            if db_val is None and redis_val is None:
+                continue
+            if db_val != redis_val:
+                _shadow_log_throttled(
+                    "JOURNEY_SNAPSHOT_SHADOW_STATUS_DIVERGE",
+                    role,
+                    db_tag_id or redis_tag_id,
+                    field=field,
+                    db=db_val,
+                    redis=redis_val,
+                )
+                return
+
+        logger.debug(
+            "JOURNEY_SNAPSHOT_SHADOW_AGREE role=%s tag_id=%s status=%s",
+            role,
+            _short_tag_id(db_tag_id),
+            db_tuple.get("status"),
+        )
+    except Exception:
+        try:
+            _shadow_log_throttled("JOURNEY_SNAPSHOT_SHADOW_ERROR", role, "n/a", reason="exception")
+        except Exception:
+            pass
+
+
 def try_get_passenger_active_tag(resolved_user_id: str) -> Optional[dict[str, Any]]:
     """Redis hit → yolcu active-tag yanıtı; miss/hata → None."""
     if not journey_snapshot_enabled():
@@ -413,12 +695,14 @@ def try_get_driver_active_tag(resolved_user_id: str) -> Optional[dict[str, Any]]
 
 def populate_from_passenger_path(resolved_user_id: str, response: dict[str, Any]) -> None:
     """Supabase yolcu active-tag yanıtından snapshot populate (hata yutulur)."""
-    if not journey_snapshot_enabled():
+    if not journey_snapshot_write_enabled():
         return
     try:
         uid = _normalize_user_id(resolved_user_id)
         if not uid:
             return
+
+        _shadow_compare_and_log("passenger", uid, response)
 
         tag = response.get("tag")
         if tag is None:
@@ -461,12 +745,14 @@ def populate_from_passenger_path(resolved_user_id: str, response: dict[str, Any]
 
 def populate_from_driver_path(resolved_user_id: str, response: dict[str, Any]) -> None:
     """Supabase sürücü active-trip yanıtından snapshot populate (hata yutulur)."""
-    if not journey_snapshot_enabled():
+    if not journey_snapshot_write_enabled():
         return
     try:
         uid = _normalize_user_id(resolved_user_id)
         if not uid:
             return
+
+        _shadow_compare_and_log("driver", uid, response)
 
         tag_data = response.get("tag")
         if tag_data is None:
