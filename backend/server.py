@@ -167,6 +167,7 @@ from services.transfer_payment_service import (
 import services.boarding_qr_store as boarding_qr_store
 import services.journey_snapshot_store as journey_snap
 from services import driver_presence_store as driver_presence
+from services import socketio_cluster
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
@@ -458,11 +459,21 @@ logger.info("🌐 CORS allow_origins (%d): %s", len(CORS_ALLOW_ORIGINS), ", ".jo
 _socket_debug_raw = (os.getenv("SOCKET_DEBUG") or "").strip().lower()
 _socket_debug_enabled = _socket_debug_raw in ("1", "true", "yes", "on")
 
-sio = socketio.AsyncServer(
-    async_mode="asgi",
-    cors_allowed_origins=CORS_ALLOW_ORIGINS,
-    logger=_socket_debug_enabled,
-    engineio_logger=_socket_debug_enabled,
+socketio_client_manager = socketio_cluster.build_socketio_client_manager()
+_sio_server_kwargs: dict = {
+    "async_mode": "asgi",
+    "cors_allowed_origins": CORS_ALLOW_ORIGINS,
+    "logger": _socket_debug_enabled,
+    "engineio_logger": _socket_debug_enabled,
+}
+if socketio_client_manager is not None:
+    _sio_server_kwargs["client_manager"] = socketio_client_manager
+sio = socketio.AsyncServer(**_sio_server_kwargs)
+logger.info(
+    "SOCKET_CLUSTER_MODE=%s SOCKETIO_REDIS_ADAPTER=%s SOCKETIO_REDIS_CHANNEL=%s",
+    socketio_cluster.socketio_cluster_mode_label(),
+    "enabled" if socketio_cluster.socketio_redis_adapter_enabled() else "disabled",
+    socketio_cluster.socketio_redis_channel(),
 )
 
 # Aktif kullanıcılar: {user_id: socket_id}

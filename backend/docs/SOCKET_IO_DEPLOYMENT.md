@@ -47,3 +47,25 @@ Yanıt **JSON** olmalı (örn. `0{"sid":"..."}`); **404** olmamalı.
 
 ### 6. `dispatch_queue` tablosu
 `GET /api/driver/dispatch-pending-offer` yalnızca bu tablodaki `status=sent` satırlarına bakar. Insert hataları (FK, eksik tablo, yanlış kolon) logda **ERROR** olarak görünür; düzeltmeden polling ile teklif yakalanamaz.
+
+### 7. Socket.IO Redis adapter (SCALE-5B — foundation)
+
+Varsayılan: **`SOCKETIO_REDIS_ADAPTER=0`** (bellek modu). Prod ortamda adapter **açılmamalı**; mevcut tek-process davranışı aynı kalır.
+
+Startup logları:
+- `SOCKET_CLUSTER_MODE=memory` veya `redis`
+- `SOCKETIO_REDIS_ADAPTER=disabled` veya `enabled`
+- `SOCKETIO_REDIS_CHANNEL=...`
+
+Adapter'ı yalnızca **tek backend node** üzerinde test edin. **İki veya daha fazla backend node** çalıştırmayın — dispatch leader lock olmadan `connected_users` ve dispatch kuyrukları node'lar arasında tutarsız kalır.
+
+Örnek env (yalnızca tek node test):
+```bash
+SOCKETIO_REDIS_ADAPTER=1
+SOCKETIO_REDIS_CHANNEL=leylek-socketio
+# Redis URL (öncelik sırası):
+SOCKET_REDIS_URL=redis://127.0.0.1:6379/0
+# veya mevcut REDIS_URL / REDIS_HOST+REDIS_PORT+REDIS_PASSWORD+REDIS_DB
+```
+
+Redis bağlanamazsa süreç bellek moduna düşer; startup'ta `SOCKET_CLUSTER_MODE=memory` görünür.
