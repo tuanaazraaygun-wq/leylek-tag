@@ -1291,6 +1291,113 @@ def _fetch_online_users_for_dispatch(
     return []
 
 
+def _fetch_dispatch_users_by_ids(now_iso: str, driver_ids: list) -> list:
+    """Redis GEO adayları DB doğrulama — _DISPATCH_ONLINE_DRIVER_SELECT_FULL kolonları."""
+    if not supabase or not driver_ids:
+        return []
+    seen: set[str] = set()
+    ids: list[str] = []
+    for raw in driver_ids:
+        did = str(raw or "").strip().lower()
+        if did and did not in seen:
+            seen.add(did)
+            ids.append(did)
+    if not ids:
+        return []
+
+    batch_size = max(1, driver_presence.geo_dispatch_read_db_verify_batch())
+    all_rows: list = []
+    last_err: Optional[Exception] = None
+    for offset in range(0, len(ids), batch_size):
+        chunk = ids[offset : offset + batch_size]
+        chunk_rows: Optional[list] = None
+        for sel in (_DISPATCH_ONLINE_DRIVER_SELECT_FULL, _DISPATCH_ONLINE_DRIVER_SELECT_MIN):
+            try:
+                query = (
+                    supabase.table("users")
+                    .select(sel)
+                    .in_("id", chunk)
+                    .eq("driver_online", True)
+                    .eq("is_active", True)
+                )
+                query = _apply_driver_active_until_filter(query, now_iso)
+                result = query.execute()
+                if sel != _DISPATCH_ONLINE_DRIVER_SELECT_FULL:
+                    logger.warning(
+                        "fetch_dispatch_users_by_ids select_fallback select=%s",
+                        sel,
+                    )
+                chunk_rows = result.data or []
+                break
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    "fetch_dispatch_users_by_ids select_fallback select=%s err=%s",
+                    sel,
+                    e,
+                )
+        if chunk_rows is None:
+            if last_err is not None:
+                raise last_err
+            continue
+        all_rows.extend(chunk_rows)
+
+    if not all_rows:
+        return []
+
+    row_by_id = {str(r.get("id") or "").strip().lower(): r for r in all_rows if isinstance(r, dict)}
+    ordered: list = []
+    for did in ids:
+        row = row_by_id.get(did)
+        if row is not None:
+            ordered.append(row)
+    return ordered
+
+
+def _fetch_online_users_for_dispatch_with_geo_canary(
+    now_iso: str,
+    pickup_lat: Optional[float] = None,
+    pickup_lng: Optional[float] = None,
+    *,
+    radius_km: float,
+    passenger_vehicle_kind: Optional[str] = None,
+    vehicle_filter: bool = True,
+    sample_key: str = "",
+) -> list:
+    """Dispatch aday keşfi: GEO read canary veya mevcut SQL yolu."""
+    if not driver_presence.geo_dispatch_read_enabled():
+        return _fetch_online_users_for_dispatch(now_iso, pickup_lat, pickup_lng)
+    if not driver_presence.should_geo_dispatch_read_sample(sample_key):
+        return _fetch_online_users_for_dispatch(now_iso, pickup_lat, pickup_lng)
+    if pickup_lat is None or pickup_lng is None:
+        return _fetch_online_users_for_dispatch(now_iso, pickup_lat, pickup_lng)
+
+    try:
+        candidate_ids = driver_presence.fetch_geo_dispatch_candidate_ids(
+            float(pickup_lat),
+            float(pickup_lng),
+            float(radius_km),
+            vehicle_filter,
+            passenger_vehicle_kind,
+            driver_presence.geo_dispatch_read_max_ids(),
+        )
+    except Exception:
+        candidate_ids = None
+
+    if candidate_ids is None:
+        return _fetch_online_users_for_dispatch(now_iso, pickup_lat, pickup_lng)
+
+    try:
+        verified_rows = _fetch_dispatch_users_by_ids(now_iso, candidate_ids)
+    except Exception:
+        return _fetch_online_users_for_dispatch(now_iso, pickup_lat, pickup_lng)
+
+    if not verified_rows and driver_presence.geo_dispatch_read_empty_fallback_enabled():
+        return _fetch_online_users_for_dispatch(now_iso, pickup_lat, pickup_lng)
+
+    return verified_rows
+
+
 def _fetch_user_row_for_dispatch_offer(uid: str) -> Optional[dict]:
     """Tek sürücü dispatch guard: 42703 → MIN select fallback."""
     if not supabase or not uid:
@@ -2387,7 +2494,15 @@ async def find_eligible_drivers(
 
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
-        online_rows = _fetch_online_users_for_dispatch(now, pickup_lat, pickup_lng)
+        online_rows = _fetch_online_users_for_dispatch_with_geo_canary(
+            now,
+            pickup_lat,
+            pickup_lng,
+            radius_km=r_km,
+            passenger_vehicle_kind=pref,
+            vehicle_filter=vehicle_filter,
+            sample_key=str(tag_id or pickup_lat or ""),
+        )
         if SCALE1A_SQL_BBOX_SHADOW:
             _scale_sql_bbox_shadow_log(
                 "normal",

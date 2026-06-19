@@ -4,6 +4,7 @@ SCALE-3B-1 — Shadow compare after write (HGETALL vs expected DB tuple).
 SCALE-3B-2 — Dispatch cohort shadow (DB online_rows vs Redis HGETALL; read-only).
 SCALE-3C-1 — Passenger driver-location read canary (HGETALL; GET endpoint only).
 SCALE-4A-1 — Driver GEO Redis write foundation (no dispatch read path).
+SCALE-4C-1 — Dispatch GEO read canary (GEORADIUS + HGETALL; DB verify in server).
 
 DRIVER_PRESENCE_REDIS=0 (default) → yazma kapalı.
 DRIVER_PRESENCE_SHADOW=1 → shadow yazma (default kapalı).
@@ -12,6 +13,8 @@ DRIVER_PRESENCE_READ_SAMPLE=0.0 (default) → read canary kapalı.
 DRIVER_GEO_REDIS=0 (default) → GEO yazma kapalı.
 DRIVER_GEO_SHADOW=0 (default) → GEO shadow kapalı.
 DRIVER_GEO_DISPATCH_SHADOW=0 (default) → dispatch GEO cohort shadow kapalı.
+DRIVER_GEO_READ=0 (default) → dispatch GEO read canary kapalı.
+DRIVER_GEO_READ_SAMPLE=0.0 (default) → read canary örnekleme kapalı.
 Redis hata/miss → sessiz; DB source of truth kalır.
 """
 
@@ -233,6 +236,50 @@ def should_geo_dispatch_shadow_sample(sample_key: Any) -> bool:
     return bucket < int(rate * 10000)
 
 
+def geo_dispatch_read_enabled() -> bool:
+    """DRIVER_GEO_READ=1 → dispatch GEO read canary (default kapalı)."""
+    return _env_bool("DRIVER_GEO_READ", False)
+
+
+def geo_dispatch_read_sample_rate() -> float:
+    """DRIVER_GEO_READ_SAMPLE — istek/tag hash örnekleme (default 0.0)."""
+    return _env_float("DRIVER_GEO_READ_SAMPLE", 0.0)
+
+
+def should_geo_dispatch_read_sample(sample_key: Any) -> bool:
+    """İstek/tag-hash örnekleme — deterministik; should_geo_dispatch_shadow_sample ile aynı desen."""
+    rate = geo_dispatch_read_sample_rate()
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    key = str(sample_key or "").strip()
+    if not key:
+        return False
+    bucket = int(hashlib.md5(key.encode()).hexdigest()[:8], 16) % 10000
+    return bucket < int(rate * 10000)
+
+
+def geo_dispatch_read_max_ids() -> int:
+    """DRIVER_GEO_MAX_IDS — GEO read başına max aday (default 50)."""
+    return _env_int("DRIVER_GEO_MAX_IDS", 50)
+
+
+def geo_dispatch_read_pipeline_enabled() -> bool:
+    """DRIVER_GEO_PIPELINE=1 → HGETALL pipeline (default açık)."""
+    return _env_bool("DRIVER_GEO_PIPELINE", True)
+
+
+def geo_dispatch_read_db_verify_batch() -> int:
+    """DRIVER_GEO_DB_VERIFY_BATCH — DB verify IN batch boyutu (default 50)."""
+    return _env_int("DRIVER_GEO_DB_VERIFY_BATCH", 50)
+
+
+def geo_dispatch_read_empty_fallback_enabled() -> bool:
+    """DRIVER_GEO_READ_EMPTY_FALLBACK=1 → boş verify sonrası SQL fallback (default açık)."""
+    return _env_bool("DRIVER_GEO_READ_EMPTY_FALLBACK", True)
+
+
 def ttl_online_sec() -> int:
     """DRIVER_PRESENCE_TTL_ONLINE_SEC — online TTL (default 180)."""
     return _env_int("DRIVER_PRESENCE_TTL_ONLINE_SEC", 180)
@@ -325,6 +372,29 @@ def _redis_hgetall_presence(driver_id: str) -> Optional[dict[str, str]]:
         if not raw:
             return None
         return _decode_redis_hash(raw)
+    except Exception:
+        return None
+
+
+def _redis_hgetall_presence_batch(driver_ids: list[str]) -> Optional[list[Optional[dict[str, str]]]]:
+    """Pipeline HGETALL; hata → None."""
+    try:
+        r = get_redis_client()
+        if r is None:
+            return None
+        if not driver_ids:
+            return []
+        pipe = r.pipeline()
+        for did in driver_ids:
+            pipe.hgetall(_presence_key(did))
+        raw_results = pipe.execute()
+        out: list[Optional[dict[str, str]]] = []
+        for raw in raw_results or []:
+            if not raw:
+                out.append(None)
+            else:
+                out.append(_decode_redis_hash(raw))
+        return out
     except Exception:
         return None
 
@@ -820,6 +890,64 @@ def _decode_geo_member(member: Any) -> str:
     if isinstance(member, bytes):
         return normalize_driver_id(member.decode())
     return normalize_driver_id(member)
+
+
+def fetch_geo_dispatch_candidate_ids(
+    pickup_lat: float,
+    pickup_lng: float,
+    radius_km: float,
+    vehicle_filter: bool,
+    passenger_vehicle_kind: Any,
+    max_ids: int,
+) -> Optional[list[str]]:
+    """Redis GEORADIUS + presence doğrulama; hata → None, başarı → sıralı aday id listesi."""
+    try:
+        try:
+            plat = float(pickup_lat)
+            plng = float(pickup_lng)
+            rk = max(0.001, float(radius_km))
+        except (TypeError, ValueError):
+            return None
+
+        cap = max(1, int(max_ids))
+        geo_key = _geo_dispatch_shadow_key(vehicle_filter, passenger_vehicle_kind)
+
+        geo_raw = _redis_georadius_driver_ids(
+            geo_key,
+            pickup_lng=plng,
+            pickup_lat=plat,
+            radius_km=rk,
+            max_rows=cap,
+        )
+        if geo_raw is None:
+            return None
+
+        ids = [normalize_driver_id(x) for x in (geo_raw or []) if x]
+        ids = [x for x in ids if x][:cap]
+        if not ids:
+            return []
+
+        if geo_dispatch_read_pipeline_enabled():
+            presence_rows = _redis_hgetall_presence_batch(ids)
+            if presence_rows is None:
+                return None
+        else:
+            presence_rows = [_redis_hgetall_presence(did) for did in ids]
+
+        candidates: list[str] = []
+        for did, redis_raw in zip(ids, presence_rows):
+            if not redis_raw:
+                continue
+            validated = _validate_presence_for_read(redis_raw, did)
+            if validated is None:
+                continue
+            if not validated.get("driver_online"):
+                continue
+            candidates.append(did)
+
+        return candidates
+    except Exception:
+        return None
 
 
 def _redis_georadius_driver_ids(
