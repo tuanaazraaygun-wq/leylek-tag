@@ -8505,7 +8505,7 @@ async def passenger_location_for_driver_socket(
 
 
 # Google/OSRM route bilgisi — kısa TTL ile tekrar çağrıları azaltır (Directions/OSRM maliyeti)
-_ROUTE_INFO_CACHE_TTL_SEC = 90.0
+_ROUTE_INFO_CACHE_TTL_SEC = 300.0
 _ROUTE_INFO_CACHE_MAX = 512
 _ROUTE_INFO_CACHE: dict[str, tuple[float, dict]] = {}
 
@@ -8684,7 +8684,7 @@ def _bbox_road_prefilter_ok(
 # Tek gerçek yol mesafesi: Google Distance Matrix (varsa) veya OSRM. Haversine ile eşleşme yok.
 _MATCH_ROUTE_BBOX_DEG = 0.25
 _MATCH_ROUTE_TOP_N = 10
-_MATCH_ROUTE_CACHE_TTL_SEC = 30.0
+_MATCH_ROUTE_CACHE_TTL_SEC = 120.0
 _MATCH_ROUTE_CACHE_MAX = 4096
 _MATCH_ROUTE_CACHE: dict[str, tuple[float, float, float]] = {}
 
