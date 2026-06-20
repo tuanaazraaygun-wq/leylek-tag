@@ -191,7 +191,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, playPaymentConfirmedSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -11035,6 +11035,7 @@ function PassengerDashboard({
           rideCreateLastError: sanitizeRideCreateError(message),
           rideCreatePassengerUiState: 'error_alert',
         });
+        void playFeedbackErrorSound();
         appAlert('Hata', message);
       }
     } finally {
@@ -11462,10 +11463,12 @@ function PassengerDashboard({
         }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
       } else {
         setMatchingInProgress(false);
+        void playFeedbackErrorSound();
         appAlert('Hata', 'Teklif kabul edilemedi');
       }
     } catch (error) {
       setMatchingInProgress(false);
+      void playFeedbackErrorSound();
       appAlert('Hata', 'Teklif kabul edilemedi');
     }
   };

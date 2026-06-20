@@ -580,3 +580,40 @@ export async function playPaymentConfirmedSound(): Promise<void> {
     if (__DEV__) console.warn('playPaymentConfirmedSound', e);
   }
 }
+
+// ── Kritik işlem hatası — yumuşak uyarı ──
+
+const FEEDBACK_ERROR_COOLDOWN_MS = 1200;
+const FEEDBACK_ERROR_VOLUME = 0.5;
+
+const FEEDBACK_ERROR_SOURCE = require('../assets/sounds/feedback-error.wav');
+
+let lastFeedbackErrorAt = 0;
+
+/** Form / API işlemi başarısız — kritik geri bildirim */
+export async function playFeedbackErrorSound(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+
+  const now = Date.now();
+  if (now - lastFeedbackErrorAt < FEEDBACK_ERROR_COOLDOWN_MS) return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(FEEDBACK_ERROR_SOURCE, {
+      shouldPlay: false,
+      volume: FEEDBACK_ERROR_VOLUME,
+      isLooping: false,
+    });
+    lastFeedbackErrorAt = now;
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playFeedbackErrorSound', e);
+  }
+}
