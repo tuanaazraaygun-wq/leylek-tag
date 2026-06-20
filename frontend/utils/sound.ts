@@ -429,3 +429,61 @@ export async function tryPlayDriverOfferSoundFromPushData(data: unknown): Promis
   if (!(await isPersistedDriverUser())) return;
   notifyDriverNewOfferSoundFromForegroundPush(tagId);
 }
+
+// ── Quick Match sürücü daveti — operasyon çağrısı (dispatch teklif yolundan ayrı) ──
+
+const QUICK_MATCH_OPS_COOLDOWN_MS = 2000;
+const QUICK_MATCH_OPS_VOLUME = 0.62;
+
+const QUICK_MATCH_OPS_SOUND_SOURCE = require('../assets/sounds/quick-match-driver-ops.wav');
+
+/** Bu oturumda ops sesi çalındı — invite_id başına tek çalma */
+const quickMatchOpsChimedInviteIds = new Set<string>();
+let lastQuickMatchOpsAt = 0;
+
+async function playQuickMatchDriverOpsCall(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+
+  const now = Date.now();
+  if (now - lastQuickMatchOpsAt < QUICK_MATCH_OPS_COOLDOWN_MS) {
+    return;
+  }
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(QUICK_MATCH_OPS_SOUND_SOURCE, {
+      shouldPlay: false,
+      volume: QUICK_MATCH_OPS_VOLUME,
+      isLooping: false,
+    });
+    lastQuickMatchOpsAt = now;
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playQuickMatchDriverOpsCall', e);
+  }
+}
+
+/**
+ * Quick Match — yeni sürücü daveti (foreground). Aynı invite_id tekrar çalmaz.
+ * App background/inactive ise playQuickMatchDriverOpsCall no-op.
+ */
+export function notifyQuickMatchDriverOpsSoundFromInvite(inviteId: string): void {
+  const id = String(inviteId || '').trim();
+  if (!id) return;
+  if (quickMatchOpsChimedInviteIds.has(id)) return;
+  quickMatchOpsChimedInviteIds.add(id);
+  void playQuickMatchDriverOpsCall();
+}
+
+/** Oturum kapanışı / QM driver session disable */
+export function resetQuickMatchDriverOpsSoundGate(): void {
+  quickMatchOpsChimedInviteIds.clear();
+  lastQuickMatchOpsAt = 0;
+}

@@ -191,7 +191,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound } from '../utils/sound';
+import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -17686,6 +17686,56 @@ function DriverDashboard({
     hasActiveTag: Boolean(activeTag),
     onMatched: handleQuickMatchDriverMatched,
   });
+
+  /** QM ops ses — restore/resume’da bekleyen davet sessiz; yeni invite_id çalar */
+  const quickMatchOpsRestoreFinishedRef = useRef(false);
+  const quickMatchOpsResumeBaselineInviteIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!quickMatchDriverEnabled) {
+      quickMatchOpsRestoreFinishedRef.current = false;
+      quickMatchOpsResumeBaselineInviteIdRef.current = null;
+      resetQuickMatchDriverOpsSoundGate();
+      return;
+    }
+    if (quickMatchDriverSession.isRestoring) {
+      quickMatchOpsRestoreFinishedRef.current = false;
+      return;
+    }
+    if (quickMatchOpsRestoreFinishedRef.current) {
+      return;
+    }
+    quickMatchOpsRestoreFinishedRef.current = true;
+    if (quickMatchDriverSession.status === 'pending') {
+      const baselineId = String(quickMatchDriverSession.invite?.invite_id || '').trim();
+      if (baselineId) {
+        quickMatchOpsResumeBaselineInviteIdRef.current = baselineId;
+      }
+    }
+  }, [
+    quickMatchDriverEnabled,
+    quickMatchDriverSession.isRestoring,
+    quickMatchDriverSession.status,
+    quickMatchDriverSession.invite?.invite_id,
+  ]);
+
+  useEffect(() => {
+    if (!quickMatchDriverEnabled) return;
+    if (quickMatchDriverSession.isRestoring) return;
+    if (!quickMatchOpsRestoreFinishedRef.current) return;
+    if (quickMatchDriverSession.status !== 'pending') return;
+
+    const inviteId = String(quickMatchDriverSession.invite?.invite_id || '').trim();
+    if (!inviteId) return;
+    if (inviteId === quickMatchOpsResumeBaselineInviteIdRef.current) return;
+
+    notifyQuickMatchDriverOpsSoundFromInvite(inviteId);
+  }, [
+    quickMatchDriverEnabled,
+    quickMatchDriverSession.isRestoring,
+    quickMatchDriverSession.status,
+    quickMatchDriverSession.invite?.invite_id,
+  ]);
 
   const trustedDirectDriverSession = useTrustedDirectDriverSession({
     enabled: trustedDirectDriverEnabled,
