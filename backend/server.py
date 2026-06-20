@@ -490,7 +490,7 @@ if socketio_client_manager is not None:
     _sio_server_kwargs["client_manager"] = socketio_client_manager
 sio = socketio.AsyncServer(**_sio_server_kwargs)
 logger.info(
-    "SOCKET_CLUSTER_MODE=%s SOCKETIO_REDIS_ADAPTER=%s SOCKETIO_REDIS_CHANNEL=%s",
+    "SOCKET_CLUSTER_MODE=%s SOCKETIO_REDIS_ADAPTER=%s channel=%s",
     socketio_cluster.socketio_cluster_mode_label(),
     "enabled" if socketio_cluster.socketio_redis_adapter_enabled() else "disabled",
     socketio_cluster.socketio_redis_channel(),

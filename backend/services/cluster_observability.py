@@ -87,6 +87,7 @@ def collect_cluster_snapshot(
         "node_id": get_node_id(),
         "enabled": cluster_obs_enabled(),
         "socketio_mode": socketio_cluster.socketio_cluster_mode_label(),
+        "cluster_mode_configured": socketio_cluster.socket_cluster_mode_env(),
         "adapter_enabled": socketio_cluster.socketio_redis_adapter_enabled(),
         "channel": socketio_cluster.socketio_redis_channel(),
         "socket_unique_sids": len(socket_id_to_user),

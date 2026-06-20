@@ -1,8 +1,9 @@
 """
-Socket.IO Redis adapter foundation (SCALE-5B).
+Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 shadow prep).
 
 SOCKETIO_REDIS_ADAPTER=0 → yalnız bellek; varsayılan davranış değişmez.
-Redis bağlanamazsa sessizce bellek moduna düşer (manager None).
+SOCKET_CLUSTER_MODE=memory (varsayılan) → adapter açık olsa bile Redis denenmez.
+Her iki flag açıkken Redis bağlanamazsa sessizce bellek moduna düşer (manager None).
 """
 
 from __future__ import annotations
@@ -25,6 +26,14 @@ def socketio_redis_adapter_enabled() -> bool:
         "yes",
         "on",
     )
+
+
+def socket_cluster_mode_env() -> str:
+    """SOCKET_CLUSTER_MODE — varsayılan memory; redis/cluster → redis."""
+    raw = (os.getenv("SOCKET_CLUSTER_MODE") or "memory").strip().lower()
+    if raw in ("redis", "cluster"):
+        return "redis"
+    return "memory"
 
 
 def socketio_redis_channel() -> str:
@@ -50,8 +59,14 @@ def _build_redis_url() -> str:
 def build_socketio_client_manager() -> Optional[Any]:
     """AsyncRedisManager veya None; hata durumunda asla raise etmez."""
     global _cluster_mode_label
+    _cluster_mode_label = "memory"
     if not socketio_redis_adapter_enabled():
-        _cluster_mode_label = "memory"
+        return None
+    if socket_cluster_mode_env() != "redis":
+        logger.info(
+            "[socketio_cluster] shadow prep: SOCKET_CLUSTER_MODE=%s, Redis adapter skipped",
+            socket_cluster_mode_env(),
+        )
         return None
     try:
         import socketio as _socketio
