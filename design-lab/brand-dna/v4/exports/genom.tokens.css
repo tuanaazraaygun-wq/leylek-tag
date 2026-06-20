@@ -1,0 +1,20 @@
+/**
+ * LeylekTAG Logo Genom Tokens — F1 Meridian Wing
+ * Scope: design-lab/brand-dna/v4/exports/ only
+ */
+:root {
+  --logo-accent: #00D4AA;
+  --logo-stroke: #F5F7FA;
+  --logo-stroke-light: #1A2332;
+  --logo-ground: #0D1117;
+  --logo-ground-alt: #1A2332;
+  --logo-ring-idle: rgba(245, 247, 250, 0.6);
+  --genom-cyan: #00D4AA;
+  --genom-stroke-512: 2.5;
+  --genom-ring-512: 2;
+  --genom-radius: 3;
+}
+
+[data-logo-theme="light"] {
+  --logo-stroke: var(--logo-stroke-light);
+}

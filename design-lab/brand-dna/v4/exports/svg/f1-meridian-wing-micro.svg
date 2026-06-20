@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="LeylekTAG mark micro">
+  <title>LeylekTAG M0 micro</title>
+  <g id="logo.symbol.f1" data-tier="micro">
+    <line stroke="#F5F7FA" fill="none" x1="160" y1="340" x2="352" y2="340" stroke-width="3" stroke-linecap="round"/>
+    <path stroke="#F5F7FA" fill="none" d="M 176 340 Q 320 200 336 340" stroke-width="3" stroke-linecap="round"/>
+    <circle fill="#00D4AA" cx="268" cy="248" r="10"/>
+  </g>
+</svg>

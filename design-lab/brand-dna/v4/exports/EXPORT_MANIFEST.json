@@ -1,0 +1,43 @@
+{
+  "version": "4.0.0-phase4",
+  "ship": "F1 Meridian Wing (S07)",
+  "generatedAt": "2026-06-21",
+  "scope": "design-lab/brand-dna/v4/exports only",
+  "svg": {
+    "master": "f1-meridian-wing-master.svg",
+    "masterCopy": "svg/f1-meridian-wing-master.svg",
+    "micro": "svg/f1-meridian-wing-micro.svg",
+    "icon1024": "svg/f1-meridian-wing-icon-1024.svg",
+    "qrHc": "svg/f1-meridian-wing-qr-hc.svg",
+    "androidForeground": "svg/android-adaptive-foreground.svg",
+    "androidBackground": "svg/android-adaptive-background.svg"
+  },
+  "pngLadder": [
+    "png/f1/16.png",
+    "png/f1/24.png",
+    "png/f1/32.png",
+    "png/f1/48.png",
+    "png/f1/64.png",
+    "png/f1/96.png",
+    "png/f1/128.png",
+    "png/f1/256.png",
+    "png/f1/512.png",
+    "png/f1/1024.png"
+  ],
+  "ios": "png/f1/ios/",
+  "favicon": "png/f1/favicon/",
+  "qrHc": "png/f1/qr-hc-256.png",
+  "android": {
+    "foreground1080": "png/f1/android-adaptive-foreground-1080.png",
+    "foreground432": "png/f1/android-adaptive-foreground-432.png",
+    "background1080": "png/f1/android-adaptive-background-1080.png",
+    "spec": "android-adaptive-icon-spec.json"
+  },
+  "lottie": {
+    "boot": "lottie/f1-boot-presence.json",
+    "lock": "lottie/f1-lock-ring.json",
+    "status": "placeholder-spec"
+  },
+  "genom": "genom.tokens.css",
+  "exportScript": "scripts/export_f1_png.ps1"
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" role="img" aria-label="LeylekTAG app icon">
+  <title>LeylekTAG App Icon 1024</title>
+  <rect id="logo.layer.ground" width="1024" height="1024" fill="#0D1117"/>
+  <g transform="translate(512 512) scale(0.88) translate(-256 -256)">
+    <line stroke="#F5F7FA" fill="none" x1="80" y1="340" x2="432" y2="340"
+          stroke-width="2.5" stroke-linecap="round"/>
+    <path stroke="#F5F7FA" fill="none"
+          d="M 96 340 C 128 220, 248 168, 320 168 C 392 168, 416 248, 424 340"
+          stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="256" cy="272" rx="112" ry="80"
+             stroke="rgba(245,247,250,0.6)" fill="none" stroke-width="2"
+             stroke-linecap="round"/>
+    <circle fill="#00D4AA" cx="268" cy="248" r="7"/>
+  </g>
+</svg>

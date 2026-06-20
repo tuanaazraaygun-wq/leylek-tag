@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "ship": "F1 Meridian Wing (S07)",
+  "scope": "design-lab exports only — not wired to frontend/res/",
+  "foreground": {
+    "file": "svg/android-adaptive-foreground.svg",
+    "exportPng": "png/f1/android-adaptive-foreground-1080.png",
+    "canvasPx": 1080,
+    "safeZonePercent": 66.7,
+    "safeZonePx": 720,
+    "content": "symbol only — horizon, wing, ring, accent",
+    "backgroundInForeground": false
+  },
+  "background": {
+    "file": "svg/android-adaptive-background.svg",
+    "exportPng": "png/f1/android-adaptive-background-1080.png",
+    "canvasPx": 1080,
+    "fill": "#0D1117",
+    "gradient": false
+  },
+  "legacyIcon": {
+    "sizePx": 192,
+    "export": "png/f1/192.png",
+    "tier": "standard"
+  },
+  "monochrome": {
+    "android13": "System tint applies to foreground; verify wing readable",
+    "fallback": "png/f1/android-adaptive-foreground-1080.png"
+  },
+  "materialYou": {
+    "cyanAccentPreserve": "#00D4AA on accent dot — do not theme-tint accent layer in Phase 5"
+  },
+  "expoAdaptive": {
+    "foregroundImage": "png/f1/android-adaptive-foreground-432.png",
+    "backgroundImage": "png/f1/android-adaptive-background-1080.png",
+    "backgroundColor": "#0D1117"
+  }
+}

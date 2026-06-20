@@ -1,0 +1,55 @@
+{
+  "v": "4.0",
+  "meta": {
+    "g": "LeylekTAG",
+    "a": "Brand DNA v4",
+    "d": "F1 boot presence — PLACEHOLDER paths; re-bind to SVG layers in After Effects / Lottie editor",
+    "tc": "#00D4AA"
+  },
+  "fr": 60,
+  "ip": 0,
+  "op": 33,
+  "w": 512,
+  "h": 512,
+  "nm": "f1-boot-presence",
+  "motionToken": "v4.motion.presence.pulse",
+  "sonicToken": "sonic.presence.boot",
+  "sonicOffsetMs": 40,
+  "durationMs": 550,
+  "layers": [
+    {
+      "ty": 4,
+      "nm": "logo.symbol.f1",
+      "ind": 1,
+      "ks": {
+        "o": { "a": 1, "k": [
+          { "t": 0, "s": [0], "e": [100], "i": { "x": [0.22], "y": [1] }, "o": { "x": [0.36], "y": [1] } },
+          { "t": 7, "s": [100] }
+        ]},
+        "s": { "a": 1, "k": [
+          { "t": 0, "s": [96, 96, 100], "e": [103, 103, 100] },
+          { "t": 10, "s": [103, 103, 100], "e": [100, 100, 100] },
+          { "t": 24, "s": [100, 100, 100] }
+        ]}
+      },
+      "refSvg": "svg/f1-meridian-wing-master.svg",
+      "refLayers": ["logo.layer.horizon", "logo.layer.wing", "logo.layer.ring", "logo.layer.accent"]
+    }
+  ],
+  "timeline": {
+    "0ms": "opacity 0; scale 0.96",
+    "40ms": "sonic.presence.boot attack",
+    "160ms": "scale peak 1.03; glow max 0.25",
+    "280ms": "sonic E4 phase 2",
+    "400ms": "scale settle 1.0",
+    "550ms": "handoff to app chrome"
+  },
+  "glow": {
+    "token": "glow.presence",
+    "maxOpacity": 0.25,
+    "fadeInMs": 120,
+    "peakMs": 160
+  },
+  "haptic": null,
+  "status": "placeholder-spec-not-production-bound"
+}

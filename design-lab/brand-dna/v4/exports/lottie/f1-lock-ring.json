@@ -1,0 +1,60 @@
+{
+  "v": "4.0",
+  "meta": {
+    "g": "LeylekTAG",
+    "d": "F1 lock ring close — 320ms; sync marker + sonic.qr.success; F3 timing reference",
+    "tc": "#00D4AA"
+  },
+  "fr": 60,
+  "ip": 0,
+  "op": 20,
+  "w": 512,
+  "h": 512,
+  "nm": "f1-lock-ring",
+  "motionToken": "v4.motion.lock.ringClose",
+  "sonicToken": "sonic.qr.success",
+  "durationMs": 320,
+  "f3Reference": "Orbital Seal ring-close timing only — geometry remains F1",
+  "layers": [
+    {
+      "ty": 4,
+      "nm": "logo.layer.ring",
+      "ind": 1,
+      "ks": {},
+      "shapes": [{
+        "ty": "gr",
+        "nm": "ringStroke",
+        "it": [{
+          "ty": "el",
+          "p": { "a": 0, "k": [256, 272] },
+          "s": { "a": 0, "k": [224, 160] }
+        }, {
+          "ty": "st",
+          "c": { "a": 0, "k": [0, 0.831, 0.667, 1] },
+          "w": { "a": 0, "k": 2.5 },
+          "lc": 2,
+          "lj": 2,
+          "d": [{ "n": "o", "nm": "offset", "v": { "a": 1, "k": [
+            { "t": 0, "s": [100] },
+            { "t": 19, "s": [0] }
+          ]}}]
+        }]
+      }],
+      "refSvg": "svg/f1-meridian-wing-master.svg#logo.layer.ring"
+    },
+    {
+      "ty": 4,
+      "nm": "logo.layer.accent",
+      "ind": 2,
+      "refSvg": "svg/f1-meridian-wing-master.svg#logo.layer.accent",
+      "flash": { "ms": 80, "opacityPeak": 1.0 }
+    }
+  ],
+  "timeline": {
+    "0ms": "ring dashoffset 100%; sonic A4 attack",
+    "80ms": "cyan flash peak; glow.lock 0.50",
+    "320ms": "ring closed; static"
+  },
+  "markerSync": "lock.ringClose frame 0 shared Lottie component",
+  "status": "placeholder-spec-not-production-bound"
+}
