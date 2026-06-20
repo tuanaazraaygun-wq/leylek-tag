@@ -26,7 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
-import { playFeedbackErrorSound } from '../utils/sound';
+import { playFeedbackErrorSound, playUiTapSound } from '../utils/sound';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -1458,6 +1458,7 @@ function RequestCard({
               await Promise.resolve(onAcceptFlowStart?.(tagIdForAccept));
               try {
                 playTapSound?.();
+                void playUiTapSound();
                 const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
                 const res = await fetch(url, {
                   method: 'POST',

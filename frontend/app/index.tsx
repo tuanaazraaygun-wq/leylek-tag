@@ -191,7 +191,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -3918,6 +3918,7 @@ export default function App() {
 
     const handleContinue = async () => {
       if (!selectedRole || !rideVehicleKind) return;
+      void playUiTapSound();
       roleScreenHaptic();
       console.log('DRIVER_CONTINUE_PRESSED', {
         selected_role: selectedRole,
@@ -10581,6 +10582,7 @@ function PassengerDashboard({
   // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
   const handleCallButton = async () => {
     playTapSound();
+    void playUiTapSound();
     console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
 
     // Hedef kontrolü (arama tek başına yetmez; haritadan nokta şart)
@@ -11047,6 +11049,7 @@ function PassengerDashboard({
 
   const handlePriceOfferSendPress = () => {
     playTapSound();
+    void playUiTapSound();
     patchRideCreateDiag({ rideCreateButtonPressed: true });
     if (!destination || !priceInfo || !selectedPrice || !user?.id) {
       patchRideCreateDiag({
@@ -11364,6 +11367,7 @@ function PassengerDashboard({
 
   const handleAcceptOffer = async (offerId: string) => {
     playTapSound();
+    void playUiTapSound();
     if (!activeTag) {
       appAlert('Hata', 'Aktif talep bulunamadı');
       return;

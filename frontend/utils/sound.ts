@@ -617,3 +617,40 @@ export async function playFeedbackErrorSound(): Promise<void> {
     if (__DEV__) console.warn('playFeedbackErrorSound', e);
   }
 }
+
+// ── CTA micro tap — LSDS sonic.ui.tap ──
+
+const UI_TAP_ANTI_DOUBLE_FIRE_MS = 70;
+const UI_TAP_VOLUME = 0.4;
+
+const UI_TAP_SOURCE = require('../assets/sounds/ui-tap.wav');
+
+let lastUiTapAt = 0;
+
+/** Birincil CTA dokunuşu — kısa micro click (global tap değil) */
+export async function playUiTapSound(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+
+  const now = Date.now();
+  if (now - lastUiTapAt < UI_TAP_ANTI_DOUBLE_FIRE_MS) return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(UI_TAP_SOURCE, {
+      shouldPlay: false,
+      volume: UI_TAP_VOLUME,
+      isLooping: false,
+    });
+    lastUiTapAt = now;
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playUiTapSound', e);
+  }
+}
