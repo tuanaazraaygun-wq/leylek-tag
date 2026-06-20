@@ -1,9 +1,10 @@
 """
-SCALE-6C-1 / SCALE-6C-2 — Dispatch leader lock observability + shadow acquire.
+SCALE-6C-1 / SCALE-6C-2 / SCALE-6C-3A — Dispatch leader lock observability + enforcement prep.
 
 DISPATCH_LEADER_LOCK_ENABLED=0 (default) → no dispatch enforcement.
 DISPATCH_LEADER_LOCK_SHADOW=0 (default) → no Redis SET/EXPIRE/DEL.
 DISPATCH_LEADER_LOCK_SHADOW=1 → shadow loop: SET NX EX + renew if holder; no dispatch gate.
+DISPATCH_LEADER_LOCK_ENABLED=1 → should_run_dispatch() leader-only; pending RPUSH/LPOP.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from redis_cache import get_redis_client
 from services import cluster_observability
 
 LEADER_KEY = "leylek:dispatch:leader"
+PENDING_START_KEY = "leylek:dispatch:pending_start"
 
 _RENEW_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -96,6 +98,81 @@ def _base_result(**extra: Any) -> dict[str, Any]:
     }
     out.update(extra)
     return out
+
+
+def is_dispatch_leader() -> bool:
+    """Redis holder == bu node_id; holder yok veya hata → False."""
+    holder = read_leader_holder()
+    if not holder:
+        return False
+    return holder == _node_id()
+
+
+def should_run_dispatch() -> bool:
+    """ENABLED=0 → True (no-op). ENABLED=1 → yalnızca leader; redis yok → False."""
+    if not dispatch_leader_lock_enabled():
+        return True
+    try:
+        if get_redis_client() is None:
+            return False
+    except Exception:
+        return False
+    return is_dispatch_leader()
+
+
+def dispatch_guard_reason() -> str:
+    """should_run_dispatch() False iken log reason; True iken enforcement_disabled veya is_leader."""
+    if not dispatch_leader_lock_enabled():
+        return "enforcement_disabled"
+    try:
+        if get_redis_client() is None:
+            return "redis_unavailable"
+    except Exception:
+        return "redis_unavailable"
+    if is_dispatch_leader():
+        return "is_leader"
+    return "not_leader"
+
+
+def enqueue_pending_dispatch_start(tag_id: str) -> bool:
+    """Non-leader create: RPUSH pending list. Yalnız ENABLED=1; hata → False."""
+    if not dispatch_leader_lock_enabled():
+        return False
+    tid = str(tag_id or "").strip()
+    if not tid:
+        return False
+    try:
+        client = get_redis_client()
+        if client is None:
+            return False
+        client.rpush(PENDING_START_KEY, tid)
+        return True
+    except Exception:
+        return False
+
+
+def drain_pending_dispatch_starts(max_n: int = 5) -> list[str]:
+    """Leader tick: LPOP up to max_n tag ids. Yalnız ENABLED=1 + is_leader."""
+    if not dispatch_leader_lock_enabled():
+        return []
+    if not is_dispatch_leader():
+        return []
+    limit = max(1, min(int(max_n or 5), 50))
+    drained: list[str] = []
+    try:
+        client = get_redis_client()
+        if client is None:
+            return []
+        for _ in range(limit):
+            raw = client.lpop(PENDING_START_KEY)
+            if raw is None:
+                break
+            tid = str(raw).strip()
+            if tid:
+                drained.append(tid)
+    except Exception:
+        return drained
+    return drained
 
 
 def read_leader_holder() -> Optional[str]:

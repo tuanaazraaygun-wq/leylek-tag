@@ -4702,12 +4702,48 @@ async def apply_force_end_trip_and_notify(
     }
 
 
+def _dispatch_leader_guard_skip(
+    context: str,
+    tag_id: Optional[str] = None,
+    *,
+    enqueue_pending: bool = False,
+) -> bool:
+    """
+    SCALE-6C-3A: ENABLED=0 → False (caller devam). ENABLED=1 + guard → True (skip).
+    """
+    if dispatch_leader_lock.should_run_dispatch():
+        return False
+    reason = dispatch_leader_lock.dispatch_guard_reason()
+    pending_enqueued = False
+    if enqueue_pending and tag_id:
+        pending_enqueued = dispatch_leader_lock.enqueue_pending_dispatch_start(tag_id)
+        if pending_enqueued:
+            logger.info(
+                "[dispatch_leader] pending_enqueued tag_id=%s context=%s node_id=%s",
+                tag_id,
+                context,
+                cluster_observability.get_node_id(),
+            )
+    logger.info(
+        "[dispatch_leader] guard_skip reason=%s context=%s tag_id=%s node_id=%s "
+        "pending_enqueued=%s",
+        reason,
+        context,
+        tag_id,
+        cluster_observability.get_node_id(),
+        pending_enqueued,
+    )
+    return True
+
+
 async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     """
     Sıradaki sürücüye teklif gönder
     Timeout sonrası otomatik olarak sonrakine geç
     """
     try:
+        if _dispatch_leader_guard_skip("dispatch_offer_to_next_driver", tag_id):
+            return
         config = await get_dispatch_config()
         timeout = config.get("driver_offer_timeout", 10)
         merged = {**(dispatch_tag_context.get(tag_id) or {}), **(tag_data or {})}
@@ -4837,6 +4873,8 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
     İlk kabul eden kazanır (accept_ride atomik).
     Dönüş: bildirilen sürücü sayısı (0 = kimse yok / hata).
     """
+    if _dispatch_leader_guard_skip("broadcast_offer_to_all", tag_id):
+        return 0
     try:
         pickup_lat = tag_data.get("pickup_lat")
         pickup_lng = tag_data.get("pickup_lng")
@@ -5664,6 +5702,10 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
 
 async def rolling_dispatch_start(tag_id: str) -> int:
     """DB'den tag; 20 km + vehicle_kind + mesafe sırası; ilk batch + timer. Dönüş: eligible sayısı."""
+    if _dispatch_leader_guard_skip(
+        "rolling_dispatch_start", tag_id, enqueue_pending=True
+    ):
+        return 0
     logger.info("[normal_ride_dispatch_start] entering rolling_dispatch_start tag_id=%s", tag_id)
     await rolling_dispatch_stop(tag_id, revoke_offers=False)
     tr = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
@@ -6049,6 +6091,8 @@ async def _tag_dispatch_state_recover_on_startup() -> None:
     Phase 1C: restore rolling_dispatch_index from tag_dispatch_state + tags after process restart.
     In-memory dispatch remains authoritative during runtime; DB is checkpoint only.
     """
+    if _dispatch_leader_guard_skip("tag_dispatch_state_recover_on_startup"):
+        return
     if not DISPATCH_WAVE_DB_STATE or not supabase:
         return
     try:
@@ -6523,6 +6567,27 @@ async def _dispatch_leader_shadow_loop() -> None:
                 tick.get("is_leader"),
                 tick.get("ttl_sec"),
             )
+            if dispatch_leader_lock.dispatch_leader_lock_enabled() and tick.get(
+                "is_leader"
+            ):
+                pending = await asyncio.to_thread(
+                    dispatch_leader_lock.drain_pending_dispatch_starts, 5
+                )
+                for pending_tag_id in pending:
+                    logger.info(
+                        "[dispatch_leader] pending_drained tag_id=%s node_id=%s",
+                        pending_tag_id,
+                        tick.get("node_id"),
+                    )
+                    try:
+                        await rolling_dispatch_start(pending_tag_id)
+                    except Exception as pending_exc:
+                        logger.warning(
+                            "[dispatch_leader] pending_dispatch_start_failed "
+                            "tag_id=%s err=%s",
+                            pending_tag_id,
+                            pending_exc,
+                        )
         except Exception as exc:
             logger.warning("[dispatch_leader] shadow_tick_error %s", exc)
         await asyncio.sleep(interval)
