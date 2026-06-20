@@ -1822,6 +1822,9 @@ DISPATCH_WAVE_DB_STATE = os.getenv("DISPATCH_WAVE_DB_STATE", "").strip().lower()
     "on",
 )
 
+# SCALE-6C-3C: non-leader ride/create → pending queue; caller must not treat as zero eligible.
+DISPATCH_START_DEFERRED = -1
+
 # Phase 2A: structured dispatch score logs only (no sort/filter behavior change).
 DISPATCH_SCORE_LOGS = os.getenv("DISPATCH_SCORE_LOGS", "").strip().lower() in (
     "1",
@@ -4712,17 +4715,26 @@ async def apply_force_end_trip_and_notify(
     }
 
 
+def _dispatch_recovery_should_run() -> bool:
+    """tag_dispatch_state recover yalnızca Redis leader holder'da (SHADOW=1) veya tek-node legacy."""
+    if dispatch_leader_lock.dispatch_leader_lock_shadow_enabled():
+        return dispatch_leader_lock.is_dispatch_leader()
+    if dispatch_leader_lock.dispatch_leader_lock_enabled():
+        return dispatch_leader_lock.should_run_dispatch()
+    return True
+
+
 def _dispatch_leader_guard_skip(
     context: str,
     tag_id: Optional[str] = None,
     *,
     enqueue_pending: bool = False,
-) -> bool:
+) -> tuple[bool, bool]:
     """
-    SCALE-6C-3A: ENABLED=0 → False (caller devam). ENABLED=1 + guard → True (skip).
+    SCALE-6C-3A/3C: ENABLED=0 → (False, False). ENABLED=1 + guard → (True, pending_enqueued).
     """
     if dispatch_leader_lock.should_run_dispatch():
-        return False
+        return False, False
     reason = dispatch_leader_lock.dispatch_guard_reason()
     pending_enqueued = False
     if enqueue_pending and tag_id:
@@ -4743,7 +4755,61 @@ def _dispatch_leader_guard_skip(
         cluster_observability.get_node_id(),
         pending_enqueued,
     )
+    return True, pending_enqueued
+
+
+async def _dispatch_leader_step_down_abort(tag_id: str, context: str) -> bool:
+    """ENABLED=1 + artık leader değil → yerel rolling timer/state durdur (revoke yok)."""
+    if not dispatch_leader_lock.dispatch_leader_lock_enabled():
+        return False
+    if dispatch_leader_lock.should_run_dispatch():
+        return False
+    logger.info(
+        "[dispatch_leader] step_down context=%s tag_id=%s reason=%s node_id=%s",
+        context,
+        tag_id,
+        dispatch_leader_lock.dispatch_guard_reason(),
+        cluster_observability.get_node_id(),
+    )
+    await rolling_dispatch_stop(tag_id, revoke_offers=False)
     return True
+
+
+async def _merge_db_rejected_drivers_into_excluded(
+    tag_id: str, excluded: set[str]
+) -> int:
+    """SCALE-6C-3C: /ride/reject non-leader DB satırını leader batch exclude ile birleştir."""
+    if not supabase:
+        return 0
+    try:
+        dq = (
+            supabase.table("dispatch_queue")
+            .select("driver_id")
+            .eq("tag_id", tag_id)
+            .eq("status", "rejected")
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning(
+            "[dispatch_leader] db_reject_exclude_select_failed tag_id=%s err=%s",
+            tag_id,
+            exc,
+        )
+        return 0
+    merged = 0
+    for row in dq.data or []:
+        did = str(row.get("driver_id") or "").strip().lower()
+        if not did or did in excluded:
+            continue
+        excluded.add(did)
+        merged += 1
+    if merged:
+        logger.info(
+            "[dispatch_leader] db_reject_exclude_merged tag_id=%s count=%s",
+            tag_id,
+            merged,
+        )
+    return merged
 
 
 async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
@@ -4752,7 +4818,7 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     Timeout sonrası otomatik olarak sonrakine geç
     """
     try:
-        if _dispatch_leader_guard_skip("dispatch_offer_to_next_driver", tag_id):
+        if _dispatch_leader_guard_skip("dispatch_offer_to_next_driver", tag_id)[0]:
             return
         config = await get_dispatch_config()
         timeout = config.get("driver_offer_timeout", 10)
@@ -4883,7 +4949,7 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
     İlk kabul eden kazanır (accept_ride atomik).
     Dönüş: bildirilen sürücü sayısı (0 = kimse yok / hata).
     """
-    if _dispatch_leader_guard_skip("broadcast_offer_to_all", tag_id):
+    if _dispatch_leader_guard_skip("broadcast_offer_to_all", tag_id)[0]:
         return 0
     try:
         pickup_lat = tag_data.get("pickup_lat")
@@ -5454,6 +5520,8 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     Önce henüz bu döngüde gösterilmemiş uygun sürücüler seçilir; kalan yoksa offered_driver_ids sıfırlanıp baştan dönülür.
     Dalga geçişinde remove_offer yok — önceki dalgalar ekranda kalır; revoke yalnız rolling_dispatch_stop (kabul/iptal).
     """
+    if await _dispatch_leader_step_down_abort(tag_id, "rolling_dispatch_batch"):
+        return
     state = rolling_dispatch_index.get(tag_id)
     if not state:
         return
@@ -5489,6 +5557,8 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         excluded: set[str] = {str(x).strip().lower() for x in excluded_raw if x}
     else:
         excluded = {str(x).strip().lower() for x in excluded_raw if x}
+    state["excluded_driver_ids"] = excluded
+    await _merge_db_rejected_drivers_into_excluded(tag_id, excluded)
     state["excluded_driver_ids"] = excluded
 
     offered_raw = state.get("offered_driver_ids") or set()
@@ -5780,6 +5850,10 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     async def _timeout_tick():
         try:
             await asyncio.sleep(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS)
+            if await _dispatch_leader_step_down_abort(
+                tag_id, "rolling_dispatch_batch_timeout"
+            ):
+                return
             if tag_id not in rolling_dispatch_index:
                 return
             tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
@@ -5806,11 +5880,12 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
 
 
 async def rolling_dispatch_start(tag_id: str) -> int:
-    """DB'den tag; 20 km + vehicle_kind + mesafe sırası; ilk batch + timer. Dönüş: eligible sayısı."""
-    if _dispatch_leader_guard_skip(
+    """DB'den tag; 20 km + vehicle_kind + mesafe sırası; ilk batch + timer. Dönüş: eligible sayısı veya DISPATCH_START_DEFERRED."""
+    skip, pending_enqueued = _dispatch_leader_guard_skip(
         "rolling_dispatch_start", tag_id, enqueue_pending=True
-    ):
-        return 0
+    )
+    if skip:
+        return DISPATCH_START_DEFERRED if pending_enqueued else 0
     logger.info("[normal_ride_dispatch_start] entering rolling_dispatch_start tag_id=%s", tag_id)
     await rolling_dispatch_stop(tag_id, revoke_offers=False)
     tr = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
@@ -6156,6 +6231,10 @@ async def _recover_rolling_immediate_batch(tag_id: str) -> None:
     try:
         if tag_id not in rolling_dispatch_index:
             return
+        if await _dispatch_leader_step_down_abort(
+            tag_id, "tag_dispatch_recover_immediate_batch"
+        ):
+            return
         tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
         if not tr.data or tr.data[0].get("status") != "waiting":
             await rolling_dispatch_stop(tag_id, revoke_offers=False)
@@ -6176,6 +6255,10 @@ async def _recover_rolling_sleep_then_batch(tag_id: str, delay_s: float) -> None
         await asyncio.sleep(delay_s)
         if tag_id not in rolling_dispatch_index:
             return
+        if await _dispatch_leader_step_down_abort(
+            tag_id, "tag_dispatch_recover_scheduled_batch"
+        ):
+            return
         tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
         if not tr.data or tr.data[0].get("status") != "waiting":
             await rolling_dispatch_stop(tag_id, revoke_offers=False)
@@ -6191,25 +6274,12 @@ async def _recover_rolling_sleep_then_batch(tag_id: str, delay_s: float) -> None
         )
 
 
-async def _tag_dispatch_state_recover_on_startup() -> None:
-    """
-    Phase 1C: restore rolling_dispatch_index from tag_dispatch_state + tags after process restart.
-    In-memory dispatch remains authoritative during runtime; DB is checkpoint only.
-    """
-    if _dispatch_leader_guard_skip("tag_dispatch_state_recover_on_startup"):
-        return
-    if not DISPATCH_WAVE_DB_STATE or not supabase:
-        return
-    try:
-        ds = supabase.table("tag_dispatch_state").select("*").execute()
-    except Exception as exc:
-        logger.warning(
-            "[tag_dispatch_recover] tag_dispatch_state select exc=%s", repr(exc)
-        )
-        return
-
-    candidates = list(ds.data or [])
-    logger.info("[tag_dispatch_recover_start] tag_dispatch_state_rows=%s", len(candidates))
+async def _tag_dispatch_state_recover_rows(
+    candidates: list[dict],
+    *,
+    trigger: str,
+) -> None:
+    """Restore rolling_dispatch_index entries from tag_dispatch_state rows."""
     if not candidates:
         return
 
@@ -6220,7 +6290,9 @@ async def _tag_dispatch_state_recover_on_startup() -> None:
     try:
         tr = supabase.table("tags").select("*").in_("id", raw_ids).execute()
     except Exception as exc:
-        logger.warning("[tag_dispatch_recover] tags select exc=%s", repr(exc))
+        logger.warning(
+            "[tag_dispatch_recover] tags select trigger=%s exc=%s", trigger, repr(exc)
+        )
         return
 
     waiting_normal: dict[str, dict] = {}
@@ -6239,6 +6311,13 @@ async def _tag_dispatch_state_recover_on_startup() -> None:
         if tag_id is None:
             continue
         tag_id = str(tag_id).strip()
+        if tag_id in rolling_dispatch_index:
+            logger.info(
+                "[tag_dispatch_recover] skip_already_active tag_id=%s trigger=%s",
+                tag_id,
+                trigger,
+            )
+            continue
         row = waiting_normal.get(tag_id)
         if not row:
             continue
@@ -6247,28 +6326,35 @@ async def _tag_dispatch_state_recover_on_startup() -> None:
             bseq = int(drow.get("batch_seq") or 0)
         except (TypeError, ValueError):
             logger.info(
-                "[tag_dispatch_recover] skip_invalid_batch_seq tag_id=%s", tag_id
+                "[tag_dispatch_recover] skip_invalid_batch_seq tag_id=%s trigger=%s",
+                tag_id,
+                trigger,
             )
             continue
         if bseq < 0:
             logger.info(
-                "[tag_dispatch_recover] skip_invalid_batch_seq tag_id=%s batch_seq=%s",
+                "[tag_dispatch_recover] skip_invalid_batch_seq tag_id=%s batch_seq=%s trigger=%s",
                 tag_id,
                 bseq,
+                trigger,
             )
             continue
 
         wave_deadline = _wave_deadline_from_dispatch_state_row(drow.get("wave_deadline"))
         if wave_deadline is None:
             logger.info(
-                "[tag_dispatch_recover] skip_missing_wave_deadline tag_id=%s", tag_id
+                "[tag_dispatch_recover] skip_missing_wave_deadline tag_id=%s trigger=%s",
+                tag_id,
+                trigger,
             )
             continue
 
         full_tag = await _rolling_dispatch_full_tag_from_tags_row(row)
         if not full_tag:
             logger.info(
-                "[tag_dispatch_recover] skip_missing_pickup_coords tag_id=%s", tag_id
+                "[tag_dispatch_recover] skip_missing_pickup_coords tag_id=%s trigger=%s",
+                tag_id,
+                trigger,
             )
             continue
 
@@ -6287,11 +6373,13 @@ async def _tag_dispatch_state_recover_on_startup() -> None:
         }
 
         logger.info(
-            "[tag_dispatch_recovered] tag_id=%s batch_seq=%s offered_count=%s current_batch_count=%s",
+            "[tag_dispatch_recovered] tag_id=%s batch_seq=%s offered_count=%s "
+            "current_batch_count=%s trigger=%s",
             tag_id,
             bseq,
             len(offered_s),
             len(cur_batch),
+            trigger,
         )
 
         now = datetime.now(timezone.utc)
@@ -6305,18 +6393,77 @@ async def _tag_dispatch_state_recover_on_startup() -> None:
                 pass
 
         if remaining <= 0:
-            logger.info("[tag_dispatch_recover_fire_immediate] tag_id=%s", tag_id)
+            logger.info(
+                "[tag_dispatch_recover_fire_immediate] tag_id=%s trigger=%s",
+                tag_id,
+                trigger,
+            )
             task = asyncio.create_task(_recover_rolling_immediate_batch(tag_id))
         else:
             logger.info(
-                "[tag_dispatch_recover_scheduled] tag_id=%s remaining_s=%.3f",
+                "[tag_dispatch_recover_scheduled] tag_id=%s remaining_s=%.3f trigger=%s",
                 tag_id,
                 remaining,
+                trigger,
             )
             task = asyncio.create_task(
                 _recover_rolling_sleep_then_batch(tag_id, remaining)
             )
         rolling_dispatch_tasks[tag_id] = task
+
+
+async def _tag_dispatch_state_recover_on_leader_acquired() -> None:
+    """SCALE-6C-3C: soft failover — yeni leader lock alınca in-flight tag'leri recover et."""
+    if not DISPATCH_WAVE_DB_STATE or not supabase:
+        return
+    if not _dispatch_recovery_should_run():
+        return
+    try:
+        ds = supabase.table("tag_dispatch_state").select("*").execute()
+    except Exception as exc:
+        logger.warning(
+            "[tag_dispatch_recover] leader_acquired select exc=%s", repr(exc)
+        )
+        return
+    candidates = [
+        r
+        for r in (ds.data or [])
+        if str(r.get("tag_id") or "").strip() not in rolling_dispatch_index
+    ]
+    if not candidates:
+        return
+    logger.info(
+        "[tag_dispatch_recover_leader_acquired] tag_dispatch_state_rows=%s node_id=%s",
+        len(candidates),
+        cluster_observability.get_node_id(),
+    )
+    await _tag_dispatch_state_recover_rows(candidates, trigger="leader_acquired")
+
+
+async def _tag_dispatch_state_recover_on_startup() -> None:
+    """
+    Phase 1C: restore rolling_dispatch_index from tag_dispatch_state + tags after process restart.
+    In-memory dispatch remains authoritative during runtime; DB is checkpoint only.
+    """
+    if not _dispatch_recovery_should_run():
+        logger.info(
+            "[tag_dispatch_recover] skip_not_leader context=startup node_id=%s",
+            cluster_observability.get_node_id(),
+        )
+        return
+    if not DISPATCH_WAVE_DB_STATE or not supabase:
+        return
+    try:
+        ds = supabase.table("tag_dispatch_state").select("*").execute()
+    except Exception as exc:
+        logger.warning(
+            "[tag_dispatch_recover] tag_dispatch_state select exc=%s", repr(exc)
+        )
+        return
+
+    candidates = list(ds.data or [])
+    logger.info("[tag_dispatch_recover_start] tag_dispatch_state_rows=%s", len(candidates))
+    await _tag_dispatch_state_recover_rows(candidates, trigger="startup")
 
 
 async def handle_dispatch_accept(tag_id: str, driver_id: str):
@@ -6693,6 +6840,14 @@ async def _dispatch_leader_shadow_loop() -> None:
                             pending_tag_id,
                             pending_exc,
                         )
+            if tick.get("acquired") and tick.get("is_leader"):
+                try:
+                    await _tag_dispatch_state_recover_on_leader_acquired()
+                except Exception as recover_exc:
+                    logger.warning(
+                        "[tag_dispatch_recover] leader_acquired_failed err=%s",
+                        recover_exc,
+                    )
         except Exception as exc:
             logger.warning("[dispatch_leader] shadow_tick_error %s", exc)
         await asyncio.sleep(interval)
@@ -24654,6 +24809,7 @@ async def _create_ride_offer_execute(
                     )
             # Dağıtım hatası teklif oluşturmayı bozmasın (yolcu ekranında "Teklif oluşturulamadı" önlenir)
             notified = 0
+            dispatch_deferred = False
             try:
                 logger.info("[normal_ride_dispatch_start] tag_id=%s", tag_id)
                 _tag_dispatch_obs_log(
@@ -24665,9 +24821,16 @@ async def _create_ride_offer_execute(
                     reason="before_rolling_dispatch_start",
                 )
                 notified = await rolling_dispatch_start(tag_id)
+                dispatch_deferred = notified == DISPATCH_START_DEFERRED
+                if dispatch_deferred:
+                    logger.info(
+                        "[dispatch_leader] dispatch_deferred tag_id=%s node_id=%s",
+                        tag_id,
+                        cluster_observability.get_node_id(),
+                    )
             except Exception as dispatch_ex:
                 logger.error(f"❌ rolling_dispatch_start hata (tag kaydı başarılı): {dispatch_ex}")
-            if notified == 0:
+            if not dispatch_deferred and notified == 0:
                 logger.warning(
                     "⚠️ rolling_dispatch 0 sürücü tag=%s — broadcast_offer_to_all yedek deneniyor",
                     tag_id,
@@ -24702,7 +24865,7 @@ async def _create_ride_offer_execute(
                         )
                 except Exception as bc_err:
                     logger.warning("ride/create: broadcast_offer_to_all yedek hata: %s", bc_err)
-            if notified == 0:
+            if notified == 0 and not dispatch_deferred:
                 logger.warning(
                     "[normal_ride_no_driver] tag_id=%s passenger_id=%s rolling_and_broadcast_zero=1 radius_km=%s",
                     tag_id,
@@ -24749,10 +24912,14 @@ async def _create_ride_offer_execute(
                 "success": True,
                 "tag": tag,
                 "dispatch_mode": "rolling_batch",
-                "eligible_driver_count": notified,
+                "eligible_driver_count": 0 if dispatch_deferred else notified,
                 "message": "Teklifiniz sürücülere gönderildi"
                 if notified > 0
-                else "Talep kaydedildi; yakında uygun sürücü aranıyor",
+                else (
+                    "Talep kaydedildi; sürücü araması başlatılıyor"
+                    if dispatch_deferred
+                    else "Talep kaydedildi; yakında uygun sürücü aranıyor"
+                ),
             }
 
         return {
