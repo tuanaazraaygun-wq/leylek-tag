@@ -236,11 +236,23 @@ def _short_log_id(value: Any) -> str:
     return f"{s[:6]}…{s[-4:]}"
 
 
-def _log_timing_safe(code: str, **fields) -> None:
+def _log_timing_safe(code: str, *, log_level: int = logging.INFO, **fields) -> None:
     try:
-        logger.info("%s %s", code, json.dumps(fields, ensure_ascii=False, default=str))
+        logger.log(log_level, "%s %s", code, json.dumps(fields, ensure_ascii=False, default=str))
     except Exception:
         pass
+
+
+_OFFER_ROUTINE_SOCKET_EVENTS = frozenset({
+    "new_passenger_offer",
+    "remove_offer",
+    "passenger_offer_taken",
+    "passenger_offer_revoked",
+})
+
+
+def _is_offer_routine_socket_event(event_name: str) -> bool:
+    return str(event_name or "").strip() in _OFFER_ROUTINE_SOCKET_EVENTS
 
 # tags.type: Martı yolculuğu vs Muhabbet (aktif yolculuk/dispatch yalnız TAG_TYPE_NORMAL)
 TAG_TYPE_NORMAL = "normal"
@@ -3796,6 +3808,9 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         payload_dict = payload if isinstance(payload, dict) else {}
         call_id = payload_dict.get("call_id")
         session_id = payload_dict.get("session_id")
+        offer_routine = _is_offer_routine_socket_event(event_name)
+        emit_log = logger.debug if offer_routine else logger.info
+        emit_timing_level = logging.DEBUG if offer_routine else logging.INFO
         if event_name.startswith("muhabbet_trip_call_") or event_name in ("incoming_call", "call_started", "call_accepted", "call_rejected", "call_timeout"):
             logger.info(
                 "TARGET_SID_COUNT %s",
@@ -3830,7 +3845,7 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                     ensure_ascii=False,
                 ),
             )
-        logger.info(
+        emit_log(
             "[socket_emit_user] %s",
             json.dumps(
                 {
@@ -3846,14 +3861,23 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             ),
         )
         if room_member_count == 0 and sid_count == 0:
-            logger.warning(
-                "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
-                event_name,
-                _mask_log_id(canonical_lo),
-                _mask_log_room(room),
-            )
+            if offer_routine:
+                logger.debug(
+                    "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
+                    event_name,
+                    _mask_log_id(canonical_lo),
+                    _mask_log_room(room),
+                )
+            else:
+                logger.warning(
+                    "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
+                    event_name,
+                    _mask_log_id(canonical_lo),
+                    _mask_log_room(room),
+                )
             _log_timing_safe(
                 "SOCKET_EMIT_NO_TARGET",
+                log_level=emit_timing_level,
                 event_name=event_name,
                 user_id_masked=_mask_log_id(canonical_lo),
                 room=_mask_log_room(room),
@@ -3874,6 +3898,7 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
                     logger.warning("%s emit sid=%s err=%s", event_name, _mask_log_sid(sid), em)
             _log_timing_safe(
                 "SOCKET_EMIT_SID_FALLBACK",
+                log_level=emit_timing_level,
                 event_name=event_name,
                 user_id_masked=_mask_log_id(canonical_lo),
                 sid_count=sid_count,
@@ -3889,6 +3914,7 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             )
         _log_timing_safe(
             "SOCKET_EMIT_TIMING",
+            log_level=emit_timing_level,
             event_name=event_name,
             user_id_masked=_mask_log_id(canonical_lo),
             resolve_ms=round(_resolve_ms, 2),
@@ -5526,7 +5552,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         emit_res = await emit_new_passenger_offer_to_driver(d_id, offer_data)
         if not emit_res:
             continue
-        logger.info(
+        logger.debug(
             "new_passenger_offer emitted tag=%s driver=%s (socket veya room)",
             tag_id,
             d_id,
