@@ -301,6 +301,7 @@ function schedulePassengerBoardingScanClose(setVisible: (v: boolean) => void): v
 }
 
 const BOARDING_REMOTE_ACK_MS = 400;
+const TRIP_END_REMOTE_ACK_MS = 400;
 
 function _normTagStatus(st: unknown): string {
   return String(st ?? '')
@@ -15421,6 +15422,33 @@ function DriverDashboard({
   
   // 🆕 QR Modal State (Sürücü)
   const [showQRModal, setShowQRModal] = useState(false);
+  const [driverTripEndRemoteSuccess, setDriverTripEndRemoteSuccess] = useState(false);
+  const showQRModalRef = useRef(false);
+  const driverTripEndRemoteAckTagRef = useRef<string | null>(null);
+  const driverTripEndCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  showQRModalRef.current = showQRModal;
+
+  useEffect(() => {
+    if (showQRModal) {
+      driverTripEndRemoteAckTagRef.current = null;
+      setDriverTripEndRemoteSuccess(false);
+      return;
+    }
+    if (driverTripEndCloseTimerRef.current != null) {
+      clearTimeout(driverTripEndCloseTimerRef.current);
+      driverTripEndCloseTimerRef.current = null;
+    }
+    setDriverTripEndRemoteSuccess(false);
+  }, [showQRModal]);
+
+  const closeDriverTripEndQrModal = useCallback(() => {
+    if (driverTripEndCloseTimerRef.current != null) {
+      clearTimeout(driverTripEndCloseTimerRef.current);
+      driverTripEndCloseTimerRef.current = null;
+    }
+    setDriverTripEndRemoteSuccess(false);
+    setShowQRModal(false);
+  }, []);
 
   const [driverBoardingQrModalVisible, setDriverBoardingQrModalVisible] = useState(false);
   const [driverBoardingRemoteSuccess, setDriverBoardingRemoteSuccess] = useState(false);
@@ -16373,15 +16401,42 @@ function DriverDashboard({
     onShowRatingModal: (data) => {
       console.log('⭐ ŞOFÖR - PUANLAMA MODALI AÇ (Socket):', data);
       if ((data as { should_rate?: boolean }).should_rate !== true) return;
-      setShowQRModal(false);
-      scheduleRatingModalAfterQrDismiss(() => {
-        setRatingModalData({
-          visible: true,
-          tagId: data.tag_id,
-          rateUserId: data.rate_user_id,
-          rateUserName: data.rate_user_name,
+
+      const scheduleDriverRating = () => {
+        scheduleRatingModalAfterQrDismiss(() => {
+          setRatingModalData({
+            visible: true,
+            tagId: data.tag_id,
+            rateUserId: data.rate_user_id,
+            rateUserName: data.rate_user_name,
+          });
         });
-      });
+      };
+
+      if (!showQRModalRef.current) {
+        scheduleDriverRating();
+        return;
+      }
+
+      const tagKey = String(data.tag_id || '').trim();
+      if (!tagKey || driverTripEndRemoteAckTagRef.current === tagKey) {
+        return;
+      }
+      driverTripEndRemoteAckTagRef.current = tagKey;
+
+      void playQrScanSuccessSound();
+      void tapButtonHaptic();
+      setDriverTripEndRemoteSuccess(true);
+
+      if (driverTripEndCloseTimerRef.current != null) {
+        clearTimeout(driverTripEndCloseTimerRef.current);
+      }
+      driverTripEndCloseTimerRef.current = setTimeout(() => {
+        driverTripEndCloseTimerRef.current = null;
+        setDriverTripEndRemoteSuccess(false);
+        setShowQRModal(false);
+        scheduleDriverRating();
+      }, TRIP_END_REMOTE_ACK_MS);
     },
     onBoardingConfirmed: (data) => {
       const tid = data?.tag_id;
@@ -20075,7 +20130,8 @@ function DriverDashboard({
       {/* 🆕 QR İLE YOLCULUK BİTİRME MODALI (SÜRÜCÜ) */}
       <QRTripEndModal
         visible={showQRModal}
-        onClose={() => setShowQRModal(false)}
+        remoteSuccess={driverTripEndRemoteSuccess}
+        onClose={closeDriverTripEndQrModal}
         userId={user.id}
         tagId={activeTag?.id || ''}
         isDriver={true}
@@ -20086,7 +20142,7 @@ function DriverDashboard({
         otherLatitude={activeTag?.passenger_latitude}
         otherLongitude={activeTag?.passenger_longitude}
         onComplete={(showRating, rateUserId, rateUserName) => {
-          setShowQRModal(false);
+          closeDriverTripEndQrModal();
           if (showRating) {
             const tagId = activeTag?.id || '';
             const resolvedRateUserId = activeTag?.passenger_id || rateUserId || '';

@@ -21,11 +21,19 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
+import { tapButtonHaptic } from '../utils/touchHaptics';
 
 const { width } = Dimensions.get('window');
 
 /** Çift decode burst — retry’i kilitlemez */
 const TRIP_END_SCAN_BURST_DEDUPE_MS = 120;
+const TRIP_END_SUCCESS_BEAT_MS = 400;
+
+function tripEndSuccessBeatDelay(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, TRIP_END_SUCCESS_BEAT_MS);
+  });
+}
 
 type PaymentMethod = 'cash' | 'card';
 
@@ -50,6 +58,8 @@ interface QRTripEndModalProps {
   /** Trusted Direct: nakit katkı bildirimi (claim cash) — QR complete kullanılmaz */
   onTrustedPaymentClaim?: (method: 'cash') => void | Promise<void>;
   onComplete: (showRating: boolean, rateUserId: string, rateUserName: string) => void;
+  /** Sürücü: yolcu QR tamamlayınca kısa remote onay overlay */
+  remoteSuccess?: boolean;
 }
 
 export default function QRTripEndModal({
@@ -69,6 +79,7 @@ export default function QRTripEndModal({
   onChooseDriverIban,
   onTrustedPaymentClaim,
   onComplete,
+  remoteSuccess = false,
 }: QRTripEndModalProps) {
   const isTrustedDirect = String(matchChannel || '').trim().toLowerCase() === 'trusted';
   const effectiveBookingPaymentMethod: PaymentMethod | null =
@@ -82,9 +93,20 @@ export default function QRTripEndModal({
   const [cameraSessionKey, setCameraSessionKey] = useState(0);
   /** Yolcu: bitirme yolu seçimi / QR / ödeme onayı */
   const [passengerStep, setPassengerStep] = useState<'choose' | 'scan' | 'payment'>('scan');
+  const [scanSuccessBeat, setScanSuccessBeat] = useState(false);
   const [pendingDriverId, setPendingDriverId] = useState<string | null>(null);
   const [legacyPaymentPick, setLegacyPaymentPick] = useState<PaymentMethod | null>(null);
   const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
+  const mountedRef = useRef(true);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const qrValue = `leylektag://end?u=${userId}&t=${tagId}`;
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
@@ -93,6 +115,7 @@ export default function QRTripEndModal({
     if (visible) {
       setScanned(false);
       setProcessing(false);
+      setScanSuccessBeat(false);
       setPassengerStep(!isDriver && (isTrustedDirect || showIbanOption) ? 'choose' : 'scan');
       setPendingDriverId(null);
       setLegacyPaymentPick(null);
@@ -118,7 +141,8 @@ export default function QRTripEndModal({
     passengerStep === 'scan' &&
     cameraReady &&
     !scanned &&
-    !processing;
+    !processing &&
+    !scanSuccessBeat;
 
   const submitCompleteQr = useCallback(
     async (paymentConfirmed: PaymentMethod, driverUserId: string) => {
@@ -184,7 +208,7 @@ export default function QRTripEndModal({
   const handleBarCodeScanned = useCallback(
     async ({ data }: { type: string; data: string }) => {
       if (isDriver || isTrustedDirect) return;
-      if (!cameraReady || scanned || processing) return;
+      if (!cameraReady || scanned || processing || scanSuccessBeat) return;
       const raw = (data || '').trim();
       if (!raw.startsWith('leylektag://end?')) {
         return;
@@ -198,7 +222,7 @@ export default function QRTripEndModal({
       lastScannedValueRef.current = { data: raw, ts: now };
 
       setScanned(true);
-      Vibration.vibrate(100);
+      void tapButtonHaptic();
 
       const params = new URLSearchParams(raw.split('?')[1]);
       const driverUserId = params.get('u');
@@ -230,14 +254,20 @@ export default function QRTripEndModal({
         return;
       }
 
-      // Yolcu: QR doğru — ödeme onayı adımına geç
       lastScannedValueRef.current = { data: '', ts: 0 };
       void playQrScanSuccessSound();
+      setCameraReady(false);
+      setScanSuccessBeat(true);
+      await tripEndSuccessBeatDelay();
+      if (!mountedRef.current || !visibleRef.current) {
+        return;
+      }
       setPendingDriverId(driverUserId);
       setPassengerStep('payment');
       setScanned(false);
+      setScanSuccessBeat(false);
     },
-    [isDriver, isTrustedDirect, cameraReady, scanned, processing, tagId],
+    [isDriver, isTrustedDirect, cameraReady, scanned, processing, scanSuccessBeat, tagId],
   );
 
   const handleTrustedCashClaim = () => {
@@ -277,6 +307,7 @@ export default function QRTripEndModal({
   const handleClose = () => {
     setScanned(false);
     setProcessing(false);
+    setScanSuccessBeat(false);
     setCameraReady(false);
     setPassengerStep(!isDriver && (isTrustedDirect || showIbanOption) ? 'choose' : 'scan');
     setPendingDriverId(null);
@@ -406,6 +437,17 @@ export default function QRTripEndModal({
                       quietZone={10}
                     />
                   </View>
+                  {remoteSuccess ? (
+                    <View style={styles.remoteSuccessOverlay} pointerEvents="none">
+                      <Ionicons name="checkmark-circle" size={56} color="rgba(34,211,238,0.95)" />
+                      <PremiumText variant="body" style={styles.remoteSuccessTitle}>
+                        QR doğrulandı
+                      </PremiumText>
+                      <PremiumText variant="caption" muted style={styles.remoteSuccessSubtitle}>
+                        Yolcu kodu okuttu
+                      </PremiumText>
+                    </View>
+                  ) : null}
                   <PremiumText variant="caption" muted style={styles.hint}>
                     Yolcu kodu taradığında yolculuk güvenli şekilde tamamlanır.
                   </PremiumText>
@@ -561,6 +603,17 @@ export default function QRTripEndModal({
                           <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
                           <PremiumText variant="caption" muted style={styles.processingText}>
                             İşlem hazırlanıyor
+                          </PremiumText>
+                        </View>
+                      ) : null}
+                      {scanSuccessBeat ? (
+                        <View style={styles.cameraStatusOverlay}>
+                          <Ionicons name="checkmark-circle" size={56} color="rgba(34,211,238,0.95)" />
+                          <PremiumText variant="body" style={styles.scanSuccessTitle}>
+                            QR doğrulandı
+                          </PremiumText>
+                          <PremiumText variant="caption" muted style={styles.processingText}>
+                            Ödeme adımına geçiliyor…
                           </PremiumText>
                         </View>
                       ) : null}
@@ -891,6 +944,8 @@ const styles = StyleSheet.create({
     paddingVertical: LDS_SPACING.lg,
     paddingHorizontal: LDS_SPACING.md,
     borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    position: 'relative',
+    overflow: 'hidden',
     ...LDS_ELEVATION.panel,
   },
   qrCheckpointRow: {
@@ -1169,5 +1224,25 @@ const styles = StyleSheet.create({
   backScanText: {
     fontWeight: '700',
     color: 'rgba(186, 230, 253, 0.92)',
+  },
+  scanSuccessTitle: {
+    fontWeight: '700',
+    marginTop: LDS_SPACING.xxs,
+    textAlign: 'center',
+  },
+  remoteSuccessOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: LDS_SPACING.xxs,
+    zIndex: 10,
+  },
+  remoteSuccessTitle: {
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  remoteSuccessSubtitle: {
+    textAlign: 'center',
   },
 });
