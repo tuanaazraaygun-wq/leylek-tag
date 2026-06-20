@@ -1,5 +1,5 @@
 """
-Cluster observability foundation (SCALE-6A-1 / SCALE-6A-2 / SCALE-6C-1).
+Cluster observability foundation (SCALE-6A-1 / SCALE-6A-2 / SCALE-6C-1 / SCALE-6C-2).
 
 Yalnızca node kimliği, feature flag ve read-only snapshot; davranış değiştirmez.
 """
@@ -114,6 +114,7 @@ def collect_cluster_snapshot(
         "uptime_s": uptime_s,
         "dispatch_leader_enabled": leader["enabled"],
         "dispatch_leader_shadow_enabled": leader["shadow_enabled"],
+        "dispatch_leader_shadow_loop_enabled": leader["shadow_loop_enabled"],
         "dispatch_leader_key": leader["leader_key"],
         "dispatch_leader_holder": leader["holder"],
         "dispatch_leader_is_leader": leader["is_leader"],

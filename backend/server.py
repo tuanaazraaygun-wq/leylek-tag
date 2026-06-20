@@ -6507,6 +6507,27 @@ async def _cluster_obs_heartbeat_loop() -> None:
         await asyncio.sleep(interval)
 
 
+async def _dispatch_leader_shadow_loop() -> None:
+    interval = dispatch_leader_lock.dispatch_leader_renew_sec()
+    logger.info("[dispatch_leader] shadow loop started interval_s=%s", interval)
+    while True:
+        try:
+            tick = await asyncio.to_thread(dispatch_leader_lock.leader_shadow_tick)
+            logger.info(
+                "[dispatch_leader] shadow_tick node_id=%s holder=%s acquired=%s "
+                "renewed=%s is_leader=%s ttl_sec=%s",
+                tick.get("node_id"),
+                tick.get("holder"),
+                tick.get("acquired"),
+                tick.get("renewed"),
+                tick.get("is_leader"),
+                tick.get("ttl_sec"),
+            )
+        except Exception as exc:
+            logger.warning("[dispatch_leader] shadow_tick_error %s", exc)
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def startup():
     global last_cleanup_time, _route_http_client
@@ -6529,6 +6550,8 @@ async def startup():
     cluster_observability.record_startup_mono()
     if cluster_observability.cluster_obs_enabled():
         asyncio.create_task(_cluster_obs_heartbeat_loop())
+    if dispatch_leader_lock.dispatch_leader_lock_shadow_enabled():
+        asyncio.create_task(_dispatch_leader_shadow_loop())
     clear_dispatch_in_memory_state()
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()
