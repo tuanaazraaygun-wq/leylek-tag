@@ -82,14 +82,16 @@ def collect_cluster_snapshot(
     """Read-only cluster snapshot; Redis ping yok (SCALE-6A-3)."""
     mono = startup_mono if startup_mono is not None else _startup_mono
     uptime_s = time.monotonic() - mono if mono is not None else 0.0
+    redis_cfg = socketio_cluster.socketio_redis_config_summary()
 
     return {
         "node_id": get_node_id(),
         "enabled": cluster_obs_enabled(),
         "socketio_mode": socketio_cluster.socketio_cluster_mode_label(),
-        "cluster_mode_configured": socketio_cluster.socket_cluster_mode_env(),
-        "adapter_enabled": socketio_cluster.socketio_redis_adapter_enabled(),
-        "channel": socketio_cluster.socketio_redis_channel(),
+        "cluster_mode_configured": redis_cfg["cluster_mode"],
+        "adapter_enabled": redis_cfg["adapter_enabled"],
+        "channel": redis_cfg["channel"],
+        "redis_url_configured": redis_cfg["redis_url_configured"],
         "socket_unique_sids": len(socket_id_to_user),
         "connected_user_keys": len(connected_users),
         "socket_sid_to_keys_entries": len(socket_sid_to_keys),

@@ -1,9 +1,9 @@
 """
-Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 shadow prep).
+Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2).
 
 SOCKETIO_REDIS_ADAPTER=0 → yalnız bellek; varsayılan davranış değişmez.
 SOCKET_CLUSTER_MODE=memory (varsayılan) → adapter açık olsa bile Redis denenmez.
-Her iki flag açıkken Redis bağlanamazsa sessizce bellek moduna düşer (manager None).
+Her iki flag açıkken Redis URL/dependency eksikse uyarı + bellek modu (crash yok).
 """
 
 from __future__ import annotations
@@ -40,6 +40,42 @@ def socketio_redis_channel() -> str:
     return (os.getenv("SOCKETIO_REDIS_CHANNEL") or "leylek-socketio").strip()
 
 
+def redis_url_configured() -> bool:
+    """True when SOCKET_REDIS_URL, REDIS_URL veya REDIS_HOST açıkça ayarlı."""
+    if (os.environ.get("SOCKET_REDIS_URL") or "").strip():
+        return True
+    if (os.environ.get("REDIS_URL") or "").strip():
+        return True
+    if (os.environ.get("REDIS_HOST") or "").strip():
+        return True
+    return False
+
+
+def socketio_redis_config_summary() -> dict:
+    """Read-only Redis adapter config özeti; bağlantı/ping yok."""
+    return {
+        "cluster_mode": socket_cluster_mode_env(),
+        "adapter_enabled": socketio_redis_adapter_enabled(),
+        "channel": socketio_redis_channel(),
+        "redis_url_configured": redis_url_configured(),
+    }
+
+
+def _redis_adapter_dependency_ok() -> tuple[bool, str]:
+    """redis paketi ve AsyncRedisManager kullanılabilirliği."""
+    try:
+        import redis  # noqa: F401
+    except ImportError as exc:
+        return False, f"redis package missing: {exc}"
+    try:
+        import socketio as _socketio
+    except ImportError as exc:
+        return False, f"socketio import failed: {exc}"
+    if not hasattr(_socketio, "AsyncRedisManager"):
+        return False, "socketio.AsyncRedisManager unavailable"
+    return True, ""
+
+
 def _build_redis_url() -> str:
     url = (os.environ.get("SOCKET_REDIS_URL") or "").strip()
     if url:
@@ -66,6 +102,19 @@ def build_socketio_client_manager() -> Optional[Any]:
         logger.info(
             "[socketio_cluster] shadow prep: SOCKET_CLUSTER_MODE=%s, Redis adapter skipped",
             socket_cluster_mode_env(),
+        )
+        return None
+    dep_ok, dep_reason = _redis_adapter_dependency_ok()
+    if not dep_ok:
+        logger.warning(
+            "[socketio_cluster] Redis adapter dependency guard: %s; bellek modu",
+            dep_reason,
+        )
+        return None
+    if not redis_url_configured():
+        logger.warning(
+            "[socketio_cluster] Redis adapter config guard: redis_url not configured "
+            "(set SOCKET_REDIS_URL, REDIS_URL or REDIS_HOST); bellek modu",
         )
         return None
     try:
