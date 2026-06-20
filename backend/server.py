@@ -6425,6 +6425,7 @@ async def startup():
         cluster_observability.get_node_id(),
         cluster_observability.cluster_obs_enabled(),
     )
+    cluster_observability.record_startup_mono()
     clear_dispatch_in_memory_state()
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()
