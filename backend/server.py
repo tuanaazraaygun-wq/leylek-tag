@@ -2044,6 +2044,33 @@ _offer_push_dedupe_lock = asyncio.Lock()
 _offer_push_last_sent_mono: dict[tuple[str, str], float] = {}
 OFFER_PUSH_DEDUPE_WINDOW_SEC = 120.0
 
+_offer_socket_emit_dedupe: dict[str, float] = {}
+OFFER_SOCKET_EMIT_DEDUPE_WINDOW_SEC = OFFER_PUSH_DEDUPE_WINDOW_SEC or 120.0
+
+
+def _should_emit_offer_socket(driver_id: str, tag_id: str) -> bool:
+    """(driver_id, tag_id) için OFFER_SOCKET_EMIT_DEDUPE_WINDOW_SEC içinde socket emit tekrarlanmaz."""
+    try:
+        did = str(driver_id or "").strip().lower()
+        tid = str(tag_id or "").strip()
+        if not did or not tid:
+            return True
+        key = f"{did}|{tid}"
+        now = time.monotonic()
+        prev = _offer_socket_emit_dedupe.get(key)
+        if prev is not None and (now - prev) < OFFER_SOCKET_EMIT_DEDUPE_WINDOW_SEC:
+            return False
+        _offer_socket_emit_dedupe[key] = now
+        if len(_offer_socket_emit_dedupe) > 3000:
+            cutoff = now - OFFER_SOCKET_EMIT_DEDUPE_WINDOW_SEC * 4
+            for k2, ts in list(_offer_socket_emit_dedupe.items()):
+                if ts < cutoff:
+                    del _offer_socket_emit_dedupe[k2]
+        return True
+    except Exception:
+        return True
+
+
 # OFFER-A2: first GPS → emit_existing recovery debounce (in-memory; push dedupe ile hizalı)
 _emit_existing_recovery_last_mono: dict[str, float] = {}
 EMIT_EXISTING_GPS_RECOVERY_DEBOUNCE_SEC = 120.0
@@ -3135,7 +3162,7 @@ async def _driver_offer_push_fcm_deduped(
 ) -> None:
     """
     Tek FCM / log satırı; (driver_id, tag_id) için OFFER_PUSH_DEDUPE_WINDOW_SEC içinde tekrar gönderilmez.
-    Socket emit her seferinde çalışır; yalnız push dedupe (reconnect / çift register).
+    Socket emit ayrı dedupe (_should_emit_offer_socket); push dedupe reconnect / çift register için.
     """
     if not offer_tag_id:
         return
@@ -3287,11 +3314,31 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Off
         socket_room_member_count = 0
         socket_attempted = False
         if _user_has_active_socket_room(raw):
-            sock_stats = await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
-            socket_attempted = True
-            if sock_stats:
-                socket_sid_count = int(sock_stats.get("sid_count") or 0)
-                socket_room_member_count = int(sock_stats.get("room_member_count") or 0)
+            offer_tag_id_for_socket = offer_data.get("tag_id")
+            if _should_emit_offer_socket(raw, offer_tag_id_for_socket):
+                sock_stats = await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
+                socket_attempted = True
+                if sock_stats:
+                    socket_sid_count = int(sock_stats.get("sid_count") or 0)
+                    socket_room_member_count = int(sock_stats.get("room_member_count") or 0)
+            else:
+                try:
+                    dedupe_key = f"{raw}|{str(offer_tag_id_for_socket or '').strip()}"
+                    prev_ts = _offer_socket_emit_dedupe.get(dedupe_key)
+                    age_s = (time.monotonic() - prev_ts) if prev_ts is not None else 0.0
+                    logger.info(
+                        "OFFER_SOCKET_DEDUPE_SKIP driver_id=%s tag_id=%s age_s=%.2f window_s=%s",
+                        _mask_log_id(raw),
+                        offer_tag_id_for_socket,
+                        age_s,
+                        OFFER_SOCKET_EMIT_DEDUPE_WINDOW_SEC,
+                    )
+                except Exception:
+                    logger.info(
+                        "OFFER_SOCKET_DEDUPE_SKIP driver_id=%s tag_id=%s",
+                        _mask_log_id(raw),
+                        offer_tag_id_for_socket,
+                    )
         else:
             logger.info(
                 "OFFER_SOCKET_SKIP_OFFLINE driver_id=%s tag_id=%s",
