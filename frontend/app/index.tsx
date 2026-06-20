@@ -9645,6 +9645,7 @@ function PassengerDashboard({
 
   const handleQuickMatchMatched = useCallback(
     async (_tagId: string) => {
+      void playMatchChimeSound();
       setQuickMatchFlowVisible(false);
       setQuickMatchRouteContext(null);
       await loadActiveTag();
@@ -17666,6 +17667,7 @@ function DriverDashboard({
     kycStatus?.status !== 'pending';
 
   const handleQuickMatchDriverMatched = useCallback(async (_tagId?: string) => {
+    void playMatchChimeSound();
     try {
       await loadActiveTag();
     } catch (error) {
