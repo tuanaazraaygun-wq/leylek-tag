@@ -167,6 +167,7 @@ from services.transfer_payment_service import (
 import services.boarding_qr_store as boarding_qr_store
 import services.journey_snapshot_store as journey_snap
 from services import driver_presence_store as driver_presence
+from services import cluster_observability
 from services import socketio_cluster
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
@@ -6419,6 +6420,11 @@ last_cleanup_time = None
 @app.on_event("startup")
 async def startup():
     global last_cleanup_time, _route_http_client
+    logger.info(
+        "[cluster_obs] startup node_id=%s enabled=%s",
+        cluster_observability.get_node_id(),
+        cluster_observability.cluster_obs_enabled(),
+    )
     clear_dispatch_in_memory_state()
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()
