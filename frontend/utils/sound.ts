@@ -90,8 +90,7 @@ async function ensureMatchChimeLoaded(): Promise<Audio.Sound | null> {
     matchChimeLoadPromise = (async (): Promise<Audio.Sound | null> => {
       try {
         const { sound } = await Audio.Sound.createAsync(
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('../assets/sounds/match-chime.mp3'),
+          require('../assets/sounds/match-chime.wav'),
           { shouldPlay: false, volume: MATCH_CHIME_VOLUME, isLooping: false },
         );
         return sound;
