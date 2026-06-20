@@ -543,3 +543,40 @@ export async function playQrScanSuccessSound(): Promise<void> {
 export async function playQrScanErrorSound(): Promise<void> {
   await playQrScanToneOnce(QR_SCAN_ERROR_SOURCE, QR_SCAN_ERROR_VOLUME, 'error');
 }
+
+// ── Ödeme / katkı onayı ──
+
+const PAYMENT_CONFIRMED_COOLDOWN_MS = 1000;
+const PAYMENT_CONFIRMED_VOLUME = 0.52;
+
+const PAYMENT_CONFIRMED_SOURCE = require('../assets/sounds/payment-confirmed.wav');
+
+let lastPaymentConfirmedAt = 0;
+
+/** Ödeme veya katkı onayı başarılı — güven / handshake tonu */
+export async function playPaymentConfirmedSound(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+
+  const now = Date.now();
+  if (now - lastPaymentConfirmedAt < PAYMENT_CONFIRMED_COOLDOWN_MS) return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(PAYMENT_CONFIRMED_SOURCE, {
+      shouldPlay: false,
+      volume: PAYMENT_CONFIRMED_VOLUME,
+      isLooping: false,
+    });
+    lastPaymentConfirmedAt = now;
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playPaymentConfirmedSound', e);
+  }
+}

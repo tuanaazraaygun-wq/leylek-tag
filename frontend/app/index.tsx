@@ -191,7 +191,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -7803,6 +7803,7 @@ function PassengerDashboard({
 
   const handlePassengerTripEndComplete = useCallback(
     (showRating: boolean, rateUserId: string, rateUserName: string) => {
+      void playPaymentConfirmedSound();
       setShowQRModal(false);
       if (showRating) {
         const tagId = activeTag?.id || '';
@@ -16485,6 +16486,7 @@ function DriverDashboard({
     try {
       const result = await respondTransferPayment(tagId, uid, { approved: true });
       if (result.ok) {
+        void playPaymentConfirmedSound();
         setTransferPaymentConfirmVisible(false);
         setTransferPaymentPassengerName('');
         setTransferPaymentMethod('iban');
