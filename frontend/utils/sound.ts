@@ -487,3 +487,59 @@ export function resetQuickMatchDriverOpsSoundGate(): void {
   quickMatchOpsChimedInviteIds.clear();
   lastQuickMatchOpsAt = 0;
 }
+
+// ── QR tarama — kısa onay / yumuşak uyarı ──
+
+const QR_SCAN_SOUND_COOLDOWN_MS = 500;
+const QR_SCAN_SUCCESS_VOLUME = 0.5;
+const QR_SCAN_ERROR_VOLUME = 0.48;
+
+const QR_SCAN_SUCCESS_SOURCE = require('../assets/sounds/qr-scan-success.wav');
+const QR_SCAN_ERROR_SOURCE = require('../assets/sounds/qr-scan-error.wav');
+
+let lastQrScanSuccessAt = 0;
+let lastQrScanErrorAt = 0;
+
+async function playQrScanToneOnce(source: number, volume: number, kind: 'success' | 'error'): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+
+  const now = Date.now();
+  const lastAt = kind === 'success' ? lastQrScanSuccessAt : lastQrScanErrorAt;
+  if (now - lastAt < QR_SCAN_SOUND_COOLDOWN_MS) return;
+  if (now - lastQrScanSuccessAt < QR_SCAN_SOUND_COOLDOWN_MS && kind === 'error') return;
+  if (now - lastQrScanErrorAt < QR_SCAN_SOUND_COOLDOWN_MS && kind === 'success') return;
+
+  try {
+    await loadSounds();
+    const { sound } = await Audio.Sound.createAsync(source, {
+      shouldPlay: false,
+      volume,
+      isLooping: false,
+    });
+    if (kind === 'success') {
+      lastQrScanSuccessAt = now;
+    } else {
+      lastQrScanErrorAt = now;
+    }
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+  } catch (e) {
+    if (__DEV__) console.warn(`playQrScan${kind === 'success' ? 'Success' : 'Error'}Sound`, e);
+  }
+}
+
+/** QR okuma geçerli — kısa onay blip */
+export async function playQrScanSuccessSound(): Promise<void> {
+  await playQrScanToneOnce(QR_SCAN_SUCCESS_SOURCE, QR_SCAN_SUCCESS_VOLUME, 'success');
+}
+
+/** QR okuma hatalı — yumuşak uyarı */
+export async function playQrScanErrorSound(): Promise<void> {
+  await playQrScanToneOnce(QR_SCAN_ERROR_SOURCE, QR_SCAN_ERROR_VOLUME, 'error');
+}

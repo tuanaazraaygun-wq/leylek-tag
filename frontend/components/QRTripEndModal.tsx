@@ -20,6 +20,7 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
+import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
 
 const { width } = Dimensions.get('window');
 
@@ -204,6 +205,7 @@ export default function QRTripEndModal({
       const qrTagId = params.get('t');
 
       if (!driverUserId || !qrTagId) {
+        void playQrScanErrorSound();
         appAlert(
           'Geçersiz kod',
           'QR kodu okunamadı. Tekrar deneyin.',
@@ -216,6 +218,7 @@ export default function QRTripEndModal({
       }
 
       if (qrTagId !== tagId) {
+        void playQrScanErrorSound();
         appAlert(
           'Uyumsuz kod',
           'Bu QR kod bu yolculuğa ait değil.',
@@ -229,6 +232,7 @@ export default function QRTripEndModal({
 
       // Yolcu: QR doğru — ödeme onayı adımına geç
       lastScannedValueRef.current = { data: '', ts: 0 };
+      void playQrScanSuccessSound();
       setPendingDriverId(driverUserId);
       setPassengerStep('payment');
       setScanned(false);

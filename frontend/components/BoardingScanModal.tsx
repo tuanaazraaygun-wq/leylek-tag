@@ -16,6 +16,7 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
+import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
 
 type Props = {
   visible: boolean;
@@ -133,6 +134,7 @@ export default function BoardingScanModal({
         const tok = await waitForPersistedAccessToken();
         if (!tok?.trim()) {
           if (!closingRef.current) {
+            void playQrScanErrorSound();
             appAlert('Oturum', 'Biniş doğrulamak için yeniden giriş yapın.');
           }
           return;
@@ -156,17 +158,20 @@ export default function BoardingScanModal({
           json = raw ? JSON.parse(raw) : {};
         } catch {
           if (!closingRef.current) {
+            void playQrScanErrorSound();
             appAlert('Hata', 'Sunucu yanıtı okunamadı');
           }
           return;
         }
         if (res.status === 401) {
           if (!closingRef.current) {
+            void playQrScanErrorSound();
             appAlert('Oturum', json.detail || 'Oturum süresi dolmuş olabilir; yeniden giriş yapın.');
           }
           return;
         }
         if (json.success) {
+          void playQrScanSuccessSound();
           const rawTag = (json as { tag_id?: string }).tag_id;
           const propTag = typeof tagId === 'string' ? tagId.trim() : '';
           const tag_id =
@@ -195,6 +200,7 @@ export default function BoardingScanModal({
           if (closingRef.current) {
             return;
           }
+          void playQrScanErrorSound();
           const detail = (json.detail || '').toLowerCase();
           const expiredOrInvalid =
             detail.includes('süresi dolmuş') ||
@@ -209,6 +215,7 @@ export default function BoardingScanModal({
         }
       } catch {
         if (!closingRef.current) {
+          void playQrScanErrorSound();
           appAlert('Hata', 'Ağ hatası — internet bağlantınızı kontrol edin');
         }
       } finally {
