@@ -1,10 +1,11 @@
 """
-Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2 / SCALE-6B-3).
+Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2 / SCALE-6B-3 / SCALE-6B-4).
 
 SOCKETIO_REDIS_ADAPTER=0 → yalnız bellek; varsayılan davranış değişmez.
 SOCKET_CLUSTER_MODE=memory (varsayılan) → adapter açık olsa bile Redis denenmez.
 Her iki flag açıkken Redis URL/dependency eksikse uyarı + bellek modu (crash yok).
 Readiness özeti bağlantı/ping yapmaz (shadow dry-run).
+SCALE-6B-4: runtime topology — repo backend_socket_app, legacy leylek-socket ayrı.
 """
 
 from __future__ import annotations
@@ -41,6 +42,20 @@ def socketio_redis_channel() -> str:
     return (os.getenv("SOCKETIO_REDIS_CHANNEL") or "leylek-socketio").strip()
 
 
+def socketio_runtime_role() -> str:
+    """Bu süreç: repo backend server:socket_app (api.leylektag.com/socket.io/)."""
+    return "backend_socket_app"
+
+
+def socketio_manages_legacy_socket() -> bool:
+    """socket.leylektag.com:8765 leylek-socket bu süreçte yönetilmez."""
+    return False
+
+
+def socketio_primary_path() -> str:
+    return "/socket.io"
+
+
 def redis_url_configured() -> bool:
     """True when SOCKET_REDIS_URL, REDIS_URL veya REDIS_HOST açıkça ayarlı."""
     if (os.environ.get("SOCKET_REDIS_URL") or "").strip():
@@ -59,6 +74,9 @@ def socketio_redis_config_summary() -> dict:
         "adapter_enabled": socketio_redis_adapter_enabled(),
         "channel": socketio_redis_channel(),
         "redis_url_configured": redis_url_configured(),
+        "runtime_role": socketio_runtime_role(),
+        "primary_socket_path": socketio_primary_path(),
+        "manages_legacy_socket": socketio_manages_legacy_socket(),
     }
     summary.update(socketio_redis_adapter_readiness())
     return summary

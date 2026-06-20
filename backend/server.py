@@ -502,6 +502,12 @@ if not _socketio_readiness["adapter_ready"]:
         _socketio_readiness["adapter_ready"],
         _socketio_readiness["adapter_disabled_reason"],
     )
+logger.info(
+    "[socketio_cluster] runtime role=%s path=%s manages_legacy_socket=%s",
+    socketio_cluster.socketio_runtime_role(),
+    socketio_cluster.socketio_primary_path(),
+    socketio_cluster.socketio_manages_legacy_socket(),
+)
 
 # Aktif kullanıcılar: {user_id: socket_id}
 connected_users = {}
