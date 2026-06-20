@@ -3283,12 +3283,21 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Off
             offer_data.get("is_dispatch"),
         )
         # Çoklu sekme / reconnect: tüm sid'ler + user odası (tek sid map anahtarı kaçırmasın).
-        sock_stats = await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
         socket_sid_count = 0
         socket_room_member_count = 0
-        if sock_stats:
-            socket_sid_count = int(sock_stats.get("sid_count") or 0)
-            socket_room_member_count = int(sock_stats.get("room_member_count") or 0)
+        socket_attempted = False
+        if _user_has_active_socket_room(raw):
+            sock_stats = await emit_socket_event_to_user(raw, "new_passenger_offer", offer_data)
+            socket_attempted = True
+            if sock_stats:
+                socket_sid_count = int(sock_stats.get("sid_count") or 0)
+                socket_room_member_count = int(sock_stats.get("room_member_count") or 0)
+        else:
+            logger.info(
+                "OFFER_SOCKET_SKIP_OFFLINE driver_id=%s tag_id=%s",
+                _mask_log_id(raw),
+                offer_data.get("tag_id"),
+            )
 
         # FCM: yalnız send_trip_push_and_log → send_push_notification (Expo token kullanılmaz).
         offer_tag_id = offer_data.get("tag_id")
@@ -3309,7 +3318,7 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Off
             delivery_id=delivery_id,
             tag_id=offer_data.get("tag_id"),
             driver_id=raw,
-            socket_attempted=True,
+            socket_attempted=socket_attempted,
             socket_sid_count=socket_sid_count,
             socket_room_member_count=socket_room_member_count,
             push_scheduled=push_scheduled,
@@ -4033,6 +4042,20 @@ def _all_sids_for_registered_user(user_id: str) -> list[str]:
             seen.add(ss)
             out.append(ss)
     return out
+
+
+def _user_has_active_socket_room(user_id: str) -> bool:
+    """Kullanıcının aktif socket odası veya bağlı sid'i var mı (emit öncesi çevrimiçi kontrolü)."""
+    try:
+        ul = str(user_id or "").strip().lower()
+        if not ul:
+            return False
+        room = _normalize_user_room(ul)
+        room_member_count = _socketio_room_member_count(room)
+        sid_count = len(_all_sids_for_registered_user(ul))
+        return (room_member_count > 0) or (sid_count > 0)
+    except Exception:
+        return False
 
 
 async def emit_trip_force_ended_to_party(
@@ -5153,7 +5176,14 @@ async def rolling_dispatch_stop(
                 reason="rolling_dispatch_stop_revoke",
             )
             try:
-                await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
+                if _user_has_active_socket_room(did):
+                    await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
+                else:
+                    logger.info(
+                        "REMOVE_OFFER_SOCKET_SKIP_OFFLINE driver_id=%s tag_id=%s",
+                        _mask_log_id(did),
+                        tag_id,
+                    )
             except Exception:
                 pass
     await _expire_dispatch_queue_rows_for_tag(tag_id)
@@ -6096,7 +6126,14 @@ async def handle_dispatch_reject(tag_id: str, driver_id: str):
                 rd["excluded_driver_ids"] = ex
             ex.add(did_n)
             try:
-                await emit_socket_event_to_user(did_n, "remove_offer", {"tag_id": tag_id})
+                if _user_has_active_socket_room(did_n):
+                    await emit_socket_event_to_user(did_n, "remove_offer", {"tag_id": tag_id})
+                else:
+                    logger.info(
+                        "REMOVE_OFFER_SOCKET_SKIP_OFFLINE driver_id=%s tag_id=%s",
+                        _mask_log_id(did_n),
+                        tag_id,
+                    )
             except Exception:
                 pass
 
@@ -22510,7 +22547,14 @@ async def match_accept_cleanup_foreign_offers(
             "accepted_tag_id": acc,
         }
         try:
-            await emit_socket_event_to_user(did_raw, "remove_offer", payload)
+            if _user_has_active_socket_room(did_raw):
+                await emit_socket_event_to_user(did_raw, "remove_offer", payload)
+            else:
+                logger.info(
+                    "REMOVE_OFFER_SOCKET_SKIP_OFFLINE driver_id=%s tag_id=%s",
+                    _mask_log_id(did_raw),
+                    otid,
+                )
             await emit_socket_event_to_user(did_raw, "passenger_offer_taken", payload)
             emit_count += 1
         except Exception as em:
