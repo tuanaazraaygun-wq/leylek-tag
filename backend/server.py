@@ -6417,6 +6417,45 @@ SOCKET_SERVER_PORT = int(os.getenv("PORT", "8001"))
 # Son temizlik zamanı (global)
 last_cleanup_time = None
 
+
+async def _cluster_obs_heartbeat_loop() -> None:
+    interval = cluster_observability.cluster_obs_heartbeat_sec()
+    logger.info("[cluster_obs] heartbeat started interval_s=%s", interval)
+    while True:
+        try:
+            snap = cluster_observability.collect_cluster_snapshot(
+                socket_id_to_user=socket_id_to_user,
+                connected_users=connected_users,
+                socket_sid_to_keys=socket_sid_to_keys,
+                rolling_dispatch_index=rolling_dispatch_index,
+                rolling_dispatch_tasks=rolling_dispatch_tasks,
+                dispatch_queues=dispatch_queues,
+                active_dispatch_tasks=active_dispatch_tasks,
+            )
+            logger.info(
+                "[cluster_obs] snapshot node_id=%s enabled=%s socketio_mode=%s "
+                "adapter_enabled=%s channel=%s socket_unique_sids=%s "
+                "connected_user_keys=%s rolling_dispatch_active_tags=%s "
+                "rolling_dispatch_pending_timers=%s dispatch_queue_tags=%s "
+                "active_dispatch_task_keys=%s uptime_s=%s",
+                snap["node_id"],
+                snap["enabled"],
+                snap["socketio_mode"],
+                snap["adapter_enabled"],
+                snap["channel"],
+                snap["socket_unique_sids"],
+                snap["connected_user_keys"],
+                snap["rolling_dispatch_active_tags"],
+                snap["rolling_dispatch_pending_timers"],
+                snap["dispatch_queue_tags"],
+                snap["active_dispatch_task_keys"],
+                snap["uptime_s"],
+            )
+        except Exception as exc:
+            logger.warning("[cluster_obs] snapshot_error %s", exc)
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def startup():
     global last_cleanup_time, _route_http_client
@@ -6426,6 +6465,8 @@ async def startup():
         cluster_observability.cluster_obs_enabled(),
     )
     cluster_observability.record_startup_mono()
+    if cluster_observability.cluster_obs_enabled():
+        asyncio.create_task(_cluster_obs_heartbeat_loop())
     clear_dispatch_in_memory_state()
     _warn_security_env_on_startup()
     _warn_admin_auth_style_inconsistency()

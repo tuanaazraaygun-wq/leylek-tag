@@ -27,6 +27,16 @@ def cluster_obs_enabled() -> bool:
     )
 
 
+def cluster_obs_heartbeat_sec() -> int:
+    """CLUSTER_OBS_HEARTBEAT_SEC — varsayılan 30, aralık [5, 300]."""
+    raw = os.getenv("CLUSTER_OBS_HEARTBEAT_SEC", "30").strip()
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 30
+    return max(5, min(300, value))
+
+
 def resolve_node_id() -> str:
     """Node kimliğini bir kez çözümler ve modül önbelleğine yazar."""
     global _node_id
