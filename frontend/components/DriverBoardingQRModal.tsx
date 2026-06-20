@@ -24,9 +24,16 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   tagId: string;
+  /** LSX: yolcu biniş doğruladığında kısa onay overlay */
+  remoteSuccess?: boolean;
 };
 
-export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props) {
+export default function DriverBoardingQRModal({
+  visible,
+  onClose,
+  tagId,
+  remoteSuccess = false,
+}: Props) {
   const [qrString, setQrString] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +225,17 @@ export default function DriverBoardingQRModal({ visible, onClose, tagId }: Props
                 <PremiumText variant="caption" muted style={styles.qrHint}>
                   Kod doğrulandığında yolculuk güvenli şekilde başlar.
                 </PremiumText>
+                {remoteSuccess ? (
+                  <View style={styles.remoteSuccessOverlay} pointerEvents="none">
+                    <Ionicons name="checkmark-circle" size={52} color="rgba(34,211,238,0.95)" />
+                    <PremiumText variant="body" style={styles.remoteSuccessTitle}>
+                      Biniş doğrulandı
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.remoteSuccessSubtitle}>
+                      Yolcu kodu okuttu
+                    </PremiumText>
+                  </View>
+                ) : null}
               </GlassSurface>
             ) : showSkeleton ? (
               <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
@@ -378,6 +396,8 @@ const styles = StyleSheet.create({
     paddingVertical: LDS_SPACING.lg,
     paddingHorizontal: LDS_SPACING.md,
     borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    position: 'relative',
+    overflow: 'hidden',
     ...LDS_ELEVATION.panel,
   },
   qrCheckpointRow: {
@@ -438,5 +458,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: LDS_SPACING.xs,
+  },
+  remoteSuccessOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,17,31,0.82)',
+    borderRadius: LDS_RADIUS.lg,
+    gap: LDS_SPACING.xs,
+    paddingHorizontal: LDS_SPACING.md,
+  },
+  remoteSuccessTitle: {
+    fontWeight: '700',
+    color: 'rgba(186, 230, 253, 0.96)',
+    textAlign: 'center',
+  },
+  remoteSuccessSubtitle: {
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

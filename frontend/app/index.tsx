@@ -191,7 +191,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -299,6 +299,8 @@ function schedulePassengerBoardingScanClose(setVisible: (v: boolean) => void): v
   }
   setTimeout(() => setVisible(false), 300);
 }
+
+const BOARDING_REMOTE_ACK_MS = 400;
 
 function _normTagStatus(st: unknown): string {
   return String(st ?? '')
@@ -15421,8 +15423,26 @@ function DriverDashboard({
   const [showQRModal, setShowQRModal] = useState(false);
 
   const [driverBoardingQrModalVisible, setDriverBoardingQrModalVisible] = useState(false);
+  const [driverBoardingRemoteSuccess, setDriverBoardingRemoteSuccess] = useState(false);
   const [driverBoardingNearBanner, setDriverBoardingNearBanner] = useState(false);
   const driverBoardingStableSinceRef = useRef<number | null>(null);
+  const driverBoardingQrModalVisibleRef = useRef(false);
+  const driverBoardingRemoteAckTagRef = useRef<string | null>(null);
+  const driverBoardingCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  driverBoardingQrModalVisibleRef.current = driverBoardingQrModalVisible;
+
+  useEffect(() => {
+    if (driverBoardingQrModalVisible) {
+      driverBoardingRemoteAckTagRef.current = null;
+      setDriverBoardingRemoteSuccess(false);
+      return;
+    }
+    if (driverBoardingCloseTimerRef.current != null) {
+      clearTimeout(driverBoardingCloseTimerRef.current);
+      driverBoardingCloseTimerRef.current = null;
+    }
+    setDriverBoardingRemoteSuccess(false);
+  }, [driverBoardingQrModalVisible]);
   
   // 🆕 Rating Modal State - QR tarama sonrası puanlama (Sürücü)
   const [ratingModalData, setRatingModalData] = useState<{
@@ -16381,8 +16401,26 @@ function DriverDashboard({
           boarding_confirmed_at: data.boarding_confirmed_at ?? prev.boarding_confirmed_at,
         };
       });
-      setDriverBoardingQrModalVisible(false);
       setDriverBoardingNearBanner(false);
+
+      if (!driverBoardingQrModalVisibleRef.current) return;
+
+      const tagKey = String(tid).trim();
+      if (!tagKey || driverBoardingRemoteAckTagRef.current === tagKey) return;
+      driverBoardingRemoteAckTagRef.current = tagKey;
+
+      void playQrScanSuccessSound();
+      void tapButtonHaptic();
+      setDriverBoardingRemoteSuccess(true);
+
+      if (driverBoardingCloseTimerRef.current != null) {
+        clearTimeout(driverBoardingCloseTimerRef.current);
+      }
+      driverBoardingCloseTimerRef.current = setTimeout(() => {
+        driverBoardingCloseTimerRef.current = null;
+        setDriverBoardingRemoteSuccess(false);
+        setDriverBoardingQrModalVisible(false);
+      }, BOARDING_REMOTE_ACK_MS);
     },
     ...driverTrustSocketHandlers,
     onTrustedInviteReceived: handleDriverTrustedInviteSocketEvent,
@@ -20069,7 +20107,15 @@ function DriverDashboard({
 
       <DriverBoardingQRModal
         visible={driverBoardingQrModalVisible}
-        onClose={() => setDriverBoardingQrModalVisible(false)}
+        remoteSuccess={driverBoardingRemoteSuccess}
+        onClose={() => {
+          if (driverBoardingCloseTimerRef.current != null) {
+            clearTimeout(driverBoardingCloseTimerRef.current);
+            driverBoardingCloseTimerRef.current = null;
+          }
+          setDriverBoardingRemoteSuccess(false);
+          setDriverBoardingQrModalVisible(false);
+        }}
         tagId={activeTag?.id || ''}
       />
       

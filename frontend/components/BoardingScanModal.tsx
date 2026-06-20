@@ -17,6 +17,7 @@ import { API_BASE_URL } from '../lib/backendConfig';
 import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
+import { tapButtonHaptic } from '../utils/touchHaptics';
 
 type Props = {
   visible: boolean;
@@ -38,6 +39,13 @@ export type BoardingScanModalProps = Props;
 /** Aynı karede ML Kit’in çift decode etmesi — ms; retry’i engellememek için kısa tutulur */
 const BOARDING_SCAN_BURST_DEDUPE_MS = 120;
 const BOARDING_SCAN_RESCAN_COOLDOWN_MS = 900;
+const BOARDING_SUCCESS_BEAT_MS = 400;
+
+function boardingSuccessBeatDelay(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, BOARDING_SUCCESS_BEAT_MS);
+  });
+}
 
 export default function BoardingScanModal({
   visible,
@@ -50,6 +58,7 @@ export default function BoardingScanModal({
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [successBeat, setSuccessBeat] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const lastScannedValueRef = useRef<{ data: string; ts: number }>({ data: '', ts: 0 });
@@ -88,6 +97,7 @@ export default function BoardingScanModal({
     setCameraReady(false);
     setScanned(false);
     setProcessing(false);
+    setSuccessBeat(false);
     closingRef.current = false;
     verifiedClosingRef.current = false;
     verifyInFlightRef.current = false;
@@ -115,6 +125,7 @@ export default function BoardingScanModal({
     if (mountedRef.current) {
       setScanned(false);
       setProcessing(false);
+      setSuccessBeat(false);
     }
     lastScannedValueRef.current = { data: '', ts: 0 };
     cooldownUntilRef.current = 0;
@@ -172,6 +183,7 @@ export default function BoardingScanModal({
         }
         if (json.success) {
           void playQrScanSuccessSound();
+          void tapButtonHaptic();
           const rawTag = (json as { tag_id?: string }).tag_id;
           const propTag = typeof tagId === 'string' ? tagId.trim() : '';
           const tag_id =
@@ -181,6 +193,12 @@ export default function BoardingScanModal({
           closingRef.current = true;
           if (canMutateScanState()) {
             setCameraReady(false);
+            setProcessing(false);
+            setSuccessBeat(true);
+          }
+          await boardingSuccessBeatDelay();
+          if (!mountedRef.current || !visibleRef.current) {
+            return;
           }
           const closeModal = await Promise.resolve(
             onVerified({
@@ -195,6 +213,9 @@ export default function BoardingScanModal({
           } else {
             verifiedClosingRef.current = false;
             closingRef.current = false;
+            if (canMutateScanState()) {
+              setSuccessBeat(false);
+            }
           }
         } else {
           if (closingRef.current) {
@@ -275,7 +296,7 @@ export default function BoardingScanModal({
     [cameraReady, scanned, processing, verifyBoarding],
   );
 
-  const scannerActive = cameraReady && !scanned && !processing;
+  const scannerActive = cameraReady && !scanned && !processing && !successBeat;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -376,6 +397,17 @@ export default function BoardingScanModal({
                     <ActivityIndicator size="large" color="#22D3EE" />
                     <PremiumText variant="caption" muted style={styles.processingText}>
                       Doğrulanıyor…
+                    </PremiumText>
+                  </View>
+                ) : null}
+                {successBeat ? (
+                  <View style={styles.processing}>
+                    <Ionicons name="checkmark-circle" size={56} color="rgba(34,211,238,0.95)" />
+                    <PremiumText variant="body" style={styles.successTitle}>
+                      Biniş doğrulandı
+                    </PremiumText>
+                    <PremiumText variant="caption" muted style={styles.processingText}>
+                      Yolculuk başlıyor…
                     </PremiumText>
                   </View>
                 ) : null}
@@ -560,5 +592,11 @@ const styles = StyleSheet.create({
   processingText: {
     marginTop: LDS_SPACING.xs,
     fontWeight: '600',
+  },
+  successTitle: {
+    marginTop: LDS_SPACING.sm,
+    fontWeight: '700',
+    color: 'rgba(186, 230, 253, 0.96)',
+    textAlign: 'center',
   },
 });
