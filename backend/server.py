@@ -2164,6 +2164,16 @@ def _dispatch_env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _dispatch_db_backed_revoke_enabled() -> bool:
+    """DISPATCH_DB_BACKED_REVOKE=0 → DB-backed revoke kapalı (varsayılan açık)."""
+    return os.getenv("DISPATCH_DB_BACKED_REVOKE", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def _iban_payments_enabled() -> bool:
     return os.getenv("IBAN_PAYMENTS_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -5025,6 +5035,87 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
 # ==================== ROLLING BATCH DISPATCH (bellek + dispatch_queue senkronu) ====================
 
 
+async def revoke_dispatch_offers_for_tag_from_db(
+    tag_id: str,
+    *,
+    except_driver_id: Optional[str] = None,
+    reason: str = "accepted",
+) -> dict[str, Any]:
+    """
+    SCALE-6C-3B: dispatch_queue status=sent → socket revoke (salt okuma + emit).
+    DB update/expire/delete yapmaz.
+    """
+    tid = str(tag_id or "").strip()
+    emit_reason = str(reason or "accepted").strip().lower()
+    result: dict[str, Any] = {
+        "tag_id": tid,
+        "reason": emit_reason,
+        "drivers_found": 0,
+        "emits_ok": 0,
+        "skipped_except": 0,
+    }
+    if not _dispatch_db_backed_revoke_enabled() or not tid or not supabase:
+        return result
+    ex = str(except_driver_id).strip().lower() if except_driver_id else None
+    try:
+        dq = (
+            supabase.table("dispatch_queue")
+            .select("driver_id")
+            .eq("tag_id", tid)
+            .eq("status", "sent")
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("[dispatch_db_revoke] select_failed tag_id=%s err=%s", tid, exc)
+        return result
+    seen: set[str] = set()
+    driver_ids: list[str] = []
+    for row in dq.data or []:
+        did = str(row.get("driver_id") or "").strip().lower()
+        if not did or did in seen:
+            continue
+        seen.add(did)
+        driver_ids.append(did)
+    result["drivers_found"] = len(driver_ids)
+    for did in driver_ids:
+        if ex and did == ex:
+            result["skipped_except"] += 1
+            continue
+        try:
+            if emit_reason == "cancelled":
+                await emit_passenger_offer_revoked(
+                    did, tid, revoke_reason="passenger_cancelled"
+                )
+            else:
+                if _user_has_active_socket_room(did):
+                    await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tid})
+                else:
+                    logger.info(
+                        "REMOVE_OFFER_SOCKET_SKIP_OFFLINE driver_id=%s tag_id=%s",
+                        _mask_log_id(did),
+                        tid,
+                    )
+            result["emits_ok"] += 1
+        except Exception as em:
+            logger.warning(
+                "[dispatch_db_revoke] emit_failed tag_id=%s driver=%s err=%s",
+                tid,
+                _mask_log_id(did),
+                em,
+            )
+    if driver_ids:
+        logger.info(
+            "[dispatch_db_revoke] tag_id=%s reason=%s drivers_found=%s emits_ok=%s "
+            "skipped_except=%s",
+            tid,
+            emit_reason,
+            result["drivers_found"],
+            result["emits_ok"],
+            result["skipped_except"],
+        )
+    return result
+
+
 async def _expire_dispatch_queue_rows_for_tag(tag_id: str) -> None:
     """Aynı tag için eski waiting/sent satırlarını kapat (polling ile uyum)."""
     try:
@@ -5319,6 +5410,20 @@ async def rolling_dispatch_stop(
                     )
             except Exception:
                 pass
+    elif revoke_offers and not st and _dispatch_db_backed_revoke_enabled():
+        _db_reason = "accepted" if except_driver_id else "cancelled"
+        try:
+            await revoke_dispatch_offers_for_tag_from_db(
+                tag_id,
+                except_driver_id=except_driver_id,
+                reason=_db_reason,
+            )
+        except Exception as _dbr:
+            logger.warning(
+                "[dispatch_db_revoke] rolling_dispatch_stop tag_id=%s err=%s",
+                tag_id,
+                _dbr,
+            )
     await _expire_dispatch_queue_rows_for_tag(tag_id)
     logger.info(
         "[tag_dispatch_state_shadow_enter] place=stop tag_id=%s flag=%s",
@@ -15217,6 +15322,10 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
         invalidate_tag_cache(tag_id, resolved_id or pid, driver_id)
 
         try:
+            await revoke_dispatch_offers_for_tag_from_db(tag_id, reason="cancelled")
+        except Exception:
+            pass
+        try:
             q_mem = dispatch_queues.get(tag_id, [])
             for e in q_mem:
                 if e.get("status") == "sent":
@@ -15286,6 +15395,10 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tid).eq("status", "pending").execute()
         
         # 3. 🔥 Dispatch queue'dan sil - SÜRÜCÜLERDEN HEMEN KALDIR
+        try:
+            await revoke_dispatch_offers_for_tag_from_db(tid, reason="cancelled")
+        except Exception:
+            pass
         try:
             q_mem = dispatch_queues.get(tid, [])
             for e in q_mem:
