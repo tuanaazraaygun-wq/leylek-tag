@@ -168,6 +168,7 @@ import services.boarding_qr_store as boarding_qr_store
 import services.journey_snapshot_store as journey_snap
 from services import driver_presence_store as driver_presence
 from services import cluster_observability
+from services import dispatch_leader_lock
 from services import socketio_cluster
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
@@ -6452,25 +6453,55 @@ async def _cluster_obs_heartbeat_loop() -> None:
                 dispatch_queues=dispatch_queues,
                 active_dispatch_tasks=active_dispatch_tasks,
             )
-            logger.info(
-                "[cluster_obs] snapshot node_id=%s enabled=%s socketio_mode=%s "
-                "adapter_enabled=%s channel=%s socket_unique_sids=%s "
-                "connected_user_keys=%s rolling_dispatch_active_tags=%s "
-                "rolling_dispatch_pending_timers=%s dispatch_queue_tags=%s "
-                "active_dispatch_task_keys=%s uptime_s=%s",
-                snap["node_id"],
-                snap["enabled"],
-                snap["socketio_mode"],
-                snap["adapter_enabled"],
-                snap["channel"],
-                snap["socket_unique_sids"],
-                snap["connected_user_keys"],
-                snap["rolling_dispatch_active_tags"],
-                snap["rolling_dispatch_pending_timers"],
-                snap["dispatch_queue_tags"],
-                snap["active_dispatch_task_keys"],
-                snap["uptime_s"],
-            )
+            if dispatch_leader_lock.dispatch_leader_log_heartbeat_enabled():
+                logger.info(
+                    "[cluster_obs] snapshot node_id=%s enabled=%s socketio_mode=%s "
+                    "adapter_enabled=%s channel=%s socket_unique_sids=%s "
+                    "connected_user_keys=%s rolling_dispatch_active_tags=%s "
+                    "rolling_dispatch_pending_timers=%s dispatch_queue_tags=%s "
+                    "active_dispatch_task_keys=%s uptime_s=%s "
+                    "dispatch_leader_enabled=%s dispatch_leader_shadow_enabled=%s "
+                    "dispatch_leader_holder=%s dispatch_leader_is_leader=%s "
+                    "dispatch_leader_redis_available=%s dispatch_leader_error=%s",
+                    snap["node_id"],
+                    snap["enabled"],
+                    snap["socketio_mode"],
+                    snap["adapter_enabled"],
+                    snap["channel"],
+                    snap["socket_unique_sids"],
+                    snap["connected_user_keys"],
+                    snap["rolling_dispatch_active_tags"],
+                    snap["rolling_dispatch_pending_timers"],
+                    snap["dispatch_queue_tags"],
+                    snap["active_dispatch_task_keys"],
+                    snap["uptime_s"],
+                    snap["dispatch_leader_enabled"],
+                    snap["dispatch_leader_shadow_enabled"],
+                    snap["dispatch_leader_holder"],
+                    snap["dispatch_leader_is_leader"],
+                    snap["dispatch_leader_redis_available"],
+                    snap["dispatch_leader_error"],
+                )
+            else:
+                logger.info(
+                    "[cluster_obs] snapshot node_id=%s enabled=%s socketio_mode=%s "
+                    "adapter_enabled=%s channel=%s socket_unique_sids=%s "
+                    "connected_user_keys=%s rolling_dispatch_active_tags=%s "
+                    "rolling_dispatch_pending_timers=%s dispatch_queue_tags=%s "
+                    "active_dispatch_task_keys=%s uptime_s=%s",
+                    snap["node_id"],
+                    snap["enabled"],
+                    snap["socketio_mode"],
+                    snap["adapter_enabled"],
+                    snap["channel"],
+                    snap["socket_unique_sids"],
+                    snap["connected_user_keys"],
+                    snap["rolling_dispatch_active_tags"],
+                    snap["rolling_dispatch_pending_timers"],
+                    snap["dispatch_queue_tags"],
+                    snap["active_dispatch_task_keys"],
+                    snap["uptime_s"],
+                )
         except Exception as exc:
             logger.warning("[cluster_obs] snapshot_error %s", exc)
         await asyncio.sleep(interval)
@@ -6483,6 +6514,17 @@ async def startup():
         "[cluster_obs] startup node_id=%s enabled=%s",
         cluster_observability.get_node_id(),
         cluster_observability.cluster_obs_enabled(),
+    )
+    _leader_snap = dispatch_leader_lock.leader_lock_status_snapshot()
+    logger.info(
+        "[dispatch_leader] enabled=%s shadow=%s holder=%s is_leader=%s "
+        "redis_available=%s error=%s",
+        _leader_snap["enabled"],
+        _leader_snap["shadow_enabled"],
+        _leader_snap["holder"],
+        _leader_snap["is_leader"],
+        _leader_snap["redis_available"],
+        _leader_snap["error"],
     )
     cluster_observability.record_startup_mono()
     if cluster_observability.cluster_obs_enabled():

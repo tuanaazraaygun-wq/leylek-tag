@@ -1,5 +1,5 @@
 """
-Cluster observability foundation (SCALE-6A-1 / SCALE-6A-2).
+Cluster observability foundation (SCALE-6A-1 / SCALE-6A-2 / SCALE-6C-1).
 
 Yalnızca node kimliği, feature flag ve read-only snapshot; davranış değiştirmez.
 """
@@ -11,7 +11,7 @@ import socket
 import time
 from typing import Any, Optional
 
-from services import socketio_cluster
+from services import dispatch_leader_lock, socketio_cluster
 
 _node_id: Optional[str] = None
 _startup_mono: Optional[float] = None
@@ -84,6 +84,7 @@ def collect_cluster_snapshot(
     uptime_s = time.monotonic() - mono if mono is not None else 0.0
     redis_cfg = socketio_cluster.socketio_redis_config_summary()
     preflight = socketio_cluster.socketio_adapter_enable_preflight()
+    leader = dispatch_leader_lock.leader_lock_status_snapshot()
 
     return {
         "node_id": get_node_id(),
@@ -111,4 +112,11 @@ def collect_cluster_snapshot(
         "dispatch_queue_tags": len(dispatch_queues),
         "active_dispatch_task_keys": len(active_dispatch_tasks),
         "uptime_s": uptime_s,
+        "dispatch_leader_enabled": leader["enabled"],
+        "dispatch_leader_shadow_enabled": leader["shadow_enabled"],
+        "dispatch_leader_key": leader["leader_key"],
+        "dispatch_leader_holder": leader["holder"],
+        "dispatch_leader_is_leader": leader["is_leader"],
+        "dispatch_leader_redis_available": leader["redis_available"],
+        "dispatch_leader_error": leader["error"],
     }
