@@ -15347,6 +15347,7 @@ function DriverDashboard({
           trip_distance_km: tripK,
           trip_duration_min: tag.estimated_minutes ?? null,
           passenger_payment_method: normalizePassengerPaymentMethod(tag.passenger_payment_method) ?? undefined,
+          ingressSource: 'push' as const,
         }];
       });
       return true;
@@ -16023,6 +16024,7 @@ function DriverDashboard({
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
+          ingressSource: 'socket' as const,
         };
         const nextList = [...filtered, newRow];
         if (data.tag_id) {
@@ -17469,6 +17471,7 @@ function DriverDashboard({
             const s = String(v || '').toLowerCase();
             return s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
           })(),
+          ingressSource: 'poll' as const,
         };
         const merged = [...prev, newRow];
         const vis = merged
@@ -18260,6 +18263,7 @@ function DriverDashboard({
             row.passenger_vehicle_kind =
               pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
           }
+          row.ingressSource = 'requests';
 
           return { id, row };
         };
@@ -18957,6 +18961,8 @@ function DriverDashboard({
                   .passenger_payment_method,
                 notes: req.notes,
                 created_at: req.created_at,
+                ingressSource: (req as { ingressSource?: 'socket' | 'poll' | 'push' | 'requests' | 'unknown' })
+                  .ingressSource,
               };
               })}
               driverName={user.name}

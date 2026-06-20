@@ -2167,6 +2167,19 @@ def _dispatch_env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _dispatch_offer_seen_telemetry_enabled() -> bool:
+    """DISPATCH_OFFER_SEEN_TELEMETRY=0 (default) → endpoint no-op; dispatch unchanged."""
+    return os.getenv("DISPATCH_OFFER_SEEN_TELEMETRY", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+_OFFER_SEEN_SOURCES = frozenset({"socket", "poll", "push", "requests", "unknown"})
+
+
 def _dispatch_db_backed_revoke_enabled() -> bool:
     """DISPATCH_DB_BACKED_REVOKE=0 → DB-backed revoke kapalı (varsayılan açık)."""
     return os.getenv("DISPATCH_DB_BACKED_REVOKE", "1").strip().lower() not in (
@@ -17221,6 +17234,165 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
     except Exception as e:
         logger.error(f"dispatch-pending-offer error: {e}")
         return {"success": False, "offer": None, "detail": str(e)}
+
+
+class DriverOfferSeenRequest(BaseModel):
+    tag_id: str
+    source: Optional[str] = "unknown"
+
+
+@api_router.post("/driver/offer-seen")
+async def driver_offer_seen(
+    body: DriverOfferSeenRequest = Body(...),
+    driver_id: str = None,
+    user_id: str = None,
+):
+    """
+    P0 telemetry: first UI render ack for normal dispatch offers.
+    Does not alter TTL, revoke, socket, or push behavior.
+    """
+    if not _dispatch_offer_seen_telemetry_enabled():
+        return {"success": True, "recorded": False, "disabled": True}
+
+    try:
+        did_raw = driver_id or user_id
+        if not did_raw:
+            return {
+                "success": True,
+                "recorded": False,
+                "reason": "user_id_required",
+            }
+
+        tag_id = str(body.tag_id or "").strip()
+        if not tag_id:
+            return {"success": True, "recorded": False, "reason": "tag_id_required"}
+
+        src = str(body.source or "unknown").strip().lower()
+        if src not in _OFFER_SEEN_SOURCES:
+            src = "unknown"
+
+        try:
+            resolved_id = await resolve_user_id(str(did_raw).strip())
+        except Exception:
+            resolved_id = None
+        if not resolved_id:
+            resolved_id = str(did_raw).strip()
+        else:
+            resolved_id = str(resolved_id).strip()
+
+        if not supabase:
+            logger.warning("[offer_seen] tag_id=%s driver_id=%s source=%s recorded=0 reason=no_db", tag_id, _mask_log_id(resolved_id), src)
+            return {"success": True, "recorded": False, "reason": "no_db"}
+
+        tr = (
+            supabase.table("tags")
+            .select("status")
+            .eq("id", tag_id)
+            .eq("type", TAG_TYPE_NORMAL)
+            .limit(1)
+            .execute()
+        )
+        if not tr.data:
+            logger.info(
+                "[offer_seen_skip_tag_status] tag_id=%s driver_id=%s source=%s status=not_found",
+                tag_id,
+                _mask_log_id(resolved_id),
+                src,
+            )
+            return {"success": True, "recorded": False, "reason": "tag_not_found"}
+
+        tag_status = str(tr.data[0].get("status") or "").strip().lower()
+        if tag_status != "waiting":
+            logger.info(
+                "[offer_seen_skip_tag_status] tag_id=%s driver_id=%s source=%s status=%s",
+                tag_id,
+                _mask_log_id(resolved_id),
+                src,
+                tag_status,
+            )
+            return {"success": True, "recorded": False, "reason": "tag_not_waiting"}
+
+        existing = (
+            supabase.table("dispatch_queue")
+            .select("id, driver_seen_at, sent_at")
+            .eq("tag_id", tag_id)
+            .eq("driver_id", resolved_id)
+            .eq("status", "sent")
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            logger.info(
+                "[offer_seen_no_row] tag_id=%s driver_id=%s source=%s",
+                tag_id,
+                _mask_log_id(resolved_id),
+                src,
+            )
+            return {"success": True, "recorded": False, "reason": "no_sent_row"}
+
+        row = existing.data[0]
+        if row.get("driver_seen_at") is not None:
+            logger.info(
+                "[offer_seen_already] tag_id=%s driver_id=%s source=%s",
+                tag_id,
+                _mask_log_id(resolved_id),
+                src,
+            )
+            return {"success": True, "recorded": False, "reason": "already_seen"}
+
+        now_iso = datetime.utcnow().isoformat()
+        upd = (
+            supabase.table("dispatch_queue")
+            .update({"driver_seen_at": now_iso, "driver_seen_source": src})
+            .eq("id", row["id"])
+            .eq("status", "sent")
+            .is_("driver_seen_at", "null")
+            .execute()
+        )
+        if not upd.data:
+            logger.info(
+                "[offer_seen_already] tag_id=%s driver_id=%s source=%s race=1",
+                tag_id,
+                _mask_log_id(resolved_id),
+                src,
+            )
+            return {"success": True, "recorded": False, "reason": "already_seen"}
+
+        sent_to_seen_ms = None
+        try:
+            sent_at_raw = row.get("sent_at")
+            if sent_at_raw:
+                sent_dt = sent_at_raw if isinstance(sent_at_raw, datetime) else datetime.fromisoformat(
+                    str(sent_at_raw).replace("Z", "+00:00")
+                )
+                if sent_dt.tzinfo is not None:
+                    sent_dt = sent_dt.replace(tzinfo=None)
+                sent_to_seen_ms = int((datetime.utcnow() - sent_dt).total_seconds() * 1000)
+        except Exception:
+            sent_to_seen_ms = None
+
+        logger.info(
+            "[offer_seen] tag_id=%s driver_id=%s source=%s recorded=1 sent_to_seen_ms=%s",
+            tag_id,
+            _mask_log_id(resolved_id),
+            src,
+            sent_to_seen_ms if sent_to_seen_ms is not None else "null",
+        )
+        return {
+            "success": True,
+            "recorded": True,
+            "driver_seen_at": now_iso,
+            "source": src,
+        }
+    except Exception as e:
+        logger.warning(
+            "[offer_seen] tag_id=%s driver_id=%s source=%s recorded=0 err=%s",
+            str(getattr(body, "tag_id", "") or ""),
+            _mask_log_id(driver_id or user_id),
+            str(getattr(body, "source", "unknown") or "unknown"),
+            e,
+        )
+        return {"success": True, "recorded": False, "reason": "error"}
 
 
 @api_router.post("/driver/start-trip")

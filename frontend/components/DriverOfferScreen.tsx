@@ -50,6 +50,10 @@ import {
   ROUTE_LOADING_UI,
   ROUTE_UNAVAILABLE_REVEAL_DELAY_MS,
 } from '../lib/routeLoadingUiConstants';
+import {
+  type OfferSeenSource,
+  reportDriverOfferSeen,
+} from '../lib/offerSeenTelemetry';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -1060,6 +1064,8 @@ export interface PassengerRequest {
   passenger_vehicle_kind?: 'car' | 'motorcycle';
   /** Yolcu ödeme: nakit | card (UI: kart yakında — iş mantığı değişmez) */
   passenger_payment_method?: 'cash' | 'card';
+  /** Offer ingress channel for seen telemetry (P0, flag-gated). */
+  ingressSource?: OfferSeenSource;
 }
 
 interface DriverOfferScreenProps {
@@ -1127,6 +1133,15 @@ function RequestCard({
   const [accepting, setAccepting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const seenLayoutReportedRef = useRef(false);
+
+  const handleOfferCardLayout = useCallback(() => {
+    if (seenLayoutReportedRef.current) return;
+    seenLayoutReportedRef.current = true;
+    const tagId = String(request.tag_id || request.id || '').trim();
+    if (!tagId) return;
+    void reportDriverOfferSeen(driverId, tagId, request.ingressSource ?? 'unknown');
+  }, [driverId, request.id, request.tag_id, request.ingressSource]);
 
   useEffect(() => {
     Animated.parallel([
@@ -1320,6 +1335,7 @@ function RequestCard({
   return (
     <Animated.View
       style={[styles.reqCardWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
+      onLayout={handleOfferCardLayout}
     >
       <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.reqCard}>
         <View style={styles.reqHeaderRow}>
