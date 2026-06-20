@@ -1,9 +1,10 @@
 """
-Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2).
+Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2 / SCALE-6B-3).
 
 SOCKETIO_REDIS_ADAPTER=0 → yalnız bellek; varsayılan davranış değişmez.
 SOCKET_CLUSTER_MODE=memory (varsayılan) → adapter açık olsa bile Redis denenmez.
 Her iki flag açıkken Redis URL/dependency eksikse uyarı + bellek modu (crash yok).
+Readiness özeti bağlantı/ping yapmaz (shadow dry-run).
 """
 
 from __future__ import annotations
@@ -53,11 +54,54 @@ def redis_url_configured() -> bool:
 
 def socketio_redis_config_summary() -> dict:
     """Read-only Redis adapter config özeti; bağlantı/ping yok."""
-    return {
+    summary = {
         "cluster_mode": socket_cluster_mode_env(),
         "adapter_enabled": socketio_redis_adapter_enabled(),
         "channel": socketio_redis_channel(),
         "redis_url_configured": redis_url_configured(),
+    }
+    summary.update(socketio_redis_adapter_readiness())
+    return summary
+
+
+def socketio_redis_adapter_readiness() -> dict:
+    """Shadow dry-run readiness; flags kapalıysa Redis import/connect yok."""
+    adapter_requested = socketio_redis_adapter_enabled()
+    cluster_mode = socket_cluster_mode_env()
+    redis_mode_requested = cluster_mode == "redis"
+    url_ok = redis_url_configured()
+
+    dep_available = False
+    dep_reason = ""
+    if adapter_requested and redis_mode_requested:
+        dep_ok, dep_reason = _redis_adapter_dependency_ok()
+        dep_available = dep_ok
+
+    if not adapter_requested:
+        disabled_reason = "adapter_not_requested"
+    elif not redis_mode_requested:
+        disabled_reason = f"cluster_mode_{cluster_mode}"
+    elif not dep_available:
+        disabled_reason = dep_reason or "redis_dependency_unavailable"
+    elif not url_ok:
+        disabled_reason = "redis_url_not_configured"
+    else:
+        disabled_reason = ""
+
+    adapter_ready = (
+        adapter_requested
+        and redis_mode_requested
+        and url_ok
+        and dep_available
+    )
+
+    return {
+        "adapter_requested": adapter_requested,
+        "redis_mode_requested": redis_mode_requested,
+        "redis_url_configured": url_ok,
+        "redis_dependency_available": dep_available,
+        "adapter_ready": adapter_ready,
+        "adapter_disabled_reason": disabled_reason,
     }
 
 

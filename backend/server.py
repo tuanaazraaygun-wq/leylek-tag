@@ -495,6 +495,13 @@ logger.info(
     "enabled" if socketio_cluster.socketio_redis_adapter_enabled() else "disabled",
     socketio_cluster.socketio_redis_channel(),
 )
+_socketio_readiness = socketio_cluster.socketio_redis_adapter_readiness()
+if not _socketio_readiness["adapter_ready"]:
+    logger.info(
+        "[socketio_cluster] adapter_readiness ready=%s reason=%s",
+        _socketio_readiness["adapter_ready"],
+        _socketio_readiness["adapter_disabled_reason"],
+    )
 
 # Aktif kullanıcılar: {user_id: socket_id}
 connected_users = {}
