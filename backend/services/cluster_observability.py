@@ -83,6 +83,7 @@ def collect_cluster_snapshot(
     mono = startup_mono if startup_mono is not None else _startup_mono
     uptime_s = time.monotonic() - mono if mono is not None else 0.0
     redis_cfg = socketio_cluster.socketio_redis_config_summary()
+    preflight = socketio_cluster.socketio_adapter_enable_preflight()
 
     return {
         "node_id": get_node_id(),
@@ -100,6 +101,8 @@ def collect_cluster_snapshot(
         "runtime_role": redis_cfg["runtime_role"],
         "primary_socket_path": redis_cfg["primary_socket_path"],
         "manages_legacy_socket": redis_cfg["manages_legacy_socket"],
+        "can_enable_on_this_process": preflight["can_enable_on_this_process"],
+        "enable_blockers": preflight["enable_blockers"],
         "socket_unique_sids": len(socket_id_to_user),
         "connected_user_keys": len(connected_users),
         "socket_sid_to_keys_entries": len(socket_sid_to_keys),

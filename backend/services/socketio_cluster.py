@@ -1,11 +1,12 @@
 """
-Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2 / SCALE-6B-3 / SCALE-6B-4).
+Socket.IO Redis adapter foundation (SCALE-5B / SCALE-6B-1 / SCALE-6B-2 / SCALE-6B-3 / SCALE-6B-4 / SCALE-6B-5).
 
 SOCKETIO_REDIS_ADAPTER=0 → yalnız bellek; varsayılan davranış değişmez.
 SOCKET_CLUSTER_MODE=memory (varsayılan) → adapter açık olsa bile Redis denenmez.
 Her iki flag açıkken Redis URL/dependency eksikse uyarı + bellek modu (crash yok).
 Readiness özeti bağlantı/ping yapmaz (shadow dry-run).
 SCALE-6B-4: runtime topology — repo backend_socket_app, legacy leylek-socket ayrı.
+SCALE-6B-5: controlled enable preflight — bağlantı/ping yok.
 """
 
 from __future__ import annotations
@@ -120,6 +121,45 @@ def socketio_redis_adapter_readiness() -> dict:
         "redis_dependency_available": dep_available,
         "adapter_ready": adapter_ready,
         "adapter_disabled_reason": disabled_reason,
+    }
+
+
+def socketio_adapter_enable_preflight() -> dict:
+    """Controlled adapter enable preflight; Redis import/connect/ping yok."""
+    runtime_role = socketio_runtime_role()
+    primary_socket_path = socketio_primary_path()
+    manages_legacy_socket = socketio_manages_legacy_socket()
+    cluster_mode = socket_cluster_mode_env()
+    readiness = socketio_redis_adapter_readiness()
+    channel = socketio_redis_channel()
+
+    blockers: list[str] = []
+    if runtime_role != "backend_socket_app":
+        blockers.append(f"runtime_role={runtime_role}")
+    if manages_legacy_socket:
+        blockers.append("manages_legacy_socket=True")
+    if primary_socket_path != "/socket.io":
+        blockers.append(f"primary_socket_path={primary_socket_path}")
+    if not readiness["adapter_ready"]:
+        reason = readiness["adapter_disabled_reason"]
+        blockers.append(reason or "adapter_not_ready")
+
+    can_enable = not blockers
+
+    return {
+        "runtime_role": runtime_role,
+        "primary_socket_path": primary_socket_path,
+        "manages_legacy_socket": manages_legacy_socket,
+        "cluster_mode": cluster_mode,
+        "adapter_requested": readiness["adapter_requested"],
+        "redis_mode_requested": readiness["redis_mode_requested"],
+        "channel": channel,
+        "redis_url_configured": readiness["redis_url_configured"],
+        "redis_dependency_available": readiness["redis_dependency_available"],
+        "adapter_ready": readiness["adapter_ready"],
+        "adapter_disabled_reason": readiness["adapter_disabled_reason"],
+        "can_enable_on_this_process": can_enable,
+        "enable_blockers": blockers,
     }
 
 

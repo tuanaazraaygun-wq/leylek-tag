@@ -508,6 +508,13 @@ logger.info(
     socketio_cluster.socketio_primary_path(),
     socketio_cluster.socketio_manages_legacy_socket(),
 )
+_socketio_preflight = socketio_cluster.socketio_adapter_enable_preflight()
+if not _socketio_preflight["can_enable_on_this_process"]:
+    logger.info(
+        "[socketio_cluster] enable_preflight can_enable=%s blockers=%s",
+        _socketio_preflight["can_enable_on_this_process"],
+        _socketio_preflight["enable_blockers"],
+    )
 
 # Aktif kullanıcılar: {user_id: socket_id}
 connected_users = {}
