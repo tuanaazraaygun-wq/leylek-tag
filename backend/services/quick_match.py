@@ -1483,6 +1483,7 @@ def accept_quick_match_invite(
         "pickup_location": request_row.get("pickup_label"),
         "dropoff_location": request_row.get("dropoff_label"),
         "passenger_preferred_vehicle": vehicle_pref,
+        "passenger_payment_method": "cash",
         "distance_km": request_row.get("distance_km"),
         "matched_at": now_iso,
     }

@@ -115,7 +115,8 @@ export default function QRTripEndModal({
   const qrValue = `leylektag://end?u=${userId}&t=${tagId}`;
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
   const canAutoCompleteCashAfterScan =
-    !isTrustedDirect && effectiveBookingPaymentMethod === 'cash';
+    !isTrustedDirect &&
+    (effectiveBookingPaymentMethod === 'cash' || effectiveBookingPaymentMethod == null);
 
   useEffect(() => {
     if (visible) {
