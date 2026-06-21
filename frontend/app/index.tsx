@@ -13,6 +13,9 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
+import { themeChoiceEnabled } from '../lib/featureFlags';
+import { maybeNavigateToThemeChoice } from '../lib/theme/themeChoiceGate';
+import ThemeChoiceScreen from '../components/theme/ThemeChoiceScreen';
 import LiveMapView from '../components/LiveMapView';
 import TestFlightDebugPanel from '../components/TestFlightDebugPanel';
 import { isTestFlightDiagnosticsEnabled } from '../lib/testFlightDebug';
@@ -1026,6 +1029,7 @@ type AppScreen =
   | 'set-pin'
   | 'enter-pin'
   | 'role-select'
+  | 'theme-choice'
   | 'dashboard'
   | 'forgot-password'
   | 'reset-pin'
@@ -1982,6 +1986,9 @@ export default function App() {
           } else {
             setScreen('role-select');
           }
+          if (legalWasAccepted && themeChoiceEnabled) {
+            void maybeNavigateToThemeChoice(parsedUser.id, setScreen);
+          }
         }
 
         if (!legalWasAccepted) {
@@ -2291,6 +2298,10 @@ export default function App() {
         }
       } catch (e) {
         console.warn('Legal accept restore:', e);
+      }
+      if (themeChoiceEnabled) {
+        const navigated = await maybeNavigateToThemeChoice(user.id, setScreen);
+        if (navigated) return;
       }
     }
   };
@@ -3889,6 +3900,15 @@ export default function App() {
     );
   }
 
+  if (screen === 'theme-choice') {
+    return (
+      <ThemeChoiceScreen
+        userId={user?.id}
+        onComplete={() => setScreen('role-select')}
+      />
+    );
+  }
+
   if (screen === 'role-select') {
     const mergeVehicleIntoUser = (u: NonNullable<typeof user>) => {
       if (!rideVehicleKind || !selectedRole) return { ...u, role: selectedRole || u.role };
@@ -4357,6 +4377,7 @@ export default function App() {
     user &&
     guardScreen !== 'dashboard' &&
     guardScreen !== 'role-select' &&
+    guardScreen !== 'theme-choice' &&
     guardScreen !== 'community' &&
     guardScreen !== 'driver-kyc'
   ) {
