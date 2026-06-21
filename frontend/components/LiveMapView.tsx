@@ -2699,8 +2699,8 @@ export default function LiveMapView({
 
   const [mapTilesReady, setMapTilesReady] = useState(false);
   const mapReadyHandledRef = useRef(false);
-  /** Driver matched trip — onMapReady Android gap; overlay must not block indefinitely (P1-C-G-C). */
-  const MAP_TILES_READY_DRIVER_FALLBACK_MS = 2800;
+  /** Matched/in_progress — onMapReady gecikmesi; overlay süresiz kalmamalı (QA-2B). */
+  const MAP_TILES_READY_FALLBACK_MS = 1200;
   useEffect(() => {
     setMapTilesReady(false);
     mapReadyHandledRef.current = false;
@@ -5896,7 +5896,7 @@ export default function LiveMapView({
   }, [onDriverNavMapReady]);
 
   useEffect(() => {
-    if (!isDriver || !tagId) return;
+    if (!tagId) return;
     const st = String(tagStatus || '').toLowerCase();
     if (st !== 'matched' && st !== 'in_progress') return;
 
@@ -5905,10 +5905,10 @@ export default function LiveMapView({
       mapReadyHandledRef.current = true;
       setMapTilesReady(true);
       onDriverNavMapReady();
-    }, MAP_TILES_READY_DRIVER_FALLBACK_MS);
+    }, MAP_TILES_READY_FALLBACK_MS);
 
     return () => clearTimeout(timer);
-  }, [isDriver, tagId, tagStatus, onDriverNavMapReady]);
+  }, [tagId, tagStatus, onDriverNavMapReady]);
 
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
@@ -6313,6 +6313,11 @@ export default function LiveMapView({
   const showMapLoadingOverlay =
     !driverRideUiModern && !driverNavImmersive && !mapTilesReady;
 
+  const mapLoadingMessage = useMemo(() => {
+    const st = String(tagStatus || '').toLowerCase();
+    return st === 'in_progress' ? 'Yolculuk hazırlanıyor…' : 'Harita hazırlanıyor…';
+  }, [tagStatus]);
+
   const routeValueStyle = [
     styles.routeValueModern,
     driverNavImmersive ? styles.routeValueModernNav : null,
@@ -6510,7 +6515,17 @@ export default function LiveMapView({
 
       {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF + sol üst Ara (48x48) */}
       {MapView ? (
-        <View style={styles.mapSlot} pointerEvents="box-none">
+        <View
+          style={[
+            styles.mapSlot,
+            showMapLoadingOverlay
+              ? isScopeLight
+                ? styles.mapSlotLoadingLight
+                : styles.mapSlotLoadingDark
+              : null,
+          ]}
+          pointerEvents="box-none"
+        >
         <MapView
           key={isDriver ? `driver-map-${String(tagId ?? 'active')}` : 'map-default'}
           ref={mapRef}
@@ -6797,8 +6812,44 @@ export default function LiveMapView({
         </MapView>
         {showMapLoadingOverlay ? (
           <View style={[styles.mapLoadingOverlay, jLt?.mapLoadingOverlay]} pointerEvents="none">
-            <ActivityIndicator size="small" color={ui.activity} />
-            <Text style={[styles.mapLoadingOverlayText, jLt?.mapLoadingText]}>Harita yükleniyor…</Text>
+            <GlassSurface
+              variant="plain"
+              borderRadius={LDS_RADIUS.lg}
+              style={[
+                styles.mapLoadingCard,
+                isScopeLight ? styles.mapLoadingCardLight : styles.mapLoadingCardDark,
+              ]}
+            >
+              <View style={styles.mapLoadingIconRing}>
+                <Ionicons name="map-outline" size={22} color={ui.activity} />
+              </View>
+              <ActivityIndicator size="small" color={ui.activity} />
+              <Text style={[styles.mapLoadingOverlayText, jLt?.mapLoadingText]}>
+                {mapLoadingMessage}
+              </Text>
+            </GlassSurface>
+            <View style={styles.mapLoadingSkeletonRow} pointerEvents="none">
+              <View
+                style={[
+                  styles.mapLoadingSkeletonBar,
+                  isScopeLight ? styles.mapLoadingSkeletonBarLight : styles.mapLoadingSkeletonBarDark,
+                ]}
+              />
+              <View
+                style={[
+                  styles.mapLoadingSkeletonBar,
+                  styles.mapLoadingSkeletonBarMid,
+                  isScopeLight ? styles.mapLoadingSkeletonBarLight : styles.mapLoadingSkeletonBarDark,
+                ]}
+              />
+              <View
+                style={[
+                  styles.mapLoadingSkeletonBar,
+                  styles.mapLoadingSkeletonBarShort,
+                  isScopeLight ? styles.mapLoadingSkeletonBarLight : styles.mapLoadingSkeletonBarDark,
+                ]}
+              />
+            </View>
           </View>
         ) : null}
         </View>
@@ -8478,18 +8529,79 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 1,
   },
+  mapSlotLoadingLight: {
+    backgroundColor: 'rgba(248, 250, 252, 0.96)',
+  },
+  mapSlotLoadingDark: {
+    backgroundColor: 'rgba(8, 17, 31, 0.88)',
+  },
   mapLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(8, 17, 31, 0.42)',
     zIndex: 2,
-    gap: 8,
+    gap: LDS_SPACING.sm,
+    paddingHorizontal: LDS_SPACING.lg,
+  },
+  mapLoadingCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: LDS_SPACING.md,
+    paddingHorizontal: LDS_SPACING.lg,
+    gap: LDS_SPACING.sm,
+    minWidth: 220,
+    ...LDS_ELEVATION.chip,
+  },
+  mapLoadingCardLight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: 'rgba(0, 212, 170, 0.22)',
+  },
+  mapLoadingCardDark: {
+    backgroundColor: 'rgba(16, 26, 43, 0.92)',
+    borderWidth: LDS_BORDER_WIDTH.hairline,
+    borderColor: LDS_BORDER_COLOR.cockpitPanelTop,
+  },
+  mapLoadingIconRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+  },
+  mapLoadingSkeletonRow: {
+    width: '72%',
+    maxWidth: 280,
+    gap: LDS_SPACING.xs,
+    marginTop: LDS_SPACING.xxs,
+  },
+  mapLoadingSkeletonBar: {
+    height: 6,
+    borderRadius: 3,
+    width: '100%',
+    opacity: 0.85,
+  },
+  mapLoadingSkeletonBarMid: {
+    width: '86%',
+    alignSelf: 'center',
+  },
+  mapLoadingSkeletonBarShort: {
+    width: '62%',
+    alignSelf: 'center',
+  },
+  mapLoadingSkeletonBarLight: {
+    backgroundColor: 'rgba(100, 116, 139, 0.22)',
+  },
+  mapLoadingSkeletonBarDark: {
+    backgroundColor: 'rgba(34, 211, 238, 0.18)',
   },
   mapLoadingOverlayText: {
     color: 'rgba(186, 201, 222, 0.88)',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
+    textAlign: 'center',
   },
   map: { flex: 1 },
   navManeuverBanner: {

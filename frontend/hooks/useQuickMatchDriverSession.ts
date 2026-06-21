@@ -6,6 +6,7 @@ import {
   getCurrentQuickMatchInvite,
   type QuickMatchApiErrorCode,
   type QuickMatchApiResult,
+  type QuickMatchAcceptResponse,
   type QuickMatchInvitePublic,
 } from '../lib/quickMatchApi';
 
@@ -24,7 +25,7 @@ export type UseQuickMatchDriverSessionOptions = {
   enabled: boolean;
   hasActiveTag: boolean;
   pollIntervalMs?: number;
-  onMatched: (matchedTagId: string) => void;
+  onMatched: (matchedTagId: string, acceptPayload?: QuickMatchAcceptResponse) => void;
 };
 
 function isPendingDriverInvite(
@@ -375,7 +376,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
     setStatus('matched');
     stopPolling();
     if (tagId) {
-      onMatchedRef.current(tagId);
+      onMatchedRef.current(tagId, result.data);
     }
     return Boolean(tagId);
   }, [applyInvite, stopPolling]);

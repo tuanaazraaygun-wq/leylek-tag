@@ -78,6 +78,7 @@ import {
 import DriverQuickMatchInviteCard from '../components/superUx/DriverQuickMatchInviteCard';
 import DriverTrustedDirectInviteCard from '../components/superUx/DriverTrustedDirectInviteCard';
 import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession';
+import type { QuickMatchAcceptResponse } from '../lib/quickMatchApi';
 import { useTrustedDirectDriverSession } from '../hooks/useTrustedDirectDriverSession';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
@@ -841,6 +842,33 @@ interface Tag {
     passenger_id?: string;
     requested_at?: string;
   } | null;
+}
+
+/** QM accept — loadActiveTag beklerken LiveMap’e geçiş için minimal tag (hydrate sonra tamamlar). */
+function buildOptimisticQuickMatchDriverTag(
+  tagId: string,
+  acceptPayload: QuickMatchAcceptResponse | undefined,
+  driverUser: { id: string; name?: string | null } | null | undefined,
+): Tag {
+  const req = acceptPayload?.request;
+  const summary = acceptPayload?.tag;
+  return {
+    id: tagId,
+    tag_id: tagId,
+    passenger_id: '',
+    passenger_name: '',
+    pickup_location: req?.pickup_label ?? '',
+    dropoff_location: req?.dropoff_label ?? '',
+    status: 'matched',
+    match_channel: summary?.match_channel ?? 'quick',
+    offered_price: req?.offered_contribution_tl,
+    distance_km: req?.distance_km,
+    passenger_vehicle_kind: req?.vehicle_preference ?? 'car',
+    matched_at: req?.matched_at ?? new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    driver_id: driverUser?.id,
+    driver_name: driverUser?.name ?? undefined,
+  };
 }
 
 /** Backend `tags.end_request.kind` — zorla bitirde karşı taraf onayı */
@@ -12518,8 +12546,16 @@ function PassengerDashboard({
     <View style={[styles.passengerTripShell, dashLt?.tripShell]}>
     <CockpitBackground />
     <SafeAreaView style={styles.containerTransparent}>
-      {/* 🆕 Eşleşme Sağlanıyor Modal */}
-      <TagMatchTransitionOverlay active={matchingInProgress} />
+      {/* 🆕 Eşleşme Sağlanıyor Modal — LiveMap aktifken tek loader (harita overlay) yeterli */}
+      <TagMatchTransitionOverlay
+        active={
+          matchingInProgress &&
+          !(
+            activeTag &&
+            (activeTag.status === 'matched' || activeTag.status === 'in_progress')
+          )
+        }
+      />
       
       {/* Toast Notification - Otomatik Kaybolan */}
       {showToast && (
@@ -17994,14 +18030,32 @@ function DriverDashboard({
     !activeTag &&
     kycStatus?.status !== 'pending';
 
-  const handleQuickMatchDriverMatched = useCallback(async (_tagId?: string) => {
-    void playMatchChimeSound();
-    try {
-      await loadActiveTag();
-    } catch (error) {
-      console.warn('[QuickMatchDriver] loadActiveTag after match failed', error);
-    }
-  }, [loadActiveTag]);
+  const handleQuickMatchDriverMatched = useCallback(
+    async (tagId?: string, acceptPayload?: QuickMatchAcceptResponse) => {
+      void playMatchChimeSound();
+      const tid = String(tagId || acceptPayload?.tag?.tag_id || '').trim();
+      if (tid) {
+        driverMatchTransitionFromAcceptRef.current = true;
+        setActiveTag(buildOptimisticQuickMatchDriverTag(tid, acceptPayload, user));
+        setScreen('dashboard');
+        driverJourneyRecoveryWindowUntilRef.current = activeJourneyRecoveryWindowUntilMs();
+        console.log('ACTIVE_JOURNEY_RECOVERY_REFRESH', {
+          role: 'driver',
+          source: 'quick_match_accept',
+          phase: 'optimistic',
+          tag_id: tid,
+        });
+      }
+      try {
+        await loadActiveTag();
+      } catch (error) {
+        console.warn('[QuickMatchDriver] loadActiveTag after match failed', error);
+      } finally {
+        driverMatchTransitionFromAcceptRef.current = false;
+      }
+    },
+    [loadActiveTag, user],
+  );
 
   const handleTrustedDirectDriverMatched = useCallback(async (_tagId?: string) => {
     try {
@@ -19273,17 +19327,10 @@ function DriverDashboard({
                 }, ACTIVE_JOURNEY_RECOVERY_SOCKET_DELAY_MS);
 
                 if (data?.tag_id) {
-                  if (driverMatchTransitionTimerRef.current) {
-                    clearTimeout(driverMatchTransitionTimerRef.current);
-                    driverMatchTransitionTimerRef.current = null;
-                  }
                   driverMatchTransitionFromAcceptRef.current = true;
-                  setDriverMatchTransitionVisible(true);
-                  driverMatchTransitionTimerRef.current = setTimeout(() => {
-                    driverMatchTransitionTimerRef.current = null;
+                  setTimeout(() => {
                     driverMatchTransitionFromAcceptRef.current = false;
-                    setDriverMatchTransitionVisible(false);
-                  }, TAG_MATCH_TRANSITION_HOLD_MS);
+                  }, 0);
                 }
               }}
               onBack={() => onDriverOfferGoToRoleSelect?.()}
@@ -19358,7 +19405,16 @@ function DriverDashboard({
       />
     ) : null}
     <SafeAreaView style={styles.containerTransparent}>
-      <TagMatchTransitionOverlay active={driverMatchTransitionVisible} />
+      <TagMatchTransitionOverlay
+        active={
+          driverMatchTransitionVisible &&
+          !(
+            activeTag &&
+            !shouldDisableActivityMap &&
+            (activeTag.status === 'matched' || activeTag.status === 'in_progress')
+          )
+        }
+      />
 
       {/* CANLI HARİTA - Tam Ekran (Şoför)
           Android'de (stabilite için) haritayı kapatıyoruz. */}
