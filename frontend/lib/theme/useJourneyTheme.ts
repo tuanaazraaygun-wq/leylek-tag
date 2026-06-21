@@ -19,6 +19,8 @@ export type JourneyUiColors = {
   successIcon: string;
   errorIcon: string;
   ctaIcon: string;
+  ctaIconLight: string;
+  ctaIconFill: string;
   closeIcon: string;
   chevron: string;
   routeDotPrimary: string;
@@ -56,6 +58,14 @@ export type JourneyChromeLightSurfaces = {
   drvBottomQrBtnBoarding: ViewStyle;
   drvBottomQrBtnBoardingNear: ViewStyle;
   drvBottomQrBtnTripEnd: ViewStyle;
+  paxBottomCallBtn: ViewStyle;
+  paxBottomChatBtn: ViewStyle;
+  paxBottomGuvenBtn: ViewStyle;
+  drvBottomCallBtn: ViewStyle;
+  drvBottomChatBtn: ViewStyle;
+  drvBottomGuvenBtn: ViewStyle;
+  paxBottomEndBtn: ViewStyle;
+  driverRideForceBtn: ViewStyle;
   peerCardShell: ViewStyle;
   warningBanner: ViewStyle;
   successBanner: ViewStyle;
@@ -64,6 +74,15 @@ export type JourneyChromeLightSurfaces = {
   tripBannerBtnPrimary: ViewStyle;
   tripBannerBtnSecondary: ViewStyle;
   tripBannerHintAccent: TextStyle;
+  matchedRouteLineText: TextStyle;
+  matchedPriceChipText: TextStyle;
+  matchedNearChipText: TextStyle;
+  paxLiveChipText: TextStyle;
+  driverNavChipLabelText: TextStyle;
+  trustedAddChipText: TextStyle;
+  trustedAddChipMutedText: TextStyle;
+  dangerBtnText: TextStyle;
+  qrPrimaryBtnText: TextStyle;
 };
 
 const JOURNEY_UI_DARK: JourneyUiColors = {
@@ -74,6 +93,8 @@ const JOURNEY_UI_DARK: JourneyUiColors = {
   successIcon: 'rgba(34,211,238,0.95)',
   errorIcon: 'rgba(252,165,165,0.95)',
   ctaIcon: 'rgba(243,248,255,0.94)',
+  ctaIconLight: 'rgba(243,248,255,0.94)',
+  ctaIconFill: 'rgba(243,248,255,0.94)',
   closeIcon: 'rgba(243,248,255,0.88)',
   chevron: 'rgba(186,201,222,0.78)',
   routeDotPrimary: '#22D3EE',
@@ -89,17 +110,20 @@ const JOURNEY_UI_DARK: JourneyUiColors = {
 };
 
 function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLightSurfaces {
+  const dangerBg = 'rgba(220, 38, 38, 0.08)';
+  const dangerBorder = 'rgba(220, 38, 38, 0.28)';
+
   return {
     topRouteShell: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
     },
     topPhaseChipShell: {
-      backgroundColor: tokens.bg.glass,
+      backgroundColor: tokens.bg.canvasMid,
       borderColor: tokens.border.default,
     },
     topLiveChipShell: {
-      backgroundColor: tokens.bg.glass,
+      backgroundColor: tokens.bg.canvasMid,
       borderColor: tokens.border.default,
     },
     topLiveChipDot: { backgroundColor: tokens.accent.primary },
@@ -108,66 +132,104 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
       borderColor: tokens.accent.glowMid,
     },
     matchedTopNearChip: {
-      backgroundColor: tokens.bg.glass,
+      backgroundColor: tokens.bg.canvasMid,
       borderColor: tokens.border.default,
     },
     mapLoadingOverlay: { backgroundColor: tokens.shadow.modal },
     mapLoadingText: { color: tokens.text.muted },
     webFallback: { backgroundColor: tokens.bg.canvas },
     navManeuverBanner: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderBottomColor: tokens.border.default,
     },
     trustedAddCompactChip: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
       borderTopColor: tokens.borderColors.cardTopCyan,
     },
     trustedAddCompactChipMuted: {
-      backgroundColor: tokens.bg.glass,
+      backgroundColor: tokens.bg.canvasMid,
       borderColor: tokens.border.default,
     },
     trustedAddCompactChipError: {
-      backgroundColor: 'rgba(127, 29, 29, 0.10)',
-      borderColor: 'rgba(248, 113, 113, 0.35)',
+      backgroundColor: dangerBg,
+      borderColor: dangerBorder,
     },
     drvTopStatusChip: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.canvasMid,
       borderColor: tokens.border.default,
     },
     drvOpsStatusChipDot: { backgroundColor: tokens.accent.primary },
     paxBottomDeckShell: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
       borderTopColor: tokens.borderColors.cardTopCyan,
     },
     drvBottomDeckShell: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
       borderTopColor: tokens.borderColors.cardTopCyan,
     },
     paxBottomQrBtnBoarding: {
-      backgroundColor: tokens.bg.glassMuted,
-      borderColor: tokens.borderColors.selected,
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.glowMid,
     },
     paxBottomQrBtnTripEnd: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.accent.primary,
       borderColor: tokens.accent.glowMid,
     },
     drvBottomQrBtnBoarding: {
-      backgroundColor: tokens.bg.glassMuted,
-      borderColor: tokens.borderColors.selected,
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.glowMid,
     },
     drvBottomQrBtnBoardingNear: {
-      backgroundColor: tokens.accent.glowLow,
+      backgroundColor: tokens.accent.primary,
       borderColor: tokens.accent.glowMid,
     },
     drvBottomQrBtnTripEnd: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.accent.primary,
       borderColor: tokens.accent.glowMid,
     },
+    paxBottomCallBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    paxBottomChatBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    paxBottomGuvenBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    drvBottomCallBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    drvBottomChatBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    drvBottomGuvenBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    paxBottomEndBtn: {
+      backgroundColor: dangerBg,
+      borderColor: dangerBorder,
+    },
+    driverRideForceBtn: {
+      backgroundColor: dangerBg,
+      borderColor: dangerBorder,
+    },
     peerCardShell: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
     },
     warningBanner: {
@@ -179,12 +241,12 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
       borderColor: 'rgba(52, 211, 153, 0.28)',
     },
     tripBannerAlert: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
       borderTopColor: tokens.borderColors.cardTopCyan,
     },
     tripBannerPlain: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
     },
     tripBannerBtnPrimary: {
@@ -192,10 +254,19 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
       borderColor: tokens.accent.glowMid,
     },
     tripBannerBtnSecondary: {
-      backgroundColor: tokens.bg.glass,
+      backgroundColor: tokens.bg.canvasMid,
       borderColor: tokens.border.default,
     },
     tripBannerHintAccent: { color: tokens.accent.primary },
+    matchedRouteLineText: { color: tokens.text.primary },
+    matchedPriceChipText: { color: tokens.accent.primary, fontWeight: '700' },
+    matchedNearChipText: { color: tokens.text.primary, fontWeight: '600' },
+    paxLiveChipText: { color: tokens.accent.primary, fontWeight: '700' },
+    driverNavChipLabelText: { color: tokens.text.primary },
+    trustedAddChipText: { color: tokens.accent.primary },
+    trustedAddChipMutedText: { color: tokens.text.muted },
+    dangerBtnText: { color: tokens.status.error },
+    qrPrimaryBtnText: { color: tokens.text.inverse, fontWeight: '800' },
   };
 }
 
@@ -207,7 +278,9 @@ function buildJourneyUi(tokens: LhThemeTokens): JourneyUiColors {
     activity: tokens.accent.primary,
     successIcon: tokens.accent.primary,
     errorIcon: tokens.status.error,
-    ctaIcon: tokens.text.inverse,
+    ctaIcon: tokens.text.primary,
+    ctaIconLight: tokens.text.primary,
+    ctaIconFill: tokens.text.inverse,
     closeIcon: tokens.text.primary,
     chevron: tokens.text.muted,
     routeDotPrimary: tokens.accent.primary,
