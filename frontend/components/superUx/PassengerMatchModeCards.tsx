@@ -119,6 +119,9 @@ const SECONDARY_CARDS: CardDef[] = [
   },
 ];
 
+/** UX-MATCHCARD-2A — Yerime Al placeholder; definition kept, UI hidden until feature ships. */
+const RENDER_PROXY_MATCH_CARD = false;
+
 const stylesDark = StyleSheet.create({
   quickHeroCard: {
     borderTopColor: 'rgba(34, 211, 238, 0.42)',
@@ -327,6 +330,13 @@ function PassengerMatchModeCards({
     [isScopeLight, tokens],
   );
 
+  const visibleSecondaryCards = useMemo(
+    () => SECONDARY_CARDS.filter((card) => RENDER_PROXY_MATCH_CARD || card.id !== 'proxy'),
+    [],
+  );
+
+  const soloSecondaryRow = visibleSecondaryCards.length === 1;
+
   const layout = useMemo(() => {
     const usableHeight = Math.max(0, winH - 120);
     const isCompact = usableHeight < 720 || winW < 380;
@@ -510,6 +520,7 @@ function PassengerMatchModeCards({
   const renderSecondaryHero = (card: CardDef) => {
     const isProxy = card.id === 'proxy';
     const isTrusted = card.id === 'trusted';
+    const cellStyle = [styles.heroCell, soloSecondaryRow && styles.heroCellSoloCentered];
     const isDriverViewer = isTrusted && hasDriverRegistration;
     const isEnabled = isProxy
       ? false
@@ -618,7 +629,7 @@ function PassengerMatchModeCards({
           accessibilityRole="button"
           accessibilityState={{ disabled: true }}
           accessibilityLabel={isDriverViewer ? accessibilityLabel : `${card.title}. Yakında`}
-          style={styles.heroCell}
+          style={cellStyle}
         >
           <View pointerEvents="none">{secondaryCard}</View>
         </Pressable>
@@ -626,7 +637,7 @@ function PassengerMatchModeCards({
     }
 
     return (
-      <View key={card.id} style={styles.heroCell} accessibilityLabel={accessibilityLabel}>
+      <View key={card.id} style={cellStyle} accessibilityLabel={accessibilityLabel}>
         {secondaryCard}
       </View>
     );
@@ -637,8 +648,8 @@ function PassengerMatchModeCards({
       <View style={styles.heroRow}>
         {PRIMARY_CARDS.map(renderPrimaryHero)}
       </View>
-      <View style={styles.heroRow}>
-        {SECONDARY_CARDS.map(renderSecondaryHero)}
+      <View style={[styles.heroRow, soloSecondaryRow && styles.heroRowSolo]}>
+        {visibleSecondaryCards.map(renderSecondaryHero)}
       </View>
     </View>
   );
@@ -663,11 +674,22 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: LDS_SPACING.sm,
   },
+  heroRowSolo: {
+    justifyContent: 'center',
+  },
   heroCell: {
     flex: 1,
     flexBasis: 0,
     minWidth: 0,
     alignSelf: 'stretch',
+  },
+  heroCellSoloCentered: {
+    flex: 0,
+    flexGrow: 0,
+    flexShrink: 0,
+    width: '48%',
+    maxWidth: (MATCH_DECK_MAX_WIDTH - LDS_SPACING.sm) / 2,
+    alignSelf: 'center',
   },
   heroCardShell: {
     flex: 1,
