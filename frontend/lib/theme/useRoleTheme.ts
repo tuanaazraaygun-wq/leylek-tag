@@ -3,6 +3,7 @@
  */
 
 import { useMemo } from 'react';
+import { Platform } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import { isLightThemeScreenEnabled } from '../featureFlags';
@@ -26,10 +27,12 @@ export type RoleLightSurfaces = {
   roleStepCircleText: TextStyle;
   roleStepCircleTextActive: TextStyle;
   roleStepCircleTextMuted: TextStyle;
+  roleStepCircleMuted: ViewStyle;
   roleStepLabel: TextStyle;
   roleStepLabelActive: TextStyle;
   roleStepLabelDone: TextStyle;
   roleStepLabelMuted: TextStyle;
+  roleStepHelper: TextStyle;
   roleStepDash: ViewStyle;
   roleCardCompact: ViewStyle;
   roleCardLabel: TextStyle;
@@ -44,9 +47,19 @@ export type RoleLightSurfaces = {
   roleChangeRoleLabelSecondary: TextStyle;
   ctaBorder: string;
   ctaTextShadow: string;
+  ctaTouchableEnabled: ViewStyle;
+  ctaTouchableDisabled: ViewStyle;
+  ctaBodyEnabled: ViewStyle;
+  ctaBodyDisabled: ViewStyle;
   iconMuted: string;
   iconChevron: string;
 };
+
+/** Light role screen — readable label tiers (slate scale, not washed-out muted). */
+const ROLE_LT_LABEL = '#334155';
+const ROLE_LT_LABEL_MUTED = '#64748B';
+const ROLE_LT_LABEL_DONE = '#0F766E';
+const ROLE_LT_DESC = '#475569';
 
 export type RoleInputColors = {
   accent: string;
@@ -106,13 +119,15 @@ function buildRoleLightSurfaces(tokens: LhThemeTokens): RoleLightSurfaces {
       borderColor: tokens.accent.glowMid,
       backgroundColor: tokens.bg.glass,
     },
-    roleStepCircleText: { color: tokens.text.muted },
+    roleStepCircleText: { color: ROLE_LT_LABEL },
     roleStepCircleTextActive: { color: tokens.text.primary },
-    roleStepCircleTextMuted: { color: tokens.text.muted },
-    roleStepLabel: { color: tokens.text.muted },
-    roleStepLabelActive: { color: tokens.text.primary },
-    roleStepLabelDone: { color: tokens.text.muted },
-    roleStepLabelMuted: { color: tokens.text.muted },
+    roleStepCircleTextMuted: { color: ROLE_LT_LABEL_MUTED },
+    roleStepCircleMuted: { opacity: 1 },
+    roleStepLabel: { color: ROLE_LT_LABEL },
+    roleStepLabelActive: { color: tokens.text.primary, fontWeight: '900' },
+    roleStepLabelDone: { color: ROLE_LT_LABEL_DONE },
+    roleStepLabelMuted: { color: ROLE_LT_LABEL_MUTED },
+    roleStepHelper: { color: ROLE_LT_LABEL_MUTED },
     roleStepDash: { backgroundColor: tokens.border.card },
     roleCardCompact: {
       backgroundColor: tokens.selectionCard.cardBackground,
@@ -126,12 +141,22 @@ function buildRoleLightSurfaces(tokens: LhThemeTokens): RoleLightSurfaces {
       color: tokens.text.primary,
       textShadowColor: tokens.accent.glowMid,
     },
-    roleCardDesc: { color: tokens.text.muted },
-    roleCardDescActivePassenger: { color: tokens.text.muted },
-    roleCardDescActiveDriver: { color: tokens.text.muted },
+    roleCardDesc: { color: ROLE_LT_DESC },
+    roleCardDescActivePassenger: { color: ROLE_LT_LABEL_DONE },
+    roleCardDescActiveDriver: { color: ROLE_LT_LABEL_DONE },
     roleCheckBadge: {
       backgroundColor: tokens.bg.elevated,
-      borderColor: tokens.border.default,
+      borderColor: tokens.accent.primary,
+      ...Platform.select({
+        ios: {
+          shadowColor: tokens.shadow.ambient,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 1,
+          shadowRadius: 4,
+        },
+        android: { elevation: 2 },
+        default: {},
+      }),
     },
     roleStatusStripCompact: {
       backgroundColor: tokens.bg.glassMuted,
@@ -143,11 +168,41 @@ function buildRoleLightSurfaces(tokens: LhThemeTokens): RoleLightSurfaces {
       backgroundColor: tokens.bg.glass,
       borderColor: tokens.border.default,
     },
-    roleChangeRoleLabelSecondary: { color: tokens.text.muted },
-    ctaBorder: tokens.accent.glowMid,
-    ctaTextShadow: tokens.shadow.ambient,
-    iconMuted: tokens.text.muted,
-    iconChevron: tokens.text.muted,
+    roleChangeRoleLabelSecondary: { color: ROLE_LT_DESC },
+    ctaBorder: tokens.accent.primary,
+    ctaTextShadow: 'transparent',
+    ctaTouchableEnabled: Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.10)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 1,
+        shadowRadius: 10,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }) ?? {},
+    ctaTouchableDisabled: Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.06)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
+      },
+      android: { elevation: 2 },
+      default: {},
+    }) ?? {},
+    ctaBodyEnabled: {
+      backgroundColor: '#FFFFFF',
+      borderColor: tokens.accent.primary,
+      borderTopColor: tokens.accent.glowHigh,
+    },
+    ctaBodyDisabled: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.border.default,
+    },
+    iconMuted: ROLE_LT_DESC,
+    iconChevron: ROLE_LT_LABEL,
   };
 }
 

@@ -30,14 +30,14 @@ export type BlueprintIllustrationProps = {
 export function getBlueprintPalette(active: boolean, theme: ResolvedTheme = 'dark'): BlueprintPalette {
   if (theme === 'light') {
     return {
-      stroke: active ? 'rgba(13,148,136,0.92)' : 'rgba(15,118,110,0.62)',
-      strokeMuted: active ? 'rgba(13,148,136,0.52)' : 'rgba(100,116,139,0.48)',
-      fill: active ? 'rgba(0,212,170,0.16)' : 'rgba(0,212,170,0.08)',
-      fillDeep: active ? 'rgba(0,212,170,0.22)' : 'rgba(0,212,170,0.12)',
-      fillAccent: active ? 'rgba(14,165,233,0.18)' : 'rgba(14,165,233,0.10)',
-      grid: 'rgba(15,23,42,0.10)',
-      glow: active ? 'rgba(0,212,170,0.14)' : 'rgba(0,212,170,0.06)',
-      highlight: active ? 'rgba(13,17,23,0.88)' : 'rgba(51,65,85,0.72)',
+      stroke: active ? 'rgba(13,148,136,0.92)' : 'rgba(15,118,110,0.72)',
+      strokeMuted: active ? 'rgba(13,148,136,0.58)' : 'rgba(71,85,105,0.58)',
+      fill: active ? 'rgba(0,212,170,0.16)' : 'rgba(0,212,170,0.10)',
+      fillDeep: active ? 'rgba(0,212,170,0.22)' : 'rgba(0,212,170,0.14)',
+      fillAccent: active ? 'rgba(14,165,233,0.18)' : 'rgba(14,165,233,0.12)',
+      grid: 'rgba(15,23,42,0.12)',
+      glow: active ? 'rgba(0,212,170,0.14)' : 'rgba(0,212,170,0.08)',
+      highlight: active ? 'rgba(13,17,23,0.88)' : 'rgba(51,65,85,0.82)',
     };
   }
 

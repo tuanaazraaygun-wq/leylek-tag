@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback, useImperativeHandle } from 'react';
-import { Animated, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, LinearGradient as SvgLinearGradient, Path, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -9,8 +9,6 @@ import { LDS_COLOR_CTA_RIM } from '../tokens/color';
 import { useLeylekEyeMotion, type LeylekEyeMotionProfile } from './useLeylekEyeMotion';
 
 const AnimatedG = Animated.createAnimatedComponent(G);
-
-const LEYLEK_ZEKA_EYE_PNG = require('../../assets/images/leylek-zeka-eye.png');
 
 export const LEYLEK_EYE_HERO_SIZE = 66;
 export const LEYLEK_EYE_ROLE_SELECT_SIZE = 49;
@@ -154,7 +152,6 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
   const viewSize = resolveEyeViewSize(size);
   const isSubtleChrome = chromeTone === 'subtle';
   const isLightTheme = themeVariant === 'light';
-  const usePngMark = isLightTheme;
 
   useImperativeHandle(ref, () => ({
     triggerFocus: motion.triggerFocus,
@@ -165,14 +162,7 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
     onPress?.();
   }, [motion.triggerFocus, onPress]);
 
-  const eyeNode = usePngMark ? (
-    <Image
-      source={LEYLEK_ZEKA_EYE_PNG}
-      style={{ width: Math.round(viewSize * 1.08), height: Math.round(viewSize * 1.08) }}
-      resizeMode="contain"
-      accessibilityIgnoresInvertColors
-    />
-  ) : (
+  const eyeNode = (
     <Animated.View
       style={[
         styles.eyeScaleWrap,
@@ -222,19 +212,17 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
           pointerEvents="none"
           style={[styles.glassSheen, { borderRadius: capsuleRadius }]}
         />
-        {!isLightTheme ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.rimPulse,
-              {
-                borderRadius: capsuleRadius,
-                opacity: motion.rimOpacity,
-                borderColor: LDS_COLOR_CTA_RIM,
-              },
-            ]}
-          />
-        ) : null}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.rimPulse,
+            {
+              borderRadius: capsuleRadius,
+              opacity: motion.rimOpacity,
+              borderColor: isLightTheme ? 'rgba(0,212,170,0.28)' : LDS_COLOR_CTA_RIM,
+            },
+          ]}
+        />
         <View
           style={[
             styles.glassInnerRim,

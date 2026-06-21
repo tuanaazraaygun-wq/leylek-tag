@@ -216,8 +216,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
   const { resolvedTheme } = useTheme();
   const eyeThemeVariant = resolvedTheme === 'light' ? 'light' : 'dark';
-  const guardianEyeSize =
-    eyeThemeVariant === 'light' ? LEYLEK_EYE_ROLE_SELECT_SIZE + 3 : LEYLEK_EYE_ROLE_SELECT_SIZE;
+  const guardianEyeSize = LEYLEK_EYE_ROLE_SELECT_SIZE;
 
   const [reduceMotion, setReduceMotion] = useState(false);
   const [keyboardUp, setKeyboardUp] = useState(false);

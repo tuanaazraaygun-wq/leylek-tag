@@ -420,7 +420,7 @@ export function RoleSelectScreen({
                       ]}
                     >
                       {roleStep1Done ? (
-                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={roleIn.textPrimary} />
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={roleLt ? roleIn.accent : roleIn.textPrimary} />
                       ) : (
                         <Text style={[styles.roleStepCircleText, roleLt?.roleStepCircleText, roleActiveStep === 1 && styles.roleStepCircleTextActive, roleActiveStep === 1 && roleLt?.roleStepCircleTextActive]}>1</Text>
                       )}
@@ -432,7 +432,7 @@ export function RoleSelectScreen({
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 1 && styles.roleStepLabelActive,
                         roleActiveStep === 1 && roleLt?.roleStepLabelActive,
-                        roleActiveStep === 1 && styles.roleStepLabelActiveRole,
+                        roleActiveStep === 1 && !roleLt && styles.roleStepLabelActiveRole,
                         roleStep1Done && styles.roleStepLabelDone,
                         roleStep1Done && roleLt?.roleStepLabelDone,
                       ]}
@@ -460,10 +460,11 @@ export function RoleSelectScreen({
                         roleStep2Done && roleActiveStep !== 2 && styles.roleStepCircleDone,
                         roleStep2Done && roleActiveStep !== 2 && roleLt?.roleStepCircleDone,
                         !roleStep1Done && styles.roleStepCircleMuted,
+                        !roleStep1Done && roleLt?.roleStepCircleMuted,
                       ]}
                     >
                       {roleStep2Done ? (
-                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={roleIn.textPrimary} />
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={roleLt ? roleIn.accent : roleIn.textPrimary} />
                       ) : (
                         <Text
                           style={[
@@ -486,7 +487,7 @@ export function RoleSelectScreen({
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 2 && styles.roleStepLabelActive,
                         roleActiveStep === 2 && roleLt?.roleStepLabelActive,
-                        roleActiveStep === 2 && styles.roleStepLabelActiveVehicle,
+                        roleActiveStep === 2 && !roleLt && styles.roleStepLabelActiveVehicle,
                         roleStep2Done && styles.roleStepLabelDone,
                         roleStep2Done && roleLt?.roleStepLabelDone,
                         !roleStep1Done && styles.roleStepLabelMuted,
@@ -514,6 +515,7 @@ export function RoleSelectScreen({
                         roleActiveStep === 3 && styles.roleStepCircleActiveContinue,
                         roleActiveStep === 3 && roleStepPulseStyle,
                         !rideVehicleKind && styles.roleStepCircleMuted,
+                        !rideVehicleKind && roleLt?.roleStepCircleMuted,
                       ]}
                     >
                       <Text
@@ -536,7 +538,9 @@ export function RoleSelectScreen({
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 3 && styles.roleStepLabelActive,
                         roleActiveStep === 3 && roleLt?.roleStepLabelActive,
-                        roleActiveStep === 3 && styles.roleStepLabelActiveContinue,
+                        roleActiveStep === 3 && !roleLt && styles.roleStepLabelActiveContinue,
+                        !rideVehicleKind && roleActiveStep !== 3 && styles.roleStepLabelMuted,
+                        !rideVehicleKind && roleActiveStep !== 3 && roleLt?.roleStepLabelMuted,
                       ]}
                       numberOfLines={2}
                     >
@@ -549,6 +553,7 @@ export function RoleSelectScreen({
                   muted
                   style={[
                     styles.roleStepHelper,
+                    roleLt?.roleStepHelper,
                     rs.isVeryCompact && styles.roleStepHelperVery,
                     rs.isCompact && !rs.isVeryCompact && styles.roleStepHelperCompact,
                     { marginTop: roleStepHelperMarginTop },
@@ -626,7 +631,7 @@ export function RoleSelectScreen({
                         checkmark={
                           selectedRole === 'passenger' ? (
                             <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
+                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleLt ? roleIn.accent : roleIn.textPrimary} />
                             </View>
                           ) : undefined
                         }
@@ -687,7 +692,7 @@ export function RoleSelectScreen({
                         checkmark={
                           selectedRole === 'driver' ? (
                             <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
+                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleLt ? roleIn.accent : roleIn.textPrimary} />
                             </View>
                           ) : undefined
                         }
@@ -757,7 +762,7 @@ export function RoleSelectScreen({
                           checkmark={
                             rideVehicleKind === 'car' ? (
                               <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
+                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleLt ? roleIn.accent : roleIn.textPrimary} />
                               </View>
                             ) : undefined
                           }
@@ -811,7 +816,7 @@ export function RoleSelectScreen({
                           checkmark={
                             rideVehicleKind === 'motorcycle' ? (
                               <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
+                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleLt ? roleIn.accent : roleIn.textPrimary} />
                               </View>
                             ) : undefined
                           }
@@ -894,17 +899,21 @@ export function RoleSelectScreen({
               onPress={onContinue}
               accessibilityLabel="Devam et"
               touchableStyleOverrides={
-                !selectedRole || !rideVehicleKind
-                  ? (pap.roleFloatAmbientLow as Record<string, unknown>)
-                  : (pap.roleCtaCyanHalo as Record<string, unknown>)
+                roleLt
+                  ? ((!selectedRole || !rideVehicleKind
+                      ? roleLt.ctaTouchableDisabled
+                      : roleLt.ctaTouchableEnabled) as Record<string, unknown>)
+                  : ((!selectedRole || !rideVehicleKind
+                      ? pap.roleFloatAmbientLow
+                      : pap.roleCtaCyanHalo) as Record<string, unknown>)
               }
               labelStyle={{
                 fontSize: roleContinueTextSize,
                 letterSpacing: 0.42,
                 fontWeight: '900',
                 textShadowColor: roleLt?.ctaTextShadow ?? 'rgba(2,10,26,0.55)',
-                textShadowOffset: { width: 0, height: 1 },
-                textShadowRadius: 3,
+                textShadowOffset: roleLt ? { width: 0, height: 0 } : { width: 0, height: 1 },
+                textShadowRadius: roleLt ? 0 : 3,
               }}
               gradientStyleOverrides={{
                 minHeight: roleContinueMinHeight,
@@ -914,6 +923,9 @@ export function RoleSelectScreen({
                 gap: Math.round(Math.max(8, Math.min(14, 14 * roleScale))),
                 borderWidth: StyleSheet.hairlineWidth + 1,
                 borderColor: roleLt?.ctaBorder ?? 'rgba(34,211,238,0.28)',
+                ...(!selectedRole || !rideVehicleKind
+                  ? roleLt?.ctaBodyDisabled
+                  : roleLt?.ctaBodyEnabled),
               }}
               trailing={
                 <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color={roleIn.textPrimary} />
