@@ -199,6 +199,7 @@ import {
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
 import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
+import { offerSoundController } from '../lib/offerSoundController';
 import {
   isActiveTripTagStatus,
   useLeylekZekaChrome,
@@ -15319,8 +15320,14 @@ function DriverDashboard({
 
   const driverPollOrderedIdsForSoundRef = useRef<string[]>([]);
 
+  const stopDriverOfferAlarmLoop = useCallback((reason: string) => {
+    offerSoundController.stopOfferLoop(reason);
+    void stopDriverOfferAlarmPlayback();
+  }, []);
+
   useEffect(() => {
     return () => {
+      offerSoundController.destroy();
       void unloadDriverNewOfferLuxuryTone();
     };
   }, []);
@@ -15406,6 +15413,7 @@ function DriverDashboard({
   const handleDriverOfferUnavailable = useCallback((info: { tagId: string; requestId?: string }) => {
     const tid = String(info.tagId || '').trim();
     if (!tid) return;
+    stopDriverOfferAlarmLoop('offer_unavailable');
     const rid = String(info.requestId || '').trim();
     clearDriverRemoveOfferTimer(tid);
     driverPendingAcceptTagIdsRef.current.delete(tid);
@@ -15421,7 +15429,7 @@ function DriverDashboard({
         return true;
       }),
     );
-  }, []);
+  }, [stopDriverOfferAlarmLoop]);
 
   const driverDataPollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -15486,7 +15494,7 @@ function DriverDashboard({
       driverEnsureSocketRegistered,
       'driver_accept_offer',
     );
-    void stopDriverOfferAlarmPlayback();
+    void stopDriverOfferAlarmLoop('driver_accept_flow_start');
     const t = String(tagId || '').trim();
     if (t) driverPendingAcceptTagIdsRef.current.add(t);
   }, [driverEnsureSocketRegistered]);
@@ -15962,7 +15970,7 @@ function DriverDashboard({
       return;
     }
     const { m: d, tag_id, route_info } = norm;
-    void stopDriverOfferAlarmPlayback();
+    void stopDriverOfferAlarmLoop('match_route_socket');
     const now = Date.now();
     const g = driverMatchSoundGuardRef.current;
     if (!g || g.id !== tag_id || now - g.at > 1800) {
@@ -16431,7 +16439,7 @@ function DriverDashboard({
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
       console.log('OFFER_EVENT_RECEIVED', { kind: 'tag_matched', tag_id: data?.tag_id ?? null });
-      void stopDriverOfferAlarmPlayback();
+      void stopDriverOfferAlarmLoop('tag_matched');
       // 🔊 EŞLEŞME SESİ - Ding ding ding
       playMatchSound();
       clearAllDriverOfferRemovalState();
@@ -18131,24 +18139,6 @@ function DriverDashboard({
     quickMatchDriverSession.invite?.invite_id,
   ]);
 
-  useEffect(() => {
-    if (!quickMatchDriverEnabled) return;
-    if (quickMatchDriverSession.isRestoring) return;
-    if (!quickMatchOpsRestoreFinishedRef.current) return;
-    if (quickMatchDriverSession.status !== 'pending') return;
-
-    const inviteId = String(quickMatchDriverSession.invite?.invite_id || '').trim();
-    if (!inviteId) return;
-    if (inviteId === quickMatchOpsResumeBaselineInviteIdRef.current) return;
-
-    notifyQuickMatchDriverOpsSoundFromInvite(inviteId);
-  }, [
-    quickMatchDriverEnabled,
-    quickMatchDriverSession.isRestoring,
-    quickMatchDriverSession.status,
-    quickMatchDriverSession.invite?.invite_id,
-  ]);
-
   const trustedDirectDriverSession = useTrustedDirectDriverSession({
     enabled: trustedDirectDriverEnabled,
     hasActiveTag: Boolean(activeTag),
@@ -18810,6 +18800,7 @@ function DriverDashboard({
   // Şoför: "Geç" — bu tag'ı bu sürücü için reddet (yalnızca current tag)
   const handleDismissRequest = async (tagId: string) => {
     playTapSound();
+    stopDriverOfferAlarmLoop('dismiss');
     try {
       const response = await fetch(
         `${API_URL}/ride/reject?tag_id=${encodeURIComponent(tagId)}&driver_id=${encodeURIComponent(String(user.id))}`,
@@ -18960,6 +18951,62 @@ function DriverDashboard({
     .map((r) => String(r.id || r.tag_id || r.request_id || '').trim())
     .filter(Boolean)
     .join(',');
+
+  /** RC-P0-2B — tek global offer alarm döngüsü (QM > normal, görünürlük bazlı) */
+  useEffect(() => {
+    if (quickMatchDriverSession.isRestoring) {
+      offerSoundController.syncOfferLoop({ key: null, kind: null, visible: false });
+      return;
+    }
+
+    const qmInviteId = String(quickMatchDriverSession.invite?.invite_id || '').trim();
+    const qmBaseline = quickMatchOpsResumeBaselineInviteIdRef.current;
+    const qmPending =
+      quickMatchDriverEnabled &&
+      quickMatchOpsRestoreFinishedRef.current &&
+      quickMatchDriverSession.status === 'pending' &&
+      !!qmInviteId &&
+      qmInviteId !== qmBaseline;
+
+    if (qmPending) {
+      notifyQuickMatchDriverOpsSoundFromInvite(qmInviteId);
+      offerSoundController.syncOfferLoop({
+        key: `qm:${qmInviteId}`,
+        kind: 'quick_match',
+        visible: true,
+      });
+      return;
+    }
+
+    const st = String(activeTag?.status ?? '').trim().toLowerCase();
+    const driverTripBusy =
+      !!activeTag &&
+      (st === 'matched' || st === 'in_progress' || st === 'driver_on_way');
+    const topReq = requests[0];
+    const topTagId = String(topReq?.id ?? topReq?.tag_id ?? '').trim();
+    const normalVisible = !driverTripBusy && requests.length > 0 && !!topTagId;
+
+    if (normalVisible) {
+      notifyDriverNewOfferSoundFromRealtimeOffer(topTagId);
+      offerSoundController.syncOfferLoop({
+        key: `normal:${topTagId}`,
+        kind: 'normal',
+        visible: true,
+      });
+      return;
+    }
+
+    offerSoundController.syncOfferLoop({ key: null, kind: null, visible: false });
+  }, [
+    quickMatchDriverEnabled,
+    quickMatchDriverSession.isRestoring,
+    quickMatchDriverSession.status,
+    quickMatchDriverSession.invite?.invite_id,
+    activeTag?.status,
+    activeTag?.id,
+    requests.length,
+    requestsIdsKey,
+  ]);
 
   useEffect(() => {
     const aid = String(activeTag?.id || '').trim();
@@ -19288,7 +19335,7 @@ function DriverDashboard({
               onOfferUnavailable={handleDriverOfferUnavailable}
               onDriverAcceptMatch={(match) => {
                 const data = match as Record<string, unknown>;
-                void stopDriverOfferAlarmPlayback();
+                void stopDriverOfferAlarmLoop('accept_match');
                 clearAllDriverOfferRemovalState();
                 setRequests([]);
                 playMatchSound();

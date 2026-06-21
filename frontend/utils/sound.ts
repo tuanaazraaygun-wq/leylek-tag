@@ -314,9 +314,96 @@ export async function invalidateDriverOfferSoundCache(): Promise<void> {
   await unloadDriverNewOfferLuxuryTone();
 }
 
+/** RC-P0-2B — loop controller burst durdurma (QM ephemeral + normal cached pozisyon) */
+export async function stopOfferAlertBurstPlayback(): Promise<void> {
+  if (qmOpsAlertSound) {
+    const qm = qmOpsAlertSound;
+    qmOpsAlertSound = null;
+    try {
+      await qm.stopAsync();
+      await qm.unloadAsync();
+    } catch {
+      /* ignore */
+    }
+  }
+  if (driverOfferSound) {
+    try {
+      await driverOfferSound.stopAsync();
+      await driverOfferSound.setPositionAsync(0);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** RC-P0-2B — normal teklif alarm burst (max playMs, sonra dur) */
+export async function playDriverOfferAlertBurst(playMs = 2000): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  try {
+    await loadSounds();
+    await stopOfferAlertBurstPlayback();
+    const userId = await resolveDriverOfferUserId();
+    const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
+    const volume = userId ? await getDriverOfferSoundVolume(userId) : DEFAULT_DRIVER_OFFER_VOLUME;
+    const sound = await ensureDriverOfferSoundLoaded(kind);
+    if (!sound) return;
+    await sound.setVolumeAsync(volume);
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        void sound.stopAsync().then(() => sound.setPositionAsync(0)).catch(() => {}).finally(resolve);
+      }, playMs);
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playDriverOfferAlertBurst', e);
+  }
+}
+
+let qmOpsAlertSound: Audio.Sound | null = null;
+
+const QUICK_MATCH_OPS_VOLUME = 0.62;
+const QUICK_MATCH_OPS_SOUND_SOURCE = require('../assets/sounds/quick-match-driver-ops.wav');
+
+/** RC-P0-2B — Quick Match ops alarm burst (max playMs) */
+export async function playQuickMatchOfferAlertBurst(playMs = 2000): Promise<void> {
+  if (Platform.OS === 'web') return;
+  if (AppState.currentState !== 'active') return;
+  try {
+    await loadSounds();
+    await stopOfferAlertBurstPlayback();
+    const { sound } = await Audio.Sound.createAsync(QUICK_MATCH_OPS_SOUND_SOURCE, {
+      shouldPlay: false,
+      volume: QUICK_MATCH_OPS_VOLUME,
+      isLooping: false,
+    });
+    qmOpsAlertSound = sound;
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        void sound
+          .stopAsync()
+          .then(() => sound.unloadAsync())
+          .catch(() => {})
+          .finally(() => {
+            if (qmOpsAlertSound === sound) {
+              qmOpsAlertSound = null;
+            }
+            resolve();
+          });
+      }, playMs);
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('playQuickMatchOfferAlertBurst', e);
+  }
+}
+
 /** Kabul / eşleşme — teklif alarm playback'ini durdur (chimed/baseline korunur) */
 export async function stopDriverOfferAlarmPlayback(): Promise<void> {
   driverOfferToneCooldownGate.reset();
+  await stopOfferAlertBurstPlayback();
   await unloadDriverOfferSoundInternal();
 }
 
@@ -329,7 +416,7 @@ export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
 
 function markDriverOfferChimedAndPlay(tagKey: string): void {
   if (!driverOfferSessionGate.tryMarkChimed(tagKey)) return;
-  void playDriverNewOfferLuxuryTone();
+  /* RC-P0-2B: playback — offerSoundController visibility sync (push/socket dedupe only) */
 }
 
 export function parseDriverOfferTagFromPushData(data: unknown): string | null {
@@ -410,7 +497,7 @@ export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
     anyNew = true;
   }
   if (anyNew) {
-    void playDriverNewOfferLuxuryTone();
+    /* RC-P0-2B: loop via offerSoundController sync — no one-shot here */
   }
 }
 
@@ -430,10 +517,6 @@ export async function tryPlayDriverOfferSoundFromPushData(data: unknown): Promis
 }
 
 // ── Quick Match sürücü daveti — operasyon çağrısı (dispatch teklif yolundan ayrı) ──
-
-const QUICK_MATCH_OPS_VOLUME = 0.62;
-
-const QUICK_MATCH_OPS_SOUND_SOURCE = require('../assets/sounds/quick-match-driver-ops.wav');
 
 async function playQuickMatchDriverOpsCall(): Promise<void> {
   if (Platform.OS === 'web') return;
@@ -467,7 +550,7 @@ async function playQuickMatchDriverOpsCall(): Promise<void> {
  */
 export function notifyQuickMatchDriverOpsSoundFromInvite(inviteId: string): void {
   if (!quickMatchOpsSessionGate.tryMarkChimed(inviteId)) return;
-  void playQuickMatchDriverOpsCall();
+  /* RC-P0-2B: loop via offerSoundController — session dedupe only */
 }
 
 /** Oturum kapanışı / QM driver session disable */
