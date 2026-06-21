@@ -1116,7 +1116,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                         ]}
                       >
                         <Image
-                          source={require('../assets/images/leylek-logo-premium.png')}
+                          source={require('../assets/images/leylek-zeka-eye.png')}
                           style={styles.logoImage}
                           resizeMode="contain"
                           accessibilityIgnoresInvertColors

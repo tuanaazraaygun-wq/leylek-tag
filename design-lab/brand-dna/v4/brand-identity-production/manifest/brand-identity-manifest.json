@@ -10,29 +10,30 @@
     "10_BRAND_DRIFT_RULES.md",
     "11_BRAND_FREEZE_CHECKLIST.md"
   ],
-  "status": "B6-3-production-sync",
+  "status": "B6-4-production-sync",
   "productionTouched": true,
   "lastProductionSync": {
-    "sprint": "B6-3",
+    "sprint": "B6-4",
     "date": "2026-06-21",
     "exportTool": "resvg-js 2.6.2-beta.1",
+    "targets": [
+      "frontend/assets/images/leylek-zeka-eye.png",
+      "frontend/assets/images/leylek-watermark.png",
+      "frontend/components/MuhabbetWatermark.tsx",
+      "frontend/components/LeylekZekaWidget.tsx",
+      "frontend/components/LeylekZekaChat.tsx",
+      "frontend/components/superUx/LeylekEyeTrigger.tsx"
+    ]
+  },
+  "previousProductionSync": {
+    "sprint": "B6-3",
+    "date": "2026-06-21",
     "targets": [
       "frontend/assets/images/icon.png",
       "frontend/assets/images/adaptive-icon.png",
       "frontend/assets/images/adaptive-icon-foreground.png",
       "frontend/assets/images/favicon.png",
-      "frontend/android/app/src/main/res/mipmap-*/ic_launcher.png",
-      "frontend/android/app/src/main/res/mipmap-*/ic_launcher_foreground.png",
-      "frontend/android/app/src/main/res/mipmap-*/ic_launcher_round.png"
-    ]
-  },
-  "previousProductionSync": {
-    "sprint": "B6-2",
-    "date": "2026-06-21",
-    "targets": [
-      "frontend/assets/images/leylek-logo-premium.png",
-      "frontend/assets/ios.premium.logo.png",
-      "frontend/android/app/src/main/res/drawable-*/splashscreen_logo.png"
+      "frontend/android/app/src/main/res/mipmap-*/ic_launcher*.png"
     ]
   },
   "primarySourceLogo": "frontend/assets/images/leylek-logo-premium.png",

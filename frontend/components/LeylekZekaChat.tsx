@@ -44,6 +44,7 @@ import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 const LOGO = require('../assets/images/leylek-logo-premium.png');
+const ZEKA_EYE = require('../assets/images/leylek-zeka-eye.png');
 
 /** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
 const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
@@ -345,7 +346,7 @@ const HeaderLogoMark = memo(function HeaderLogoMark({ reduceMotion }: { reduceMo
         !reduceMotion && { transform: [{ translateY: floatY }, { scale }] },
       ]}
     >
-      <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
+      <Image source={ZEKA_EYE} style={styles.headerLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
     </Animated.View>
   );
 });

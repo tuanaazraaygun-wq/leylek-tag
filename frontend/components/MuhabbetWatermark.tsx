@@ -2,12 +2,12 @@ import React from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
 /**
- * Leylek Teklif Sende sekmeleri — tek Image, düşük opaklık, etkileşim yok.
+ * Leylek Teklif Sende sekmeleri — B5.2 watermark asset (12% opacity baked in SVG export).
  */
 export default function MuhabbetWatermark() {
   return (
     <View style={styles.wrap} pointerEvents="none">
-      <Image source={require('../assets/images/leylek-logo-premium.png')} style={styles.img} resizeMode="contain" />
+      <Image source={require('../assets/images/leylek-watermark.png')} style={styles.img} resizeMode="contain" />
     </View>
   );
 }
@@ -23,6 +23,6 @@ const styles = StyleSheet.create({
     width: '72%',
     maxWidth: 320,
     height: 220,
-    opacity: 0.06,
+    opacity: 1,
   },
 });

@@ -1,9 +1,7 @@
 import React, { memo } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
   PREMIUM_NAVY_CARD,
   PREMIUM_NAVY_DEEP,
@@ -32,7 +30,12 @@ function LeylekEyeTrigger({ onPress }: LeylekEyeTriggerProps) {
         style={styles.grad}
       >
         <View style={styles.ring} pointerEvents="none">
-          <Ionicons name="eye-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+          <Image
+            source={require('../../assets/images/leylek-zeka-eye.png')}
+            style={styles.eyeMark}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
         </View>
       </LinearGradient>
     </Pressable>
@@ -78,5 +81,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: PREMIUM_BORDER_SLATE,
     backgroundColor: 'rgba(34, 211, 238, 0.08)',
+  },
+  eyeMark: {
+    width: 26,
+    height: 26,
   },
 });
