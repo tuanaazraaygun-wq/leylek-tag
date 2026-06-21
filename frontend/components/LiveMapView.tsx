@@ -53,6 +53,7 @@ import { PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/co
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { useLiveMapChromeTheme } from '../lib/theme/useJourneyTheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -725,8 +726,9 @@ function RouteCalculatingPremium({
   const fs = compact ? U.fontSizeMapCompact : U.fontSizeMap;
   const dotSz = compact ? U.dotSizeMapCompact : U.dotSizeMap;
   const dotGap = compact ? U.dotGapMapCompact : U.dotGapMap;
-  const cockpitLoadingText = 'rgba(186,201,222,0.88)';
-  const cockpitLoadingDots = '#22D3EE';
+  const { ui } = useLiveMapChromeTheme();
+  const cockpitLoadingText = ui.loadingText;
+  const cockpitLoadingDots = ui.loadingDots;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
       <Text
@@ -776,12 +778,13 @@ function RouteUnavailableMuted({
   compact?: boolean;
   valueTextStyle?: TextStyle | TextStyle[] | null;
 }) {
+  const { ui } = useLiveMapChromeTheme();
   const fs = compact ? 12.5 : 14;
   return (
     <Text
       style={[
         {
-          color: 'rgba(186,201,222,0.82)',
+          color: ui.textMuted,
           fontSize: fs,
           fontWeight: '500',
           letterSpacing: 0.1,
@@ -2318,8 +2321,9 @@ function sliceMeetingRouteForNavFit(user: MapLatLng, route: MapLatLng[], aheadM:
 }
 
 function NavManeuverArrowIcon({ kind, size = 56 }: { kind: ManeuverArrowKind; size?: number }) {
-  const primary = '#22D3EE';
-  const soft = 'rgba(243,248,255,0.94)';
+  const { ui } = useLiveMapChromeTheme();
+  const primary = ui.accent;
+  const soft = ui.textSoft;
   switch (kind) {
     case 'straight':
       return <MaterialCommunityIcons name="arrow-up-bold" size={size} color={primary} />;
@@ -2410,6 +2414,7 @@ const AnimatedBorder = ({ color, children }: { color: string; children: React.Re
 // 🆕 Işıklı Navigasyon İkonu
 const NavigationIcon = ({ onPress }: { onPress: () => void }) => {
   const glow = useRef(new Animated.Value(0.5)).current;
+  const { ui } = useLiveMapChromeTheme();
   
   useEffect(() => {
     Animated.loop(
@@ -2432,8 +2437,8 @@ const NavigationIcon = ({ onPress }: { onPress: () => void }) => {
     <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
       <Animated.View style={[styles.navIconContainer, { opacity: glow }]}>
         <View style={styles.navIconOuter}>
-          <LinearGradient colors={['#0C4A6E', '#0891B2', '#22D3EE']} style={styles.navIconInner}>
-            <Ionicons name="navigate" size={28} color="#F3F8FF" />
+          <LinearGradient colors={[...ui.ctaGradientSoft]} style={styles.navIconInner}>
+            <Ionicons name="navigate" size={28} color={ui.ctaIcon} />
           </LinearGradient>
         </View>
       </Animated.View>
@@ -2545,6 +2550,7 @@ export default function LiveMapView({
   onOpenTrustedHub,
   trustedInviteRefreshNonce = 0,
 }: LiveMapViewProps) {
+  const { chromeSurfaces: jLt, ui } = useLiveMapChromeTheme();
   const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
   const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
 
@@ -4495,9 +4501,9 @@ export default function LiveMapView({
   ]);
   
   // Web harita fallback ikonu — rol ayrımı yok; premium navy/cyan
-  const themeColor = '#22D3EE';
-  const themeLightColor = 'rgba(186,230,253,0.42)';
-  const themeGradient = ['#08111F', '#101A2B', '#22D3EE'];
+  const themeColor = ui.accent;
+  const themeLightColor = ui.textMuted;
+  const themeGradient = ui.webFallbackGradient;
   
   // Arama fonksiyonu - hızlı ve direkt
   const handleCall = async (type: 'audio' | 'video') => {
@@ -6120,8 +6126,8 @@ export default function LiveMapView({
     meetingDistance <= 1.2;
   /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
   const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
-  const driverMatrixNavChipGradientColors = ['#08111F', '#0B1220', '#101A2B', '#22D3EE'] as const;
-  const driverMatrixNavChipIconColor = 'rgba(243,248,255,0.94)';
+  const driverMatrixNavChipGradientColors = ui.ctaGradient;
+  const driverMatrixNavChipIconColor = ui.ctaIcon;
 
   /** Dış harita hedefi — iç navigasyondan bağımsız; tag yedekleri offline senaryo için. */
   const driverExternalNavTarget = useMemo((): MapLatLng | null => {
@@ -6190,7 +6196,7 @@ export default function LiveMapView({
             accessibilityRole="button"
             accessibilityLabel="Apple Maps ile aç"
           >
-            <Ionicons name="map-outline" size={17} color="rgba(243,248,255,0.92)" />
+            <Ionicons name="map-outline" size={17} color={ui.ctaIcon} />
           </TouchableOpacity>
         ) : null}
         <TouchableOpacity
@@ -6200,7 +6206,7 @@ export default function LiveMapView({
           accessibilityRole="button"
           accessibilityLabel="Google Maps ile aç"
         >
-          <MaterialCommunityIcons name="google-maps" size={18} color="rgba(34,211,238,0.95)" />
+          <MaterialCommunityIcons name="google-maps" size={18} color={ui.accent} />
         </TouchableOpacity>
       </View>
     ) : null;
@@ -6316,14 +6322,15 @@ export default function LiveMapView({
         trustedAddCreating ||
         trustedAddAccepting ||
         trustedAddStatus === 'loading' ? (
-          <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
-            <ActivityIndicator size="small" color="#22D3EE" />
+          <View style={[styles.trustedAddCompactChipMuted, jLt?.trustedAddCompactChipMuted]} pointerEvents="none">
+            <ActivityIndicator size="small" color={ui.activity} />
           </View>
         ) : trustedAddStatus === 'incoming_pending' ? (
           <>
             <Pressable
               style={({ pressed }) => [
                 styles.trustedAddCompactChip,
+                jLt?.trustedAddCompactChip,
                 !boardingConfirmed ? styles.trustedAddCompactChipLocked : null,
                 pressed && { opacity: 0.88 },
               ]}
@@ -6334,7 +6341,7 @@ export default function LiveMapView({
               <Animated.View
                 style={[styles.trustedAddCompactChipInner, { opacity: trustedAddPulse }]}
               >
-                <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.95)" />
+                <Ionicons name="shield-checkmark-outline" size={14} color={ui.successIcon} />
                 <Text
                   style={styles.trustedAddCompactChipText}
                   numberOfLines={1}
@@ -6346,8 +6353,8 @@ export default function LiveMapView({
               </Animated.View>
             </Pressable>
             {trustedAddErrorMessage ? (
-              <View style={styles.trustedAddCompactChipError} pointerEvents="none">
-                <Ionicons name="alert-circle-outline" size={13} color="rgba(252,165,165,0.95)" />
+              <View style={[styles.trustedAddCompactChipError, jLt?.trustedAddCompactChipError]} pointerEvents="none">
+                <Ionicons name="alert-circle-outline" size={13} color={ui.errorIcon} />
                 <Text
                   style={styles.trustedAddCompactChipErrorText}
                   numberOfLines={1}
@@ -6363,6 +6370,7 @@ export default function LiveMapView({
             <Pressable
               style={({ pressed }) => [
                 styles.trustedAddCompactChip,
+                jLt?.trustedAddCompactChip,
                 !boardingConfirmed ? styles.trustedAddCompactChipLocked : null,
                 pressed && { opacity: 0.88 },
               ]}
@@ -6373,7 +6381,7 @@ export default function LiveMapView({
               <Animated.View
                 style={[styles.trustedAddCompactChipInner, { opacity: trustedAddPulse }]}
               >
-                <Ionicons name="person-add-outline" size={14} color="rgba(34,211,238,0.95)" />
+                <Ionicons name="person-add-outline" size={14} color={ui.successIcon} />
                 <Text
                   style={styles.trustedAddCompactChipText}
                   numberOfLines={1}
@@ -6388,8 +6396,8 @@ export default function LiveMapView({
             (trustedAddStatus === 'none' ||
               trustedAddStatus === 'declined' ||
               trustedAddStatus === 'error') ? (
-              <View style={styles.trustedAddCompactChipError} pointerEvents="none">
-                <Ionicons name="alert-circle-outline" size={13} color="rgba(252,165,165,0.95)" />
+              <View style={[styles.trustedAddCompactChipError, jLt?.trustedAddCompactChipError]} pointerEvents="none">
+                <Ionicons name="alert-circle-outline" size={13} color={ui.errorIcon} />
                 <Text
                   style={styles.trustedAddCompactChipErrorText}
                   numberOfLines={1}
@@ -6401,13 +6409,13 @@ export default function LiveMapView({
             ) : null}
           </>
         ) : (
-          <View style={styles.trustedAddCompactChipMuted} pointerEvents="none">
+          <View style={[styles.trustedAddCompactChipMuted, jLt?.trustedAddCompactChipMuted]} pointerEvents="none">
             <Ionicons
               name={
                 trustedAddStatus === 'active' ? 'checkmark-circle-outline' : 'time-outline'
               }
               size={14}
-              color="rgba(186,201,222,0.78)"
+              color={ui.chevron}
             />
             <Text
               style={styles.trustedAddCompactChipMutedText}
@@ -6459,6 +6467,7 @@ export default function LiveMapView({
           style={[
             styles.navManeuverBanner,
             styles.navManeuverBannerCompact,
+            jLt?.navManeuverBanner,
             { paddingTop: Math.max(insets.top, 8) + 4 },
           ]}
           pointerEvents="none"
@@ -6763,16 +6772,16 @@ export default function LiveMapView({
           )}
         </MapView>
         {showMapLoadingOverlay ? (
-          <View style={styles.mapLoadingOverlay} pointerEvents="none">
-            <ActivityIndicator size="small" color="#22D3EE" />
-            <Text style={styles.mapLoadingOverlayText}>Harita yükleniyor…</Text>
+          <View style={[styles.mapLoadingOverlay, jLt?.mapLoadingOverlay]} pointerEvents="none">
+            <ActivityIndicator size="small" color={ui.activity} />
+            <Text style={[styles.mapLoadingOverlayText, jLt?.mapLoadingText]}>Harita yükleniyor…</Text>
           </View>
         ) : null}
         </View>
       ) : (
         // Web fallback - harita yok
-        <View style={styles.webFallback}>
-          <Ionicons name="map-outline" size={64} color="#22D3EE" />
+        <View style={[styles.webFallback, jLt?.webFallback]}>
+          <Ionicons name="map-outline" size={64} color={ui.activity} />
           <Text style={styles.webFallbackText}>Harita mobil cihazda görüntülenir</Text>
         </View>
       )}
@@ -6795,6 +6804,7 @@ export default function LiveMapView({
                 style={[
                   styles.driverRideStatusPill,
                   boardingConfirmed ? styles.driverRideStatusPillStarted : null,
+                  jLt?.drvTopStatusChip,
                 ]}
               >
                 <View style={styles.driverRideStatusDot} />
@@ -6809,12 +6819,12 @@ export default function LiveMapView({
                 </PremiumText>
               </GlassSurface>
               <View style={styles.driverRideTopHeaderRight}>
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.driverRideLiveTagShell}>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={[styles.driverRideLiveTagShell, jLt?.topLiveChipShell]}>
                   <PremiumText variant="caption" style={styles.driverRideLiveTag}>
                     Canlı
                   </PremiumText>
                 </GlassSurface>
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.driverRideVehicleChip}>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.driverRideVehicleChip, jLt?.matchedTopNearChip]}>
                   <PremiumText variant="caption" muted style={styles.driverRideVehicleChipText}>
                     {passMotor ? 'Motor' : 'Araba'}
                   </PremiumText>
@@ -6824,7 +6834,7 @@ export default function LiveMapView({
 
             <View style={styles.driverRideLocRow}>
               <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconPickup]}>
-                <Ionicons name="navigate-circle" size={20} color="#22D3EE" />
+                <Ionicons name="navigate-circle" size={20} color={ui.activity} />
               </View>
               <View style={styles.driverRideLocTextCol}>
                 <PremiumText variant="caption" muted style={styles.driverRideSectionLabel}>
@@ -6844,7 +6854,7 @@ export default function LiveMapView({
 
             <View style={[styles.driverRideLocRow, { marginTop: LDS_SPACING.sm }]}>
               <View style={[styles.driverRideLocIconWrap, styles.driverRideLocIconDest]}>
-                <Ionicons name="flag" size={18} color="rgba(34,211,238,0.92)" />
+                <Ionicons name="flag" size={18} color={ui.accent} />
               </View>
               <View style={styles.driverRideLocTextCol}>
                 <PremiumText variant="caption" muted style={styles.driverRideSectionLabel}>
@@ -6931,6 +6941,7 @@ export default function LiveMapView({
           style={[
             styles.drvTopRouteShell,
             compactMatchedLayout ? styles.drvTopRouteShellCompact : null,
+            jLt?.topRouteShell,
           ]}
           borderRadius={LDS_RADIUS.lg}
         >
@@ -6938,7 +6949,7 @@ export default function LiveMapView({
             <View style={styles.matchedTopRouteHeaderLeft}>
               <GlassSurface
                 variant="plain"
-                style={styles.drvTopPhaseChipShell}
+                style={[styles.drvTopPhaseChipShell, jLt?.topPhaseChipShell]}
                 borderRadius={LDS_RADIUS.sm}
               >
                 <PremiumText variant="caption" muted style={styles.drvTopPhaseChip}>
@@ -6949,10 +6960,10 @@ export default function LiveMapView({
                 <View style={styles.drvTopLiveChipWrap}>
                   <GlassSurface
                     variant="plain"
-                    style={styles.drvTopLiveChipShell}
+                    style={[styles.drvTopLiveChipShell, jLt?.topLiveChipShell]}
                     borderRadius={LDS_RADIUS.full}
                   >
-                    <View style={styles.drvTopLiveChipDot} />
+                    <View style={[styles.drvTopLiveChipDot, jLt?.topLiveChipDot]} />
                     <PremiumText variant="caption" muted style={styles.drvTopLiveChipText}>
                       Canlı
                     </PremiumText>
@@ -6963,7 +6974,7 @@ export default function LiveMapView({
             {matchedTopPriceLabel != null ? (
               <GlassSurface
                 variant="plain"
-                style={styles.matchedTopPriceChip}
+                style={[styles.matchedTopPriceChip, jLt?.matchedTopPriceChip]}
                 borderRadius={LDS_RADIUS.sm}
               >
                 <PremiumText variant="caption" style={styles.matchedTopPriceChipText}>
@@ -6980,7 +6991,7 @@ export default function LiveMapView({
               navigationMode ? { opacity: navigationStage === 'pickup' ? 1 : 0.42 } : null,
             ]}
           >
-            <View style={[styles.matchedTopRouteDot, { backgroundColor: '#22D3EE' }]} />
+            <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotPrimary }]} />
             <PremiumText
               variant="caption"
               style={styles.matchedTopRouteLineText}
@@ -6998,7 +7009,7 @@ export default function LiveMapView({
                 navigationMode ? { opacity: navigationStage === 'destination' ? 1 : 0.42 } : null,
               ]}
             >
-              <View style={[styles.matchedTopRouteDot, { backgroundColor: 'rgba(34,211,238,0.88)' }]} />
+              <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotSecondary }]} />
               <PremiumText
                 variant="caption"
                 style={styles.matchedTopRouteLineText}
@@ -7009,7 +7020,7 @@ export default function LiveMapView({
               {nearDestination ? (
                 <GlassSurface
                   variant="plain"
-                  style={styles.matchedTopNearChip}
+                  style={[styles.matchedTopNearChip, jLt?.matchedTopNearChip]}
                   borderRadius={LDS_RADIUS.sm}
                 >
                   <PremiumText variant="caption" muted style={styles.matchedTopNearChipText}>
@@ -7025,7 +7036,7 @@ export default function LiveMapView({
               <Ionicons
                 name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
                 size={12}
-                color="rgba(186,201,222,0.82)"
+                color={ui.textMuted}
               />
               <PremiumText variant="caption" muted style={styles.matchedTopPaymentText} numberOfLines={1}>
                 {passengerPaymentMethod === 'card'
@@ -7054,15 +7065,15 @@ export default function LiveMapView({
                   accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
-                    colors={['#08111F', '#0B1220', '#22D3EE']}
+                    colors={[...ui.ctaGradientSoft]}
                     style={styles.navImmersiveAraGrad}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
                     {voiceCallPending ? (
-                      <ActivityIndicator size="small" color="#F3F8FF" />
+                      <ActivityIndicator size="small" color={ui.ctaIcon} />
                     ) : (
-                      <Ionicons name="call" size={18} color="rgba(243,248,255,0.94)" />
+                      <Ionicons name="call" size={18} color={ui.ctaIcon} />
                     )}
                     <Text style={styles.navImmersiveAraText}>
                       {voiceCallPending ? 'Bağlanıyor…' : 'Ara'}
@@ -7114,17 +7125,17 @@ export default function LiveMapView({
                     accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                   >
                     <LinearGradient
-                      colors={['rgba(16,26,43,0.98)', '#0B1220', '#22D3EE']}
+                      colors={[...ui.ctaGradientSoft]}
                       locations={[0, 0.5, 1]}
                       style={styles.navImmersiveGuvenGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
                       {trustRequestPending ? (
-                        <ActivityIndicator size="small" color="#F3F8FF" />
+                        <ActivityIndicator size="small" color={ui.ctaIcon} />
                       ) : (
                         <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                          <Ionicons name="shield-checkmark" size={18} color="rgba(243,248,255,0.94)" />
+                          <Ionicons name="shield-checkmark" size={18} color={ui.ctaIcon} />
                         </Animated.View>
                       )}
                       <Text style={styles.navImmersiveGuvenText}>
@@ -7211,6 +7222,7 @@ export default function LiveMapView({
             style={[
               styles.paxTopRouteShell,
               compactMatchedLayout ? styles.paxTopRouteShellCompact : null,
+              jLt?.topRouteShell,
             ]}
             borderRadius={LDS_RADIUS.lg}
           >
@@ -7218,7 +7230,7 @@ export default function LiveMapView({
               <View style={styles.matchedTopRouteHeaderLeft}>
                 <GlassSurface
                   variant="plain"
-                  style={styles.paxTopPhaseChipShell}
+                  style={[styles.paxTopPhaseChipShell, jLt?.topPhaseChipShell]}
                   borderRadius={LDS_RADIUS.sm}
                 >
                   <PremiumText variant="caption" style={styles.paxTopPhaseChip}>
@@ -7229,10 +7241,10 @@ export default function LiveMapView({
                   <Animated.View style={[styles.paxTopLiveChipWrap, { opacity: canliBlink }]}>
                     <GlassSurface
                       variant="plain"
-                      style={styles.paxTopLiveChipShell}
+                      style={[styles.paxTopLiveChipShell, jLt?.topLiveChipShell]}
                       borderRadius={LDS_RADIUS.full}
                     >
-                      <View style={styles.paxTopLiveChipDot} />
+                      <View style={[styles.paxTopLiveChipDot, jLt?.topLiveChipDot]} />
                       <PremiumText variant="caption" style={styles.paxTopLiveChipText}>
                         Canlı
                       </PremiumText>
@@ -7243,7 +7255,7 @@ export default function LiveMapView({
               {matchedTopPriceLabel != null ? (
                 <GlassSurface
                   variant="plain"
-                  style={styles.matchedTopPriceChip}
+                  style={[styles.matchedTopPriceChip, jLt?.matchedTopPriceChip]}
                   borderRadius={LDS_RADIUS.sm}
                 >
                   <PremiumText variant="caption" style={styles.matchedTopPriceChipText}>
@@ -7259,7 +7271,7 @@ export default function LiveMapView({
                 compactMatchedLayout ? styles.matchedTopRouteLineRowCompact : null,
               ]}
             >
-              <View style={[styles.matchedTopRouteDot, { backgroundColor: '#22D3EE' }]} />
+              <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotPrimary }]} />
               <PremiumText
                 variant="caption"
                 style={styles.matchedTopRouteLineText}
@@ -7276,7 +7288,7 @@ export default function LiveMapView({
                   compactMatchedLayout ? styles.matchedTopRouteLineRowCompact : null,
                 ]}
               >
-                <View style={[styles.matchedTopRouteDot, { backgroundColor: 'rgba(34,211,238,0.88)' }]} />
+                <View style={[styles.matchedTopRouteDot, { backgroundColor: ui.routeDotSecondary }]} />
                 <PremiumText
                   variant="caption"
                   style={styles.matchedTopRouteLineText}
@@ -7287,7 +7299,7 @@ export default function LiveMapView({
                 {nearDestination ? (
                   <GlassSurface
                     variant="plain"
-                    style={styles.matchedTopNearChip}
+                    style={[styles.matchedTopNearChip, jLt?.matchedTopNearChip]}
                     borderRadius={LDS_RADIUS.sm}
                   >
                     <PremiumText variant="caption" style={styles.paxTopNearChipText}>
@@ -7300,7 +7312,7 @@ export default function LiveMapView({
           </GlassSurface>
 
           {matrixStatus ? (
-            <GlassSurface variant="plain" style={styles.paxTopStatusChip} borderRadius={LDS_RADIUS.md}>
+            <GlassSurface variant="plain" style={[styles.paxTopStatusChip, jLt?.drvTopStatusChip]} borderRadius={LDS_RADIUS.md}>
               <PremiumText variant="caption" muted style={styles.paxTopMatrixText}>
                 {matrixStatus
                   .replace('SURUCU', 'SÜRÜCÜ')
@@ -7341,7 +7353,7 @@ export default function LiveMapView({
               accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
             >
               <Animated.View style={{ transform: [{ rotate: navGitCompassRotate }] }}>
-                <Ionicons name="compass" size={18} color="rgba(34,211,238,0.95)" />
+                <Ionicons name="compass" size={18} color={ui.accent} />
               </Animated.View>
               <Text style={styles.driverNavRecenterFabText}>Yeniden ortala</Text>
             </TouchableOpacity>
@@ -7357,7 +7369,7 @@ export default function LiveMapView({
             accessibilityRole="button"
             accessibilityLabel="Navigasyonu kapat"
           >
-            <Ionicons name="close-circle" size={22} color="rgba(243,248,255,0.88)" />
+            <Ionicons name="close-circle" size={22} color={ui.closeIcon} />
             <Text style={styles.driverNavCloseFabText}>Navigasyonu kapat</Text>
           </TouchableOpacity>
         </View>
@@ -7394,15 +7406,15 @@ export default function LiveMapView({
                   accessibilityLabel="Yolcuyu ara"
                 >
                   <LinearGradient
-                    colors={['#08111F', '#0B1220', '#101A2B', '#22D3EE']}
+                    colors={[...ui.ctaGradient]}
                     style={styles.driverRidePrimaryBtnGrad}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
                     {voiceCallPending ? (
-                      <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" />
+                      <ActivityIndicator size="small" color={ui.ctaIcon} />
                     ) : (
-                      <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
+                      <Ionicons name="call" size={22} color={ui.ctaIcon} />
                     )}
                     <Text
                       style={styles.driverRidePrimaryBtnText}
@@ -7425,7 +7437,7 @@ export default function LiveMapView({
                 accessibilityRole="button"
                 accessibilityLabel={driverMatrixNavChipLabel}
               >
-                <Ionicons name="navigate" size={20} color="rgba(34,211,238,0.95)" />
+                <Ionicons name="navigate" size={20} color={ui.accent} />
                 <Text
                   style={styles.driverRideSecondaryBtnText}
                   numberOfLines={1}
@@ -7452,12 +7464,12 @@ export default function LiveMapView({
                     accessibilityLabel="Yol paylaşımını bitir — yol sonu QR"
                   >
                     <LinearGradient
-                      colors={['#08111F', '#101A2B', 'rgba(30,58,95,0.92)', 'rgba(34,211,238,0.5)']}
+                      colors={[...ui.qrGradientBoarding]}
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
+                      <Ionicons name="qr-code" size={20} color={ui.ctaIcon} />
                       <Text
                         style={styles.driverRideQrBtnText}
                         numberOfLines={1}
@@ -7515,7 +7527,7 @@ export default function LiveMapView({
                       accessibilityRole="button"
                       accessibilityLabel="Zorla bitir"
                     >
-                      <Ionicons name="warning" size={18} color="rgba(252,165,165,0.92)" />
+                      <Ionicons name="warning" size={18} color={ui.errorIcon} />
                       <Text
                         style={styles.driverRideForceBtnText}
                         numberOfLines={1}
@@ -7549,24 +7561,14 @@ export default function LiveMapView({
                     <LinearGradient
                       colors={
                         driverNearPickupForQr
-                          ? [
-                              'rgba(217,119,6,0.26)',
-                              '#0B1220',
-                              '#101A2B',
-                              'rgba(34,211,238,0.48)',
-                            ]
-                          : [
-                              'rgba(217,119,6,0.14)',
-                              '#08111F',
-                              '#101A2B',
-                              'rgba(34,211,238,0.4)',
-                            ]
+                          ? [...ui.qrGradientTripEnd]
+                          : [...ui.qrGradientBoardingNear]
                       }
                       style={styles.driverRideQrBtnGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                     >
-                      <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
+                      <Ionicons name="qr-code" size={20} color={ui.ctaIcon} />
                       <Text
                         style={styles.driverRideQrBtnText}
                         numberOfLines={1}
@@ -7624,7 +7626,7 @@ export default function LiveMapView({
                       accessibilityRole="button"
                       accessibilityLabel="Zorla bitir"
                     >
-                      <Ionicons name="warning" size={18} color="rgba(252,165,165,0.92)" />
+                      <Ionicons name="warning" size={18} color={ui.errorIcon} />
                       <Text
                         style={styles.driverRideForceBtnText}
                         numberOfLines={1}
@@ -7646,6 +7648,7 @@ export default function LiveMapView({
               style={[
                 styles.paxBottomDeckShell,
                 compactMatchedLayout ? styles.paxBottomDeckShellCompact : null,
+                jLt?.paxBottomDeckShell,
               ]}
               borderRadius={LDS_RADIUS.lg}
             >
@@ -7681,9 +7684,9 @@ export default function LiveMapView({
                           accessibilityLabel="Sürücüyü ara"
                         >
                           {voiceCallPending ? (
-                            <ActivityIndicator size="small" color="#22D3EE" />
+                            <ActivityIndicator size="small" color={ui.activity} />
                           ) : (
-                            <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
+                            <Ionicons name="call" size={22} color={ui.ctaIcon} />
                           )}
                         </TouchableOpacity>
                       </Animated.View>
@@ -7714,7 +7717,7 @@ export default function LiveMapView({
                           <Ionicons
                             name="chatbubble-ellipses"
                             size={18}
-                            color="rgba(243,248,255,0.94)"
+                            color={ui.ctaIcon}
                           />
                           <PremiumText variant="caption" style={styles.paxBottomChatBtnText} numberOfLines={1}>
                             Sürücüye Yaz
@@ -7752,13 +7755,13 @@ export default function LiveMapView({
                           accessibilityLabel={trustRequestPending ? 'Güven isteği gönderiliyor' : (trustRequestLabel ?? 'Güven AL')}
                         >
                           {trustRequestPending ? (
-                            <ActivityIndicator size="small" color="#22D3EE" />
+                            <ActivityIndicator size="small" color={ui.activity} />
                           ) : (
                             <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
                               <Ionicons
                                 name="shield-checkmark"
                                 size={20}
-                                color="rgba(243,248,255,0.94)"
+                                color={ui.ctaIcon}
                               />
                             </Animated.View>
                           )}
@@ -7792,6 +7795,7 @@ export default function LiveMapView({
                       styles.paxBottomQrBtn,
                       styles.paxBottomQrBtnFull,
                       boardingConfirmed ? styles.paxBottomQrBtnTripEnd : styles.paxBottomQrBtnBoarding,
+                      boardingConfirmed ? jLt?.paxBottomQrBtnTripEnd : jLt?.paxBottomQrBtnBoarding,
                     ]}
                     onPress={() => {
                       void tapButtonHaptic();
@@ -7803,7 +7807,7 @@ export default function LiveMapView({
                       boardingConfirmed ? 'Yol paylaşımını bitir' : 'Biniş kodunu tara'
                     }
                   >
-                    <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
+                    <Ionicons name="qr-code" size={20} color={ui.ctaIcon} />
                     <PremiumText
                       variant="caption"
                       style={styles.paxBottomQrBtnText}
@@ -7862,7 +7866,7 @@ export default function LiveMapView({
                   accessibilityRole="button"
                   accessibilityLabel="Zorla bitir"
                 >
-                  <Ionicons name="close-circle" size={18} color="rgba(252,165,165,0.92)" />
+                  <Ionicons name="close-circle" size={18} color={ui.errorIcon} />
                   <PremiumText
                     variant="caption"
                     style={styles.paxBottomEndBtnText}
@@ -7884,6 +7888,7 @@ export default function LiveMapView({
               style={[
                 styles.drvBottomDeckShell,
                 compactMatchedLayout ? styles.drvBottomDeckShellCompact : null,
+                jLt?.drvBottomDeckShell,
               ]}
               borderRadius={LDS_RADIUS.lg}
             >
@@ -7917,9 +7922,9 @@ export default function LiveMapView({
                           accessibilityLabel="Yolcuyu ara"
                         >
                           {voiceCallPending ? (
-                            <ActivityIndicator size="small" color="#22D3EE" />
+                            <ActivityIndicator size="small" color={ui.activity} />
                           ) : (
-                            <Ionicons name="call" size={22} color="rgba(243,248,255,0.94)" />
+                            <Ionicons name="call" size={22} color={ui.ctaIcon} />
                           )}
                         </TouchableOpacity>
                       </Animated.View>
@@ -7950,7 +7955,7 @@ export default function LiveMapView({
                           <Ionicons
                             name="chatbubble-ellipses"
                             size={18}
-                            color="rgba(243,248,255,0.94)"
+                            color={ui.ctaIcon}
                           />
                           <PremiumText variant="caption" style={styles.drvBottomChatBtnText} numberOfLines={1}>
                             Yolcuya Yaz
@@ -7992,13 +7997,13 @@ export default function LiveMapView({
                           }
                         >
                           {trustRequestPending ? (
-                            <ActivityIndicator size="small" color="#22D3EE" />
+                            <ActivityIndicator size="small" color={ui.activity} />
                           ) : (
                             <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
                               <Ionicons
                                 name="shield-checkmark"
                                 size={20}
-                                color="rgba(243,248,255,0.94)"
+                                color={ui.ctaIcon}
                               />
                             </Animated.View>
                           )}
@@ -8021,6 +8026,11 @@ export default function LiveMapView({
                     styles.drvBottomQrBtnFull,
                     boardingConfirmed ? styles.drvBottomQrBtnTripEnd : styles.drvBottomQrBtnBoarding,
                     driverNearPickupForQr && !boardingConfirmed ? styles.drvBottomQrBtnBoardingNear : null,
+                    boardingConfirmed
+                      ? jLt?.drvBottomQrBtnTripEnd
+                      : driverNearPickupForQr
+                        ? jLt?.drvBottomQrBtnBoardingNear
+                        : jLt?.drvBottomQrBtnBoarding,
                   ]}
                   onPress={() => {
                     void tapButtonHaptic();
@@ -8032,7 +8042,7 @@ export default function LiveMapView({
                     boardingConfirmed ? 'Yol paylaşımını bitir — yol sonu QR' : 'Biniş QR göster'
                   }
                 >
-                  <Ionicons name="qr-code" size={20} color="rgba(243,248,255,0.94)" />
+                  <Ionicons name="qr-code" size={20} color={ui.ctaIcon} />
                   <PremiumText
                     variant="caption"
                     style={styles.drvBottomQrBtnText}
@@ -8090,7 +8100,7 @@ export default function LiveMapView({
                   accessibilityRole="button"
                   accessibilityLabel="Zorla bitir"
                 >
-                  <Ionicons name="close-circle-outline" size={17} color="rgba(252,165,165,0.88)" />
+                  <Ionicons name="close-circle-outline" size={17} color={ui.errorIcon} />
                   <PremiumText
                     variant="caption"
                     style={styles.drvBottomEndBtnText}
@@ -8128,7 +8138,7 @@ export default function LiveMapView({
             accessibilityRole="button"
             accessibilityLabel="Konumuma göre haritayı ortala"
           >
-            <Ionicons name="locate" size={22} color="#22D3EE" />
+            <Ionicons name="locate" size={22} color={ui.activity} />
           </TouchableOpacity>
         </View>
       ) : null}
@@ -8145,14 +8155,14 @@ export default function LiveMapView({
           activeOpacity={1} 
           onPress={() => setShowInfoCard(false)}
         >
-          <View style={styles.infoCardContainer}>
+          <View style={[styles.infoCardContainer, jLt?.peerCardShell]}>
             <TouchableOpacity activeOpacity={1} onPress={() => {}}>
               {/* Kapatma Butonu */}
               <TouchableOpacity 
                 style={styles.infoCardCloseButton} 
                 onPress={() => setShowInfoCard(false)}
               >
-                <Ionicons name="close-circle" size={28} color="rgba(186,201,222,0.82)" />
+                <Ionicons name="close-circle" size={28} color={ui.textMuted} />
               </TouchableOpacity>
 
               {/* Başlık */}
@@ -8173,7 +8183,7 @@ export default function LiveMapView({
               <View style={styles.infoCardContent}>
                 {/* İsim */}
                 <View style={styles.infoCardRow}>
-                  <Ionicons name="person" size={20} color="rgba(186,201,222,0.82)" />
+                  <Ionicons name="person" size={20} color={ui.textMuted} />
                   <Text style={styles.infoCardLabel}>İsim</Text>
                   <Text style={styles.infoCardValue}>{displayFirstName(otherUserName, 'Bilinmiyor')}</Text>
                 </View>
@@ -8195,7 +8205,7 @@ export default function LiveMapView({
                     {/* Marka & Model */}
                     {(otherUserDetails.vehicleBrand || otherUserDetails.vehicleModel) && (
                       <View style={styles.infoCardRow}>
-                        <Ionicons name="car-sport" size={20} color="rgba(186,201,222,0.82)" />
+                        <Ionicons name="car-sport" size={20} color={ui.textMuted} />
                         <Text style={styles.infoCardLabel}>Araç:</Text>
                         <Text style={styles.infoCardValue}>
                           {otherUserDetails.vehicleBrand || ''} {otherUserDetails.vehicleModel || ''}
@@ -8207,7 +8217,7 @@ export default function LiveMapView({
                     {/* Renk */}
                     {otherUserDetails.vehicleColor && (
                       <View style={styles.infoCardRow}>
-                        <Ionicons name="color-palette" size={20} color="rgba(186,201,222,0.82)" />
+                        <Ionicons name="color-palette" size={20} color={ui.textMuted} />
                         <Text style={styles.infoCardLabel}>Renk:</Text>
                         <View style={styles.infoCardColorContainer}>
                           <View style={[styles.infoCardColorDot, { backgroundColor: getColorCode(otherUserDetails.vehicleColor) }]} />
@@ -8219,7 +8229,7 @@ export default function LiveMapView({
                     {/* Plaka */}
                     {otherUserDetails.plateNumber && (
                       <View style={styles.infoCardRow}>
-                        <Ionicons name="document-text" size={20} color="rgba(186,201,222,0.82)" />
+                        <Ionicons name="document-text" size={20} color={ui.textMuted} />
                         <Text style={styles.infoCardLabel}>Plaka:</Text>
                         <View style={styles.infoCardPlateContainer}>
                           <Text style={styles.infoCardPlateText}>{otherUserDetails.plateNumber}</Text>
@@ -8242,7 +8252,7 @@ export default function LiveMapView({
 
                 {/* Puan */}
                 <View style={styles.infoCardRow}>
-                  <Ionicons name="star" size={20} color="#22D3EE" />
+                  <Ionicons name="star" size={20} color={ui.activity} />
                   <Text style={styles.infoCardLabel}>Puan</Text>
                   {otherUserDetails?.rating != null &&
                   Number.isFinite(Number(otherUserDetails.rating)) &&

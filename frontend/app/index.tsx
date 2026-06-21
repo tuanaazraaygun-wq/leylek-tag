@@ -190,6 +190,7 @@ import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/of
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
 import { useDriverTheme } from '../lib/theme/useDriverTheme';
+import { useJourneyTheme } from '../lib/theme/useJourneyTheme';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import {
   publishTrustedInviteHubRefresh,
@@ -7437,6 +7438,7 @@ function PassengerDashboard({
     dashboardSurfaces: dashLt,
     routePickerSurfaces: rpLt,
   } = usePassengerTheme();
+  const { chromeSurfaces: jLt } = useJourneyTheme('journey');
   const priceModalSheetMaxHeight = Math.min(
     paxWindowHeight * 0.92,
     paxWindowHeight - insets.top - 8,
@@ -12532,7 +12534,7 @@ function PassengerDashboard({
                     }}
                     style={styles.passengerTripBannerWrap}
                   >
-                    <GlassSurface variant="plain" style={styles.passengerTripBannerAlert} borderRadius={LDS_RADIUS.md}>
+                    <GlassSurface variant="plain" style={[styles.passengerTripBannerAlert, jLt?.tripBannerAlert]} borderRadius={LDS_RADIUS.md}>
                       <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
                         {firstChatTapBanner.title}
                       </PremiumText>
@@ -12559,13 +12561,13 @@ function PassengerDashboard({
                     }}
                     style={styles.passengerTripBannerWrap}
                   >
-                    <GlassSurface variant="plain" style={styles.passengerTripBannerPlain} borderRadius={LDS_RADIUS.lg}>
+                    <GlassSurface variant="plain" style={[styles.passengerTripBannerPlain, jLt?.tripBannerPlain]} borderRadius={LDS_RADIUS.lg}>
                       <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
                         Sürücü yakın — araca bindikten sonra biniş QR kodunu okutun
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.passengerTripBannerBody}>
                         Yolculuk, biniş doğrulandıktan sonra başlar.{' '}
-                        <PremiumText variant="caption" style={styles.passengerTripBannerHintAccent}>
+                        <PremiumText variant="caption" style={[styles.passengerTripBannerHintAccent, jLt?.tripBannerHintAccent]}>
                           Dokunarak onaylayın.
                         </PremiumText>
                       </PremiumText>
@@ -12575,7 +12577,7 @@ function PassengerDashboard({
                 {passengerBoardingReminderBannerVisible &&
                 activeTag?.status === 'matched' &&
                 !activeTag?.boarding_confirmed_at ? (
-                  <GlassSurface variant="plain" style={[styles.passengerTripBannerWrap, styles.passengerTripBannerPlain]} borderRadius={LDS_RADIUS.lg}>
+                  <GlassSurface variant="plain" style={[styles.passengerTripBannerWrap, styles.passengerTripBannerPlain, jLt?.tripBannerPlain]} borderRadius={LDS_RADIUS.lg}>
                     <PremiumText variant="body" style={styles.passengerTripBannerTitle}>
                       Biniş QR kodunu, araca bindikten sonra okutun
                     </PremiumText>
@@ -12584,7 +12586,7 @@ function PassengerDashboard({
                     </PremiumText>
                     <View style={styles.passengerTripBannerActions}>
                       <TouchableOpacity
-                        style={styles.passengerTripBannerBtnSecondary}
+                        style={[styles.passengerTripBannerBtnSecondary, jLt?.tripBannerBtnSecondary]}
                         onPress={() => {
                           passengerBoardingBannerDismissedRef.current = true;
                           setPassengerBoardingReminderBannerVisible(false);
@@ -12595,7 +12597,7 @@ function PassengerDashboard({
                         </PremiumText>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.passengerTripBannerBtnPrimary}
+                        style={[styles.passengerTripBannerBtnPrimary, jLt?.tripBannerBtnPrimary]}
                         onPress={() => {
                           setPassengerBoardingReminderBannerVisible(false);
                           setPassengerBoardingScanVisible(true);
@@ -18877,6 +18879,7 @@ function DriverDashboard({
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
   );
   const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
+  const { chromeSurfaces: jLt } = useJourneyTheme('journey');
 
   console.log('OFFER_RENDER_CONDITION', {
     driver_in_active_trip: driverInActiveTrip,
@@ -19221,7 +19224,7 @@ function DriverDashboard({
               }}
               style={styles.driverTripBannerWrap}
             >
-              <GlassSurface variant="plain" style={styles.driverTripBannerAlert} borderRadius={LDS_RADIUS.md}>
+              <GlassSurface variant="plain" style={[styles.driverTripBannerAlert, jLt?.tripBannerAlert]} borderRadius={LDS_RADIUS.md}>
                 <PremiumText variant="body" style={styles.driverTripBannerTitle}>
                   {driverFirstChatTapBanner.title}
                 </PremiumText>
