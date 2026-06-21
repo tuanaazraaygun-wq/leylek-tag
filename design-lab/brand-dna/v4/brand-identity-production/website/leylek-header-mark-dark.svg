@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Website navbar mark  compact symbol + optional wordmark space -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" fill="none" role="img" aria-label="LeylekTAG header mark">
+  <g transform="translate(8 8) scale(0.125)">
+    <rect width="512" height="512" fill="none"/>
+    <path stroke="#00D4AA" fill="none" stroke-width="12" stroke-linecap="round"
+      d="M 118 318 A 138 138 0 1 1 362 248" />
+    <g fill="#F5F7FA">
+      <path d="M 236 168 C 248 162 262 158 278 162 L 312 168 C 322 170 328 176 326 184 C 324 192 314 196 302 194 L 268 188 C 252 186 242 192 236 206 C 228 224 224 248 226 272 C 228 296 234 316 244 334 L 248 348 C 250 356 246 362 238 362 C 230 362 224 356 222 348 L 214 320 C 208 300 206 278 208 256 C 210 234 216 214 224 198 C 228 188 232 178 236 168 Z" />
+      <path d="M 238 362 L 236 396 C 235 404 240 410 248 410 C 256 410 261 404 260 396 L 258 362 Z" />
+    </g>
+    <circle fill="#00D4AA" cx="286" cy="178" r="10" />
+  </g>
+  <text x="88" y="52" fill="#F5F7FA" font-family="system-ui, sans-serif" font-size="28" font-weight="600" letter-spacing="-0.02em">LeylekTAG</text>
+</svg>

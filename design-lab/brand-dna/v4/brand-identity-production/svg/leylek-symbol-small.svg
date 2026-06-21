@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Small-size tier S/M0  arc + accent dot only (1648px exports) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="LeylekTAG symbol small">
+  <rect width="512" height="512" fill="#0D1117"/>
+  <path stroke="#00D4AA" fill="none" stroke-width="14" stroke-linecap="round"
+    d="M 128 320 A 128 128 0 1 1 352 260" />
+  <circle fill="#00D4AA" cx="286" cy="178" r="12" />
+  <path fill="#F5F7FA" fill-opacity="0.85"
+    d="M 248 200 C 262 196 278 204 286 220 C 294 236 288 254 272 262 C 256 270 238 262 232 246 C 226 230 234 212 248 200 Z" />
+</svg>

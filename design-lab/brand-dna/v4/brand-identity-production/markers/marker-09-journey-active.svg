@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Marker 09  Active Journey: path + pulse -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Active journey marker">
+  <circle cx="24" cy="24" r="20" fill="#00D4AA" fill-opacity="0.2"/>
+  <path stroke="#00D4AA" stroke-width="2.5" stroke-linecap="round" fill="none"
+    d="M 12 32 C 18 20 30 20 36 32" />
+  <circle cx="24" cy="24" r="6" fill="#1A2332" stroke="#F5F7FA" stroke-width="2"/>
+  <circle cx="24" cy="24" r="2.5" fill="#00D4AA"/>
+</svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Leylek Zeka eye  logo accent derivative (widget / loading / rating) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Leylek Zeka eye">
+  <circle cx="32" cy="32" r="28" stroke="#00D4AA" stroke-width="3" fill="#0D1117"/>
+  <circle cx="32" cy="32" r="10" fill="#00D4AA"/>
+  <circle cx="29" cy="29" r="3.5" fill="#F5F7FA" fill-opacity="0.5"/>
+</svg>

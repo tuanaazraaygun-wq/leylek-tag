@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LeylekTAG Symbol Master v1  B5 Production
+  Source trace: frontend/assets/images/leylek-logo-premium.png
+  Evolution: 3D metal ’ controlled premium flat/semi-flat
+  NOT F1 Meridian Wing  preserves premium stork + orbital arc silhouette
+  Limitation: Hand-traced SVG approximation; IoU overlay QA required before DNA freeze
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="LeylekTAG symbol">
+  <defs>
+    <style>
+      .logo-stroke { fill: #F5F7FA; }
+      .logo-accent { fill: #00D4AA; }
+      .logo-arc { stroke: #00D4AA; fill: none; }
+      .logo-wing { fill: none; stroke: #F5F7FA; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <!-- layer.orbitalArc  open ring, gap top-right near beak -->
+  <g id="layer.orbitalArc">
+    <path class="logo-arc" stroke-width="10" stroke-linecap="round"
+      d="M 118 318
+         A 138 138 0 1 1 362 248" />
+    <path class="logo-arc" stroke-width="6" stroke="#F5F7FA" stroke-opacity="0.35" stroke-linecap="round"
+      d="M 118 318
+         A 138 138 0 1 1 362 248" />
+  </g>
+
+  <!-- layer.storkBody  profile silhouette preserved from premium PNG -->
+  <g id="layer.storkBody">
+    <!-- crest -->
+    <path class="logo-stroke" d="M 218 168 L 210 148 L 224 158 L 232 142 L 236 168 Z" />
+    <!-- head + neck -->
+    <path class="logo-stroke" d="M 236 168
+      C 248 162 262 158 278 162
+      L 312 168
+      C 322 170 328 176 326 184
+      C 324 192 314 196 302 194
+      L 268 188
+      C 252 186 242 192 236 206
+      C 228 224 224 248 226 272
+      C 228 296 234 316 244 334
+      L 248 348
+      C 250 356 246 362 238 362
+      C 230 362 224 356 222 348
+      L 214 320
+      C 208 300 206 278 208 256
+      C 210 234 216 214 224 198
+      C 228 188 232 178 236 168 Z" />
+    <!-- wing sweep -->
+    <path class="logo-wing" stroke-width="5"
+      d="M 248 210 C 268 218 292 240 308 268 C 316 282 318 298 310 312" />
+    <!-- standing leg -->
+    <path class="logo-stroke" d="M 238 362 L 236 396 C 235 404 240 410 248 410 C 256 410 261 404 260 396 L 258 362 Z" />
+    <!-- tucked leg -->
+    <path class="logo-stroke" d="M 252 334
+      C 262 328 272 332 276 342
+      C 280 352 274 362 264 364
+      C 254 366 246 358 248 348
+      C 250 340 252 334 252 334 Z" />
+  </g>
+
+  <!-- layer.accentDot  canonical cyan eye -->
+  <g id="layer.accentDot">
+    <circle class="logo-accent" cx="286" cy="178" r="7" />
+    <circle fill="#F5F7FA" fill-opacity="0.45" cx="284" cy="176" r="2.5" />
+  </g>
+</svg>

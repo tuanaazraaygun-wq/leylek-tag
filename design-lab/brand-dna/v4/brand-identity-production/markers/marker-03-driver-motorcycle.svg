@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Marker 03  Driver motorcycle -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Driver motorcycle marker">
+  <circle cx="24" cy="24" r="20" fill="#00D4AA" fill-opacity="0.18"/>
+  <ellipse cx="24" cy="22" rx="10" ry="5" fill="#1A2332" stroke="#F5F7FA" stroke-width="2"/>
+  <circle cx="14" cy="30" r="4" fill="#1A2332" stroke="#F5F7FA" stroke-width="2"/>
+  <circle cx="34" cy="30" r="4" fill="#1A2332" stroke="#F5F7FA" stroke-width="2"/>
+  <path stroke="#F5F7FA" stroke-width="2" stroke-linecap="round" d="M 18 22 L 24 18 L 30 22" />
+</svg>

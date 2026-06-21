@@ -1,0 +1,76 @@
+{
+  "manifestVersion": "1.0.0",
+  "brandIdentityVersion": "B5-v1",
+  "status": "design-lab-only",
+  "productionTouched": false,
+  "primarySourceLogo": "frontend/assets/images/leylek-logo-premium.png",
+  "canonicalDecision": "Evolve premium stork + orbital arc — NOT F1 Meridian Wing",
+  "colorTokens": {
+    "meridianCyan": "#00D4AA",
+    "trustWhite": "#F5F7FA",
+    "depthSlate": "#1A2332",
+    "voidBlack": "#0D1117",
+    "warmResolve": "#C8E6D0",
+    "legacyHorizonGlow": "#22D3EE"
+  },
+  "svgMaster": {
+    "symbol": "svg/leylek-symbol-master-v1.svg",
+    "dark": "svg/leylek-symbol-dark.svg",
+    "white": "svg/leylek-symbol-white.svg",
+    "small": "svg/leylek-symbol-small.svg",
+    "zekaEye": "svg/leylek-zeka-eye-v1.svg",
+    "watermark": "svg/leylek-watermark-v1.svg"
+  },
+  "surfaceAssets": {
+    "appIcon1024": "app-icons/leylek-app-icon-1024.svg",
+    "adaptiveForeground432": "app-icons/leylek-adaptive-foreground-432.svg",
+    "splash1920": "splash/leylek-splash-1920x1080.svg",
+    "websiteHeaderDark": "website/leylek-header-mark-dark.svg"
+  },
+  "markers": [
+    { "id": "passenger", "file": "markers/marker-01-passenger.svg", "replaces": "passenger-woman.png" },
+    { "id": "driver-car", "file": "markers/marker-02-driver-car.svg", "replaces": "driver-car.png" },
+    { "id": "driver-motorcycle", "file": "markers/marker-03-driver-motorcycle.svg", "replaces": "driver-motor.png" },
+    { "id": "quick-match", "file": "markers/marker-04-quick-match.svg", "replaces": null },
+    { "id": "trusted-driver", "file": "markers/marker-05-trusted-driver.svg", "replaces": null },
+    { "id": "trust-network", "file": "markers/marker-06-trust-network.svg", "replaces": null },
+    { "id": "destination", "file": "markers/marker-07-destination.svg", "replaces": "MapDestinationFlagPin" },
+    { "id": "pickup", "file": "markers/marker-08-pickup.svg", "replaces": "MapPickupPin" },
+    { "id": "journey-active", "file": "markers/marker-09-journey-active.svg", "replaces": null },
+    { "id": "cluster", "file": "markers/marker-10-cluster.svg", "replaces": null },
+    { "id": "offline-driver", "file": "markers/marker-11-offline-driver.svg", "replaces": null },
+    { "id": "searching-pulse", "file": "markers/marker-12-searching-pulse.svg", "replaces": "DriverOfferScreen seeking rings" }
+  ],
+  "exportLadder": {
+    "logo": [
+      { "tier": "M0", "px": 16, "source": "svg/leylek-symbol-small.svg" },
+      { "tier": "M1", "px": 24, "source": "svg/leylek-symbol-small.svg" },
+      { "tier": "S", "px": 32, "source": "svg/leylek-symbol-master-v1.svg", "simplify": true },
+      { "tier": "S", "px": 48, "source": "svg/leylek-symbol-master-v1.svg" },
+      { "tier": "M", "px": 128, "source": "svg/leylek-symbol-master-v1.svg" },
+      { "tier": "L", "px": 512, "source": "svg/leylek-symbol-master-v1.svg" },
+      { "tier": "XL", "px": 1024, "source": "app-icons/leylek-app-icon-1024.svg" }
+    ],
+    "markers": [
+      { "px": 24, "source": "markers/*.svg", "scale": 0.5 },
+      { "px": 32, "source": "markers/*.svg", "scale": 0.67 },
+      { "px": 34, "source": "markers/marker-02-driver-car.svg", "note": "driver car display default" },
+      { "px": 48, "source": "markers/*.svg", "scale": 1.0 },
+      { "px": 64, "source": "markers/*.svg", "scale": 1.33 }
+    ]
+  },
+  "limitations": [
+    "SVG is hand-traced approximation from leylek-logo-premium.png — not automated vector trace",
+    "Silhouette IoU overlay QA required before DNA freeze (target ≥85%)",
+    "PNG raster exports not bundled — generate from SVG via export ladder",
+    "3D metal shading simplified to flat/semi-flat fills per B5 spec",
+    "F1 Meridian Wing explicitly excluded from ship path"
+  ],
+  "retireTargets": [
+    "website/public/logo-leylek.svg",
+    "website/public/store/leylektag-icon.png",
+    "frontend/assets/images/adaptive-icon-foreground.png",
+    "frontend/assets/images/favicon.png",
+    "frontend/assets/markers/passenger-woman.png"
+  ]
+}

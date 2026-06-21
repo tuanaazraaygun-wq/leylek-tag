@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Marker 06  Trust Network: linked nodes -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Trust network marker">
+  <circle cx="24" cy="24" r="20" fill="#00D4AA" fill-opacity="0.12"/>
+  <path stroke="#C8E6D0" stroke-width="2" d="M 24 14 L 34 28 L 14 28 Z" fill="none"/>
+  <circle cx="24" cy="14" r="4" fill="#1A2332" stroke="#C8E6D0" stroke-width="2"/>
+  <circle cx="34" cy="28" r="4" fill="#1A2332" stroke="#C8E6D0" stroke-width="2"/>
+  <circle cx="14" cy="28" r="4" fill="#1A2332" stroke="#C8E6D0" stroke-width="2"/>
+  <circle cx="24" cy="24" r="3" fill="#00D4AA"/>
+</svg>
