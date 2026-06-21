@@ -9087,10 +9087,25 @@ function PassengerDashboard({
     onFirstChatMessage: (data) => {
       if (!data?.tag_id) return;
       if (activeTag?.id && data.tag_id !== activeTag.id) return;
+      const preview = String(
+        (data as { message_preview?: string }).message_preview ||
+          (data as { message?: string }).message ||
+          '',
+      ).trim();
+      const createdRaw = (data as { created_at?: string }).created_at;
+      const parsedTs = createdRaw ? new Date(createdRaw).getTime() : NaN;
+      const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
+      if (preview) {
+        setPassengerIncomingMessage({
+          text: preview,
+          senderId: String((data as { sender_id?: string }).sender_id || ''),
+          timestamp,
+        });
+      }
       if (passengerChatVisible) return;
       setFirstChatTapBanner({
         title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
-        subtitle: 'Cevap vermek için dokun',
+        subtitle: preview || 'Cevap vermek için dokun',
       });
     },
     onForceEndCounterpartyPrompt: (data) => {
@@ -13142,6 +13157,7 @@ function PassengerDashboard({
                   tagId={activeTag?.id || ''}
                   tripCommsLocked={!!activeTag?.boarding_confirmed_at}
                   incomingMessage={passengerIncomingMessage}
+                  onIncomingMessageHandled={() => setPassengerIncomingMessage(null)}
                   onSendMessage={(text, receiverId) => {
                     // Socket ile ANLIK gönder
                     console.log('📤 [YOLCU] onSendMessage callback:', { 
@@ -16361,10 +16377,25 @@ function DriverDashboard({
     onFirstChatMessage: (data) => {
       if (!data?.tag_id) return;
       if (activeTag?.id && data.tag_id !== activeTag.id) return;
+      const preview = String(
+        (data as { message_preview?: string }).message_preview ||
+          (data as { message?: string }).message ||
+          '',
+      ).trim();
+      const createdRaw = (data as { created_at?: string }).created_at;
+      const parsedTs = createdRaw ? new Date(createdRaw).getTime() : NaN;
+      const timestamp = Number.isFinite(parsedTs) ? parsedTs : Date.now();
+      if (preview) {
+        setDriverIncomingMessage({
+          text: preview,
+          senderId: String((data as { sender_id?: string }).sender_id || ''),
+          timestamp,
+        });
+      }
       if (driverChatVisible) return;
       setDriverFirstChatTapBanner({
         title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
-        subtitle: 'Cevap vermek için dokun',
+        subtitle: preview || 'Cevap vermek için dokun',
       });
     },
     onForceEndCounterpartyPrompt: (data) => {
@@ -19674,6 +19705,7 @@ function DriverDashboard({
             tagId={activeTag?.id || ''}
             tripCommsLocked={!!activeTag?.boarding_confirmed_at}
             incomingMessage={driverIncomingMessage}
+            onIncomingMessageHandled={() => setDriverIncomingMessage(null)}
             onSendMessage={(text, receiverId) => {
               // Socket ile ANLIK gönder
               console.log('📤 [SÜRÜCÜ] onSendMessage callback:', { 

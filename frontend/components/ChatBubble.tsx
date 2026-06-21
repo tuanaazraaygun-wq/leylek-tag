@@ -14,6 +14,7 @@ import {
   Dimensions,
   Platform,
   Keyboard,
+  KeyboardAvoidingView,
   Vibration,
   Modal,
   Pressable,
@@ -28,6 +29,8 @@ import { getSupabase } from '../lib/supabase';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const MERGE_TS_WINDOW_MS = 5000;
+const ANDROID_KEYBOARD_HIDE_DEBOUNCE_MS = 180;
 
 interface Message {
   id: string;
@@ -49,8 +52,55 @@ interface ChatBubbleProps {
   tagId: string;
   onSendMessage?: (text: string, receiverId: string) => void;
   incomingMessage?: { text: string; senderId: string; timestamp: number } | null;
+  /** Parent incomingMessage state temizliği (duplicate inject önleme) */
+  onIncomingMessageHandled?: () => void;
   /** Biniş doğrulandı — yeni mesaj gönderimi kapalı (yayın + REST) */
   tripCommsLocked?: boolean;
+}
+
+type ApiChatRow = {
+  id?: string;
+  message?: string;
+  sender_id?: string;
+  created_at?: string;
+};
+
+function isDuplicateMessage(existing: Message, candidate: Message): boolean {
+  if (existing.id && candidate.id && existing.id === candidate.id) return true;
+  if (
+    existing.text.trim() === candidate.text.trim() &&
+    existing.sender === candidate.sender &&
+    Math.abs(existing.timestamp.getTime() - candidate.timestamp.getTime()) < MERGE_TS_WINDOW_MS
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function mergeMessages(prev: Message[], incoming: Message[]): Message[] {
+  const next = [...prev];
+  for (const cand of incoming) {
+    if (next.some((m) => isDuplicateMessage(m, cand))) continue;
+    next.push(cand);
+  }
+  next.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  return next;
+}
+
+function apiRowToMessage(row: ApiChatRow, selfUserId: string, otherLabel: string): Message | null {
+  const text = String(row.message || '').trim();
+  if (!text) return null;
+  const sid = String(row.sender_id || '').trim().toLowerCase();
+  const self = String(selfUserId || '').trim().toLowerCase();
+  const tsRaw = row.created_at ? new Date(row.created_at) : new Date();
+  const timestamp = Number.isNaN(tsRaw.getTime()) ? new Date() : tsRaw;
+  return {
+    id: String(row.id || `db-${sid}-${timestamp.getTime()}`),
+    text,
+    sender: sid === self ? 'me' : 'other',
+    timestamp,
+    senderName: sid === self ? undefined : otherLabel,
+  };
 }
 
 function firstNameOnly(full: string | undefined, fallback: string): string {
@@ -98,6 +148,8 @@ export default function ChatBubble({
   userId,
   otherUserId,
   tagId,
+  incomingMessage = null,
+  onIncomingMessageHandled,
   tripCommsLocked = false,
 }: ChatBubbleProps) {
   const otherFirst = useMemo(
@@ -122,8 +174,17 @@ export default function ChatBubble({
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const flatListRef = useRef<FlatList>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  
+  const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastIncomingKeyRef = useRef<string | null>(null);
+  const historyFetchTagRef = useRef<string | null>(null);
+
   const suggestions = isDriver ? DRIVER_SUGGESTIONS : PASSENGER_SUGGESTIONS;
+
+  const scrollToBottom = useCallback((animated = true) => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    }, 100);
+  }, []);
 
   // ═══════════════════════════════════════════════════════════════
   // SUPABASE REALTIME BROADCAST - DATABASE'E KAYDETMEZ!
@@ -170,8 +231,8 @@ export default function ChatBubble({
           timestamp: new Date(msg.timestamp),
           senderName: firstNameOnly(msg.senderName, otherFirst),
         };
-        
-        setMessages(prev => [...prev, newMessage]);
+
+        setMessages((prev) => mergeMessages(prev, [newMessage]));
         
         // 🆕 Mesaj geldiğinde titreşim
         Vibration.vibrate(200);
@@ -181,10 +242,7 @@ export default function ChatBubble({
           setUnreadCount(prev => prev + 1);
         }
         
-        // Scroll to bottom
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        scrollToBottom(true);
       })
       .subscribe((status) => {
         console.log('🔔 [ChatBubble] Broadcast subscription status:', status);
@@ -200,34 +258,52 @@ export default function ChatBubble({
         channelRef.current = null;
       }
     };
-  }, [tagId, userId, isMinimized, visible, otherFirst]);
+  }, [tagId, userId, isMinimized, visible, otherFirst, scrollToBottom]);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const subShow = Keyboard.addListener(showEvt, (e) => {
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+        keyboardHideDebounceRef.current = null;
+      }
       const h = e.endCoordinates?.height ?? 0;
       setKeyboardPad(h > 0 ? h : 0);
     });
-    const subHide = Keyboard.addListener(hideEvt, () => setKeyboardPad(0));
+    const subHide = Keyboard.addListener(hideEvt, () => {
+      if (Platform.OS === 'ios') {
+        setKeyboardPad(0);
+        return;
+      }
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+      }
+      keyboardHideDebounceRef.current = setTimeout(() => {
+        keyboardHideDebounceRef.current = null;
+        setKeyboardPad(0);
+      }, ANDROID_KEYBOARD_HIDE_DEBOUNCE_MS);
+    });
     return () => {
       subShow.remove();
       subHide.remove();
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+        keyboardHideDebounceRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
     if (keyboardPad <= 0) return;
-    const t = setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-    return () => clearTimeout(t);
-  }, [keyboardPad]);
+    scrollToBottom(true);
+  }, [keyboardPad, scrollToBottom]);
 
   useEffect(() => {
     if (!visible) {
       setIsMinimized(false);
       setUnreadCount(0);
+      historyFetchTagRef.current = null;
     }
   }, [visible]);
 
@@ -237,7 +313,84 @@ export default function ChatBubble({
     setIsMinimized(false);
     setUnreadCount(0);
     setSpamWarning('');
+    lastIncomingKeyRef.current = null;
+    historyFetchTagRef.current = null;
   }, [tagId]);
+
+  useEffect(() => {
+    if (!visible || !tagId) return;
+    const fetchKey = `${tagId}`;
+    if (historyFetchTagRef.current === fetchKey) return;
+    historyFetchTagRef.current = fetchKey;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/chat/messages?tag_id=${encodeURIComponent(tagId)}&limit=50`,
+        );
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          messages?: ApiChatRow[];
+        };
+        if (cancelled || !Array.isArray(json.messages)) return;
+        const hydrated = json.messages
+          .map((row) => apiRowToMessage(row, userId, otherFirst))
+          .filter((m): m is Message => m != null);
+        if (hydrated.length === 0) return;
+        setMessages((prev) => mergeMessages(prev, hydrated));
+        scrollToBottom(false);
+      } catch {
+        /* non-fatal — broadcast akışı devam eder */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, tagId, userId, otherFirst, scrollToBottom]);
+
+  useEffect(() => {
+    const text = String(incomingMessage?.text || '').trim();
+    if (!text) return;
+
+    const incKey = `${incomingMessage?.senderId || ''}|${incomingMessage?.timestamp || 0}|${text}`;
+    if (lastIncomingKeyRef.current === incKey) return;
+    lastIncomingKeyRef.current = incKey;
+
+    const sid = String(incomingMessage?.senderId || '').trim().toLowerCase();
+    const self = String(userId || '').trim().toLowerCase();
+    if (sid && sid === self) {
+      onIncomingMessageHandled?.();
+      return;
+    }
+
+    const msg: Message = {
+      id: `incoming-${incomingMessage?.timestamp || Date.now()}`,
+      text,
+      sender: 'other',
+      timestamp: new Date(incomingMessage?.timestamp || Date.now()),
+      senderName: otherFirst,
+    };
+
+    setMessages((prev) => mergeMessages(prev, [msg]));
+
+    if (!visible || isMinimized) {
+      setUnreadCount((prev) => prev + 1);
+    } else {
+      scrollToBottom(true);
+    }
+
+    onIncomingMessageHandled?.();
+  }, [
+    incomingMessage,
+    userId,
+    otherFirst,
+    visible,
+    isMinimized,
+    onIncomingMessageHandled,
+    scrollToBottom,
+  ]);
 
   // ═══════════════════════════════════════════════════════════════
   // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
@@ -287,13 +440,10 @@ export default function ChatBubble({
       timestamp: new Date(),
       senderName: myFirst,
     };
-    setMessages(prev => [...prev, newMessage]);
+    setMessages((prev) => mergeMessages(prev, [newMessage]));
     setInputText('');
-    
-    // Scroll to bottom
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+
+    scrollToBottom(true);
     
     // 2. Broadcast ile gönder - DATABASE'E KAYDETMEZ!
     try {
@@ -458,7 +608,11 @@ export default function ChatBubble({
             pointerEvents="none"
             style={styles.sheetEdgeLight}
           />
-          <View style={styles.keyboardView}>
+          <KeyboardAvoidingView
+            style={styles.keyboardView}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -490,6 +644,8 @@ export default function ChatBubble({
           keyExtractor={(item) => item.id}
           style={styles.messageList}
           contentContainerStyle={styles.messageListContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           renderItem={({ item }) => (
             <View style={[
               styles.messageBubble,
@@ -560,8 +716,8 @@ export default function ChatBubble({
             styles.inputContainer,
             {
               paddingBottom:
-                keyboardPad > 0
-                  ? keyboardPad + 10
+                Platform.OS === 'android' && keyboardPad > 0
+                  ? 10
                   : Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12),
             },
           ]}
@@ -591,7 +747,7 @@ export default function ChatBubble({
             />
           </TouchableOpacity>
         </View>
-          </View>
+          </KeyboardAvoidingView>
         </Animated.View>
       </View>
     </Modal>
