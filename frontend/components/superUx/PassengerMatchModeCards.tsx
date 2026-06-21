@@ -5,6 +5,8 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
+  type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 import {
   PREMIUM_AUTH_CYAN,
@@ -27,6 +29,8 @@ import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { LDS_TYPOGRAPHY } from '../../design-system/tokens/typography';
 import { useTrustedSummary } from '../../hooks/useTrustedSummary';
 import { formatPassengerTrustedCardSubtitle } from '../../lib/trustedSummaryCopy';
+import { usePassengerTheme } from '../../lib/theme/usePassengerTheme';
+import type { LhThemeTokens } from '../../lib/theme/types';
 
 export type PassengerMatchModeCardsProps = {
   /** Mevcut rota seçimi — yalnızca setShowDestinationPicker(true) */
@@ -51,6 +55,30 @@ type CardDef = {
   badgeTone?: CardBadgeTone;
   enabled: boolean;
   tier: 'primary' | 'secondary';
+};
+
+type MatchCardTheme = {
+  heroTitle: TextStyle;
+  heroSubtitle: TextStyle;
+  quickTitle: TextStyle;
+  quickSubtitle: TextStyle;
+  normalSubtitle: TextStyle;
+  titleDisabled: TextStyle;
+  subtitleMuted: TextStyle;
+  quickHeroCard: ViewStyle;
+  normalHeroCard: ViewStyle;
+  normalHeroCardEnabled: ViewStyle;
+  proxyHeroCard: ViewStyle;
+  trustedHeroCard: ViewStyle;
+  heroCardDisabledShell: ViewStyle;
+  modeBadgePillQuick: ViewStyle;
+  modeBadgePillNormal: ViewStyle;
+  modeBadgeTextQuick: TextStyle;
+  modeBadgeTextNormal: TextStyle;
+  soonPill: ViewStyle;
+  soonPillText: TextStyle;
+  driverPanelCtaPill: ViewStyle;
+  driverPanelCtaPillText: TextStyle;
 };
 
 const PRIMARY_CARDS: CardDef[] = [
@@ -91,57 +119,194 @@ const SECONDARY_CARDS: CardDef[] = [
   },
 ];
 
-function renderModeBadge(
-  label: string,
-  tone: CardBadgeTone,
-  isVeryCompact: boolean,
-) {
-  return (
-    <View
-      style={[
-        styles.modeBadgePill,
-        tone === 'quick' ? styles.modeBadgePillQuick : styles.modeBadgePillNormal,
-        isVeryCompact && styles.modeBadgePillVeryCompact,
-      ]}
-    >
-      <PremiumText
-        variant="step"
-        style={[
-          styles.modeBadgeText,
-          tone === 'quick' ? styles.modeBadgeTextQuick : styles.modeBadgeTextNormal,
-          isVeryCompact && styles.modeBadgeTextVeryCompact,
-        ]}
-        numberOfLines={1}
-      >
-        {label}
-      </PremiumText>
-    </View>
-  );
+const stylesDark = StyleSheet.create({
+  quickHeroCard: {
+    borderTopColor: 'rgba(34, 211, 238, 0.42)',
+    borderLeftColor: 'rgba(34, 211, 238, 0.2)',
+    borderColor: 'rgba(34, 211, 238, 0.3)',
+    backgroundColor: 'rgba(34, 211, 238, 0.04)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_AUTH_CYAN,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.38,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 6 },
+    }),
+  },
+  normalHeroCard: {
+    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
+    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
+    borderColor: LDS_BORDER_COLOR.card,
+    backgroundColor: 'rgba(4, 10, 20, 0.28)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.28,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 6 },
+    }),
+  },
+  proxyHeroCard: {
+    borderTopColor: 'rgba(251, 191, 36, 0.32)',
+    borderLeftColor: 'rgba(251, 191, 36, 0.16)',
+    borderColor: 'rgba(251, 191, 36, 0.24)',
+    backgroundColor: 'rgba(251, 191, 36, 0.04)',
+  },
+  trustedHeroCard: {
+    borderTopColor: 'rgba(129, 140, 248, 0.34)',
+    borderLeftColor: 'rgba(129, 140, 248, 0.16)',
+    borderColor: 'rgba(129, 140, 248, 0.24)',
+    backgroundColor: 'rgba(79, 70, 229, 0.05)',
+    ...Platform.select({
+      ios: {
+        shadowColor: PREMIUM_NAVY_DEEP,
+        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
+        shadowOpacity: 0.22,
+        shadowRadius: LDS_SPACING.sm,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  heroCardDisabledShell: {
+    opacity: 0.58,
+    borderColor: PREMIUM_BORDER_SLATE,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  modeBadgePillQuick: {
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderColor: 'rgba(34, 211, 238, 0.32)',
+  },
+  modeBadgePillNormal: {
+    backgroundColor: 'rgba(30, 58, 95, 0.55)',
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  modeBadgeTextQuick: {
+    color: 'rgba(186, 230, 253, 0.96)',
+  },
+  modeBadgeTextNormal: {
+    color: 'rgba(148, 163, 184, 0.92)',
+  },
+  soonPill: {
+    backgroundColor: 'rgba(30, 58, 95, 0.55)',
+    borderColor: PREMIUM_BORDER_SLATE,
+  },
+  soonPillText: {
+    color: 'rgba(148, 163, 184, 0.92)',
+  },
+  driverPanelCtaPill: {
+    backgroundColor: 'rgba(79, 70, 229, 0.14)',
+    borderColor: 'rgba(129, 140, 248, 0.38)',
+  },
+  driverPanelCtaPillText: {
+    color: 'rgba(196, 181, 253, 0.96)',
+  },
+});
+
+function buildLightMatchCardTheme(tokens: LhThemeTokens): MatchCardTheme {
+  return {
+    heroTitle: { color: tokens.text.primary },
+    heroSubtitle: { color: tokens.text.muted },
+    quickTitle: { color: tokens.text.primary, textShadowColor: 'transparent' },
+    quickSubtitle: { color: tokens.text.muted, fontWeight: '600' },
+    normalSubtitle: { color: tokens.text.muted, fontWeight: '500' },
+    titleDisabled: { color: tokens.text.muted },
+    subtitleMuted: { color: tokens.text.muted },
+    quickHeroCard: {
+      borderTopColor: tokens.accent.glowMid,
+      borderLeftColor: tokens.accent.glowLow,
+      borderColor: tokens.border.default,
+      backgroundColor: tokens.accent.glowLow,
+      shadowColor: tokens.shadow.ambient,
+    },
+    normalHeroCard: {
+      borderTopColor: tokens.borderColors.cardTopCyan,
+      borderLeftColor: tokens.borderColors.cardLeftCyan,
+      borderColor: tokens.borderColors.card,
+      backgroundColor: tokens.selectionCard.cardBackground,
+      shadowColor: tokens.shadow.ambient,
+    },
+    normalHeroCardEnabled: {
+      borderWidth: 2,
+      borderColor: tokens.borderColors.selected,
+      borderTopColor: tokens.borderColors.selectedTop,
+      borderLeftColor: tokens.borderColors.cardLeftCyan,
+      backgroundColor: tokens.selectionCard.cardSelectedBackground,
+    },
+    proxyHeroCard: {
+      borderTopColor: 'rgba(251, 191, 36, 0.38)',
+      borderLeftColor: 'rgba(251, 191, 36, 0.18)',
+      borderColor: 'rgba(217, 119, 6, 0.22)',
+      backgroundColor: 'rgba(251, 191, 36, 0.08)',
+    },
+    trustedHeroCard: {
+      borderTopColor: 'rgba(129, 140, 248, 0.38)',
+      borderLeftColor: 'rgba(129, 140, 248, 0.16)',
+      borderColor: 'rgba(99, 102, 241, 0.22)',
+      backgroundColor: 'rgba(99, 102, 241, 0.06)',
+      shadowColor: tokens.shadow.ambient,
+    },
+    heroCardDisabledShell: {
+      opacity: 0.68,
+      borderColor: tokens.border.default,
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    modeBadgePillQuick: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    modeBadgePillNormal: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    modeBadgeTextQuick: { color: tokens.accent.primary },
+    modeBadgeTextNormal: { color: tokens.text.muted },
+    soonPill: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    soonPillText: { color: tokens.text.muted },
+    driverPanelCtaPill: {
+      backgroundColor: 'rgba(99, 102, 241, 0.10)',
+      borderColor: 'rgba(99, 102, 241, 0.28)',
+    },
+    driverPanelCtaPillText: { color: 'rgba(67, 56, 202, 0.92)' },
+  };
 }
 
-function renderSoonPill() {
-  return (
-    <View style={styles.soonPill}>
-      <PremiumText variant="step" style={styles.soonPillText}>
-        Yakında
-      </PremiumText>
-    </View>
-  );
-}
-
-function renderDriverPanelCtaPill(isVeryCompact: boolean) {
-  return (
-    <View style={[styles.driverPanelCtaPill, isVeryCompact && styles.driverPanelCtaPillVeryCompact]}>
-      <PremiumText
-        variant="step"
-        style={[styles.driverPanelCtaPillText, isVeryCompact && styles.driverPanelCtaPillTextVeryCompact]}
-        numberOfLines={2}
-      >
-        Sürücü Paneline Git
-      </PremiumText>
-    </View>
-  );
-}
+const DARK_MATCH_CARD_THEME: MatchCardTheme = {
+  heroTitle: { color: PREMIUM_TEXT_SOFT },
+  heroSubtitle: { color: 'rgba(148, 168, 196, 0.72)' },
+  quickTitle: {
+    color: PREMIUM_TEXT_SOFT,
+    textShadowColor: 'rgba(34, 211, 238, 0.28)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: LDS_SPACING.xs,
+  },
+  quickSubtitle: { color: 'rgba(148, 196, 220, 0.82)', fontWeight: '600' },
+  normalSubtitle: { color: 'rgba(148, 168, 196, 0.78)', fontWeight: '500' },
+  titleDisabled: { color: PREMIUM_TEXT_MUTED },
+  subtitleMuted: { color: PREMIUM_TEXT_MUTED },
+  quickHeroCard: stylesDark.quickHeroCard,
+  normalHeroCard: stylesDark.normalHeroCard,
+  normalHeroCardEnabled: {},
+  proxyHeroCard: stylesDark.proxyHeroCard,
+  trustedHeroCard: stylesDark.trustedHeroCard,
+  heroCardDisabledShell: stylesDark.heroCardDisabledShell,
+  modeBadgePillQuick: stylesDark.modeBadgePillQuick,
+  modeBadgePillNormal: stylesDark.modeBadgePillNormal,
+  modeBadgeTextQuick: stylesDark.modeBadgeTextQuick,
+  modeBadgeTextNormal: stylesDark.modeBadgeTextNormal,
+  soonPill: stylesDark.soonPill,
+  soonPillText: stylesDark.soonPillText,
+  driverPanelCtaPill: stylesDark.driverPanelCtaPill,
+  driverPanelCtaPillText: stylesDark.driverPanelCtaPillText,
+};
 
 function PassengerMatchModeCards({
   onNormalPress,
@@ -152,8 +317,14 @@ function PassengerMatchModeCards({
 }: PassengerMatchModeCardsProps) {
   const { height: winH, width: winW } = useWindowDimensions();
   const { status, summary } = useTrustedSummary();
+  const { isScopeLight, tokens } = usePassengerTheme();
   const trustedWired = typeof onTrustedPress === 'function';
   const quickWired = typeof onQuickPress === 'function';
+
+  const cardTheme = useMemo(
+    () => (isScopeLight ? buildLightMatchCardTheme(tokens) : DARK_MATCH_CARD_THEME),
+    [isScopeLight, tokens],
+  );
 
   const layout = useMemo(() => {
     const usableHeight = Math.max(0, winH - 120);
@@ -180,6 +351,62 @@ function PassengerMatchModeCards({
     };
   }, [winH, winW]);
 
+  const renderModeBadge = (
+    label: string,
+    tone: CardBadgeTone,
+    isVeryCompact: boolean,
+  ) => (
+    <View
+      style={[
+        styles.modeBadgePill,
+        tone === 'quick' ? cardTheme.modeBadgePillQuick : cardTheme.modeBadgePillNormal,
+        isVeryCompact && styles.modeBadgePillVeryCompact,
+      ]}
+    >
+      <PremiumText
+        variant="step"
+        style={[
+          styles.modeBadgeText,
+          tone === 'quick' ? cardTheme.modeBadgeTextQuick : cardTheme.modeBadgeTextNormal,
+          isVeryCompact && styles.modeBadgeTextVeryCompact,
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </PremiumText>
+    </View>
+  );
+
+  const renderSoonPill = () => (
+    <View style={[styles.soonPill, cardTheme.soonPill]}>
+      <PremiumText variant="step" style={[styles.soonPillText, cardTheme.soonPillText]}>
+        Yakında
+      </PremiumText>
+    </View>
+  );
+
+  const renderDriverPanelCtaPill = (isVeryCompact: boolean) => (
+    <View
+      style={[
+        styles.driverPanelCtaPill,
+        cardTheme.driverPanelCtaPill,
+        isVeryCompact && styles.driverPanelCtaPillVeryCompact,
+      ]}
+    >
+      <PremiumText
+        variant="step"
+        style={[
+          styles.driverPanelCtaPillText,
+          cardTheme.driverPanelCtaPillText,
+          isVeryCompact && styles.driverPanelCtaPillTextVeryCompact,
+        ]}
+        numberOfLines={2}
+      >
+        Sürücü Paneline Git
+      </PremiumText>
+    </View>
+  );
+
   const renderPrimaryHero = (card: CardDef) => {
     const isNormal = card.id === 'normal';
     const isQuick = card.id === 'quick';
@@ -195,24 +422,27 @@ function PassengerMatchModeCards({
     const cardShellStyle = [
       styles.heroCardShell,
       { minHeight: layout.primaryCardMinHeight, maxHeight: layout.primaryCardMinHeight + 16 },
-      isQuick ? styles.quickHeroCard : styles.normalHeroCard,
-      !isEnabled && styles.heroCardDisabledShell,
+      isQuick ? cardTheme.quickHeroCard : cardTheme.normalHeroCard,
+      isNormal && isEnabled ? cardTheme.normalHeroCardEnabled : null,
+      !isEnabled && cardTheme.heroCardDisabledShell,
     ];
 
     const titleStyle = [
       LDS_TYPOGRAPHY.title,
       styles.heroTitle,
+      cardTheme.heroTitle,
       { fontSize: layout.titleSize },
-      isQuick && isEnabled && styles.quickTitle,
-      !isEnabled && styles.titleDisabled,
+      isQuick && isEnabled && cardTheme.quickTitle,
+      !isEnabled && cardTheme.titleDisabled,
     ];
 
     const subtitleStyle = [
       LDS_TYPOGRAPHY.caption,
       styles.heroSubtitle,
+      cardTheme.heroSubtitle,
       { fontSize: layout.subtitleSize, lineHeight: layout.subtitleSize + 4 },
-      isQuick && isEnabled && styles.quickSubtitle,
-      isNormal && isEnabled && styles.normalSubtitle,
+      isQuick && isEnabled && cardTheme.quickSubtitle,
+      isNormal && isEnabled && cardTheme.normalSubtitle,
     ];
 
     const cardAccessory = showSoonPill
@@ -323,23 +553,25 @@ function PassengerMatchModeCards({
     const cardShellStyle = [
       styles.heroCardShell,
       { minHeight: layout.primaryCardMinHeight, maxHeight: layout.primaryCardMinHeight + 16 },
-      isProxy ? styles.proxyHeroCard : styles.trustedHeroCard,
-      !isEnabled && styles.heroCardDisabledShell,
+      isProxy ? cardTheme.proxyHeroCard : cardTheme.trustedHeroCard,
+      !isEnabled && cardTheme.heroCardDisabledShell,
     ];
 
     const titleStyle = [
       LDS_TYPOGRAPHY.title,
       styles.heroTitle,
+      cardTheme.heroTitle,
       { fontSize: layout.titleSize },
-      !isEnabled && styles.titleDisabled,
+      !isEnabled && cardTheme.titleDisabled,
     ];
 
     const subtitleStyle = [
       LDS_TYPOGRAPHY.caption,
       styles.heroSubtitle,
+      cardTheme.heroSubtitle,
       { fontSize: layout.subtitleSize, lineHeight: layout.subtitleSize + 4 },
-      isEnabled && !isProxy && styles.normalSubtitle,
-      !isEnabled && styles.subtitleMuted,
+      isEnabled && !isProxy && cardTheme.normalSubtitle,
+      !isEnabled && cardTheme.subtitleMuted,
     ];
 
     const secondaryCard = (
@@ -437,94 +669,15 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
   },
-  quickHeroCard: {
-    borderTopColor: 'rgba(34, 211, 238, 0.42)',
-    borderLeftColor: 'rgba(34, 211, 238, 0.2)',
-    borderColor: 'rgba(34, 211, 238, 0.3)',
-    backgroundColor: 'rgba(34, 211, 238, 0.04)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_AUTH_CYAN,
-        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
-        shadowOpacity: 0.38,
-        shadowRadius: LDS_SPACING.sm,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  normalHeroCard: {
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
-    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
-    borderColor: LDS_BORDER_COLOR.card,
-    backgroundColor: 'rgba(4, 10, 20, 0.28)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_NAVY_DEEP,
-        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
-        shadowOpacity: 0.28,
-        shadowRadius: LDS_SPACING.sm,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  proxyHeroCard: {
-    borderTopColor: 'rgba(251, 191, 36, 0.32)',
-    borderLeftColor: 'rgba(251, 191, 36, 0.16)',
-    borderColor: 'rgba(251, 191, 36, 0.24)',
-    backgroundColor: 'rgba(251, 191, 36, 0.04)',
-  },
-  trustedHeroCard: {
-    borderTopColor: 'rgba(129, 140, 248, 0.34)',
-    borderLeftColor: 'rgba(129, 140, 248, 0.16)',
-    borderColor: 'rgba(129, 140, 248, 0.24)',
-    backgroundColor: 'rgba(79, 70, 229, 0.05)',
-    ...Platform.select({
-      ios: {
-        shadowColor: PREMIUM_NAVY_DEEP,
-        shadowOffset: { width: 0, height: LDS_SPACING.xxs },
-        shadowOpacity: 0.22,
-        shadowRadius: LDS_SPACING.sm,
-      },
-      android: { elevation: 4 },
-    }),
-  },
-  heroCardDisabledShell: {
-    opacity: 0.58,
-    borderColor: PREMIUM_BORDER_SLATE,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
   heroTitle: {
     textAlign: 'center',
     fontWeight: '800',
-    color: PREMIUM_TEXT_SOFT,
     letterSpacing: -0.3,
-  },
-  quickTitle: {
-    color: PREMIUM_TEXT_SOFT,
-    textShadowColor: 'rgba(34, 211, 238, 0.28)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: LDS_SPACING.xs,
   },
   heroSubtitle: {
     textAlign: 'center',
     fontWeight: '500',
-    color: 'rgba(148, 168, 196, 0.72)',
     letterSpacing: 0.1,
-  },
-  quickSubtitle: {
-    color: 'rgba(148, 196, 220, 0.82)',
-    fontWeight: '600',
-  },
-  normalSubtitle: {
-    color: 'rgba(148, 168, 196, 0.78)',
-    fontWeight: '500',
-  },
-  titleDisabled: {
-    color: PREMIUM_TEXT_MUTED,
-  },
-  subtitleMuted: {
-    color: PREMIUM_TEXT_MUTED,
   },
   modeBadgePill: {
     alignSelf: 'flex-end',
@@ -538,14 +691,6 @@ const styles = StyleSheet.create({
     maxWidth: 96,
     paddingHorizontal: LDS_SPACING.xxs + 1,
   },
-  modeBadgePillQuick: {
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    borderColor: 'rgba(34, 211, 238, 0.32)',
-  },
-  modeBadgePillNormal: {
-    backgroundColor: 'rgba(30, 58, 95, 0.55)',
-    borderColor: PREMIUM_BORDER_SLATE,
-  },
   modeBadgeText: {
     fontSize: 9,
     fontWeight: '800',
@@ -557,25 +702,16 @@ const styles = StyleSheet.create({
     fontSize: 7,
     letterSpacing: 0.2,
   },
-  modeBadgeTextQuick: {
-    color: 'rgba(186, 230, 253, 0.96)',
-  },
-  modeBadgeTextNormal: {
-    color: 'rgba(148, 163, 184, 0.92)',
-  },
   soonPill: {
     alignSelf: 'center',
     paddingHorizontal: LDS_SPACING.sm,
     paddingVertical: LDS_SPACING.xxs - 1,
     borderRadius: 999,
-    backgroundColor: 'rgba(30, 58, 95, 0.55)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: PREMIUM_BORDER_SLATE,
   },
   soonPillText: {
     fontSize: 10,
     fontWeight: '800',
-    color: 'rgba(148, 163, 184, 0.92)',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
@@ -585,9 +721,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: LDS_SPACING.xs,
     paddingVertical: LDS_SPACING.xxs,
     borderRadius: 999,
-    backgroundColor: 'rgba(79, 70, 229, 0.14)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(129, 140, 248, 0.38)',
   },
   driverPanelCtaPillVeryCompact: {
     maxWidth: 104,
@@ -596,7 +730,6 @@ const styles = StyleSheet.create({
   driverPanelCtaPillText: {
     fontSize: 8,
     fontWeight: '800',
-    color: 'rgba(196, 181, 253, 0.96)',
     letterSpacing: 0.2,
     textAlign: 'center',
     lineHeight: 11,

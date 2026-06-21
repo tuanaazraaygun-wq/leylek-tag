@@ -89,7 +89,7 @@ function buildRoleLightSurfaces(tokens: LhThemeTokens): RoleLightSurfaces {
     roleTopTitle: { color: tokens.text.primary },
     roleTopTitleAccent: { color: tokens.accent.primary },
     roleUnifiedCockpitShell: {
-      backgroundColor: tokens.glassSurface.panel.backgroundColor,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.borderColors.cockpitPanel,
       borderTopColor: tokens.borderColors.cockpitPanelTop,
       borderLeftColor: tokens.borderColors.cockpitPanelLeft,
@@ -119,6 +119,7 @@ function buildRoleLightSurfaces(tokens: LhThemeTokens): RoleLightSurfaces {
       borderColor: tokens.borderColors.card,
       borderTopColor: tokens.borderColors.cardTopCyan,
       borderLeftColor: tokens.borderColors.cardLeftCyan,
+      shadowColor: tokens.shadow.ambient,
     },
     roleCardLabel: { color: tokens.text.primary },
     roleCardLabelActive: {

@@ -22,6 +22,7 @@ import {
   useLeylekZekaChrome,
 } from '../contexts/LeylekZekaChromeContext';
 import { useLeylekZeka } from '../hooks/useLeylekZeka';
+import { useTheme } from '../hooks/useTheme';
 import {
   getContextualPillLine,
   pickFlowAwareAmbientLine,
@@ -213,6 +214,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     passengerWaitInsight,
   } = useLeylekZekaChrome();
   const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
+  const { resolvedTheme } = useTheme();
+  const eyeThemeVariant = resolvedTheme === 'light' ? 'light' : 'dark';
+  const guardianEyeSize =
+    eyeThemeVariant === 'light' ? LEYLEK_EYE_ROLE_SELECT_SIZE + 3 : LEYLEK_EYE_ROLE_SELECT_SIZE;
 
   const [reduceMotion, setReduceMotion] = useState(false);
   const [keyboardUp, setKeyboardUp] = useState(false);
@@ -964,12 +969,14 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[
                 styles.centerAnchor,
                 styles.roleSelectEyeAnchor,
+                eyeThemeVariant === 'light' && styles.roleSelectEyeAnchorLight,
                 { top: roleSelectEyeTop },
               ]}
             >
               <LeylekEye
-                size={LEYLEK_EYE_ROLE_SELECT_SIZE}
+                size={guardianEyeSize}
                 chromeTone="subtle"
+                themeVariant={eyeThemeVariant}
                 motionProfile="guardian"
                 onPress={onOpen}
                 reduceMotion={reduceMotion}
@@ -982,12 +989,14 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               style={[
                 styles.centerAnchor,
                 styles.passengerMatchHomeEyeAnchor,
+                eyeThemeVariant === 'light' && styles.passengerMatchHomeEyeAnchorLight,
                 { top: passengerMatchHomeEyeTop },
               ]}
             >
               <LeylekEye
-                size={LEYLEK_EYE_ROLE_SELECT_SIZE}
+                size={guardianEyeSize}
                 chromeTone="subtle"
+                themeVariant={eyeThemeVariant}
                 motionProfile="guardian"
                 onPress={onOpen}
                 reduceMotion={reduceMotion}
@@ -1026,6 +1035,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                   <LeylekEye
                     size={LEYLEK_EYE_WATCHING_SIZE}
                     chromeTone="subtle"
+                    themeVariant={eyeThemeVariant}
                     motionProfile="guardian"
                     reduceMotion={reduceMotion}
                     accessibilityLabel={PASSENGER_MATCHING_EYE_A11Y_LABEL}
@@ -1169,10 +1179,16 @@ const styles = StyleSheet.create({
     zIndex: 4,
     opacity: 0.74,
   },
+  roleSelectEyeAnchorLight: {
+    opacity: 1,
+  },
   /** Passenger Match Decision Cockpit guardian — slot hizası, kokpit parçası. */
   passengerMatchHomeEyeAnchor: {
     zIndex: 4,
     opacity: 0.88,
+  },
+  passengerMatchHomeEyeAnchorLight: {
+    opacity: 1,
   },
   passengerWaitMapAnchor: {
     position: 'absolute',

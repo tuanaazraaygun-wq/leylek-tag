@@ -35,6 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing } from '../constants/Colors';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
+import { useTheme } from '../hooks/useTheme';
 import {
   type LeylekZekaMessage,
   type LeylekZekaReplySource,
@@ -192,9 +193,11 @@ const TypingBars = memo(function TypingBars() {
 const Bubble = memo(function Bubble({
   item,
   displayText,
+  isLightShell = false,
 }: {
   item: LeylekZekaMessage;
   displayText?: string;
+  isLightShell?: boolean;
 }) {
   const isUser = item.role === 'user';
   const text = displayText ?? item.text;
@@ -216,7 +219,7 @@ const Bubble = memo(function Bubble({
   }
   return (
     <View style={[styles.bubbleWrap, styles.bubbleWrapAi]}>
-      <View style={styles.bubbleAiCard}>
+      <View style={[styles.bubbleAiCard, isLightShell && styles.bubbleAiCardLight]}>
         <View style={styles.bubbleAiAccentStrip}>
           <LinearGradient
             colors={[...BRAND_GRADIENT]}
@@ -227,7 +230,7 @@ const Bubble = memo(function Bubble({
         </View>
         <View style={styles.bubbleAiContentBody}>
           <Text
-            style={[styles.bubbleText, styles.bubbleTextAi]}
+            style={[styles.bubbleText, styles.bubbleTextAi, isLightShell && styles.bubbleTextAiLight]}
             selectable
             {...Platform.select({
               android: {
@@ -311,7 +314,13 @@ const EmptyWelcome = memo(function EmptyWelcome({
 });
 
 /** Başlık logosu — hafif nefes (scale), spin yok */
-const HeaderLogoMark = memo(function HeaderLogoMark({ reduceMotion }: { reduceMotion: boolean }) {
+const HeaderLogoMark = memo(function HeaderLogoMark({
+  reduceMotion,
+  isLightShell = false,
+}: {
+  reduceMotion: boolean;
+  isLightShell?: boolean;
+}) {
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (reduceMotion) {
@@ -343,6 +352,7 @@ const HeaderLogoMark = memo(function HeaderLogoMark({ reduceMotion }: { reduceMo
     <Animated.View
       style={[
         styles.headerLogoWrapCompact,
+        isLightShell && styles.headerLogoWrapCompactLight,
         !reduceMotion && { transform: [{ translateY: floatY }, { scale }] },
       ]}
     >
@@ -363,6 +373,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
+  const { resolvedTheme, tokens } = useTheme();
+  const isLightShell = resolvedTheme === 'light';
   const [input, setInput] = useState('');
   const [showBetaHint, setShowBetaHint] = useState(false);
   const [speechEnabled, setSpeechEnabled] = useState(true);
@@ -1140,9 +1152,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       <Bubble
         item={item}
         displayText={item.role === 'assistant' ? displayedAssistantTextById[item.id] : undefined}
+        isLightShell={isLightShell}
       />
     ),
-    [displayedAssistantTextById],
+    [displayedAssistantTextById, isLightShell],
   );
 
   const keyExtractor = useCallback((m: LeylekZekaMessage) => m.id, []);
@@ -1222,6 +1235,16 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     return typeof sb === 'number' && sb > 0 ? sb : 0;
   }, [insets.top]);
 
+  const sheetGradient = isLightShell
+    ? (['#F8FAFC', '#F4F7FB', '#EEF2F7'] as const)
+    : COCKPIT_HERO_GRADIENT;
+  const sheetBorderColor = isLightShell ? 'rgba(0,212,170,0.28)' : 'rgba(34, 211, 238, 0.38)';
+  const backdropBg = isLightShell ? 'rgba(15,23,42,0.28)' : 'rgba(2, 6, 14, 0.72)';
+  const headerBarColors = isLightShell
+    ? (['rgba(255,255,255,0.98)', 'rgba(244,247,251,0.96)', 'rgba(238,242,247,0.94)'] as const)
+    : (['rgba(10, 22, 40, 0.98)', 'rgba(8, 18, 34, 0.94)', 'rgba(6, 14, 28, 0.9)'] as const);
+  const headerBarBorder = isLightShell ? 'rgba(0,212,170,0.22)' : 'rgba(34, 211, 238, 0.28)';
+
   return (
     <Modal
       visible={visible}
@@ -1232,7 +1255,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     >
       <View style={styles.modalRoot}>
         <Pressable
-          style={styles.backdrop}
+          style={[styles.backdrop, { backgroundColor: backdropBg }]}
           onPress={closeWithHaptic}
           accessibilityRole="button"
           accessibilityLabel="Kapat"
@@ -1250,9 +1273,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 : null,
             ]}
           >
-          <View style={[styles.sheet, { height: panelMaxHeight, maxHeight: panelMaxHeight }]}>
+          <View
+            style={[
+              styles.sheet,
+              isLightShell && styles.sheetLight,
+              { height: panelMaxHeight, maxHeight: panelMaxHeight, borderColor: sheetBorderColor },
+            ]}
+          >
             <LinearGradient
-              colors={[...COCKPIT_HERO_GRADIENT]}
+              colors={[...sheetGradient]}
               locations={[0, 0.55, 1]}
               start={{ x: 0.15, y: 0 }}
               end={{ x: 0.9, y: 1 }}
@@ -1260,10 +1289,19 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               pointerEvents="none"
             />
             {Platform.OS === 'ios' ? (
-              <BlurView intensity={42} tint="dark" style={styles.sheetBlur} pointerEvents="none" />
+              <BlurView
+                intensity={isLightShell ? 28 : 42}
+                tint={isLightShell ? 'light' : 'dark'}
+                style={styles.sheetBlur}
+                pointerEvents="none"
+              />
             ) : (
               <LinearGradient
-                colors={['rgba(8, 18, 32, 0.55)', 'rgba(6, 14, 26, 0.88)']}
+                colors={
+                  isLightShell
+                    ? (['rgba(255,255,255,0.72)', 'rgba(244,247,251,0.88)'] as const)
+                    : (['rgba(8, 18, 32, 0.55)', 'rgba(6, 14, 26, 0.88)'] as const)
+                }
                 locations={[0, 1]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -1272,7 +1310,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               />
             )}
             <LinearGradient
-              colors={['rgba(34, 211, 238, 0.08)', 'transparent', 'rgba(37, 99, 235, 0.06)']}
+              colors={
+                isLightShell
+                  ? (['rgba(0,212,170,0.06)', 'transparent', 'rgba(14,165,233,0.04)'] as const)
+                  : (['rgba(34, 211, 238, 0.08)', 'transparent', 'rgba(37, 99, 235, 0.06)'] as const)
+              }
               locations={[0, 0.45, 1]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -1282,11 +1324,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
             <View style={[styles.sheetInner, { paddingTop: Math.max(insets.top, 10) + 6 }]}>
           <LinearGradient
-            colors={['rgba(10, 22, 40, 0.98)', 'rgba(8, 18, 34, 0.94)', 'rgba(6, 14, 28, 0.9)']}
+            colors={[...headerBarColors]}
             locations={[0, 0.5, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.headerBar}
+            style={[styles.headerBar, { borderColor: headerBarBorder }]}
           >
             <LinearGradient
               colors={[COCKPIT_CYAN, '#3FA9F5', '#2563EB']}
@@ -1304,11 +1346,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             />
             <View style={styles.headerTitleRow}>
               <View style={styles.headerLead}>
-                <HeaderLogoMark reduceMotion={reduceMotion} />
+                <HeaderLogoMark reduceMotion={reduceMotion} isLightShell={isLightShell} />
                 <View style={styles.headerTextCol}>
-                  <Text style={styles.heroEyebrow}>{headerHeroTagline}</Text>
+                  <Text style={[styles.heroEyebrow, isLightShell && { color: tokens.accent.primary }]}>
+                    {headerHeroTagline}
+                  </Text>
                   <View style={styles.titleRow}>
-                    <Text style={styles.title}>Leylek Zeka</Text>
+                    <Text style={[styles.title, isLightShell && { color: tokens.text.primary }]}>
+                      Leylek Zeka
+                    </Text>
                     <LinearGradient
                       colors={[...BRAND_GRADIENT]}
                       start={{ x: 0, y: 0 }}
@@ -1318,10 +1364,17 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                       <Text style={styles.aiBadgeText}>AI</Text>
                     </LinearGradient>
                   </View>
-                  <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  <Text
+                    style={[styles.headerSubtitle, isLightShell && { color: tokens.text.muted }]}
+                    numberOfLines={1}
+                  >
                     {headerSubtitle}
                   </Text>
-                  {modeCaption ? <Text style={styles.modeCaptionInline}>{modeCaption}</Text> : null}
+                  {modeCaption ? (
+                    <Text style={[styles.modeCaptionInline, isLightShell && { color: tokens.text.muted }]}>
+                      {modeCaption}
+                    </Text>
+                  ) : null}
                   <View style={styles.speechControlsRow}>
                     <Pressable
                       onPress={toggleSpeechEnabled}
@@ -1378,8 +1431,16 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 </View>
               </View>
             </View>
-            <Pressable onPress={closeWithHaptic} hitSlop={14} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color="rgba(226, 232, 240, 0.92)" />
+            <Pressable
+              onPress={closeWithHaptic}
+              hitSlop={14}
+              style={[styles.closeBtn, isLightShell && styles.closeBtnLight]}
+            >
+              <Ionicons
+                name="close"
+                size={22}
+                color={isLightShell ? tokens.text.muted : 'rgba(226, 232, 240, 0.92)'}
+              />
             </Pressable>
           </LinearGradient>
 
@@ -1462,13 +1523,21 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           </View>
 
           <LinearGradient
-            colors={['rgba(8, 18, 32, 0.97)', 'rgba(6, 14, 26, 0.98)']}
+            colors={
+              isLightShell
+                ? (['rgba(255,255,255,0.98)', 'rgba(244,247,251,0.98)'] as const)
+                : (['rgba(8, 18, 32, 0.97)', 'rgba(6, 14, 26, 0.98)'] as const)
+            }
             locations={[0, 1]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
-            style={[styles.composerBar, { paddingBottom: composerBottomPad }]}
+            style={[
+              styles.composerBar,
+              isLightShell && styles.composerBarLight,
+              { paddingBottom: composerBottomPad },
+            ]}
           >
-            <View style={styles.composerCard}>
+            <View style={[styles.composerCard, isLightShell && styles.composerCardLight]}>
               <Pressable
                 onTouchStart={handleVoiceTouchStart}
                 onTouchEnd={handleVoiceTouchEnd}
@@ -1579,12 +1648,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   </View>
                 </View>
               </Pressable>
-              <Text style={styles.composerLabel}>Mesaj</Text>
+              <Text style={[styles.composerLabel, isLightShell && { color: tokens.text.muted }]}>
+                Mesaj
+              </Text>
               <View style={styles.inputRow}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, isLightShell && styles.inputLight]}
                   placeholder={contextCopy.placeholder}
-                  placeholderTextColor="rgba(148, 163, 184, 0.75)"
+                  placeholderTextColor={isLightShell ? tokens.text.muted : 'rgba(148, 163, 184, 0.75)'}
                   value={input}
                   onChangeText={setInput}
                   editable={!isTyping}
@@ -1688,6 +1759,16 @@ const styles = StyleSheet.create({
         shadowRadius: 32,
       },
       android: { elevation: 22 },
+    }),
+  },
+  sheetLight: {
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.12)',
+        shadowOpacity: 0.18,
+      },
+      android: { elevation: 16 },
     }),
   },
   sheetSkyBase: {
@@ -1837,6 +1918,16 @@ const styles = StyleSheet.create({
       android: { elevation: 1 },
     }),
   },
+  headerLogoWrapCompactLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(0,212,170,0.28)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.10)',
+      },
+      android: { elevation: 2 },
+    }),
+  },
   headerLogo: {
     width: 30,
     height: 30,
@@ -1954,6 +2045,10 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 3 },
     }),
+  },
+  closeBtnLight: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderColor: 'rgba(15,23,42,0.10)',
   },
   betaBanner: {
     flexDirection: 'row',
@@ -2136,6 +2231,16 @@ const styles = StyleSheet.create({
       android: { elevation: 3 },
     }),
   },
+  bubbleAiCardLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(15,23,42,0.10)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.08)',
+      },
+      android: { elevation: 2 },
+    }),
+  },
   /** Sabit genişlik — flex ile metin alanından genişlik çalmaz */
   bubbleAiAccentStrip: {
     width: 5,
@@ -2183,6 +2288,9 @@ const styles = StyleSheet.create({
     opacity: 1,
     flexShrink: 1,
     width: '100%',
+  },
+  bubbleTextAiLight: {
+    color: 'rgba(13,17,23,0.90)',
   },
   emptyPromptTitle: {
     marginTop: Spacing.md,
@@ -2304,6 +2412,15 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
     }),
   },
+  composerBarLight: {
+    borderTopColor: 'rgba(15,23,42,0.08)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.06)',
+      },
+      android: { elevation: 4 },
+    }),
+  },
   composerLabel: {
     fontFamily: DIGITAL_MONO,
     fontSize: 9,
@@ -2329,6 +2446,16 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
       },
       android: { elevation: 4 },
+    }),
+  },
+  composerCardLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(15,23,42,0.10)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.06)',
+      },
+      android: { elevation: 2 },
     }),
   },
   voiceHoldZone: {
@@ -2414,6 +2541,11 @@ const styles = StyleSheet.create({
     marginRight: Spacing.sm,
     fontWeight: '500',
     letterSpacing: 0.04,
+  },
+  inputLight: {
+    color: 'rgba(13,17,23,0.92)',
+    backgroundColor: 'rgba(238,242,247,0.88)',
+    borderColor: 'rgba(15,23,42,0.10)',
   },
   voiceStatusHeader: {
     flexDirection: 'row',

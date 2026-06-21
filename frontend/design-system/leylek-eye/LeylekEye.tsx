@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback, useImperativeHandle } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, LinearGradient as SvgLinearGradient, Path, RadialGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -10,11 +10,14 @@ import { useLeylekEyeMotion, type LeylekEyeMotionProfile } from './useLeylekEyeM
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
+const LEYLEK_ZEKA_EYE_PNG = require('../../assets/images/leylek-zeka-eye.png');
+
 export const LEYLEK_EYE_HERO_SIZE = 66;
 export const LEYLEK_EYE_ROLE_SELECT_SIZE = 49;
 export const LEYLEK_EYE_VIEW_SIZE = 50;
 
 export type LeylekEyeChromeTone = 'default' | 'subtle';
+export type LeylekEyeThemeVariant = 'dark' | 'light';
 
 function resolveEyeViewSize(capsuleSize: number): number {
   return Math.round(capsuleSize * (LEYLEK_EYE_VIEW_SIZE / LEYLEK_EYE_HERO_SIZE));
@@ -27,6 +30,7 @@ export type LeylekEyeHandle = {
 export type LeylekEyeProps = {
   size?: number;
   chromeTone?: LeylekEyeChromeTone;
+  themeVariant?: LeylekEyeThemeVariant;
   motionProfile?: LeylekEyeMotionProfile;
   onPress?: () => void;
   reduceMotion?: boolean;
@@ -136,6 +140,7 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
   {
     size = LEYLEK_EYE_HERO_SIZE,
     chromeTone = 'default',
+    themeVariant = 'dark',
     motionProfile = 'fab',
     onPress,
     reduceMotion = false,
@@ -148,6 +153,8 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
   const innerRimRadius = Math.max(10, Math.round(size * 0.21));
   const viewSize = resolveEyeViewSize(size);
   const isSubtleChrome = chromeTone === 'subtle';
+  const isLightTheme = themeVariant === 'light';
+  const usePngMark = isLightTheme;
 
   useImperativeHandle(ref, () => ({
     triggerFocus: motion.triggerFocus,
@@ -158,7 +165,14 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
     onPress?.();
   }, [motion.triggerFocus, onPress]);
 
-  const eyeNode = (
+  const eyeNode = usePngMark ? (
+    <Image
+      source={LEYLEK_ZEKA_EYE_PNG}
+      style={{ width: Math.round(viewSize * 1.08), height: Math.round(viewSize * 1.08) }}
+      resizeMode="contain"
+      accessibilityIgnoresInvertColors
+    />
+  ) : (
     <Animated.View
       style={[
         styles.eyeScaleWrap,
@@ -181,35 +195,53 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
       style={[
         styles.wrap,
         isSubtleChrome && styles.wrapSubtle,
+        isLightTheme && styles.wrapLight,
+        isLightTheme && isSubtleChrome && styles.wrapLightSubtle,
         { width: size, height: size, borderRadius: capsuleRadius },
       ]}
     >
       <LinearGradient
-        colors={['rgba(18,32,52,0.98)', PREMIUM_NAVY_CARD, 'rgba(8,14,24,0.97)']}
+        colors={
+          isLightTheme
+            ? (['#FFFFFF', '#F4F7FB', '#EEF2F7'] as const)
+            : (['rgba(18,32,52,0.98)', PREMIUM_NAVY_CARD, 'rgba(8,14,24,0.97)'] as const)
+        }
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={styles.grad}
       >
         <LinearGradient
-          colors={['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.03)', 'transparent']}
+          colors={
+            isLightTheme
+              ? (['rgba(255,255,255,0.92)', 'rgba(0,212,170,0.06)', 'transparent'] as const)
+              : (['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.03)', 'transparent'] as const)
+          }
           locations={[0, 0.35, 0.72]}
           start={{ x: 0.15, y: 0 }}
           end={{ x: 0.85, y: 0.55 }}
           pointerEvents="none"
           style={[styles.glassSheen, { borderRadius: capsuleRadius }]}
         />
-        <Animated.View
-          pointerEvents="none"
+        {!isLightTheme ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.rimPulse,
+              {
+                borderRadius: capsuleRadius,
+                opacity: motion.rimOpacity,
+                borderColor: LDS_COLOR_CTA_RIM,
+              },
+            ]}
+          />
+        ) : null}
+        <View
           style={[
-            styles.rimPulse,
-            {
-              borderRadius: capsuleRadius,
-              opacity: motion.rimOpacity,
-              borderColor: LDS_COLOR_CTA_RIM,
-            },
+            styles.glassInnerRim,
+            isLightTheme && styles.glassInnerRimLight,
+            { borderRadius: innerRimRadius },
           ]}
         />
-        <View style={[styles.glassInnerRim, { borderRadius: innerRimRadius }]} />
         <View style={styles.eyeWell}>{eyeNode}</View>
       </LinearGradient>
     </View>
@@ -264,6 +296,22 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  wrapLight: {
+    borderColor: 'rgba(0, 212, 170, 0.32)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15, 23, 42, 0.12)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 1,
+        shadowRadius: 10,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  wrapLightSubtle: {
+    borderColor: 'rgba(0, 212, 170, 0.24)',
+  },
   wrapPressed: {
     opacity: 0.94,
   },
@@ -282,6 +330,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.06)',
     borderTopColor: 'rgba(255,255,255,0.12)',
     pointerEvents: 'none',
+  },
+  glassInnerRimLight: {
+    borderColor: 'rgba(15,23,42,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.72)',
   },
   rimPulse: {
     ...StyleSheet.absoluteFillObject,

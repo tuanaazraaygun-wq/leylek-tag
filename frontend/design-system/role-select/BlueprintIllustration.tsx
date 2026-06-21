@@ -1,6 +1,8 @@
 import React, { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg from 'react-native-svg';
+import { useTheme } from '../../hooks/useTheme';
+import type { ResolvedTheme } from '../../lib/theme/types';
 import { LDS_ILLUSTRATION } from '../tokens/illustration';
 
 export type BlueprintPalette = {
@@ -25,7 +27,20 @@ export type BlueprintIllustrationProps = {
   children: (palette: BlueprintPalette) => React.ReactNode;
 };
 
-export function getBlueprintPalette(active: boolean): BlueprintPalette {
+export function getBlueprintPalette(active: boolean, theme: ResolvedTheme = 'dark'): BlueprintPalette {
+  if (theme === 'light') {
+    return {
+      stroke: active ? 'rgba(13,148,136,0.92)' : 'rgba(15,118,110,0.62)',
+      strokeMuted: active ? 'rgba(13,148,136,0.52)' : 'rgba(100,116,139,0.48)',
+      fill: active ? 'rgba(0,212,170,0.16)' : 'rgba(0,212,170,0.08)',
+      fillDeep: active ? 'rgba(0,212,170,0.22)' : 'rgba(0,212,170,0.12)',
+      fillAccent: active ? 'rgba(14,165,233,0.18)' : 'rgba(14,165,233,0.10)',
+      grid: 'rgba(15,23,42,0.10)',
+      glow: active ? 'rgba(0,212,170,0.14)' : 'rgba(0,212,170,0.06)',
+      highlight: active ? 'rgba(13,17,23,0.88)' : 'rgba(51,65,85,0.72)',
+    };
+  }
+
   return {
     stroke: active ? 'rgba(34,211,238,0.88)' : 'rgba(94,210,230,0.56)',
     strokeMuted: active ? 'rgba(34,211,238,0.42)' : 'rgba(94,210,230,0.32)',
@@ -47,7 +62,11 @@ function BlueprintIllustration({
   preserveAspectRatio = 'meet',
   children,
 }: BlueprintIllustrationProps) {
-  const palette = useMemo(() => getBlueprintPalette(active), [active]);
+  const { resolvedTheme } = useTheme();
+  const palette = useMemo(
+    () => getBlueprintPalette(active, resolvedTheme),
+    [active, resolvedTheme],
+  );
   const fillRatio = isVeryCompact
     ? LDS_ILLUSTRATION.stageFillRatioVeryCompact
     : LDS_ILLUSTRATION.stageFillRatio;
