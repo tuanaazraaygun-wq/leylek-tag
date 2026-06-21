@@ -1,5 +1,6 @@
 /**
  * Canlı harita / teklif / bekleme ekranlarında aynı PNG marker seti (LiveMapView ile uyumlu).
+ * B5.2 / B6-5 — brand geometry constitution exports.
  */
 
 export const NAV_MARKER_IMG = {
@@ -9,8 +10,17 @@ export const NAV_MARKER_IMG = {
    */
   driverCar: require('../assets/markers/driver-car.png'),
   driverMotor: require('../assets/markers/driver-motor.png'),
-  /** Tek nötr yolcu ikonu — cinsiyet / kullanıcı id tahmini yok */
-  passenger: require('../assets/markers/passenger-woman.png'),
+  /** Gender-neutral silhouette — no male/female read @32px (B5.2 constitution). */
+  passenger: require('../assets/markers/passenger-neutral.png'),
+  pickup: require('../assets/markers/pickup.png'),
+  destination: require('../assets/markers/destination.png'),
+  journeyActive: require('../assets/markers/journey-active.png'),
+  quickMatch: require('../assets/markers/quick-match.png'),
+  trustNetwork: require('../assets/markers/trust-network.png'),
+  trustedDriver: require('../assets/markers/trusted-driver.png'),
+  cluster: require('../assets/markers/cluster.png'),
+  offlineDriver: require('../assets/markers/offline-driver.png'),
+  searchingPulse: require('../assets/markers/searching-pulse.png'),
 } as const;
 
 /**
