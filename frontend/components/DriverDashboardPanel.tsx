@@ -277,10 +277,10 @@ export default function DriverDashboardPanel({
               ]}
             />
             <View style={styles.onlineTextCol}>
-              <PremiumText variant="body" style={styles.onlineStatusLabel}>
+              <PremiumText variant="body" style={[styles.onlineStatusLabel, dpLt?.onlineStatusLabel]}>
                 {availabilityLabel}
               </PremiumText>
-              <PremiumText variant="caption" muted style={styles.onlineStatusHint} numberOfLines={1}>
+              <PremiumText variant="caption" muted style={[styles.onlineStatusHint, dpLt?.onlineStatusHint]} numberOfLines={1}>
                 {onlineStatusHint}
               </PremiumText>
             </View>
@@ -327,17 +327,17 @@ export default function DriverDashboardPanel({
                 accessibilityRole="summary"
                 accessibilityLabel={`Bugünkü katkılar ${data.today.earnings} lira, ${data.today.trips_count} sefer. Hedef yüzde ${goalProgress}.`}
               >
-                <PremiumText variant="caption" muted style={styles.instrumentLabel}>
+                <PremiumText variant="caption" muted style={[styles.instrumentLabel, dpLt?.instrumentLabel]}>
                   Bugünkü katkılar
                 </PremiumText>
                 <PremiumText variant="title" style={[styles.instrumentAmount, dpLt?.instrumentAmount]}>
                   {data.today.earnings} ₺
                 </PremiumText>
                 <View style={styles.instrumentMetaRow}>
-                  <PremiumText variant="caption" muted style={styles.instrumentMeta}>
+                  <PremiumText variant="caption" muted style={[styles.instrumentMeta, dpLt?.instrumentMeta]}>
                     {data.today.trips_count} sefer
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.instrumentMeta}>
+                  <PremiumText variant="caption" muted style={[styles.instrumentMeta, dpLt?.instrumentMeta]}>
                     Hedef %{goalProgress}
                   </PremiumText>
                 </View>
@@ -369,7 +369,7 @@ export default function DriverDashboardPanel({
                   }
                 />
                 <View style={styles.footerTextCol}>
-                  <PremiumText variant="caption" muted style={styles.footerMetaLabel}>
+                  <PremiumText variant="caption" muted style={[styles.footerMetaLabel, dpLt?.footerMetaLabel]}>
                     Seans
                   </PremiumText>
                   <PremiumText variant="caption" style={[styles.footerValue, dpLt?.footerValue]}>
@@ -394,7 +394,7 @@ export default function DriverDashboardPanel({
               >
                 <Ionicons name="cube-outline" size={14} color={ui.iconMuted} />
                 <View style={styles.footerTextCol}>
-                  <PremiumText variant="caption" muted style={styles.footerMetaLabel}>
+                  <PremiumText variant="caption" muted style={[styles.footerMetaLabel, dpLt?.footerMetaLabel]}>
                     Paket
                   </PremiumText>
                   <PremiumText variant="caption" style={[styles.footerValue, dpLt?.footerValue]}>
@@ -416,7 +416,7 @@ export default function DriverDashboardPanel({
                   <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
                     {data.today.trips_count}
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.statLabel}>
+                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt?.statLabel]}>
                     Bugünkü sefer
                   </PremiumText>
                 </View>
@@ -430,7 +430,7 @@ export default function DriverDashboardPanel({
                   <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
                     {data.weekly.earnings} ₺
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.statLabel}>
+                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt?.statLabel]}>
                     Haftalık paylaşım katkıları
                   </PremiumText>
                 </View>
@@ -446,7 +446,7 @@ export default function DriverDashboardPanel({
                       ? data.stats.rating.toFixed(1)
                       : '—'}
                   </PremiumText>
-                  <PremiumText variant="caption" muted style={styles.statLabel}>
+                  <PremiumText variant="caption" muted style={[styles.statLabel, dpLt?.statLabel]}>
                     {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
                       ? 'Puan'
                       : 'Henüz değerlendirme yok'}

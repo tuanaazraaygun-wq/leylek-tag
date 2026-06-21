@@ -19142,7 +19142,7 @@ function DriverDashboard({
                       accessibilityRole="header"
                       accessibilityLabel="LeylekTAG Kokpit"
                     >
-                      <PremiumText variant="title" style={dws.cockpitHeaderBrand} numberOfLines={1}>
+                      <PremiumText variant="title" style={[dws.cockpitHeaderBrand, dwsLt?.cockpitHeaderBrand]} numberOfLines={1}>
                         LeylekTAG · Kokpit
                       </PremiumText>
                     </View>
@@ -19182,6 +19182,7 @@ function DriverDashboard({
           <View
             style={[
               dws.cockpitOfferGround,
+              dwsLt?.cockpitOfferGround,
               driverInviteDeckDimVisible && { opacity: 0.38 },
             ]}
             pointerEvents={driverInviteDeckDimVisible ? 'none' : 'auto'}

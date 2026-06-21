@@ -2235,13 +2235,13 @@ export default function DriverOfferScreen({
           ]}
           borderRadius={LDS_RADIUS.xl}
         >
-          <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
+          <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded, osLt?.listHeader]}>
             <View style={styles.listHeaderCompactRow}>
               <View style={styles.listHeaderLiveDotWrap} pointerEvents="none">
                 <View style={styles.listHeaderAccentDotOuter} />
                 <View style={styles.listHeaderAccentDot} />
               </View>
-              <PremiumText variant="step" style={styles.listTitleCompact} numberOfLines={1}>
+              <PremiumText variant="step" style={[styles.listTitleCompact, osLt?.listTitleCompact]} numberOfLines={1}>
                 Yakın talepler · {resolveFieldRadiusKm(mapHud.radius)} km
               </PremiumText>
               {visibleRequests.length > 0 ? (
@@ -2265,12 +2265,12 @@ export default function DriverOfferScreen({
               ]}
               borderRadius={LDS_RADIUS.lg}
             >
-              <View style={styles.emptyBrandStrip}>
+              <View style={[styles.emptyBrandStrip, osLt?.emptyBrandStrip]}>
                 <View style={styles.emptyBrandDotWrap} pointerEvents="none">
                   <View style={styles.emptyBrandDotOuter} />
                   <View style={styles.emptyBrandDot} />
                 </View>
-                <PremiumText variant="caption" style={styles.emptyBrandLabel}>
+                <PremiumText variant="caption" style={[styles.emptyBrandLabel, osLt?.emptyBrandLabel]}>
                   LeylekTAG · Saha operasyonu
                 </PremiumText>
               </View>
@@ -2287,6 +2287,7 @@ export default function DriverOfferScreen({
                     styles.emptyOrbRingOuter,
                     mapExpanded && styles.emptyOrbRingOuterMapExpanded,
                     isMotor && styles.emptyOrbRingOuterMotor,
+                    osLt?.emptyOrbRingOuter,
                   ]}
                 />
                 <View
@@ -2295,9 +2296,10 @@ export default function DriverOfferScreen({
                     styles.emptyOrbRingMid,
                     mapExpanded && styles.emptyOrbRingMidMapExpanded,
                     isMotor && styles.emptyOrbRingMidMotor,
+                    osLt?.emptyOrbRingMid,
                   ]}
                 />
-                <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded]}>
+                <View style={[styles.emptyOrbCore, mapExpanded && styles.emptyOrbCoreMapExpanded, osLt?.emptyOrbCore]}>
                   <Ionicons
                     name="radio-outline"
                     size={mapExpanded ? 16 : 18}
@@ -2311,24 +2313,25 @@ export default function DriverOfferScreen({
                   styles.emptyStatusPill,
                   mapExpanded && styles.emptyStatusPillMapExpanded,
                   isMotor && styles.emptyStatusPillMotor,
+                  osLt?.emptyStatusPill,
                 ]}
               >
                 <View style={styles.emptyStatusLiveDot} />
-                <PremiumText variant="step" style={styles.emptyStatusText}>
+                <PremiumText variant="step" style={[styles.emptyStatusText, osLt?.emptyStatusText]}>
                   Saha taraması aktif
                 </PremiumText>
               </View>
 
               <PremiumText
                 variant="title"
-                style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded]}
+                style={[styles.emptyTitle, mapExpanded && styles.emptyTitleMapExpanded, osLt?.emptyTitle]}
               >
                 Teklif bekleniyor
               </PremiumText>
               <PremiumText
                 variant="caption"
                 muted
-                style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded]}
+                style={[styles.emptySubtitle, mapExpanded && styles.emptySubtitleMapExpanded, osLt?.emptySubtitle]}
               >
                 {resolveFieldRadiusKm(mapHud.radius)} km saha çevresinde tarama sürüyor.
               </PremiumText>
@@ -2392,7 +2395,11 @@ export default function DriverOfferScreen({
           ]}
         >
           <TouchableOpacity
-            style={[styles.fieldOpHud, mapExpanded ? styles.fieldOpHudExpanded : styles.fieldOpHudCollapsed]}
+            style={[
+              styles.fieldOpHud,
+              mapExpanded ? styles.fieldOpHudExpanded : styles.fieldOpHudCollapsed,
+              !mapExpanded && osLt?.fieldOpHudCollapsed,
+            ]}
             onPress={() => setMapExpanded((v) => !v)}
             activeOpacity={0.88}
             accessibilityRole="button"
@@ -2405,15 +2412,15 @@ export default function DriverOfferScreen({
                 </PremiumText>
                 {mapExpanded ? (
                   <>
-                    <PremiumText variant="step" style={styles.fieldOpHudTitle} numberOfLines={1}>
+                    <PremiumText variant="step" style={[styles.fieldOpHudTitle, osLt?.fieldOpHudTitle]} numberOfLines={1}>
                       Saha Operasyon Merkezi
                     </PremiumText>
-                    <PremiumText variant="caption" muted style={styles.fieldOpHudCaption} numberOfLines={1}>
+                    <PremiumText variant="caption" muted style={[styles.fieldOpHudCaption, osLt?.fieldOpHudCaption]} numberOfLines={1}>
                       Field Intelligence
                     </PremiumText>
                   </>
                 ) : (
-                  <PremiumText variant="caption" muted style={styles.fieldOpHudCaption} numberOfLines={1}>
+                  <PremiumText variant="caption" muted style={[styles.fieldOpHudCaption, osLt?.fieldOpHudCaption]} numberOfLines={1}>
                     Saha Operasyon Merkezi · Field Intelligence
                   </PremiumText>
                 )}
@@ -2432,43 +2439,43 @@ export default function DriverOfferScreen({
               style={styles.fieldOpHudMetricsScroll}
               contentContainerStyle={styles.fieldOpHudMetricsContent}
             >
-              <View style={styles.fieldOpMetricCell}>
-                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
                   Yakın Talepler
                 </PremiumText>
-                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
                   {fieldIntelMetrics.nearRequestsLabel}
                 </PremiumText>
               </View>
-              <View style={styles.fieldOpMetricCell}>
-                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
                   Tarama Alanı
                 </PremiumText>
-                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
                   {fieldIntelMetrics.scanLabel}
                 </PremiumText>
               </View>
-              <View style={styles.fieldOpMetricCell}>
-                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
                   Saha Durumu
                 </PremiumText>
-                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
                   {fieldIntelMetrics.fieldStatus}
                 </PremiumText>
               </View>
-              <View style={styles.fieldOpMetricCell}>
-                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
                   Yakın Sinyal
                 </PremiumText>
-                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
                   {fieldIntelMetrics.nearSignalLabel}
                 </PremiumText>
               </View>
-              <View style={styles.fieldOpMetricCell}>
-                <PremiumText variant="caption" muted style={styles.fieldOpMetricLabel} numberOfLines={1}>
+              <View style={[styles.fieldOpMetricCell, osLt?.fieldOpMetricCell]}>
+                <PremiumText variant="caption" muted style={[styles.fieldOpMetricLabel, osLt?.fieldOpMetricLabel]} numberOfLines={1}>
                   Yoğun Bölge
                 </PremiumText>
-                <PremiumText variant="caption" style={styles.fieldOpMetricValue} numberOfLines={1}>
+                <PremiumText variant="caption" style={[styles.fieldOpMetricValue, osLt?.fieldOpMetricValue]} numberOfLines={1}>
                   {fieldIntelMetrics.denseRegionLabel}
                 </PremiumText>
               </View>
@@ -2476,7 +2483,7 @@ export default function DriverOfferScreen({
             <PremiumText
               variant="caption"
               muted
-              style={styles.fieldOpInsightLine}
+              style={[styles.fieldOpInsightLine, osLt?.fieldOpInsightLine]}
               numberOfLines={1}
             >
               {resolveFieldOpportunityInsightLine({

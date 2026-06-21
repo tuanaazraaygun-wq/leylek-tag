@@ -96,7 +96,7 @@ function TrustMetricRow({
         size={compact ? 12 : 11}
         color={hasValue ? ui.iconMuted : ui.sessionInactive}
       />
-      <PremiumText variant="caption" muted style={compact ? styles.embeddedMetricLabel : styles.metricLabel} numberOfLines={1}>
+      <PremiumText variant="caption" muted style={[compact ? styles.embeddedMetricLabel : styles.metricLabel, compact ? qsLt?.embeddedMetricLabel : qsLt?.metricLabel]} numberOfLines={1}>
         {presentation.shortLabel}
       </PremiumText>
       <PremiumText
@@ -105,6 +105,7 @@ function TrustMetricRow({
         style={[
           compact ? styles.embeddedMetricValue : styles.metricValue,
           hasValue && styles.metricValueActive,
+          compact ? qsLt?.embeddedMetricValue : qsLt?.metricValue,
           hasValue && qsLt?.metricValueActive,
         ]}
         numberOfLines={1}
@@ -135,10 +136,10 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
         <Ionicons name="shield-checkmark-outline" size={embedded ? 13 : 12} color={ui.trustIcon} />
       </View>
       <View style={styles.titleCol}>
-        <PremiumText variant="caption" style={styles.title} numberOfLines={1}>
+        <PremiumText variant="caption" style={[styles.title, qsLt?.title]} numberOfLines={1}>
           Güven ağı
         </PremiumText>
-        <PremiumText variant="caption" muted style={styles.subtitle} numberOfLines={1}>
+        <PremiumText variant="caption" muted style={[styles.subtitle, qsLt?.subtitle]} numberOfLines={1}>
           {headerSubtitle}
         </PremiumText>
       </View>
@@ -178,7 +179,7 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
 
         <View style={[styles.embeddedQmPill, qsLt?.embeddedQmPill]} accessibilityLabel="Hızlı eşleşme. Yakında" accessibilityRole="text">
           <Ionicons name="flash-outline" size={10} color={ui.sessionInactive} />
-          <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
+          <PremiumText variant="caption" muted style={[styles.qmLabel, qsLt?.qmLabel]} numberOfLines={1}>
             Yakında
           </PremiumText>
         </View>
@@ -222,7 +223,7 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
             accessibilityRole="text"
           >
             <Ionicons name="flash-outline" size={10} color={ui.sessionInactive} />
-            <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
+            <PremiumText variant="caption" muted style={[styles.qmLabel, qsLt?.qmLabel]} numberOfLines={1}>
               Yakında
             </PremiumText>
           </View>

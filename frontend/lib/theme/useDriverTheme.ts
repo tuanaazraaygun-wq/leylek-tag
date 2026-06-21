@@ -30,6 +30,8 @@ export type DriverUiColors = {
 export type DriverWaitingShellLightSurfaces = {
   waitingRoot: ViewStyle;
   cockpitHeaderBtnShell: ViewStyle;
+  cockpitHeaderBrand: TextStyle;
+  cockpitOfferGround: ViewStyle;
 };
 
 export type DriverDashboardPanelLightSurfaces = {
@@ -41,11 +43,17 @@ export type DriverDashboardPanelLightSurfaces = {
   switchThumbOn: ViewStyle;
   panelShell: ViewStyle;
   panelShellLoading: ViewStyle;
+  onlineStatusLabel: TextStyle;
+  onlineStatusHint: TextStyle;
   instrumentAmount: TextStyle;
+  instrumentLabel: TextStyle;
+  instrumentMeta: TextStyle;
   progressFill: ViewStyle;
+  footerMetaLabel: TextStyle;
   footerValue: TextStyle;
   statIconWrap: ViewStyle;
   statValue: TextStyle;
+  statLabel: TextStyle;
 };
 
 export type DriverCockpitQuickStripLightSurfaces = {
@@ -55,9 +63,16 @@ export type DriverCockpitQuickStripLightSurfaces = {
   metricCell: ViewStyle;
   metricCellActive: ViewStyle;
   embeddedMetricRow: ViewStyle;
+  title: TextStyle;
+  subtitle: TextStyle;
+  metricLabel: TextStyle;
+  metricValue: TextStyle;
+  embeddedMetricLabel: TextStyle;
+  embeddedMetricValue: TextStyle;
   metricValueActive: TextStyle;
   qmPill: ViewStyle;
   embeddedQmPill: ViewStyle;
+  qmLabel: TextStyle;
 };
 
 export type DriverQuickMatchInviteLightSurfaces = {
@@ -77,15 +92,33 @@ export type DriverQuickMatchInviteLightSurfaces = {
 export type DriverOfferScreenLightSurfaces = {
   container: ViewStyle;
   dispatchDeck: ViewStyle;
+  listHeader: ViewStyle;
+  listTitleCompact: TextStyle;
   listHeaderCountPill: ViewStyle;
   listHeaderCountText: TextStyle;
   emptyStateCard: ViewStyle;
+  emptyBrandStrip: ViewStyle;
+  emptyBrandLabel: TextStyle;
+  emptyOrbRingOuter: ViewStyle;
+  emptyOrbRingMid: ViewStyle;
+  emptyOrbCore: ViewStyle;
+  emptyStatusPill: ViewStyle;
+  emptyStatusText: TextStyle;
+  emptyTitle: TextStyle;
+  emptySubtitle: TextStyle;
   emptyChip: ViewStyle;
   emptyChipText: TextStyle;
   mapFallback: ViewStyle;
   mapChromeShell: ViewStyle;
   mapChromeShellCollapsed: ViewStyle;
+  fieldOpHudCollapsed: ViewStyle;
   fieldOpHudBrand: TextStyle;
+  fieldOpHudTitle: TextStyle;
+  fieldOpHudCaption: TextStyle;
+  fieldOpMetricCell: ViewStyle;
+  fieldOpMetricLabel: TextStyle;
+  fieldOpMetricValue: TextStyle;
+  fieldOpInsightLine: TextStyle;
   reqCard: ViewStyle;
   reqPriceText: TextStyle;
   reqPassengerName: TextStyle;
@@ -121,6 +154,8 @@ function buildDriverWaitingShellLightSurfaces(tokens: LhThemeTokens): DriverWait
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
     },
+    cockpitHeaderBrand: { color: tokens.text.primary },
+    cockpitOfferGround: { borderTopColor: tokens.border.default },
   };
 }
 
@@ -157,14 +192,20 @@ function buildDriverDashboardPanelLightSurfaces(tokens: LhThemeTokens): DriverDa
     panelShellLoading: {
       backgroundColor: tokens.bg.glassMuted,
     },
+    onlineStatusLabel: { color: tokens.text.primary },
+    onlineStatusHint: { color: tokens.text.muted },
     instrumentAmount: { color: tokens.text.primary },
+    instrumentLabel: { color: tokens.text.muted },
+    instrumentMeta: { color: tokens.text.muted },
     progressFill: { backgroundColor: tokens.accent.primary },
+    footerMetaLabel: { color: tokens.text.muted },
     footerValue: { color: tokens.text.primary },
     statIconWrap: {
       backgroundColor: tokens.accent.glowLow,
       borderColor: tokens.accent.glowMid,
     },
     statValue: { color: tokens.text.primary },
+    statLabel: { color: tokens.text.muted },
   };
 }
 
@@ -194,6 +235,12 @@ function buildDriverCockpitQuickStripLightSurfaces(
     embeddedMetricRow: {
       backgroundColor: 'transparent',
     },
+    title: { color: tokens.text.primary },
+    subtitle: { color: tokens.text.muted },
+    metricLabel: { color: tokens.text.muted },
+    metricValue: { color: tokens.text.muted },
+    embeddedMetricLabel: { color: tokens.text.muted },
+    embeddedMetricValue: { color: tokens.text.muted },
     metricValueActive: { color: tokens.text.primary },
     qmPill: {
       backgroundColor: tokens.bg.glass,
@@ -203,6 +250,7 @@ function buildDriverCockpitQuickStripLightSurfaces(
       backgroundColor: tokens.bg.glass,
       borderColor: tokens.border.default,
     },
+    qmLabel: { color: tokens.text.muted },
   };
 }
 
@@ -255,15 +303,40 @@ function buildDriverOfferScreenLightSurfaces(tokens: LhThemeTokens): DriverOffer
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
     },
+    listHeader: { borderBottomColor: tokens.border.default },
+    listTitleCompact: { color: tokens.text.primary },
     listHeaderCountPill: {
-      backgroundColor: tokens.bg.glass,
-      borderColor: tokens.border.default,
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
     },
     listHeaderCountText: { color: tokens.accent.primary },
     emptyStateCard: {
-      backgroundColor: tokens.bg.glassMuted,
+      backgroundColor: tokens.bg.elevated,
       borderColor: tokens.border.default,
     },
+    emptyBrandStrip: { borderBottomColor: tokens.border.default },
+    emptyBrandLabel: { color: tokens.accent.primary, opacity: 1 },
+    emptyOrbRingOuter: {
+      borderColor: tokens.accent.glowMid,
+      backgroundColor: tokens.accent.glowLow,
+    },
+    emptyOrbRingMid: {
+      borderColor: tokens.accent.glowMid,
+      backgroundColor: tokens.bg.glass,
+    },
+    emptyOrbCore: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.accent.glowMid,
+    },
+    emptyStatusPill: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.accent.glowMid,
+      borderTopColor: tokens.accent.glowMid,
+    },
+    emptyStatusText: { color: tokens.text.primary },
+    emptyTitle: { color: tokens.text.primary },
+    emptySubtitle: { color: tokens.text.muted },
     emptyChip: {
       backgroundColor: tokens.accent.glowLow,
       borderColor: tokens.accent.glowMid,
@@ -277,7 +350,17 @@ function buildDriverOfferScreenLightSurfaces(tokens: LhThemeTokens): DriverOffer
     mapChromeShellCollapsed: {
       backgroundColor: tokens.bg.glassMuted,
     },
-    fieldOpHudBrand: { color: tokens.accent.primary },
+    fieldOpHudCollapsed: { maxHeight: 76 },
+    fieldOpHudBrand: { color: tokens.accent.primary, opacity: 1 },
+    fieldOpHudTitle: { color: tokens.text.primary },
+    fieldOpHudCaption: { color: tokens.text.muted },
+    fieldOpMetricCell: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+    },
+    fieldOpMetricLabel: { color: tokens.text.muted },
+    fieldOpMetricValue: { color: tokens.accent.primary },
+    fieldOpInsightLine: { color: tokens.text.muted, opacity: 1 },
     reqCard: {
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
