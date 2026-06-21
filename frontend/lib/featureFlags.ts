@@ -13,3 +13,6 @@ export const themeChoiceEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_CHOICE'
 
 /** B3-4+ — light theme rendering */
 export const lightThemeEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_LIGHT_THEME');
+
+/** B3-5 — settings hub Görünüm segment */
+export const themeSettingsEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_SETTINGS');

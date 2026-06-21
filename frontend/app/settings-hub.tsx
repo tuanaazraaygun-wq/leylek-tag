@@ -17,7 +17,9 @@ import {
 } from '../design-system/primitives';
 import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { themeSettingsEnabled } from '../lib/featureFlags';
 import { clearSessionStorage, getPersistedUserRaw } from '../lib/sessionToken';
+import ThemeSettingsSegment from '../components/theme/ThemeSettingsSegment';
 
 type HubUser = {
   id?: string;
@@ -178,6 +180,8 @@ export default function SettingsHubScreen() {
               onPress={openMyProfile}
             />
           </SettingsHubCard>
+
+          {themeSettingsEnabled ? <ThemeSettingsSegment /> : null}
 
           {user?.role === 'driver' ? (
             <>

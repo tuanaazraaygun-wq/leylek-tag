@@ -1,8 +1,9 @@
 /**
- * Settings hub integration stub — B3-5.
- * No UI in B3-2; exposes a stable contract for future settings-hub.tsx wiring.
+ * Settings hub integration — B3-5 bridge over ThemeProvider.
  */
 
+import { useMemo } from 'react';
+import { useTheme } from '../../hooks/useTheme';
 import type { ThemeMode } from './types';
 
 export type ThemeSettingsBridge = {
@@ -13,4 +14,18 @@ export type ThemeSettingsBridge = {
 
 export function createThemeSettingsBridge(deps: ThemeSettingsBridge): ThemeSettingsBridge {
   return deps;
+}
+
+export function useThemeSettingsBridge(): ThemeSettingsBridge {
+  const { themeMode, setTheme, hydrated } = useTheme();
+
+  return useMemo(
+    () =>
+      createThemeSettingsBridge({
+        getThemeMode: () => themeMode,
+        setThemeMode: setTheme,
+        isHydrated: () => hydrated,
+      }),
+    [themeMode, setTheme, hydrated],
+  );
 }
