@@ -37,6 +37,8 @@ function tripEndSuccessBeatDelay(): Promise<void> {
 
 type PaymentMethod = 'cash' | 'card';
 
+type CompleteQrOutcome = 'success' | 'conflict' | 'error';
+
 interface QRTripEndModalProps {
   visible: boolean;
   onClose: () => void;
@@ -112,6 +114,8 @@ export default function QRTripEndModal({
 
   const qrValue = `leylektag://end?u=${userId}&t=${tagId}`;
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
+  const canAutoCompleteCashAfterScan =
+    !isTrustedDirect && effectiveBookingPaymentMethod === 'cash' && !showIbanOption;
 
   useEffect(() => {
     if (visible) {
@@ -147,7 +151,7 @@ export default function QRTripEndModal({
     !scanSuccessBeat;
 
   const submitCompleteQr = useCallback(
-    async (paymentConfirmed: PaymentMethod, driverUserId: string) => {
+    async (paymentConfirmed: PaymentMethod, driverUserId: string): Promise<CompleteQrOutcome> => {
       setProcessing(true);
       try {
         const response = await fetch(`${API_BASE_URL}/trip/complete-qr`, {
@@ -164,7 +168,11 @@ export default function QRTripEndModal({
         });
 
         const raw = await response.text();
-        let result: { success?: boolean; detail?: string; driver_name?: string } = {};
+        let result: {
+          success?: boolean;
+          detail?: string | { message?: string };
+          driver_name?: string;
+        } = {};
         try {
           result = raw ? JSON.parse(raw) : {};
         } catch {
@@ -177,21 +185,31 @@ export default function QRTripEndModal({
             [{ text: 'Tamam', style: 'default' }],
             { variant: 'info' },
           );
-          return;
+          return 'error';
         }
 
         if (result.success) {
           Vibration.vibrate([0, 100, 50, 100]);
           onComplete(true, driverUserId, result.driver_name || firstName);
           onClose();
-        } else {
-          appAlert(
-            'Tamamlanamadı',
-            result.detail || 'Yolculuk bitirilemedi. Kısa bir süre sonra tekrar deneyin.',
-            [{ text: 'Tamam', style: 'default' }],
-            { variant: 'warning' },
-          );
+          return 'success';
         }
+
+        if (response.status === 409) {
+          return 'conflict';
+        }
+
+        const detailRaw = result.detail;
+        const detailMsg =
+          typeof detailRaw === 'string'
+            ? detailRaw
+            : typeof detailRaw === 'object' && detailRaw?.message
+              ? String(detailRaw.message)
+              : 'Yolculuk bitirilemedi. Kısa bir süre sonra tekrar deneyin.';
+        appAlert('Tamamlanamadı', detailMsg, [{ text: 'Tamam', style: 'default' }], {
+          variant: 'warning',
+        });
+        return 'error';
       } catch (error) {
         console.error('QR complete error:', error);
         appAlert(
@@ -200,6 +218,7 @@ export default function QRTripEndModal({
           [{ text: 'Tamam', style: 'default' }],
           { variant: 'info' },
         );
+        return 'error';
       } finally {
         setProcessing(false);
       }
@@ -264,12 +283,43 @@ export default function QRTripEndModal({
       if (!mountedRef.current || !visibleRef.current) {
         return;
       }
+
+      if (canAutoCompleteCashAfterScan) {
+        setScanSuccessBeat(false);
+        const outcome = await submitCompleteQr('cash', driverUserId);
+        if (outcome === 'success') {
+          return;
+        }
+        setPendingDriverId(driverUserId);
+        setPassengerStep('payment');
+        setScanned(false);
+        if (outcome === 'conflict') {
+          appAlert(
+            'Katkı onayı gerekli',
+            'Katkı payı onayı tamamlanmadan yolculuk bitirilemez. Katkı bilgisini kontrol edin.',
+            [{ text: 'Tamam', style: 'default' }],
+            { variant: 'info' },
+          );
+        }
+        return;
+      }
+
       setPendingDriverId(driverUserId);
       setPassengerStep('payment');
       setScanned(false);
       setScanSuccessBeat(false);
     },
-    [isDriver, isTrustedDirect, cameraReady, scanned, processing, scanSuccessBeat, tagId],
+    [
+      isDriver,
+      isTrustedDirect,
+      cameraReady,
+      scanned,
+      processing,
+      scanSuccessBeat,
+      tagId,
+      canAutoCompleteCashAfterScan,
+      submitCompleteQr,
+    ],
   );
 
   const handleTrustedCashClaim = () => {
@@ -297,7 +347,7 @@ export default function QRTripEndModal({
     if (!legacyPaymentPick || !pendingDriverId) {
       appAlert(
         'Seçim gerekli',
-        'Nakit katkı veya kart seçeneğini işaretleyin.',
+        'Katkı payı veya kart seçeneğini işaretleyin.',
         [{ text: 'Tamam', style: 'default' }],
         { variant: 'info' },
       );
@@ -320,19 +370,19 @@ export default function QRTripEndModal({
 
   const paymentTitle =
     effectiveBookingPaymentMethod === 'cash'
-      ? 'Nakit katkı'
+      ? 'Katkı payı'
       : effectiveBookingPaymentMethod === 'card'
         ? 'Kart (yakında)'
-        : 'Katkı yöntemini seç';
+        : 'Katkı payını nasıl ilettiğinizi seçin';
 
   const paymentSubtitle =
     effectiveBookingPaymentMethod === 'cash'
-      ? 'Teklifinizde nakit seçmiştiniz. Yol paylaşım katkısını nakit olarak ilettiğinizi onaylayın.'
+      ? 'Teklifte katkı payı nakit olarak belirlenmişti. Ödemeyi yaptığınızı onaylayın.'
       : effectiveBookingPaymentMethod === 'card'
         ? 'Kart yakında. Şimdilik katkı bildirimini onaylayarak yolculuğu tamamlayın.'
         : isTrustedDirect
-          ? 'Ücreti nakit olarak ödediğinizi onaylayın.'
-          : 'Bu yolculuk için teklifte katkı tercihi kayıtlı değil. Katkıyı nasıl ilettiğinizi seçin.';
+          ? 'Katkı payını nakit olarak ilettiğinizi onaylayın.'
+          : 'Bu yolculuk için teklifte katkı tercihi kayıtlı değil. Katkı payını nasıl ilettiğinizi seçin.';
 
   const phaseStep = isTrustedDirect
     ? isDriver
@@ -341,7 +391,7 @@ export default function QRTripEndModal({
     : isDriver
       ? 'Yolculuk tamamlandı'
       : passengerStep === 'choose' || passengerStep === 'payment'
-        ? 'Katkı yöntemini seç'
+        ? 'Katkı payını onayla'
         : 'Yolculuk tamamlandı';
 
   const phaseCaption = isTrustedDirect
@@ -353,8 +403,10 @@ export default function QRTripEndModal({
       : passengerStep === 'choose'
         ? 'Yolculuğu güvenli şekilde tamamlamak için yöntemi seç.'
         : passengerStep === 'payment'
-          ? 'Katkı bilgisini kontrol ederek tamamla.'
-          : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
+          ? 'Katkı payını kontrol ederek tamamla.'
+          : canAutoCompleteCashAfterScan
+            ? 'Sürücü QR kodunu okut — yolculuk tamamlanır.'
+            : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -405,7 +457,7 @@ export default function QRTripEndModal({
                           Yolcu katkı bildirimi bekleniyor
                         </PremiumText>
                         <PremiumText variant="caption" muted style={styles.qrCheckpointSubtitle}>
-                          {firstName} nakit veya havale katkısı bildirecek
+                          {firstName} katkı payını nakit veya sürücü IBANına bildirecek
                         </PremiumText>
                       </View>
                     </View>
@@ -467,7 +519,7 @@ export default function QRTripEndModal({
                   activeOpacity={0.88}
                   disabled={processing}
                   accessibilityRole="button"
-                  accessibilityLabel="Yol paylaşım katkısını nakit olarak ilettim"
+                  accessibilityLabel="Katkı payını nakit olarak ilettim"
                 >
                   <GlassSurface variant="plain" style={[styles.chooseOption, payLt?.chooseOption]} borderRadius={LDS_RADIUS.md}>
                     <View style={[styles.chooseOptionIconWrap, payLt?.chooseOptionIconWrap]}>
@@ -475,7 +527,7 @@ export default function QRTripEndModal({
                     </View>
                     <View style={styles.chooseOptionTextCol}>
                       <PremiumText variant="body" style={styles.chooseOptionTitle}>
-                        Yol paylaşım katkısını nakit olarak ilettim
+                        Katkı payını nakit olarak ilettim
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
                         Sürücü onayından sonra yolculuk tamamlanır
@@ -490,7 +542,7 @@ export default function QRTripEndModal({
                   activeOpacity={0.88}
                   disabled={processing}
                   accessibilityRole="button"
-                  accessibilityLabel="Yol paylaşım katkısını Havale EFT ile ilettim"
+                  accessibilityLabel="Katkı payını sürücünün IBANına Havale EFT ile ilettim"
                 >
                   <GlassSurface variant="plain" style={[styles.chooseOption, payLt?.chooseOption]} borderRadius={LDS_RADIUS.md}>
                     <View style={[styles.chooseOptionIconWrap, payLt?.chooseOptionIconWrap]}>
@@ -498,7 +550,7 @@ export default function QRTripEndModal({
                     </View>
                     <View style={styles.chooseOptionTextCol}>
                       <PremiumText variant="body" style={styles.chooseOptionTitle}>
-                        Yol paylaşım katkısını Havale/EFT ile ilettim
+                        Katkı payını sürücünün IBANına Havale/EFT ile ilettim
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
                         Sürücü hesap bilgilerini görüntüle
@@ -559,7 +611,7 @@ export default function QRTripEndModal({
                         Sürücü QR kodunu tara
                       </PremiumText>
                       <PremiumText variant="caption" muted style={styles.chooseOptionSubtitle}>
-                        Nakit katkı ile tamamla
+                        Katkı payını ilettim — QR ile tamamla
                       </PremiumText>
                     </View>
                     <Ionicons name="chevron-forward" size={20} color={payUi.chevron} />
@@ -615,7 +667,9 @@ export default function QRTripEndModal({
                             QR doğrulandı
                           </PremiumText>
                           <PremiumText variant="caption" muted style={styles.processingText}>
-                            Ödeme adımına geçiliyor…
+                            {canAutoCompleteCashAfterScan
+                              ? 'Yolculuk tamamlanıyor…'
+                              : 'Katkı payını onaylamaya geçiliyor…'}
                           </PremiumText>
                         </View>
                       ) : null}
@@ -637,7 +691,9 @@ export default function QRTripEndModal({
                 )}
 
                 <PremiumText variant="caption" muted style={styles.hint}>
-                  Ardından katkı yöntemini onaylayacaksın
+                  {canAutoCompleteCashAfterScan
+                    ? 'QR okutulunca yolculuk tamamlanır'
+                    : 'Gerekirse katkı payını onaylayacaksın'}
                 </PremiumText>
               </View>
             ) : (
@@ -662,7 +718,7 @@ export default function QRTripEndModal({
                     >
                       <Ionicons name="cash-outline" size={24} color={payUi.accent} />
                       <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-                        Nakit katkıyı ilettiğimi onayla
+                        Ödemeyi yaptım — yolculuğu tamamla
                       </PremiumText>
                     </TouchableOpacity>
                   )}
@@ -721,7 +777,7 @@ export default function QRTripEndModal({
                                 legacyPaymentPick === 'cash' && payLt?.legacyChipTextActive,
                               ]}
                             >
-                              Nakit katkı
+                              Katkı payı (nakit)
                             </PremiumText>
                           </GlassSurface>
                         </TouchableOpacity>

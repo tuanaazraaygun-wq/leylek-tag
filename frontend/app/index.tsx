@@ -15533,6 +15533,40 @@ function DriverDashboard({
     }
     setDriverBoardingRemoteSuccess(false);
   }, [driverBoardingQrModalVisible]);
+
+  /** UX-P0-QR-1: socket gelmese bile yolcu biniş onayı → sürücü QR modal kapanışı */
+  const triggerDriverBoardingQrRemoteClose = useCallback((tagKey: string) => {
+    const key = String(tagKey || '').trim();
+    if (!key || !driverBoardingQrModalVisibleRef.current) return;
+    if (driverBoardingRemoteAckTagRef.current === key) return;
+    driverBoardingRemoteAckTagRef.current = key;
+
+    void playQrScanSuccessSound();
+    void tapButtonHaptic();
+    setDriverBoardingRemoteSuccess(true);
+
+    if (driverBoardingCloseTimerRef.current != null) {
+      clearTimeout(driverBoardingCloseTimerRef.current);
+    }
+    driverBoardingCloseTimerRef.current = setTimeout(() => {
+      driverBoardingCloseTimerRef.current = null;
+      setDriverBoardingRemoteSuccess(false);
+      setDriverBoardingQrModalVisible(false);
+    }, BOARDING_REMOTE_ACK_MS);
+  }, []);
+
+  useEffect(() => {
+    const tid = activeTag?.id ? String(activeTag.id).trim() : '';
+    if (!tid || !activeTag?.boarding_confirmed_at || !driverBoardingQrModalVisible) return;
+    if (String(activeTag?.status || '').trim().toLowerCase() !== 'in_progress') return;
+    triggerDriverBoardingQrRemoteClose(tid);
+  }, [
+    activeTag?.id,
+    activeTag?.boarding_confirmed_at,
+    activeTag?.status,
+    driverBoardingQrModalVisible,
+    triggerDriverBoardingQrRemoteClose,
+  ]);
   
   // 🆕 Rating Modal State - QR tarama sonrası puanlama (Sürücü)
   const [ratingModalData, setRatingModalData] = useState<{
@@ -16523,22 +16557,7 @@ function DriverDashboard({
 
       if (!driverBoardingQrModalVisibleRef.current) return;
 
-      const tagKey = String(tid).trim();
-      if (!tagKey || driverBoardingRemoteAckTagRef.current === tagKey) return;
-      driverBoardingRemoteAckTagRef.current = tagKey;
-
-      void playQrScanSuccessSound();
-      void tapButtonHaptic();
-      setDriverBoardingRemoteSuccess(true);
-
-      if (driverBoardingCloseTimerRef.current != null) {
-        clearTimeout(driverBoardingCloseTimerRef.current);
-      }
-      driverBoardingCloseTimerRef.current = setTimeout(() => {
-        driverBoardingCloseTimerRef.current = null;
-        setDriverBoardingRemoteSuccess(false);
-        setDriverBoardingQrModalVisible(false);
-      }, BOARDING_REMOTE_ACK_MS);
+      triggerDriverBoardingQrRemoteClose(String(tid).trim());
     },
     ...driverTrustSocketHandlers,
     onTrustedInviteReceived: handleDriverTrustedInviteSocketEvent,
