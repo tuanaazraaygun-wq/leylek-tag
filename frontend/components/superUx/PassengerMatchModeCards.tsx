@@ -35,6 +35,10 @@ export type PassengerMatchModeCardsProps = {
   onQuickPress?: () => void;
   /** Güvenilir sürücüler hub — /trusted-network?role=passenger */
   onTrustedPress?: () => void;
+  /** Onaylı sürücü kaydı — kart «Yolcularım» + sürücü paneli köprüsü */
+  hasDriverRegistration?: boolean;
+  /** v1.1 — role-filtered yolcu sayısı; yoksa statik fallback */
+  trustedPassengerCount?: number | null;
 };
 
 type CardBadgeTone = 'quick' | 'normal';
@@ -125,10 +129,26 @@ function renderSoonPill() {
   );
 }
 
+function renderDriverPanelCtaPill(isVeryCompact: boolean) {
+  return (
+    <View style={[styles.driverPanelCtaPill, isVeryCompact && styles.driverPanelCtaPillVeryCompact]}>
+      <PremiumText
+        variant="step"
+        style={[styles.driverPanelCtaPillText, isVeryCompact && styles.driverPanelCtaPillTextVeryCompact]}
+        numberOfLines={2}
+      >
+        Sürücü Paneline Git
+      </PremiumText>
+    </View>
+  );
+}
+
 function PassengerMatchModeCards({
   onNormalPress,
   onQuickPress,
   onTrustedPress,
+  hasDriverRegistration = false,
+  trustedPassengerCount = null,
 }: PassengerMatchModeCardsProps) {
   const { height: winH, width: winW } = useWindowDimensions();
   const { status, summary } = useTrustedSummary();
@@ -257,22 +277,48 @@ function PassengerMatchModeCards({
   const renderSecondaryHero = (card: CardDef) => {
     const isProxy = card.id === 'proxy';
     const isTrusted = card.id === 'trusted';
+    const isDriverViewer = isTrusted && hasDriverRegistration;
     const isEnabled = isProxy
       ? false
       : card.enabled || (isTrusted && trustedWired);
     const trustedReady = isTrusted && status === 'ready' && summary != null;
     const trustedSubtitle =
-      trustedReady && summary ? formatPassengerTrustedCardSubtitle(summary) : null;
-    const showSoonPill = isProxy || (isTrusted && !trustedWired && !trustedReady);
+      !isDriverViewer && trustedReady && summary
+        ? formatPassengerTrustedCardSubtitle(summary)
+        : null;
+    const showSoonPill =
+      isProxy || (isTrusted && !isDriverViewer && !trustedWired && !trustedReady);
     const onPress = isTrusted && trustedWired ? onTrustedPress : undefined;
+
+    const displayTitle = isDriverViewer ? 'Yolcularım' : card.title;
+    const passengerPeerCount =
+      trustedPassengerCount != null && Number.isFinite(trustedPassengerCount)
+        ? Math.max(0, Math.floor(trustedPassengerCount))
+        : null;
+    const driverViewerSubtitle =
+      passengerPeerCount != null && passengerPeerCount > 0
+        ? `${passengerPeerCount} güvenilir yolcu`
+        : 'Güvenilir yolcularınız';
 
     const displaySubtitle = showSoonPill
       ? null
-      : trustedSubtitle
-        ? trustedSubtitle
-        : isTrusted && trustedWired
-          ? card.subtitle
-          : card.subtitle;
+      : isDriverViewer
+        ? driverViewerSubtitle
+        : trustedSubtitle
+          ? trustedSubtitle
+          : isTrusted && trustedWired
+            ? card.subtitle
+            : card.subtitle;
+
+    const cardAccessory = showSoonPill
+      ? renderSoonPill()
+      : isDriverViewer && isEnabled
+        ? renderDriverPanelCtaPill(layout.isVeryCompact)
+        : undefined;
+
+    const accessibilityLabel = isDriverViewer
+      ? `${displayTitle}. ${driverViewerSubtitle}. Sürücü paneline git`
+      : `${displayTitle}. ${displaySubtitle ?? card.subtitle}`;
 
     const cardShellStyle = [
       styles.heroCardShell,
@@ -319,11 +365,11 @@ function PassengerMatchModeCards({
             />
           )
         }
-        title={card.title}
+        title={displayTitle}
         subtitle={showSoonPill ? ' ' : displaySubtitle ?? card.subtitle}
         titleStyle={titleStyle}
         subtitleStyle={subtitleStyle}
-        checkmark={showSoonPill ? renderSoonPill() : undefined}
+        checkmark={cardAccessory}
       />
     );
 
@@ -334,7 +380,7 @@ function PassengerMatchModeCards({
           disabled
           accessibilityRole="button"
           accessibilityState={{ disabled: true }}
-          accessibilityLabel={`${card.title}. Yakında`}
+          accessibilityLabel={isDriverViewer ? accessibilityLabel : `${card.title}. Yakında`}
           style={styles.heroCell}
         >
           <View pointerEvents="none">{secondaryCard}</View>
@@ -343,7 +389,7 @@ function PassengerMatchModeCards({
     }
 
     return (
-      <View key={card.id} style={styles.heroCell}>
+      <View key={card.id} style={styles.heroCell} accessibilityLabel={accessibilityLabel}>
         {secondaryCard}
       </View>
     );
@@ -532,5 +578,31 @@ const styles = StyleSheet.create({
     color: 'rgba(148, 163, 184, 0.92)',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
+  },
+  driverPanelCtaPill: {
+    alignSelf: 'center',
+    maxWidth: 120,
+    paddingHorizontal: LDS_SPACING.xs,
+    paddingVertical: LDS_SPACING.xxs,
+    borderRadius: 999,
+    backgroundColor: 'rgba(79, 70, 229, 0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(129, 140, 248, 0.38)',
+  },
+  driverPanelCtaPillVeryCompact: {
+    maxWidth: 104,
+    paddingHorizontal: LDS_SPACING.xxs + 1,
+  },
+  driverPanelCtaPillText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: 'rgba(196, 181, 253, 0.96)',
+    letterSpacing: 0.2,
+    textAlign: 'center',
+    lineHeight: 11,
+  },
+  driverPanelCtaPillTextVeryCompact: {
+    fontSize: 7,
+    lineHeight: 10,
   },
 });

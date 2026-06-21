@@ -333,6 +333,15 @@ function _pickDriverVehicleKindForResume(loggedInUser: User, dTag: Record<string
   return 'car';
 }
 
+function _pickDriverVehicleKindForRoleSwitch(loggedInUser: User): 'car' | 'motorcycle' {
+  const dd = loggedInUser.driver_details;
+  if (dd && typeof dd === 'object' && !Array.isArray(dd)) {
+    const approved = _approvedVehicleKindsFromDriverDetails(dd as Record<string, unknown>);
+    if (approved.length > 0) return approved[0];
+  }
+  return _pickDriverVehicleKindForResume(loggedInUser, {});
+}
+
 /** Yolcu eşleşme socket'i: önce incoming canonical kind; yoksa prev activeTag.driver_vehicle_kind (motorcycle güvenliyse korunur). */
 function _mergePassengerMatchSocketDriverVehicleKind(
   prev: Tag | null,
@@ -13350,6 +13359,7 @@ function PassengerDashboard({
               </View>
 
               <PassengerMatchModeCards
+                hasDriverRegistration={userHasDriverRegistration(user)}
                 onNormalPress={() => {
                   playTapSound();
                   setPassengerIdleOfferChannel('normal');
@@ -13369,7 +13379,61 @@ function PassengerDashboard({
                 onTrustedPress={() => {
                   playTapSound();
                   if (userHasDriverRegistration(user)) {
-                    alertTrustedDirectPassengerOnlyBlocked(() => setScreen('role-select'));
+                    void (async () => {
+                      if (activeTag) {
+                        appAlert(
+                          'Aktif yolculuk',
+                          'Aktif yolculuğunuz varken sürücü paneline geçemezsiniz.',
+                        );
+                        return;
+                      }
+                      if (!user?.id) return;
+                      const vk = _pickDriverVehicleKindForRoleSwitch(user);
+                      const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=driver&vehicle_kind=${vk}`;
+                      let setRideRes: Response;
+                      try {
+                        setRideRes = await fetch(setRideUrl, { method: 'POST' });
+                      } catch {
+                        appAlert('Hata', 'Bağlantı hatası');
+                        return;
+                      }
+                      const { data: setRideData } = await parseApiJson(setRideRes);
+                      if (!setRideRes.ok) {
+                        if (setRideRes.status === 403) {
+                          alertVehicleRegistrationRequired(vk, () => {
+                            setDriverKycScreenVehicleKind(vk);
+                            setScreen('driver-kyc');
+                          });
+                          return;
+                        }
+                        appAlert(
+                          'Hata',
+                          apiErrMsg(setRideData, 'Bu araç tipi için onaylı sürücü kaydınız bulunmuyor.'),
+                        );
+                        return;
+                      }
+                      const baseDd =
+                        user.driver_details && typeof user.driver_details === 'object'
+                          ? { ...(user.driver_details as Record<string, unknown>) }
+                          : {};
+                      const mergedDd = { ...baseDd, vehicle_kind: vk };
+                      const u: User = {
+                        ...user,
+                        role: 'driver',
+                        driver_details: mergedDd as User['driver_details'],
+                      };
+                      const savedUser = await saveUser(u);
+                      setUser(savedUser);
+                      setSelectedRole('driver');
+                      setRideVehicleKind(vk);
+                      try {
+                        await AsyncStorage.setItem(`last_role_${user.id}`, 'driver');
+                      } catch {
+                        /* ignore */
+                      }
+                      setScreen('dashboard');
+                      void requestLocationPermission();
+                    })();
                     return;
                   }
                   setPassengerIdleOfferChannel('normal');
