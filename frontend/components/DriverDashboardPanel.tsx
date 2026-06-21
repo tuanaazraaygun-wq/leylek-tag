@@ -15,6 +15,7 @@ import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { PREMIUM_AUTH_CYAN, PREMIUM_BORDER_SLATE, PREMIUM_TEXT_MUTED } from './auth/premiumAuthStyles';
+import { useDriverTheme } from '../lib/theme/useDriverTheme';
 import DriverCockpitQuickStrip from './superUx/DriverCockpitQuickStrip';
 
 interface DriverDashboardPanelProps {
@@ -75,6 +76,7 @@ export default function DriverDashboardPanel({
   expanded = false,
   onExpandToggle,
 }: DriverDashboardPanelProps) {
+  const { dashboardPanelSurfaces: dpLt, ui } = useDriverTheme();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
   const [remainingText, setRemainingText] = useState('00:00:00');
@@ -226,13 +228,13 @@ export default function DriverDashboardPanel({
     return (
       <View style={styles.stack}>
         <View style={styles.onlineStripWrap}>
-          <GlassSurface variant="plain" style={styles.onlineStripLoading} borderRadius={LDS_RADIUS.lg}>
-            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+          <GlassSurface variant="plain" style={[styles.onlineStripLoading, dpLt?.onlineStripLoading]} borderRadius={LDS_RADIUS.lg}>
+            <ActivityIndicator size="small" color={ui.activity} />
           </GlassSurface>
         </View>
         <View style={styles.container}>
-          <GlassSurface variant="panel" style={styles.panelShellLoading} borderRadius={LDS_RADIUS.xl}>
-            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+          <GlassSurface variant="panel" style={[styles.panelShellLoading, dpLt?.panelShellLoading]} borderRadius={LDS_RADIUS.xl}>
+            <ActivityIndicator size="small" color={ui.activity} />
           </GlassSurface>
         </View>
       </View>
@@ -263,6 +265,7 @@ export default function DriverDashboardPanel({
           style={[
             styles.onlineStrip,
             isOnline ? styles.onlineStripActive : styles.onlineStripInactive,
+            isOnline ? dpLt?.onlineStripActive : dpLt?.onlineStripInactive,
           ]}
           borderRadius={LDS_RADIUS.lg}
         >
@@ -287,6 +290,7 @@ export default function DriverDashboardPanel({
             style={[
               styles.switchTrack,
               isOnline ? styles.switchTrackOn : styles.switchTrackOff,
+              isOnline ? dpLt?.switchTrackOn : dpLt?.switchTrackOff,
               (toggling || !data.active_time.is_active) && styles.switchTrackDisabled,
             ]}
             onPress={toggleOnline}
@@ -300,12 +304,13 @@ export default function DriverDashboardPanel({
             }}
           >
             {toggling ? (
-              <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" style={styles.switchSpinner} />
+              <ActivityIndicator size="small" color={ui.textSoft} style={styles.switchSpinner} />
             ) : (
               <View
                 style={[
                   styles.switchThumb,
                   isOnline ? styles.switchThumbOn : styles.switchThumbOff,
+                  isOnline && dpLt?.switchThumbOn,
                 ]}
               />
             )}
@@ -314,7 +319,7 @@ export default function DriverDashboardPanel({
       </View>
 
       <Animated.View style={[styles.container, { height: panelHeight }]}>
-        <GlassSurface variant="panel" style={styles.panelShell} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface variant="panel" style={[styles.panelShell, dpLt?.panelShell]} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.collapsedHud}>
             <View style={styles.cockpitGrid}>
               <View
@@ -325,7 +330,7 @@ export default function DriverDashboardPanel({
                 <PremiumText variant="caption" muted style={styles.instrumentLabel}>
                   Bugünkü katkılar
                 </PremiumText>
-                <PremiumText variant="title" style={styles.instrumentAmount}>
+                <PremiumText variant="title" style={[styles.instrumentAmount, dpLt?.instrumentAmount]}>
                   {data.today.earnings} ₺
                 </PremiumText>
                 <View style={styles.instrumentMetaRow}>
@@ -337,7 +342,7 @@ export default function DriverDashboardPanel({
                   </PremiumText>
                 </View>
                 <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${goalProgress}%` }]} />
+                  <View style={[styles.progressFill, dpLt?.progressFill, { width: `${goalProgress}%` }]} />
                 </View>
               </View>
 
@@ -359,22 +364,22 @@ export default function DriverDashboardPanel({
                   size={14}
                   color={
                     data.active_time.is_active
-                      ? 'rgba(34,211,238,0.88)'
-                      : 'rgba(148,163,184,0.72)'
+                      ? ui.sessionActive
+                      : ui.sessionInactive
                   }
                 />
                 <View style={styles.footerTextCol}>
                   <PremiumText variant="caption" muted style={styles.footerMetaLabel}>
                     Seans
                   </PremiumText>
-                  <PremiumText variant="caption" style={styles.footerValue}>
+                  <PremiumText variant="caption" style={[styles.footerValue, dpLt?.footerValue]}>
                     {sessionText}
                   </PremiumText>
                 </View>
                 <Ionicons
                   name={expanded ? 'chevron-up' : 'chevron-down'}
                   size={16}
-                  color={PREMIUM_TEXT_MUTED}
+                  color={ui.chevron}
                 />
               </TouchableOpacity>
 
@@ -387,16 +392,16 @@ export default function DriverDashboardPanel({
                 accessibilityRole="button"
                 accessibilityLabel="Paket yönetimi"
               >
-                <Ionicons name="cube-outline" size={14} color="rgba(148,163,184,0.82)" />
+                <Ionicons name="cube-outline" size={14} color={ui.iconMuted} />
                 <View style={styles.footerTextCol}>
                   <PremiumText variant="caption" muted style={styles.footerMetaLabel}>
                     Paket
                   </PremiumText>
-                  <PremiumText variant="caption" style={styles.footerValue}>
+                  <PremiumText variant="caption" style={[styles.footerValue, dpLt?.footerValue]}>
                     Yönet
                   </PremiumText>
                 </View>
-                <Ionicons name="chevron-forward" size={14} color={PREMIUM_TEXT_MUTED} />
+                <Ionicons name="chevron-forward" size={14} color={ui.chevron} />
               </TouchableOpacity>
             </View>
           </View>
@@ -405,10 +410,10 @@ export default function DriverDashboardPanel({
             <View style={styles.expandedContent}>
               <View style={styles.statsRow}>
                 <View style={styles.statColumn}>
-                  <View style={styles.statIconWrap}>
-                    <Ionicons name="car-outline" size={20} color="rgba(34,211,238,0.88)" />
+                  <View style={[styles.statIconWrap, dpLt?.statIconWrap]}>
+                    <Ionicons name="car-outline" size={20} color={ui.statCar} />
                   </View>
-                  <PremiumText variant="title" style={styles.statValue}>
+                  <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
                     {data.today.trips_count}
                   </PremiumText>
                   <PremiumText variant="caption" muted style={styles.statLabel}>
@@ -422,7 +427,7 @@ export default function DriverDashboardPanel({
                   <View style={[styles.statIconWrap, styles.statIconWrapViolet]}>
                     <Ionicons name="wallet-outline" size={20} color="rgba(226,232,240,0.88)" />
                   </View>
-                  <PremiumText variant="title" style={styles.statValue}>
+                  <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
                     {data.weekly.earnings} ₺
                   </PremiumText>
                   <PremiumText variant="caption" muted style={styles.statLabel}>
@@ -436,7 +441,7 @@ export default function DriverDashboardPanel({
                   <View style={[styles.statIconWrap, styles.statIconWrapAmber]}>
                     <Ionicons name="star" size={20} color="rgba(251,211,141,0.95)" />
                   </View>
-                  <PremiumText variant="title" style={styles.statValue}>
+                  <PremiumText variant="title" style={[styles.statValue, dpLt?.statValue]}>
                     {data.stats.rating != null && Number.isFinite(data.stats.rating) && data.stats.rating > 0
                       ? data.stats.rating.toFixed(1)
                       : '—'}

@@ -14,6 +14,7 @@ import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import type { useQuickMatchDriverSession } from '../../hooks/useQuickMatchDriverSession';
+import { useDriverTheme } from '../../lib/theme/useDriverTheme';
 
 export type DriverQuickMatchSessionView = Pick<
   ReturnType<typeof useQuickMatchDriverSession>,
@@ -141,10 +142,11 @@ function useInviteCountdown(
 }
 
 function DecisionHeader() {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   return (
     <View style={styles.phaseBlock}>
-      <View style={styles.iconRing}>
-        <Ionicons name="flash-outline" size={26} color="rgba(34,211,238,0.92)" />
+      <View style={[styles.iconRing, qmLt?.iconRing]}>
+        <Ionicons name="flash-outline" size={26} color={ui.flashIcon} />
       </View>
       <PremiumText variant="step" style={styles.phaseStep}>
         {TITLE_COPY}
@@ -157,8 +159,9 @@ function DecisionHeader() {
 }
 
 function PollWarningBanner() {
+  const { quickMatchSurfaces: qmLt } = useDriverTheme();
   return (
-    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.pollWarningBanner}>
+    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={[styles.pollWarningBanner, qmLt?.pollWarningBanner]}>
       <Ionicons name="cloud-offline-outline" size={16} color="rgba(251, 191, 36, 0.95)" />
       <PremiumText variant="caption" style={styles.pollWarningText}>
         {POLL_WARNING_COPY}
@@ -178,6 +181,7 @@ function PrimaryButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -186,14 +190,15 @@ function PrimaryButton({
       accessibilityState={{ disabled: Boolean(disabled || loading) }}
       style={({ pressed }) => [
         styles.primaryBtnWrap,
+        qmLt?.primaryBtnWrap,
         (disabled || loading) && styles.primaryBtnDisabled,
         pressed && !disabled && !loading && styles.primaryBtnPressed,
       ]}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+        <ActivityIndicator size="small" color={ui.activity} />
       ) : (
-        <PremiumText variant="body" style={styles.primaryBtnText}>
+        <PremiumText variant="body" style={[styles.primaryBtnText, qmLt?.primaryBtnText]}>
           {label}
         </PremiumText>
       )}
@@ -212,6 +217,7 @@ function SecondaryButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -220,12 +226,13 @@ function SecondaryButton({
       accessibilityState={{ disabled: Boolean(disabled || loading) }}
       style={({ pressed }) => [
         styles.secondaryBtnWrap,
+        qmLt?.secondaryBtnWrap,
         (disabled || loading) && styles.secondaryBtnDisabled,
         pressed && !disabled && !loading && styles.secondaryBtnPressed,
       ]}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+        <ActivityIndicator size="small" color={ui.activity} />
       ) : (
         <PremiumText variant="body" muted style={styles.secondaryBtnText}>
           {label}
@@ -246,6 +253,7 @@ function InviteDetailsBlock({
   distanceBand: string | null | undefined;
   countdownSec: number | null;
 }) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   const countdownLabel = formatCountdownLabel(countdownSec);
   const countdownHint = formatCountdownHint(countdownSec);
   const countdownExpired = countdownSec != null && countdownSec <= 0;
@@ -259,7 +267,7 @@ function InviteDetailsBlock({
           Alış noktası
         </PremiumText>
         <View style={styles.pickupRow}>
-          <Ionicons name="radio-button-on" size={14} color={PREMIUM_AUTH_CYAN} />
+          <Ionicons name="radio-button-on" size={14} color={ui.accent} />
           <PremiumText variant="body" style={styles.fieldValue} numberOfLines={3}>
             {pickupLabel}
           </PremiumText>
@@ -272,7 +280,7 @@ function InviteDetailsBlock({
             Mesafe
           </PremiumText>
           <View style={styles.inlineValueRow}>
-            <Ionicons name="navigate-outline" size={14} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="navigate-outline" size={14} color={ui.accent} />
             <PremiumText variant="body" style={styles.fieldValue}>
               {formatDistanceBand(distanceBand)}
             </PremiumText>
@@ -283,8 +291,8 @@ function InviteDetailsBlock({
             Katkı
           </PremiumText>
           <View style={styles.inlineValueRow}>
-            <Ionicons name="cash-outline" size={14} color={PREMIUM_AUTH_CYAN} />
-            <PremiumText variant="body" style={styles.contributionValue}>
+            <Ionicons name="cash-outline" size={14} color={ui.accent} />
+            <PremiumText variant="body" style={[styles.contributionValue, qmLt?.contributionValue]}>
               {contributionTl} TL
             </PremiumText>
           </View>
@@ -295,11 +303,11 @@ function InviteDetailsBlock({
         {CONTRIBUTION_DISCLAIMER}
       </PremiumText>
 
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={styles.countdownChip}>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={[styles.countdownChip, qmLt?.countdownChip]}>
         <Ionicons
           name="timer-outline"
           size={18}
-          color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : PREMIUM_AUTH_CYAN}
+          color={countdownExpired ? LDS_COLOR_ERROR : countdownUrgent ? '#FBBF24' : ui.accent}
         />
         <View style={styles.countdownTextCol}>
           <PremiumText
@@ -317,6 +325,7 @@ function InviteDetailsBlock({
             variant="body"
             style={[
               styles.countdownText,
+              qmLt?.countdownText,
               countdownExpired && styles.countdownExpired,
               countdownUrgent && styles.countdownUrgent,
             ]}
@@ -336,6 +345,7 @@ export function DriverQuickMatchInviteCard({
   onDecline,
   onClose,
 }: DriverQuickMatchInviteCardProps) {
+  const { quickMatchSurfaces: qmLt, ui } = useDriverTheme();
   const invite = session.invite;
   const countdownActive = visible && session.status === 'pending' && invite != null;
   const countdownSec = useInviteCountdown(
@@ -398,7 +408,7 @@ export function DriverQuickMatchInviteCard({
     if (session.status === 'restoring' || session.isRestoring) {
       return (
         <View style={styles.centerCard}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <ActivityIndicator size="large" color={ui.activity} />
           <PremiumText variant="body" style={styles.loadingTitle}>
             Davet kontrol ediliyor…
           </PremiumText>
@@ -409,7 +419,7 @@ export function DriverQuickMatchInviteCard({
     if (session.status === 'accepting' || session.isAccepting) {
       return (
         <View style={styles.centerCard}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
+          <ActivityIndicator size="large" color={ui.activity} />
           <PremiumText variant="body" style={styles.loadingTitle}>
             Eşleşme hazırlanıyor…
           </PremiumText>
@@ -421,7 +431,7 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.centerCard}>
           <View style={styles.successIconWrap}>
-            <Ionicons name="checkmark-circle" size={48} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="checkmark-circle" size={48} color={ui.accent} />
           </View>
           <PremiumText variant="step" style={styles.title}>
             Eşleşme tamamlandı
@@ -429,7 +439,7 @@ export function DriverQuickMatchInviteCard({
           <PremiumText variant="caption" muted style={styles.bodyMuted}>
             Buluşma ekranı hazırlanıyor
           </PremiumText>
-          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} style={styles.matchedSpinner} />
+          <ActivityIndicator size="small" color={ui.activity} style={styles.matchedSpinner} />
         </View>
       );
     }
@@ -438,7 +448,7 @@ export function DriverQuickMatchInviteCard({
       return (
         <View style={styles.section}>
           {renderPollWarning()}
-          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.errorCard}>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={[styles.errorCard, qmLt?.errorCard]}>
             <Ionicons name="alert-circle-outline" size={28} color={LDS_COLOR_ERROR} />
             <PremiumText variant="body" muted style={styles.errorBody}>
               {session.errorMessage || 'Hızlı eşleşme şu an kullanılamıyor.'}
@@ -504,10 +514,10 @@ export function DriverQuickMatchInviteCard({
       onRequestClose={handleScrimPress}
     >
       <Pressable style={styles.overlay} onPress={handleScrimPress}>
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, qmLt?.scrim]} pointerEvents="none" />
 
         <Pressable style={styles.cardWrap} onPress={(e) => e.stopPropagation()}>
-          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.card}>
+          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={[styles.card, qmLt?.card]}>
             {showDecisionHeader ? <DecisionHeader /> : null}
             {body}
           </GlassSurface>

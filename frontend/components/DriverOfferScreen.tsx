@@ -45,6 +45,7 @@ import {
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from './auth/premiumAuthStyles';
+import { useDriverTheme } from '../lib/theme/useDriverTheme';
 import {
   ROUTE_LOADING_MIN_VISIBLE_MS,
   ROUTE_LOADING_UI,
@@ -878,6 +879,7 @@ async function fetchTripRouteMetrics(
 
 /** LiveMapView `RouteCalculatingPremium` ile aynı zamanlama / renk sabitleri */
 function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
+  const { ui } = useDriverTheme();
   const U = ROUTE_LOADING_UI;
   const d0 = useRef(new Animated.Value(U.dotMinOpacity)).current;
   const d1 = useRef(new Animated.Value(U.dotMinOpacity)).current;
@@ -912,8 +914,8 @@ function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
   const dotSz = compact ? U.dotSizeOfferCompact : U.dotSizeOffer;
   const dotGap = U.dotGapOffer;
   /** LiveMap ile sabit paylaşılan zamanlama; renkler bu ekranda premium palete çekilir */
-  const routeUiText = PREMIUM_TEXT_SOFT;
-  const routeUiDot = PREMIUM_AUTH_CYAN;
+  const routeUiText = ui.textSoft;
+  const routeUiDot = ui.accent;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
       <PremiumText
@@ -1130,6 +1132,7 @@ function RequestCard({
   globalAcceptFrozen: boolean;
   setGlobalAcceptFrozen: (v: boolean) => void;
 }) {
+  const { offerScreenSurfaces: osLt, ui } = useDriverTheme();
   const [accepting, setAccepting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -1337,20 +1340,20 @@ function RequestCard({
       style={[styles.reqCardWrap, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
       onLayout={handleOfferCardLayout}
     >
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.reqCard}>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.reqCard, osLt?.reqCard]}>
         <View style={styles.reqHeaderRow}>
           <View style={styles.reqPriceBlock}>
             <PremiumText variant="caption" muted style={styles.reqRevenueLabel}>
               Teklif
             </PremiumText>
-            <PremiumText variant="title" style={styles.reqPriceText}>
+            <PremiumText variant="title" style={[styles.reqPriceText, osLt?.reqPriceText]}>
               {request.offered_price || 0} ₺
             </PremiumText>
           </View>
           <View style={styles.reqSecondLine}>
             <View style={styles.reqPassengerChip}>
-              <Ionicons name="person-circle-outline" size={13} color="rgba(148,163,184,0.92)" />
-              <PremiumText variant="caption" style={styles.reqPassengerName} numberOfLines={1}>
+              <Ionicons name="person-circle-outline" size={13} color={ui.iconMuted} />
+              <PremiumText variant="caption" style={[styles.reqPassengerName, osLt?.reqPassengerName]} numberOfLines={1}>
                 {request.passenger_name?.split(' ')[0] || 'Yolcu'}
               </PremiumText>
             </View>
@@ -1383,7 +1386,7 @@ function RequestCard({
             <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
               Alış
             </PremiumText>
-            <PremiumText variant="caption" style={styles.reqMetaValue}>
+            <PremiumText variant="caption" style={[styles.reqMetaValue, osLt?.reqMetaValue]}>
               {distanceToPassenger} km
             </PremiumText>
           </View>
@@ -1392,7 +1395,7 @@ function RequestCard({
             <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
               Yolcuya
             </PremiumText>
-            <PremiumText variant="caption" style={styles.reqMetaValue}>
+            <PremiumText variant="caption" style={[styles.reqMetaValue, osLt?.reqMetaValue]}>
               {typeof timeToPassengerDisplay === 'number'
                 ? `${timeToPassengerDisplay} dk`
                 : '—'}
@@ -1406,7 +1409,7 @@ function RequestCard({
             {tripRoadShowLoading ? (
               <TripRouteCalculatingInline compact />
             ) : (
-              <PremiumText variant="caption" style={styles.reqMetaValue}>
+              <PremiumText variant="caption" style={[styles.reqMetaValue, osLt?.reqMetaValue]}>
                 {routeDistanceText}
               </PremiumText>
             )}
@@ -1416,7 +1419,7 @@ function RequestCard({
             <PremiumText variant="caption" muted style={styles.reqMetaLabel}>
               Süre
             </PremiumText>
-            <PremiumText variant="caption" style={styles.reqMetaValue}>
+            <PremiumText variant="caption" style={[styles.reqMetaValue, osLt?.reqMetaValue]}>
               {rideDurationText}
             </PremiumText>
           </View>
@@ -1425,13 +1428,13 @@ function RequestCard({
         <View style={styles.reqRouteBlock}>
           <View style={styles.reqRouteLine}>
             <View style={[styles.reqDot, styles.reqDotPickup]} />
-            <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
+            <PremiumText variant="caption" style={[styles.reqRouteText, osLt?.reqRouteText]} numberOfLines={1}>
               {pickupLineFromRequest(request)}
             </PremiumText>
           </View>
           <View style={styles.reqRouteLine}>
             <View style={[styles.reqDot, styles.reqDotDropoff]} />
-            <PremiumText variant="caption" style={styles.reqRouteText} numberOfLines={1}>
+            <PremiumText variant="caption" style={[styles.reqRouteText, osLt?.reqRouteText]} numberOfLines={1}>
               {dropoffLineFromRequest(request)}
             </PremiumText>
           </View>
@@ -1439,7 +1442,7 @@ function RequestCard({
 
         <View style={styles.reqActionsRow}>
           <TouchableOpacity
-            style={styles.reqDismissBtn}
+            style={[styles.reqDismissBtn, osLt?.reqDismissBtn]}
             onPress={onDismiss}
             activeOpacity={0.82}
             accessibilityRole="button"
@@ -1451,7 +1454,7 @@ function RequestCard({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
+            style={[styles.reqAcceptBtn, osLt?.reqAcceptBtn, accepting && styles.acceptButtonDisabled]}
             onPress={async () => {
               if (accepting || globalAcceptFrozen) return;
 
@@ -1561,9 +1564,9 @@ function RequestCard({
               accessibilityLabel="Kabul et"
             >
               {accepting ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                <ActivityIndicator size="small" color={ui.textSoft} />
               ) : (
-                <PremiumText variant="step" style={styles.reqAcceptBtnText}>
+                <PremiumText variant="step" style={[styles.reqAcceptBtnText, osLt?.reqAcceptText]}>
                   Kabul et
                 </PremiumText>
               )}
@@ -1699,6 +1702,7 @@ export default function DriverOfferScreen({
   onAcceptFlowEnd,
   onOfferUnavailable,
 }: DriverOfferScreenProps) {
+  const { offerScreenSurfaces: osLt, ui } = useDriverTheme();
   const isMotor = vehicleKind === 'motorcycle';
   const [globalAcceptFrozen, setGlobalAcceptFrozen] = useState(false);
   const mapRef = useRef<any>(null);
@@ -2122,8 +2126,8 @@ export default function DriverOfferScreen({
   const renderMap = () => {
     if (Platform.OS === 'web' || !MapView) {
       return (
-        <View style={styles.mapFallback}>
-          <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
+        <View style={[styles.mapFallback, osLt?.mapFallback]}>
+          <Ionicons name="map" size={40} color={ui.mapFallback} />
           <PremiumText variant="caption" muted style={styles.mapFallbackText}>
             Talep {mapHud.seeking} · {resolveFieldRadiusKm(mapHud.radius)} km
           </PremiumText>
@@ -2224,7 +2228,11 @@ export default function DriverOfferScreen({
         ) : null}
         <GlassSurface
           variant="panel"
-          style={[styles.dispatchDeck, mapExpanded && styles.dispatchDeckMapExpanded]}
+          style={[
+            styles.dispatchDeck,
+            mapExpanded && styles.dispatchDeckMapExpanded,
+            osLt?.dispatchDeck,
+          ]}
           borderRadius={LDS_RADIUS.xl}
         >
           <View style={[styles.listHeader, mapExpanded && styles.listHeaderMapExpanded]}>
@@ -2237,8 +2245,8 @@ export default function DriverOfferScreen({
                 Yakın talepler · {resolveFieldRadiusKm(mapHud.radius)} km
               </PremiumText>
               {visibleRequests.length > 0 ? (
-                <View style={styles.listHeaderCountPill}>
-                  <PremiumText variant="caption" style={styles.listHeaderCountText}>
+                <View style={[styles.listHeaderCountPill, osLt?.listHeaderCountPill]}>
+                  <PremiumText variant="caption" style={[styles.listHeaderCountText, osLt?.listHeaderCountText]}>
                     {visibleRequests.length}
                   </PremiumText>
                 </View>
@@ -2250,7 +2258,11 @@ export default function DriverOfferScreen({
           <View style={[styles.emptyState, mapExpanded && styles.emptyStateMapExpanded]}>
             <GlassSurface
               variant="plain"
-              style={[styles.emptyStateCard, mapExpanded && styles.emptyStateCardMapExpanded]}
+              style={[
+                styles.emptyStateCard,
+                mapExpanded && styles.emptyStateCardMapExpanded,
+                osLt?.emptyStateCard,
+              ]}
               borderRadius={LDS_RADIUS.lg}
             >
               <View style={styles.emptyBrandStrip}>
@@ -2289,7 +2301,7 @@ export default function DriverOfferScreen({
                   <Ionicons
                     name="radio-outline"
                     size={mapExpanded ? 16 : 18}
-                    color={isMotor ? 'rgba(134,239,172,0.92)' : 'rgba(34,211,238,0.9)'}
+                    color={isMotor ? ui.motorAccent : ui.accent}
                   />
                 </View>
               </View>
@@ -2322,15 +2334,15 @@ export default function DriverOfferScreen({
               </PremiumText>
 
               <View style={styles.emptyChipRow}>
-                <View style={styles.emptyChip}>
-                  <Ionicons name="pulse-outline" size={11} color={PREMIUM_AUTH_CYAN} />
-                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                <View style={[styles.emptyChip, osLt?.emptyChip]}>
+                  <Ionicons name="pulse-outline" size={11} color={ui.emptyChip} />
+                  <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
                     Canlı tarama
                   </PremiumText>
                 </View>
-                <View style={styles.emptyChip}>
-                  <Ionicons name="shield-checkmark-outline" size={11} color={PREMIUM_AUTH_CYAN} />
-                  <PremiumText variant="caption" style={styles.emptyChipText}>
+                <View style={[styles.emptyChip, osLt?.emptyChip]}>
+                  <Ionicons name="shield-checkmark-outline" size={11} color={ui.emptyChip} />
+                  <PremiumText variant="caption" style={[styles.emptyChipText, osLt?.emptyChipText]}>
                     LeylekTAG saha
                   </PremiumText>
                 </View>
@@ -2376,6 +2388,7 @@ export default function DriverOfferScreen({
           style={[
             styles.mapChromeShell,
             mapExpanded ? styles.mapChromeShellExpanded : styles.mapChromeShellCollapsed,
+            mapExpanded ? osLt?.mapChromeShell : osLt?.mapChromeShellCollapsed,
           ]}
         >
           <TouchableOpacity
@@ -2387,7 +2400,7 @@ export default function DriverOfferScreen({
           >
             <View style={styles.fieldOpHudTopRow}>
               <View style={styles.fieldOpHudBrandCol}>
-                <PremiumText variant="caption" style={styles.fieldOpHudBrand}>
+                <PremiumText variant="caption" style={[styles.fieldOpHudBrand, osLt?.fieldOpHudBrand]}>
                   LEYLEKTAG
                 </PremiumText>
                 {mapExpanded ? (
@@ -2409,7 +2422,7 @@ export default function DriverOfferScreen({
                 <Ionicons
                   name={mapExpanded ? 'chevron-down' : 'chevron-up'}
                   size={mapExpanded ? 15 : 16}
-                  color="rgba(34,211,238,0.88)"
+                  color={ui.accent}
                 />
               </View>
             </View>
@@ -2487,7 +2500,7 @@ export default function DriverOfferScreen({
               <View style={styles.mapDimOverlay} pointerEvents="none" />
               {!driverLocation || !mapReady ? (
                 <View style={styles.mapLoadingOverlay} pointerEvents="none">
-                  <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                  <ActivityIndicator size="small" color={ui.activity} />
                   <PremiumText variant="caption" muted style={styles.mapLoadingOverlayText}>
                     {!driverLocation ? 'Konum hazırlanıyor' : 'Harita hazırlanıyor'}
                   </PremiumText>
@@ -2541,7 +2554,7 @@ export default function DriverOfferScreen({
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, osLt?.container]} edges={['top']}>
       {body}
     </SafeAreaView>
   );

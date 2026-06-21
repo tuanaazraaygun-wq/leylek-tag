@@ -7,6 +7,7 @@ import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { useTrustedSummary } from '../../hooks/useTrustedSummary';
 import { formatDriverTrustedHeaderSubtitle } from '../../lib/trustedSummaryCopy';
+import { useDriverTheme } from '../../lib/theme/useDriverTheme';
 import type { TrustedSummaryResponse } from '../../lib/trustedNetworkApi';
 
 const CHIPS = [
@@ -73,6 +74,7 @@ function TrustMetricRow({
   summary: TrustedSummaryResponse | null;
   compact?: boolean;
 }) {
+  const { quickStripSurfaces: qsLt, ui } = useDriverTheme();
   const presentation = METRIC_PRESENTATION[label];
   const chipMeta = summaryReady && summary ? chipMetaForLabel(label, summary) : null;
   const value = metricValueFromMeta(chipMeta);
@@ -80,13 +82,19 @@ function TrustMetricRow({
 
   return (
     <View
-      style={[compact ? styles.embeddedMetricRow : styles.metricCell, hasValue && !compact && styles.metricCellActive]}
+      style={[
+        compact ? styles.embeddedMetricRow : styles.metricCell,
+        compact && qsLt?.embeddedMetricRow,
+        !compact && qsLt?.metricCell,
+        hasValue && !compact && styles.metricCellActive,
+        hasValue && !compact && qsLt?.metricCellActive,
+      ]}
       accessibilityLabel={`${presentation.shortLabel}. ${value}`}
     >
       <Ionicons
         name={presentation.icon}
         size={compact ? 12 : 11}
-        color={hasValue ? 'rgba(148,163,184,0.82)' : 'rgba(148,163,184,0.55)'}
+        color={hasValue ? ui.iconMuted : ui.sessionInactive}
       />
       <PremiumText variant="caption" muted style={compact ? styles.embeddedMetricLabel : styles.metricLabel} numberOfLines={1}>
         {presentation.shortLabel}
@@ -94,7 +102,11 @@ function TrustMetricRow({
       <PremiumText
         variant="caption"
         muted
-        style={[compact ? styles.embeddedMetricValue : styles.metricValue, hasValue && styles.metricValueActive]}
+        style={[
+          compact ? styles.embeddedMetricValue : styles.metricValue,
+          hasValue && styles.metricValueActive,
+          hasValue && qsLt?.metricValueActive,
+        ]}
         numberOfLines={1}
       >
         {value}
@@ -105,6 +117,7 @@ function TrustMetricRow({
 
 /** Sürücü idle kokpit — secondary trust özeti (read-only). */
 function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCockpitQuickStripProps) {
+  const { quickStripSurfaces: qsLt, ui } = useDriverTheme();
   const { status, summary } = useTrustedSummary();
   const summaryReady = status === 'ready' && summary != null;
   const headerWired = typeof onTrustedPress === 'function';
@@ -118,8 +131,8 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
 
   const headerContent = (
     <>
-      <View style={embedded ? styles.embeddedTrustIconWrap : styles.trustIconWrap}>
-        <Ionicons name="shield-checkmark-outline" size={embedded ? 13 : 12} color="rgba(34,211,238,0.72)" />
+      <View style={[embedded ? styles.embeddedTrustIconWrap : styles.trustIconWrap, embedded ? qsLt?.embeddedTrustIconWrap : qsLt?.trustIconWrap]}>
+        <Ionicons name="shield-checkmark-outline" size={embedded ? 13 : 12} color={ui.trustIcon} />
       </View>
       <View style={styles.titleCol}>
         <PremiumText variant="caption" style={styles.title} numberOfLines={1}>
@@ -130,7 +143,7 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
         </PremiumText>
       </View>
       {headerWired ? (
-        <Ionicons name="chevron-forward" size={15} color="rgba(148,163,184,0.62)" />
+        <Ionicons name="chevron-forward" size={15} color={ui.chevron} />
       ) : null}
     </>
   );
@@ -163,8 +176,8 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
           ))}
         </View>
 
-        <View style={styles.embeddedQmPill} accessibilityLabel="Hızlı eşleşme. Yakında" accessibilityRole="text">
-          <Ionicons name="flash-outline" size={10} color="rgba(148,163,184,0.48)" />
+        <View style={[styles.embeddedQmPill, qsLt?.embeddedQmPill]} accessibilityLabel="Hızlı eşleşme. Yakında" accessibilityRole="text">
+          <Ionicons name="flash-outline" size={10} color={ui.sessionInactive} />
           <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
             Yakında
           </PremiumText>
@@ -175,7 +188,7 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
 
   return (
     <View style={styles.wrap} accessibilityRole="summary">
-      <GlassSurface variant="plain" style={styles.card} borderRadius={LDS_RADIUS.lg}>
+      <GlassSurface variant="plain" style={[styles.card, qsLt?.card]} borderRadius={LDS_RADIUS.lg}>
         {headerWired ? (
           <Pressable
             onPress={onTrustedPress}
@@ -204,11 +217,11 @@ function DriverCockpitQuickStrip({ onTrustedPress, embedded = false }: DriverCoc
           ))}
 
           <View
-            style={styles.qmPill}
+            style={[styles.qmPill, qsLt?.qmPill]}
             accessibilityLabel="Hızlı eşleşme. Yakında"
             accessibilityRole="text"
           >
-            <Ionicons name="flash-outline" size={10} color="rgba(148,163,184,0.48)" />
+            <Ionicons name="flash-outline" size={10} color={ui.sessionInactive} />
             <PremiumText variant="caption" muted style={styles.qmLabel} numberOfLines={1}>
               Yakında
             </PremiumText>

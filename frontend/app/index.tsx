@@ -189,6 +189,7 @@ import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers'
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
+import { useDriverTheme } from '../lib/theme/useDriverTheme';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import {
   publishTrustedInviteHubRefresh,
@@ -18875,6 +18876,7 @@ function DriverDashboard({
     activeTag &&
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
   );
+  const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
 
   console.log('OFFER_RENDER_CONDITION', {
     driver_in_active_trip: driverInActiveTrip,
@@ -18887,7 +18889,7 @@ function DriverDashboard({
   if (!driverInActiveTrip) {
     return (
       <>
-        <View style={dws.waitingRoot}>
+        <View style={[dws.waitingRoot, dwsLt?.waitingRoot]}>
           <CockpitBackground />
           <SafeAreaView edges={['top']} style={dws.cockpitSafe}>
             <View style={dws.cockpitUpperDeck}>
@@ -18899,14 +18901,14 @@ function DriverDashboard({
                 >
                   <View style={dws.cockpitHeaderBar}>
                     <TouchableOpacity
-                      style={dws.cockpitHeaderBtnShell}
+                      style={[dws.cockpitHeaderBtnShell, dwsLt?.cockpitHeaderBtnShell]}
                       onPress={() => onDriverOfferGoToRoleSelect?.()}
                       activeOpacity={0.88}
                       accessibilityRole="button"
                       accessibilityLabel="Rol seçimine dön"
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Ionicons name="chevron-back" size={22} color={PREMIUM_AUTH_CYAN} />
+                      <Ionicons name="chevron-back" size={22} color={drvUi.accent} />
                     </TouchableOpacity>
                     <View
                       style={dws.cockpitHeaderTitleCol}
@@ -18920,14 +18922,14 @@ function DriverDashboard({
                     <View style={dws.cockpitHeaderActions}>
                       <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
                       <TouchableOpacity
-                        style={dws.cockpitHeaderBtnShell}
+                        style={[dws.cockpitHeaderBtnShell, dwsLt?.cockpitHeaderBtnShell]}
                         onPress={() => onDriverOfferOpenProfile?.()}
                         activeOpacity={0.88}
                         accessibilityRole="button"
                         accessibilityLabel="Profil"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Ionicons name="person-circle-outline" size={24} color={PREMIUM_AUTH_CYAN} />
+                        <Ionicons name="person-circle-outline" size={24} color={drvUi.accent} />
                       </TouchableOpacity>
                     </View>
                   </View>
