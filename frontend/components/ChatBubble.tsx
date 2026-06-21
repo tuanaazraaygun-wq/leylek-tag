@@ -14,7 +14,6 @@ import {
   Dimensions,
   Platform,
   Keyboard,
-  KeyboardAvoidingView,
   Vibration,
   Modal,
   Pressable,
@@ -27,6 +26,8 @@ import { Audio } from 'expo-av';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getSupabase } from '../lib/supabase';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
+import { useTheme } from '../contexts/ThemeContext';
+import { lightThemeEnabled } from '../lib/featureFlags';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MERGE_TS_WINDOW_MS = 5000;
@@ -169,6 +170,73 @@ export default function ChatBubble({
   const [spamWarning, setSpamWarning] = useState(''); // 🆕 Uyarı mesajı
   const [keyboardPad, setKeyboardPad] = useState(0);
   const insets = useSafeAreaInsets();
+  const { isLight, tokens } = useTheme();
+  const isChatLight = lightThemeEnabled && isLight;
+
+  const chatLt = useMemo(() => {
+    if (!isChatLight) return null;
+    const t = tokens;
+    return {
+      backdrop: 'rgba(15,23,42,0.28)',
+      sheetBorder: t.border.default,
+      sheetShadow: t.shadow.modal,
+      headerBg: t.bg.elevated,
+      headerBorder: t.border.default,
+      headerName: t.text.primary,
+      headerIcon: t.accent.primary,
+      headerBtn: t.text.muted,
+      onlineConnected: t.accent.primary,
+      onlinePending: t.text.muted,
+      myBubbleBg: t.accent.primary,
+      myBubbleBorder: t.accent.primaryHover,
+      myLabel: 'rgba(255,255,255,0.92)',
+      myText: t.text.inverse,
+      myTime: 'rgba(255,255,255,0.78)',
+      otherBubbleBg: t.bg.canvasMid,
+      otherBubbleBorder: t.border.card,
+      otherLabel: t.accent.secondary,
+      otherText: t.text.primary,
+      otherTime: t.text.muted,
+      emptyIcon: t.accent.primary,
+      emptyTitle: t.text.primary,
+      emptySub: t.text.muted,
+      suggestionsBg: t.bg.elevated,
+      suggestionsBorder: t.border.default,
+      chipBg: t.bg.canvas,
+      chipBorder: t.border.default,
+      chipText: t.text.primary,
+      composerBg: t.bg.elevated,
+      composerBorder: t.border.default,
+      inputBg: t.bg.canvas,
+      inputBorder: t.border.default,
+      inputText: t.text.primary,
+      placeholder: t.text.muted,
+      sendBg: t.accent.primary,
+      sendBorder: t.accent.primaryHover,
+      sendIcon: t.text.inverse,
+      sendDisabledBg: t.bg.canvasMid,
+      sendDisabledIcon: t.text.muted,
+      warningBg: 'rgba(220,38,38,0.08)',
+      warningBorder: 'rgba(220,38,38,0.22)',
+      warningText: t.status.error,
+      minimizedBg: t.accent.primary,
+      minimizedIcon: t.text.inverse,
+    };
+  }, [isChatLight, tokens]);
+
+  const sheetHeight = useMemo(() => {
+    const base = SCREEN_HEIGHT * 0.6;
+    if (keyboardPad <= 0) return base;
+    const aboveKeyboard = SCREEN_HEIGHT - keyboardPad - 8;
+    return Math.min(base, Math.max(aboveKeyboard, SCREEN_HEIGHT * 0.38));
+  }, [keyboardPad]);
+
+  const composerBottomPad =
+    keyboardPad > 0
+      ? Platform.OS === 'ios'
+        ? 10
+        : 8
+      : Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -298,6 +366,12 @@ export default function ChatBubble({
     if (keyboardPad <= 0) return;
     scrollToBottom(true);
   }, [keyboardPad, scrollToBottom]);
+
+  useEffect(() => {
+    if (visible && !isMinimized) {
+      scrollToBottom(false);
+    }
+  }, [visible, isMinimized, scrollToBottom]);
 
   useEffect(() => {
     if (!visible) {
@@ -562,18 +636,28 @@ export default function ChatBubble({
   // Minimized bubble
   if (isMinimized) {
     return (
-      <Animated.View 
+      <Animated.View
         style={[
           styles.minimizedBubble,
-          { transform: [{ scale: scaleAnim }] }
+          isChatLight &&
+            chatLt && {
+              backgroundColor: chatLt.minimizedBg,
+              borderColor: chatLt.sendBorder,
+              shadowColor: tokens.shadow.ambient,
+            },
+          { transform: [{ scale: scaleAnim }] },
         ]}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.minimizedContent}
           onPress={toggleMinimize}
           activeOpacity={0.8}
         >
-          <Ionicons name="chatbubble-ellipses" size={24} color="#08111F" />
+          <Ionicons
+            name="chatbubble-ellipses"
+            size={24}
+            color={isChatLight && chatLt ? chatLt.minimizedIcon : '#08111F'}
+          />
           {unreadCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -588,166 +672,356 @@ export default function ChatBubble({
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modalRoot}>
-        <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Sohbeti kapat" />
+        <Pressable
+          style={[styles.sheetBackdrop, isChatLight && chatLt && { backgroundColor: chatLt.backdrop }]}
+          onPress={onClose}
+          accessibilityLabel="Sohbeti kapat"
+        />
         <Animated.View
           style={[
             styles.container,
-            { transform: [{ translateY: slideAnim }] },
+            {
+              transform: [{ translateY: slideAnim }],
+              marginBottom: keyboardPad,
+              height: sheetHeight,
+              maxHeight: sheetHeight,
+            },
+            isChatLight &&
+              chatLt && {
+                backgroundColor: chatLt.headerBg,
+                borderColor: chatLt.sheetBorder,
+                shadowColor: chatLt.sheetShadow,
+              },
           ]}
         >
-          <LinearGradient
-            colors={['#101A2B', '#0B1220', '#08111F']}
-            locations={[0, 0.52, 1]}
-            pointerEvents="none"
-            style={styles.sheetGlassFill}
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(34,211,238,0.06)', 'transparent']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            pointerEvents="none"
-            style={styles.sheetEdgeLight}
-          />
-          <KeyboardAvoidingView
-            style={styles.keyboardView}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-          >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Ionicons name="person-circle" size={32} color="#22D3EE" />
-            <View style={styles.headerInfo}>
-              <Text style={styles.headerName}>{otherFirst}</Text>
-              <View style={styles.onlineStatus}>
-                <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#22D3EE' : 'rgba(186,201,222,0.45)' }]} />
-                <Text style={[styles.onlineText, { color: isConnected ? '#22D3EE' : 'rgba(186,201,222,0.75)' }]}>
-                  {isConnected ? 'Bağlı' : 'Bağlanıyor...'}
-                </Text>
+          {!isChatLight ? (
+            <>
+              <LinearGradient
+                colors={['#101A2B', '#0B1220', '#08111F']}
+                locations={[0, 0.52, 1]}
+                pointerEvents="none"
+                style={styles.sheetGlassFill}
+              />
+              <LinearGradient
+                colors={['transparent', 'rgba(34,211,238,0.06)', 'transparent']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                pointerEvents="none"
+                style={styles.sheetEdgeLight}
+              />
+            </>
+          ) : null}
+          <View style={styles.keyboardView}>
+            {/* Header */}
+            <View
+              style={[
+                styles.header,
+                isChatLight &&
+                  chatLt && {
+                    backgroundColor: chatLt.headerBg,
+                    borderBottomColor: chatLt.headerBorder,
+                  },
+              ]}
+            >
+              <View style={styles.headerLeft}>
+                <Ionicons
+                  name="person-circle"
+                  size={32}
+                  color={isChatLight && chatLt ? chatLt.headerIcon : '#22D3EE'}
+                />
+                <View style={styles.headerInfo}>
+                  <Text
+                    style={[
+                      styles.headerName,
+                      isChatLight && chatLt && { color: chatLt.headerName },
+                    ]}
+                  >
+                    {otherFirst}
+                  </Text>
+                  <View style={styles.onlineStatus}>
+                    <View
+                      style={[
+                        styles.onlineDot,
+                        {
+                          backgroundColor: isConnected
+                            ? isChatLight && chatLt
+                              ? chatLt.onlineConnected
+                              : '#22D3EE'
+                            : isChatLight && chatLt
+                              ? chatLt.onlinePending
+                              : 'rgba(186,201,222,0.45)',
+                        },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.onlineText,
+                        {
+                          color: isConnected
+                            ? isChatLight && chatLt
+                              ? chatLt.onlineConnected
+                              : '#22D3EE'
+                            : isChatLight && chatLt
+                              ? chatLt.onlinePending
+                              : 'rgba(186,201,222,0.75)',
+                        },
+                      ]}
+                    >
+                      {isConnected ? 'Bağlı' : 'Bağlanıyor...'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity onPress={toggleMinimize} style={styles.headerBtn}>
+                  <Ionicons
+                    name="remove"
+                    size={24}
+                    color={isChatLight && chatLt ? chatLt.headerBtn : 'rgba(186,201,222,0.82)'}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+                  <Ionicons
+                    name="close"
+                    size={24}
+                    color={isChatLight && chatLt ? chatLt.headerBtn : 'rgba(186,201,222,0.82)'}
+                  />
+                </TouchableOpacity>
               </View>
             </View>
-          </View>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity onPress={toggleMinimize} style={styles.headerBtn}>
-              <Ionicons name="remove" size={24} color="rgba(186,201,222,0.82)" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
-              <Ionicons name="close" size={24} color="rgba(186,201,222,0.82)" />
-            </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* Messages */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          style={styles.messageList}
-          contentContainerStyle={styles.messageListContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          renderItem={({ item }) => (
-            <View style={[
-              styles.messageBubble,
-              item.sender === 'me' ? styles.myMessage : styles.otherMessage
-            ]}>
-              <Text
+            {/* Messages */}
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              keyExtractor={(item) => item.id}
+              style={styles.messageList}
+              contentContainerStyle={styles.messageListContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              onContentSizeChange={() => scrollToBottom(false)}
+              renderItem={({ item }) => {
+                const isMe = item.sender === 'me';
+                return (
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      isMe ? styles.myMessage : styles.otherMessage,
+                      isChatLight &&
+                        chatLt &&
+                        (isMe
+                          ? {
+                              backgroundColor: chatLt.myBubbleBg,
+                              borderColor: chatLt.myBubbleBorder,
+                              shadowColor: chatLt.sheetShadow,
+                            }
+                          : {
+                              backgroundColor: chatLt.otherBubbleBg,
+                              borderColor: chatLt.otherBubbleBorder,
+                              shadowColor: chatLt.sheetShadow,
+                            }),
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.senderLabel,
+                        isMe ? styles.mySenderLabel : styles.otherSenderLabel,
+                        isChatLight &&
+                          chatLt &&
+                          (isMe ? { color: chatLt.myLabel } : { color: chatLt.otherLabel }),
+                      ]}
+                    >
+                      {isMe ? myFirst : firstNameOnly(item.senderName, otherFirst)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.messageText,
+                        isMe ? styles.myMessageText : styles.otherMessageText,
+                        isChatLight &&
+                          chatLt &&
+                          (isMe ? { color: chatLt.myText } : { color: chatLt.otherText }),
+                      ]}
+                    >
+                      {item.text}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.messageTime,
+                        isMe ? styles.myMessageTime : styles.otherMessageTime,
+                        isChatLight &&
+                          chatLt &&
+                          (isMe ? { color: chatLt.myTime } : { color: chatLt.otherTime }),
+                      ]}
+                    >
+                      {item.timestamp.toLocaleTimeString('tr-TR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons
+                    name="chatbubbles-outline"
+                    size={48}
+                    color={isChatLight && chatLt ? chatLt.emptyIcon : 'rgba(34,211,238,0.42)'}
+                  />
+                  <Text
+                    style={[
+                      styles.emptyText,
+                      isChatLight && chatLt && { color: chatLt.emptyTitle },
+                    ]}
+                  >
+                    Henüz mesaj yok
+                  </Text>
+                  <Text
+                    style={[
+                      styles.emptySubtext,
+                      isChatLight && chatLt && { color: chatLt.emptySub },
+                    ]}
+                  >
+                    Bir mesaj göndererek sohbeti başlatın
+                  </Text>
+                </View>
+              }
+            />
+
+            {/* Quick suggestions */}
+            <View
+              style={[
+                styles.suggestionsContainer,
+                isChatLight &&
+                  chatLt && {
+                    backgroundColor: chatLt.suggestionsBg,
+                    borderTopColor: chatLt.suggestionsBorder,
+                  },
+              ]}
+            >
+              <FlatList
+                horizontal
+                data={suggestions}
+                keyExtractor={(item) => item}
+                showsHorizontalScrollIndicator={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.suggestionChip,
+                      tripCommsLocked && { opacity: 0.45 },
+                      isChatLight &&
+                        chatLt && {
+                          backgroundColor: chatLt.chipBg,
+                          borderColor: chatLt.chipBorder,
+                        },
+                    ]}
+                    onPress={() => sendMessage(item)}
+                    disabled={tripCommsLocked}
+                  >
+                    <Text
+                      style={[
+                        styles.suggestionText,
+                        isChatLight && chatLt && { color: chatLt.chipText },
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+
+            {spamWarning ? (
+              <View
                 style={[
-                  styles.senderLabel,
-                  item.sender === 'me' ? styles.mySenderLabel : styles.otherSenderLabel,
+                  styles.warningContainer,
+                  isChatLight &&
+                    chatLt && {
+                      backgroundColor: chatLt.warningBg,
+                      borderColor: chatLt.warningBorder,
+                    },
                 ]}
               >
-                {item.sender === 'me'
-                  ? myFirst
-                  : firstNameOnly(item.senderName, otherFirst)}
-              </Text>
-              <Text style={[
-                styles.messageText,
-                item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
-              ]}>
-                {item.text}
-              </Text>
-              <Text style={[
-                styles.messageTime,
-                item.sender === 'me' ? styles.myMessageTime : styles.otherMessageTime
-              ]}>
-                {item.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </View>
-          )}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubbles-outline" size={48} color="rgba(34,211,238,0.42)" />
-              <Text style={styles.emptyText}>Henüz mesaj yok</Text>
-              <Text style={styles.emptySubtext}>Bir mesaj göndererek sohbeti başlatın</Text>
-            </View>
-          }
-        />
+                <Text
+                  style={[
+                    styles.warningText,
+                    isChatLight && chatLt && { color: chatLt.warningText },
+                  ]}
+                >
+                  {spamWarning}
+                </Text>
+              </View>
+            ) : null}
 
-        {/* Quick suggestions */}
-        <View style={styles.suggestionsContainer}>
-          <FlatList
-            horizontal
-            data={suggestions}
-            keyExtractor={(item) => item}
-            showsHorizontalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={[styles.suggestionChip, tripCommsLocked && { opacity: 0.45 }]}
-                onPress={() => sendMessage(item)}
-                disabled={tripCommsLocked}
+            <View
+              style={[
+                styles.inputContainer,
+                { paddingBottom: composerBottomPad },
+                isChatLight &&
+                  chatLt && {
+                    backgroundColor: chatLt.composerBg,
+                    borderTopColor: chatLt.composerBorder,
+                  },
+              ]}
+            >
+              <TextInput
+                style={[
+                  styles.input,
+                  isChatLight &&
+                    chatLt && {
+                      backgroundColor: chatLt.inputBg,
+                      borderColor: chatLt.inputBorder,
+                      color: chatLt.inputText,
+                    },
+                ]}
+                placeholder="Mesajınızı yazın..."
+                placeholderTextColor={
+                  isChatLight && chatLt ? chatLt.placeholder : 'rgba(186,201,222,0.55)'
+                }
+                value={inputText}
+                onChangeText={setInputText}
+                multiline
+                maxLength={500}
+                editable={!tripCommsLocked}
+                textAlignVertical="center"
+              />
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  (!inputText.trim() || tripCommsLocked) && styles.sendButtonDisabled,
+                  isChatLight &&
+                    chatLt &&
+                    (inputText.trim() && !tripCommsLocked
+                      ? {
+                          backgroundColor: chatLt.sendBg,
+                          borderColor: chatLt.sendBorder,
+                        }
+                      : {
+                          backgroundColor: chatLt.sendDisabledBg,
+                          borderColor: chatLt.inputBorder,
+                          shadowOpacity: 0,
+                          elevation: 0,
+                        }),
+                ]}
+                onPress={() => sendMessage(inputText)}
+                disabled={!inputText.trim() || tripCommsLocked}
               >
-                <Text style={styles.suggestionText}>{item}</Text>
+                <Ionicons
+                  name="send"
+                  size={20}
+                  color={
+                    !inputText.trim() || tripCommsLocked
+                      ? isChatLight && chatLt
+                        ? chatLt.sendDisabledIcon
+                        : 'rgba(186,201,222,0.42)'
+                      : isChatLight && chatLt
+                        ? chatLt.sendIcon
+                        : '#08111F'
+                  }
+                />
               </TouchableOpacity>
-            )}
-          />
-        </View>
-
-        {/* 🆕 Spam/Küfür Uyarı Mesajı */}
-        {spamWarning ? (
-          <View style={styles.warningContainer}>
-            <Text style={styles.warningText}>{spamWarning}</Text>
+            </View>
           </View>
-        ) : null}
-
-        {/* Input — klavye yüksekliği ile altta sabit; gönderince klavye kapanmaz */}
-        <View
-          style={[
-            styles.inputContainer,
-            {
-              paddingBottom:
-                Platform.OS === 'android' && keyboardPad > 0
-                  ? 10
-                  : Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12),
-            },
-          ]}
-        >
-          <TextInput
-            style={styles.input}
-            placeholder="Mesajınızı yazın..."
-            placeholderTextColor="rgba(186,201,222,0.55)"
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={500}
-            editable={!tripCommsLocked}
-          />
-          <TouchableOpacity 
-            style={[
-              styles.sendButton,
-              (!inputText.trim() || tripCommsLocked) && styles.sendButtonDisabled
-            ]}
-            onPress={() => sendMessage(inputText)}
-            disabled={!inputText.trim() || tripCommsLocked}
-          >
-            <Ionicons
-              name="send"
-              size={20}
-              color={(!inputText.trim() || tripCommsLocked) ? 'rgba(186,201,222,0.42)' : '#08111F'}
-            />
-          </TouchableOpacity>
-        </View>
-          </KeyboardAvoidingView>
         </Animated.View>
       </View>
     </Modal>
