@@ -103,18 +103,24 @@ function TripMapMarkerImage({
   );
 }
 
-/** Sürücü Yolcuya Git: rota bearing ile dönen neon yön oku (asset yok, yalnız bu Marker). */
-function DriverNavDirectionPointer() {
+/** Sürücü Yolcuya Git: rota bearing ile dönen yön oku (asset yok, yalnız bu Marker). */
+function DriverNavDirectionPointer({ chromeTone = 'dark' }: { chromeTone?: MapMarkerChromeTone }) {
+  const isLight = chromeTone === 'light';
+  const s = isLight ? navDirectionPointerLightStyles : navDirectionPointerDarkStyles;
+
   return (
     <View collapsable={false} pointerEvents="none" style={navDirectionPointerStyles.root}>
-      <View style={navDirectionPointerStyles.glowOuter} />
-      <View style={navDirectionPointerStyles.glowMid} />
+      {isLight ? <View style={s.groundShadow} /> : null}
+      <View style={s.glowOuter} />
+      <View style={s.glowMid} />
+      {isLight ? <View style={s.capsuleBase} /> : null}
       <View style={navDirectionPointerStyles.arrowWrap}>
-        <View style={navDirectionPointerStyles.arrowHead} />
-        <View style={navDirectionPointerStyles.arrowStem} />
+        <View style={s.arrowHeadStroke} />
+        <View style={s.arrowHead} />
+        <View style={s.arrowStem} />
       </View>
-      <View style={navDirectionPointerStyles.coreRing}>
-        <View style={navDirectionPointerStyles.coreDot} />
+      <View style={s.coreRing}>
+        <View style={s.coreDot} />
       </View>
     </View>
   );
@@ -127,19 +133,27 @@ const navDirectionPointerStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  arrowWrap: {
+    position: 'absolute',
+    top: 5,
+    alignItems: 'center',
+  },
+});
+
+const navDirectionPointerDarkStyles = StyleSheet.create({
   glowOuter: {
     position: 'absolute',
     width: 55,
     height: 55,
     borderRadius: 28,
-    backgroundColor: 'rgba(34, 211, 238, 0.14)',
+    backgroundColor: 'rgba(34, 211, 238, 0.16)',
     ...(Platform.OS === 'android'
-      ? { elevation: 6 }
+      ? { elevation: 7 }
       : {
           shadowColor: '#22D3EE',
           shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.55,
-          shadowRadius: 14,
+          shadowOpacity: 0.62,
+          shadowRadius: 16,
         }),
   },
   glowMid: {
@@ -147,12 +161,22 @@ const navDirectionPointerStyles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: 'rgba(34, 211, 238, 0.28)',
+    backgroundColor: 'rgba(34, 211, 238, 0.32)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(94, 234, 212, 0.42)',
   },
-  arrowWrap: {
+  arrowHeadStroke: {
     position: 'absolute',
-    top: 5,
-    alignItems: 'center',
+    top: -1,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 15,
+    borderRightWidth: 15,
+    borderBottomWidth: 0,
+    borderTopWidth: 27,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: 'rgba(240, 249, 255, 0.42)',
   },
   arrowHead: {
     width: 0,
@@ -176,9 +200,9 @@ const navDirectionPointerStyles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: 'rgba(8, 17, 31, 0.72)',
+    backgroundColor: 'rgba(8, 17, 31, 0.78)',
     borderWidth: 2,
-    borderColor: 'rgba(94, 234, 212, 0.95)',
+    borderColor: 'rgba(94, 234, 212, 0.98)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -187,6 +211,115 @@ const navDirectionPointerStyles = StyleSheet.create({
     height: 7,
     borderRadius: 4,
     backgroundColor: '#F8FAFC',
+  },
+});
+
+const navDirectionPointerLightStyles = StyleSheet.create({
+  groundShadow: {
+    position: 'absolute',
+    bottom: 6,
+    width: 28,
+    height: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.14)',
+    ...(Platform.OS === 'android'
+      ? { elevation: 2 }
+      : {
+          shadowColor: 'rgba(15, 23, 42, 0.28)',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.35,
+          shadowRadius: 4,
+        }),
+  },
+  glowOuter: {
+    position: 'absolute',
+    width: 55,
+    height: 55,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(0, 212, 170, 0.22)',
+    ...(Platform.OS === 'android'
+      ? { elevation: 5 }
+      : {
+          shadowColor: 'rgba(15, 23, 42, 0.22)',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.28,
+          shadowRadius: 10,
+        }),
+  },
+  glowMid: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0, 212, 170, 0.10)',
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(0, 212, 170, 0.28)',
+  },
+  capsuleBase: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+  },
+  arrowHeadStroke: {
+    position: 'absolute',
+    top: -1,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 15,
+    borderRightWidth: 15,
+    borderBottomWidth: 0,
+    borderTopWidth: 27,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: 'rgba(255, 255, 255, 0.98)',
+  },
+  arrowHead: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 14,
+    borderRightWidth: 14,
+    borderBottomWidth: 0,
+    borderTopWidth: 25,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#0F766E',
+  },
+  arrowStem: {
+    width: 10,
+    height: 9,
+    marginTop: -1,
+    borderRadius: 2,
+    backgroundColor: '#0D9488',
+  },
+  coreRing: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 212, 170, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...(Platform.OS === 'android'
+      ? { elevation: 1 }
+      : {
+          shadowColor: 'rgba(15, 23, 42, 0.12)',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.2,
+          shadowRadius: 2,
+        }),
+  },
+  coreDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#0F766E',
   },
 });
 
@@ -6728,7 +6861,7 @@ export default function LiveMapView({
               zIndex={6000}
               tracksViewChanges={false}
             >
-              <DriverNavDirectionPointer />
+              <DriverNavDirectionPointer chromeTone={mapMarkerChrome} />
             </Marker>
           ) : null}
 
