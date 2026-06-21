@@ -114,6 +114,8 @@ export type RoleSelectScreenProps = {
   onSelectRole: (role: 'passenger' | 'driver') => void;
   onSelectVehicle: (kind: 'car' | 'motorcycle') => void;
   onChangeRole: () => void;
+  /** Devam Et API beklerken CTA spinner (RC-P0-1B) */
+  continueBusy?: boolean;
   onContinue: () => void;
   onLogoutPress: () => void;
   onSettingsPress: () => void;
@@ -185,6 +187,7 @@ export function RoleSelectScreen({
   onSelectRole,
   onSelectVehicle,
   onChangeRole,
+  continueBusy = false,
   onContinue,
   onLogoutPress,
   onSettingsPress,
@@ -896,6 +899,7 @@ export function RoleSelectScreen({
             <PremiumGradientCtaButton
               label="Devam Et"
               disabled={!selectedRole || !rideVehicleKind}
+              busy={continueBusy}
               onPress={onContinue}
               accessibilityLabel="Devam et"
               touchableStyleOverrides={

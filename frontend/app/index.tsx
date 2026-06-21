@@ -1235,6 +1235,8 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
   /** Araç veya motor — yolcu tercihi / sürücü kullandığı tip */
   const [rideVehicleKind, setRideVehicleKind] = useState<'car' | 'motorcycle' | null>(null);
+  /** Rol ekranı Devam Et — API beklerken CTA busy (RC-P0-1B) */
+  const [roleContinueBusy, setRoleContinueBusy] = useState(false);
 
   /** Dashboard dalı erken döndüğü için `playTapSound` burada tanımlı olmalı (PassengerDashboard içindekinden ayrı). */
   const playTapSound = useCallback(async () => {}, []);
@@ -4001,8 +4003,12 @@ export default function App() {
       ]).start();
     };
 
+    const ROLE_CONTINUE_FETCH_MS = 15000;
+    const DRIVER_CONTINUE_FAIL_MSG =
+      'Sürücü paneli açılamadı. Bağlantınızı kontrol edip tekrar deneyin.';
+
     const handleContinue = async () => {
-      if (!selectedRole || !rideVehicleKind) return;
+      if (!selectedRole || !rideVehicleKind || roleContinueBusy) return;
       void playUiTapSound();
       roleScreenHaptic();
       console.log('DRIVER_CONTINUE_PRESSED', {
@@ -4010,15 +4016,17 @@ export default function App() {
         ride_vehicle_kind: rideVehicleKind,
         user_id: user?.id ?? null,
       });
+      setRoleContinueBusy(true);
       try {
         if (user?.id) {
           const setRideUrl = `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=${selectedRole}&vehicle_kind=${rideVehicleKind}`;
           if (selectedRole === 'driver') {
-            let setRideRes: Response;
-            try {
-              setRideRes = await fetch(setRideUrl, { method: 'POST' });
-            } catch {
-              appAlert('Hata', 'Bağlantı hatası');
+            const setRideRes = await fetchWithTimeout(setRideUrl, {
+              method: 'POST',
+              timeoutMs: ROLE_CONTINUE_FETCH_MS,
+            });
+            if (!setRideRes) {
+              appAlert('Hata', DRIVER_CONTINUE_FAIL_MSG);
               return;
             }
             const { data: setRideData } = await parseApiJson(setRideRes);
@@ -4045,9 +4053,16 @@ export default function App() {
         }
         // Sürücü seçildiyse KYC kontrolü yap
         if (selectedRole === 'driver') {
-          const kycResponse = await fetch(`${API_URL}/driver/kyc/status?user_id=${user?.id}`);
+          const kycUrl = `${API_URL}/driver/kyc/status?user_id=${encodeURIComponent(String(user?.id ?? ''))}`;
+          const kycResponse = await fetchWithTimeout(kycUrl, {
+            timeoutMs: ROLE_CONTINUE_FETCH_MS,
+          });
+          if (!kycResponse) {
+            appAlert('Hata', DRIVER_CONTINUE_FAIL_MSG);
+            return;
+          }
           const kycData = await kycResponse.json();
-          
+
           if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
             if (user) await saveUser(mergeVehicleIntoUser(user));
             setDriverKycScreenVehicleKind(null);
@@ -4068,7 +4083,7 @@ export default function App() {
           // approved ise KYC durumunu temizle
           setKycStatus(null);
         }
-        
+
         await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
         if (selectedRole && user) {
           const updatedUser = mergeVehicleIntoUser(user);
@@ -4079,11 +4094,11 @@ export default function App() {
               (updatedUser.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind ??
               rideVehicleKind,
           });
-          
+
           // 📍 Hemen konum izni iste
           console.log('📍 Rol seçildi, konum izni isteniyor...');
           requestLocationPermission();
-          
+
           console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue' });
           setScreen('dashboard');
         }
@@ -4092,13 +4107,17 @@ export default function App() {
         if (selectedRole === 'passenger' && user) {
           const updatedUser = mergeVehicleIntoUser(user);
           await saveUser(updatedUser);
-          
+
           // 📍 Konum izni iste
           requestLocationPermission();
-          
+
           console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue_catch' });
           setScreen('dashboard');
+        } else if (selectedRole === 'driver') {
+          appAlert('Hata', DRIVER_CONTINUE_FAIL_MSG);
         }
+      } finally {
+        setRoleContinueBusy(false);
       }
     };
 
@@ -4324,6 +4343,7 @@ export default function App() {
         onSelectRole={handleRoleSelect}
         onSelectVehicle={handleRoleSelectVehicle}
         onChangeRole={handleRoleSelectChangeRole}
+        continueBusy={roleContinueBusy}
         onContinue={() => { void handleContinue(); }}
         onLogoutPress={handleRoleSelectLogout}
         onSettingsPress={handleRoleSelectSettings}
