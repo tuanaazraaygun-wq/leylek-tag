@@ -1,6 +1,6 @@
 /**
- * Feature flags — env-driven, default OFF.
- * B3-2: themeChoiceEnabled + lightThemeEnabled remain false until B3-3+.
+ * Feature flags — env-driven via EAS `env` (see eas.json).
+ * Theme release (UX-RELEASE-THEME-1): LIGHT_THEME + THEME_CHOICE + THEME_SETTINGS default OFF when unset.
  */
 
 function readBoolEnv(name: string): boolean {
