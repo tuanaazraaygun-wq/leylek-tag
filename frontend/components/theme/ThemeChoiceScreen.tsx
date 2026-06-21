@@ -34,9 +34,9 @@ type ThemeChoiceOption = {
 };
 
 const OPTIONS: ThemeChoiceOption[] = [
-  { mode: 'dark', label: 'Gece', caption: 'Koyu kokpit', accessibilityLabel: 'Gece teması' },
-  { mode: 'light', label: 'Gündüz', caption: 'Aydınlık görünüm', accessibilityLabel: 'Gündüz teması' },
-  { mode: 'system', label: 'Sistem', caption: 'Cihazınla aynı', accessibilityLabel: 'Sistem teması' },
+  { mode: 'dark', label: 'Karanlık Tema', caption: 'Koyu kokpit görünümü', accessibilityLabel: 'Karanlık tema' },
+  { mode: 'light', label: 'Aydınlık Tema', caption: 'Aydınlık görünüm', accessibilityLabel: 'Aydınlık tema' },
+  { mode: 'system', label: 'Sistem temasını kullan', caption: 'Cihazınla aynı', accessibilityLabel: 'Sistem teması' },
 ];
 
 function previewResolved(mode: ThemeMode, systemScheme: ColorSchemeName | null | undefined): ResolvedTheme {

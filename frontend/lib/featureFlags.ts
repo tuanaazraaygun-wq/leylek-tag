@@ -14,7 +14,7 @@ function readBoolEnv(name: string, defaultWhenUnset = false): boolean {
   return defaultWhenUnset;
 }
 
-/** B3-3 — first-run theme choice screen */
+/** B3-3 — first-run theme choice after OTP + legal (lh_theme_choice_done_${userId}) */
 export const themeChoiceEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_CHOICE', true);
 
 /** B3-4+ — light theme rendering */
