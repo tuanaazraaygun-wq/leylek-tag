@@ -1,27 +1,35 @@
 /**
  * Feature flags — env-driven via EAS `env` (see eas.json).
- * Theme release (UX-RELEASE-THEME-1): LIGHT_THEME + THEME_CHOICE + THEME_SETTINGS default OFF when unset.
+ * Theme flags default ON when unset (local release / Gradle APK).
+ * Set EXPO_PUBLIC_FEATURE_*=false to disable explicitly.
  */
 
-function readBoolEnv(name: string): boolean {
+function readBoolEnv(name: string, defaultWhenUnset = false): boolean {
   const value = process.env[name];
-  return value === 'true' || value === '1';
+  if (value === undefined || value === '') {
+    return defaultWhenUnset;
+  }
+  if (value === 'false' || value === '0') return false;
+  if (value === 'true' || value === '1') return true;
+  return defaultWhenUnset;
 }
 
 /** B3-3 — first-run theme choice screen */
-export const themeChoiceEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_CHOICE');
+export const themeChoiceEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_CHOICE', true);
 
 /** B3-4+ — light theme rendering */
-export const lightThemeEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_LIGHT_THEME');
+export const lightThemeEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_LIGHT_THEME', true);
 
 /** B3-5 — settings hub Görünüm segment */
-export const themeSettingsEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_SETTINGS');
+export const themeSettingsEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_SETTINGS', true);
 
-/** B3-6a — comma list e.g. `auth` or `auth,role`; empty = no per-screen light surfaces */
+/** B3-6a — comma list e.g. `auth` or `auth,role`; unset = `*` */
 function parseLightThemeScreens(): ReadonlySet<string> {
-  const raw = process.env.EXPO_PUBLIC_FEATURE_LIGHT_THEME_SCREENS?.trim();
-  if (!raw) return new Set();
-  return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+  const raw = process.env.EXPO_PUBLIC_FEATURE_LIGHT_THEME_SCREENS;
+  if (raw === undefined) return new Set(['*']);
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === 'false' || trimmed === '0') return new Set();
+  return new Set(trimmed.split(',').map((s) => s.trim()).filter(Boolean));
 }
 
 export const lightThemeScreens = parseLightThemeScreens();
