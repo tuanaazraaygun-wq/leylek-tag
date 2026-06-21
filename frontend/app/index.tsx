@@ -122,7 +122,7 @@ import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING, ldsSnapSpacing } from '../design-system/tokens/spacing';
 import { LDS_ILLUSTRATION } from '../design-system/tokens/illustration';
-import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from '../components/auth/premiumAuthChrome';
+import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton, useAuthTheme } from '../components/auth/premiumAuthChrome';
 import {
   PREMIUM_AUTH_CYAN,
   PREMIUM_BORDER_SLATE,
@@ -1100,6 +1100,7 @@ export default function App() {
       isCompact: windowHeight < 660,
     };
   }, [windowWidth, windowHeight]);
+  const { tokens: authTk, lightSurfaces: authLt, authInput: authIn } = useAuthTheme();
   const leylekChrome = useLeylekZekaChrome();
   const [user, setUser] = useState<User | null>(null);
   const [muhabbetDeeplinkGroupId, setMuhabbetDeeplinkGroupId] = useState<string | null>(null);
@@ -2957,24 +2958,24 @@ export default function App() {
           subtitle={`${phone} — test hesabı (SMS yok)`}
         />
         <PremiumGlassShell compactPadding={tpShort}>
-          <Text style={pap.phoneLabel}>{testLoginUserExists ? 'Şifre gir' : 'Şifre oluştur'}</Text>
-          <Text style={pap.otpHint}>
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>{testLoginUserExists ? 'Şifre gir' : 'Şifre oluştur'}</Text>
+          <Text style={[pap.otpHint, authLt?.otpHint]}>
             {testLoginUserExists
               ? 'Bu numara kayıtlı. Test şifrenizi girin.'
               : 'İlk kez giriş: en az 6 karakterlik bir şifre belirleyin.'}
           </Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="lock-closed-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="lock-closed-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               placeholder="••••••"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               secureTextEntry
               value={testLoginPassword}
               onChangeText={setTestLoginPassword}
               autoCapitalize="none"
               autoCorrect={false}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
             />
           </View>
           <PremiumGradientCtaButton
@@ -2996,7 +2997,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Geri dön"
           >
-            <Text style={pap.otpBackText}>Geri Dön</Text>
+            <Text style={[pap.otpBackText, authLt?.otpBackText]}>Geri Dön</Text>
           </TouchableOpacity>
         </PremiumGlassShell>
       </PremiumAuthScreenShell>
@@ -3060,15 +3061,15 @@ export default function App() {
             subtitle="Hesabınızı oluşturun"
           />
           <PremiumGlassShell compactPadding={regShort}>
-            <Text style={pap.phoneLabel}>Adınız</Text>
-            <View style={pap.inputShell}>
-              <Ionicons name="person-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Adınız</Text>
+            <View style={[pap.inputShell, authLt?.inputShell]}>
+              <Ionicons name="person-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
               <TextInput
-                style={pap.inputField}
+                style={[pap.inputField, authLt?.inputField]}
                 placeholder="Adınızı girin"
-                placeholderTextColor="rgba(148,163,184,0.78)"
+                placeholderTextColor={authIn.placeholder}
                 value={firstName}
-                selectionColor={PREMIUM_AUTH_CYAN}
+                selectionColor={authIn.selection}
                 onChangeText={(t) => {
                   if (t.length > firstName.length) void keyCharHaptic();
                   setFirstName(t);
@@ -3076,15 +3077,15 @@ export default function App() {
               />
             </View>
 
-            <Text style={pap.phoneLabel}>Soyadınız</Text>
-            <View style={pap.inputShell}>
-              <Ionicons name="person-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+            <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Soyadınız</Text>
+            <View style={[pap.inputShell, authLt?.inputShell]}>
+              <Ionicons name="person-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
               <TextInput
-                style={pap.inputField}
+                style={[pap.inputField, authLt?.inputField]}
                 placeholder="Soyadınızı girin"
-                placeholderTextColor="rgba(148,163,184,0.78)"
+                placeholderTextColor={authIn.placeholder}
                 value={lastName}
-                selectionColor={PREMIUM_AUTH_CYAN}
+                selectionColor={authIn.selection}
                 onChangeText={(t) => {
                   if (t.length > lastName.length) void keyCharHaptic();
                   setLastName(t);
@@ -3092,9 +3093,9 @@ export default function App() {
               />
             </View>
 
-            <Text style={pap.phoneLabel}>Yaşadığınız şehir</Text>
+            <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Yaşadığınız şehir</Text>
             <TouchableOpacity
-              style={pap.cityPickRowPremium}
+              style={[pap.cityPickRowPremium, authLt?.cityPickRowPremium]}
               onPress={() => {
                 void tapButtonHaptic();
                 setShowCityPicker(true);
@@ -3103,28 +3104,34 @@ export default function App() {
               accessibilityRole="button"
               accessibilityLabel="Şehir seç"
             >
-              <View style={pap.cityPickIconWrap}>
-                <Ionicons name="business-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+              <View style={[pap.cityPickIconWrap, authLt?.cityPickIconWrap]}>
+                <Ionicons name="business-outline" size={22} color={authTk.accent.primary} />
               </View>
               <View style={pap.cityPickTextCol}>
-                <Text style={pap.cityPickHint}>Hizmet bölgeniz</Text>
-                <Text style={selectedCity ? pap.cityPickValue : pap.cityPickPlaceholder} numberOfLines={2}>
+                <Text style={[pap.cityPickHint, authLt?.cityPickHint]}>Hizmet bölgeniz</Text>
+                <Text
+                  style={[
+                    selectedCity ? pap.cityPickValue : pap.cityPickPlaceholder,
+                    selectedCity ? authLt?.cityPickValue : authLt?.cityPickPlaceholder,
+                  ]}
+                  numberOfLines={2}
+                >
                   {selectedCity || 'Şehir seçmek için dokunun'}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="rgba(148,163,184,0.85)" />
+              <Ionicons name="chevron-forward" size={20} color={authIn.iconMuted} />
             </TouchableOpacity>
 
-            <Text style={pap.phoneLabel}>Telefon Numarası</Text>
-            <View style={pap.inputShell}>
-              <Ionicons name="call-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
-              <Text style={pap.authPhonePlusPremium}>+90</Text>
+            <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Telefon Numarası</Text>
+            <View style={[pap.inputShell, authLt?.inputShell]}>
+              <Ionicons name="call-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
+              <Text style={[pap.authPhonePlusPremium, authLt?.authPhonePlusPremium]}>+90</Text>
               <TextInput
-                style={[pap.inputField, { flex: 1 }]}
+                style={[pap.inputField, authLt?.inputField, { flex: 1 }]}
                 placeholder="5XX XXX XX XX"
-                placeholderTextColor="rgba(148,163,184,0.78)"
+                placeholderTextColor={authIn.placeholder}
                 value={phone}
-                selectionColor={PREMIUM_AUTH_CYAN}
+                selectionColor={authIn.selection}
                 onChangeText={(text) => {
                   let cleaned = text.replace(/[^0-9]/g, '');
                   if (cleaned.startsWith('0')) {
@@ -3139,7 +3146,7 @@ export default function App() {
                 maxLength={10}
               />
             </View>
-            <Text style={pap.hintBelowInput}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
+            <Text style={[pap.hintBelowInput, authLt?.hintBelowInput]}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
 
             <PremiumGradientCtaButton
               label="DEVAM ET"
@@ -3191,33 +3198,34 @@ export default function App() {
               accessibilityRole="button"
               accessibilityLabel="Geri dön"
             >
-              <Text style={pap.otpBackText}>Geri Dön</Text>
+              <Text style={[pap.otpBackText, authLt?.otpBackText]}>Geri Dön</Text>
             </TouchableOpacity>
           </PremiumGlassShell>
         </PremiumAuthScreenShell>
 
         {/* Şehir Seçici Modal */}
         <Modal visible={showCityPicker} transparent={true} animationType="slide" onRequestClose={() => setShowCityPicker(false)}>
-          <View style={pap.authBottomSheetBackdrop}>
+          <View style={[pap.authBottomSheetBackdrop, authLt?.authBottomSheetBackdrop]}>
             <TouchableOpacity style={pap.flexOne} activeOpacity={1} onPress={() => setShowCityPicker(false)} />
-            <View style={pap.authCitySheet}>
-              <View style={pap.authSheetGrab} />
-              <Text style={pap.authSheetTitle}>Şehir seçin</Text>
-              <Text style={pap.authSheetSubtitle}>Listeden seçin veya arayın</Text>
-              <View style={pap.authCitySearchRow}>
-                <Ionicons name="search" size={20} color={PREMIUM_AUTH_CYAN} />
+            <View style={[pap.authCitySheet, authLt?.authCitySheet]}>
+              <View style={[pap.authSheetGrab, authLt?.authSheetGrab]} />
+              <Text style={[pap.authSheetTitle, authLt?.authSheetTitle]}>Şehir seçin</Text>
+              <Text style={[pap.authSheetSubtitle, authLt?.authSheetSubtitle]}>Listeden seçin veya arayın</Text>
+              <View style={[pap.authCitySearchRow, authLt?.authCitySearchRow]}>
+                <Ionicons name="search" size={20} color={authTk.accent.primary} />
                 <TextInput
-                  style={pap.authCitySearchInput}
+                  style={[pap.authCitySearchInput, authLt?.authCitySearchInput]}
                   placeholder="İl adı yazın…"
-                  placeholderTextColor="rgba(148,163,184,0.72)"
+                  placeholderTextColor={authIn.placeholderSearch}
                   value={citySearchQuery}
                   onChangeText={setCitySearchQuery}
                   autoCorrect={false}
                   autoCapitalize="words"
+                  selectionColor={authIn.selection}
                 />
                 {citySearchQuery.length > 0 ? (
                   <TouchableOpacity onPress={() => setCitySearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close-circle" size={22} color="rgba(148,163,184,0.85)" />
+                    <Ionicons name="close-circle" size={22} color={authIn.iconMuted} />
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -3227,13 +3235,18 @@ export default function App() {
                 keyboardShouldPersistTaps="handled"
                 style={pap.authCityFlat}
                 ListEmptyComponent={
-                  <Text style={pap.cityEmptyHintPremium}>
+                  <Text style={[pap.cityEmptyHintPremium, authLt?.cityEmptyHintPremium]}>
                     {cities.length === 0 ? 'Şehirler yükleniyor…' : 'Eşleşen şehir yok'}
                   </Text>
                 }
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={[pap.authCityItem, selectedCity === item && pap.authCityItemSelected]}
+                    style={[
+                      pap.authCityItem,
+                      authLt?.authCityItem,
+                      selectedCity === item && pap.authCityItemSelected,
+                      selectedCity === item && authLt?.authCityItemSelected,
+                    ]}
                     onPress={() => {
                       void tapButtonHaptic();
                       setSelectedCity(item);
@@ -3243,15 +3256,24 @@ export default function App() {
                     <Ionicons
                       name="location-outline"
                       size={20}
-                      color={selectedCity === item ? PREMIUM_AUTH_CYAN : 'rgba(148,163,184,0.78)'}
+                      color={selectedCity === item ? authTk.accent.primary : authIn.iconMutedSoft}
                     />
-                    <Text style={[pap.authCityItemText, selectedCity === item && pap.authCityItemTextSelected]}>{item}</Text>
-                    {selectedCity === item ? <Ionicons name="checkmark-circle" size={22} color={PREMIUM_AUTH_CYAN} /> : null}
+                    <Text
+                      style={[
+                        pap.authCityItemText,
+                        authLt?.authCityItemText,
+                        selectedCity === item && pap.authCityItemTextSelected,
+                        selectedCity === item && authLt?.authCityItemTextSelected,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                    {selectedCity === item ? <Ionicons name="checkmark-circle" size={22} color={authTk.accent.primary} /> : null}
                   </TouchableOpacity>
                 )}
               />
-              <TouchableOpacity style={pap.authSheetCloseSoft} onPress={() => setShowCityPicker(false)}>
-                <Text style={pap.authSheetCloseSoftText}>Kapat</Text>
+              <TouchableOpacity style={[pap.authSheetCloseSoft, authLt?.authSheetCloseSoft]} onPress={() => setShowCityPicker(false)}>
+                <Text style={[pap.authSheetCloseSoftText, authLt?.authSheetCloseSoftText]}>Kapat</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3429,17 +3451,17 @@ export default function App() {
           subtitle="6 haneli güvenlik şifrenizi oluşturun"
         />
         <PremiumGlassShell compactPadding={pinShort}>
-          <Text style={pap.phoneLabel}>Şifreniz (6 Hane)</Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Şifreniz (6 Hane)</Text>
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="keypad-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               placeholder="• • • • • •"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               keyboardType="number-pad"
               secureTextEntry={!showPin}
               value={pin}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
               onChangeText={(t) => {
                 if (t.length > pin.length) void keyCharHaptic();
                 setPin(t);
@@ -3454,21 +3476,21 @@ export default function App() {
               accessibilityRole="button"
               accessibilityLabel={showPin ? 'Şifreyi gizle' : 'Şifreyi göster'}
             >
-              <Ionicons name={showPin ? 'eye-off' : 'eye'} size={22} color="rgba(148,163,184,0.85)" />
+              <Ionicons name={showPin ? 'eye-off' : 'eye'} size={22} color={authIn.iconMuted} />
             </TouchableOpacity>
           </View>
 
-          <Text style={pap.phoneLabel}>Şifre Tekrar</Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Şifre Tekrar</Text>
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="keypad-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               placeholder="• • • • • •"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               keyboardType="number-pad"
               secureTextEntry={!showPin}
               value={confirmPin}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
               onChangeText={(t) => {
                 if (t.length > confirmPin.length) void keyCharHaptic();
                 setConfirmPin(t);
@@ -3502,7 +3524,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Geri dön"
           >
-            <Text style={pap.otpBackText}>Geri Dön</Text>
+            <Text style={[pap.otpBackText, authLt?.otpBackText]}>Geri Dön</Text>
           </TouchableOpacity>
         </PremiumGlassShell>
       </PremiumAuthScreenShell>
@@ -3607,17 +3629,17 @@ export default function App() {
           subtitle="6 haneli PIN kodunuzu girin"
         />
         <PremiumGlassShell compactPadding={entShort}>
-          <Text style={pap.phoneLabel}>Şifreniz</Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Şifreniz</Text>
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="keypad-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               placeholder="• • • • • •"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               keyboardType="number-pad"
               secureTextEntry={!showPin}
               value={pin}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
               onChangeText={(t) => {
                 if (t.length > pin.length) void keyCharHaptic();
                 setPin(t);
@@ -3632,7 +3654,7 @@ export default function App() {
               accessibilityRole="button"
               accessibilityLabel={showPin ? 'Şifreyi gizle' : 'Şifreyi göster'}
             >
-              <Ionicons name={showPin ? 'eye-off' : 'eye'} size={22} color="rgba(148,163,184,0.85)" />
+              <Ionicons name={showPin ? 'eye-off' : 'eye'} size={22} color={authIn.iconMuted} />
             </TouchableOpacity>
           </View>
 
@@ -3662,7 +3684,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Geri dön"
           >
-            <Text style={pap.otpBackText}>Geri Dön</Text>
+            <Text style={[pap.otpBackText, authLt?.otpBackText]}>Geri Dön</Text>
           </TouchableOpacity>
         </PremiumGlassShell>
       </PremiumAuthScreenShell>
@@ -3685,21 +3707,21 @@ export default function App() {
           subtitle="Telefon numaranızı girin, size doğrulama kodu göndereceğiz."
         />
         <PremiumGlassShell compactPadding={fpShort}>
-          <Text style={pap.phoneLabel}>Telefon Numarası</Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="call-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
-            <Text style={pap.authPhonePlusPremium}>+90</Text>
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Telefon Numarası</Text>
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="call-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
+            <Text style={[pap.authPhonePlusPremium, authLt?.authPhonePlusPremium]}>+90</Text>
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               value={phone}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
               onChangeText={(text) => {
                 const cleaned = text.replace(/\D/g, '');
                 if (cleaned.length > phone.length) void keyCharHaptic();
                 setPhone(cleaned);
               }}
               placeholder="5XX XXX XX XX"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               keyboardType="phone-pad"
               maxLength={10}
             />
@@ -3762,7 +3784,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Geri dön"
           >
-            <Text style={pap.otpBackText}>Geri Dön</Text>
+            <Text style={[pap.otpBackText, authLt?.otpBackText]}>Geri Dön</Text>
           </TouchableOpacity>
         </PremiumGlassShell>
       </PremiumAuthScreenShell>
@@ -3785,37 +3807,37 @@ export default function App() {
           subtitle={`${phone} numarasına gönderilen kodu girin ve yeni şifrenizi belirleyin`}
         />
         <PremiumGlassShell compactPadding={rpShort}>
-          <Text style={pap.phoneLabel}>Doğrulama Kodu</Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="keypad-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel]}>Doğrulama Kodu</Text>
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="keypad-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               value={otp}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
               onChangeText={(t) => {
                 if (t.length > otp.length) void keyCharHaptic();
                 setOtp(t);
               }}
               placeholder="6 haneli kod"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               keyboardType="number-pad"
               maxLength={6}
             />
           </View>
 
-          <Text style={[pap.phoneLabel, { marginTop: 14 }]}>Yeni Şifre (6 Haneli PIN)</Text>
-          <View style={pap.inputShell}>
-            <Ionicons name="lock-closed-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <Text style={[pap.phoneLabel, authLt?.phoneLabel, { marginTop: 14 }]}>Yeni Şifre (6 Haneli PIN)</Text>
+          <View style={[pap.inputShell, authLt?.inputShell]}>
+            <Ionicons name="lock-closed-outline" size={18} color={authTk.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pap.inputField}
+              style={[pap.inputField, authLt?.inputField]}
               value={pin}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={authIn.selection}
               onChangeText={(t) => {
                 if (t.length > pin.length) void keyCharHaptic();
                 setPin(t);
               }}
               placeholder="6 haneli yeni şifre"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={authIn.placeholder}
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}
@@ -3893,7 +3915,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Geri dön"
           >
-            <Text style={pap.otpBackText}>Geri Dön</Text>
+            <Text style={[pap.otpBackText, authLt?.otpBackText]}>Geri Dön</Text>
           </TouchableOpacity>
         </PremiumGlassShell>
       </PremiumAuthScreenShell>

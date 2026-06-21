@@ -52,6 +52,39 @@ export type AuthLightSurfaces = {
   trustChip: ViewStyle;
   trustChipIconWrap: ViewStyle;
   trustChipIcon: string;
+  hintBelowInput: TextStyle;
+  cityPickRowPremium: ViewStyle;
+  cityPickIconWrap: ViewStyle;
+  cityPickHint: TextStyle;
+  cityPickValue: TextStyle;
+  cityPickPlaceholder: TextStyle;
+  authPhonePlusPremium: TextStyle;
+  authBottomSheetBackdrop: ViewStyle;
+  authCitySheet: ViewStyle;
+  authSheetGrab: ViewStyle;
+  authSheetTitle: TextStyle;
+  authSheetSubtitle: TextStyle;
+  authCitySearchRow: ViewStyle;
+  authCitySearchInput: TextStyle;
+  authCityItem: ViewStyle;
+  authCityItemSelected: ViewStyle;
+  authCityItemText: TextStyle;
+  authCityItemTextSelected: TextStyle;
+  authSheetCloseSoft: ViewStyle;
+  authSheetCloseSoftText: TextStyle;
+  cityEmptyHintPremium: TextStyle;
+  iconMuted: string;
+  iconMutedSoft: string;
+  placeholderSearch: string;
+};
+
+export type AuthInputColors = {
+  placeholder: string;
+  placeholderOtp: string;
+  placeholderSearch: string;
+  selection: string;
+  iconMuted: string;
+  iconMutedSoft: string;
 };
 
 function buildAuthLightSurfaces(tokens: LhThemeTokens): AuthLightSurfaces {
@@ -100,6 +133,51 @@ function buildAuthLightSurfaces(tokens: LhThemeTokens): AuthLightSurfaces {
       borderColor: tokens.border.card,
     },
     trustChipIcon: tokens.text.muted,
+    hintBelowInput: { color: tokens.text.muted },
+    cityPickRowPremium: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    cityPickIconWrap: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.border.card,
+    },
+    cityPickHint: { color: tokens.text.muted },
+    cityPickValue: { color: tokens.text.primary },
+    cityPickPlaceholder: { color: tokens.text.muted },
+    authPhonePlusPremium: { color: tokens.accent.primary },
+    authBottomSheetBackdrop: { backgroundColor: tokens.shadow.modal },
+    authCitySheet: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+    },
+    authSheetGrab: { backgroundColor: tokens.border.card },
+    authSheetTitle: { color: tokens.text.primary },
+    authSheetSubtitle: { color: tokens.text.muted },
+    authCitySearchRow: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    authCitySearchInput: { color: tokens.text.primary },
+    authCityItem: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.card,
+    },
+    authCityItemSelected: {
+      borderColor: tokens.accent.glowHigh,
+      backgroundColor: tokens.accent.glowLow,
+    },
+    authCityItemText: { color: tokens.text.primary },
+    authCityItemTextSelected: { color: tokens.accent.primary },
+    authSheetCloseSoft: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.default,
+    },
+    authSheetCloseSoftText: { color: tokens.text.primary },
+    cityEmptyHintPremium: { color: tokens.text.muted },
+    iconMuted: tokens.text.muted,
+    iconMutedSoft: tokens.text.muted,
+    placeholderSearch: tokens.text.muted,
   };
 }
 
@@ -118,7 +196,19 @@ export function useAuthTheme() {
     [isAuthLight, effectiveTokens],
   );
 
-  return { tokens: effectiveTokens, isAuthLight, lightSurfaces };
+  const authInput = useMemo<AuthInputColors>(
+    () => ({
+      placeholder: lightSurfaces?.placeholder ?? 'rgba(148,163,184,0.78)',
+      placeholderOtp: lightSurfaces?.placeholderOtp ?? 'rgba(148,163,184,0.55)',
+      placeholderSearch: lightSurfaces?.placeholderSearch ?? 'rgba(148,163,184,0.72)',
+      selection: lightSurfaces?.selection ?? effectiveTokens.accent.primary,
+      iconMuted: lightSurfaces?.iconMuted ?? 'rgba(148,163,184,0.85)',
+      iconMutedSoft: lightSurfaces?.iconMutedSoft ?? 'rgba(148,163,184,0.78)',
+    }),
+    [lightSurfaces, effectiveTokens],
+  );
+
+  return { tokens: effectiveTokens, isAuthLight, lightSurfaces, authInput };
 }
 
 /** LHIS kokpit zemin — login / OTP / register / forgot ortak shell. */
