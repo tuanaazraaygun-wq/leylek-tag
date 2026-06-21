@@ -1,5 +1,5 @@
 /**
- * B4-1 — LSX public surface (registry-only; no sensory side effects).
+ * B4 — LSX public surface (registry + gated runtime; flags OFF = zero side effects).
  */
 
 export {
@@ -34,7 +34,9 @@ export {
   lsxMotionEnabled,
   lsxSonicEnabled,
   lsxHapticEnabled,
+  lsxOrchestratorEnabled,
   isLsxMasterEnabled,
+  isLsxOrchestratorEnabled,
   isLsxMotionChannelEnabled,
   isLsxSonicChannelEnabled,
   isLsxHapticChannelEnabled,
@@ -106,3 +108,34 @@ export {
   playLsxSonicEvent,
 } from './sonicController';
 export type { SonicProductionHandlers, PlayLsxSonicEventOptions } from './sonicController';
+
+export {
+  playLsxHapticSemantic,
+  playLsxHapticForToken,
+  playLsxHapticEvent,
+  isHapticSemanticSupported,
+} from './hapticController';
+export type { HapticSemanticId, PlayLsxHapticOptions } from './hapticController';
+
+export { playLsxEvent } from './orchestrator';
+export type { PlayLsxEventOptions } from './orchestrator';
+
+export { orchestratorDedupeAllows, resetOrchestratorDedupeState } from './orchestratorDedupe';
+
+export {
+  playQrSuccessLsx,
+  playQrErrorLsx,
+  playPaymentSuccessLsx,
+  playTrustConnectedLsx,
+  playRatingCompleteLsx,
+} from './qrPaymentTrustBindings';
+export type { LsxBindingOptions } from './qrPaymentTrustBindings';
+
+export {
+  assertLsxManifestSafe,
+  assertLsxRuntimeSafe,
+  listEnabledLsxChannels,
+  listActiveLsxChannels,
+  isLsxProductionDefault,
+} from './qa';
+export type { LsxChannelName } from './qa';

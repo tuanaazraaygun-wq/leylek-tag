@@ -548,6 +548,9 @@ export default function CallScreenV2({
             InCallManager.setForceSpeakerphoneOn(true);
           }
           InCallManager.startRingtone('_DEFAULT_', [0, 600, 300, 600], 'playback', 60);
+          // B4-6 / R-B4-08: Trust-call ring uses an independent looping Vibration pattern.
+          // Do NOT wire LSX haptics (playLsxHaptic*, playLsxEvent) into CallScreenV2 — motor
+          // collision risk. Future LsxSessionGuard must suspend LSX haptics while call active.
           Vibration.vibrate([0, 600, 300, 600], true);
         } catch {
           /* noop */
