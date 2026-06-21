@@ -42,7 +42,6 @@ import {
   shouldTriggerPassengerProactiveInsight,
   wasProactiveShownForTag,
 } from '../lib/leylekZekaProactiveInsight';
-import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
 import LeylekEye, {
   LEYLEK_EYE_FAB_SIZE,
   LEYLEK_EYE_ROLE_SELECT_SIZE,
@@ -935,24 +934,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     playOrbHint,
   ]);
 
-  const logoScale = breathe.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.048],
-  });
-  const logoTilt = tilt.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-2.4deg', '2.4deg'],
-  });
-  const logoLift = flutter.interpolate({
-    inputRange: [0, 1],
-    outputRange: [2, -2],
-  });
-  const flutterPulse = flutter.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.009],
-  });
-  const logoScaleCombined = Animated.multiply(logoScale, flutterPulse);
-
   const onOpen = useCallback(() => {
     markInteraction();
     setLeylekZekaChatOpen(true);
@@ -1153,46 +1134,14 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                         : 'Uygulama içi yardım için dokunun.'
                     }
                   >
-                    {isLightFabChrome ? (
-                      <LeylekEye
-                        size={FAB_SIZE}
-                        chromeTone="default"
-                        themeVariant="light"
-                        motionProfile="fab"
-                        reduceMotion={reduceMotion}
-                        accessibilityLabel="Leylek Zeka"
-                      />
-                    ) : (
-                      <LinearGradient
-                        colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
-                        locations={[0, 0.35, 0.72, 1]}
-                        start={{ x: 0.15, y: 0.1 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.fabGrad}
-                      >
-                        <Animated.View
-                          style={[
-                            styles.logoStage,
-                            reduceMotion
-                              ? undefined
-                              : {
-                                  transform: [
-                                    { translateY: logoLift },
-                                    { scale: logoScaleCombined },
-                                    { rotate: logoTilt },
-                                  ],
-                                },
-                          ]}
-                        >
-                          <Image
-                            source={require('../assets/images/leylek-zeka-eye.png')}
-                            style={styles.logoImage}
-                            resizeMode="contain"
-                            accessibilityIgnoresInvertColors
-                          />
-                        </Animated.View>
-                      </LinearGradient>
-                    )}
+                    <LeylekEye
+                      size={FAB_SIZE}
+                      chromeTone="default"
+                      themeVariant={eyeThemeVariant}
+                      motionProfile="fab"
+                      reduceMotion={reduceMotion}
+                      accessibilityLabel="Leylek Zeka"
+                    />
                   </Pressable>
                   <View
                     style={[

@@ -42,10 +42,10 @@ import {
   type LeylekZekaSendOptions,
 } from '../hooks/useLeylekZeka';
 import { getLeylekZekaContextCopy } from '../lib/leylekZekaUxCopy';
+import LeylekEye, { LEYLEK_EYE_CHAT_HEADER_SIZE } from '../design-system/leylek-eye/LeylekEye';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 const LOGO = require('../assets/images/leylek-logo-premium.png');
-const ZEKA_EYE = require('../assets/images/leylek-zeka-eye.png');
 
 /** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
 const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
@@ -257,6 +257,7 @@ const EmptyWelcome = memo(function EmptyWelcome({
   prompts,
   disabled,
   onPromptPress,
+  isLightShell = false,
 }: {
   title: string;
   body: string;
@@ -266,31 +267,36 @@ const EmptyWelcome = memo(function EmptyWelcome({
   prompts: string[];
   disabled: boolean;
   onPromptPress: (prompt: string) => void;
+  isLightShell?: boolean;
 }) {
   return (
     <View style={styles.emptyState}>
-      <View style={styles.emptyIconWrap}>
+      <View style={[styles.emptyIconWrap, isLightShell && styles.emptyIconWrapLight]}>
         <Image source={LOGO} style={styles.emptyLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyBody} numberOfLines={2}>
+      <Text style={[styles.emptyTitle, isLightShell && styles.emptyTitleLight]}>{title}</Text>
+      <Text style={[styles.emptyBody, isLightShell && styles.emptyBodyLight]} numberOfLines={2}>
         {body}
       </Text>
-      <View style={styles.operationGuideCard}>
+      <View style={[styles.operationGuideCard, isLightShell && styles.operationGuideCardLight]}>
         <View style={styles.operationGuideHeader}>
-          <Ionicons name="shield-checkmark" size={14} color={COCKPIT_CYAN} />
-          <Text style={styles.operationGuideTitle}>{operationTitle}</Text>
+          <Ionicons name="shield-checkmark" size={14} color={isLightShell ? '#0D9488' : COCKPIT_CYAN} />
+          <Text style={[styles.operationGuideTitle, isLightShell && styles.operationGuideTitleLight]}>
+            {operationTitle}
+          </Text>
         </View>
         <View style={styles.operationChecklist}>
           {safeChecklist.slice(0, 2).map((item) => (
             <View key={item} style={styles.operationChecklistRow}>
-              <Ionicons name="checkmark-circle" size={12} color={COCKPIT_CYAN} />
-              <Text style={styles.operationChecklistText}>{item}</Text>
+              <Ionicons name="checkmark-circle" size={12} color={isLightShell ? '#0D9488' : COCKPIT_CYAN} />
+              <Text style={[styles.operationChecklistText, isLightShell && styles.operationChecklistTextLight]}>
+                {item}
+              </Text>
             </View>
           ))}
         </View>
       </View>
-      <Text style={styles.emptyPromptTitle}>Hızlı başlangıç</Text>
+      <Text style={[styles.emptyPromptTitle, isLightShell && styles.emptyPromptTitleLight]}>Hızlı başlangıç</Text>
       <View style={styles.emptyPromptGrid}>
         {prompts.map((prompt) => (
           <Pressable
@@ -301,11 +307,12 @@ const EmptyWelcome = memo(function EmptyWelcome({
             accessibilityLabel={prompt}
             style={({ pressed }) => [
               styles.emptyPromptChip,
+              isLightShell && styles.emptyPromptChipLight,
               disabled && styles.emptyPromptChipDisabled,
               pressed && !disabled && styles.emptyPromptChipPressed,
             ]}
           >
-            <Text style={styles.emptyPromptText}>{prompt}</Text>
+            <Text style={[styles.emptyPromptText, isLightShell && styles.emptyPromptTextLight]}>{prompt}</Text>
           </Pressable>
         ))}
       </View>
@@ -313,7 +320,7 @@ const EmptyWelcome = memo(function EmptyWelcome({
   );
 });
 
-/** Başlık logosu — hafif nefes (scale), spin yok */
+/** Başlık logosu — canonical LeylekEye (SVG + guardian motion). */
 const HeaderLogoMark = memo(function HeaderLogoMark({
   reduceMotion,
   isLightShell = false,
@@ -321,43 +328,17 @@ const HeaderLogoMark = memo(function HeaderLogoMark({
   reduceMotion: boolean;
   isLightShell?: boolean;
 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (reduceMotion) {
-      pulse.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 2400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 2400,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, reduceMotion]);
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
-  const floatY = pulse.interpolate({ inputRange: [0, 1], outputRange: [0, -2.5] });
   return (
-    <Animated.View
-      style={[
-        styles.headerLogoWrapCompact,
-        isLightShell && styles.headerLogoWrapCompactLight,
-        !reduceMotion && { transform: [{ translateY: floatY }, { scale }] },
-      ]}
-    >
-      <Image source={ZEKA_EYE} style={styles.headerLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
-    </Animated.View>
+    <View style={styles.headerLogoSlot}>
+      <LeylekEye
+        size={LEYLEK_EYE_CHAT_HEADER_SIZE}
+        chromeTone="subtle"
+        themeVariant={isLightShell ? 'light' : 'dark'}
+        motionProfile="guardian"
+        reduceMotion={reduceMotion}
+        accessibilityLabel="Leylek Zeka"
+      />
+    </View>
   );
 });
 
@@ -1328,7 +1309,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             locations={[0, 0.5, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.headerBar, { borderColor: headerBarBorder }]}
+            style={[styles.headerBar, styles.headerBarCompact, { borderColor: headerBarBorder }]}
           >
             <LinearGradient
               colors={[COCKPIT_CYAN, '#3FA9F5', '#2563EB']}
@@ -1338,7 +1319,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               pointerEvents="none"
             />
             <LinearGradient
-              colors={['rgba(34, 211, 238, 0.14)', 'transparent', 'rgba(37, 99, 235, 0.1)']}
+              colors={
+                isLightShell
+                  ? (['rgba(0,212,170,0.05)', 'transparent', 'rgba(14,165,233,0.03)'] as const)
+                  : (['rgba(34, 211, 238, 0.14)', 'transparent', 'rgba(37, 99, 235, 0.1)'] as const)
+              }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.headerBarGlow}
@@ -1348,11 +1333,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               <View style={styles.headerLead}>
                 <HeaderLogoMark reduceMotion={reduceMotion} isLightShell={isLightShell} />
                 <View style={styles.headerTextCol}>
-                  <Text style={[styles.heroEyebrow, isLightShell && { color: tokens.accent.primary }]}>
+                  <Text style={[styles.heroEyebrow, styles.heroEyebrowCompact, isLightShell && { color: tokens.accent.primary }]}>
                     {headerHeroTagline}
                   </Text>
                   <View style={styles.titleRow}>
-                    <Text style={[styles.title, isLightShell && { color: tokens.text.primary }]}>
+                    <Text
+                      style={[styles.title, styles.titleCompact, isLightShell && { color: tokens.text.primary }]}
+                      numberOfLines={1}
+                    >
                       Leylek Zeka
                     </Text>
                     <LinearGradient
@@ -1365,16 +1353,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                     </LinearGradient>
                   </View>
                   <Text
-                    style={[styles.headerSubtitle, isLightShell && { color: tokens.text.muted }]}
+                    style={[styles.headerSubtitle, styles.headerSubtitleCompact, isLightShell && { color: tokens.text.muted }]}
                     numberOfLines={1}
                   >
                     {headerSubtitle}
+                    {modeCaption ? ` · ${modeCaption}` : ''}
                   </Text>
-                  {modeCaption ? (
-                    <Text style={[styles.modeCaptionInline, isLightShell && { color: tokens.text.muted }]}>
-                      {modeCaption}
-                    </Text>
-                  ) : null}
                   <View style={styles.speechControlsRow}>
                     <Pressable
                       onPress={toggleSpeechEnabled}
@@ -1383,17 +1367,36 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                       accessibilityLabel="Sesli cevap"
                       style={({ pressed }) => [
                         styles.speechToggle,
+                        isLightShell && styles.speechToggleLight,
                         speechEnabled && styles.speechToggleOn,
+                        speechEnabled && isLightShell && styles.speechToggleOnLight,
+                        !speechEnabled && isLightShell && styles.speechToggleOffLight,
                         pressed && styles.speechTogglePressed,
                       ]}
                     >
                       <Ionicons
                         name={speechEnabled ? 'volume-high' : 'volume-mute'}
                         size={12}
-                        color={speechEnabled ? '#1D4ED8' : '#64748B'}
+                        color={
+                          speechEnabled
+                            ? isLightShell
+                              ? tokens.accent.primary
+                              : '#1D4ED8'
+                            : isLightShell
+                              ? tokens.text.muted
+                              : '#64748B'
+                        }
                       />
-                      <Text style={[styles.speechToggleText, speechEnabled && styles.speechToggleTextOn]}>
-                        Sesli cevap {speechEnabled ? 'açık' : 'kapalı'}
+                      <Text
+                        style={[
+                          styles.speechToggleText,
+                          isLightShell && styles.speechToggleTextLight,
+                          speechEnabled && styles.speechToggleTextOn,
+                          speechEnabled && isLightShell && styles.speechToggleTextOnLight,
+                          !speechEnabled && isLightShell && styles.speechToggleTextOffLight,
+                        ]}
+                      >
+                        Sesli {speechEnabled ? 'açık' : 'kapalı'}
                       </Text>
                     </Pressable>
                     {isSpeaking ? (
@@ -1403,7 +1406,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                         accessibilityLabel="Sesli cevabı durdur"
                         style={({ pressed }) => [
                           styles.speechMiniControl,
+                          isLightShell && styles.speechMiniControlLight,
                           styles.speechMiniControlStop,
+                          isLightShell && styles.speechMiniControlStopLight,
                           pressed && styles.speechMiniControlPressed,
                         ]}
                       >
@@ -1420,11 +1425,19 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                         accessibilityLabel="Son Leylek Zeka cevabını tekrar oku"
                         style={({ pressed }) => [
                           styles.speechMiniControl,
+                          isLightShell && styles.speechMiniControlLight,
                           pressed && styles.speechMiniControlPressed,
                         ]}
                       >
-                        <Ionicons name="refresh" size={12} color="#1D4ED8" />
-                        <Text style={styles.speechMiniControlText}>Tekrar oku</Text>
+                        <Ionicons name="refresh" size={12} color={isLightShell ? tokens.accent.primary : '#1D4ED8'} />
+                        <Text
+                          style={[
+                            styles.speechMiniControlText,
+                            isLightShell && styles.speechMiniControlTextLight,
+                          ]}
+                        >
+                          Tekrar oku
+                        </Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -1434,7 +1447,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             <Pressable
               onPress={closeWithHaptic}
               hitSlop={14}
-              style={[styles.closeBtn, isLightShell && styles.closeBtnLight]}
+              style={[styles.closeBtn, styles.closeBtnCompact, isLightShell && styles.closeBtnLight]}
             >
               <Ionicons
                 name="close"
@@ -1445,8 +1458,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           </LinearGradient>
 
           {showBetaHint ? (
-            <View style={styles.betaBanner}>
-              <Text style={styles.betaText}>
+            <View style={[styles.betaBanner, isLightShell && styles.betaBannerLight]}>
+              <Text style={[styles.betaText, isLightShell && styles.betaTextLight]}>
                 Akıllı rehber aktif · Güvenli akış kontrol altında · Yazı veya sesli sorabilirsiniz.
               </Text>
               <Pressable onPress={dismissBetaHint} hitSlop={8} style={styles.betaDismiss}>
@@ -1456,12 +1469,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           ) : null}
 
           {error ? (
-            <Pressable onPress={onClearError} style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+            <Pressable onPress={onClearError} style={[styles.errorBanner, isLightShell && styles.errorBannerLight]}>
+              <Text style={[styles.errorText, isLightShell && styles.errorTextLight]}>{error}</Text>
             </Pressable>
           ) : null}
 
-          <View style={styles.listWrap}>
+          <View style={[styles.listWrap, isLightShell && styles.listWrapLight]}>
             <FlatList
               ref={listRef}
               data={messages}
@@ -1497,23 +1510,28 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   prompts={contextCopy.starterPrompts}
                   disabled={isTyping}
                   onPromptPress={onStarterPromptPress}
+                  isLightShell={isLightShell}
                 />
               }
               ListFooterComponent={
                 isTyping ? (
-                  <View style={styles.typingBubbleOuter}>
+                  <View style={[styles.typingBubbleOuter, isLightShell && styles.typingBubbleOuterLight]}>
                     <LinearGradient
                       colors={[...BRAND_GRADIENT]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 0, y: 1 }}
                       style={styles.typingAccent}
                     />
-                    <View style={styles.typingBubbleInner}>
+                    <View style={[styles.typingBubbleInner, isLightShell && styles.typingBubbleInnerLight]}>
                       <View style={styles.thinkingHeaderRow}>
-                        <Ionicons name="sparkles" size={13} color="#2563EB" />
-                        <Text style={styles.thinkingTitle}>Leylek Zeka düşünüyor</Text>
+                        <Ionicons name="sparkles" size={13} color={isLightShell ? '#2563EB' : '#2563EB'} />
+                        <Text style={[styles.thinkingTitle, isLightShell && styles.thinkingTitleLight]}>
+                          Leylek Zeka düşünüyor
+                        </Text>
                       </View>
-                      <Text style={styles.thinkingSubtitle}>Yanıt hazırlanıyor...</Text>
+                      <Text style={[styles.thinkingSubtitle, isLightShell && styles.thinkingSubtitleLight]}>
+                        Yanıt hazırlanıyor...
+                      </Text>
                       <TypingBars />
                     </View>
                   </View>
@@ -1549,8 +1567,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 disabled={isTyping}
                 style={({ pressed }) => [
                   styles.voiceHoldZone,
+                  isLightShell && styles.voiceHoldZoneLight,
                   isListening && styles.voiceHoldZoneListening,
                   voiceInputError ? styles.voiceHoldZoneError : null,
+                  voiceInputError && isLightShell ? styles.voiceHoldZoneErrorLight : null,
                   isTyping && styles.voiceHoldZoneDisabled,
                   pressed && !isTyping && styles.voiceHoldZonePressed,
                 ]}
@@ -1565,7 +1585,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   />
                 ) : null}
                 <View style={styles.voiceHoldInner}>
-                  <View style={styles.voiceHoldIconWrap}>
+                  <View style={[styles.voiceHoldIconWrap, isLightShell && !isListening && styles.voiceHoldIconWrapLight]}>
                     {isListening && !reduceMotion ? (
                       <Animated.View
                         pointerEvents="none"
@@ -1575,7 +1595,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                     <Ionicons
                       name={isListening ? 'mic' : 'mic-outline'}
                       size={28}
-                      color={isListening ? '#FFFFFF' : COCKPIT_CYAN}
+                      color={isListening ? '#FFFFFF' : isLightShell ? tokens.accent.primary : COCKPIT_CYAN}
                     />
                   </View>
                   <View style={styles.voiceHoldTextCol}>
@@ -1592,6 +1612,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                         style={[
                           styles.voiceStatusTitle,
                           isListening ? styles.voiceStatusTitleOnDark : null,
+                          !isListening && isLightShell ? styles.voiceStatusTitleLight : null,
                           voiceInputError ? styles.voiceStatusTitleError : null,
                         ]}
                         numberOfLines={1}
@@ -1603,6 +1624,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                       style={[
                         styles.voiceStatusBody,
                         isListening ? styles.voiceStatusBodyOnDark : null,
+                        !isListening && isLightShell ? styles.voiceStatusBodyLight : null,
                         voiceInputError ? styles.voiceStatusBodyError : null,
                       ]}
                       numberOfLines={2}
@@ -1832,6 +1854,11 @@ const styles = StyleSheet.create({
       android: { elevation: 4 },
     }),
   },
+  headerBarCompact: {
+    paddingTop: Spacing.sm + 2,
+    paddingBottom: Spacing.xs + 2,
+    marginBottom: Spacing.xs + 2,
+  },
   headerBrandStrip: {
     position: 'absolute',
     top: 0,
@@ -1850,7 +1877,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     flex: 1,
-    paddingRight: 36,
+    paddingRight: 34,
     minWidth: 0,
   },
   titleRow: {
@@ -1897,40 +1924,15 @@ const styles = StyleSheet.create({
     color: COCKPIT_CYAN,
     marginBottom: 4,
   },
-  headerLogoWrapCompact: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(15, 30, 52, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 211, 238, 0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  heroEyebrowCompact: {
+    fontSize: 9,
+    letterSpacing: 0.9,
+    marginBottom: 2,
+  },
+  headerLogoSlot: {
     marginRight: Spacing.sm,
-    marginTop: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: COCKPIT_CYAN,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.12,
-        shadowRadius: 4,
-      },
-      android: { elevation: 1 },
-    }),
-  },
-  headerLogoWrapCompactLight: {
-    backgroundColor: '#FFFFFF',
-    borderColor: 'rgba(0,212,170,0.28)',
-    ...Platform.select({
-      ios: {
-        shadowColor: 'rgba(15,23,42,0.10)',
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  headerLogo: {
-    width: 30,
-    height: 30,
+    marginTop: 0,
+    flexShrink: 0,
   },
   headerTextCol: {
     flex: 1,
@@ -1944,6 +1946,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     flexShrink: 1,
   },
+  titleCompact: {
+    fontSize: 17,
+    lineHeight: 21,
+    letterSpacing: -0.22,
+  },
   headerSubtitle: {
     fontSize: 12,
     color: 'rgba(186, 230, 253, 0.82)',
@@ -1951,6 +1958,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.02,
     lineHeight: 16,
+  },
+  headerSubtitleCompact: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 2,
   },
   modeCaptionInline: {
     fontFamily: DIGITAL_MONO,
@@ -1966,8 +1978,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 5,
-    marginTop: 6,
+    gap: 4,
+    marginTop: 4,
   },
   speechToggle: {
     flexDirection: 'row',
@@ -1980,9 +1992,21 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(34, 211, 238, 0.22)',
   },
+  speechToggleLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(15,23,42,0.12)',
+  },
   speechToggleOn: {
     backgroundColor: 'rgba(37, 99, 235, 0.35)',
     borderColor: 'rgba(34, 211, 238, 0.45)',
+  },
+  speechToggleOnLight: {
+    backgroundColor: 'rgba(0,212,170,0.14)',
+    borderColor: 'rgba(0,212,170,0.42)',
+  },
+  speechToggleOffLight: {
+    backgroundColor: 'rgba(241,245,249,0.98)',
+    borderColor: 'rgba(100,116,139,0.28)',
   },
   speechTogglePressed: {
     opacity: 0.82,
@@ -1995,8 +2019,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.04,
   },
+  speechToggleTextLight: {
+    color: 'rgba(71,85,105,0.92)',
+  },
   speechToggleTextOn: {
     color: COCKPIT_CYAN,
+  },
+  speechToggleTextOnLight: {
+    color: '#0F766E',
+    fontWeight: '800',
+  },
+  speechToggleTextOffLight: {
+    color: 'rgba(100,116,139,0.92)',
   },
   speechMiniControl: {
     flexDirection: 'row',
@@ -2009,9 +2043,17 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(34, 211, 238, 0.22)',
   },
+  speechMiniControlLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(15,23,42,0.10)',
+  },
   speechMiniControlStop: {
     backgroundColor: 'rgba(48, 18, 24, 0.88)',
     borderColor: 'rgba(248, 113, 113, 0.35)',
+  },
+  speechMiniControlStopLight: {
+    backgroundColor: 'rgba(254,242,242,0.98)',
+    borderColor: 'rgba(248,113,113,0.35)',
   },
   speechMiniControlPressed: {
     opacity: 0.82,
@@ -2022,6 +2064,9 @@ const styles = StyleSheet.create({
     lineHeight: 12,
     color: COCKPIT_CYAN,
     fontWeight: '800',
+  },
+  speechMiniControlTextLight: {
+    color: '#0D9488',
   },
   speechMiniControlTextStop: {
     color: '#FCA5A5',
@@ -2046,6 +2091,11 @@ const styles = StyleSheet.create({
       android: { elevation: 3 },
     }),
   },
+  closeBtnCompact: {
+    top: Spacing.xs + 2,
+    padding: 8,
+    borderRadius: 18,
+  },
   closeBtnLight: {
     backgroundColor: 'rgba(255,255,255,0.94)',
     borderColor: 'rgba(15,23,42,0.10)',
@@ -2061,6 +2111,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(34, 211, 238, 0.28)',
   },
+  betaBannerLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(0,212,170,0.22)',
+  },
   betaText: {
     flex: 1,
     fontSize: 11,
@@ -2068,6 +2122,9 @@ const styles = StyleSheet.create({
     color: 'rgba(186, 230, 253, 0.88)',
     paddingRight: Spacing.sm,
     fontWeight: '600',
+  },
+  betaTextLight: {
+    color: 'rgba(51,65,85,0.92)',
   },
   betaDismiss: {
     paddingTop: 2,
@@ -2080,11 +2137,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(248, 113, 113, 0.28)',
   },
+  errorBannerLight: {
+    backgroundColor: 'rgba(254,242,242,0.96)',
+    borderColor: 'rgba(248,113,113,0.32)',
+  },
   errorText: {
     fontFamily: DIGITAL_MONO,
     color: '#FCA5A5',
     fontSize: 11,
     lineHeight: 16,
+  },
+  errorTextLight: {
+    color: '#B91C1C',
   },
   listWrap: {
     flex: 1,
@@ -2096,6 +2160,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(34, 211, 238, 0.18)',
     overflow: 'hidden',
     backgroundColor: 'rgba(6, 12, 22, 0.78)',
+  },
+  listWrapLight: {
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderColor: 'rgba(15,23,42,0.10)',
   },
   list: {
     flex: 1,
@@ -2138,6 +2206,16 @@ const styles = StyleSheet.create({
       android: { elevation: 4 },
     }),
   },
+  emptyIconWrapLight: {
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderColor: 'rgba(0,212,170,0.24)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.08)',
+      },
+      android: { elevation: 2 },
+    }),
+  },
   emptyLogo: {
     width: 40,
     height: 40,
@@ -2149,6 +2227,9 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     textAlign: 'center',
   },
+  emptyTitleLight: {
+    color: 'rgba(15,23,42,0.92)',
+  },
   emptyBody: {
     marginTop: Spacing.sm,
     textAlign: 'center',
@@ -2156,6 +2237,9 @@ const styles = StyleSheet.create({
     color: 'rgba(186, 230, 253, 0.78)',
     fontSize: 13,
     fontWeight: '500',
+  },
+  emptyBodyLight: {
+    color: 'rgba(71,85,105,0.88)',
   },
   operationGuideCard: {
     width: '100%',
@@ -2166,6 +2250,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(12, 24, 42, 0.72)',
     borderWidth: 1,
     borderColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  operationGuideCardLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(15,23,42,0.10)',
   },
   operationGuideHeader: {
     flexDirection: 'row',
@@ -2181,6 +2269,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
+  },
+  operationGuideTitleLight: {
+    color: '#0F766E',
   },
   operationGuideBody: {
     fontFamily: DIGITAL_MONO,
@@ -2206,6 +2297,9 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     color: 'rgba(226, 232, 240, 0.9)',
     fontWeight: '600',
+  },
+  operationChecklistTextLight: {
+    color: 'rgba(51,65,85,0.92)',
   },
   bubbleWrap: { marginBottom: Spacing.md, maxWidth: '92%' },
   bubbleWrapUser: { alignSelf: 'flex-end' },
@@ -2302,6 +2396,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     width: '100%',
   },
+  emptyPromptTitleLight: {
+    color: 'rgba(100,116,139,0.92)',
+  },
   emptyPromptGrid: {
     width: '100%',
     marginTop: 8,
@@ -2315,6 +2412,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(34, 211, 238, 0.2)',
   },
+  emptyPromptChipLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(15,23,42,0.10)',
+  },
   emptyPromptChipPressed: {
     opacity: 0.88,
     borderColor: 'rgba(34, 211, 238, 0.45)',
@@ -2327,6 +2428,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: 'rgba(226, 232, 240, 0.92)',
     fontWeight: '600',
+  },
+  emptyPromptTextLight: {
+    color: 'rgba(51,65,85,0.92)',
   },
   typingBubbleOuter: {
     alignSelf: 'flex-start',
@@ -2349,6 +2453,10 @@ const styles = StyleSheet.create({
       android: { elevation: 2 },
     }),
   },
+  typingBubbleOuterLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(15,23,42,0.10)',
+  },
   typingAccent: {
     width: 5,
     minHeight: 52,
@@ -2359,6 +2467,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 2,
     backgroundColor: 'rgba(12, 24, 42, 0.92)',
+  },
+  typingBubbleInnerLight: {
+    backgroundColor: 'rgba(255,255,255,0.98)',
   },
   thinkingHeaderRow: {
     flexDirection: 'row',
@@ -2381,6 +2492,12 @@ const styles = StyleSheet.create({
     color: 'rgba(186, 230, 253, 0.72)',
     fontWeight: '600',
     marginBottom: 7,
+  },
+  thinkingTitleLight: {
+    color: '#2563EB',
+  },
+  thinkingSubtitleLight: {
+    color: 'rgba(71,85,105,0.82)',
   },
   typingRow: {
     flexDirection: 'row',
@@ -2476,12 +2593,27 @@ const styles = StyleSheet.create({
       android: { elevation: 3 },
     }),
   },
+  voiceHoldZoneLight: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(0,212,170,0.28)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15,23,42,0.08)',
+        shadowOpacity: 0.1,
+      },
+      android: { elevation: 2 },
+    }),
+  },
   voiceHoldZoneListening: {
     borderColor: 'rgba(29, 78, 216, 0.72)',
   },
   voiceHoldZoneError: {
     borderColor: 'rgba(248, 113, 113, 0.4)',
     backgroundColor: 'rgba(48, 18, 24, 0.72)',
+  },
+  voiceHoldZoneErrorLight: {
+    backgroundColor: 'rgba(254,242,242,0.96)',
+    borderColor: 'rgba(248,113,113,0.35)',
   },
   voiceHoldZoneDisabled: {
     opacity: 0.42,
@@ -2506,6 +2638,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8, 18, 32, 0.65)',
     borderWidth: 1,
     borderColor: 'rgba(34, 211, 238, 0.35)',
+  },
+  voiceHoldIconWrapLight: {
+    backgroundColor: 'rgba(0,212,170,0.08)',
+    borderColor: 'rgba(0,212,170,0.24)',
   },
   voiceHoldPulseRing: {
     position: 'absolute',
@@ -2580,6 +2716,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.04,
   },
+  voiceStatusTitleLight: {
+    color: 'rgba(15,23,42,0.92)',
+  },
   voiceStatusTitleOnDark: {
     color: '#FFFFFF',
   },
@@ -2593,6 +2732,9 @@ const styles = StyleSheet.create({
     color: 'rgba(186, 230, 253, 0.75)',
     fontWeight: '600',
     marginTop: 2,
+  },
+  voiceStatusBodyLight: {
+    color: 'rgba(71,85,105,0.82)',
   },
   voiceStatusBodyOnDark: {
     color: 'rgba(255, 255, 255, 0.92)',

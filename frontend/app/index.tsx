@@ -19147,7 +19147,7 @@ function DriverDashboard({
                       </PremiumText>
                     </View>
                     <View style={dws.cockpitHeaderActions}>
-                      <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} />
+                      <LeylekEyeTrigger onPress={openLeylekZekaFromMapDriver} themeVariant={dwsLt ? 'light' : 'dark'} />
                       <TouchableOpacity
                         style={[dws.cockpitHeaderBtnShell, dwsLt?.cockpitHeaderBtnShell]}
                         onPress={() => onDriverOfferOpenProfile?.()}
