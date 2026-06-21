@@ -1,8 +1,27 @@
 {
   "manifestVersion": "1.0.0",
-  "brandIdentityVersion": "B5-v1",
-  "status": "design-lab-only",
-  "productionTouched": false,
+  "brandIdentityVersion": "B5.2-v1.0",
+  "geometryFreeze": "2026-06-21",
+  "geometryDocs": [
+    "06_LOGO_GEOMETRY_CONSTITUTION.md",
+    "07_MARKER_GEOMETRY_CONSTITUTION.md",
+    "08_SHARED_ICON_SYSTEM.md",
+    "09_EXPORT_SYSTEM.md",
+    "10_BRAND_DRIFT_RULES.md",
+    "11_BRAND_FREEZE_CHECKLIST.md"
+  ],
+  "status": "B6-2-production-sync",
+  "productionTouched": true,
+  "lastProductionSync": {
+    "sprint": "B6-2",
+    "date": "2026-06-21",
+    "exportTool": "resvg-js 2.6.2-beta.1",
+    "targets": [
+      "frontend/assets/images/leylek-logo-premium.png",
+      "frontend/assets/ios.premium.logo.png",
+      "frontend/android/app/src/main/res/drawable-*/splashscreen_logo.png"
+    ]
+  },
   "primarySourceLogo": "frontend/assets/images/leylek-logo-premium.png",
   "canonicalDecision": "Evolve premium stork + orbital arc — NOT F1 Meridian Wing",
   "colorTokens": {
@@ -59,9 +78,11 @@
       { "px": 64, "source": "markers/*.svg", "scale": 1.33 }
     ]
   },
+  "similarityTarget": "95-98% silhouette vs leylek-logo-premium.png",
+  "correction": "B5.1 — removed crown/mascot drift; master PNG is SSOT",
   "limitations": [
-    "SVG is hand-traced approximation from leylek-logo-premium.png — not automated vector trace",
-    "Silhouette IoU overlay QA required before DNA freeze (target ≥85%)",
+    "SVG is hand-traced reconstruction from leylek-logo-premium.png MASTER",
+    "Silhouette IoU overlay QA required before DNA freeze (target 95-98%)",
     "PNG raster exports not bundled — generate from SVG via export ladder",
     "3D metal shading simplified to flat/semi-flat fills per B5 spec",
     "F1 Meridian Wing explicitly excluded from ship path"
