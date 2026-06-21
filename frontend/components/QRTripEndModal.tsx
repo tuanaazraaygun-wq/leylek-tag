@@ -8,7 +8,9 @@ import {
   Dimensions,
   Vibration,
   ScrollView,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -85,6 +87,8 @@ export default function QRTripEndModal({
 }: QRTripEndModalProps) {
   const { qrSurfaces: qrLt, ui: qrUi } = useQrPaymentTrustTheme('qr');
   const { paymentSurfaces: payLt, ui: payUi } = useQrPaymentTrustTheme('payment');
+  const insets = useSafeAreaInsets();
+  const footerPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
   const isTrustedDirect = String(matchChannel || '').trim().toLowerCase() === 'trusted';
   const effectiveBookingPaymentMethod: PaymentMethod | null =
     isTrustedDirect && bookingPaymentMethod === 'card' ? null : bookingPaymentMethod;
@@ -409,13 +413,91 @@ export default function QRTripEndModal({
             ? 'Sürücü QR kodunu okut — yolculuk tamamlanır.'
             : 'Yolculuğu güvenli şekilde tamamlamak için QR kodunu okut.';
 
+  const showPaymentFooter = !isDriver && passengerStep === 'payment';
+
+  const renderPaymentFooter = () => {
+    if (!showPaymentFooter) return null;
+    const primaryIconColor = payLt ? payUi.selectedIcon : payUi.accent;
+
+    return (
+      <View style={styles.paymentFooter}>
+        {effectiveBookingPaymentMethod === 'cash' && (
+          <TouchableOpacity
+            style={[styles.primaryPayBtn, payLt?.primaryPayBtn]}
+            onPress={() => handlePassengerPaymentConfirm('cash')}
+            disabled={processing}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="cash-outline" size={24} color={primaryIconColor} />
+            <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
+              Ödemeyi yaptım — yolculuğu tamamla
+            </PremiumText>
+          </TouchableOpacity>
+        )}
+
+        {showCardPaymentOption && effectiveBookingPaymentMethod === 'card' && (
+          <TouchableOpacity
+            style={[styles.primaryPayBtn, payLt?.primaryPayBtn]}
+            onPress={() => handlePassengerPaymentConfirm('card')}
+            disabled={processing}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="card-outline" size={24} color={primaryIconColor} />
+            <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
+              Kart ile katkıyı ilettiğimi onayla
+            </PremiumText>
+          </TouchableOpacity>
+        )}
+
+        {!effectiveBookingPaymentMethod && (
+          <TouchableOpacity
+            style={[
+              styles.primaryPayBtn,
+              payLt?.primaryPayBtn,
+              (!legacyPaymentPick || processing) && styles.primaryPayBtnDisabled,
+            ]}
+            onPress={handleLegacyConfirm}
+            disabled={processing || !legacyPaymentPick}
+            activeOpacity={0.88}
+          >
+            <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
+              Onayla ve yolculuğu bitir
+            </PremiumText>
+          </TouchableOpacity>
+        )}
+
+        {processing ? (
+          <View style={styles.processingRow}>
+            <ActivityIndicator size="small" color={payUi.activity} />
+            <PremiumText variant="caption" muted style={styles.processingInlineText}>
+              Yolculuk tamamlanıyor
+            </PremiumText>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.backScan, payLt?.backScan]}
+          onPress={() => {
+            setPassengerStep('scan');
+            setPendingDriverId(null);
+          }}
+          activeOpacity={0.85}
+        >
+          <PremiumText variant="caption" style={[styles.backScanText, payLt?.backScanText]}>
+            ← QR taramaya dön
+          </PremiumText>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <CockpitBackground showGrid={false} />
         <View style={[styles.scrim, qrLt?.scrim, payLt?.scrim]} pointerEvents="none" />
 
-        <GlassSurface variant="panel" style={[styles.container, qrLt?.container, payLt?.container]} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface variant="panel" style={[styles.container, qrLt?.container, payLt?.container, { paddingBottom: footerPad }]} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
               <PremiumText variant="caption" style={[styles.phaseStep, qrLt?.phaseStep, payLt?.phaseStep]}>
@@ -710,34 +792,6 @@ export default function QRTripEndModal({
                     {paymentSubtitle}
                   </PremiumText>
 
-                  {effectiveBookingPaymentMethod === 'cash' && (
-                    <TouchableOpacity
-                      style={[styles.primaryPayBtn, payLt?.primaryPayBtn]}
-                      onPress={() => handlePassengerPaymentConfirm('cash')}
-                      disabled={processing}
-                      activeOpacity={0.88}
-                    >
-                      <Ionicons name="cash-outline" size={24} color={payUi.accent} />
-                      <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-                        Ödemeyi yaptım — yolculuğu tamamla
-                      </PremiumText>
-                    </TouchableOpacity>
-                  )}
-
-                  {showCardPaymentOption && effectiveBookingPaymentMethod === 'card' && (
-                    <TouchableOpacity
-                      style={[styles.primaryPayBtn, payLt?.primaryPayBtn]}
-                      onPress={() => handlePassengerPaymentConfirm('card')}
-                      disabled={processing}
-                      activeOpacity={0.88}
-                    >
-                      <Ionicons name="card-outline" size={24} color={payUi.accent} />
-                      <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-                        Kart ile katkıyı ilettiğimi onayla
-                      </PremiumText>
-                    </TouchableOpacity>
-                  )}
-
                   {!effectiveBookingPaymentMethod && (
                     <>
                       {!isTrustedDirect ? (
@@ -821,48 +875,14 @@ export default function QRTripEndModal({
                           </TouchableOpacity>
                         ) : null}
                       </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.primaryPayBtn,
-                          payLt?.primaryPayBtn,
-                          (!legacyPaymentPick || processing) && styles.primaryPayBtnDisabled,
-                        ]}
-                        onPress={handleLegacyConfirm}
-                        disabled={processing || !legacyPaymentPick}
-                        activeOpacity={0.88}
-                      >
-                        <PremiumText variant="body" style={[styles.primaryPayText, payLt?.primaryPayText]}>
-                          Onayla ve yolculuğu bitir
-                        </PremiumText>
-                      </TouchableOpacity>
                     </>
                   )}
-
-                  {processing ? (
-                    <View style={styles.processingRow}>
-                      <ActivityIndicator size="small" color={payUi.activity} />
-                      <PremiumText variant="caption" muted style={styles.processingInlineText}>
-                        Yolculuk tamamlanıyor
-                      </PremiumText>
-                    </View>
-                  ) : null}
-
-                  <TouchableOpacity
-                    style={styles.backScan}
-                    onPress={() => {
-                      setPassengerStep('scan');
-                      setPendingDriverId(null);
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <PremiumText variant="caption" style={styles.backScanText}>
-                      ← QR taramaya dön
-                    </PremiumText>
-                  </TouchableOpacity>
                 </GlassSurface>
               </View>
             )}
           </ScrollView>
+
+          {renderPaymentFooter()}
 
           <TouchableOpacity style={[styles.cancelBtn, payLt?.cancelBtn]} onPress={handleClose} activeOpacity={0.85}>
             <PremiumText variant="body" muted style={styles.cancelBtnText}>
@@ -886,7 +906,6 @@ const styles = StyleSheet.create({
   },
   container: {
     maxHeight: '92%',
-    paddingBottom: LDS_SPACING.md,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     ...LDS_ELEVATION.cockpit,
@@ -951,7 +970,9 @@ const styles = StyleSheet.create({
     color: 'rgba(186, 230, 253, 0.92)',
   },
   scroll: {
-    maxHeight: 520,
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 480,
   },
   scrollContent: {
     paddingHorizontal: LDS_SPACING.lg,
@@ -1205,7 +1226,12 @@ const styles = StyleSheet.create({
   paymentBody: {
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: LDS_SPACING.md,
+    marginBottom: LDS_SPACING.sm,
+  },
+  paymentFooter: {
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
   },
   primaryPayBtn: {
     flexDirection: 'row',

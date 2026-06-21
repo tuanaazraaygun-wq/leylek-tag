@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -17,6 +18,7 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import type { TripPaymentDetailsResponse } from '../lib/tripPaymentApi';
 import { appAlert } from '../contexts/AppAlertContext';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 export type DriverPaymentDetailsSheetMode = 'info' | 'trip_end';
 
@@ -60,8 +62,11 @@ export default function DriverPaymentDetailsSheet({
   onClose,
   onPaid,
 }: DriverPaymentDetailsSheetProps) {
+  const insets = useSafeAreaInsets();
+  const { paymentSurfaces: payLt, ui: payUi } = useQrPaymentTrustTheme('payment');
   const holderName = String(details?.account_holder_name || '').trim();
   const iban = String(details?.iban || '').trim();
+  const footerPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
 
   const handleCopyName = useCallback(async () => {
     if (!holderName) return;
@@ -87,13 +92,17 @@ export default function DriverPaymentDetailsSheet({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, payLt?.scrim]} pointerEvents="none" />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Kapat" />
 
-        <GlassSurface variant="panel" style={styles.sheet} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface
+          variant="panel"
+          style={[styles.sheet, payLt?.container, { paddingBottom: footerPad }]}
+          borderRadius={LDS_RADIUS.xl}
+        >
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
-              <PremiumText variant="step" style={styles.phaseStep}>
+              <PremiumText variant="step" style={[styles.phaseStep, payLt?.phaseStep]}>
                 Havale / EFT bilgileri
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
@@ -103,18 +112,23 @@ export default function DriverPaymentDetailsSheet({
             <Pressable
               onPress={onClose}
               hitSlop={12}
-              style={styles.closeBtn}
+              style={[styles.closeBtn, payLt?.closeBtn]}
               accessibilityRole="button"
               accessibilityLabel="Kapat"
             >
-              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
+              <Ionicons name="close" size={22} color={payUi.closeIcon} />
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.body}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {loading ? (
               <View style={styles.centerBlock}>
-                <ActivityIndicator size="small" color="#22D3EE" />
+                <ActivityIndicator size="small" color={payUi.activity} />
                 <PremiumText variant="caption" muted style={styles.loadingText}>
                   Havale / EFT bilgileri yükleniyor…
                 </PremiumText>
@@ -122,9 +136,9 @@ export default function DriverPaymentDetailsSheet({
             ) : null}
 
             {!loading && error ? (
-              <GlassSurface variant="plain" style={styles.errorCard} borderRadius={LDS_RADIUS.md}>
-                <Ionicons name="information-circle-outline" size={20} color="rgba(34,211,238,0.88)" />
-                <PremiumText variant="caption" style={styles.errorText}>
+              <GlassSurface variant="plain" style={[styles.errorCard, payLt?.fieldCard]} borderRadius={LDS_RADIUS.md}>
+                <Ionicons name="information-circle-outline" size={20} color={payUi.accent} />
+                <PremiumText variant="caption" style={[styles.errorText, payLt?.fieldValue]}>
                   {error}
                 </PremiumText>
               </GlassSurface>
@@ -135,8 +149,8 @@ export default function DriverPaymentDetailsSheet({
                 <PremiumText variant="caption" muted style={styles.fieldLabel}>
                   Hesap sahibi
                 </PremiumText>
-                <GlassSurface variant="plain" style={styles.fieldCard} borderRadius={LDS_RADIUS.md}>
-                  <PremiumText variant="body" style={styles.fieldValue}>
+                <GlassSurface variant="plain" style={[styles.fieldCard, payLt?.fieldCard]} borderRadius={LDS_RADIUS.md}>
+                  <PremiumText variant="body" style={[styles.fieldValue, payLt?.fieldValue]}>
                     {holderName || '—'}
                   </PremiumText>
                 </GlassSurface>
@@ -144,30 +158,30 @@ export default function DriverPaymentDetailsSheet({
                 <PremiumText variant="caption" muted style={styles.fieldLabel}>
                   IBAN
                 </PremiumText>
-                <GlassSurface variant="plain" style={styles.fieldCard} borderRadius={LDS_RADIUS.md}>
-                  <PremiumText variant="body" selectable style={styles.ibanValue}>
+                <GlassSurface variant="plain" style={[styles.fieldCard, payLt?.fieldCard]} borderRadius={LDS_RADIUS.md}>
+                  <PremiumText variant="body" selectable style={[styles.ibanValue, payLt?.ibanValue]}>
                     {iban || '—'}
                   </PremiumText>
                 </GlassSurface>
 
                 <Pressable
-                  style={[styles.secondaryBtn, !holderName && styles.btnDisabled]}
+                  style={[styles.secondaryBtn, payLt?.copyBtn, !holderName && styles.btnDisabled]}
                   onPress={() => void handleCopyName()}
                   disabled={!holderName}
                 >
-                  <Ionicons name="copy-outline" size={18} color="rgba(34,211,238,0.92)" />
-                  <PremiumText variant="caption" style={styles.secondaryBtnText}>
+                  <Ionicons name="copy-outline" size={18} color={payUi.accent} />
+                  <PremiumText variant="caption" style={[styles.secondaryBtnText, payLt?.copyBtnText]}>
                     Ad soyad kopyala
                   </PremiumText>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.secondaryBtn, !iban && styles.btnDisabled]}
+                  style={[styles.secondaryBtn, payLt?.copyBtn, !iban && styles.btnDisabled]}
                   onPress={() => void handleCopyIban()}
                   disabled={!iban}
                 >
-                  <Ionicons name="copy-outline" size={18} color="rgba(34,211,238,0.92)" />
-                  <PremiumText variant="caption" style={styles.secondaryBtnText}>
+                  <Ionicons name="copy-outline" size={18} color={payUi.accent} />
+                  <PremiumText variant="caption" style={[styles.secondaryBtnText, payLt?.copyBtnText]}>
                     IBAN kopyala
                   </PremiumText>
                 </Pressable>
@@ -179,15 +193,21 @@ export default function DriverPaymentDetailsSheet({
             ) : null}
           </ScrollView>
 
-          <Pressable
-            style={[styles.primaryBtn, (loading || !!error) && styles.primaryDisabled]}
-            disabled={loading || !!error}
-            onPress={handlePrimary}
-          >
-            <PremiumText variant="body" style={styles.primaryText}>
-              {mode === 'trip_end' ? 'Yol paylaşım katkısını ilettim' : 'Tamam'}
-            </PremiumText>
-          </Pressable>
+          <View style={styles.footer}>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                payLt?.primaryBtn,
+                (loading || !!error) && styles.primaryDisabled,
+              ]}
+              disabled={loading || !!error}
+              onPress={handlePrimary}
+            >
+              <PremiumText variant="body" style={[styles.primaryText, payLt?.primaryBtnText]}>
+                {mode === 'trip_end' ? 'Ödemeyi yaptım — devam et' : 'Tamam'}
+              </PremiumText>
+            </Pressable>
+          </View>
         </GlassSurface>
       </View>
     </Modal>
@@ -205,7 +225,6 @@ const styles = StyleSheet.create({
   },
   sheet: {
     maxHeight: '88%',
-    paddingBottom: LDS_SPACING.md,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     ...LDS_ELEVATION.cockpit,
@@ -229,6 +248,7 @@ const styles = StyleSheet.create({
   phaseStep: {
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+    color: 'rgba(186, 230, 253, 0.94)',
   },
   phaseCaption: {
     lineHeight: 18,
@@ -242,6 +262,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(8,17,31,0.55)',
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.card,
+  },
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
   },
   body: {
     paddingHorizontal: LDS_SPACING.lg,
@@ -317,9 +341,11 @@ const styles = StyleSheet.create({
     marginTop: LDS_SPACING.xs,
     lineHeight: 18,
   },
+  footer: {
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.sm,
+  },
   primaryBtn: {
-    marginHorizontal: LDS_SPACING.lg,
-    marginTop: LDS_SPACING.xs,
     paddingVertical: LDS_SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',

@@ -5,13 +5,16 @@ import {
   StyleSheet,
   TouchableOpacity,
   Pressable,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 type Props = {
   visible: boolean;
@@ -20,16 +23,24 @@ type Props = {
 };
 
 export default function BoardingPassengerPromptModal({ visible, onYes, onNo }: Props) {
+  const insets = useSafeAreaInsets();
+  const { paymentSurfaces: payLt, ui } = useQrPaymentTrustTheme('payment');
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 16);
+
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <Pressable style={styles.overlay} onPress={onNo}>
+      <Pressable style={[styles.overlay, { paddingBottom: bottomPad }]} onPress={onNo}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, payLt?.scrim]} pointerEvents="none" />
 
         <Pressable style={styles.cardWrap} onPress={(e) => e.stopPropagation()}>
-          <GlassSurface variant="panel" style={styles.card} borderRadius={LDS_RADIUS.xl}>
+          <GlassSurface
+            variant="panel"
+            style={[styles.card, payLt?.container]}
+            borderRadius={LDS_RADIUS.xl}
+          >
             <View style={styles.phaseBlock}>
-              <PremiumText variant="step" style={styles.phaseStep}>
+              <PremiumText variant="step" style={[styles.phaseStep, payLt?.phaseStep]}>
                 Güvenli biniş
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
@@ -37,17 +48,24 @@ export default function BoardingPassengerPromptModal({ visible, onYes, onNo }: P
               </PremiumText>
             </View>
 
-            <View style={styles.iconRing}>
-              <Ionicons name="car-sport-outline" size={26} color="rgba(34,211,238,0.92)" />
+            <View style={[styles.iconRing, payLt?.iconRing]}>
+              <Ionicons name="car-sport-outline" size={26} color={ui.accent} />
             </View>
 
             <PremiumText variant="body" style={styles.questionText}>
               Araca bindiniz mi?
             </PremiumText>
 
-            <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-              <Ionicons name="shield-checkmark-outline" size={15} color="rgba(34,211,238,0.88)" />
-              <PremiumText variant="caption" style={styles.guardianChipText}>
+            <GlassSurface
+              variant="plain"
+              style={[styles.guardianChip, payLt?.guardianChip]}
+              borderRadius={LDS_RADIUS.full}
+            >
+              <Ionicons name="shield-checkmark-outline" size={15} color={ui.accent} />
+              <PremiumText
+                variant="caption"
+                style={[styles.guardianChipText, payLt?.phaseStep]}
+              >
                 Biniş QR ile doğrulanır
               </PremiumText>
             </GlassSurface>
@@ -58,16 +76,26 @@ export default function BoardingPassengerPromptModal({ visible, onYes, onNo }: P
 
             <View style={styles.row}>
               <TouchableOpacity
-                style={styles.btnSecondaryWrap}
+                style={[styles.btnSecondaryWrap, payLt?.boardingSecondaryBtn]}
                 onPress={onNo}
                 activeOpacity={0.85}
               >
-                <PremiumText variant="body" muted style={styles.btnSecondaryText}>
+                <PremiumText
+                  variant="body"
+                  style={[styles.btnSecondaryText, payLt?.secondaryOutlineBtnText]}
+                >
                   Hayır
                 </PremiumText>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.btnPrimaryWrap} onPress={onYes} activeOpacity={0.88}>
-                <PremiumText variant="body" style={styles.btnPrimaryText}>
+              <TouchableOpacity
+                style={[styles.btnPrimaryWrap, payLt?.boardingPrimaryBtn]}
+                onPress={onYes}
+                activeOpacity={0.88}
+              >
+                <PremiumText
+                  variant="body"
+                  style={[styles.btnPrimaryText, payLt?.boardingPrimaryBtnText]}
+                >
                   Evet
                 </PremiumText>
               </TouchableOpacity>
@@ -111,6 +139,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+    color: 'rgba(186, 230, 253, 0.94)',
   },
   phaseCaption: {
     textAlign: 'center',
@@ -177,6 +206,7 @@ const styles = StyleSheet.create({
   btnSecondaryText: {
     fontWeight: '700',
     textAlign: 'center',
+    color: 'rgba(186, 201, 222, 0.88)',
   },
   btnPrimaryWrap: {
     flex: 1,

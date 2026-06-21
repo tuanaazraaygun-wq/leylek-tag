@@ -64,6 +64,24 @@ export type PaymentModalLightSurfaces = {
   legacyChipTextActive: TextStyle;
   permissionBtnGlass: ViewStyle;
   cancelBtn: ViewStyle;
+  fieldCard: ViewStyle;
+  fieldValue: TextStyle;
+  ibanValue: TextStyle;
+  copyBtn: ViewStyle;
+  copyBtnText: TextStyle;
+  primaryBtn: ViewStyle;
+  primaryBtnText: TextStyle;
+  secondaryOutlineBtn: ViewStyle;
+  secondaryOutlineBtnText: TextStyle;
+  disputeBtn: ViewStyle;
+  disputeBtnText: TextStyle;
+  noteInput: ViewStyle;
+  iconRing: ViewStyle;
+  boardingPrimaryBtn: ViewStyle;
+  boardingPrimaryBtnText: TextStyle;
+  boardingSecondaryBtn: ViewStyle;
+  backScan: ViewStyle;
+  backScanText: TextStyle;
 };
 
 export type RatingModalLightSurfaces = {
@@ -207,11 +225,10 @@ function buildPaymentModalLightSurfaces(tokens: LhThemeTokens): PaymentModalLigh
       borderColor: tokens.accent.glowMid,
     },
     primaryPayBtn: {
-      backgroundColor: tokens.bg.glassMuted,
-      borderColor: tokens.borderColors.selected,
-      borderTopColor: tokens.borderColors.selectedTop,
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.primaryHover,
     },
-    primaryPayText: { color: tokens.text.primary },
+    primaryPayText: { color: tokens.text.inverse },
     legacyChip: {
       backgroundColor: tokens.bg.glass,
       borderColor: tokens.border.default,
@@ -229,6 +246,56 @@ function buildPaymentModalLightSurfaces(tokens: LhThemeTokens): PaymentModalLigh
       backgroundColor: tokens.bg.glass,
       borderColor: tokens.border.default,
     },
+    fieldCard: {
+      backgroundColor: tokens.bg.canvasMid,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.border.default,
+    },
+    fieldValue: { color: tokens.text.primary },
+    ibanValue: { color: tokens.text.primary },
+    copyBtn: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: tokens.border.default,
+    },
+    copyBtnText: { color: tokens.accent.primary },
+    primaryBtn: {
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.primaryHover,
+    },
+    primaryBtnText: { color: tokens.text.inverse },
+    secondaryOutlineBtn: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: tokens.border.default,
+    },
+    secondaryOutlineBtnText: { color: tokens.text.primary },
+    disputeBtn: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: 'rgba(220,38,38,0.28)',
+    },
+    disputeBtnText: { color: tokens.status.error },
+    noteInput: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: tokens.border.default,
+      color: tokens.text.primary,
+    },
+    iconRing: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    boardingPrimaryBtn: {
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.primaryHover,
+    },
+    boardingPrimaryBtnText: { color: tokens.text.inverse },
+    boardingSecondaryBtn: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: tokens.border.default,
+    },
+    backScan: {
+      backgroundColor: tokens.bg.canvas,
+      borderColor: tokens.border.default,
+    },
+    backScanText: { color: tokens.accent.secondary },
   };
 }
 

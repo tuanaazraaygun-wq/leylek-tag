@@ -7,15 +7,16 @@ import {
   Animated,
   Dimensions,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DISPUTE_NOTE_MAX = 500;
@@ -40,10 +41,13 @@ export default function TransferPaymentConfirmModal({
   onApprove,
   onReject,
 }: TransferPaymentConfirmModalProps) {
+  const insets = useSafeAreaInsets();
+  const { paymentSurfaces: payLt, ui: payUi } = useQrPaymentTrustTheme('payment');
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const [disputeStep, setDisputeStep] = useState(false);
   const [disputeNote, setDisputeNote] = useState('');
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 16);
 
   useEffect(() => {
     if (visible) {
@@ -94,12 +98,9 @@ export default function TransferPaymentConfirmModal({
       statusBarTranslucent
       onRequestClose={() => {}}
     >
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={[styles.overlay, { paddingBottom: bottomPad }]}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, payLt?.scrim]} pointerEvents="none" />
 
         <Animated.View
           style={[
@@ -110,15 +111,19 @@ export default function TransferPaymentConfirmModal({
             },
           ]}
         >
-          <GlassSurface variant="panel" style={styles.modalContainer} borderRadius={LDS_RADIUS.xl}>
-            <View style={styles.iconRing}>
-              <Ionicons name="wallet-outline" size={32} color="rgba(34,211,238,0.92)" />
+          <GlassSurface
+            variant="panel"
+            style={[styles.modalContainer, payLt?.container]}
+            borderRadius={LDS_RADIUS.xl}
+          >
+            <View style={[styles.iconRing, payLt?.iconRing]}>
+              <Ionicons name="wallet-outline" size={32} color={payUi.accent} />
             </View>
 
             {!disputeStep ? (
               <>
                 <View style={styles.phaseBlock}>
-                  <PremiumText variant="step" style={styles.phaseStep}>
+                  <PremiumText variant="step" style={[styles.phaseStep, payLt?.phaseStep]}>
                     {phaseStep}
                   </PremiumText>
                   <PremiumText variant="caption" muted style={styles.phaseCaption}>
@@ -135,22 +140,22 @@ export default function TransferPaymentConfirmModal({
 
                 <View style={styles.buttonColumn}>
                   <TouchableOpacity
-                    style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                    style={[styles.primaryBtn, payLt?.primaryBtn, loading && styles.btnDisabled]}
                     onPress={() => void onApprove()}
                     activeOpacity={0.88}
                     disabled={loading}
                   >
-                    <PremiumText variant="body" style={styles.primaryBtnText}>
+                    <PremiumText variant="body" style={[styles.primaryBtnText, payLt?.primaryBtnText]}>
                       {loading ? 'Gönderiliyor…' : 'Evet, katkıyı aldım'}
                     </PremiumText>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.disputeBtn, loading && styles.btnDisabled]}
+                    style={[styles.disputeBtn, payLt?.disputeBtn, loading && styles.btnDisabled]}
                     onPress={() => setDisputeStep(true)}
                     activeOpacity={0.88}
                     disabled={loading}
                   >
-                    <PremiumText variant="caption" style={styles.disputeBtnText}>
+                    <PremiumText variant="caption" style={[styles.disputeBtnText, payLt?.disputeBtnText]}>
                       Hayır, katkı almadım / sorun bildir
                     </PremiumText>
                   </TouchableOpacity>
@@ -158,18 +163,18 @@ export default function TransferPaymentConfirmModal({
               </>
             ) : (
               <>
-                <PremiumText variant="step" style={styles.phaseStep}>
+                <PremiumText variant="step" style={[styles.phaseStep, payLt?.phaseStep]}>
                   Sorun bildir
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.description}>
                   Katkı almadıysanız kısaca açıklayın. Destek ekibi inceleyecek.
                 </PremiumText>
                 <TextInput
-                  style={styles.noteInput}
+                  style={[styles.noteInput, payLt?.noteInput]}
                   value={disputeNote}
                   onChangeText={(t) => setDisputeNote(t.slice(0, DISPUTE_NOTE_MAX))}
                   placeholder="Kısaca açıklayın"
-                  placeholderTextColor="rgba(186,201,222,0.45)"
+                  placeholderTextColor={payUi.textMuted}
                   multiline
                   maxLength={DISPUTE_NOTE_MAX}
                   editable={!loading}
@@ -177,17 +182,17 @@ export default function TransferPaymentConfirmModal({
                 />
                 <View style={styles.buttonColumn}>
                   <TouchableOpacity
-                    style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                    style={[styles.primaryBtn, payLt?.primaryBtn, loading && styles.btnDisabled]}
                     onPress={() => void onReject(disputeNote.trim())}
                     activeOpacity={0.88}
                     disabled={loading}
                   >
-                    <PremiumText variant="body" style={styles.primaryBtnText}>
+                    <PremiumText variant="body" style={[styles.primaryBtnText, payLt?.primaryBtnText]}>
                       {loading ? 'Gönderiliyor…' : 'Gönder'}
                     </PremiumText>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.secondaryBtn, loading && styles.btnDisabled]}
+                    style={[styles.secondaryBtn, payLt?.secondaryOutlineBtn, loading && styles.btnDisabled]}
                     onPress={() => {
                       if (loading) return;
                       setDisputeStep(false);
@@ -196,7 +201,10 @@ export default function TransferPaymentConfirmModal({
                     activeOpacity={0.88}
                     disabled={loading}
                   >
-                    <PremiumText variant="caption" muted style={styles.secondaryBtnText}>
+                    <PremiumText
+                      variant="caption"
+                      style={[styles.secondaryBtnText, payLt?.secondaryOutlineBtnText]}
+                    >
                       Geri
                     </PremiumText>
                   </TouchableOpacity>
@@ -205,7 +213,7 @@ export default function TransferPaymentConfirmModal({
             )}
           </GlassSurface>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -258,6 +266,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+    color: 'rgba(186, 230, 253, 0.94)',
   },
   phaseCaption: {
     textAlign: 'center',
