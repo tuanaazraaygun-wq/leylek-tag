@@ -30,6 +30,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useMuhabbetActiveTripRecovery } from '../hooks/useMuhabbetActiveTripRecovery';
 import TestFlightDiagnosticsHost from '../components/TestFlightDiagnosticsHost';
 import { initCrashlytics } from '../lib/crashlytics';
+import { ThemeProvider } from '../contexts/ThemeContext';
 
 // Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
@@ -85,6 +86,7 @@ export default function RootLayout() {
   return (
     <RootErrorBoundary>
       <SafeAreaProvider>
+        <ThemeProvider>
         <AppAlertProvider>
           <PushNotificationsProvider>
             <NotificationProvider>
@@ -110,6 +112,7 @@ export default function RootLayout() {
             </NotificationProvider>
           </PushNotificationsProvider>
         </AppAlertProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </RootErrorBoundary>
   );
