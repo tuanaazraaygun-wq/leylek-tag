@@ -115,7 +115,7 @@ export default function QRTripEndModal({
   const qrValue = `leylektag://end?u=${userId}&t=${tagId}`;
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
   const canAutoCompleteCashAfterScan =
-    !isTrustedDirect && effectiveBookingPaymentMethod === 'cash' && !showIbanOption;
+    !isTrustedDirect && effectiveBookingPaymentMethod === 'cash';
 
   useEffect(() => {
     if (visible) {
@@ -668,7 +668,7 @@ export default function QRTripEndModal({
                           </PremiumText>
                           <PremiumText variant="caption" muted style={styles.processingText}>
                             {canAutoCompleteCashAfterScan
-                              ? 'Yolculuk tamamlanıyor…'
+                              ? 'QR doğrulandı, yolculuk tamamlanıyor…'
                               : 'Katkı payını onaylamaya geçiliyor…'}
                           </PremiumText>
                         </View>
