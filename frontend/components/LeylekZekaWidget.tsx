@@ -43,7 +43,10 @@ import {
   wasProactiveShownForTag,
 } from '../lib/leylekZekaProactiveInsight';
 import LeylekEyeTrigger from './superUx/LeylekEyeTrigger';
-import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
+import LeylekEye, {
+  LEYLEK_EYE_FAB_SIZE,
+  LEYLEK_EYE_ROLE_SELECT_SIZE,
+} from '../design-system/leylek-eye/LeylekEye';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -51,7 +54,7 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 
 const LeylekZekaChat = React.lazy(() => import('./LeylekZekaChat'));
 
-const FAB_SIZE = 68;
+const FAB_SIZE = LEYLEK_EYE_FAB_SIZE;
 const LOGO_SIZE = 44;
 const FAB_CORNER = 23;
 const FAB_BOTTOM_EXTRA_PX = 14;
@@ -91,6 +94,7 @@ const TYPING_CHAR_MS_MIN = 24;
 const TYPING_CHAR_MS_MAX = 38;
 const TYPING_START_DELAY_MS = 180;
 const BUBBLE_MAX_W = 220;
+const BUBBLE_MAX_W_LIGHT = 208;
 const PASSENGER_MATCHING_EYE_A11Y_LABEL = 'Leylek Zeka';
 /** Waiting cockpit — compact guardian eye (P-WAIT-1A, P1-UX-B-A: göz-only). */
 const LEYLEK_EYE_WATCHING_SIZE = LDS_SPACING.xxxl - LDS_SPACING.xxs;
@@ -99,6 +103,9 @@ const PASSENGER_MATCHING_EYE_LEFT_PX = 16;
 
 const ORB_ACCENT_CYAN = 'rgba(34, 211, 238, 0.96)';
 const ORB_TEXT_SOFT = 'rgba(224, 246, 255, 0.94)';
+const ORB_HINT_TEXT_LIGHT = '#334155';
+const ORB_HINT_ACCENT_LIGHT = '#0F766E';
+const ORB_HINT_CURSOR_LIGHT = '#0D9488';
 
 function nextAmbientGapMs(): number {
   const span = AMBIENT_GAP_MAX_MS - AMBIENT_GAP_MIN_MS + 1;
@@ -123,10 +130,13 @@ function renderAccentSlices(
   full: string,
   visibleLen: number,
   spans: { start: number; end: number }[],
+  isLightTheme: boolean,
 ) {
   const n = Math.min(visibleLen, full.length);
+  const textStyle = isLightTheme ? styles.orbHintTextLight : styles.orbHintText;
+  const accentStyle = isLightTheme ? styles.orbHintAccentLight : styles.orbHintAccent;
   if (!spans.length || n === 0) {
-    return <Text style={styles.orbHintText}>{full.slice(0, n)}</Text>;
+    return <Text style={textStyle}>{full.slice(0, n)}</Text>;
   }
   const parts: React.ReactNode[] = [];
   let pos = 0;
@@ -134,7 +144,7 @@ function renderAccentSlices(
     if (sp.start >= n) break;
     if (pos < sp.start) {
       parts.push(
-        <Text key={`w-${pos}`} style={styles.orbHintText}>
+        <Text key={`w-${pos}`} style={textStyle}>
           {full.slice(pos, Math.min(sp.start, n))}
         </Text>,
       );
@@ -142,7 +152,7 @@ function renderAccentSlices(
     if (sp.start < n) {
       const accentEnd = Math.min(sp.end, n);
       parts.push(
-        <Text key={`a-${sp.start}`} style={styles.orbHintAccent}>
+        <Text key={`a-${sp.start}`} style={accentStyle}>
           {full.slice(sp.start, accentEnd)}
         </Text>,
       );
@@ -151,12 +161,12 @@ function renderAccentSlices(
   }
   if (pos < n) {
     parts.push(
-      <Text key={`w-tail-${pos}`} style={styles.orbHintText}>
+      <Text key={`w-tail-${pos}`} style={textStyle}>
         {full.slice(pos, n)}
       </Text>,
     );
   }
-  return <Text style={styles.orbHintText}>{parts}</Text>;
+  return <Text style={textStyle}>{parts}</Text>;
 }
 
 function OrbBubbleTypingText({
@@ -166,6 +176,7 @@ function OrbBubbleTypingText({
   cursorOpacity,
   cursorBlinkAnimated = true,
   accentHints,
+  isLightTheme = false,
 }: {
   full: string;
   visibleLen: number;
@@ -173,25 +184,28 @@ function OrbBubbleTypingText({
   cursorOpacity: Animated.Value;
   cursorBlinkAnimated?: boolean;
   accentHints?: readonly string[];
+  isLightTheme?: boolean;
 }) {
   const spans = useMemo(() => resolveAccentSpans(full, accentHints), [full, accentHints]);
+  const cursorColor = isLightTheme ? ORB_HINT_CURSOR_LIGHT : ORB_ACCENT_CYAN;
   const cursorStyle = useMemo(
     () => ({
       opacity: cursorOpacity,
-      color: ORB_ACCENT_CYAN,
+      color: cursorColor,
       fontWeight: '300' as const,
     }),
-    [cursorOpacity],
+    [cursorColor, cursorOpacity],
   );
+  const textStyle = isLightTheme ? styles.orbHintTextLight : styles.orbHintText;
 
   return (
-    <Text style={styles.orbHintText} numberOfLines={3}>
-      {renderAccentSlices(full, visibleLen, spans)}
+    <Text style={textStyle} numberOfLines={3}>
+      {renderAccentSlices(full, visibleLen, spans, isLightTheme)}
       {showCursor && visibleLen <= full.length ? (
         cursorBlinkAnimated ? (
           <Animated.Text style={[styles.orbCursor, cursorStyle]}>|</Animated.Text>
         ) : (
-          <Text style={[styles.orbCursor, { color: ORB_ACCENT_CYAN, opacity: 1 }]}>|</Text>
+          <Text style={[styles.orbCursor, { color: cursorColor, opacity: 1 }]}>|</Text>
         )
       ) : null}
     </Text>
@@ -216,6 +230,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
   const { resolvedTheme } = useTheme();
   const eyeThemeVariant = resolvedTheme === 'light' ? 'light' : 'dark';
+  const isLightFabChrome = eyeThemeVariant === 'light';
   const guardianEyeSize = LEYLEK_EYE_ROLE_SELECT_SIZE;
 
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -331,6 +346,27 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   );
 
   const fabGlowStyle = useMemo(() => {
+    if (isLightFabChrome) {
+      if (glowVariant === 'idle') {
+        return {
+          shadowOpacity: Platform.OS === 'ios' ? 0.1 : undefined,
+          elevation: Platform.OS === 'android' ? 4 : undefined,
+          borderColor: 'rgba(0, 212, 170, 0.28)',
+        } as const;
+      }
+      if (glowVariant === 'attention') {
+        return {
+          shadowOpacity: Platform.OS === 'ios' ? 0.14 : undefined,
+          elevation: Platform.OS === 'android' ? 6 : undefined,
+          borderColor: 'rgba(0, 212, 170, 0.38)',
+        } as const;
+      }
+      return {
+        shadowOpacity: Platform.OS === 'ios' ? 0.12 : undefined,
+        elevation: Platform.OS === 'android' ? 5 : undefined,
+        borderColor: 'rgba(0, 212, 170, 0.32)',
+      } as const;
+    }
     if (glowVariant === 'idle') {
       return {
         shadowOpacity: Platform.OS === 'ios' ? 0.38 : undefined,
@@ -350,7 +386,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       elevation: Platform.OS === 'android' ? 14 : undefined,
       borderColor: 'rgba(34, 211, 238, 0.58)',
     } as const;
-  }, [glowVariant]);
+  }, [glowVariant, isLightFabChrome]);
 
   const speechFull = ephemeralFullLine ?? ambientFullLine;
   const speechAccentHints = ephemeralFullLine ? undefined : ambientAccents;
@@ -933,7 +969,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const bubbleShadowOpacity = bubbleBreath.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.18, 0.3],
+    outputRange: isLightFabChrome ? [0.08, 0.14] : [0.18, 0.3],
   });
 
   const bubbleInner = (
@@ -944,7 +980,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
         transform: [{ translateY: bubbleTranslateY }],
       }}
     >
-      <View style={styles.orbHintCapsule}>
+      <View
+        style={[
+          styles.orbHintCapsule,
+          isLightFabChrome && styles.orbHintCapsuleLight,
+          isLightFabChrome && { maxWidth: BUBBLE_MAX_W_LIGHT },
+        ]}
+      >
         <OrbBubbleTypingText
           full={speechFull}
           visibleLen={typedVisibleLen}
@@ -952,9 +994,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
           cursorOpacity={cursorBlink}
           cursorBlinkAnimated={!isRoleSelectScreen}
           accentHints={speechAccentHints}
+          isLightTheme={isLightFabChrome}
         />
       </View>
-      <View style={styles.orbHintTail} />
+      <View style={[styles.orbHintTail, isLightFabChrome && styles.orbHintTailLight]} />
     </Animated.View>
   );
 
@@ -1057,6 +1100,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 style={[
                   styles.fabColumn,
                   isPassengerPreMatchWaitOrb ? styles.fabColumnWaitMap : null,
+                  isLightFabChrome && styles.fabColumnLight,
                   { transform: [{ translateY: floatY }] },
                 ]}
               >
@@ -1066,6 +1110,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                       pointerEvents="none"
                       style={[
                         styles.orbHintGlowWrap,
+                        isLightFabChrome && styles.orbHintGlowWrapLight,
                         isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
                       ]}
                     >
@@ -1076,6 +1121,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                       pointerEvents="none"
                       style={[
                         styles.orbHintGlowWrap,
+                        isLightFabChrome && styles.orbHintGlowWrapLight,
                         isPassengerPreMatchWaitOrb ? styles.orbHintGlowWrapWaitMap : null,
                         Platform.OS === 'ios' ? { shadowOpacity: bubbleShadowOpacity } : null,
                       ]}
@@ -1091,7 +1137,11 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                     onPressIn={markInteraction}
                     style={({ pressed }) => [
                       styles.fabOuter,
+                      isLightFabChrome && styles.fabOuterLight,
                       isPassengerOfferWaitingMode && styles.passengerOfferWaitFabOuter,
+                      isLightFabChrome &&
+                        isPassengerOfferWaitingMode &&
+                        styles.passengerOfferWaitFabOuterLight,
                       fabGlowStyle,
                       pressed && styles.fabPressed,
                     ]}
@@ -1103,38 +1153,64 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                         : 'Uygulama içi yardım için dokunun.'
                     }
                   >
-                    <LinearGradient
-                      colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
-                      locations={[0, 0.35, 0.72, 1]}
-                      start={{ x: 0.15, y: 0.1 }}
-                      end={{ x: 0.9, y: 1 }}
-                      style={styles.fabGrad}
-                    >
-                      <Animated.View
-                        style={[
-                          styles.logoStage,
-                          reduceMotion
-                            ? undefined
-                            : {
-                                transform: [
-                                  { translateY: logoLift },
-                                  { scale: logoScaleCombined },
-                                  { rotate: logoTilt },
-                                ],
-                              },
-                        ]}
+                    {isLightFabChrome ? (
+                      <LeylekEye
+                        size={FAB_SIZE}
+                        chromeTone="default"
+                        themeVariant="light"
+                        motionProfile="fab"
+                        reduceMotion={reduceMotion}
+                        accessibilityLabel="Leylek Zeka"
+                      />
+                    ) : (
+                      <LinearGradient
+                        colors={['#0B1E33', '#123A5C', '#1A5F94', '#22A8D8']}
+                        locations={[0, 0.35, 0.72, 1]}
+                        start={{ x: 0.15, y: 0.1 }}
+                        end={{ x: 0.9, y: 1 }}
+                        style={styles.fabGrad}
                       >
-                        <Image
-                          source={require('../assets/images/leylek-zeka-eye.png')}
-                          style={styles.logoImage}
-                          resizeMode="contain"
-                          accessibilityIgnoresInvertColors
-                        />
-                      </Animated.View>
-                    </LinearGradient>
+                        <Animated.View
+                          style={[
+                            styles.logoStage,
+                            reduceMotion
+                              ? undefined
+                              : {
+                                  transform: [
+                                    { translateY: logoLift },
+                                    { scale: logoScaleCombined },
+                                    { rotate: logoTilt },
+                                  ],
+                                },
+                          ]}
+                        >
+                          <Image
+                            source={require('../assets/images/leylek-zeka-eye.png')}
+                            style={styles.logoImage}
+                            resizeMode="contain"
+                            accessibilityIgnoresInvertColors
+                          />
+                        </Animated.View>
+                      </LinearGradient>
+                    )}
                   </Pressable>
-                  <View style={styles.orbAiBadge} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                    <Text style={styles.orbAiBadgeText}>AI</Text>
+                  <View
+                    style={[
+                      styles.orbAiBadge,
+                      isLightFabChrome && styles.orbAiBadgeLight,
+                    ]}
+                    pointerEvents="none"
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <Text
+                      style={[
+                        styles.orbAiBadgeText,
+                        isLightFabChrome && styles.orbAiBadgeTextLight,
+                      ]}
+                    >
+                      AI
+                    </Text>
                   </View>
                 </View>
               </Animated.View>
@@ -1205,6 +1281,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     maxWidth: BUBBLE_MAX_W,
   },
+  fabColumnLight: {
+    maxWidth: BUBBLE_MAX_W_LIGHT,
+  },
   fabColumnWaitMap: {
     alignItems: 'flex-start',
   },
@@ -1229,6 +1308,19 @@ const styles = StyleSheet.create({
       android: {},
     }),
   },
+  fabOuterLight: {
+    overflow: 'visible',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15, 23, 42, 0.12)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowRadius: 10,
+      },
+      android: { elevation: 4 },
+    }),
+  },
   passengerOfferWaitFabOuter: {
     borderWidth: LDS_BORDER_WIDTH.standard,
     borderColor: LDS_BORDER_COLOR.cockpitPanel,
@@ -1241,6 +1333,19 @@ const styles = StyleSheet.create({
         shadowRadius: LDS_SPACING.sm,
       },
       android: { elevation: 6 },
+    }),
+  },
+  passengerOfferWaitFabOuterLight: {
+    borderWidth: StyleSheet.hairlineWidth + 0.5,
+    borderColor: 'rgba(0, 212, 170, 0.28)',
+    borderTopColor: 'rgba(255, 255, 255, 0.88)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15, 23, 42, 0.10)',
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
     }),
   },
   fabGrad: {
@@ -1282,6 +1387,22 @@ const styles = StyleSheet.create({
     color: ORB_ACCENT_CYAN,
     letterSpacing: 0.65,
   },
+  orbAiBadgeLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(0, 212, 170, 0.32)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15, 23, 42, 0.10)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 4,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  orbAiBadgeTextLight: {
+    color: ORB_HINT_ACCENT_LIGHT,
+  },
   orbHintGlowWrap: {
     marginBottom: 8,
     maxWidth: BUBBLE_MAX_W,
@@ -1299,6 +1420,18 @@ const styles = StyleSheet.create({
   orbHintGlowWrapWaitMap: {
     alignSelf: 'flex-start',
   },
+  orbHintGlowWrapLight: {
+    marginBottom: 6,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15, 23, 42, 0.10)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
+      },
+      android: { elevation: 2 },
+    }),
+  },
   orbHintCapsule: {
     maxWidth: BUBBLE_MAX_W,
     paddingVertical: 8,
@@ -1308,6 +1441,22 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(34, 211, 238, 0.32)',
     borderTopColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  orbHintCapsuleLight: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    borderTopColor: 'rgba(0, 212, 170, 0.18)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(15, 23, 42, 0.08)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 4,
+      },
+      android: { elevation: 2 },
+    }),
   },
   orbHintTail: {
     alignSelf: 'center',
@@ -1322,6 +1471,13 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
     marginBottom: 2,
   },
+  orbHintTailLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    borderLeftColor: 'rgba(15, 23, 42, 0.06)',
+    borderRightColor: 'rgba(15, 23, 42, 0.06)',
+    borderBottomColor: 'rgba(15, 23, 42, 0.06)',
+  },
   orbHintText: {
     fontSize: 11,
     fontWeight: '600',
@@ -1330,8 +1486,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     lineHeight: 15,
   },
+  orbHintTextLight: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: ORB_HINT_TEXT_LIGHT,
+    textAlign: 'center',
+    letterSpacing: 0.06,
+    lineHeight: 15,
+  },
   orbHintAccent: {
     color: ORB_ACCENT_CYAN,
+    fontWeight: '700',
+  },
+  orbHintAccentLight: {
+    color: ORB_HINT_ACCENT_LIGHT,
     fontWeight: '700',
   },
   orbCursor: {

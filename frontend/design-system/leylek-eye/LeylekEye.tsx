@@ -11,6 +11,7 @@ import { useLeylekEyeMotion, type LeylekEyeMotionProfile } from './useLeylekEyeM
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 export const LEYLEK_EYE_HERO_SIZE = 66;
+export const LEYLEK_EYE_FAB_SIZE = 68;
 export const LEYLEK_EYE_ROLE_SELECT_SIZE = 49;
 export const LEYLEK_EYE_VIEW_SIZE = 50;
 
