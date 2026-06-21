@@ -35,6 +35,8 @@ import {
   MARKER_PIXEL,
 } from '../lib/mapNavMarkers';
 import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
+import type { MapMarkerChromeTone } from '../lib/theme/useMapMarkerTheme';
+import { scaleMapMarkerPixel } from '../lib/theme/useMapMarkerTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import InRideSaferForceEndModal from './InRideSaferForceEndModal';
@@ -89,12 +91,16 @@ function TripMapMarkerImage({
   source,
   scale = 1,
   size = 40,
+  chromeTone = 'dark',
 }: {
   source: number;
   scale?: number;
   size?: number;
+  chromeTone?: MapMarkerChromeTone;
 }) {
-  return <MapEntityMarkerImage source={source} size={size} scale={scale} />;
+  return (
+    <MapEntityMarkerImage source={source} size={size} scale={scale} chromeTone={chromeTone} />
+  );
 }
 
 /** Sürücü Yolcuya Git: rota bearing ile dönen neon yön oku (asset yok, yalnız bu Marker). */
@@ -2554,6 +2560,7 @@ export default function LiveMapView({
   trustedInviteRefreshNonce = 0,
 }: LiveMapViewProps) {
   const { chromeSurfaces: jLt, ui, isScopeLight } = useLiveMapChromeTheme();
+  const mapMarkerChrome: MapMarkerChromeTone = isScopeLight ? 'light' : 'dark';
   const journeyTrustUiEnabled = !EMERGENCY_TRUST_JOURNEY_UI_DISABLED;
   const trustRequestAction = journeyTrustUiEnabled ? onTrustRequest : undefined;
 
@@ -6724,13 +6731,15 @@ export default function LiveMapView({
                     ? getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')
                     : getPassengerMarkerImage()
                 }
-                size={
+                chromeTone={mapMarkerChrome}
+                size={scaleMapMarkerPixel(
                   isDriver
                     ? passMotor
                       ? MARKER_PIXEL.driverMotor
                       : MARKER_PIXEL.driverCar
-                    : MARKER_PIXEL.passenger
-                }
+                    : MARKER_PIXEL.passenger,
+                  isScopeLight,
+                )}
               />
             </Marker>
           )}
@@ -6750,13 +6759,25 @@ export default function LiveMapView({
                     ? getPassengerMarkerImage()
                     : getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')
                 }
-                scale={peerMapPinScale}
+                chromeTone={mapMarkerChrome}
+                scale={isScopeLight ? 1 : peerMapPinScale}
                 size={
-                  isDriver
-                    ? MARKER_PIXEL.passenger
-                    : passMotor
-                      ? MARKER_PIXEL.driverMotor
-                      : MARKER_PIXEL.driverCar
+                  isScopeLight
+                    ? Math.round(
+                        scaleMapMarkerPixel(
+                          isDriver
+                            ? MARKER_PIXEL.passenger
+                            : passMotor
+                              ? MARKER_PIXEL.driverMotor
+                              : MARKER_PIXEL.driverCar,
+                          true,
+                        ) * peerMapPinScale,
+                      )
+                    : isDriver
+                      ? MARKER_PIXEL.passenger
+                      : passMotor
+                        ? MARKER_PIXEL.driverMotor
+                        : MARKER_PIXEL.driverCar
                 }
               />
             </Marker>
@@ -6770,7 +6791,7 @@ export default function LiveMapView({
               tracksViewChanges={pinTracks}
               zIndex={3000}
             >
-              <MapDestinationFlagPin />
+              <MapDestinationFlagPin chromeTone={mapMarkerChrome} />
             </Marker>
           )}
         </MapView>
