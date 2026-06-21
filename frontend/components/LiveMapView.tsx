@@ -69,16 +69,18 @@ const DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP = 112;
  * Immersive nav: Google mapPadding.bottom — araç PNG yüksekliği + alt inset ile kamera merkezi/yol hizası.
  */
 /** Yolcuya Git immersive pointer — mapPadding kalibrasyonu (yalnız görsel). */
-const NAV_IMMERSIVE_POINTER_PX = 52;
+const NAV_IMMERSIVE_POINTER_PX = 60;
 
 function driverNavImmersiveMapPaddingBottomPx(insetsBottom: number): number {
+  const screenShiftPx = Math.round(SCREEN_HEIGHT * 0.15);
   const iconHalf = NAV_IMMERSIVE_POINTER_PX * 0.5;
   const raw =
     DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP +
     iconHalf +
     Math.max(insetsBottom, 0) +
-    10;
-  return Math.round(Math.min(210, Math.max(96, raw)));
+    10 +
+    screenShiftPx;
+  return Math.round(Math.min(280, Math.max(96, raw)));
 }
 
 /** Android: `tracksViewChanges` kısa süre true — sürekli true iken özel PNG bazen çizilmez (bekleme ekranıyla aynı mantık). */
@@ -120,9 +122,9 @@ const navDirectionPointerStyles = StyleSheet.create({
   },
   glowOuter: {
     position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 55,
+    height: 55,
+    borderRadius: 28,
     backgroundColor: 'rgba(34, 211, 238, 0.14)',
     ...(Platform.OS === 'android'
       ? { elevation: 6 }
@@ -135,38 +137,38 @@ const navDirectionPointerStyles = StyleSheet.create({
   },
   glowMid: {
     position: 'absolute',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(34, 211, 238, 0.28)',
   },
   arrowWrap: {
     position: 'absolute',
-    top: 4,
+    top: 5,
     alignItems: 'center',
   },
   arrowHead: {
     width: 0,
     height: 0,
-    borderLeftWidth: 12,
-    borderRightWidth: 12,
+    borderLeftWidth: 14,
+    borderRightWidth: 14,
     borderBottomWidth: 0,
-    borderTopWidth: 22,
+    borderTopWidth: 25,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#22D3EE',
   },
   arrowStem: {
-    width: 9,
-    height: 8,
+    width: 10,
+    height: 9,
     marginTop: -1,
     borderRadius: 2,
     backgroundColor: '#5EEAD4',
   },
   coreRing: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: 'rgba(8, 17, 31, 0.72)',
     borderWidth: 2,
     borderColor: 'rgba(94, 234, 212, 0.95)',
@@ -174,9 +176,9 @@ const navDirectionPointerStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   coreDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     backgroundColor: '#F8FAFC',
   },
 });
@@ -6699,7 +6701,7 @@ export default function LiveMapView({
               coordinate={navMapVehicleCoordResolved}
               flat
               rotation={navMapVehicleRotation}
-              anchor={{ x: 0.5, y: 0.5 }}
+              anchor={{ x: 0.5, y: 0.38 }}
               zIndex={6000}
               tracksViewChanges={false}
             >
