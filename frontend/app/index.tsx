@@ -15336,6 +15336,8 @@ function DriverDashboard({
   onDriverOfferGoToRoleSelect,
 }: DriverDashboardProps) {
   const router = useRouter();
+  const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
+  const { chromeSurfaces: jLt } = useJourneyBannerTheme();
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
@@ -15519,9 +15521,6 @@ function DriverDashboard({
   // KYC Status - prop'tan al veya null
   const kycStatus = kycStatusProp;
   const setKycStatus = setKycStatusProp || (() => {});
-
-  const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
-  const { chromeSurfaces: jLt } = useJourneyBannerTheme();
 
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
