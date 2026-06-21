@@ -12,12 +12,12 @@ import { appAlert } from '../contexts/AppAlertContext';
 import LeylekEye, { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
-import { PREMIUM_AUTH_CYAN } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import TrustedAddButton from './trusted/TrustedAddButton';
 import { useTrustedCounterpartyStatus } from '../hooks/useTrustedCounterpartyStatus';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 import { API_BASE_URL } from '../lib/backendConfig';
 
 /** Emergency P0: journey hot-path trust UI temporarily disabled */
@@ -53,6 +53,7 @@ export default function RatingModal({
   rateUserName,
   onOpenTrustedHub,
 }: RatingModalProps) {
+  const { ratingSurfaces: rtLt, ui } = useQrPaymentTrustTheme('payment');
   const [rating, setRating] = useState(5);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -179,7 +180,7 @@ export default function RatingModal({
           <TouchableOpacity
             key={star}
             onPress={() => setRating(star)}
-            style={styles.starBtn}
+            style={[styles.starBtn, rtLt?.starBtn]}
             hitSlop={{ top: 14, bottom: 14, left: 10, right: 10 }}
             activeOpacity={0.75}
           >
@@ -187,7 +188,7 @@ export default function RatingModal({
               name={star <= rating ? 'star' : 'star-outline'}
               size={34}
               color={
-                star <= rating ? 'rgba(34,211,238,0.92)' : 'rgba(186,201,222,0.38)'
+                star <= rating ? ui.starActive : ui.starInactive
               }
             />
           </TouchableOpacity>
@@ -209,11 +210,11 @@ export default function RatingModal({
     >
       <View style={styles.overlay}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, rtLt?.scrim]} pointerEvents="none" />
 
-        <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface variant="panel" style={[styles.container, rtLt?.container]} borderRadius={LDS_RADIUS.xl}>
           {submitted ? (
-            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.successPanel}>
+            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.successPanel, rtLt?.successPanel]}>
               <View style={styles.successContainer}>
                 <View style={styles.guardianOrb}>
                   <LeylekEye
@@ -223,7 +224,7 @@ export default function RatingModal({
                     accessibilityLabel="Leylek guardian"
                   />
                 </View>
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.successStatusChip}>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.successStatusChip, rtLt?.successStatusChip]}>
                   <PremiumText variant="caption" style={styles.successStatusChipText}>
                     Kapanış onayı
                   </PremiumText>
@@ -256,7 +257,7 @@ export default function RatingModal({
                   </View>
                 ) : null}
                 <TouchableOpacity
-                  style={styles.continueBtn}
+                  style={[styles.continueBtn, rtLt?.continueBtn]}
                   onPress={handleContinue}
                   activeOpacity={0.85}
                   accessibilityRole="button"
@@ -270,7 +271,7 @@ export default function RatingModal({
             </GlassSurface>
           ) : (
             <>
-              <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.phasePanel}>
+              <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={[styles.phasePanel, rtLt?.phasePanel]}>
                 <View style={styles.phaseBlock}>
                   <PremiumText variant="step" style={styles.phaseStep}>
                     Yolculuk tamamlandı
@@ -287,12 +288,12 @@ export default function RatingModal({
 
               {renderStars()}
 
-              <PremiumText variant="caption" style={styles.ratingText}>
+              <PremiumText variant="caption" style={[styles.ratingText, rtLt?.ratingText]}>
                 {rating} / 5
               </PremiumText>
 
               <TouchableOpacity
-                style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+                style={[styles.submitBtn, rtLt?.submitBtn, loading && styles.submitBtnDisabled]}
                 onPress={handleSubmitRating}
                 disabled={loading}
                 hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
@@ -300,7 +301,7 @@ export default function RatingModal({
               >
                 {loading ? (
                   <View style={styles.loadingRow}>
-                    <ActivityIndicator color={PREMIUM_AUTH_CYAN} />
+                    <ActivityIndicator color={ui.activity} />
                     <PremiumText variant="caption" muted style={styles.loadingText}>
                       Değerlendirmen kaydediliyor…
                     </PremiumText>
@@ -313,7 +314,7 @@ export default function RatingModal({
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.skipBtn} onPress={onClose} activeOpacity={0.85}>
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.skipPanel}>
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={[styles.skipPanel, rtLt?.skipPanel]}>
                   <PremiumText variant="caption" muted style={styles.skipBtnText}>
                     Şimdilik atla
                   </PremiumText>

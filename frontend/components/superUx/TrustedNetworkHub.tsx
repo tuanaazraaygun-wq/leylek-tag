@@ -65,6 +65,7 @@ import {
 import TrustedConnectionRow from './TrustedConnectionRow';
 import TrustedPendingRow from './TrustedPendingRow';
 import TrustedRadarBriefingStrip from './TrustedRadarBriefingStrip';
+import { useQrPaymentTrustTheme } from '../../lib/theme/useQrPaymentTrustTheme';
 
 export type TrustedNetworkHubProps = {
   role: TrustedHubRole;
@@ -82,9 +83,10 @@ function isPendingResponderRequest(row: TrustedDirectRequestRow | null | undefin
 }
 
 function RouteContextBanner({ route }: { route: TrustedDirectRouteContext }) {
+  const { trustSurfaces: trLt } = useQrPaymentTrustTheme('trust');
   return (
-    <View style={styles.routeBanner}>
-      <Text style={styles.routeBannerTitle}>{TDM_ROUTE_BANNER_TITLE}</Text>
+    <View style={[styles.routeBanner, trLt?.routeBanner]}>
+      <Text style={[styles.routeBannerTitle, trLt?.routeBannerTitle]}>{TDM_ROUTE_BANNER_TITLE}</Text>
       <Text style={styles.routeBannerLine} numberOfLines={1}>
         {route.pickup_label} → {route.dropoff_label}
       </Text>
@@ -96,10 +98,11 @@ function RouteContextBanner({ route }: { route: TrustedDirectRouteContext }) {
 }
 
 function HubSkeletonRows() {
+  const { trustSurfaces: trLt } = useQrPaymentTrustTheme('trust');
   return (
     <View style={styles.skeletonWrap}>
       {[0, 1, 2].map((key) => (
-        <View key={key} style={styles.skeletonRow}>
+        <View key={key} style={[styles.skeletonRow, trLt?.skeletonRow]}>
           <View style={styles.skeletonAvatar} />
           <View style={styles.skeletonTextCol}>
             <View style={styles.skeletonLineMain} />
@@ -118,9 +121,10 @@ function HubSection({
   title: string;
   children: React.ReactNode;
 }) {
+  const { trustSurfaces: trLt } = useQrPaymentTrustTheme('trust');
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={[styles.sectionTitle, trLt?.sectionTitle]}>{title}</Text>
       <View style={styles.sectionList}>{children}</View>
     </View>
   );
@@ -133,6 +137,7 @@ function TrustedNetworkHub({
   hasActiveTag = false,
   tdmSession = null,
 }: TrustedNetworkHubProps) {
+  const { trustSurfaces: trLt, ui, isScopeLight } = useQrPaymentTrustTheme('trust');
   const router = useRouter();
   const {
     status,
@@ -378,27 +383,29 @@ function TrustedNetworkHub({
           : '';
 
   return (
-    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
-      <LinearGradient
-        colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(11, 18, 32, 0.98)']}
-        style={StyleSheet.absoluteFill}
-      />
+    <SafeAreaView style={[styles.root, trLt?.root]} edges={['top', 'left', 'right']}>
+      {!isScopeLight ? (
+        <LinearGradient
+          colors={[PREMIUM_NAVY_DEEP, PREMIUM_NAVY_CARD, 'rgba(11, 18, 32, 0.98)']}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
 
-      <View style={styles.header}>
+      <View style={[styles.header, trLt?.header]}>
         <Pressable
-          style={styles.backBtn}
+          style={[styles.backBtn, trLt?.backBtn]}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Geri"
         >
-          <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+          <Ionicons name="arrow-back" size={20} color={ui.accent} />
         </Pressable>
         <View style={styles.headerBody}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, trLt?.title]} numberOfLines={1}>
             {title}
           </Text>
           {subtitle ? (
-            <Text style={styles.subtitle} numberOfLines={2}>
+            <Text style={[styles.subtitle, trLt?.subtitle]} numberOfLines={2}>
               {subtitle}
             </Text>
           ) : null}
@@ -409,7 +416,9 @@ function TrustedNetworkHub({
         <Pressable
           style={[
             styles.actionBanner,
+            trLt?.actionBanner,
             actionError ? styles.actionBannerError : styles.actionBannerSuccess,
+            actionError ? trLt?.actionBannerError : trLt?.actionBannerSuccess,
           ]}
           onPress={clearActionFeedback}
           accessibilityRole="text"
@@ -417,7 +426,7 @@ function TrustedNetworkHub({
           <Ionicons
             name={actionError ? 'alert-circle-outline' : 'checkmark-circle-outline'}
             size={16}
-            color={actionError ? 'rgba(252, 165, 165, 0.95)' : 'rgba(52, 211, 153, 0.95)'}
+            color={actionError ? ui.errorIcon : ui.successBanner}
           />
           <Text
             style={[
@@ -433,11 +442,11 @@ function TrustedNetworkHub({
 
       {tdmSession?.errorMessage ? (
         <Pressable
-          style={[styles.actionBanner, styles.actionBannerError]}
+          style={[styles.actionBanner, styles.actionBannerError, trLt?.actionBanner, trLt?.actionBannerError]}
           onPress={() => tdmSession.dismissError?.()}
           accessibilityRole="text"
         >
-          <Ionicons name="alert-circle-outline" size={16} color="rgba(252, 165, 165, 0.95)" />
+          <Ionicons name="alert-circle-outline" size={16} color={ui.errorIcon} />
           <Text style={[styles.actionBannerText, styles.actionBannerTextError]} numberOfLines={3}>
             {tdmSession.errorMessage}
           </Text>
@@ -445,7 +454,7 @@ function TrustedNetworkHub({
       ) : null}
 
       {showOrphanPendingPanel ? (
-        <View style={styles.orphanPanel}>
+        <View style={[styles.orphanPanel, trLt?.orphanPanel]}>
           <Text style={styles.orphanTitle}>{TDM_ORPHAN_PENDING_TITLE}</Text>
           <Text style={styles.orphanBody}>{TDM_ORPHAN_PENDING_BODY}</Text>
           <View style={styles.orphanActions}>
@@ -455,7 +464,7 @@ function TrustedNetworkHub({
               disabled={orphanCancelling}
             >
               {orphanCancelling ? (
-                <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+                <ActivityIndicator size="small" color={ui.activity} />
               ) : (
                 <Text style={styles.orphanBtnPrimaryText}>{TDM_ORPHAN_CANCEL}</Text>
               )}
@@ -474,26 +483,26 @@ function TrustedNetworkHub({
       ) : null}
 
       {showTdmUi && tdmPendingBlocked ? (
-        <View style={styles.tdmPendingBanner}>
-          <Ionicons name="time-outline" size={16} color={PREMIUM_AUTH_CYAN} />
+        <View style={[styles.tdmPendingBanner, trLt?.tdmPendingBanner]}>
+          <Ionicons name="time-outline" size={16} color={ui.accent} />
           <Text style={styles.tdmPendingBannerText}>{TDM_PENDING_BANNER}</Text>
         </View>
       ) : null}
 
       {tdmGloballyBlocked ? (
-        <View style={styles.tdmHintBanner}>
+        <View style={[styles.tdmHintBanner, trLt?.tdmHintBanner]}>
           <Text style={styles.tdmHintBannerText}>{TDM_UNAVAILABLE_HINT}</Text>
         </View>
       ) : null}
 
       {role === 'passenger' && !routeContext && tdmEnabled !== false && !showOrphanPendingPanel ? (
-        <View style={styles.tdmHintBanner}>
+        <View style={[styles.tdmHintBanner, trLt?.tdmHintBanner]}>
           <Text style={styles.tdmHintBannerText}>{TDM_NO_ROUTE_HINT}</Text>
         </View>
       ) : null}
 
       {hasActiveTag && role === 'passenger' && routeContext ? (
-        <View style={styles.tdmHintBanner}>
+        <View style={[styles.tdmHintBanner, trLt?.tdmHintBanner]}>
           <Text style={styles.tdmHintBannerText}>{TDM_ACTIVE_TAG_BLOCK}</Text>
         </View>
       ) : null}
@@ -503,15 +512,15 @@ function TrustedNetworkHub({
       {isLoading ? (
         <HubSkeletonRows />
       ) : isError ? (
-        <View style={styles.errorPanel}>
+        <View style={[styles.errorPanel, trLt?.errorPanel]}>
           <View style={styles.errorIconWrap}>
-            <Ionicons name="cloud-offline-outline" size={28} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="cloud-offline-outline" size={28} color={ui.accent} />
           </View>
           <Text style={styles.errorTitle}>{HUB_ERROR_TITLE}</Text>
           <Text style={styles.errorBody}>{HUB_ERROR_BODY}</Text>
         </View>
       ) : isReady && !hasAnyData ? (
-        <View style={styles.emptyPanel}>
+        <View style={[styles.emptyPanel, trLt?.emptyPanel]}>
           <Text style={styles.emptyEmoji}>🦢</Text>
           <Text style={styles.emptyTitle}>{globalEmptyTitle(role)}</Text>
           <Text style={styles.emptyBody}>{globalEmptyBody(role)}</Text>
@@ -593,28 +602,28 @@ function TrustedNetworkHub({
         transparent
         onRequestClose={closeContributionModal}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <View style={[styles.modalBackdrop, trLt?.modalBackdrop]}>
+          <View style={[styles.modalCard, trLt?.modalCard]}>
             <Text style={styles.modalTitle}>{TDM_CONTRIBUTION_TITLE}</Text>
             {priceLoading ? (
-              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+              <ActivityIndicator size="small" color={ui.activity} />
             ) : (
               <>
                 <View style={styles.stepperRow}>
                   <Pressable
-                    style={styles.stepperBtn}
+                    style={[styles.stepperBtn, trLt?.stepperBtn]}
                     onPress={() => setContributionTl((v) => Math.max(minContributionTl, v - 10))}
                     disabled={contributionTl <= minContributionTl}
                   >
-                    <Ionicons name="remove" size={22} color={PREMIUM_AUTH_CYAN} />
+                    <Ionicons name="remove" size={22} color={ui.accent} />
                   </Pressable>
                   <Text style={styles.stepperValue}>{contributionTl} ₺</Text>
                   <Pressable
-                    style={styles.stepperBtn}
+                    style={[styles.stepperBtn, trLt?.stepperBtn]}
                     onPress={() => setContributionTl((v) => Math.min(maxContributionTl, v + 10))}
                     disabled={contributionTl >= maxContributionTl}
                   >
-                    <Ionicons name="add" size={22} color={PREMIUM_AUTH_CYAN} />
+                    <Ionicons name="add" size={22} color={ui.accent} />
                   </Pressable>
                 </View>
                 {priceError ? (
@@ -640,7 +649,7 @@ function TrustedNetworkHub({
               }
               busy={tdmSession?.isCreating === true}
             />
-            <Pressable style={styles.modalCancelBtn} onPress={closeContributionModal}>
+            <Pressable style={[styles.modalCancelBtn, trLt?.modalCancelBtn]} onPress={closeContributionModal}>
               <Text style={styles.modalCancelText}>{TDM_CONTRIBUTION_CANCEL}</Text>
             </Pressable>
           </View>

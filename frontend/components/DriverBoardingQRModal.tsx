@@ -16,6 +16,7 @@ import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 const QR_FETCH_TIMEOUT_MS = 9000;
 const QR_SLOW_RETRY_MS = 8000;
@@ -34,6 +35,7 @@ export default function DriverBoardingQRModal({
   tagId,
   remoteSuccess = false,
 }: Props) {
+  const { qrSurfaces: qrLt, ui } = useQrPaymentTrustTheme('qr');
   const [qrString, setQrString] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,12 +157,12 @@ export default function DriverBoardingQRModal({
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, qrLt?.scrim]} pointerEvents="none" />
 
-        <GlassSurface variant="panel" style={styles.sheet} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface variant="panel" style={[styles.sheet, qrLt?.container]} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
-              <PremiumText variant="caption" style={styles.phaseStep}>
+              <PremiumText variant="caption" style={[styles.phaseStep, qrLt?.phaseStep]}>
                 Biniş doğrulaması
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
@@ -169,18 +171,18 @@ export default function DriverBoardingQRModal({
             </View>
             <TouchableOpacity
               onPress={onClose}
-              style={styles.closeBtn}
+              style={[styles.closeBtn, qrLt?.closeBtn]}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Kapat"
             >
-              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
+              <Ionicons name="close" size={22} color={ui.closeIcon} />
             </TouchableOpacity>
           </View>
 
-          <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-            <View style={styles.guardianLiveDot} />
-            <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.88)" />
+          <GlassSurface variant="plain" style={[styles.guardianChip, qrLt?.guardianChip]} borderRadius={LDS_RADIUS.full}>
+            <View style={[styles.guardianLiveDot, qrLt?.guardianLiveDot]} />
+            <Ionicons name="shield-checkmark-outline" size={14} color={ui.accent} />
             <PremiumText variant="caption" style={styles.guardianChipText}>
               Yolcu QR kodunu okutuyor
             </PremiumText>
@@ -193,7 +195,7 @@ export default function DriverBoardingQRModal({
                   {error}
                 </PremiumText>
                 <TouchableOpacity
-                  style={styles.retryBtn}
+                  style={[styles.retryBtn, qrLt?.retryBtn]}
                   onPress={() => void fetchCode(true)}
                   activeOpacity={0.88}
                 >
@@ -203,10 +205,10 @@ export default function DriverBoardingQRModal({
                 </TouchableOpacity>
               </View>
             ) : qrString ? (
-              <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+              <GlassSurface variant="stage" style={[styles.qrStage, qrLt?.qrStage]} borderRadius={LDS_RADIUS.lg}>
                 <View style={styles.qrCheckpointRow}>
-                  <View style={styles.qrIconRing}>
-                    <Ionicons name="qr-code-outline" size={22} color="rgba(34,211,238,0.92)" />
+                  <View style={[styles.qrIconRing, qrLt?.qrIconRing]}>
+                    <Ionicons name="qr-code-outline" size={22} color={ui.accent} />
                   </View>
                   <View style={styles.qrCheckpointTextCol}>
                     <PremiumText variant="body" style={styles.qrCheckpointTitle}>
@@ -227,8 +229,8 @@ export default function DriverBoardingQRModal({
                 </PremiumText>
                 {remoteSuccess ? (
                   <View style={styles.remoteSuccessOverlay} pointerEvents="none">
-                    <Ionicons name="checkmark-circle" size={52} color="rgba(34,211,238,0.95)" />
-                    <PremiumText variant="body" style={styles.remoteSuccessTitle}>
+                    <Ionicons name="checkmark-circle" size={52} color={ui.successIcon} />
+                    <PremiumText variant="body" style={[styles.remoteSuccessTitle, qrLt?.remoteSuccessTitle]}>
                       Biniş doğrulandı
                     </PremiumText>
                     <PremiumText variant="caption" muted style={styles.remoteSuccessSubtitle}>
@@ -238,10 +240,10 @@ export default function DriverBoardingQRModal({
                 ) : null}
               </GlassSurface>
             ) : showSkeleton ? (
-              <GlassSurface variant="stage" style={styles.qrStage} borderRadius={LDS_RADIUS.lg}>
+              <GlassSurface variant="stage" style={[styles.qrStage, qrLt?.qrStage]} borderRadius={LDS_RADIUS.lg}>
                 <View style={styles.qrCheckpointRow}>
-                  <View style={styles.qrIconRing}>
-                    <Ionicons name="qr-code-outline" size={22} color="rgba(34,211,238,0.55)" />
+                  <View style={[styles.qrIconRing, qrLt?.qrIconRing]}>
+                    <Ionicons name="qr-code-outline" size={22} color={ui.accent} />
                   </View>
                   <View style={styles.qrCheckpointTextCol}>
                     <PremiumText variant="body" style={styles.qrCheckpointTitle}>
@@ -255,15 +257,15 @@ export default function DriverBoardingQRModal({
 
                 <View style={styles.qrSkeletonBox}>
                   {loading ? (
-                    <ActivityIndicator size="large" color="#22D3EE" />
+                    <ActivityIndicator size="large" color={ui.activity} />
                   ) : (
-                    <Ionicons name="qr-code-outline" size={72} color="rgba(186,201,222,0.28)" />
+                    <Ionicons name="qr-code-outline" size={72} color={ui.textMuted} />
                   )}
                 </View>
 
                 {showSlowRetry ? (
                   <TouchableOpacity
-                    style={styles.retryBtn}
+                    style={[styles.retryBtn, qrLt?.retryBtn]}
                     onPress={() => void fetchCode(true)}
                     activeOpacity={0.88}
                   >

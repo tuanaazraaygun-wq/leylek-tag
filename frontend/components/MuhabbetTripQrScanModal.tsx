@@ -19,6 +19,7 @@ import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 type MuhabbetTripQrScanModalProps = {
   visible: boolean;
@@ -119,6 +120,7 @@ export default function MuhabbetTripQrScanModal({
   onClose,
   onConfirmToken,
 }: MuhabbetTripQrScanModalProps) {
+  const { qrSurfaces: qrLt, ui } = useQrPaymentTrustTheme('qr');
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -247,9 +249,9 @@ export default function MuhabbetTripQrScanModal({
 
         {!hasPermission?.granted ? (
           <View style={styles.permissionStage}>
-            <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.permissionPanel}>
-              <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-                <Ionicons name="scan-outline" size={14} color="rgba(34,211,238,0.88)" />
+            <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={[styles.permissionPanel, qrLt?.permissionPanel]}>
+              <GlassSurface variant="plain" style={[styles.guardianChip, qrLt?.guardianChip]} borderRadius={LDS_RADIUS.full}>
+                <Ionicons name="scan-outline" size={14} color={ui.accent} />
                 <PremiumText variant="caption" style={styles.guardianChipText}>
                   QR doğrulaması
                 </PremiumText>
@@ -263,7 +265,7 @@ export default function MuhabbetTripQrScanModal({
               </PremiumText>
 
               <TouchableOpacity
-                style={styles.permBtnPrimary}
+                style={[styles.permBtnPrimary, qrLt?.permBtn]}
                 onPress={() => void requestPermission()}
                 activeOpacity={0.88}
               >

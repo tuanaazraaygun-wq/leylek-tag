@@ -18,6 +18,7 @@ import { appAlert } from '../contexts/AppAlertContext';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { playQrScanErrorSound, playQrScanSuccessSound } from '../utils/sound';
 import { tapButtonHaptic } from '../utils/touchHaptics';
+import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
 
 type Props = {
   visible: boolean;
@@ -55,6 +56,7 @@ export default function BoardingScanModal({
   longitude,
   onVerified,
 }: Props) {
+  const { qrSurfaces: qrLt, ui } = useQrPaymentTrustTheme('qr');
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -302,12 +304,12 @@ export default function BoardingScanModal({
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, qrLt?.scrim]} pointerEvents="none" />
 
-        <GlassSurface variant="panel" style={styles.container} borderRadius={LDS_RADIUS.xl}>
+        <GlassSurface variant="panel" style={[styles.container, qrLt?.container]} borderRadius={LDS_RADIUS.xl}>
           <View style={styles.header}>
             <View style={styles.headerTextCol}>
-              <PremiumText variant="caption" style={styles.phaseStep}>
+              <PremiumText variant="caption" style={[styles.phaseStep, qrLt?.phaseStep]}>
                 Biniş doğrulaması
               </PremiumText>
               <PremiumText variant="caption" muted style={styles.phaseCaption}>
@@ -316,18 +318,18 @@ export default function BoardingScanModal({
             </View>
             <TouchableOpacity
               onPress={handleClose}
-              style={styles.closeBtn}
+              style={[styles.closeBtn, qrLt?.closeBtn]}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel="Kapat"
             >
-              <Ionicons name="close" size={22} color="rgba(186,201,222,0.82)" />
+              <Ionicons name="close" size={22} color={ui.closeIcon} />
             </TouchableOpacity>
           </View>
 
-          <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-            <View style={styles.guardianLiveDot} />
-            <Ionicons name="scan-outline" size={14} color="rgba(34,211,238,0.88)" />
+          <GlassSurface variant="plain" style={[styles.guardianChip, qrLt?.guardianChip]} borderRadius={LDS_RADIUS.full}>
+            <View style={[styles.guardianLiveDot, qrLt?.guardianLiveDot]} />
+            <Ionicons name="scan-outline" size={14} color={ui.accent} />
             <PremiumText variant="caption" style={styles.guardianChipText}>
               Güvenli biniş kontrolü
             </PremiumText>
@@ -343,7 +345,7 @@ export default function BoardingScanModal({
                 Kamera izni gerekli
               </PremiumText>
               <TouchableOpacity
-                style={styles.permBtn}
+                style={[styles.permBtn, qrLt?.permBtn]}
                 onPress={() => void requestPermission()}
                 activeOpacity={0.88}
               >
@@ -353,7 +355,7 @@ export default function BoardingScanModal({
               </TouchableOpacity>
             </View>
           ) : (
-            <GlassSurface variant="stage" style={styles.cameraStage} borderRadius={LDS_RADIUS.lg}>
+            <GlassSurface variant="stage" style={[styles.cameraStage, qrLt?.cameraStage]} borderRadius={LDS_RADIUS.lg}>
               <View style={styles.cameraBox}>
                 <CameraView
                   key={`boarding-cam-${cameraSessionKey}`}
@@ -386,7 +388,7 @@ export default function BoardingScanModal({
                 </View>
                 {!cameraReady && !processing ? (
                   <View style={styles.processing}>
-                    <ActivityIndicator size="large" color="#22D3EE" />
+                    <ActivityIndicator size="large" color={ui.activity} />
                     <PremiumText variant="caption" muted style={styles.processingText}>
                       Kamera hazırlanıyor…
                     </PremiumText>
@@ -394,7 +396,7 @@ export default function BoardingScanModal({
                 ) : null}
                 {processing ? (
                   <View style={styles.processing}>
-                    <ActivityIndicator size="large" color="#22D3EE" />
+                    <ActivityIndicator size="large" color={ui.activity} />
                     <PremiumText variant="caption" muted style={styles.processingText}>
                       Doğrulanıyor…
                     </PremiumText>
@@ -402,8 +404,8 @@ export default function BoardingScanModal({
                 ) : null}
                 {successBeat ? (
                   <View style={styles.processing}>
-                    <Ionicons name="checkmark-circle" size={56} color="rgba(34,211,238,0.95)" />
-                    <PremiumText variant="body" style={styles.successTitle}>
+                    <Ionicons name="checkmark-circle" size={56} color={ui.successIcon} />
+                    <PremiumText variant="body" style={[styles.successTitle, qrLt?.scanSuccessTitle]}>
                       Biniş doğrulandı
                     </PremiumText>
                     <PremiumText variant="caption" muted style={styles.processingText}>
