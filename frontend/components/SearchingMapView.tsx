@@ -17,6 +17,7 @@ import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../
 import { MapDestinationFlagPin, MapEntityMarkerImage } from '../lib/mapMarkerChrome';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
 import { PREMIUM_AUTH_CYAN } from './auth/premiumAuthStyles';
+import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
@@ -83,6 +84,7 @@ export default function SearchingMapView({
   nearbyDriverCount = 0,
   selfUserId = null,
 }: SearchingMapViewProps) {
+  const { searchingSurfaces: lt, ui } = usePassengerTheme();
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
   const [searchingMapTracks, setSearchingMapTracks] = useState(true);
@@ -130,9 +132,9 @@ export default function SearchingMapView({
   // Web fallback
   if (Platform.OS === 'web' || !MapView) {
     return (
-      <View style={[styles.container, { height }]}>
-        <View style={styles.webFallback}>
-          <Ionicons name="map" size={40} color={PREMIUM_AUTH_CYAN} />
+      <View style={[styles.container, { height }, lt?.container]}>
+        <View style={[styles.webFallback, lt?.webFallback]}>
+          <Ionicons name="map" size={40} color={ui.accent} />
           <PremiumText variant="body" muted style={styles.webFallbackText}>
             {driverLocations.length > 0
               ? `${driverLocations.length} sürücü teklifi`
@@ -162,7 +164,7 @@ export default function SearchingMapView({
   };
 
   return (
-    <View style={[styles.container, { height }]}>
+    <View style={[styles.container, { height }, lt?.container]}>
       <MapView
         ref={mapRef}
         style={styles.map}
@@ -233,9 +235,9 @@ export default function SearchingMapView({
                 <GlassSurface
                   variant="plain"
                   borderRadius={LDS_RADIUS.sm}
-                  style={styles.carPriceTag}
+                  style={[styles.carPriceTag, lt?.carPriceTag]}
                 >
-                  <PremiumText variant="caption" style={styles.carPriceText}>
+                  <PremiumText variant="caption" style={[styles.carPriceText, lt?.carPriceText]}>
                     ₺{driver.price}
                   </PremiumText>
                 </GlassSurface>
@@ -247,15 +249,15 @@ export default function SearchingMapView({
       </MapView>
 
       {offerDriverCount > 0 ? (
-        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.driverCountBadge}>
-          <Ionicons name="car" size={16} color={PREMIUM_AUTH_CYAN} />
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.driverCountBadge, lt?.driverCountBadge]}>
+          <Ionicons name="car" size={16} color={ui.accent} />
           <PremiumText variant="caption" style={styles.driverCountText}>
             {offerDriverCount} teklif
           </PremiumText>
         </GlassSurface>
       ) : null}
 
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.infoBanner}>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={[styles.infoBanner, lt?.infoBanner]}>
         <PremiumText variant="body" style={styles.infoBannerText}>
           {offerDriverCount > 0 ? 'Sürücü teklifleri hazır' : 'Eşleşme aranıyor'}
         </PremiumText>

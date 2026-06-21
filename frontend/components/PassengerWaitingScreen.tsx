@@ -45,6 +45,7 @@ import { LDS_TYPOGRAPHY } from '../design-system/tokens/typography';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
+import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -154,6 +155,7 @@ export default function PassengerWaitingScreen({
   selfUserId = null,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { waitingSurfaces: lt, ui } = usePassengerTheme();
 
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
   const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>({
@@ -328,7 +330,7 @@ export default function PassengerWaitingScreen({
     : null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, lt?.container]}>
       <CockpitBackground />
 
       <ScrollView
@@ -344,19 +346,19 @@ export default function PassengerWaitingScreen({
           <View style={styles.topBar}>
             <TouchableOpacity
               onPress={() => (onPressBack ? onPressBack() : onCancel())}
-              style={styles.navButton}
+              style={[styles.navButton, lt?.navButton]}
               accessibilityRole="button"
               accessibilityLabel="Geri"
             >
-              <Ionicons name="chevron-back" size={20} color={PREMIUM_AUTH_CYAN} />
+              <Ionicons name="chevron-back" size={20} color={ui.accent} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onCancel}
-              style={styles.navButtonDanger}
+              style={[styles.navButtonDanger, lt?.navButtonDanger]}
               accessibilityRole="button"
               accessibilityLabel="Teklifi iptal et"
             >
-              <Ionicons name="close" size={20} color="rgba(248,113,113,0.92)" />
+              <Ionicons name="close" size={20} color={ui.dangerIcon} />
             </TouchableOpacity>
           </View>
 
@@ -455,15 +457,15 @@ export default function PassengerWaitingScreen({
             })}
           </MapView>
         ) : (
-          <View style={styles.mapPlaceholder}>
-            <Ionicons name="map" size={48} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.mapPlaceholderText}>
+          <View style={[styles.mapPlaceholder, lt?.mapPlaceholder]}>
+            <Ionicons name="map" size={48} color={ui.accent} />
+            <Text style={[styles.mapPlaceholderText, lt?.mapPlaceholderText]}>
               {userLocation && !isNativeGoogleMapsSupported()
                 ? 'Bu cihazda harita kapalı; eşleşme ve sürücü listesi normal çalışır.'
                 : 'Harita yükleniyor...'}
             </Text>
             {userLocation && !isNativeGoogleMapsSupported() ? (
-              <Text style={styles.mapPlaceholderSub}>
+              <Text style={[styles.mapPlaceholderSub, lt?.mapPlaceholderSub]}>
                 Sürücüler değerlendiriliyor
               </Text>
             ) : null}
@@ -472,11 +474,11 @@ export default function PassengerWaitingScreen({
         <GlassSurface
           variant="plain"
           borderRadius={LDS_RADIUS.full}
-          style={styles.mapStatsBar}
+          style={[styles.mapStatsBar, lt?.mapStatsBar]}
           pointerEvents="none"
         >
           <Text
-            style={styles.mapStatsBarText}
+            style={[styles.mapStatsBarText, lt?.mapStatsBarText]}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.82}
@@ -491,15 +493,15 @@ export default function PassengerWaitingScreen({
           <GlassSurface variant="plain" style={styles.locationCard}>
         <View style={styles.locationRow}>
           <View style={styles.locationDot}>
-            <View style={[styles.dot, { backgroundColor: PREMIUM_AUTH_CYAN }]} />
+            <View style={[styles.dot, { backgroundColor: ui.accent }]} />
           </View>
-          <Text style={styles.locationText} numberOfLines={1}>
+          <Text style={[styles.locationText, lt?.locationText]} numberOfLines={1}>
             {pickupAddress || 'Alış noktası'}
           </Text>
         </View>
         
         <View style={styles.locationDivider}>
-          <View style={styles.dividerLine} />
+          <View style={[styles.dividerLine, lt?.dividerLine]} />
         </View>
         
         <View style={styles.locationRow}>
@@ -508,21 +510,21 @@ export default function PassengerWaitingScreen({
               style={[
                 styles.dot,
                 {
-                  backgroundColor: 'rgba(127, 29, 29, 0.55)',
+                  backgroundColor: ui.dropoffDot,
                   borderWidth: 1,
                   borderColor: 'rgba(248, 113, 113, 0.4)',
                 },
               ]}
             />
           </View>
-          <Text style={styles.locationText} numberOfLines={1}>
+          <Text style={[styles.locationText, lt?.locationText]} numberOfLines={1}>
             {dropoffAddress || 'Varış noktası'}
           </Text>
         </View>
         
-        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-outline" size={18} color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.shareButtonText}>Paylaş</Text>
+        <TouchableOpacity style={[styles.shareButton, lt?.shareButton]} onPress={handleShare}>
+          <Ionicons name="share-outline" size={18} color={ui.accent} />
+          <Text style={[styles.shareButtonText, lt?.shareButtonText]}>Paylaş</Text>
         </TouchableOpacity>
           </GlassSurface>
 
@@ -530,14 +532,14 @@ export default function PassengerWaitingScreen({
         {dispatchStatus.current_driver_index === 0 && (
           <View style={styles.loadingContainer}>
             <View style={styles.loadingDots}>
-              <Animated.View style={[styles.loadingDot, { transform: [{ scale: dotScale }] }]} />
-              <Animated.View style={[styles.loadingDot, styles.loadingDotDelay1]} />
-              <Animated.View style={[styles.loadingDot, styles.loadingDotDelay2]} />
+              <Animated.View style={[styles.loadingDot, lt?.loadingDot, { transform: [{ scale: dotScale }] }]} />
+              <Animated.View style={[styles.loadingDot, lt?.loadingDot, styles.loadingDotDelay1]} />
+              <Animated.View style={[styles.loadingDot, lt?.loadingDot, styles.loadingDotDelay2]} />
             </View>
           </View>
         )}
 
-        <PremiumText variant="body" style={styles.statusTitle}>
+        <PremiumText variant="body" style={[styles.statusTitle, lt?.statusTitle]}>
           {getStatusMessage()}
         </PremiumText>
         <PremiumText variant="caption" muted style={styles.statusSubtitle}>
@@ -546,9 +548,9 @@ export default function PassengerWaitingScreen({
 
         {dispatchStatus.current_driver_index > 0 && (
           <View style={styles.dispatchInfo}>
-            <View style={styles.dispatchBadge}>
-              <Ionicons name="people" size={14} color={PREMIUM_AUTH_CYAN} />
-              <Text style={styles.dispatchBadgeText}>
+            <View style={[styles.dispatchBadge, lt?.dispatchBadge]}>
+              <Ionicons name="people" size={14} color={ui.accent} />
+              <Text style={[styles.dispatchBadgeText, lt?.dispatchBadgeText]}>
                 {dispatchStatus.current_driver_index} / {dispatchStatus.total_drivers} sürücüye gösterildi
               </Text>
             </View>
@@ -564,8 +566,8 @@ export default function PassengerWaitingScreen({
           { paddingBottom: Math.max(insets.bottom, LDS_SPACING.sm) + LDS_SPACING.xxs },
         ]}
       >
-        <TouchableOpacity style={styles.cancelTagButton} onPress={onCancel} activeOpacity={0.88}>
-          <Text style={styles.cancelTagButtonText}>Teklifi iptal et</Text>
+        <TouchableOpacity style={[styles.cancelTagButton, lt?.cancelTagButton]} onPress={onCancel} activeOpacity={0.88}>
+          <Text style={[styles.cancelTagButtonText, lt?.cancelTagButtonText]}>Teklifi iptal et</Text>
         </TouchableOpacity>
       </View>
       
@@ -576,23 +578,23 @@ export default function PassengerWaitingScreen({
         animationType="slide"
         onRequestClose={() => setShowDriverProfile(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.driverProfileModal}>
+        <View style={[styles.modalOverlay, lt?.modalOverlay]}>
+          <View style={[styles.driverProfileModal, lt?.driverProfileModal]}>
             <View style={styles.modalHeader}>
               <PremiumText variant="title" style={styles.modalTitle}>
                 Sürücü profili
               </PremiumText>
               <TouchableOpacity onPress={() => setShowDriverProfile(false)}>
-                <Ionicons name="close" size={24} color="rgba(186,201,222,0.82)" />
+                <Ionicons name="close" size={24} color={ui.modalCloseIcon} />
               </TouchableOpacity>
             </View>
             
             {selectedDriver && (
               <View style={styles.driverProfileContent}>
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.driverAvatar}>
-                  <Ionicons name="person" size={40} color="rgba(243,248,255,0.94)" />
+                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.driverAvatar, lt?.driverAvatar]}>
+                  <Ionicons name="person" size={40} color={ui.avatarIcon} />
                 </GlassSurface>
-                <PremiumText variant="title" style={styles.driverName}>
+                <PremiumText variant="title" style={[styles.driverName, lt?.driverName]}>
                   {displayFirstName(selectedDriver.name, 'Sürücü')}
                 </PremiumText>
                 
@@ -602,9 +604,9 @@ export default function PassengerWaitingScreen({
                   <GlassSurface
                     variant="plain"
                     borderRadius={LDS_RADIUS.full}
-                    style={styles.driverRating}
+                    style={[styles.driverRating, lt?.driverRating]}
                   >
-                    <Ionicons name="star" size={18} color={PREMIUM_AUTH_CYAN} />
+                    <Ionicons name="star" size={18} color={ui.accent} />
                     <PremiumText variant="body" style={styles.driverRatingText}>
                       {Number(selectedDriver.rating).toFixed(1)}
                     </PremiumText>
@@ -613,7 +615,7 @@ export default function PassengerWaitingScreen({
                   <GlassSurface
                     variant="plain"
                     borderRadius={LDS_RADIUS.sm}
-                    style={styles.driverRatingEmpty}
+                    style={[styles.driverRatingEmpty, lt?.driverRatingEmpty]}
                   >
                     <PremiumText variant="caption" muted style={styles.driverRatingEmptyText}>
                       Henüz değerlendirme yok
@@ -630,7 +632,7 @@ export default function PassengerWaitingScreen({
                 {selectedDriver.distance_km != null &&
                 Number.isFinite(Number(selectedDriver.distance_km)) &&
                 Number(selectedDriver.distance_km) > 0 ? (
-                  <PremiumText variant="caption" style={styles.driverDistance}>
+                  <PremiumText variant="caption" style={[styles.driverDistance, lt?.driverDistance]}>
                     {Number(selectedDriver.distance_km).toFixed(1)} km uzaklıkta
                   </PremiumText>
                 ) : null}

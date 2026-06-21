@@ -188,6 +188,7 @@ import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
+import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import {
   publishTrustedInviteHubRefresh,
@@ -5568,6 +5569,7 @@ function PassengerOfferCard({
   onDismiss?: () => void;
   isBest?: boolean;
 }) {
+  const { offerCardSurfaces: ocLt, ui } = usePassengerTheme();
   const [accepting, setAccepting] = useState(false);
   
   const personName = displayFirstName(offer.driver_name, 'Sürücü');
@@ -5611,12 +5613,12 @@ function PassengerOfferCard({
   };
 
   return (
-    <View style={[passengerCardStyles.card, isBest && passengerCardStyles.cardBest]}>
+    <View style={[passengerCardStyles.card, ocLt?.card, isBest && passengerCardStyles.cardBest, isBest && ocLt?.cardBest]}>
       {/* ÖNERİLEN Etiketi */}
       {isBest && (
-        <View style={passengerCardStyles.bestBadge}>
-          <Ionicons name="trophy" size={14} color={PREMIUM_AUTH_CYAN} />
-          <PremiumText variant="caption" style={passengerCardStyles.bestText}>
+        <View style={[passengerCardStyles.bestBadge, ocLt?.bestBadge]}>
+          <Ionicons name="trophy" size={14} color={ui.accent} />
+          <PremiumText variant="caption" style={[passengerCardStyles.bestText, ocLt?.bestText]}>
             ÖNERİLEN
           </PremiumText>
         </View>
@@ -5629,18 +5631,18 @@ function PassengerOfferCard({
           {offer.driver_photo ? (
             <Image source={{ uri: offer.driver_photo }} style={passengerCardStyles.avatar} />
           ) : (
-            <View style={passengerCardStyles.avatarPlaceholder}>
-              <PremiumText variant="title" style={passengerCardStyles.avatarLetter}>
+            <View style={[passengerCardStyles.avatarPlaceholder, ocLt?.avatarPlaceholder]}>
+              <PremiumText variant="title" style={[passengerCardStyles.avatarLetter, ocLt?.avatarLetter]}>
                 {personName.charAt(0)}
               </PremiumText>
             </View>
           )}
-          <View style={passengerCardStyles.onlineDot} />
+          <View style={[passengerCardStyles.onlineDot, ocLt?.onlineDot]} />
         </View>
         
         {/* Sürücü Bilgileri */}
         <View style={passengerCardStyles.driverInfo}>
-          <PremiumText variant="body" style={passengerCardStyles.driverName}>
+          <PremiumText variant="body" style={[passengerCardStyles.driverName, ocLt?.driverName]}>
             {personName}
           </PremiumText>
           {hasTrustMeta ? (
@@ -5648,7 +5650,7 @@ function PassengerOfferCard({
               {hasRating ? (
                 <>
                   <Ionicons name="star" size={12} color="#FBBF24" />
-                  <PremiumText variant="caption" style={passengerCardStyles.ratingText}>
+                  <PremiumText variant="caption" style={[passengerCardStyles.ratingText, ocLt?.ratingText]}>
                     {rawRating.toFixed(1)}
                   </PremiumText>
                 </>
@@ -5672,7 +5674,7 @@ function PassengerOfferCard({
                       •
                     </PremiumText>
                   ) : null}
-                  <Ionicons name="shield-checkmark" size={12} color={PREMIUM_AUTH_CYAN} />
+                  <Ionicons name="shield-checkmark" size={12} color={ui.accent} />
                   <PremiumText variant="caption" muted style={passengerCardStyles.verifiedText}>
                     Doğrulanmış
                   </PremiumText>
@@ -5692,15 +5694,15 @@ function PassengerOfferCard({
         </View>
         
         {/* Fiyat */}
-        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={passengerCardStyles.priceBox}>
-          <PremiumText variant="title" style={passengerCardStyles.priceAmount}>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.sm} style={[passengerCardStyles.priceBox, ocLt?.priceBox]}>
+          <PremiumText variant="title" style={[passengerCardStyles.priceAmount, ocLt?.priceAmount]}>
             ₺{offer.price || '?'}
           </PremiumText>
         </GlassSurface>
       </View>
       
       {/* Alt Kısım - Mesafe + Süre + Butonlar */}
-      <View style={passengerCardStyles.bottomRow}>
+      <View style={[passengerCardStyles.bottomRow, ocLt?.bottomRow]}>
         <View style={passengerCardStyles.statsRow}>
           <View style={passengerCardStyles.statItem}>
             <Ionicons name="navigate-circle-outline" size={16} color="rgba(186,201,222,0.82)" />
@@ -5720,13 +5722,14 @@ function PassengerOfferCard({
         
         <View style={passengerCardStyles.actionRow}>
           {onDismiss && (
-            <TouchableOpacity style={passengerCardStyles.dismissBtn} onPress={onDismiss}>
+            <TouchableOpacity style={[passengerCardStyles.dismissBtn, ocLt?.dismissBtn]} onPress={onDismiss}>
               <Ionicons name="close" size={18} color="rgba(186,201,222,0.88)" />
             </TouchableOpacity>
           )}
           <TouchableOpacity 
             style={[
               passengerCardStyles.acceptBtn,
+              ocLt?.acceptBtn,
               isBest && passengerCardStyles.acceptBtnBest,
               accepting && passengerCardStyles.acceptBtnBusy,
             ]}
@@ -5738,7 +5741,7 @@ function PassengerOfferCard({
             ) : (
               <>
                 <Ionicons name="checkmark" size={18} color="#08111F" />
-                <PremiumText variant="body" style={passengerCardStyles.acceptText}>
+                <PremiumText variant="body" style={[passengerCardStyles.acceptText, ocLt?.acceptText]}>
                   Kabul et
                 </PremiumText>
               </>
@@ -7427,6 +7430,12 @@ function PassengerDashboard({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: paxWindowHeight } = useWindowDimensions();
+  const {
+    ui: paxUi,
+    searchingPhaseSurfaces: spLt,
+    dashboardSurfaces: dashLt,
+    routePickerSurfaces: rpLt,
+  } = usePassengerTheme();
   const priceModalSheetMaxHeight = Math.min(
     paxWindowHeight * 0.92,
     paxWindowHeight - insets.top - 8,
@@ -12324,8 +12333,8 @@ function PassengerDashboard({
     return (
       <View style={{ flex: 1 }}>
         <CockpitBackground />
-        <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-          <ActivityIndicator size="large" color="#3FA9F5" />
+        <SafeAreaView style={[styles.container, dashLt?.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={paxUi.activity} />
         </SafeAreaView>
         <TagMatchTransitionOverlay active={matchingInProgress} />
       </View>
@@ -12372,11 +12381,11 @@ function PassengerDashboard({
               style={[styles.roleUnifiedCockpitShell, searchingStyles.offerCockpitShell]}
             >
               <View style={searchingStyles.topBar}>
-                <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={searchingStyles.backBtn}>
-                  <Ionicons name="chevron-back" size={20} color={PREMIUM_AUTH_CYAN} />
+                <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={[searchingStyles.backBtn, spLt?.backBtn]}>
+                  <Ionicons name="chevron-back" size={20} color={paxUi.accent} />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleCancelTag} style={searchingStyles.cancelBtn}>
-                  <Ionicons name="close" size={20} color="rgba(248,113,113,0.92)" />
+                <TouchableOpacity onPress={handleCancelTag} style={[searchingStyles.cancelBtn, spLt?.cancelBtn]}>
+                  <Ionicons name="close" size={20} color={paxUi.dangerIcon} />
                 </TouchableOpacity>
               </View>
 
@@ -12402,30 +12411,30 @@ function PassengerDashboard({
 
               <GlassSurface variant="plain" style={searchingStyles.routeCard}>
                 <View style={searchingStyles.routeRow}>
-                  <View style={[searchingStyles.routeDot, { backgroundColor: PREMIUM_AUTH_CYAN }]} />
-                  <PremiumText variant="body" style={searchingStyles.routeText} numberOfLines={1}>
+                  <View style={[searchingStyles.routeDot, { backgroundColor: paxUi.accent }]} />
+                  <PremiumText variant="body" style={[searchingStyles.routeText, spLt?.routeText]} numberOfLines={1}>
                     {activeTag.pickup_location}
                   </PremiumText>
                 </View>
                 <Ionicons
                   name="arrow-down"
                   size={14}
-                  color="rgba(186,201,222,0.55)"
+                  color={paxUi.routeArrow}
                   style={searchingStyles.routeArrow}
                 />
                 <View style={searchingStyles.routeRow}>
-                  <View style={[searchingStyles.routeDot, { backgroundColor: 'rgba(248,140,148,0.78)' }]} />
-                  <PremiumText variant="body" style={searchingStyles.routeText} numberOfLines={1}>
+                  <View style={[searchingStyles.routeDot, { backgroundColor: paxUi.dropoffDot }]} />
+                  <PremiumText variant="body" style={[searchingStyles.routeText, spLt?.routeText]} numberOfLines={1}>
                     {activeTag.dropoff_location}
                   </PremiumText>
                 </View>
 
                 <TouchableOpacity
-                  style={searchingStyles.shareButton}
+                  style={[searchingStyles.shareButton, spLt?.shareButton]}
                   onPress={handleShareRideRequest}
                 >
-                  <Ionicons name="share-social" size={18} color={PREMIUM_AUTH_CYAN} />
-                  <PremiumText variant="body" style={searchingStyles.shareButtonText}>
+                  <Ionicons name="share-social" size={18} color={paxUi.accent} />
+                  <PremiumText variant="body" style={[searchingStyles.shareButtonText, spLt?.shareButtonText]}>
                     Paylaş
                   </PremiumText>
                 </TouchableOpacity>
@@ -12436,9 +12445,9 @@ function PassengerDashboard({
                   <PremiumText variant="title" style={searchingStyles.offersTitle}>
                     Teklifler
                   </PremiumText>
-                  <View style={searchingStyles.liveIndicator}>
-                    <View style={searchingStyles.liveDot} />
-                    <PremiumText variant="step" style={searchingStyles.liveText}>
+                  <View style={[searchingStyles.liveIndicator, spLt?.liveIndicator]}>
+                    <View style={[searchingStyles.liveDot, spLt?.liveDot]} />
+                    <PremiumText variant="step" style={[searchingStyles.liveText, spLt?.liveText]}>
                       Canlı
                     </PremiumText>
                   </View>
@@ -12473,7 +12482,7 @@ function PassengerDashboard({
 
   // YOLCU EKRANI - AKTİF TAG VAR (matched veya in_progress)
   return (
-    <View style={styles.passengerTripShell}>
+    <View style={[styles.passengerTripShell, dashLt?.tripShell]}>
     <CockpitBackground />
     <SafeAreaView style={styles.containerTransparent}>
       {/* 🆕 Eşleşme Sağlanıyor Modal */}
@@ -12488,7 +12497,7 @@ function PassengerDashboard({
             end={{ x: 1, y: 0 }}
             style={styles.toastGradient}
           >
-            <Ionicons name="checkmark-circle" size={24} color="#22D3EE" />
+            <Ionicons name="checkmark-circle" size={24} color={paxUi.toastAccent} />
             <Text style={styles.toastText}>{toastMessage}</Text>
           </LinearGradient>
         </Animated.View>
@@ -13284,6 +13293,7 @@ function PassengerDashboard({
                 <Pressable
                   style={({ pressed }) => [
                     styles.passengerMatchBackBtn,
+                    dashLt?.matchBackBtn,
                     pressed && styles.passengerMatchHeaderBtnPressed,
                   ]}
                   onPress={() => {
@@ -13291,11 +13301,12 @@ function PassengerDashboard({
                     setScreen('role-select');
                   }}
                 >
-                  <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+                  <Ionicons name="arrow-back" size={20} color={paxUi.accent} />
                 </Pressable>
                 <Pressable
                   style={({ pressed }) => [
                     styles.passengerMatchLogoutBtn,
+                    dashLt?.matchLogoutBtn,
                     pressed && styles.passengerMatchHeaderBtnPressed,
                   ]}
                   onPress={() => {
@@ -13304,7 +13315,7 @@ function PassengerDashboard({
                   }}
                   accessibilityLabel="Çıkış"
                 >
-                  <Ionicons name="log-out-outline" size={20} color={PREMIUM_TEXT_MUTED} />
+                  <Ionicons name="log-out-outline" size={20} color={paxUi.textMuted} />
                 </Pressable>
               </View>
 
@@ -13607,10 +13618,10 @@ function PassengerDashboard({
                           <GlassSurface
                             variant="plain"
                             borderRadius={LDS_RADIUS.md}
-                            style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash]}
+                            style={[styles.priceModalPayOptionCard, styles.priceModalPayOptionCardCash, rpLt?.priceModalPayOptionCardCash]}
                           >
                             <View style={styles.priceModalPayOptionLeft}>
-                              <Ionicons name="wallet-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+                              <Ionicons name="wallet-outline" size={22} color={paxUi.accent} />
                             </View>
                             <View style={styles.priceModalPayOptionBody}>
                               <View style={styles.priceModalPayOptionTitleRow}>
@@ -13723,17 +13734,17 @@ function PassengerDashboard({
                     if (!offerSendSubmitting) resetPriceOfferPaymentUi();
                   }}
                 />
-                <GlassSurface variant="panel" borderRadius={LDS_RADIUS.lg} style={styles.priceOfferPaymentWarnCard}>
+                <GlassSurface variant="panel" borderRadius={LDS_RADIUS.lg} style={[styles.priceOfferPaymentWarnCard, rpLt?.priceOfferPaymentWarnCard]}>
                   <Ionicons
                     name="information-circle-outline"
                     size={40}
-                    color={PREMIUM_AUTH_CYAN}
+                    color={paxUi.accent}
                     style={styles.priceOfferPaymentWarnIcon}
                   />
-                  <PremiumText variant="title" style={styles.priceOfferPaymentWarnTitle}>
+                  <PremiumText variant="title" style={[styles.priceOfferPaymentWarnTitle, rpLt?.priceOfferPaymentWarnTitle]}>
                     Katkı yöntemini seç
                   </PremiumText>
-                  <PremiumText variant="body" muted style={styles.priceOfferPaymentWarnBody}>
+                  <PremiumText variant="body" muted style={[styles.priceOfferPaymentWarnBody, rpLt?.priceOfferPaymentWarnBody]}>
                     Seçim yapmazsan varsayılan olarak nakit katkı uygulanır.
                   </PremiumText>
                   <TouchableOpacity
@@ -13880,7 +13891,7 @@ function PassengerDashboard({
                 accessibilityRole="button"
                 accessibilityLabel="Geri dön"
               >
-                <Ionicons name="arrow-back" size={26} color="#22D3EE" />
+                <Ionicons name="arrow-back" size={26} color={paxUi.accent} />
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -13896,7 +13907,7 @@ function PassengerDashboard({
                 accessibilityRole="button"
                 accessibilityLabel="Adres ara"
               >
-                <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
+                <Text style={[styles.destinationChangeAreaBtnText, rpLt?.changeAreaBtnText]} numberOfLines={1}>
                   Adres ara
                 </Text>
               </Pressable>
@@ -13910,27 +13921,27 @@ function PassengerDashboard({
                 >
                   {routePickerStep === 'pickup' ? (
                     <>
-                      <Text style={styles.destinationMapHintTitle} pointerEvents="none">
+                      <Text style={[styles.destinationMapHintTitle, rpLt?.mapHintTitle]} pointerEvents="none">
                         Alınış noktasını doğrulayın
                       </Text>
-                      <Text style={styles.destinationMapHintMinimal} pointerEvents="none">
+                      <Text style={[styles.destinationMapHintMinimal, rpLt?.mapHintMinimal]} pointerEvents="none">
                         Haritayı sürücünün geleceği noktanın üzerine getirin.
                       </Text>
                     </>
                   ) : (
                     <>
-                      <View style={styles.destinationMapVerifyHintCard} pointerEvents="none">
-                        <Text style={styles.destinationMapVerifyHintTitle}>
+                      <View style={[styles.destinationMapVerifyHintCard, rpLt?.mapVerifyHintCard]} pointerEvents="none">
+                        <Text style={[styles.destinationMapVerifyHintTitle, rpLt?.mapVerifyHintTitle]}>
                           Tam ineceğiniz yeri seçin
                         </Text>
-                        <Text style={styles.destinationMapVerifyHintBody}>
+                        <Text style={[styles.destinationMapVerifyHintBody, rpLt?.mapVerifyHintBody]}>
                           Haritayı tam inmek istediğiniz noktaya getirin ve Tam burası'na basın.
                         </Text>
                       </View>
                     </>
                   )}
                   <TouchableOpacity
-                    style={styles.destinationMapConfirmBtnWrap}
+                    style={[styles.destinationMapConfirmBtnWrap, rpLt?.mapConfirmBtnWrap]}
                     activeOpacity={0.88}
                     onPress={() => void confirmDestinationPickerCenter()}
                     pointerEvents="auto"
@@ -13941,7 +13952,7 @@ function PassengerDashboard({
                       end={{ x: 1, y: 1 }}
                       style={styles.destinationMapConfirmBtnGrad}
                     >
-                      <Text style={styles.destinationMapConfirmBtnText}>Tam burası</Text>
+                      <Text style={[styles.destinationMapConfirmBtnText, rpLt?.mapConfirmBtnText]}>Tam burası</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
@@ -14006,7 +14017,7 @@ function PassengerDashboard({
                 accessibilityRole="button"
                 accessibilityLabel="Geri dön"
               >
-                <Ionicons name="arrow-back" size={26} color="#22D3EE" />
+                <Ionicons name="arrow-back" size={26} color={paxUi.accent} />
               </Pressable>
             <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
               <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
@@ -14032,6 +14043,8 @@ function PassengerDashboard({
                         styles.destinationFloatingPanel,
                         styles.pickupRouteFloatingPanel,
                         styles.routePickerPanelShell,
+                        rpLt?.floatingPanel,
+                        rpLt?.pickupFloatingPanel,
                         routePickerPanelMaxHeight != null ? { maxHeight: routePickerPanelMaxHeight } : null,
                       ]}
                       pointerEvents="auto"
@@ -14064,10 +14077,10 @@ function PassengerDashboard({
                             colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
-                            style={styles.pickupUseLocationBtnGlass}
+                            style={[styles.pickupUseLocationBtnGlass, rpLt?.pickupUseLocationBtnGlass]}
                           >
                             <View style={styles.pickupUseLocationIconRing}>
-                              <Ionicons name="locate" size={22} color="#22D3EE" />
+                              <Ionicons name="locate" size={22} color={paxUi.accent} />
                             </View>
                             <View style={styles.pickupUseLocationTextCol}>
                               <Text style={styles.pickupUseLocationBtnText}>
@@ -14078,7 +14091,7 @@ function PassengerDashboard({
                               </Text>
                             </View>
                             {pickupConfirmBusy ? (
-                              <ActivityIndicator size="small" color="#22D3EE" />
+                              <ActivityIndicator size="small" color={paxUi.accent} />
                             ) : (
                               <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
                             )}
@@ -14094,10 +14107,10 @@ function PassengerDashboard({
                               colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
                               start={{ x: 0, y: 0 }}
                               end={{ x: 1, y: 1 }}
-                              style={styles.pickupUseLocationBtnGlass}
+                              style={[styles.pickupUseLocationBtnGlass, rpLt?.pickupUseLocationBtnGlass]}
                             >
                               <View style={styles.pickupUseLocationIconRing}>
-                                <Ionicons name="map-outline" size={22} color="#22D3EE" />
+                                <Ionicons name="map-outline" size={22} color={paxUi.accent} />
                               </View>
                               <View style={styles.pickupUseLocationTextCol}>
                                 <Text style={styles.pickupUseLocationBtnText}>Haritadan seç</Text>
@@ -14140,7 +14153,7 @@ function PassengerDashboard({
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
                             {savedHomeAddress ? (
-                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium, rpLt?.savedQuickCardPremium]}>
                                 <TouchableOpacity
                                   style={styles.savedQuickCardBody}
                                   activeOpacity={0.88}
@@ -14148,7 +14161,7 @@ function PassengerDashboard({
                                 >
                                   <View style={styles.routeRecentCardRow}>
                                     <View style={styles.routeRecentIconRing}>
-                                      <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                      <Ionicons name="home-outline" size={18} color={paxUi.accent} />
                                     </View>
                                     <View style={styles.routeRecentCardTextCol}>
                                       <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
@@ -14182,7 +14195,7 @@ function PassengerDashboard({
                               </View>
                             ) : null}
                             {savedWorkAddress ? (
-                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium, rpLt?.savedQuickCardPremium]}>
                                 <TouchableOpacity
                                   style={styles.savedQuickCardBody}
                                   activeOpacity={0.88}
@@ -14190,7 +14203,7 @@ function PassengerDashboard({
                                 >
                                   <View style={styles.routeRecentCardRow}>
                                     <View style={styles.routeRecentIconRing}>
-                                      <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                      <Ionicons name="business-outline" size={18} color={paxUi.accent} />
                                     </View>
                                     <View style={styles.routeRecentCardTextCol}>
                                       <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
@@ -14228,7 +14241,7 @@ function PassengerDashboard({
                       ) : null}
                       {recentPickups.length > 0 ? (
                         <View style={styles.routeRecentSection}>
-                          <Text style={styles.routeRecentSectionTitle}>
+                          <Text style={[styles.routeRecentSectionTitle, rpLt?.routeRecentSectionTitle]}>
                             Son kullanılan alınış noktaları
                           </Text>
                           <View style={styles.routeRecentList}>
@@ -14241,7 +14254,7 @@ function PassengerDashboard({
                               >
                                 <View style={styles.routeRecentCardRow}>
                                   <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="time-outline" size={18} color="#22D3EE" />
+                                    <Ionicons name="time-outline" size={18} color={paxUi.accent} />
                                   </View>
                                   <View style={styles.routeRecentCardTextCol}>
                                     <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
@@ -14266,6 +14279,7 @@ function PassengerDashboard({
                       style={[
                         styles.destinationFloatingPanel,
                         styles.routePickerPanelShell,
+                        rpLt?.floatingPanel,
                         routePickerPanelMaxHeight != null ? { maxHeight: routePickerPanelMaxHeight } : null,
                       ]}
                       pointerEvents="auto"
@@ -14279,6 +14293,7 @@ function PassengerDashboard({
                               styles.destinationHeroTitle,
                               styles.destinationHeroTitleAnimated,
                               styles.destinationStepHeroTitle,
+                              rpLt?.destinationHeroTitleStep,
                             ]}
                             numberOfLines={2}
                             adjustsFontSizeToFit
@@ -14315,7 +14330,7 @@ function PassengerDashboard({
                           />
                         </View>
                         {isNativeGoogleMapsSupported() ? (
-                          <Text style={styles.destinationSearchFlowHint}>
+                          <Text style={[styles.destinationSearchFlowHint, rpLt?.destinationSearchFlowHint]}>
                             Listeden seçin veya haritadan işaretleyin.
                           </Text>
                         ) : null}
@@ -14331,7 +14346,7 @@ function PassengerDashboard({
                         <View style={styles.savedQuickSection}>
                           <View style={styles.savedQuickRow}>
                             {savedHomeAddress ? (
-                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium, rpLt?.savedQuickCardPremium]}>
                                 <TouchableOpacity
                                   style={styles.savedQuickCardBody}
                                   activeOpacity={0.88}
@@ -14339,7 +14354,7 @@ function PassengerDashboard({
                                 >
                                   <View style={styles.routeRecentCardRow}>
                                     <View style={styles.routeRecentIconRing}>
-                                      <Ionicons name="home-outline" size={18} color="#22D3EE" />
+                                      <Ionicons name="home-outline" size={18} color={paxUi.accent} />
                                     </View>
                                     <View style={styles.routeRecentCardTextCol}>
                                       <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
@@ -14373,7 +14388,7 @@ function PassengerDashboard({
                               </View>
                             ) : null}
                             {savedWorkAddress ? (
-                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium]}>
+                              <View style={[styles.savedQuickCardWrap, styles.savedQuickCardPremium, rpLt?.savedQuickCardPremium]}>
                                 <TouchableOpacity
                                   style={styles.savedQuickCardBody}
                                   activeOpacity={0.88}
@@ -14381,7 +14396,7 @@ function PassengerDashboard({
                                 >
                                   <View style={styles.routeRecentCardRow}>
                                     <View style={styles.routeRecentIconRing}>
-                                      <Ionicons name="business-outline" size={18} color="#22D3EE" />
+                                      <Ionicons name="business-outline" size={18} color={paxUi.accent} />
                                     </View>
                                     <View style={styles.routeRecentCardTextCol}>
                                       <Text style={styles.savedQuickCardTitle} numberOfLines={1}>
@@ -14420,7 +14435,7 @@ function PassengerDashboard({
 
                       {recentDestinations.length > 0 ? (
                         <View style={styles.routeRecentSection}>
-                          <Text style={styles.routeRecentSectionTitle}>Son gidilen yerler</Text>
+                          <Text style={[styles.routeRecentSectionTitle, rpLt?.routeRecentSectionTitle]}>Son gidilen yerler</Text>
                           <View style={styles.routeRecentList}>
                             {recentDestinations.map((point, index) => (
                               <TouchableOpacity
@@ -14431,7 +14446,7 @@ function PassengerDashboard({
                               >
                                 <View style={styles.routeRecentCardRow}>
                                   <View style={styles.routeRecentIconRing}>
-                                    <Ionicons name="navigate-outline" size={18} color="#22D3EE" />
+                                    <Ionicons name="navigate-outline" size={18} color={paxUi.accent} />
                                   </View>
                                   <View style={styles.routeRecentCardTextCol}>
                                     <Text style={styles.routeRecentCardTitle} numberOfLines={2}>
@@ -14463,7 +14478,7 @@ function PassengerDashboard({
                             style={styles.destinationMapPickBtnGlass}
                           >
                             <View style={styles.destinationMapPickIconRing}>
-                              <Ionicons name="map-outline" size={22} color="#22D3EE" />
+                              <Ionicons name="map-outline" size={22} color={paxUi.accent} />
                             </View>
                             <View style={styles.destinationMapPickTextCol}>
                               <Text style={styles.destinationMapPickBtnText}>Haritadan seç</Text>
@@ -14484,7 +14499,7 @@ function PassengerDashboard({
                         pickupCoordsMatchSaved(passengerPickup, savedWorkAddress)
                       ) ? (
                         <View style={[styles.pickupSaveSection, styles.pickupSaveSectionBottom]}>
-                          <Text style={styles.pickupSaveTitle}>Alınış adresini kaydet</Text>
+                          <Text style={[styles.pickupSaveTitle, rpLt?.pickupSaveTitle]}>Alınış adresini kaydet</Text>
                           <View style={styles.pickupSaveBtnRow}>
                             {!pickupCoordsMatchSaved(passengerPickup, savedHomeAddress) ? (
                               <TouchableOpacity
