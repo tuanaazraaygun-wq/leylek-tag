@@ -13,11 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AdminPanel from '../AdminPanel';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
-import {
-  PREMIUM_AUTH_CYAN,
-  PREMIUM_TEXT_SOFT,
-  premiumAuthStyles as pap,
-} from '../auth/premiumAuthStyles';
+import { premiumAuthStyles as pap } from '../auth/premiumAuthStyles';
+import { useRoleTheme } from '../../lib/theme/useRoleTheme';
 import CarHero from '../../design-system/role-select/CarHero';
 import MotorcycleHero from '../../design-system/role-select/MotorcycleHero';
 import PassengerSeatHero from '../../design-system/role-select/PassengerSeatHero';
@@ -195,6 +192,12 @@ export function RoleSelectScreen({
   onCloseAdminPanel,
 }: RoleSelectScreenProps) {
   const styles = stylesProp as Record<string, object>;
+  const { lightSurfaces: roleLt, roleInput: roleIn } = useRoleTheme();
+  const titleGradient = roleLt?.cockpitTitleGradient ?? [
+    'rgba(34,211,238,0.12)',
+    'rgba(8,17,31,0)',
+    'rgba(34,211,238,0.07)',
+  ] as const;
 
   const tripExitBannerNewline = roleSelectTripExitBanner?.indexOf('\n') ?? -1;
   const tripExitBannerTitle =
@@ -244,11 +247,11 @@ export function RoleSelectScreen({
               <GlassSurface
                 variant="plain"
                 borderRadius={LDS_RADIUS.sm}
-                style={styles.roleSelectBannerInner}
+                style={[styles.roleSelectBannerInner, roleLt?.roleSelectBannerInner]}
               >
                 <PremiumText
                   variant="body"
-                  style={[styles.roleSelectBannerText, { textAlign: 'center' }]}
+                  style={[styles.roleSelectBannerText, roleLt?.roleSelectBannerText, { textAlign: 'center' }]}
                 >
                   {tripExitBannerTitle}
                 </PremiumText>
@@ -274,6 +277,7 @@ export function RoleSelectScreen({
             <TouchableOpacity 
               style={[
                 styles.roleExitBtn,
+                roleLt?.roleExitBtn,
                 { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
               ]}
               onPress={onLogoutPress}
@@ -285,12 +289,14 @@ export function RoleSelectScreen({
               <View
                 style={[
                   styles.roleCockpitFrame,
+                  roleLt?.roleCockpitFrame,
                   { borderRadius: cockpitTitleInnerRadius + 4 },
                 ]}
               >
                 <View
                   style={[
                     styles.roleCockpitInner,
+                    roleLt?.roleCockpitInner,
                     {
                       paddingVertical: roleTitlePadV,
                       paddingHorizontal: roleTitlePadH,
@@ -299,11 +305,7 @@ export function RoleSelectScreen({
                   ]}
                 >
                   <LinearGradient
-                    colors={[
-                      'rgba(34,211,238,0.12)',
-                      'rgba(8,17,31,0)',
-                      'rgba(34,211,238,0.07)',
-                    ]}
+                    colors={[...titleGradient]}
                     locations={[0, 0.52, 1]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
@@ -313,6 +315,7 @@ export function RoleSelectScreen({
                   <Text
                     style={[
                       styles.roleTopTitle,
+                      roleLt?.roleTopTitle,
                       rs.isCompact && !rs.isVeryCompact && styles.roleTopTitleCompact,
                       rs.isVeryCompact && styles.roleTopTitleVery,
                       { fontSize: roleTitleFontSize, lineHeight: roleTitleLineHeight },
@@ -320,7 +323,7 @@ export function RoleSelectScreen({
                     numberOfLines={2}
                     ellipsizeMode="tail"
                   >
-                    Bugün <Text style={styles.roleTopTitleAccent}>nasıl</Text> ilerlemek istersiniz?
+                    Bugün <Text style={[styles.roleTopTitleAccent, roleLt?.roleTopTitleAccent]}>nasıl</Text> ilerlemek istersiniz?
                   </Text>
                 </View>
               </View>
@@ -330,21 +333,23 @@ export function RoleSelectScreen({
               <TouchableOpacity
                 style={[
                   styles.roleAdminBtn,
+                  roleLt?.roleAdminBtn,
                   { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
                 ]}
                 onPress={onAdminPress}
               >
-                <Ionicons name="settings-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+                <Ionicons name="settings-outline" size={22} color={roleIn.accent} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 style={[
                   styles.roleAdminBtn,
+                  roleLt?.roleAdminBtn,
                   { width: roleTopButtonSize, height: roleTopButtonSize, borderRadius: roleTopButtonRadius },
                 ]}
                 onPress={onSettingsPress}
               >
-                <Ionicons name="person-circle-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+                <Ionicons name="person-circle-outline" size={22} color={roleIn.accent} />
               </TouchableOpacity>
             )}
           </View>
@@ -379,7 +384,11 @@ export function RoleSelectScreen({
             >
             <GlassSurface
               variant="panel"
-              style={[styles.roleUnifiedCockpitShell, rs.isVeryCompact && styles.roleUnifiedCockpitShellVery]}
+              style={[
+                styles.roleUnifiedCockpitShell,
+                roleLt?.roleUnifiedCockpitShell,
+                rs.isVeryCompact && styles.roleUnifiedCockpitShellVery,
+              ]}
             >
               <View style={[styles.roleStepIndicatorGlass, { marginBottom: roleStepMarginBottom }]}>
               <View
@@ -395,6 +404,7 @@ export function RoleSelectScreen({
                     <Animated.View
                       style={[
                         styles.roleStepCircle,
+                        roleLt?.roleStepCircle,
                         {
                           width: roleStepCircleSize,
                           height: roleStepCircleSize,
@@ -402,35 +412,41 @@ export function RoleSelectScreen({
                           marginBottom: roleStepCircleMarginBottom,
                         },
                         roleActiveStep === 1 && styles.roleStepCircleActive,
+                        roleActiveStep === 1 && roleLt?.roleStepCircleActive,
                         roleActiveStep === 1 && styles.roleStepCircleActiveRole,
                         roleActiveStep === 1 && roleStepPulseStyle,
                         roleStep1Done && roleActiveStep !== 1 && styles.roleStepCircleDone,
+                        roleStep1Done && roleActiveStep !== 1 && roleLt?.roleStepCircleDone,
                       ]}
                     >
                       {roleStep1Done ? (
-                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={PREMIUM_TEXT_SOFT} />
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={roleIn.textPrimary} />
                       ) : (
-                        <Text style={[styles.roleStepCircleText, roleActiveStep === 1 && styles.roleStepCircleTextActive]}>1</Text>
+                        <Text style={[styles.roleStepCircleText, roleLt?.roleStepCircleText, roleActiveStep === 1 && styles.roleStepCircleTextActive, roleActiveStep === 1 && roleLt?.roleStepCircleTextActive]}>1</Text>
                       )}
                     </Animated.View>
                     <Text
                       style={[
                         styles.roleStepLabel,
+                        roleLt?.roleStepLabel,
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 1 && styles.roleStepLabelActive,
+                        roleActiveStep === 1 && roleLt?.roleStepLabelActive,
                         roleActiveStep === 1 && styles.roleStepLabelActiveRole,
                         roleStep1Done && styles.roleStepLabelDone,
+                        roleStep1Done && roleLt?.roleStepLabelDone,
                       ]}
                       numberOfLines={2}
                     >
                       Rolünü seç
                     </Text>
                   </View>
-                  <View style={[styles.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
+                  <View style={[styles.roleStepDash, roleLt?.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
                   <View style={styles.roleStepSegment}>
                     <Animated.View
                       style={[
                         styles.roleStepCircle,
+                        roleLt?.roleStepCircle,
                         {
                           width: roleStepCircleSize,
                           height: roleStepCircleSize,
@@ -438,20 +454,25 @@ export function RoleSelectScreen({
                           marginBottom: roleStepCircleMarginBottom,
                         },
                         roleActiveStep === 2 && styles.roleStepCircleActive,
+                        roleActiveStep === 2 && roleLt?.roleStepCircleActive,
                         roleActiveStep === 2 && styles.roleStepCircleActiveVehicle,
                         roleActiveStep === 2 && roleStepPulseStyle,
                         roleStep2Done && roleActiveStep !== 2 && styles.roleStepCircleDone,
+                        roleStep2Done && roleActiveStep !== 2 && roleLt?.roleStepCircleDone,
                         !roleStep1Done && styles.roleStepCircleMuted,
                       ]}
                     >
                       {roleStep2Done ? (
-                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={PREMIUM_TEXT_SOFT} />
+                        <Ionicons name="checkmark" size={rs.isVeryCompact ? 14 : 16} color={roleIn.textPrimary} />
                       ) : (
                         <Text
                           style={[
                             styles.roleStepCircleText,
+                            roleLt?.roleStepCircleText,
                             roleActiveStep === 2 && styles.roleStepCircleTextActive,
+                            roleActiveStep === 2 && roleLt?.roleStepCircleTextActive,
                             !roleStep1Done && styles.roleStepCircleTextMuted,
+                            !roleStep1Done && roleLt?.roleStepCircleTextMuted,
                           ]}
                         >
                           2
@@ -461,22 +482,27 @@ export function RoleSelectScreen({
                     <Text
                       style={[
                         styles.roleStepLabel,
+                        roleLt?.roleStepLabel,
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 2 && styles.roleStepLabelActive,
+                        roleActiveStep === 2 && roleLt?.roleStepLabelActive,
                         roleActiveStep === 2 && styles.roleStepLabelActiveVehicle,
                         roleStep2Done && styles.roleStepLabelDone,
+                        roleStep2Done && roleLt?.roleStepLabelDone,
                         !roleStep1Done && styles.roleStepLabelMuted,
+                        !roleStep1Done && roleLt?.roleStepLabelMuted,
                       ]}
                       numberOfLines={2}
                     >
                       Araç tipini seç
                     </Text>
                   </View>
-                  <View style={[styles.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
+                  <View style={[styles.roleStepDash, roleLt?.roleStepDash, rs.isVeryCompact && styles.roleStepDashVery]} />
                   <View style={styles.roleStepSegment}>
                     <Animated.View
                       style={[
                         styles.roleStepCircle,
+                        roleLt?.roleStepCircle,
                         {
                           width: roleStepCircleSize,
                           height: roleStepCircleSize,
@@ -484,6 +510,7 @@ export function RoleSelectScreen({
                           marginBottom: roleStepCircleMarginBottom,
                         },
                         roleActiveStep === 3 && styles.roleStepCircleActive,
+                        roleActiveStep === 3 && roleLt?.roleStepCircleActive,
                         roleActiveStep === 3 && styles.roleStepCircleActiveContinue,
                         roleActiveStep === 3 && roleStepPulseStyle,
                         !rideVehicleKind && styles.roleStepCircleMuted,
@@ -492,8 +519,11 @@ export function RoleSelectScreen({
                       <Text
                         style={[
                           styles.roleStepCircleText,
+                          roleLt?.roleStepCircleText,
                           roleActiveStep === 3 && styles.roleStepCircleTextActive,
+                          roleActiveStep === 3 && roleLt?.roleStepCircleTextActive,
                           !rideVehicleKind && styles.roleStepCircleTextMuted,
+                          !rideVehicleKind && roleLt?.roleStepCircleTextMuted,
                         ]}
                       >
                         3
@@ -502,8 +532,10 @@ export function RoleSelectScreen({
                     <Text
                       style={[
                         styles.roleStepLabel,
+                        roleLt?.roleStepLabel,
                         rs.isVeryCompact && styles.roleStepLabelVery,
                         roleActiveStep === 3 && styles.roleStepLabelActive,
+                        roleActiveStep === 3 && roleLt?.roleStepLabelActive,
                         roleActiveStep === 3 && styles.roleStepLabelActiveContinue,
                       ]}
                       numberOfLines={2}
@@ -556,6 +588,7 @@ export function RoleSelectScreen({
                         compactCopy={rs.isVeryCompact || rs.isCompact}
                         style={[
                           styles.roleCardCompact,
+                          roleLt?.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                           {
@@ -574,13 +607,17 @@ export function RoleSelectScreen({
                         subtitle="Sürücülere teklif gönder"
                         titleStyle={[
                           styles.roleCardLabel,
+                          roleLt?.roleCardLabel,
                           { fontSize: roleCardLabelFontSize },
                           selectedRole === 'passenger' && styles.roleCardLabelActive,
+                          selectedRole === 'passenger' && roleLt?.roleCardLabelActive,
                         ]}
                         subtitleStyle={[
                           styles.roleCardDesc,
+                          roleLt?.roleCardDesc,
                           rs.isVeryCompact && styles.roleCardDescVery,
                           selectedRole === 'passenger' && styles.roleCardDescActivePassenger,
+                          selectedRole === 'passenger' && roleLt?.roleCardDescActivePassenger,
                           {
                             fontSize: roleCardSubtitleOneLineFont,
                             lineHeight: roleCardSubtitleOneLineHeight,
@@ -588,8 +625,8 @@ export function RoleSelectScreen({
                         ]}
                         checkmark={
                           selectedRole === 'passenger' ? (
-                            <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
+                            <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
                             </View>
                           ) : undefined
                         }
@@ -612,6 +649,7 @@ export function RoleSelectScreen({
                         compactCopy={rs.isVeryCompact || rs.isCompact}
                         style={[
                           styles.roleCardCompact,
+                          roleLt?.roleCardCompact,
                           rs.isVeryCompact && styles.roleCardCompactVery,
                           rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                           {
@@ -630,13 +668,17 @@ export function RoleSelectScreen({
                         subtitle="Yolculardan teklif al"
                         titleStyle={[
                           styles.roleCardLabel,
+                          roleLt?.roleCardLabel,
                           { fontSize: roleCardLabelFontSize },
                           selectedRole === 'driver' && styles.roleCardLabelActive,
+                          selectedRole === 'driver' && roleLt?.roleCardLabelActive,
                         ]}
                         subtitleStyle={[
                           styles.roleCardDesc,
+                          roleLt?.roleCardDesc,
                           rs.isVeryCompact && styles.roleCardDescVery,
                           selectedRole === 'driver' && styles.roleCardDescActiveDriver,
+                          selectedRole === 'driver' && roleLt?.roleCardDescActiveDriver,
                           {
                             fontSize: roleCardSubtitleOneLineFont,
                             lineHeight: roleCardSubtitleOneLineHeight,
@@ -644,8 +686,8 @@ export function RoleSelectScreen({
                         ]}
                         checkmark={
                           selectedRole === 'driver' ? (
-                            <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
+                            <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                              <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
                             </View>
                           ) : undefined
                         }
@@ -683,6 +725,7 @@ export function RoleSelectScreen({
                           compactCopy={rs.isVeryCompact || rs.isCompact}
                           style={[
                             styles.roleCardCompact,
+                            roleLt?.roleCardCompact,
                             rs.isVeryCompact && styles.roleCardCompactVery,
                             rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                             {
@@ -695,13 +738,17 @@ export function RoleSelectScreen({
                           subtitle={showPassengerVehicleCall ? 'Eşleşmesi' : 'Yolculuk modu'}
                           titleStyle={[
                             styles.roleCardLabel,
+                            roleLt?.roleCardLabel,
                             { fontSize: roleCardLabelFontSize },
                             rideVehicleKind === 'car' && styles.roleCardLabelActive,
+                            rideVehicleKind === 'car' && roleLt?.roleCardLabelActive,
                           ]}
                           subtitleStyle={[
                             styles.roleCardDesc,
+                            roleLt?.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
                             rideVehicleKind === 'car' && styles.roleCardDescActivePassenger,
+                            rideVehicleKind === 'car' && roleLt?.roleCardDescActivePassenger,
                             {
                               fontSize: roleCardSubtitleOneLineFont,
                               lineHeight: roleCardSubtitleOneLineHeight,
@@ -709,8 +756,8 @@ export function RoleSelectScreen({
                           ]}
                           checkmark={
                             rideVehicleKind === 'car' ? (
-                              <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
+                              <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
                               </View>
                             ) : undefined
                           }
@@ -732,6 +779,7 @@ export function RoleSelectScreen({
                           compactCopy={rs.isVeryCompact || rs.isCompact}
                           style={[
                             styles.roleCardCompact,
+                            roleLt?.roleCardCompact,
                             rs.isVeryCompact && styles.roleCardCompactVery,
                             rs.isCompact && !rs.isVeryCompact && styles.roleCardCompactTight,
                             {
@@ -744,13 +792,17 @@ export function RoleSelectScreen({
                           subtitle={showPassengerVehicleCall ? 'Eşleşmesi' : 'Yolculuk modu'}
                           titleStyle={[
                             styles.roleCardLabel,
+                            roleLt?.roleCardLabel,
                             { fontSize: roleCardLabelFontSize },
                             rideVehicleKind === 'motorcycle' && styles.roleCardLabelActive,
+                            rideVehicleKind === 'motorcycle' && roleLt?.roleCardLabelActive,
                           ]}
                           subtitleStyle={[
                             styles.roleCardDesc,
+                            roleLt?.roleCardDesc,
                             rs.isVeryCompact && styles.roleCardDescVery,
                             rideVehicleKind === 'motorcycle' && styles.roleCardDescActivePassenger,
+                            rideVehicleKind === 'motorcycle' && roleLt?.roleCardDescActivePassenger,
                             {
                               fontSize: roleCardSubtitleOneLineFont,
                               lineHeight: roleCardSubtitleOneLineHeight,
@@ -758,8 +810,8 @@ export function RoleSelectScreen({
                           ]}
                           checkmark={
                             rideVehicleKind === 'motorcycle' ? (
-                              <View style={[styles.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
-                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={PREMIUM_TEXT_SOFT} />
+                              <View style={[styles.roleCheckBadge, roleLt?.roleCheckBadge, rs.isVeryCompact && styles.roleCheckBadgeVery]}>
+                                <Ionicons name="checkmark-circle" size={roleCheckIconSize} color={roleIn.textPrimary} />
                               </View>
                             ) : undefined
                           }
@@ -769,6 +821,7 @@ export function RoleSelectScreen({
                     <View
                       style={[
                         styles.roleStatusStripCompact,
+                        roleLt?.roleStatusStripCompact,
                         rs.isVeryCompact && styles.roleStatusStripCompactVery,
                         rs.isCompact && !rs.isVeryCompact && styles.roleStatusStripCompactTight,
                       ]}
@@ -783,11 +836,12 @@ export function RoleSelectScreen({
                         <Ionicons
                           name="checkmark-circle"
                           size={rs.isVeryCompact ? 16 : rs.isCompact ? 17 : 18}
-                          color={PREMIUM_AUTH_CYAN}
+                          color={roleIn.accent}
                         />
                         <Text
                           style={[
                             styles.roleStatusTitleCompactInline,
+                            roleLt?.roleStatusTitleCompactInline,
                             rs.isVeryCompact && styles.roleStatusTitleCompactInlineVery,
                           ]}
                           numberOfLines={1}
@@ -798,6 +852,7 @@ export function RoleSelectScreen({
                       <TouchableOpacity
                         style={[
                           styles.roleChangeRolePillSecondary,
+                          roleLt?.roleChangeRolePillSecondary,
                           styles.roleChangeRolePillSecondaryCompact,
                           rs.isVeryCompact && styles.roleChangeRolePillSecondaryVery,
                         ]}
@@ -805,11 +860,11 @@ export function RoleSelectScreen({
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         activeOpacity={0.75}
                       >
-                        <Text style={styles.roleChangeRoleLabelSecondary}>Rolü değiştir</Text>
+                        <Text style={[styles.roleChangeRoleLabelSecondary, roleLt?.roleChangeRoleLabelSecondary]}>Rolü değiştir</Text>
                         <Ionicons
                           name="chevron-forward"
                           size={rs.isVeryCompact ? 13 : 14}
-                          color="rgba(148,189,218,0.85)"
+                          color={roleLt?.iconChevron ?? 'rgba(148,189,218,0.85)'}
                         />
                       </TouchableOpacity>
                     </View>
@@ -847,7 +902,7 @@ export function RoleSelectScreen({
                 fontSize: roleContinueTextSize,
                 letterSpacing: 0.42,
                 fontWeight: '900',
-                textShadowColor: 'rgba(2,10,26,0.55)',
+                textShadowColor: roleLt?.ctaTextShadow ?? 'rgba(2,10,26,0.55)',
                 textShadowOffset: { width: 0, height: 1 },
                 textShadowRadius: 3,
               }}
@@ -858,10 +913,10 @@ export function RoleSelectScreen({
                 borderRadius: Math.round(Math.max(21, Math.min(27, roleContinueMinHeight * 0.42))),
                 gap: Math.round(Math.max(8, Math.min(14, 14 * roleScale))),
                 borderWidth: StyleSheet.hairlineWidth + 1,
-                borderColor: 'rgba(34,211,238,0.28)',
+                borderColor: roleLt?.ctaBorder ?? 'rgba(34,211,238,0.28)',
               }}
               trailing={
-                <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color={PREMIUM_TEXT_SOFT} />
+                <Ionicons name="arrow-forward-circle" size={continueArrowIconSize} color={roleIn.textPrimary} />
               }
             />
           </View>

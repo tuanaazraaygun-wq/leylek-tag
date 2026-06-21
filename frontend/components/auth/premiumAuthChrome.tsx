@@ -21,6 +21,7 @@ import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { useTheme } from '../../hooks/useTheme';
 import { isLightThemeScreenEnabled } from '../../lib/featureFlags';
 import { buildThemeTokens } from '../../lib/theme/buildTheme';
+import { useRoleTheme } from '../../lib/theme/useRoleTheme';
 import type { LhThemeTokens } from '../../lib/theme/types';
 import { premiumAuthStyles as pa } from './premiumAuthStyles';
 
@@ -311,7 +312,9 @@ export function PremiumGradientCtaButton({
   /** Dokunmatik gövdesi için ek stil (ör. rol ekranı derin navy gölgesi) */
   touchableStyleOverrides?: Record<string, unknown>;
 }) {
-  const { tokens } = useAuthTheme();
+  const { tokens: authTokens } = useAuthTheme();
+  const { tokens: roleTokens, isRoleLight } = useRoleTheme();
+  const tokens = isRoleLight ? roleTokens : authTokens;
   const muted = !!(disabled || busy);
   const grayInactive = !!(disabled && !busy);
 
