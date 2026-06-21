@@ -170,6 +170,10 @@ export type PassengerRoutePickerLightSurfaces = {
   routeRecentSourceBadge: ViewStyle;
   routeRecentSourceBadgeText: TextStyle;
   destinationMapSearchChipOverlay: ViewStyle;
+  routePickerBackBtn: ViewStyle;
+  pickupMapPickBtnGlass: ViewStyle;
+  pickupMapPickBtnSub: TextStyle;
+  savedQuickDeleteBtn: ViewStyle;
   priceModalPayOptionCardCash: ViewStyle;
   priceOfferPaymentWarnCard: ViewStyle;
   priceOfferPaymentWarnTitle: TextStyle;
@@ -479,14 +483,22 @@ function buildPassengerRoutePickerLightSurfaces(tokens: LhThemeTokens): Passenge
       borderColor: tokens.accent.glowMid,
     },
     pickupUseLocationBtnText: { color: tokens.text.primary },
-    pickupUseLocationBtnSub: { color: tokens.text.muted },
-    destinationMapPickBtnGlass: { backgroundColor: tokens.bg.glassMuted },
+    pickupUseLocationBtnSub: { color: '#475569', fontWeight: '600' },
+    pickupMapPickBtnGlass: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    pickupMapPickBtnSub: { color: '#475569', fontWeight: '600' },
+    destinationMapPickBtnGlass: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
     destinationMapPickIconRing: {
       backgroundColor: tokens.accent.glowLow,
       borderColor: tokens.accent.glowMid,
     },
     destinationMapPickBtnText: { color: tokens.text.primary },
-    destinationMapPickBtnSub: { color: tokens.text.muted },
+    destinationMapPickBtnSub: { color: '#475569', fontWeight: '600' },
     pickupSaveTitle: { color: tokens.accent.primary },
     pickupSaveBtn: {
       backgroundColor: tokens.bg.glassMuted,
@@ -499,11 +511,24 @@ function buildPassengerRoutePickerLightSurfaces(tokens: LhThemeTokens): Passenge
     pickupSaveChipText: { color: tokens.text.primary },
     pickupSaveBtnText: { color: tokens.text.primary },
     savedQuickCardPremium: {
-      backgroundColor: tokens.accent.glowLow,
-      borderColor: tokens.accent.glowMid,
-      shadowColor: tokens.accent.primary,
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+      shadowColor: tokens.shadow.ambient,
     },
-    savedQuickCardTitle: { color: tokens.accent.primary },
+    savedQuickCardTitle: { color: tokens.accent.primary, fontWeight: '800' },
+    savedQuickDeleteBtn: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    routePickerBackBtn: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      shadowColor: tokens.shadow.ambient,
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+      elevation: 4,
+    },
     routeRecentSectionTitle: { color: tokens.accent.primary },
     destinationSearchFlowHint: { color: tokens.text.muted },
     destinationHeroTitleStep: {

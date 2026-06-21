@@ -279,7 +279,7 @@ function buildLightMatchCardTheme(tokens: LhThemeTokens): MatchCardTheme {
       backgroundColor: 'rgba(99, 102, 241, 0.10)',
       borderColor: 'rgba(99, 102, 241, 0.28)',
     },
-    driverPanelCtaPillText: { color: 'rgba(67, 56, 202, 0.92)' },
+    driverPanelCtaPillText: { color: tokens.accent.primary, fontWeight: '800' },
   };
 }
 
@@ -341,7 +341,18 @@ function PassengerMatchModeCards({
     const usableHeight = Math.max(0, winH - 120);
     const isCompact = usableHeight < 720 || winW < 380;
     const isVeryCompact = usableHeight < 650 || winW < 360;
-    const coeff = isVeryCompact ? 0.26 : isCompact ? 0.265 : 0.275;
+    const soloDeck = visibleSecondaryCards.length === 1;
+    const coeff = soloDeck
+      ? isVeryCompact
+        ? 0.245
+        : isCompact
+          ? 0.252
+          : 0.258
+      : isVeryCompact
+        ? 0.26
+        : isCompact
+          ? 0.265
+          : 0.275;
     const primaryCardMinHeight = Math.round(
       Math.max(148, Math.min(188, usableHeight * coeff)),
     );
@@ -360,7 +371,7 @@ function PassengerMatchModeCards({
       titleSize,
       subtitleSize,
     };
-  }, [winH, winW]);
+  }, [winH, winW, visibleSecondaryCards.length]);
 
   const renderModeBadge = (
     label: string,
@@ -659,6 +670,8 @@ export default memo(PassengerMatchModeCards);
 
 /** Role select kokpit kartları ile aynı optik genişlik — yatay merkez hizası */
 const MATCH_DECK_MAX_WIDTH = 440;
+/** UX-QA-2D — solo Sürücülerim/Yolcularım kartı (proxy gizli) */
+const SOLO_SECONDARY_CARD_WIDTH_RATIO = 0.68;
 
 const styles = StyleSheet.create({
   matchDeck: {
@@ -687,8 +700,9 @@ const styles = StyleSheet.create({
     flex: 0,
     flexGrow: 0,
     flexShrink: 0,
-    width: '48%',
-    maxWidth: (MATCH_DECK_MAX_WIDTH - LDS_SPACING.sm) / 2,
+    width: `${Math.round(SOLO_SECONDARY_CARD_WIDTH_RATIO * 100)}%`,
+    maxWidth: Math.round(MATCH_DECK_MAX_WIDTH * SOLO_SECONDARY_CARD_WIDTH_RATIO),
+    minWidth: 252,
     alignSelf: 'center',
   },
   heroCardShell: {
@@ -744,26 +758,26 @@ const styles = StyleSheet.create({
   },
   driverPanelCtaPill: {
     alignSelf: 'center',
-    maxWidth: 120,
-    paddingHorizontal: LDS_SPACING.xs,
-    paddingVertical: LDS_SPACING.xxs,
+    maxWidth: 136,
+    paddingHorizontal: LDS_SPACING.sm,
+    paddingVertical: LDS_SPACING.xxs + 1,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
   },
   driverPanelCtaPillVeryCompact: {
-    maxWidth: 104,
-    paddingHorizontal: LDS_SPACING.xxs + 1,
+    maxWidth: 120,
+    paddingHorizontal: LDS_SPACING.xs,
   },
   driverPanelCtaPillText: {
-    fontSize: 8,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
     textAlign: 'center',
-    lineHeight: 11,
+    lineHeight: 13,
   },
   driverPanelCtaPillTextVeryCompact: {
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 9,
+    lineHeight: 12,
   },
   disabledHeroIllustration: {
     opacity: 0.55,

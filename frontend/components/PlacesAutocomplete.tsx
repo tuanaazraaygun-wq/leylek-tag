@@ -3200,11 +3200,22 @@ export default function PlacesAutocomplete({
           {compactMerkezEntries.exactCities.map((p) => (
             <TouchableOpacity
               key={`exact-${p.label}`}
-              style={[styles.compactMerkezChip, techDark && styles.compactMerkezChipTech]}
+              style={[
+                styles.compactMerkezChip,
+                lhsDaylight && styles.compactMerkezChipDaylight,
+                techDark && styles.compactMerkezChipTech,
+              ]}
               onPress={() => handleQuickPick(p, 'merkez_chip')}
               activeOpacity={0.85}
             >
-              <Text style={[styles.compactMerkezChipText, techDark && styles.compactMerkezChipTextTech]} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.compactMerkezChipText,
+                  lhsDaylight && styles.compactMerkezChipTextDaylight,
+                  techDark && styles.compactMerkezChipTextTech,
+                ]}
+                numberOfLines={1}
+              >
                 {p.label}
               </Text>
             </TouchableOpacity>
@@ -3219,7 +3230,11 @@ export default function PlacesAutocomplete({
             return (
               <TouchableOpacity
                 key={`dist-${h.label}`}
-                style={[styles.compactMerkezChip, techDark && styles.compactMerkezChipTech]}
+                style={[
+                  styles.compactMerkezChip,
+                  lhsDaylight && styles.compactMerkezChipDaylight,
+                  techDark && styles.compactMerkezChipTech,
+                ]}
                 disabled={!ready}
                 onPress={() => handleQuickPick(districtPlace, 'merkez_chip')}
                 activeOpacity={0.85}
@@ -3228,12 +3243,16 @@ export default function PlacesAutocomplete({
                   {!ready ? (
                     <ActivityIndicator
                       size="small"
-                      color={techDark ? '#94A3B8' : '#64748B'}
+                      color={techDark ? '#94A3B8' : lhsDaylight ? '#0F766E' : '#64748B'}
                       style={styles.compactMerkezChipSpinner}
                     />
                   ) : null}
                   <Text
-                    style={[styles.compactMerkezChipText, techDark && styles.compactMerkezChipTextTech]}
+                    style={[
+                      styles.compactMerkezChipText,
+                      lhsDaylight && styles.compactMerkezChipTextDaylight,
+                      techDark && styles.compactMerkezChipTextTech,
+                    ]}
                     numberOfLines={1}
                   >
                     {h.label}
@@ -3245,11 +3264,22 @@ export default function PlacesAutocomplete({
           {compactMerkezEntries.fallbackCities.map((p) => (
             <TouchableOpacity
               key={`fb-${p.label}`}
-              style={[styles.compactMerkezChip, techDark && styles.compactMerkezChipTech]}
+              style={[
+                styles.compactMerkezChip,
+                lhsDaylight && styles.compactMerkezChipDaylight,
+                techDark && styles.compactMerkezChipTech,
+              ]}
               onPress={() => handleQuickPick(p, 'merkez_chip')}
               activeOpacity={0.85}
             >
-              <Text style={[styles.compactMerkezChipText, techDark && styles.compactMerkezChipTextTech]} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.compactMerkezChipText,
+                  lhsDaylight && styles.compactMerkezChipTextDaylight,
+                  techDark && styles.compactMerkezChipTextTech,
+                ]}
+                numberOfLines={1}
+              >
                 {p.label}
               </Text>
             </TouchableOpacity>
@@ -3264,11 +3294,22 @@ export default function PlacesAutocomplete({
             {quickPickList.map((qp) => (
               <TouchableOpacity
                 key={qp.label}
-                style={[styles.quickPickChip, techDark && styles.quickPickChipTech]}
+                style={[
+                  styles.quickPickChip,
+                  lhsDaylight && styles.quickPickChipDaylight,
+                  techDark && styles.quickPickChipTech,
+                ]}
                 activeOpacity={0.85}
                 onPress={() => handleQuickPick(qp)}
               >
-                <Text style={[styles.quickPickChipText, techDark && styles.quickPickChipTextTech]} numberOfLines={2}>
+                <Text
+                  style={[
+                    styles.quickPickChipText,
+                    lhsDaylight && styles.quickPickChipTextDaylight,
+                    techDark && styles.quickPickChipTextTech,
+                  ]}
+                  numberOfLines={2}
+                >
                   {qp.label}
                 </Text>
               </TouchableOpacity>
@@ -3458,6 +3499,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(56, 189, 248, 0.14)',
     borderColor: 'rgba(56, 189, 248, 0.45)',
   },
+  compactMerkezChipDaylight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(0, 212, 170, 0.28)',
+  },
   compactMerkezChipText: {
     fontSize: 12,
     fontWeight: '700',
@@ -3465,6 +3510,9 @@ const styles = StyleSheet.create({
   },
   compactMerkezChipTextTech: {
     color: '#E0F2FE',
+  },
+  compactMerkezChipTextDaylight: {
+    color: '#0F766E',
   },
   compactMerkezChipInner: {
     flexDirection: 'row',
@@ -3515,6 +3563,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(56, 189, 248, 0.12)',
     borderColor: 'rgba(56, 189, 248, 0.45)',
   },
+  quickPickChipDaylight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(0, 212, 170, 0.28)',
+  },
   quickPickChipText: {
     fontSize: 13,
     fontWeight: '600',
@@ -3522,6 +3574,10 @@ const styles = StyleSheet.create({
   },
   quickPickChipTextTech: {
     color: '#E0F2FE',
+  },
+  quickPickChipTextDaylight: {
+    color: '#0F766E',
+    fontWeight: '700',
   },
   
   // Popüler yerler

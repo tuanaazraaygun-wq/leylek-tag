@@ -14022,6 +14022,7 @@ function PassengerDashboard({
                 onPress={handleDestinationPickerBackPress}
                 style={[
                   styles.destinationMapBackOverlayBtn,
+                  paxLight && rpLt?.routePickerBackBtn,
                   { top: insets.top + 6 },
                 ]}
                 hitSlop={{ top: 24, bottom: 24, left: 24, right: 24 }}
@@ -14147,16 +14148,17 @@ function PassengerDashboard({
                 pointerEvents="none"
                 colors={
                   paxLight
-                    ? (['rgba(244,247,251,0.92)', 'rgba(244,247,251,0.5)', 'transparent'] as const)
+                    ? (['rgba(248,250,252,0.94)', 'rgba(248,250,252,0.55)', 'transparent'] as const)
                     : (['rgba(8, 17, 31, 0.38)', 'rgba(8, 17, 31, 0.12)', 'transparent'] as const)
                 }
-                locations={[0, 0.32, 1]}
-                style={styles.destinationModalTopFade}
+                locations={[0, 0.28, 1]}
+                style={paxLight ? styles.destinationModalTopFadeLight : styles.destinationModalTopFade}
               />
               <Pressable
                 onPress={handleDestinationPickerBackPress}
                 style={[
                   styles.destinationMapBackOverlayBtn,
+                  paxLight && rpLt?.routePickerBackBtn,
                   { top: insets.top + 6 },
                 ]}
                 hitSlop={{ top: 24, bottom: 24, left: 24, right: 24 }}
@@ -14267,12 +14269,12 @@ function PassengerDashboard({
                             <LinearGradient
                               colors={
                                 paxLight
-                                  ? [paxTk.bg.elevated, paxTk.bg.glassMuted]
+                                  ? [paxTk.accent.glowLow, paxTk.bg.elevated]
                                   : ['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']
                               }
                               start={{ x: 0, y: 0 }}
                               end={{ x: 1, y: 1 }}
-                              style={[styles.pickupUseLocationBtnGlass, rpLt?.pickupUseLocationBtnGlass]}
+                              style={[styles.pickupUseLocationBtnGlass, rpLt?.pickupMapPickBtnGlass]}
                             >
                               <View style={[styles.pickupUseLocationIconRing, rpLt?.pickupUseLocationIconRing]}>
                                 <Ionicons name="map-outline" size={22} color={paxUi.accent} />
@@ -14281,7 +14283,7 @@ function PassengerDashboard({
                                 <Text style={[styles.pickupUseLocationBtnText, rpLt?.pickupUseLocationBtnText]}>
                                   Haritadan seç
                                 </Text>
-                                <Text style={[styles.pickupUseLocationBtnSub, rpLt?.pickupUseLocationBtnSub]}>
+                                <Text style={[styles.pickupUseLocationBtnSub, rpLt?.pickupMapPickBtnSub]}>
                                   Alınış noktasını harita üzerinde işaretleyin
                                 </Text>
                               </View>
@@ -14348,7 +14350,7 @@ function PassengerDashboard({
                                   </View>
                                 </TouchableOpacity>
                                 <Pressable
-                                  style={styles.savedQuickDeleteBtn}
+                                  style={[styles.savedQuickDeleteBtn, rpLt?.savedQuickDeleteBtn]}
                                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                   onPress={() => handleRemoveSavedAddress('home')}
                                 >
@@ -14390,7 +14392,7 @@ function PassengerDashboard({
                                   </View>
                                 </TouchableOpacity>
                                 <Pressable
-                                  style={styles.savedQuickDeleteBtn}
+                                  style={[styles.savedQuickDeleteBtn, rpLt?.savedQuickDeleteBtn]}
                                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                   onPress={() => handleRemoveSavedAddress('work')}
                                 >
@@ -14541,7 +14543,7 @@ function PassengerDashboard({
                                   </View>
                                 </TouchableOpacity>
                                 <Pressable
-                                  style={styles.savedQuickDeleteBtn}
+                                  style={[styles.savedQuickDeleteBtn, rpLt?.savedQuickDeleteBtn]}
                                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                   onPress={() => handleRemoveSavedAddress('home')}
                                 >
@@ -14583,7 +14585,7 @@ function PassengerDashboard({
                                   </View>
                                 </TouchableOpacity>
                                 <Pressable
-                                  style={styles.savedQuickDeleteBtn}
+                                  style={[styles.savedQuickDeleteBtn, rpLt?.savedQuickDeleteBtn]}
                                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                   onPress={() => handleRemoveSavedAddress('work')}
                                 >
@@ -14639,21 +14641,27 @@ function PassengerDashboard({
                           onPress={openDestinationMapPickerDirect}
                         >
                           <LinearGradient
-                            colors={['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']}
+                            colors={
+                              paxLight
+                                ? [paxTk.accent.glowLow, paxTk.bg.elevated]
+                                : ['rgba(34, 211, 238, 0.22)', 'rgba(14, 165, 233, 0.14)']
+                            }
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
-                            style={styles.destinationMapPickBtnGlass}
+                            style={[styles.destinationMapPickBtnGlass, rpLt?.destinationMapPickBtnGlass]}
                           >
-                            <View style={styles.destinationMapPickIconRing}>
+                            <View style={[styles.destinationMapPickIconRing, rpLt?.destinationMapPickIconRing]}>
                               <Ionicons name="map-outline" size={22} color={paxUi.accent} />
                             </View>
                             <View style={styles.destinationMapPickTextCol}>
-                              <Text style={styles.destinationMapPickBtnText}>Haritadan seç</Text>
-                              <Text style={styles.destinationMapPickBtnSub}>
+                              <Text style={[styles.destinationMapPickBtnText, rpLt?.destinationMapPickBtnText]}>
+                                Haritadan seç
+                              </Text>
+                              <Text style={[styles.destinationMapPickBtnSub, rpLt?.destinationMapPickBtnSub]}>
                                 Hedefi harita üzerinde işaretleyin
                               </Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={20} color="rgba(34, 211, 238, 0.85)" />
+                            <Ionicons name="chevron-forward" size={20} color={paxUi.accent} />
                           </LinearGradient>
                         </TouchableOpacity>
                       ) : null}
@@ -21261,15 +21269,15 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   passengerMatchGuardianSlot: {
-    minHeight: LDS_SPACING.xxxl + LDS_SPACING.xxs,
-    marginBottom: LDS_SPACING.xxs,
+    minHeight: 0,
+    marginBottom: 0,
   },
   passengerMatchPhaseBlock: {
     alignItems: 'center',
     alignSelf: 'center',
     width: '100%',
     gap: LDS_SPACING.xxs,
-    marginBottom: LDS_SPACING.sm,
+    marginBottom: LDS_SPACING.xs,
     paddingHorizontal: LDS_SPACING.xxs,
   },
   passengerMatchPhaseStep: {
