@@ -1,5 +1,5 @@
 /**
- * Küçük UI sesleri — expo-av ile uzak URI (APK / tüm platformlar).
+ * Küçük UI sesleri — expo-av ile bundle WAV + LSX dedupe gates (B4-2).
  * index.tsx bu modülü import eder; dosya yoksa EAS bundle patlıyordu.
  */
 import { Platform, AppState } from 'react-native';
@@ -11,6 +11,19 @@ import {
   getDriverOfferSoundVolume,
   type DriverOfferSoundType,
 } from '../lib/driverOfferSoundPrefs';
+import {
+  driverOfferSessionGate,
+  driverOfferToneCooldownGate,
+  feedbackErrorCooldownGate,
+  matchChimeCooldownGate,
+  paymentConfirmedCooldownGate,
+  qrScanSonicGate,
+  quickMatchOpsCooldownGate,
+  quickMatchOpsSessionGate,
+  SONIC_DEDUPE_MS,
+  uiTapCooldownGate,
+} from '../lib/lsx/sonicDedupe';
+import { registerSonicProductionHandlers } from '../lib/lsx/sonicController';
 import { getPersistedUserRaw } from '../lib/sessionToken';
 
 const SOUND_URLS = {
@@ -21,10 +34,6 @@ const SOUND_URLS = {
 } as const;
 
 const MATCH_CHIME_VOLUME = 0.46;
-const MATCH_CHIME_DEBOUNCE_MS = 2800;
-
-/** Sürücü — yeni TAG / istek ön planda bildirim (cooldown) */
-const DRIVER_NEW_OFFER_COOLDOWN_MS = 1000;
 
 const DRIVER_OFFER_SOUND_SOURCES = {
   classic: require('../assets/sounds/driver-offer-classic.wav'),
@@ -33,12 +42,10 @@ const DRIVER_OFFER_SOUND_SOURCES = {
 } as const;
 
 let matchChimeLoadPromise: Promise<Audio.Sound | null> | null = null;
-let lastMatchChimeAt = 0;
 
 let driverOfferSound: Audio.Sound | null = null;
 let driverOfferLoadPromise: Promise<Audio.Sound | null> | null = null;
 let driverOfferLoadedKind: DriverOfferSoundType | 'fallback' | null = null;
-let lastDriverOfferLuxuryAt = 0;
 
 async function playUri(uri: string, volume = 0.7): Promise<void> {
   if (Platform.OS === 'web') return;
@@ -71,15 +78,23 @@ export async function loadSounds(): Promise<void> {
   }
 }
 
+/**
+ * @deprecated B4-2 — zero call sites; Mixkit URI off-brand. Removed in B4-4 orchestrator.
+ */
 export async function playDigitClickSound(): Promise<void> {
   await playUri(SOUND_URLS.tap, 0.65);
 }
 
+/**
+ * @deprecated B4-2 — zero call sites; Mixkit URI off-brand. Removed in B4-4 orchestrator.
+ */
 export async function playButtonSound(): Promise<void> {
   await playUri(SOUND_URLS.button, 0.7);
 }
 
-/** Sadece rol seçim ekranı — giriş / yolcu paneli / harita tıklamaları sessiz. */
+/**
+ * @deprecated B4-2 — zero call sites; use playUiTapSound for LSX ui.cta.press.
+ */
 export async function playRoleScreenSound(): Promise<void> {
   await playUri(SOUND_URLS.button, 0.42);
 }
@@ -119,13 +134,12 @@ async function ensureMatchChimeLoaded(): Promise<Audio.Sound | null> {
  */
 export async function playMatchChimeSound(): Promise<void> {
   if (Platform.OS === 'web') return;
-  const now = Date.now();
-  if (now - lastMatchChimeAt < MATCH_CHIME_DEBOUNCE_MS) return;
+  if (matchChimeCooldownGate.isCoolingDown()) return;
   try {
     await loadSounds();
     const sound = await ensureMatchChimeLoaded();
     if (!sound) return;
-    lastMatchChimeAt = now;
+    matchChimeCooldownGate.markFired();
     await sound.setVolumeAsync(MATCH_CHIME_VOLUME);
     await sound.setPositionAsync(0);
     await sound.playAsync();
@@ -224,8 +238,7 @@ async function playDriverOfferToneOnce(
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
 
-  const now = Date.now();
-  if (!opts?.bypassCooldown && now - lastDriverOfferLuxuryAt < DRIVER_NEW_OFFER_COOLDOWN_MS) {
+  if (!opts?.bypassCooldown && driverOfferToneCooldownGate.isCoolingDown()) {
     return;
   }
 
@@ -254,7 +267,7 @@ async function playDriverOfferToneOnce(
     const sound = await ensureDriverOfferSoundLoaded(kind);
     if (!sound) return;
     if (!opts?.bypassCooldown) {
-      lastDriverOfferLuxuryAt = now;
+      driverOfferToneCooldownGate.markFired();
     }
     await sound.setVolumeAsync(volume);
     await sound.setPositionAsync(0);
@@ -303,7 +316,7 @@ export async function invalidateDriverOfferSoundCache(): Promise<void> {
 
 /** Kabul / eşleşme — teklif alarm playback'ini durdur (chimed/baseline korunur) */
 export async function stopDriverOfferAlarmPlayback(): Promise<void> {
-  lastDriverOfferLuxuryAt = 0;
+  driverOfferToneCooldownGate.reset();
   await unloadDriverOfferSoundInternal();
 }
 
@@ -314,19 +327,8 @@ export async function unloadDriverNewOfferLuxuryTone(): Promise<void> {
 
 // ── Sürücü teklif sesi — modül seviyesi dedupe (socket / push / poll) ──
 
-/** Bu oturumda ses çalındı — tüm kaynaklar için tek chime/tag */
-const driverOfferSoundChimedIds = new Set<string>();
-/** İlk poll snapshot — resume teklifleri sessiz (chimed değil) */
-const driverOfferSoundBaselineIds = new Set<string>();
-/** Hidrasyon öncesi realtime (nadir; çoğu anında çalar) */
-const driverOfferSoundPendingRealtimeIds = new Set<string>();
-let driverOfferSoundHydrated = false;
-
 function markDriverOfferChimedAndPlay(tagKey: string): void {
-  const id = String(tagKey || '').trim();
-  if (!id || driverOfferSoundChimedIds.has(id)) return;
-  driverOfferSoundChimedIds.add(id);
-  driverOfferSoundPendingRealtimeIds.delete(id);
+  if (!driverOfferSessionGate.tryMarkChimed(tagKey)) return;
   void playDriverNewOfferLuxuryTone();
 }
 
@@ -368,7 +370,7 @@ export function notifyDriverNewOfferSoundFromRealtimeOffer(
 ): void {
   const id = String(tagKey || '').trim();
   if (!id) return;
-  if (driverOfferSoundChimedIds.has(id)) return;
+  if (driverOfferSessionGate.chimedIds.has(id)) return;
   markDriverOfferChimedAndPlay(id);
 }
 
@@ -388,23 +390,23 @@ export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
         .filter((tid) => Boolean(tid)),
     ),
   ];
-  if (!driverOfferSoundHydrated) {
+  if (!driverOfferSessionGate.hydrated) {
     const initialIds = new Set(uniq);
     for (const tid of initialIds) {
-      driverOfferSoundBaselineIds.add(tid);
+      driverOfferSessionGate.baselineIds.add(tid);
     }
-    driverOfferSoundHydrated = true;
+    driverOfferSessionGate.hydrated = true;
 
-    for (const pid of driverOfferSoundPendingRealtimeIds) {
+    for (const pid of driverOfferSessionGate.pendingRealtimeIds) {
       markDriverOfferChimedAndPlay(pid);
     }
-    driverOfferSoundPendingRealtimeIds.clear();
+    driverOfferSessionGate.pendingRealtimeIds.clear();
     return;
   }
   let anyNew = false;
   for (const tid of uniq) {
-    if (!tid || driverOfferSoundChimedIds.has(tid)) continue;
-    driverOfferSoundChimedIds.add(tid);
+    if (!tid || driverOfferSessionGate.chimedIds.has(tid)) continue;
+    driverOfferSessionGate.chimedIds.add(tid);
     anyNew = true;
   }
   if (anyNew) {
@@ -414,10 +416,7 @@ export function finalizeDriverOfferPollSound(orderedTagIds: string[]): void {
 
 /** Oturum kapanışı / logout (opsiyonel) */
 export function resetDriverOfferSoundGate(): void {
-  driverOfferSoundChimedIds.clear();
-  driverOfferSoundBaselineIds.clear();
-  driverOfferSoundPendingRealtimeIds.clear();
-  driverOfferSoundHydrated = false;
+  driverOfferSessionGate.reset();
 }
 
 /** NotificationContext — foreground teklif push */
@@ -432,21 +431,14 @@ export async function tryPlayDriverOfferSoundFromPushData(data: unknown): Promis
 
 // ── Quick Match sürücü daveti — operasyon çağrısı (dispatch teklif yolundan ayrı) ──
 
-const QUICK_MATCH_OPS_COOLDOWN_MS = 2000;
 const QUICK_MATCH_OPS_VOLUME = 0.62;
 
 const QUICK_MATCH_OPS_SOUND_SOURCE = require('../assets/sounds/quick-match-driver-ops.wav');
 
-/** Bu oturumda ops sesi çalındı — invite_id başına tek çalma */
-const quickMatchOpsChimedInviteIds = new Set<string>();
-let lastQuickMatchOpsAt = 0;
-
 async function playQuickMatchDriverOpsCall(): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-
-  const now = Date.now();
-  if (now - lastQuickMatchOpsAt < QUICK_MATCH_OPS_COOLDOWN_MS) {
+  if (!quickMatchOpsCooldownGate.tryPass()) {
     return;
   }
 
@@ -457,7 +449,6 @@ async function playQuickMatchDriverOpsCall(): Promise<void> {
       volume: QUICK_MATCH_OPS_VOLUME,
       isLooping: false,
     });
-    lastQuickMatchOpsAt = now;
     await sound.setPositionAsync(0);
     await sound.playAsync();
     sound.setOnPlaybackStatusUpdate((status) => {
@@ -475,40 +466,27 @@ async function playQuickMatchDriverOpsCall(): Promise<void> {
  * App background/inactive ise playQuickMatchDriverOpsCall no-op.
  */
 export function notifyQuickMatchDriverOpsSoundFromInvite(inviteId: string): void {
-  const id = String(inviteId || '').trim();
-  if (!id) return;
-  if (quickMatchOpsChimedInviteIds.has(id)) return;
-  quickMatchOpsChimedInviteIds.add(id);
+  if (!quickMatchOpsSessionGate.tryMarkChimed(inviteId)) return;
   void playQuickMatchDriverOpsCall();
 }
 
 /** Oturum kapanışı / QM driver session disable */
 export function resetQuickMatchDriverOpsSoundGate(): void {
-  quickMatchOpsChimedInviteIds.clear();
-  lastQuickMatchOpsAt = 0;
+  quickMatchOpsSessionGate.reset();
 }
 
 // ── QR tarama — kısa onay / yumuşak uyarı ──
 
-const QR_SCAN_SOUND_COOLDOWN_MS = 500;
 const QR_SCAN_SUCCESS_VOLUME = 0.5;
 const QR_SCAN_ERROR_VOLUME = 0.48;
 
 const QR_SCAN_SUCCESS_SOURCE = require('../assets/sounds/qr-scan-success.wav');
 const QR_SCAN_ERROR_SOURCE = require('../assets/sounds/qr-scan-error.wav');
 
-let lastQrScanSuccessAt = 0;
-let lastQrScanErrorAt = 0;
-
 async function playQrScanToneOnce(source: number, volume: number, kind: 'success' | 'error'): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-
-  const now = Date.now();
-  const lastAt = kind === 'success' ? lastQrScanSuccessAt : lastQrScanErrorAt;
-  if (now - lastAt < QR_SCAN_SOUND_COOLDOWN_MS) return;
-  if (now - lastQrScanSuccessAt < QR_SCAN_SOUND_COOLDOWN_MS && kind === 'error') return;
-  if (now - lastQrScanErrorAt < QR_SCAN_SOUND_COOLDOWN_MS && kind === 'success') return;
+  if (!qrScanSonicGate.tryPass(kind)) return;
 
   try {
     await loadSounds();
@@ -517,11 +495,6 @@ async function playQrScanToneOnce(source: number, volume: number, kind: 'success
       volume,
       isLooping: false,
     });
-    if (kind === 'success') {
-      lastQrScanSuccessAt = now;
-    } else {
-      lastQrScanErrorAt = now;
-    }
     await sound.setPositionAsync(0);
     await sound.playAsync();
     sound.setOnPlaybackStatusUpdate((status) => {
@@ -546,20 +519,15 @@ export async function playQrScanErrorSound(): Promise<void> {
 
 // ── Ödeme / katkı onayı ──
 
-const PAYMENT_CONFIRMED_COOLDOWN_MS = 1000;
 const PAYMENT_CONFIRMED_VOLUME = 0.52;
 
 const PAYMENT_CONFIRMED_SOURCE = require('../assets/sounds/payment-confirmed.wav');
-
-let lastPaymentConfirmedAt = 0;
 
 /** Ödeme veya katkı onayı başarılı — güven / handshake tonu */
 export async function playPaymentConfirmedSound(): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-
-  const now = Date.now();
-  if (now - lastPaymentConfirmedAt < PAYMENT_CONFIRMED_COOLDOWN_MS) return;
+  if (!paymentConfirmedCooldownGate.tryPass()) return;
 
   try {
     await loadSounds();
@@ -568,7 +536,6 @@ export async function playPaymentConfirmedSound(): Promise<void> {
       volume: PAYMENT_CONFIRMED_VOLUME,
       isLooping: false,
     });
-    lastPaymentConfirmedAt = now;
     await sound.setPositionAsync(0);
     await sound.playAsync();
     sound.setOnPlaybackStatusUpdate((status) => {
@@ -583,20 +550,15 @@ export async function playPaymentConfirmedSound(): Promise<void> {
 
 // ── Kritik işlem hatası — yumuşak uyarı ──
 
-const FEEDBACK_ERROR_COOLDOWN_MS = 1200;
 const FEEDBACK_ERROR_VOLUME = 0.5;
 
 const FEEDBACK_ERROR_SOURCE = require('../assets/sounds/feedback-error.wav');
-
-let lastFeedbackErrorAt = 0;
 
 /** Form / API işlemi başarısız — kritik geri bildirim */
 export async function playFeedbackErrorSound(): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-
-  const now = Date.now();
-  if (now - lastFeedbackErrorAt < FEEDBACK_ERROR_COOLDOWN_MS) return;
+  if (!feedbackErrorCooldownGate.tryPass()) return;
 
   try {
     await loadSounds();
@@ -605,7 +567,6 @@ export async function playFeedbackErrorSound(): Promise<void> {
       volume: FEEDBACK_ERROR_VOLUME,
       isLooping: false,
     });
-    lastFeedbackErrorAt = now;
     await sound.setPositionAsync(0);
     await sound.playAsync();
     sound.setOnPlaybackStatusUpdate((status) => {
@@ -620,20 +581,15 @@ export async function playFeedbackErrorSound(): Promise<void> {
 
 // ── CTA micro tap — LSDS sonic.ui.tap ──
 
-const UI_TAP_ANTI_DOUBLE_FIRE_MS = 70;
 const UI_TAP_VOLUME = 0.4;
 
 const UI_TAP_SOURCE = require('../assets/sounds/ui-tap.wav');
-
-let lastUiTapAt = 0;
 
 /** Birincil CTA dokunuşu — kısa micro click (global tap değil) */
 export async function playUiTapSound(): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
-
-  const now = Date.now();
-  if (now - lastUiTapAt < UI_TAP_ANTI_DOUBLE_FIRE_MS) return;
+  if (!uiTapCooldownGate.tryPass()) return;
 
   try {
     await loadSounds();
@@ -642,7 +598,6 @@ export async function playUiTapSound(): Promise<void> {
       volume: UI_TAP_VOLUME,
       isLooping: false,
     });
-    lastUiTapAt = now;
     await sound.setPositionAsync(0);
     await sound.playAsync();
     sound.setOnPlaybackStatusUpdate((status) => {
@@ -654,3 +609,19 @@ export async function playUiTapSound(): Promise<void> {
     if (__DEV__) console.warn('playUiTapSound', e);
   }
 }
+
+/** B4-2 — LSX registry sonic dispatch (flags OFF → no-op). */
+export { playLsxSonicEvent } from '../lib/lsx/sonicController';
+
+/** Re-export dedupe constants for tests / future orchestrator. */
+export { SONIC_DEDUPE_MS };
+
+registerSonicProductionHandlers({
+  playMatchChimeSound,
+  playDriverNewOfferLuxuryTone,
+  playUiTapSound,
+  playQrScanSuccessSound,
+  playQrScanErrorSound,
+  playPaymentConfirmedSound,
+  playFeedbackErrorSound,
+});

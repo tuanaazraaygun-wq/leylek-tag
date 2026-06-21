@@ -79,3 +79,30 @@ export {
   assertLsxRegistryIntegrity,
   LSX_REGISTRY_INTEGRITY_OK,
 } from './manifest';
+
+export {
+  SONIC_DEDUPE_MS,
+  matchChimeCooldownGate,
+  driverOfferToneCooldownGate,
+  driverOfferSessionGate,
+  quickMatchOpsCooldownGate,
+  quickMatchOpsSessionGate,
+  qrScanSonicGate,
+  paymentConfirmedCooldownGate,
+  feedbackErrorCooldownGate,
+  uiTapCooldownGate,
+} from './sonicDedupe';
+
+export {
+  LSX_SONIC_PRODUCTION_MAP,
+  LSX_EVENT_SONIC_PRODUCTION_MAP,
+  getProductionHandlerForSonicToken,
+  getProductionHandlerForEvent,
+} from './sonicProductionMap';
+export type { SonicProductionHandlerName } from './sonicProductionMap';
+
+export {
+  registerSonicProductionHandlers,
+  playLsxSonicEvent,
+} from './sonicController';
+export type { SonicProductionHandlers, PlayLsxSonicEventOptions } from './sonicController';
