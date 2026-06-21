@@ -1,0 +1,166 @@
+{
+  "$schema": "lh-theme-tokens/v1",
+  "meta": {
+    "version": "1.0.0",
+    "sprint": "B-3",
+    "status": "design-lab-only",
+    "date": "2026-06-21",
+    "note": "SSOT for B3-1. Not imported by production until B3-2 buildTheme.ts maps these IDs."
+  },
+  "modes": {
+    "supported": ["dark", "light", "system"],
+    "defaultMode": "dark",
+    "defaultResolved": "dark",
+    "systemFollowsDevice": true
+  },
+  "persistence": {
+    "modeKey": "lh_theme_mode_v1",
+    "choiceDoneKeyPattern": "lh_theme_choice_done_{userId}",
+    "hydrateTimeoutMs": 120
+  },
+  "tokens": {
+    "dark": {
+      "bg": {
+        "canvas": "#08111F",
+        "canvasMid": "#0B1220",
+        "card": "#101A2B",
+        "glass": "rgba(16,26,43,0.76)",
+        "glassMuted": "rgba(16,26,43,0.87)",
+        "elevated": "#101A2B"
+      },
+      "text": {
+        "primary": "rgba(243,248,255,0.94)",
+        "muted": "rgba(186,201,222,0.9)",
+        "inverse": "#08111F"
+      },
+      "border": {
+        "default": "#1E3A5F",
+        "emphasis": "rgba(34,211,238,0.28)",
+        "card": "rgba(30,58,95,0.6)"
+      },
+      "accent": {
+        "primary": "#22D3EE",
+        "primaryTarget": "#00D4AA",
+        "primaryHover": "#06B6D4",
+        "secondary": "#3FA9F5",
+        "glowLow": "rgba(34,211,238,0.12)",
+        "glowMid": "rgba(34,211,238,0.28)",
+        "glowHigh": "rgba(34,211,238,0.45)"
+      },
+      "status": {
+        "error": "#F87171",
+        "warning": "#FBBF24",
+        "success": "#34D399"
+      },
+      "shadow": {
+        "ambient": "rgba(0,0,0,0.25)",
+        "modal": "rgba(0,0,0,0.45)"
+      },
+      "map": {
+        "overlay": "rgba(8,17,31,0.92)",
+        "chrome": "rgba(11,18,32,0.88)"
+      },
+      "gradient": {
+        "cockpitBase": ["#08111F", "#0B1220", "#101A2B"],
+        "cockpitTopHaze": "rgba(34,211,238,0.06)",
+        "cockpitSideVignette": "rgba(0,0,0,0.35)",
+        "glassSheen": "rgba(255,255,255,0.04)",
+        "cta": ["#22D3EE", "#3FA9F5"]
+      }
+    },
+    "light": {
+      "bg": {
+        "canvas": "#F4F7FB",
+        "canvasMid": "#EEF2F7",
+        "card": "#FFFFFF",
+        "glass": "rgba(255,255,255,0.72)",
+        "glassMuted": "rgba(238,242,247,0.88)",
+        "elevated": "#FFFFFF"
+      },
+      "text": {
+        "primary": "rgba(13,17,23,0.92)",
+        "muted": "#64748B",
+        "inverse": "#F5F7FA"
+      },
+      "border": {
+        "default": "rgba(15,23,42,0.10)",
+        "emphasis": "rgba(0,212,170,0.28)",
+        "card": "rgba(15,23,42,0.08)"
+      },
+      "accent": {
+        "primary": "#00D4AA",
+        "primaryHover": "#00BF9A",
+        "secondary": "#0EA5E9",
+        "glowLow": "rgba(0,212,170,0.10)",
+        "glowMid": "rgba(0,212,170,0.16)",
+        "glowHigh": "rgba(0,212,170,0.22)"
+      },
+      "status": {
+        "error": "#DC2626",
+        "warning": "#D97706",
+        "success": "#059669"
+      },
+      "shadow": {
+        "ambient": "rgba(15,23,42,0.08)",
+        "modal": "rgba(15,23,42,0.14)"
+      },
+      "map": {
+        "overlay": "rgba(255,255,255,0.92)",
+        "chrome": "rgba(244,247,251,0.94)"
+      },
+      "gradient": {
+        "cockpitBase": ["#F8FAFC", "#F4F7FB", "#EEF2F7"],
+        "cockpitTopHaze": "rgba(0,212,170,0.04)",
+        "cockpitSideVignette": "rgba(15,23,42,0.03)",
+        "glassSheen": "rgba(255,255,255,0.08)",
+        "cta": ["#00D4AA", "#22D3EE", "#0EA5E9"]
+      }
+    }
+  },
+  "components": {
+    "CockpitBackground": {
+      "tokenRefs": ["gradient.cockpitBase", "gradient.cockpitTopHaze", "gradient.cockpitSideVignette"]
+    },
+    "GlassSurface": {
+      "variants": {
+        "panel": { "fill": "bg.glass", "border": "border.default" },
+        "plain": { "fill": "bg.glassMuted", "border": "border.card" },
+        "accent": { "fill": "bg.glass", "border": "border.emphasis" },
+        "inset": { "fill": "bg.card", "border": "border.card" }
+      }
+    },
+    "PremiumText": {
+      "variants": {
+        "primary": "text.primary",
+        "muted": "text.muted",
+        "accent": "accent.primary"
+      }
+    },
+    "Button": {
+      "primary": { "gradient": "gradient.cta", "text": "text.inverse", "shadow": "shadow.ambient" },
+      "secondary": { "fill": "bg.glass", "border": "border.default", "text": "text.primary" }
+    },
+    "Input": {
+      "fillDark": "bg.glassMuted",
+      "fillLight": "bg.card",
+      "border": "border.default",
+      "placeholder": "text.muted"
+    },
+    "StatusBar": {
+      "dark": "light",
+      "light": "dark"
+    }
+  },
+  "premiumAliasMap": {
+    "PREMIUM_NAVY_DEEP": "dark.bg.canvas",
+    "PREMIUM_AUTH_CYAN": "dark.accent.primary",
+    "PREMIUM_TEXT_SOFT": "dark.text.primary",
+    "PREMIUM_GLASS_FILL": "dark.bg.glass"
+  },
+  "contrastTargets": {
+    "textPrimaryOnCanvas": 4.5,
+    "textMutedOnCanvas": 3.0,
+    "accentOnCanvas": 3.0,
+    "ctaTextOnGradient": 4.5
+  }
+}

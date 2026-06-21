@@ -1,0 +1,231 @@
+{
+  "generated_at": "2026-06-20T19:17:37.966413+00:00",
+  "genome_version": "2.0",
+  "codename": "Cyan Meridian Body",
+  "sample_rate_hz": 44100,
+  "format": "PCM mono 16-bit WAV",
+  "target_peak_linear": 0.85,
+  "file_count": 22,
+  "files": [
+    {
+      "token": "sonic.driver.offer.classic",
+      "filename": "driver_offer_classic_v2a.wav",
+      "duration_sec": 0.865,
+      "peak_dbfs": -1.41,
+      "sha256": "c849eb8a288322249b20a748d5e1882044f00e9284d6d46354e213789fef2842",
+      "description": "Calm dispatch — body + P5 ascent",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.driver.offer.classic",
+      "filename": "driver_offer_classic_v2b.wav",
+      "duration_sec": 0.87,
+      "peak_dbfs": -1.41,
+      "sha256": "84d69f125f1088a20d1ca8473d687571c8fcdf861a2afa8a31d30c1bc96aab2d",
+      "description": "Calm dispatch — wider gap, softer sheen",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.driver.offer.classic",
+      "filename": "driver_offer_classic_v2c.wav",
+      "duration_sec": 0.85,
+      "peak_dbfs": -1.41,
+      "sha256": "2fb369f2f0fcd171b580272f4788a0928e788c0371a55ffbb154230e92790c60",
+      "description": "Calm dispatch — snappier tail",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.driver.offer.urgent",
+      "filename": "driver_offer_urgent_v2a.wav",
+      "duration_sec": 0.905,
+      "peak_dbfs": -1.41,
+      "sha256": "fc268af9a42aa52ac484ed8dbe42ab0b49dada3cb999c9d0249fc70ae76a4371",
+      "description": "Attention offer — tight rhythm, M2 color",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.driver.offer.urgent",
+      "filename": "driver_offer_urgent_v2b.wav",
+      "duration_sec": 0.92,
+      "peak_dbfs": -1.41,
+      "sha256": "37927263299a10465d98e547bb4a627a769ac0a42924148afa133a7ef69503fa",
+      "description": "Attention offer — spaced phase, comms edge",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.driver.offer.urgent",
+      "filename": "driver_offer_urgent_v2c.wav",
+      "duration_sec": 0.91,
+      "peak_dbfs": -1.41,
+      "sha256": "a64275441b1c51c8ed82e0153bf58f06ff47c070ecb35dd521270b63035e797c",
+      "description": "Attention offer — balanced detune",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.quickMatch.driver.opsCall",
+      "filename": "quick_match_ops_v2a.wav",
+      "duration_sec": 1.03,
+      "peak_dbfs": -1.41,
+      "sha256": "7f8e198e4b8dd433435640ed88aa306726ebc19d6a8ba852657db0a989e24b42",
+      "description": "Ops channel — C# lift to A/E stack",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.quickMatch.driver.opsCall",
+      "filename": "quick_match_ops_v2b.wav",
+      "duration_sec": 1.045,
+      "peak_dbfs": -1.41,
+      "sha256": "dc3456c042ab69f3363e7d851b15d4cca38effd71229821f9c3ecae7447489ae",
+      "description": "Ops channel — FM shimmer + detune",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.quickMatch.driver.opsCall",
+      "filename": "quick_match_ops_v2c.wav",
+      "duration_sec": 1.035,
+      "peak_dbfs": -1.41,
+      "sha256": "51ac7f3e8732ee3db8f6861af2e976e5a1fda7aa7836308af42ca18cebc74ecd",
+      "description": "Ops channel — middle FM weight",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.match.success",
+      "filename": "match_success_v2a.wav",
+      "duration_sec": 1.265,
+      "peak_dbfs": -1.41,
+      "sha256": "ea2b208323cfbe892a85263cfee7af910ff5a23153ee82ed5a22e4eb2bf94829",
+      "description": "Warm journey resolve — longest tail",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.match.success",
+      "filename": "match_success_v2b.wav",
+      "duration_sec": 1.2572,
+      "peak_dbfs": -1.41,
+      "sha256": "a693aeb1bf5aa65e6bf92b5fb2a63b140c75e09a40f800c734de86baefd44f51",
+      "description": "Warm resolve — wider gap",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.match.success",
+      "filename": "match_success_v2c.wav",
+      "duration_sec": 1.2244,
+      "peak_dbfs": -1.41,
+      "sha256": "edd91db832be0caa9f49971c96c37b9c0553f64a0ce55732e744ca1bae5179b8",
+      "description": "Warm resolve — tighter release",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.qr.success",
+      "filename": "qr_success_v2a.wav",
+      "duration_sec": 0.275,
+      "peak_dbfs": -1.41,
+      "sha256": "3af9c5a703e136e4972afcc9241725a99ebc4573a87e7ff3b93d6132191d54aa",
+      "description": "Scan lock — transient + A4/E5 whisper",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.qr.success",
+      "filename": "qr_success_v2b.wav",
+      "duration_sec": 0.242,
+      "peak_dbfs": -1.41,
+      "sha256": "8ca4ca907268d4264d99fa930a449d224f29e568259c47b9b9a20997a1070c8e",
+      "description": "Scan lock — shorter micro confirm",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.qr.error",
+      "filename": "qr_error_v2a.wav",
+      "duration_sec": 0.46,
+      "peak_dbfs": -1.41,
+      "sha256": "8570879281ed5535776b1e3fe6e07e5fb4544d98b85e75c2f2dd10564b9d9951",
+      "description": "Soft QR fail — descending m3",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.payment.confirmed",
+      "filename": "payment_confirmed_v2a.wav",
+      "duration_sec": 0.745,
+      "peak_dbfs": -1.41,
+      "sha256": "665ed268554fedab05f28d1db65bd39cc627811a023a391acb1bfe34d22444e5",
+      "description": "Handshake fifth — trustworthy ascent",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.payment.confirmed",
+      "filename": "payment_confirmed_v2b.wav",
+      "duration_sec": 0.765,
+      "peak_dbfs": -1.41,
+      "sha256": "4538ba4da279a79b68889d6448df01ecda9e8b2fddb26b8998a93dcc12bbf592",
+      "description": "Handshake — wider gap variant",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.feedback.error",
+      "filename": "feedback_error_v2a.wav",
+      "duration_sec": 0.53,
+      "peak_dbfs": -1.41,
+      "sha256": "65d0eff7fa0fffe65a5a626673b49d25fbbd872baebbb0cbea35ff0418953079",
+      "description": "API/form fail — darker undertone",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.ui.tap",
+      "filename": "ui_tap_v2a.wav",
+      "duration_sec": 0.082,
+      "peak_dbfs": -1.41,
+      "sha256": "be8e0924070c4359199c12a8d4e75089f62321242fc24324ff56146998256a34",
+      "description": "Premium CTA micro click",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.ui.tap",
+      "filename": "ui_tap_v2b.wav",
+      "duration_sec": 0.075,
+      "peak_dbfs": -1.41,
+      "sha256": "41cd704031fdc956674055551d97b1a6e1a5f930b2d4ce170ed3bfa3bb2f2fd4",
+      "description": "Glass tap — lighter transient",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.brand.signature",
+      "filename": "brand_signature_v2a.wav",
+      "duration_sec": 0.945,
+      "peak_dbfs": -1.41,
+      "sha256": "cb52634eeae79b665bdb113ef0c1cd28c1a2b42d0b24d7b950e83a9cbf2a1b62",
+      "description": "Brand sting — Leylek opens",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    },
+    {
+      "token": "sonic.brand.signature",
+      "filename": "brand_signature_v2b.wav",
+      "duration_sec": 0.96,
+      "peak_dbfs": -1.41,
+      "sha256": "5e377a578420c82ca9169765fd0c122c7f0d75f5c1a61bfd211cc15afb4c88fb",
+      "description": "Brand sting — softer sheen",
+      "genome_version": "2.0",
+      "codename": "Cyan Meridian Body"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" fill="none">
+  <rect width="800" height="400" fill="#F5F7FA"/>
+  <text x="40" y="48" fill="#111" font-size="20" font-weight="600">Play Store — Similar apps row</text>
+  <rect x="40" y="100" width="80" height="80" rx="40" fill="#ddd"/><rect x="160" y="100" width="80" height="80" rx="40" fill="#ddd"/><rect x="280" y="100" width="80" height="80" rx="40" fill="#ddd"/><rect x="400" y="100" width="80" height="80" rx="40" fill="#ddd"/><rect x="520" y="100" width="80" height="80" rx="40" fill="#ddd"/><rect x="640" y="100" width="80" height="80" rx="40" fill="#ddd"/>
+  <rect x="280" y="100" width="80" height="80" rx="40" fill="#0D1117" stroke="#00D4AA" stroke-width="2"/>
+  <g transform="translate(320, 140) scale(0.28)">
+  <g transform="translate(0,0)">
+    <path d="M -20 8 C -28 20, -30 40, -18 52 C -6 60, 14 62, 32 54" stroke="#00D4AA" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path fill="#F5F7FA" d="M -8 -18 C -10 -24, -4 -28, 2 -24 L 28 -18 L 42 -14 L 38 -10 L 12 -14 C 4 -12, 0 -6, -2 4 C -4 16, -4 28, -2 38 L 0 48 L -2 58 C -3 62, 0 64, 4 64 C 8 64, 10 60, 9 56 L 7 48"/>
+    <circle cx="18" cy="-16" r="2.5" fill="#00D4AA"/>
+  </g></g>
+</svg>

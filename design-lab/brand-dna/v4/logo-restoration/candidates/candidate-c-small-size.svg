@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B5.3 Candidate C - Faithful silhouette tuned for small-size tiers -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="LeylekTAG symbol candidate C">
+  <g id="layer.orbitalArc">
+    <path id="arc.primary" fill="none" stroke="#00D4AA" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"
+      d="M 128 184 C 92 246, 84 332, 114 392 C 148 442, 220 452, 292 428 C 356 406, 404 348, 412 276" />
+    <path id="arc.secondary" fill="none" stroke="#F5F7FA" stroke-opacity="0.18" stroke-width="11" stroke-linecap="round"
+      d="M 128 184 C 92 246, 84 332, 114 392 C 148 442, 220 452, 292 428 C 356 406, 404 348, 412 276" />
+  </g>
+  <g id="layer.storkBody" fill="#F5F7FA">
+    <path id="stork.silhouette"
+      d="M 214 134 C 210 126, 218 120, 228 124 C 234 127, 240 131, 248 132 C 262 134, 278 138, 294 141 L 330 147 L 354 152 C 356 155, 352 158, 336 157 L 308 153 C 296 152, 288 156, 282 166 C 276 178, 270 194, 266 212 C 262 232, 260 252, 260 272 C 260 292, 262 310, 266 326 L 270 346 L 268 390 C 267 398, 271 404, 278 404 C 285 404, 289 398, 288 390 L 286 346 C 282 330, 278 314, 276 298 C 272 278, 270 258, 270 238 C 270 218, 274 200, 280 184 C 274 178, 266 172, 258 166 C 250 158, 242 150, 234 144 C 228 140, 220 136, 214 134 Z" />
+  </g>
+  <g id="layer.wingSweep">
+    <path id="wing.sweep" fill="none" stroke="#F5F7FA" stroke-width="5" stroke-linecap="round" stroke-opacity="0.92"
+      d="M 264 222 C 280 228, 298 244, 310 266 C 318 280, 320 296, 312 310" />
+  </g>
+  <g id="layer.accentDot">
+    <circle id="eye.accent" fill="#00D4AA" cx="292" cy="166" r="6" />
+    <circle id="eye.highlight" fill="#F5F7FA" fill-opacity="0.38" cx="290.5" cy="164.5" r="2" />
+  </g>
+</svg>

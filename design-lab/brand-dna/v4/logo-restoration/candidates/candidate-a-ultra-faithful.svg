@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B5.3 Candidate A - Ultra-faithful restoration from master PNG reference -->
+<!-- Manual Bezier rebuild. No auto-trace. Target: less than 2% silhouette delta vs master PNG. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="LeylekTAG symbol candidate A">
+  <g id="layer.orbitalArc">
+    <path id="arc.primary" fill="none" stroke="#00D4AA" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"
+      d="M 132 188 C 96 248, 88 328, 118 388 C 152 438, 224 448, 296 424 C 360 402, 408 344, 416 272" />
+    <path id="arc.secondary" fill="none" stroke="#F5F7FA" stroke-opacity="0.22" stroke-width="10" stroke-linecap="round"
+      d="M 132 188 C 96 248, 88 328, 118 388 C 152 438, 224 448, 296 424 C 360 402, 408 344, 416 272" />
+  </g>
+  <g id="layer.storkBody" fill="#F0F4F8">
+    <path id="stork.silhouette"
+      d="M 212 136 C 208 128, 216 122, 226 126 C 232 129, 238 133, 246 134 C 260 136, 276 140, 292 143 L 328 149 L 356 155 C 358 158, 354 161, 338 160 L 306 156 C 294 155, 286 159, 280 168 C 274 180, 268 196, 264 214 C 260 234, 258 254, 258 274 C 258 294, 260 312, 264 328 L 268 348 L 266 392 C 265 400, 269 406, 276 406 C 283 406, 287 400, 286 392 L 284 348 C 280 332, 276 316, 274 300 C 270 280, 268 260, 268 240 C 268 220, 272 202, 278 186 C 272 180, 264 174, 256 168 C 248 160, 240 152, 232 146 C 226 142, 218 138, 212 136 Z" />
+    <path id="stork.leg.tucked"
+      d="M 262 332 C 252 326, 244 332, 240 342 C 236 352, 242 362, 252 364 C 262 366, 268 358, 266 348 C 265 344, 264 338, 262 332 Z" />
+  </g>
+  <g id="layer.wingSweep">
+    <path id="wing.sweep" fill="none" stroke="#F5F7FA" stroke-width="4" stroke-linecap="round" stroke-opacity="0.88"
+      d="M 262 224 C 278 230, 296 246, 308 268 C 316 282, 318 298, 310 312" />
+  </g>
+  <g id="layer.accentDot">
+    <circle id="eye.accent" fill="#00D4AA" cx="292" cy="166" r="5.5" />
+    <circle id="eye.highlight" fill="#F5F7FA" fill-opacity="0.34" cx="290.5" cy="164.5" r="1.8" />
+  </g>
+</svg>

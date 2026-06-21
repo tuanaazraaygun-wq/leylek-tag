@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B5.5 Marker MK-20 — Cluster count arc -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <rect width="48" height="48" fill="#000000"/>
+  <path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><rect x="16" y="18" width="16" height="12" rx="2" fill="#FFFFFF"/><text x="24" y="27" text-anchor="middle" fill="#000000" font-family="monospace" font-size="8" font-weight="bold">3</text>
+  <text x="2" y="47" fill="#666666" font-family="monospace" font-size="4">MK-20</text>
+</svg>

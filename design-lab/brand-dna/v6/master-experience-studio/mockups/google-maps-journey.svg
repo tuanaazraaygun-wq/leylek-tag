@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 780" fill="none">
+  <rect width="400" height="780" fill="#111"/>
+  <rect x="20" y="20" width="360" height="700" rx="28" fill="#0D1117" stroke="#4B5563" stroke-width="2"/>
+  <rect x="160" y="28" width="80" height="6" rx="3" fill="#222"/>
+  
+  <rect x="20" y="48" width="360" height="500" fill="#1A2332"/>
+  <path d="M 60 400 Q 120 320 180 280 T 340 180" stroke="#00D4AA" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <g transform="translate(100, 360)">
+    <path d="M -12 14 C -14 10, -8 6, 0 6 C 8 6, 14 10, 12 14" stroke="#F5F7FA" stroke-width="1.5" fill="none"/>
+    <circle cx="0" cy="-4" r="4" fill="#F5F7FA"/>
+  </g>
+  <g transform="translate(280, 200)">
+    <path d="M -14 12 C -16 8, -10 4, 0 4 C 10 4, 16 8, 14 12" stroke="#F5F7FA" stroke-width="1.5" fill="none"/>
+    <rect x="-10" y="-2" width="20" height="8" rx="2" fill="#F5F7FA"/>
+    <path d="M 0 -2 L 4 -8 L 10 -2" fill="#F5F7FA"/>
+  </g>
+  <g transform="translate(320, 160)">
+    <line x1="0" y1="-8" x2="0" y2="12" stroke="#F5F7FA" stroke-width="2"/>
+    <path d="M 0 -8 L 10 -4 L 0 0 Z" fill="#00D4AA"/>
+  </g>
+  <rect x="36" y="560" width="328" height="120" rx="16" fill="#121820" stroke="#4B5563"/>
+  <text x="52" y="592" fill="#F5F7FA" font-size="13" font-weight="600">Yolculuk aktif</text>
+  <text x="52" y="614" fill="#00D4AA" font-size="11">ETA 8 dk · 4.2 km</text>
+  <rect x="52" y="628" width="80" height="28" rx="8" fill="#00D4AA" opacity="0.15"/>
+  <text x="92" y="646" text-anchor="middle" fill="#00D4AA" font-size="10">Mesafe</text>
+
+  <text x="20" y="768" fill="#4B5563" font-family="system-ui,sans-serif" font-size="11">V7 — Journey on map · MEX markers + meridian route</text>
+</svg>

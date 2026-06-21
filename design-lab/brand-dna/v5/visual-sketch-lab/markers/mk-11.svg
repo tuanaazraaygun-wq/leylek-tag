@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B5.5 Marker MK-11 — Journey arc path -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <rect width="48" height="48" fill="#000000"/>
+  <path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M 10 24 Q 24 16 38 24" stroke="#FFFFFF" stroke-width="2" fill="none"/><polygon points="36,22 40,24 36,26" fill="#FFFFFF"/>
+  <text x="2" y="47" fill="#666666" font-family="monospace" font-size="4">MK-11</text>
+</svg>

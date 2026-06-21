@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B5.5 Logo Sketch LS-05 — Neck slender mid -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" fill="#000000"/>
+  
+  <g transform="translate(0, 0)">
+    <path fill="none" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" d="M 132 188 C 96 248, 88 328, 118 388 C 152 438, 224 448, 296 424 C 360 402, 408 344, 416 272"/>
+    <path fill="#FFFFFF" stroke="none" stroke-width="0" d="M 212 136 C 210 128, 220 120, 228 126 C 234 130, 240 134, 248 136 C 258 136, 272 142, 288 145 L 324 151 L 356 155 C 358 158, 354 161, 338 160 L 304 156 C 292 155, 284 160, 278 170 C 272 182, 266 198, 262 216 C 258 236, 256 256, 256 276 C 256 296, 258 314, 262 330 L 266 350 L 264 392 C 263 400, 267 406, 274 406 C 281 406, 285 400, 284 392 L 282 348 C 278 332, 274 316, 272 300 C 268 280, 266 260, 266 240 C 266 220, 270 202, 276 186 C 270 180, 262 174, 254 168 C 246 160, 238 152, 230 146 C 224 142, 216 138, 212 136 Z"/>
+    <path fill="#FFFFFF" stroke="none" stroke-width="0" d="M 262 332 C 252 326, 244 332, 240 342 C 236 352, 242 362, 252 364 C 262 366, 268 358, 266 348 C 265 344, 264 338, 262 332 Z"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" d="M 262 224 C 278 230, 296 246, 308 268 C 316 282, 318 298, 310 312"/>
+    <circle fill="#FFFFFF" cx="292" cy="166" r="5.5"/>
+  </g>
+  <text x="16" y="496" fill="#666666" font-family="monospace" font-size="11">LS-05 Neck slender mid</text>
+</svg>

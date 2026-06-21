@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 360" fill="none">
+  <rect width="520" height="360" fill="#000000"/>
+  <text x="16" y="24" fill="#FFFFFF" font-size="13">Marker Zoom 16 / 18 / 20 Comparison</text>
+  <g transform="translate(20, 50)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z16</text>
+        <g transform="scale(0.3333333333333333)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><rect x="12" y="18" width="24" height="14" rx="3" fill="#FFFFFF"/><path d="M 24 18 L 28 14 L 36 18" fill="#FFFFFF"/></g>
+      </g><g transform="translate(140, 50)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z16</text>
+        <g transform="scale(0.3333333333333333)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><ellipse cx="24" cy="26" rx="6" ry="10" fill="#FFFFFF"/><circle cx="18" cy="32" r="3" fill="#FFFFFF"/><circle cx="30" cy="32" r="3" fill="#FFFFFF"/></g>
+      </g><g transform="translate(260, 50)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z16</text>
+        <g transform="scale(0.3333333333333333)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><line x1="24" y1="14" x2="24" y2="36" stroke="#FFFFFF" stroke-width="2"/><path d="M 24 14 L 34 18 L 24 22 Z" fill="#FFFFFF"/></g>
+      </g><g transform="translate(380, 50)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z16</text>
+        <g transform="scale(0.3333333333333333)"><circle cx="24" cy="22" r="6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.35"/><circle cx="24" cy="22" r="10" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.25"/><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="24" cy="22" r="2" fill="#FFFFFF"/></g>
+      </g><g transform="translate(20, 150)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z18</text>
+        <g transform="scale(0.375)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><rect x="12" y="18" width="24" height="14" rx="3" fill="#FFFFFF"/><path d="M 24 18 L 28 14 L 36 18" fill="#FFFFFF"/></g>
+      </g><g transform="translate(140, 150)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z18</text>
+        <g transform="scale(0.375)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><ellipse cx="24" cy="26" rx="6" ry="10" fill="#FFFFFF"/><circle cx="18" cy="32" r="3" fill="#FFFFFF"/><circle cx="30" cy="32" r="3" fill="#FFFFFF"/></g>
+      </g><g transform="translate(260, 150)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z18</text>
+        <g transform="scale(0.375)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><line x1="24" y1="14" x2="24" y2="36" stroke="#FFFFFF" stroke-width="2"/><path d="M 24 14 L 34 18 L 24 22 Z" fill="#FFFFFF"/></g>
+      </g><g transform="translate(380, 150)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z18</text>
+        <g transform="scale(0.375)"><circle cx="24" cy="22" r="6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.35"/><circle cx="24" cy="22" r="10" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.25"/><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="24" cy="22" r="2" fill="#FFFFFF"/></g>
+      </g><g transform="translate(20, 250)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z20</text>
+        <g transform="scale(0.4166666666666667)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><rect x="12" y="18" width="24" height="14" rx="3" fill="#FFFFFF"/><path d="M 24 18 L 28 14 L 36 18" fill="#FFFFFF"/></g>
+      </g><g transform="translate(140, 250)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z20</text>
+        <g transform="scale(0.4166666666666667)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><ellipse cx="24" cy="26" rx="6" ry="10" fill="#FFFFFF"/><circle cx="18" cy="32" r="3" fill="#FFFFFF"/><circle cx="30" cy="32" r="3" fill="#FFFFFF"/></g>
+      </g><g transform="translate(260, 250)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z20</text>
+        <g transform="scale(0.4166666666666667)"><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><line x1="24" y1="14" x2="24" y2="36" stroke="#FFFFFF" stroke-width="2"/><path d="M 24 14 L 34 18 L 24 22 Z" fill="#FFFFFF"/></g>
+      </g><g transform="translate(380, 250)">
+        <text x="0" y="-4" fill="#666666" font-size="8">z20</text>
+        <g transform="scale(0.4166666666666667)"><circle cx="24" cy="22" r="6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.35"/><circle cx="24" cy="22" r="10" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.25"/><path d="M 8 38 C 6 34, 10 30, 16 28 C 24 26, 32 26, 40 28 C 44 30, 46 34, 42 38" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="24" cy="22" r="2" fill="#FFFFFF"/></g>
+      </g>
+</svg>
