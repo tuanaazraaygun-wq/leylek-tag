@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, ActivityIn
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 const COLORS = {
   primary: '#3FA9F5',
@@ -20,8 +21,10 @@ interface LegalPageProps {
 }
 
 export function LegalPage({ type, visible, onClose }: LegalPageProps) {
+  const { legalModalSurfaces: lt, legalUi } = useSettingsTheme('legal');
   const [content, setContent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const headerGradient = lt?.headerGradient ?? [COLORS.primaryDark, COLORS.background] as const;
   
   useEffect(() => {
     if (visible) {
@@ -46,24 +49,24 @@ export function LegalPage({ type, visible, onClose }: LegalPageProps) {
   
   return (
     <Modal visible={visible} animationType="slide">
-      <View style={styles.container}>
-        <LinearGradient colors={[COLORS.primaryDark, COLORS.background]} style={styles.header}>
+      <View style={[styles.container, lt?.container]}>
+        <LinearGradient colors={headerGradient} style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#FFF" />
+            <Ionicons name="close" size={28} color={legalUi.headerIcon} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{content?.title || 'Yükleniyor...'}</Text>
+          <Text style={[styles.headerTitle, lt?.headerTitle]}>{content?.title || 'Yükleniyor...'}</Text>
           <View style={{ width: 28 }} />
         </LinearGradient>
         
         {loading ? (
-          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 50 }} />
+          <ActivityIndicator size="large" color={legalUi.activity} style={{ marginTop: 50 }} />
         ) : (
           <ScrollView style={styles.content}>
-            <Text style={styles.companyName}>{content?.company}</Text>
+            <Text style={[styles.companyName, lt?.companyName]}>{content?.company}</Text>
             {content?.last_updated && (
-              <Text style={styles.lastUpdated}>Son güncelleme: {content.last_updated}</Text>
+              <Text style={[styles.lastUpdated, lt?.lastUpdated]}>Son güncelleme: {content.last_updated}</Text>
             )}
-            <Text style={styles.contentText}>{content?.content}</Text>
+            <Text style={[styles.contentText, lt?.contentText]}>{content?.content}</Text>
             <View style={{ height: 50 }} />
           </ScrollView>
         )}
@@ -80,6 +83,7 @@ interface LegalConsentModalProps {
 }
 
 export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsentModalProps) {
+  const { legalModalSurfaces: lt, legalUi } = useSettingsTheme('legal');
   const [privacyChecked, setPrivacyChecked] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
   const [kvkkChecked, setKvkkChecked] = useState(false);
@@ -90,17 +94,19 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
   const [showKvkk, setShowKvkk] = useState(false);
   
   const allChecked = privacyChecked && termsChecked && kvkkChecked && ageChecked;
+  const consentHeaderGradient = lt?.consentHeaderGradient ?? [COLORS.primaryDark, COLORS.card] as const;
+  const acceptGradientActive = [legalUi.accent, legalUi.accentSecondary] as const;
   
   if (!visible) return null;
   
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={styles.consentModal}>
-          <LinearGradient colors={[COLORS.primaryDark, COLORS.card]} style={styles.consentHeader}>
-            <Ionicons name="shield-checkmark" size={40} color={COLORS.primary} />
-            <Text style={styles.consentTitle}>Kullanım Onayı</Text>
-            <Text style={styles.consentSubtitle}>Devam etmek için aşağıdakileri onaylamanız gerekmektedir.</Text>
+      <View style={[styles.modalOverlay, lt?.modalOverlay]}>
+        <View style={[styles.consentModal, lt?.consentModal]}>
+          <LinearGradient colors={consentHeaderGradient} style={styles.consentHeader}>
+            <Ionicons name="shield-checkmark" size={40} color={legalUi.accent} />
+            <Text style={[styles.consentTitle, lt?.consentTitle]}>Kullanım Onayı</Text>
+            <Text style={[styles.consentSubtitle, lt?.consentSubtitle]}>Devam etmek için aşağıdakileri onaylamanız gerekmektedir.</Text>
           </LinearGradient>
           
           <ScrollView style={styles.consentContent}>
@@ -109,12 +115,12 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               style={styles.consentItem}
               onPress={() => setPrivacyChecked(!privacyChecked)}
             >
-              <View style={[styles.checkbox, privacyChecked && styles.checkboxChecked]}>
-                {privacyChecked && <Ionicons name="checkmark" size={18} color="#FFF" />}
+              <View style={[styles.checkbox, lt?.checkbox, privacyChecked && styles.checkboxChecked, privacyChecked && lt?.checkboxChecked]}>
+                {privacyChecked && <Ionicons name="checkmark" size={18} color={legalUi.iconOnAccent} />}
               </View>
               <View style={styles.consentTextContainer}>
-                <Text style={styles.consentText}>
-                  <Text style={styles.linkText} onPress={() => setShowPrivacy(true)}>Gizlilik Politikası</Text>
+                <Text style={[styles.consentText, lt?.consentText]}>
+                  <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowPrivacy(true)}>Gizlilik Politikası</Text>
                   {"'nı okudum ve kabul ediyorum."}
                 </Text>
               </View>
@@ -125,12 +131,12 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               style={styles.consentItem}
               onPress={() => setTermsChecked(!termsChecked)}
             >
-              <View style={[styles.checkbox, termsChecked && styles.checkboxChecked]}>
-                {termsChecked && <Ionicons name="checkmark" size={18} color="#FFF" />}
+              <View style={[styles.checkbox, lt?.checkbox, termsChecked && styles.checkboxChecked, termsChecked && lt?.checkboxChecked]}>
+                {termsChecked && <Ionicons name="checkmark" size={18} color={legalUi.iconOnAccent} />}
               </View>
               <View style={styles.consentTextContainer}>
-                <Text style={styles.consentText}>
-                  <Text style={styles.linkText} onPress={() => setShowTerms(true)}>Kullanım Şartları</Text>
+                <Text style={[styles.consentText, lt?.consentText]}>
+                  <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowTerms(true)}>Kullanım Şartları</Text>
                   {"'nı okudum ve kabul ediyorum."}
                 </Text>
               </View>
@@ -141,12 +147,12 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               style={styles.consentItem}
               onPress={() => setKvkkChecked(!kvkkChecked)}
             >
-              <View style={[styles.checkbox, kvkkChecked && styles.checkboxChecked]}>
-                {kvkkChecked && <Ionicons name="checkmark" size={18} color="#FFF" />}
+              <View style={[styles.checkbox, lt?.checkbox, kvkkChecked && styles.checkboxChecked, kvkkChecked && lt?.checkboxChecked]}>
+                {kvkkChecked && <Ionicons name="checkmark" size={18} color={legalUi.iconOnAccent} />}
               </View>
               <View style={styles.consentTextContainer}>
-                <Text style={styles.consentText}>
-                  <Text style={styles.linkText} onPress={() => setShowKvkk(true)}>KVKK Aydınlatma Metni</Text>
+                <Text style={[styles.consentText, lt?.consentText]}>
+                  <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowKvkk(true)}>KVKK Aydınlatma Metni</Text>
                   {"'ni okudum, kişisel verilerimin işlenmesini onaylıyorum."}
                 </Text>
               </View>
@@ -157,18 +163,18 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               style={styles.consentItem}
               onPress={() => setAgeChecked(!ageChecked)}
             >
-              <View style={[styles.checkbox, ageChecked && styles.checkboxChecked]}>
-                {ageChecked && <Ionicons name="checkmark" size={18} color="#FFF" />}
+              <View style={[styles.checkbox, lt?.checkbox, ageChecked && styles.checkboxChecked, ageChecked && lt?.checkboxChecked]}>
+                {ageChecked && <Ionicons name="checkmark" size={18} color={legalUi.iconOnAccent} />}
               </View>
               <View style={styles.consentTextContainer}>
-                <Text style={styles.consentText}>
+                <Text style={[styles.consentText, lt?.consentText]}>
                   18 yaşından büyük olduğumu beyan ediyorum.
                 </Text>
               </View>
             </TouchableOpacity>
             
             {/* Sorumluluk Reddi */}
-            <View style={styles.disclaimerBox}>
+            <View style={[styles.disclaimerBox, lt?.disclaimerBox]}>
               <Ionicons name="warning" size={24} color="#F59E0B" />
               <Text style={styles.disclaimerText}>
                 ⚠️ UYARI: Leylek TAG sadece bir aracılık platformudur. Kullanıcılar arası anlaşmazlıklardan, yolculuk sırasında oluşabilecek kaza, hasar veya kayıplardan sorumlu değildir.
@@ -176,9 +182,9 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
             </View>
           </ScrollView>
           
-          <View style={styles.consentButtons}>
-            <TouchableOpacity style={styles.declineButton} onPress={onDecline}>
-              <Text style={styles.declineButtonText}>Vazgeç</Text>
+          <View style={[styles.consentButtons, lt?.consentButtons]}>
+            <TouchableOpacity style={[styles.declineButton, lt?.declineButton]} onPress={onDecline}>
+              <Text style={[styles.declineButtonText, lt?.declineButtonText]}>Vazgeç</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -187,10 +193,10 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               disabled={!allChecked}
             >
               <LinearGradient
-                colors={allChecked ? [COLORS.primary, '#2563EB'] : ['#475569', '#64748B']}
+                colors={allChecked ? acceptGradientActive : ['#475569', '#64748B']}
                 style={styles.acceptButtonGradient}
               >
-                <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+                <Ionicons name="checkmark-circle" size={20} color={legalUi.iconOnAccent} />
                 <Text style={styles.acceptButtonText}>Kabul Et ve Devam Et</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -214,35 +220,38 @@ interface LocationWarningProps {
 }
 
 export function LocationWarningModal({ visible, onAccept, onDecline }: LocationWarningProps) {
+  const { legalModalSurfaces: lt, legalUi } = useSettingsTheme('legal');
+  const warningAcceptGradient = [legalUi.accent, legalUi.accentSecondary] as const;
+
   if (!visible) return null;
   
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={styles.warningModal}>
-          <View style={styles.warningIcon}>
-            <Ionicons name="location" size={50} color={COLORS.primary} />
+      <View style={[styles.modalOverlay, lt?.modalOverlay]}>
+        <View style={[styles.warningModal, lt?.warningModal]}>
+          <View style={[styles.warningIcon, lt?.warningIcon]}>
+            <Ionicons name="location" size={50} color={legalUi.accent} />
           </View>
           
-          <Text style={styles.warningTitle}>Konum Paylaşımı</Text>
+          <Text style={[styles.warningTitle, lt?.warningTitle]}>Konum Paylaşımı</Text>
           
-          <Text style={styles.warningText}>
+          <Text style={[styles.warningText, lt?.warningText]}>
             Leylek TAG, yolculuk sırasında konumunuzu şoför/yolcu ile paylaşır. Bu bilgi:
           </Text>
           
-          <View style={styles.warningList}>
-            <Text style={styles.warningListItem}>✓ Sadece aktif yolculuk süresince paylaşılır</Text>
-            <Text style={styles.warningListItem}>✓ Yolculuk bitince paylaşım durur</Text>
-            <Text style={styles.warningListItem}>✓ Konum geçmişi saklanmaz</Text>
+          <View style={[styles.warningList, lt?.warningList]}>
+            <Text style={[styles.warningListItem, lt?.warningListItem]}>✓ Sadece aktif yolculuk süresince paylaşılır</Text>
+            <Text style={[styles.warningListItem, lt?.warningListItem]}>✓ Yolculuk bitince paylaşım durur</Text>
+            <Text style={[styles.warningListItem, lt?.warningListItem]}>✓ Konum geçmişi saklanmaz</Text>
           </View>
           
           <View style={styles.warningButtons}>
-            <TouchableOpacity style={styles.warningDeclineBtn} onPress={onDecline}>
-              <Text style={styles.warningDeclineText}>İzin Verme</Text>
+            <TouchableOpacity style={[styles.warningDeclineBtn, lt?.warningDeclineBtn]} onPress={onDecline}>
+              <Text style={[styles.warningDeclineText, lt?.warningDeclineText]}>İzin Verme</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.warningAcceptBtn} onPress={onAccept}>
-              <LinearGradient colors={[COLORS.primary, '#2563EB']} style={styles.warningAcceptGradient}>
+              <LinearGradient colors={warningAcceptGradient} style={styles.warningAcceptGradient}>
                 <Text style={styles.warningAcceptText}>İzin Ver</Text>
               </LinearGradient>
             </TouchableOpacity>

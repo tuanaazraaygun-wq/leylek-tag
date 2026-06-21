@@ -4,11 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
-  PREMIUM_AUTH_CYAN,
   PREMIUM_NAVY_DEEP,
   PREMIUM_ROLE_CARD_BG,
   PREMIUM_ROLE_CARD_BORDER,
-  PREMIUM_TEXT_MUTED,
 } from '../components/auth/premiumAuthStyles';
 import {
   CockpitBackground,
@@ -20,6 +18,7 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { themeSettingsEnabled } from '../lib/featureFlags';
 import { clearSessionStorage, getPersistedUserRaw } from '../lib/sessionToken';
 import ThemeSettingsSegment from '../components/theme/ThemeSettingsSegment';
+import { useSettingsTheme, type SettingsUiColors, type SettingsHubLightSurfaces } from '../lib/theme/useSettingsTheme';
 
 type HubUser = {
   id?: string;
@@ -40,16 +39,27 @@ type SettingsHubRowProps = {
   onPress: () => void;
   danger?: boolean;
   isFirst?: boolean;
+  ui: SettingsUiColors;
+  hubSurfaces: SettingsHubLightSurfaces | null;
 };
 
-function SettingsHubRow({ icon, label, onPress, danger = false, isFirst = false }: SettingsHubRowProps) {
-  const iconColor = danger ? LDS_COLOR_ERROR : PREMIUM_AUTH_CYAN;
+function SettingsHubRow({
+  icon,
+  label,
+  onPress,
+  danger = false,
+  isFirst = false,
+  ui,
+  hubSurfaces,
+}: SettingsHubRowProps) {
+  const iconColor = danger ? LDS_COLOR_ERROR : ui.accent;
 
   return (
     <Pressable
       style={({ pressed }) => [
         styles.row,
         isFirst && styles.rowFirst,
+        !isFirst && hubSurfaces?.row,
         pressed && styles.rowPressed,
       ]}
       onPress={onPress}
@@ -64,7 +74,7 @@ function SettingsHubRow({ icon, label, onPress, danger = false, isFirst = false 
           {label}
         </PremiumText>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={PREMIUM_TEXT_MUTED} />
+      <Ionicons name="chevron-forward" size={18} color={ui.textMuted} />
     </Pressable>
   );
 }
@@ -89,6 +99,7 @@ function SettingsHubCard({ title, children, footer }: SettingsHubCardProps) {
 
 export default function SettingsHubScreen() {
   const router = useRouter();
+  const { hubSurfaces, ui } = useSettingsTheme('settings');
   const [user, setUser] = useState<HubUser | null>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
 
@@ -146,16 +157,20 @@ export default function SettingsHubScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, hubSurfaces?.screen]}>
       <CockpitBackground />
       <SafeAreaView style={styles.safe}>
         <GlassSurface variant="header" style={styles.headerGlass}>
           <View style={styles.header}>
             <Pressable
-              style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+              style={({ pressed }) => [
+                styles.backBtn,
+                hubSurfaces?.backBtn,
+                pressed && styles.backBtnPressed,
+              ]}
               onPress={() => router.back()}
             >
-              <Ionicons name="arrow-back" size={20} color={PREMIUM_AUTH_CYAN} />
+              <Ionicons name="arrow-back" size={20} color={ui.accent} />
             </Pressable>
             <View style={styles.headerBody}>
               <PremiumText variant="headline" style={styles.title}>
@@ -178,6 +193,8 @@ export default function SettingsHubScreen() {
               icon="person-circle-outline"
               label="Profilim"
               onPress={openMyProfile}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
           </SettingsHubCard>
 
@@ -191,6 +208,8 @@ export default function SettingsHubScreen() {
                   icon="volume-high-outline"
                   label="Teklif Sesi"
                   onPress={() => router.push('/driver-offer-sound-settings' as any)}
+                  ui={ui}
+                  hubSurfaces={hubSurfaces}
                 />
               </SettingsHubCard>
               <SettingsHubCard title="Ödeme bilgileri">
@@ -199,6 +218,8 @@ export default function SettingsHubScreen() {
                   icon="card-outline"
                   label="IBAN hesabınızı yönetin"
                   onPress={() => router.push('/driver-bank-accounts' as any)}
+                  ui={ui}
+                  hubSurfaces={hubSurfaces}
                 />
               </SettingsHubCard>
             </>
@@ -219,6 +240,8 @@ export default function SettingsHubScreen() {
               onPress={() => {
                 void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
               }}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
               icon="call-outline"
@@ -226,6 +249,8 @@ export default function SettingsHubScreen() {
               onPress={() => {
                 void openExternalLink('tel:08503078029', 'Telefon açılamadı');
               }}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
           </SettingsHubCard>
 
@@ -235,22 +260,30 @@ export default function SettingsHubScreen() {
               icon="lock-closed-outline"
               label="Gizlilik Politikası"
               onPress={() => router.push('/privacy' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
               icon="document-text-outline"
               label="Kullanım Şartları"
               onPress={() => router.push('/terms' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
               icon="information-circle-outline"
               label="KVKK"
               onPress={() => router.push('/kvkk' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
               danger
               icon="trash-outline"
               label="Hesap Silme Bilgilendirmesi"
               onPress={() => router.push('/delete-account' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
           </SettingsHubCard>
 
@@ -261,12 +294,16 @@ export default function SettingsHubScreen() {
               icon="trash-outline"
               label="Hesabımı Sil"
               onPress={() => router.push('/delete-account' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
             <SettingsHubRow
               danger
               icon="log-out-outline"
               label={logoutBusy ? 'Çıkış yapılıyor...' : 'Çıkış Yap'}
               onPress={() => void handleSafeLogout()}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
             />
           </SettingsHubCard>
         </ScrollView>

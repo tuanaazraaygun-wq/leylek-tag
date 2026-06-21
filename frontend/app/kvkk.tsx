@@ -14,39 +14,41 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 export default function KVKKScreen() {
   const router = useRouter();
+  const { legalRouteSurfaces: lt, legalUi } = useSettingsTheme('legal');
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+    <SafeAreaView style={[styles.container, lt?.container]}>
+      <StatusBar barStyle={legalUi.statusBarStyle} backgroundColor={legalUi.statusBarBg} />
       
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, lt?.header]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={legalUi.backIcon} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>KVKK Aydınlatma Metni</Text>
+        <Text style={[styles.headerTitle, lt?.headerTitle]}>KVKK Aydınlatma Metni</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.companyInfo}>
-          <Text style={styles.companyName}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <Text style={styles.companyAddress}>Meşrutiyet Mah. Konur Sk. Özsoy İş Hanı No: 25 İç Kapı No: 13 Çankaya / Ankara</Text>
-          <Text style={styles.companyEmail}>E-posta: info@karekodteknoloji.com</Text>
-          <Text style={styles.companyEmail}>Telefon: 0850 307 80 29</Text>
+        <View style={[styles.companyInfo, lt?.companyInfo]}>
+          <Text style={[styles.companyName, lt?.companyName]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <Text style={[styles.companyAddress, lt?.companyAddress]}>Meşrutiyet Mah. Konur Sk. Özsoy İş Hanı No: 25 İç Kapı No: 13 Çankaya / Ankara</Text>
+          <Text style={[styles.companyEmail, lt?.companyEmail]}>E-posta: info@karekodteknoloji.com</Text>
+          <Text style={[styles.companyEmail, lt?.companyEmail]}>Telefon: 0850 307 80 29</Text>
         </View>
 
-        <Text style={styles.sectionTitle}>1. Veri Sorumlusu</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>1. Veri Sorumlusu</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Leylek Tag mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla KAREKOD TEKNOLOJİ VE YAZILIM A.Ş. tarafından işlenmektedir.
         </Text>
 
-        <Text style={styles.sectionTitle}>2. İşlenen Veriler</Text>
-        <Text style={styles.subTitle}>Yolcu Kullanıcılar:</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>2. İşlenen Veriler</Text>
+        <Text style={[styles.subTitle, lt?.subTitle]}>Yolcu Kullanıcılar:</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           • Ad, Soyad{"\n"}
           • Telefon numarası{"\n"}
           • Şehir bilgisi{"\n"}
@@ -55,24 +57,24 @@ export default function KVKKScreen() {
           • Yolculuk geçmişi
         </Text>
 
-        <Text style={styles.subTitle}>Sürücü Kullanıcılar (ek olarak):</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.subTitle, lt?.subTitle]}>Sürücü Kullanıcılar (ek olarak):</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           • Ehliyet görseli{"\n"}
           • Araç ön ve arka fotoğrafları (plaka dahil){"\n"}
           • Plaka numarası{"\n"}
           • Araç bilgileri
         </Text>
 
-        <Text style={styles.subTitle}>Teknik Veriler:</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.subTitle, lt?.subTitle]}>Teknik Veriler:</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           • IP adresi{"\n"}
           • Cihaz bilgisi{"\n"}
           • Push bildirim token{'\''}ı{"\n"}
           • Sistem log ve güvenlik kayıtları
         </Text>
 
-        <Text style={styles.sectionTitle}>3. İşleme Amaçları</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>3. İşleme Amaçları</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           • Kullanıcı kaydı ve kimlik doğrulama{"\n"}
           • Yolcu–sürücü eşleştirme{"\n"}
           • Sürücü/yolcu teklif sistemi{"\n"}
@@ -85,8 +87,8 @@ export default function KVKKScreen() {
           • Topluluk alanının yönetimi
         </Text>
 
-        <Text style={styles.sectionTitle}>4. Saklama Süreleri</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>4. Saklama Süreleri</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           • Hesap bilgileri: Üyelik süresince{"\n"}
           • Trip kayıtları: 5 yıl{"\n"}
           • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse): 7 güne kadar{"\n"}
@@ -94,20 +96,20 @@ export default function KVKKScreen() {
           • Log kayıtları: Mevzuat süresi boyunca
         </Text>
 
-        <Text style={styles.sectionTitle}>5. Yurt Dışına Aktarım</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>5. Yurt Dışına Aktarım</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Altyapı hizmetleri (Supabase, Google Maps vb.) nedeniyle veriler yurt dışında bulunan sunucularda saklanabilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>6. Haklarınız</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>6. Haklarınız</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz. Destek hattı: 0850 307 80 29.
         </Text>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <Text style={styles.footerText}>info@karekodteknoloji.com</Text>
-          <Text style={styles.footerText}>0850 307 80 29</Text>
+        <View style={[styles.footer, lt?.footer]}>
+          <Text style={[styles.footerText, lt?.footerText]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <Text style={[styles.footerText, lt?.footerText]}>info@karekodteknoloji.com</Text>
+          <Text style={[styles.footerText, lt?.footerText]}>0850 307 80 29</Text>
         </View>
 
         <View style={{ height: 50 }} />

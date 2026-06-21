@@ -25,6 +25,7 @@ import {
   PREMIUM_TEXT_MUTED,
   PREMIUM_TEXT_SOFT,
 } from '../components/auth/premiumAuthStyles';
+import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 interface User {
   id: string;
@@ -40,6 +41,7 @@ interface User {
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { profileSurfaces: lt, ui, isScopeLight, tokens } = useSettingsTheme('profile');
   const [user, setUser] = useState<User | null>(null);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -133,181 +135,185 @@ export default function ProfileScreen() {
 
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <Text style={styles.loadingText}>Yükleniyor...</Text>
+      <SafeAreaView style={[styles.container, lt?.container]}>
+        <View style={[styles.loadingWrap, lt?.loadingWrap]}>
+          <ActivityIndicator size="large" color={ui.accent} />
+          <Text style={[styles.loadingText, lt?.loadingText]}>Yükleniyor...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.container, lt?.container]}>
+      <View style={[styles.header, lt?.header]}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={28} color={PREMIUM_AUTH_CYAN} />
+          <Ionicons name="arrow-back" size={28} color={ui.accent} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profil</Text>
+        <Text style={[styles.headerTitle, lt?.headerTitle]}>Profil</Text>
         <View style={{ width: 28 }} />
       </View>
 
       <ScrollView style={styles.content}>
-        <View style={styles.card}>
+        <View style={[styles.card, lt?.card]}>
           <TouchableOpacity style={styles.photoContainer} onPress={pickImage}>
             {user.profile_photo ? (
-              <Image source={{ uri: user.profile_photo }} style={styles.photo} />
+              <Image source={{ uri: user.profile_photo }} style={[styles.photo, lt?.photo]} />
             ) : (
-              <View style={styles.photoPlaceholder}>
-                <Ionicons name="person" size={60} color={PREMIUM_TEXT_MUTED} />
+              <View style={[styles.photoPlaceholder, lt?.photoPlaceholder]}>
+                <Ionicons name="person" size={60} color={ui.textMuted} />
               </View>
             )}
-            <View style={styles.cameraButton}>
-              <Ionicons name="camera" size={20} color="rgba(243,248,255,0.94)" />
+            <View style={[styles.cameraButton, lt?.cameraButton]}>
+              <Ionicons
+                name="camera"
+                size={20}
+                color={isScopeLight ? tokens.text.inverse : 'rgba(243,248,255,0.94)'}
+              />
             </View>
           </TouchableOpacity>
 
-          <Text style={styles.roleText}>
+          <Text style={[styles.roleText, lt?.roleText]}>
             {user.role === 'passenger' ? '🧑 Yolcu' : '🚗 Sürücü'}
           </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Kişisel Bilgiler</Text>
+        <View style={[styles.card, lt?.card]}>
+          <Text style={[styles.cardTitle, lt?.cardTitle]}>Kişisel Bilgiler</Text>
           
-          <Text style={styles.label}>Ad Soyad</Text>
+          <Text style={[styles.label, lt?.label]}>Ad Soyad</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, lt?.input]}
             value={name}
             onChangeText={setName}
             placeholder="Adınızı girin"
-            placeholderTextColor={PREMIUM_TEXT_MUTED}
+            placeholderTextColor={ui.textMuted}
           />
 
-          <Text style={styles.label}>Telefon</Text>
+          <Text style={[styles.label, lt?.label]}>Telefon</Text>
           <TextInput
-            style={[styles.input, styles.inputDisabled]}
+            style={[styles.input, styles.inputDisabled, lt?.input, lt?.inputDisabled]}
             value={user.phone}
             editable={false}
           />
 
           <TouchableOpacity
-            style={[styles.primaryButton, loading && { opacity: 0.5 }]}
+            style={[styles.primaryButton, lt?.primaryButton, loading && { opacity: 0.5 }]}
             onPress={handleSaveName}
             disabled={loading}
           >
-            <Text style={styles.primaryButtonText}>
+            <Text style={[styles.primaryButtonText, lt?.primaryButtonText]}>
               {loading ? 'Kaydediliyor...' : 'Kaydet'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>İstatistikler</Text>
+        <View style={[styles.card, lt?.card]}>
+          <Text style={[styles.cardTitle, lt?.cardTitle]}>İstatistikler</Text>
           
           <View style={styles.statRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{user.total_trips}</Text>
-              <Text style={styles.statLabel}>Yolculuk</Text>
+              <Text style={[styles.statValue, lt?.statValue]}>{user.total_trips}</Text>
+              <Text style={[styles.statLabel, lt?.statLabel]}>Yolculuk</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, lt?.statDivider]} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>⭐ {user.rating}</Text>
-              <Text style={styles.statLabel}>Puan</Text>
+              <Text style={[styles.statValue, lt?.statValue]}>⭐ {user.rating}</Text>
+              <Text style={[styles.statLabel, lt?.statLabel]}>Puan</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, lt?.statDivider]} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{user.total_ratings}</Text>
-              <Text style={styles.statLabel}>Değerlendirme</Text>
+              <Text style={[styles.statValue, lt?.statValue]}>{user.total_ratings}</Text>
+              <Text style={[styles.statLabel, lt?.statLabel]}>Değerlendirme</Text>
             </View>
           </View>
         </View>
 
         {user.role === 'driver' && (
           <TouchableOpacity
-            style={styles.verifyCard}
+            style={[styles.verifyCard, lt?.verifyCard]}
             onPress={() => router.push('/driver-verify' as any)}
           >
-            <Ionicons name="shield-checkmark" size={40} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="shield-checkmark" size={40} color={ui.accent} />
             <View style={styles.verifyInfo}>
-              <Text style={styles.verifyTitle}>Sürücü Doğrulama</Text>
-              <Text style={styles.verifySubtitle}>
+              <Text style={[styles.verifyTitle, lt?.verifyTitle]}>Sürücü Doğrulama</Text>
+              <Text style={[styles.verifySubtitle, lt?.verifySubtitle]}>
                 {user.driver_details?.is_verified
                   ? '✅ Doğrulandı'
                   : '⏳ Doğrulama bekliyor'}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={24} color={PREMIUM_TEXT_MUTED} />
+            <Ionicons name="chevron-forward" size={24} color={ui.textMuted} />
           </TouchableOpacity>
         )}
 
         {/* Yasal Bilgiler */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Yasal Bilgiler</Text>
+        <View style={[styles.card, lt?.card]}>
+          <Text style={[styles.cardTitle, lt?.cardTitle]}>Yasal Bilgiler</Text>
           
           <TouchableOpacity
-            style={styles.linkItem}
+            style={[styles.linkItem, lt?.linkItem]}
             onPress={() => router.push('/privacy' as any)}
           >
-            <Ionicons name="lock-closed-outline" size={24} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.linkText}>Gizlilik Politikası</Text>
-            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
+            <Ionicons name="lock-closed-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>Gizlilik Politikası</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.linkItem}
+            style={[styles.linkItem, lt?.linkItem]}
             onPress={() => router.push('/terms' as any)}
           >
-            <Ionicons name="document-text-outline" size={24} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.linkText}>Hizmet Şartları</Text>
-            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
+            <Ionicons name="document-text-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>Hizmet Şartları</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.linkItem}
+            style={[styles.linkItem, lt?.linkItem]}
             onPress={() => router.push('/kvkk' as any)}
           >
-            <Ionicons name="information-circle-outline" size={24} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.linkText}>KVKK Aydınlatma Metni</Text>
-            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
+            <Ionicons name="information-circle-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>KVKK Aydınlatma Metni</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Destek</Text>
-          <Text style={styles.supportCompany}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+        <View style={[styles.card, lt?.card]}>
+          <Text style={[styles.cardTitle, lt?.cardTitle]}>Destek</Text>
+          <Text style={[styles.supportCompany, lt?.supportCompany]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
           <TouchableOpacity
-            style={styles.linkItem}
+            style={[styles.linkItem, lt?.linkItem]}
             onPress={() => {
               void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı');
             }}
           >
-            <Ionicons name="mail-outline" size={24} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.linkText}>info@karekodteknoloji.com</Text>
-            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
+            <Ionicons name="mail-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>info@karekodteknoloji.com</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.linkItem, styles.supportPhoneItem]}
+            style={[styles.linkItem, styles.supportPhoneItem, lt?.linkItem]}
             onPress={() => {
               void openExternalLink('tel:08503078029', 'Telefon açılamadı');
             }}
           >
-            <Ionicons name="call-outline" size={24} color={PREMIUM_AUTH_CYAN} />
-            <Text style={styles.linkText}>0850 307 80 29</Text>
-            <Ionicons name="chevron-forward" size={20} color={PREMIUM_TEXT_MUTED} />
+            <Ionicons name="call-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>0850 307 80 29</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
           </TouchableOpacity>
         </View>
 
         {/* Hesap İşlemleri */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Hesap İşlemleri</Text>
+        <View style={[styles.card, lt?.card]}>
+          <Text style={[styles.cardTitle, lt?.cardTitle]}>Hesap İşlemleri</Text>
           
           <TouchableOpacity
-            style={[styles.linkItem, styles.dangerItem]}
+            style={[styles.linkItem, styles.dangerItem, lt?.linkItem, lt?.dangerItem]}
             onPress={() => router.push('/delete-account' as any)}
           >
             <Ionicons name="trash-outline" size={24} color="#E74C3C" />
-            <Text style={[styles.linkText, styles.dangerText]}>Hesabımı Sil</Text>
+            <Text style={[styles.linkText, styles.dangerText, lt?.linkText, lt?.dangerText]}>Hesabımı Sil</Text>
             <Ionicons name="chevron-forward" size={20} color="#E74C3C" />
           </TouchableOpacity>
         </View>

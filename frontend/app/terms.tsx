@@ -14,32 +14,34 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 export default function TermsScreen() {
   const router = useRouter();
+  const { legalRouteSurfaces: lt, legalUi } = useSettingsTheme('legal');
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+    <SafeAreaView style={[styles.container, lt?.container]}>
+      <StatusBar barStyle={legalUi.statusBarStyle} backgroundColor={legalUi.statusBarBg} />
       
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, lt?.header]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={legalUi.backIcon} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Hizmet Şartları</Text>
+        <Text style={[styles.headerTitle, lt?.headerTitle]}>Hizmet Şartları</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionTitle}>1. Hizmet Tanımı</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>1. Hizmet Tanımı</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Leylek Tag, yolcu ve sürücü kullanıcıları dijital ortamda eşleştiren bir platformdur.{"\n\n"}
           Şirket taşımacılık hizmeti sunmaz.
         </Text>
 
-        <Text style={styles.sectionTitle}>2. Sorumluluk</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>2. Sorumluluk</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Yolculuk sırasında meydana gelebilecek:{"\n"}
           • Trafik kazaları{"\n"}
           • Maddi/manevi zararlar{"\n"}
@@ -47,8 +49,8 @@ export default function TermsScreen() {
           taraflar arasındadır.
         </Text>
 
-        <Text style={styles.sectionTitle}>3. Sürücü Sorumluluğu</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>3. Sürücü Sorumluluğu</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Sürücü:{"\n"}
           • Geçerli sürücü belgesine sahip olduğunu{"\n"}
           • Aracın trafiğe uygun olduğunu{"\n"}
@@ -56,8 +58,8 @@ export default function TermsScreen() {
           beyan eder.
         </Text>
 
-        <Text style={styles.sectionTitle}>4. Topluluk Kuralları</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>4. Topluluk Kuralları</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Yasak:{"\n"}
           • Hakaret{"\n"}
           • Tehdit{"\n"}
@@ -66,14 +68,14 @@ export default function TermsScreen() {
           Şirket içerik kaldırma ve hesap kapatma hakkını saklı tutar.
         </Text>
 
-        <Text style={styles.sectionTitle}>5. Ücretlendirme</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>5. Ücretlendirme</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Yolculuk ücretleri uygulama içi hesaplama veya teklif sistemiyle belirlenir.{"\n\n"}
           Şirket komisyon veya üyelik modeli uygulayabilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>6. Ürün Kapsamı (Bilgilendirme)</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>6. Ürün Kapsamı (Bilgilendirme)</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Hizmet kapsamında aşağıdaki modüller çalışabilir:{"\n"}
           • Konum verisi ile sürücü/yolcu eşleşme ve teklif sistemi{"\n"}
           • Leylek Teklifi / Muhabbet mesajlaşma{"\n"}
@@ -83,30 +85,30 @@ export default function TermsScreen() {
           Detaylar Gizlilik Politikası ve KVKK Aydınlatma Metni{'\''}nde açıklanır.
         </Text>
 
-        <Text style={styles.sectionTitle}>7. Muhabbet Kayıt Süresi (Bilgilendirme)</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>7. Muhabbet Kayıt Süresi (Bilgilendirme)</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>8. Hesap Silme / Veri Silme</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>8. Hesap Silme / Veri Silme</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Kullanıcı, uygulama içinden hesap silme talebi oluşturabilir. İşlem koşulları ve detaylar ilgili hesap silme açıklama sayfasında yer alır.
         </Text>
 
-        <Text style={styles.sectionTitle}>9. KVKK Başvuru Hakları ve Destek</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>9. KVKK Başvuru Hakları ve Destek</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           KVKK kapsamındaki başvuru hakları ve destek iletişimi için aşağıdaki kanallar kullanılabilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>10. Uyuşmazlık</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>10. Uyuşmazlık</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Uyuşmazlıklarda Ankara Mahkemeleri yetkilidir.
         </Text>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <Text style={styles.footerText}>info@karekodteknoloji.com</Text>
-          <Text style={styles.footerText}>0850 307 80 29</Text>
+        <View style={[styles.footer, lt?.footer]}>
+          <Text style={[styles.footerText, lt?.footerText]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <Text style={[styles.footerText, lt?.footerText]}>info@karekodteknoloji.com</Text>
+          <Text style={[styles.footerText, lt?.footerText]}>0850 307 80 29</Text>
         </View>
 
         <View style={{ height: 50 }} />

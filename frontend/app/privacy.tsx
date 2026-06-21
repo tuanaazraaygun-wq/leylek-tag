@@ -14,39 +14,41 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
 
 export default function PrivacyScreen() {
   const router = useRouter();
+  const { legalRouteSurfaces: lt, legalUi } = useSettingsTheme('legal');
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
+    <SafeAreaView style={[styles.container, lt?.container]}>
+      <StatusBar barStyle={legalUi.statusBarStyle} backgroundColor={legalUi.statusBarBg} />
       
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, lt?.header]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={legalUi.backIcon} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Gizlilik Politikası</Text>
+        <Text style={[styles.headerTitle, lt?.headerTitle]}>Gizlilik Politikası</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionTitle}>1. Genel İlke</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>1. Genel İlke</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Leylek Tag, kullanıcı verilerini yalnızca hizmet sunumu amacıyla işler. Yetkisiz üçüncü kişilerle paylaşılmaz.
         </Text>
 
-        <Text style={styles.sectionTitle}>2. Konum Verisi</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>2. Konum Verisi</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Konum verisi yalnızca:{"\n"}
           • Yolculuk oluşturma{"\n"}
           • Aktif yolculuk süresi{"\n\n"}
           boyunca kullanılır. Sürekli arka plan takibi yapılmaz.
         </Text>
 
-        <Text style={styles.sectionTitle}>3. Ürün Kapsamı (Bilgilendirme)</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>3. Ürün Kapsamı (Bilgilendirme)</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Uygulama kapsamında aşağıdaki ürün özellikleri kapsamında veri işlenebilir:{"\n"}
           • Sürücü/yolcu eşleşme ve teklif sistemi{"\n"}
           • Leylek Teklifi / Muhabbet mesajlaşma{"\n"}
@@ -55,8 +57,8 @@ export default function PrivacyScreen() {
           • Cihaz, log ve güvenlik kayıtları
         </Text>
 
-        <Text style={styles.sectionTitle}>4. Sürücü Doğrulama</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>4. Sürücü Doğrulama</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Ehliyet ve araç görselleri:{"\n"}
           • Kimlik doğrulama{"\n"}
           • Güvenlik{"\n"}
@@ -64,39 +66,39 @@ export default function PrivacyScreen() {
           amaçlı işlenir ve kamuya açık paylaşılmaz.
         </Text>
 
-        <Text style={styles.sectionTitle}>5. Muhabbet İçerik Saklama</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>5. Muhabbet İçerik Saklama</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse), ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>6. Güvenlik</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>6. Güvenlik</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           • HTTPS şifreleme{"\n"}
           • Yetkilendirme sistemi{"\n"}
           • Rol bazlı erişim{"\n"}
           • Sunucu taraflı güvenlik önlemleri
         </Text>
 
-        <Text style={styles.sectionTitle}>7. Hesap Silme / Veri Silme</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>7. Hesap Silme / Veri Silme</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Kullanıcılar uygulama içinden hesaplarını silebilir.{"\n\n"}
           Silme sonrası veriler yasal zorunluluklar saklı kalmak kaydıyla silinir veya anonimleştirilir.
         </Text>
 
-        <Text style={styles.sectionTitle}>8. KVKK Başvuru Hakları</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>8. KVKK Başvuru Hakları</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           KVKK kapsamındaki başvuru haklarınızı kullanmak için aşağıdaki iletişim kanallarını kullanabilirsiniz.
         </Text>
 
-        <Text style={styles.sectionTitle}>9. 5651 Uyum</Text>
-        <Text style={styles.paragraph}>
+        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>9. 5651 Uyum</Text>
+        <Text style={[styles.paragraph, lt?.paragraph]}>
           Şirket, 5651 sayılı Kanun kapsamında hukuka aykırı içerikleri bildirim üzerine kaldırma yükümlülüğünü yerine getirir.
         </Text>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <Text style={styles.footerText}>info@karekodteknoloji.com</Text>
-          <Text style={styles.footerText}>0850 307 80 29</Text>
+        <View style={[styles.footer, lt?.footer]}>
+          <Text style={[styles.footerText, lt?.footerText]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
+          <Text style={[styles.footerText, lt?.footerText]}>info@karekodteknoloji.com</Text>
+          <Text style={[styles.footerText, lt?.footerText]}>0850 307 80 29</Text>
         </View>
 
         <View style={{ height: 50 }} />
