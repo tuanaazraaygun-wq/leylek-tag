@@ -126,6 +126,10 @@ export type QuickMatchLightSurfaces = {
   inlineError: TextStyle;
   dot: ViewStyle;
   dotActive: ViewStyle;
+  contributionCard: ViewStyle;
+  stepperBtn: ViewStyle;
+  contributionValue: TextStyle;
+  stickyFooter: ViewStyle;
 };
 
 export type PassengerRoutePickerLightSurfaces = {
@@ -427,6 +431,20 @@ function buildQuickMatchLightSurfaces(tokens: LhThemeTokens): QuickMatchLightSur
     inlineError: { color: tokens.status.error },
     dot: { backgroundColor: tokens.border.default },
     dotActive: { backgroundColor: tokens.accent.primary },
+    contributionCard: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    stepperBtn: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    contributionValue: { color: tokens.accent.primary },
+    stickyFooter: {
+      backgroundColor: tokens.bg.canvas,
+      borderTopColor: tokens.border.default,
+    },
   };
 }
 

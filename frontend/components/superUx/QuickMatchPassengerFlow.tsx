@@ -1,13 +1,16 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CockpitBackground, GlassSurface, PremiumText } from '../../design-system/primitives';
@@ -32,6 +35,10 @@ import { API_BASE_URL } from '../../lib/backendConfig';
 const CONTRIBUTION_STEP_TL = 10;
 const QUICK_MATCH_MAX_DISTANCE_KM = 20;
 const CONTRIBUTION_GUARD_MESSAGE = 'Önerilen katkı payının altına inilemez.';
+const QM_CONTENT_MAX_WIDTH = 440;
+const QM_COMPACT_HEIGHT = 650;
+const QM_COMPACT_WIDTH = 360;
+const QM_VERY_COMPACT_HEIGHT = 640;
 
 export type QuickMatchRouteContext = {
   pickup_lat: number;
@@ -208,42 +215,60 @@ function RouteSummaryCard({
   dropoffLabel,
   distanceKm,
   contributionTl,
+  compact = false,
 }: {
   pickupLabel: string;
   dropoffLabel: string;
   distanceKm?: number | null;
   contributionTl?: number | null;
+  compact?: boolean;
 }) {
   const { ui, quickMatchSurfaces: qmLt } = usePassengerTheme();
   const distanceText = formatDistanceKm(distanceKm);
+  const metaParts: string[] = [];
+  if (distanceText) metaParts.push(distanceText);
+  if (contributionTl != null) metaParts.push(`${contributionTl} TL katkı`);
+  const metaInline = metaParts.length > 0 ? metaParts.join(' · ') : null;
+
   return (
-    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.glassCard, qmLt?.glassCard]}>
-      <View style={styles.routeRow}>
-        <Ionicons name="radio-button-on" size={14} color={ui.accent} />
-        <PremiumText variant="body" style={[styles.routeLabel, qmLt?.routeLabel]} numberOfLines={2}>
+    <GlassSurface
+      variant="plain"
+      borderRadius={LDS_RADIUS.lg}
+      style={[
+        styles.glassCard,
+        compact && styles.glassCardCompact,
+        qmLt?.glassCard,
+      ]}
+    >
+      <View style={[styles.routeRow, compact && styles.routeRowCompact]}>
+        <Ionicons name="radio-button-on" size={compact ? 12 : 14} color={ui.accent} />
+        <PremiumText
+          variant={compact ? 'caption' : 'body'}
+          style={[styles.routeLabel, compact && styles.routeLabelCompact, qmLt?.routeLabel]}
+          numberOfLines={compact ? 1 : 2}
+        >
           {pickupLabel}
         </PremiumText>
       </View>
-      <View style={[styles.routeConnector, qmLt?.routeConnector]} />
-      <View style={styles.routeRow}>
-        <Ionicons name="location" size={14} color={ui.accent} />
-        <PremiumText variant="body" style={[styles.routeLabel, qmLt?.routeLabel]} numberOfLines={2}>
+      <View style={[styles.routeConnector, compact && styles.routeConnectorCompact, qmLt?.routeConnector]} />
+      <View style={[styles.routeRow, compact && styles.routeRowCompact]}>
+        <Ionicons name="location" size={compact ? 12 : 14} color={ui.accent} />
+        <PremiumText
+          variant={compact ? 'caption' : 'body'}
+          style={[styles.routeLabel, compact && styles.routeLabelCompact, qmLt?.routeLabel]}
+          numberOfLines={compact ? 1 : 2}
+        >
           {dropoffLabel}
         </PremiumText>
       </View>
-      {distanceText || contributionTl != null ? (
-        <View style={styles.routeMetaRow}>
-          {distanceText ? (
-            <PremiumText variant="caption" style={[styles.routeMetaText, qmLt?.routeMetaText]}>
-              {distanceText}
-            </PremiumText>
-          ) : null}
-          {contributionTl != null ? (
-            <PremiumText variant="caption" style={[styles.routeMetaText, qmLt?.routeMetaText]}>
-              {contributionTl} TL katkı payı
-            </PremiumText>
-          ) : null}
-        </View>
+      {metaInline ? (
+        <PremiumText
+          variant="caption"
+          style={[styles.routeMetaText, compact && styles.routeMetaTextCompact, qmLt?.routeMetaText]}
+          numberOfLines={1}
+        >
+          {metaInline}
+        </PremiumText>
       ) : null}
     </GlassSurface>
   );
@@ -271,6 +296,11 @@ function PrimaryButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { isScopeLight } = usePassengerTheme();
+  const disabledColors = isScopeLight
+    ? (['rgba(148, 163, 184, 0.45)', 'rgba(226, 232, 240, 0.92)'] as const)
+    : (['rgba(30, 58, 95, 0.65)', 'rgba(16, 26, 43, 0.85)'] as const);
+
   return (
     <Pressable
       onPress={onPress}
@@ -285,9 +315,7 @@ function PrimaryButton({
     >
       <LinearGradient
         colors={
-          disabled || loading
-            ? ['rgba(30, 58, 95, 0.65)', 'rgba(16, 26, 43, 0.85)']
-            : [...PREMIUM_AUTH_CTA_GRADIENT]
+          disabled || loading ? [...disabledColors] : [...PREMIUM_AUTH_CTA_GRADIENT]
         }
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -345,6 +373,11 @@ export function QuickMatchPassengerFlow({
   onGoNormalMatch,
 }: QuickMatchPassengerFlowProps) {
   const { ui, quickMatchSurfaces: qmLt } = usePassengerTheme();
+  const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isCompactQm = winH <= QM_COMPACT_HEIGHT || winW <= QM_COMPACT_WIDTH;
+  const isVeryCompactQm = winH <= QM_VERY_COMPACT_HEIGHT;
+  const stepperSize = isVeryCompactQm ? 40 : 44;
   const [contributionTl, setContributionTl] = useState(0);
   const [minContributionTl, setMinContributionTl] = useState(0);
   const [maxContributionTl, setMaxContributionTl] = useState(0);
@@ -602,6 +635,168 @@ export function QuickMatchPassengerFlow({
     minContributionTl > 0 &&
     (contributionTl < minContributionTl || contributionTl > maxContributionTl);
 
+  const isRequestFormState = Boolean(
+    route &&
+    !distanceTooFar &&
+    session.status !== 'restoring' &&
+    session.status !== 'creating' &&
+    !session.isCreating &&
+    session.status !== 'matched' &&
+    session.status !== 'sequencing' &&
+    session.status !== 'exhausted' &&
+    session.status !== 'expired' &&
+    session.status !== 'cancelled' &&
+    !(session.status === 'error' && session.errorMessage && !isContributionTooLowRecovery),
+  );
+
+  const createDisabled =
+    session.isCreating ||
+    distanceTooFar ||
+    priceLoading ||
+    minContributionTl <= 0 ||
+    contributionOutOfBounds;
+
+  const renderRequestFormScroll = () => {
+    if (!route) {
+      return null;
+    }
+
+    const canDecrease = contributionTl > minContributionTl;
+    const canIncrease = maxContributionTl > 0 && contributionTl < maxContributionTl;
+
+    return (
+      <View style={[styles.section, isCompactQm && styles.sectionCompact]}>
+        <RouteSummaryCard
+          pickupLabel={pickupLabel}
+          dropoffLabel={dropoffLabel}
+          distanceKm={displayDistanceKm}
+          compact={isCompactQm}
+        />
+        <GlassSurface
+          variant="plain"
+          borderRadius={LDS_RADIUS.lg}
+          style={[
+            styles.glassCard,
+            isCompactQm && styles.glassCardCompact,
+            qmLt?.glassCard,
+            qmLt?.contributionCard,
+          ]}
+        >
+          <PremiumText variant="caption" muted style={styles.contributionLabel}>
+            Hızlı eşleşme katkı payı
+          </PremiumText>
+          {priceLoading ? (
+            <View style={styles.priceLoadingRow}>
+              <ActivityIndicator size="small" color={ui.accent} />
+              <PremiumText variant="body" muted style={styles.bodyMuted}>
+                Önerilen katkı hesaplanıyor
+              </PremiumText>
+            </View>
+          ) : (
+            <>
+              {!isCompactQm ? (
+                <PremiumText variant="caption" muted style={styles.contributionSubLabel}>
+                  Önerilen katkı
+                </PremiumText>
+              ) : null}
+              <View style={styles.stepperRow}>
+                <Pressable
+                  onPress={decreaseContribution}
+                  disabled={!canDecrease}
+                  accessibilityRole="button"
+                  accessibilityLabel="Katkıyı azalt"
+                  accessibilityState={{ disabled: !canDecrease }}
+                  style={({ pressed }) => [
+                    styles.stepperBtn,
+                    { width: stepperSize, height: stepperSize },
+                    qmLt?.stepperBtn,
+                    !canDecrease && styles.stepperBtnDisabled,
+                    pressed && canDecrease && styles.stepperBtnPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name="remove"
+                    size={isVeryCompactQm ? 20 : 22}
+                    color={canDecrease ? ui.accent : ui.textMuted}
+                  />
+                </Pressable>
+                <PremiumText
+                  variant="title"
+                  style={[styles.contributionValue, qmLt?.contributionValue]}
+                >
+                  {contributionTl} TL
+                </PremiumText>
+                <Pressable
+                  onPress={increaseContribution}
+                  disabled={!canIncrease}
+                  accessibilityRole="button"
+                  accessibilityLabel="Katkıyı artır"
+                  accessibilityState={{ disabled: !canIncrease }}
+                  style={({ pressed }) => [
+                    styles.stepperBtn,
+                    { width: stepperSize, height: stepperSize },
+                    qmLt?.stepperBtn,
+                    !canIncrease && styles.stepperBtnDisabled,
+                    pressed && canIncrease && styles.stepperBtnPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name="add"
+                    size={isVeryCompactQm ? 20 : 22}
+                    color={canIncrease ? ui.accent : ui.textMuted}
+                  />
+                </Pressable>
+              </View>
+              <PremiumText variant="caption" muted style={styles.bodyMuted} numberOfLines={isCompactQm ? 1 : 2}>
+                {isCompactQm
+                  ? 'Önerilen katkının 2 katına kadar artırabilirsiniz.'
+                  : 'Önerilen katkı payının 2 katına kadar artırabilirsiniz.'}
+              </PremiumText>
+              <PremiumText variant="caption" muted style={styles.disclaimer} numberOfLines={2}>
+                LeylekTAG katkı payını tahsil etmez. Katkı payı yolculuk sonrası sürücüyle aranızda.
+              </PremiumText>
+            </>
+          )}
+        </GlassSurface>
+      </View>
+    );
+  };
+
+  const renderRequestFormFooter = () => (
+    <View
+      style={[
+        styles.stickyFooter,
+        qmLt?.stickyFooter,
+        { paddingBottom: Math.max(insets.bottom, LDS_SPACING.sm) },
+      ]}
+    >
+      <View style={styles.contentColumn}>
+        {priceError ? (
+          <PremiumText variant="caption" style={styles.inlineError}>
+            {priceError}
+          </PremiumText>
+        ) : null}
+        {createGuardMessage ? (
+          <PremiumText variant="caption" style={styles.inlineError}>
+            {createGuardMessage}
+          </PremiumText>
+        ) : null}
+        {isContributionTooLowRecovery && session.errorMessage ? (
+          <PremiumText variant="caption" style={styles.inlineError}>
+            {session.errorMessage}
+          </PremiumText>
+        ) : null}
+        <PrimaryButton
+          label="Hızlı eşleşme isteği gönder"
+          onPress={() => void handleCreate()}
+          disabled={createDisabled}
+          loading={session.isCreating}
+        />
+        <SecondaryButton label="Kapat" onPress={handleClose} />
+      </View>
+    </View>
+  );
+
   const renderBody = () => {
     if (session.status === 'restoring') {
       return (
@@ -665,6 +860,7 @@ export function QuickMatchPassengerFlow({
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
             contributionTl={displayContribution}
+            compact={isCompactQm}
           />
           {session.pollErrorMessage ? (
             <PremiumText variant="caption" style={styles.pollWarning}>
@@ -697,6 +893,7 @@ export function QuickMatchPassengerFlow({
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
             contributionTl={displayContribution}
+            compact={isCompactQm}
           />
           <PrimaryButton label="Normal Eşleş ile Devam Et" onPress={handleGoNormal} />
           <SecondaryButton label="Tekrar Hızlı Eşleş Dene" onPress={handleRetry} />
@@ -719,6 +916,7 @@ export function QuickMatchPassengerFlow({
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
             contributionTl={displayContribution}
+            compact={isCompactQm}
           />
           <PrimaryButton label="Normal Eşleş ile Devam Et" onPress={handleGoNormal} />
           <SecondaryButton label="Tekrar Hızlı Eşleş Dene" onPress={handleRetry} />
@@ -778,6 +976,7 @@ export function QuickMatchPassengerFlow({
             pickupLabel={pickupLabel}
             dropoffLabel={dropoffLabel}
             distanceKm={displayDistanceKm}
+            compact={isCompactQm}
           />
           <SecondaryButton label="Normal eşleşmeye geç" onPress={handleGoNormal} />
           <SecondaryButton label="Kapat" onPress={handleClose} />
@@ -799,116 +998,11 @@ export function QuickMatchPassengerFlow({
       );
     }
 
-    const canDecrease = contributionTl > minContributionTl;
-    const canIncrease = maxContributionTl > 0 && contributionTl < maxContributionTl;
+    if (isRequestFormState) {
+      return renderRequestFormScroll();
+    }
 
-    return (
-      <View style={styles.section}>
-        <RouteSummaryCard
-          pickupLabel={pickupLabel}
-          dropoffLabel={dropoffLabel}
-          distanceKm={displayDistanceKm}
-        />
-        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.glassCard}>
-          <PremiumText variant="caption" muted style={styles.contributionLabel}>
-            Hızlı eşleşme katkı payı
-          </PremiumText>
-          {priceLoading ? (
-            <View style={styles.priceLoadingRow}>
-              <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
-              <PremiumText variant="body" muted style={styles.bodyMuted}>
-                Önerilen katkı hesaplanıyor
-              </PremiumText>
-            </View>
-          ) : (
-            <>
-              <PremiumText variant="caption" muted style={styles.contributionSubLabel}>
-                Önerilen katkı
-              </PremiumText>
-              <View style={styles.stepperRow}>
-            <Pressable
-              onPress={decreaseContribution}
-              disabled={!canDecrease}
-              accessibilityRole="button"
-              accessibilityLabel="Katkıyı azalt"
-              accessibilityState={{ disabled: !canDecrease }}
-              style={({ pressed }) => [
-                styles.stepperBtn,
-                !canDecrease && styles.stepperBtnDisabled,
-                pressed && canDecrease && styles.stepperBtnPressed,
-              ]}
-            >
-              <Ionicons
-                name="remove"
-                size={22}
-                color={canDecrease ? PREMIUM_AUTH_CYAN : PREMIUM_TEXT_MUTED}
-              />
-            </Pressable>
-            <PremiumText variant="title" style={styles.contributionValue}>
-              {contributionTl} TL
-            </PremiumText>
-            <Pressable
-              onPress={increaseContribution}
-              disabled={!canIncrease}
-              accessibilityRole="button"
-              accessibilityLabel="Katkıyı artır"
-              accessibilityState={{ disabled: !canIncrease }}
-              style={({ pressed }) => [
-                styles.stepperBtn,
-                !canIncrease && styles.stepperBtnDisabled,
-                pressed && canIncrease && styles.stepperBtnPressed,
-              ]}
-            >
-              <Ionicons
-                name="add"
-                size={22}
-                color={canIncrease ? PREMIUM_AUTH_CYAN : PREMIUM_TEXT_MUTED}
-              />
-            </Pressable>
-          </View>
-          <PremiumText variant="caption" muted style={styles.bodyMuted}>
-            Önerilen katkı payının 2 katına kadar artırabilirsiniz.
-          </PremiumText>
-          <PremiumText variant="caption" muted style={styles.disclaimer}>
-            LeylekTAG katkı payını tahsil etmez.{'\n'}
-            Katkı payı yolculuk sonrası sürücüyle aranızda.
-          </PremiumText>
-            </>
-          )}
-        </GlassSurface>
-        {priceError ? (
-          <PremiumText variant="caption" style={styles.inlineError}>
-            {priceError}
-          </PremiumText>
-        ) : null}
-        {createGuardMessage ? (
-          <PremiumText variant="caption" style={styles.inlineError}>
-            {createGuardMessage}
-          </PremiumText>
-        ) : null}
-        {isContributionTooLowRecovery && session.errorMessage ? (
-          <PremiumText variant="caption" style={styles.inlineError}>
-            {session.errorMessage}
-          </PremiumText>
-        ) : null}
-        <PremiumText variant="caption" muted style={styles.ctaPreface}>
-          Rota hazır. İsteğinizi göndermek için aşağıdaki düğmeye dokunun.
-        </PremiumText>
-        <PrimaryButton
-          label="Hızlı eşleşme isteği gönder"
-          onPress={() => void handleCreate()}
-          disabled={
-            session.isCreating ||
-            distanceTooFar ||
-            priceLoading ||
-            minContributionTl <= 0 ||
-            contributionOutOfBounds
-          }
-          loading={session.isCreating}
-        />
-        <SecondaryButton label="Kapat" onPress={handleClose} />
-      </View>
-    );
+    return null;
   };
 
   return (
@@ -919,15 +1013,26 @@ export function QuickMatchPassengerFlow({
     >
       <View style={[styles.modalRoot, qmLt?.modalRoot]}>
         <CockpitBackground />
-        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
           <FlowHeader onClose={handleClose} closeDisabled={session.isCancelling} />
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+          <KeyboardAvoidingView
+            style={styles.bodyFlex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
           >
-            {renderBody()}
-          </ScrollView>
+            <ScrollView
+              style={styles.scrollFlex}
+              contentContainerStyle={[
+                styles.scrollContent,
+                isRequestFormState && styles.scrollContentWithFooter,
+              ]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.contentColumn}>{renderBody()}</View>
+            </ScrollView>
+            {isRequestFormState ? renderRequestFormFooter() : null}
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -944,10 +1049,33 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
   },
+  bodyFlex: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollFlex: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: LDS_SPACING.lg,
     paddingBottom: LDS_SPACING.lg,
+  },
+  scrollContentWithFooter: {
+    paddingBottom: LDS_SPACING.md,
+  },
+  contentColumn: {
+    width: '100%',
+    maxWidth: QM_CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
+    gap: LDS_SPACING.sm,
+  },
+  stickyFooter: {
+    paddingHorizontal: LDS_SPACING.lg,
+    paddingTop: LDS_SPACING.sm,
+    borderTopWidth: LDS_BORDER_WIDTH.hairline,
+    borderTopColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
+    backgroundColor: 'rgba(8, 17, 31, 0.96)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -1012,6 +1140,10 @@ const styles = StyleSheet.create({
     gap: LDS_SPACING.md,
     paddingTop: LDS_SPACING.xs,
   },
+  sectionCompact: {
+    gap: LDS_SPACING.sm,
+    paddingTop: LDS_SPACING.xxs,
+  },
   centerCard: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1025,6 +1157,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 26, 43, 0.88)',
     borderColor: PREMIUM_ROLE_COCKPIT_CYAN_EDGE,
     ...LDS_ELEVATION.chip,
+  },
+  glassCardCompact: {
+    padding: LDS_SPACING.sm,
+    gap: LDS_SPACING.xs,
   },
   statusChip: {
     alignSelf: 'center',
@@ -1044,6 +1180,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
   },
+  routeRowCompact: {
+    alignItems: 'center',
+    gap: 8,
+  },
   routeConnector: {
     marginLeft: 6,
     width: 2,
@@ -1051,11 +1191,19 @@ const styles = StyleSheet.create({
     backgroundColor: PREMIUM_BORDER_SLATE,
     borderRadius: 1,
   },
+  routeConnectorCompact: {
+    marginLeft: 5,
+    height: 10,
+  },
   routeLabel: {
     flex: 1,
     fontWeight: '600',
     color: PREMIUM_TEXT_SOFT,
     lineHeight: 20,
+  },
+  routeLabelCompact: {
+    lineHeight: 17,
+    fontWeight: '600',
   },
   routeMetaRow: {
     flexDirection: 'row',
@@ -1066,6 +1214,11 @@ const styles = StyleSheet.create({
   routeMetaText: {
     fontWeight: '700',
     color: PREMIUM_AUTH_CYAN,
+    marginTop: LDS_SPACING.xxs,
+  },
+  routeMetaTextCompact: {
+    marginTop: 0,
+    fontWeight: '600',
   },
   title: {
     fontWeight: '700',
