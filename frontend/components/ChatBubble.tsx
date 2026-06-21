@@ -26,7 +26,7 @@ import { Audio } from 'expo-av';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getSupabase } from '../lib/supabase';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../hooks/useTheme';
 import { lightThemeEnabled } from '../lib/featureFlags';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
