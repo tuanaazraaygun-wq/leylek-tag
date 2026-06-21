@@ -25,6 +25,7 @@ import {
   PREMIUM_TEXT_SOFT,
 } from '../auth/premiumAuthStyles';
 import type { useQuickMatchPassengerSession } from '../../hooks/useQuickMatchPassengerSession';
+import { usePassengerTheme } from '../../lib/theme/usePassengerTheme';
 
 import { API_BASE_URL } from '../../lib/backendConfig';
 
@@ -159,19 +160,20 @@ function FlowHeader({
   onClose: () => void | Promise<void>;
   closeDisabled?: boolean;
 }) {
+  const { ui, quickMatchSurfaces: qmLt } = usePassengerTheme();
   return (
-    <View style={styles.headerRow}>
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.headerIconOrb}>
-        <Ionicons name="flash-outline" size={22} color={PREMIUM_AUTH_CYAN} />
+    <View style={[styles.headerRow, qmLt?.headerRow]}>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={[styles.headerIconOrb, qmLt?.headerIconOrb]}>
+        <Ionicons name="flash-outline" size={22} color={ui.accent} />
       </GlassSurface>
       <View style={styles.headerTextCol}>
-        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.guardianChip}>
-          <Ionicons name="compass-outline" size={14} color="rgba(34,211,238,0.82)" />
-          <PremiumText variant="caption" style={styles.guardianChipText}>
+        <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.guardianChip, qmLt?.guardianChip]}>
+          <Ionicons name="compass-outline" size={14} color={ui.accent} />
+          <PremiumText variant="caption" style={[styles.guardianChipText, qmLt?.guardianChipText]}>
             Hızlı eşleşme
           </PremiumText>
         </GlassSurface>
-        <PremiumText variant="step" style={styles.headerTitle}>
+        <PremiumText variant="step" style={[styles.headerTitle, qmLt?.headerTitle]}>
           Yakın sürücülerle eşleş
         </PremiumText>
         <PremiumText variant="caption" muted style={styles.headerSubtitle}>
@@ -194,7 +196,7 @@ function FlowHeader({
         <Ionicons
           name="close"
           size={24}
-          color={closeDisabled ? PREMIUM_TEXT_MUTED : PREMIUM_AUTH_CYAN}
+          color={closeDisabled ? ui.textMuted : ui.accent}
         />
       </Pressable>
     </View>
@@ -212,31 +214,32 @@ function RouteSummaryCard({
   distanceKm?: number | null;
   contributionTl?: number | null;
 }) {
+  const { ui, quickMatchSurfaces: qmLt } = usePassengerTheme();
   const distanceText = formatDistanceKm(distanceKm);
   return (
-    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.glassCard}>
+    <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.glassCard, qmLt?.glassCard]}>
       <View style={styles.routeRow}>
-        <Ionicons name="radio-button-on" size={14} color={PREMIUM_AUTH_CYAN} />
-        <PremiumText variant="body" style={styles.routeLabel} numberOfLines={2}>
+        <Ionicons name="radio-button-on" size={14} color={ui.accent} />
+        <PremiumText variant="body" style={[styles.routeLabel, qmLt?.routeLabel]} numberOfLines={2}>
           {pickupLabel}
         </PremiumText>
       </View>
-      <View style={styles.routeConnector} />
+      <View style={[styles.routeConnector, qmLt?.routeConnector]} />
       <View style={styles.routeRow}>
-        <Ionicons name="location" size={14} color={PREMIUM_AUTH_CYAN} />
-        <PremiumText variant="body" style={styles.routeLabel} numberOfLines={2}>
+        <Ionicons name="location" size={14} color={ui.accent} />
+        <PremiumText variant="body" style={[styles.routeLabel, qmLt?.routeLabel]} numberOfLines={2}>
           {dropoffLabel}
         </PremiumText>
       </View>
       {distanceText || contributionTl != null ? (
         <View style={styles.routeMetaRow}>
           {distanceText ? (
-            <PremiumText variant="caption" style={styles.routeMetaText}>
+            <PremiumText variant="caption" style={[styles.routeMetaText, qmLt?.routeMetaText]}>
               {distanceText}
             </PremiumText>
           ) : null}
           {contributionTl != null ? (
-            <PremiumText variant="caption" style={styles.routeMetaText}>
+            <PremiumText variant="caption" style={[styles.routeMetaText, qmLt?.routeMetaText]}>
               {contributionTl} TL katkı payı
             </PremiumText>
           ) : null}
@@ -247,11 +250,12 @@ function RouteSummaryCard({
 }
 
 function ProgressDots() {
+  const { quickMatchSurfaces: qmLt } = usePassengerTheme();
   return (
     <View style={styles.dotsRow} accessibilityLabel="Uygun sürücüler değerlendiriliyor">
-      <View style={[styles.dot, styles.dotActive]} />
-      <View style={[styles.dot, styles.dotMid]} />
-      <View style={styles.dot} />
+      <View style={[styles.dot, styles.dotActive, qmLt?.dotActive]} />
+      <View style={[styles.dot, styles.dotMid, qmLt?.dot]} />
+      <View style={[styles.dot, qmLt?.dot]} />
     </View>
   );
 }
@@ -310,6 +314,7 @@ function SecondaryButton({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const { quickMatchSurfaces: qmLt } = usePassengerTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -322,8 +327,8 @@ function SecondaryButton({
         pressed && !disabled && styles.secondaryBtnPressed,
       ]}
     >
-      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.secondaryBtn}>
-        <PremiumText variant="body" muted={disabled} style={styles.secondaryBtnText}>
+      <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={[styles.secondaryBtn, qmLt?.secondaryBtn]}>
+        <PremiumText variant="body" muted={disabled} style={[styles.secondaryBtnText, qmLt?.secondaryBtnText]}>
           {label}
         </PremiumText>
       </GlassSurface>
@@ -339,6 +344,7 @@ export function QuickMatchPassengerFlow({
   onRetry,
   onGoNormalMatch,
 }: QuickMatchPassengerFlowProps) {
+  const { ui, quickMatchSurfaces: qmLt } = usePassengerTheme();
   const [contributionTl, setContributionTl] = useState(0);
   const [minContributionTl, setMinContributionTl] = useState(0);
   const [maxContributionTl, setMaxContributionTl] = useState(0);
@@ -600,8 +606,8 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'restoring') {
       return (
         <View style={styles.centerCard}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <PremiumText variant="body" style={styles.loadingTitle}>
+          <ActivityIndicator size="large" color={ui.accent} />
+          <PremiumText variant="body" style={[styles.loadingTitle, qmLt?.title]}>
             Eşleşme durumu güncelleniyor
           </PremiumText>
         </View>
@@ -611,8 +617,8 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'creating' || session.isCreating) {
       return (
         <View style={styles.centerCard}>
-          <ActivityIndicator size="large" color={PREMIUM_AUTH_CYAN} />
-          <PremiumText variant="body" style={styles.loadingTitle}>
+          <ActivityIndicator size="large" color={ui.accent} />
+          <PremiumText variant="body" style={[styles.loadingTitle, qmLt?.title]}>
             Hızlı eşleşme isteğiniz hazırlanıyor
           </PremiumText>
         </View>
@@ -623,15 +629,15 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.centerCard}>
           <View style={styles.successIconWrap}>
-            <Ionicons name="checkmark-circle" size={56} color={PREMIUM_AUTH_CYAN} />
+            <Ionicons name="checkmark-circle" size={56} color={ui.accent} />
           </View>
-          <PremiumText variant="title" style={styles.title}>
+          <PremiumText variant="title" style={[styles.title, qmLt?.title]}>
             Eşleşme bulundu
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
             Yolculuk ekranınız hazırlanıyor.
           </PremiumText>
-          <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} style={styles.matchedSpinner} />
+          <ActivityIndicator size="small" color={ui.accent} style={styles.matchedSpinner} />
         </View>
       );
     }
@@ -640,12 +646,12 @@ export function QuickMatchPassengerFlow({
       return (
         <View style={styles.section}>
           <ProgressDots />
-          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.statusChip}>
-            <PremiumText variant="caption" style={styles.statusChipText}>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={[styles.statusChip, qmLt?.statusChip]}>
+            <PremiumText variant="caption" style={[styles.statusChipText, qmLt?.statusChipText]}>
               Eşleşme aranıyor
             </PremiumText>
           </GlassSurface>
-          <PremiumText variant="title" style={styles.title}>
+          <PremiumText variant="title" style={[styles.title, qmLt?.title]}>
             Uygun sürücüler değerlendiriliyor
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
@@ -671,7 +677,7 @@ export function QuickMatchPassengerFlow({
             disabled={session.isCancelling}
           />
           {session.isCancelling ? (
-            <ActivityIndicator size="small" color={PREMIUM_AUTH_CYAN} />
+            <ActivityIndicator size="small" color={ui.accent} />
           ) : null}
         </View>
       );
@@ -680,7 +686,7 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'exhausted') {
       return (
         <View style={styles.section}>
-          <PremiumText variant="title" style={styles.title}>
+          <PremiumText variant="title" style={[styles.title, qmLt?.title]}>
             Yakındaki sürücülerden yanıt alınamadı.
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
@@ -702,7 +708,7 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'expired') {
       return (
         <View style={styles.section}>
-          <PremiumText variant="title" style={styles.title}>
+          <PremiumText variant="title" style={[styles.title, qmLt?.title]}>
             Yakındaki sürücülerden yanıt alınamadı.
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
@@ -724,7 +730,7 @@ export function QuickMatchPassengerFlow({
     if (session.status === 'cancelled') {
       return (
         <View style={styles.section}>
-          <PremiumText variant="title" style={styles.title}>
+          <PremiumText variant="title" style={[styles.title, qmLt?.title]}>
             İstek iptal edildi
           </PremiumText>
           <PrimaryButton label="Tekrar dene" onPress={handleRetry} />
@@ -739,9 +745,9 @@ export function QuickMatchPassengerFlow({
     ) {
       return (
         <View style={styles.section}>
-          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.errorCard}>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.errorCard, qmLt?.glassCard]}>
             <Ionicons name="alert-circle-outline" size={28} color="#F87171" />
-            <PremiumText variant="title" style={styles.errorTitle}>
+            <PremiumText variant="title" style={[styles.errorTitle, qmLt?.title]}>
               İşlem tamamlanamadı
             </PremiumText>
             <PremiumText variant="body" muted style={styles.errorBody}>
@@ -758,9 +764,9 @@ export function QuickMatchPassengerFlow({
     if (distanceTooFar) {
       return (
         <View style={styles.section}>
-          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={styles.errorCard}>
-            <Ionicons name="map-outline" size={28} color={PREMIUM_AUTH_CYAN} />
-            <PremiumText variant="title" style={styles.errorTitle}>
+          <GlassSurface variant="plain" borderRadius={LDS_RADIUS.lg} style={[styles.errorCard, qmLt?.glassCard]}>
+            <Ionicons name="map-outline" size={28} color={ui.accent} />
+            <PremiumText variant="title" style={[styles.errorTitle, qmLt?.title]}>
               Bu rota hızlı eşleşme için uygun değil
             </PremiumText>
             <PremiumText variant="body" muted style={styles.errorBody}>
@@ -782,7 +788,7 @@ export function QuickMatchPassengerFlow({
     if (!route) {
       return (
         <View style={styles.centerCard}>
-          <PremiumText variant="title" style={styles.title}>
+          <PremiumText variant="title" style={[styles.title, qmLt?.title]}>
             Rota bilgisi gerekli
           </PremiumText>
           <PremiumText variant="body" muted style={styles.bodyMuted}>
@@ -911,7 +917,7 @@ export function QuickMatchPassengerFlow({
       animationType="slide"
       onRequestClose={() => void handleClose()}
     >
-      <View style={styles.modalRoot}>
+      <View style={[styles.modalRoot, qmLt?.modalRoot]}>
         <CockpitBackground />
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <FlowHeader onClose={handleClose} closeDisabled={session.isCancelling} />

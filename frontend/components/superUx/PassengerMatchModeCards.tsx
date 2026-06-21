@@ -251,8 +251,9 @@ function buildLightMatchCardTheme(tokens: LhThemeTokens): MatchCardTheme {
       shadowColor: tokens.shadow.ambient,
     },
     heroCardDisabledShell: {
-      opacity: 0.68,
+      opacity: 1,
       borderColor: tokens.border.default,
+      backgroundColor: tokens.bg.glassMuted,
       shadowOpacity: 0,
       elevation: 0,
     },
@@ -264,13 +265,13 @@ function buildLightMatchCardTheme(tokens: LhThemeTokens): MatchCardTheme {
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
     },
-    modeBadgeTextQuick: { color: tokens.accent.primary },
-    modeBadgeTextNormal: { color: tokens.text.muted },
+    modeBadgeTextQuick: { color: tokens.accent.primary, fontWeight: '800' },
+    modeBadgeTextNormal: { color: tokens.text.muted, fontWeight: '800' },
     soonPill: {
       backgroundColor: tokens.bg.glassMuted,
       borderColor: tokens.border.default,
     },
-    soonPillText: { color: tokens.text.muted },
+    soonPillText: { color: tokens.text.muted, fontWeight: '800' },
     driverPanelCtaPill: {
       backgroundColor: 'rgba(99, 102, 241, 0.10)',
       borderColor: 'rgba(99, 102, 241, 0.28)',
@@ -460,19 +461,21 @@ function PassengerMatchModeCards({
         subtitleNumberOfLines={2}
         style={cardShellStyle}
         illustration={
-          isQuick ? (
-            <QuickMatchHero
-              stageHeight={layout.primaryHeroHeight}
-              active={isEnabled}
-              isVeryCompact={layout.isVeryCompact}
-            />
-          ) : (
-            <NormalMatchOfferHero
-              stageHeight={layout.primaryHeroHeight}
-              active={isEnabled}
-              isVeryCompact={layout.isVeryCompact}
-            />
-          )
+          <View style={!isEnabled && isScopeLight ? styles.disabledHeroIllustration : undefined}>
+            {isQuick ? (
+              <QuickMatchHero
+                stageHeight={layout.primaryHeroHeight}
+                active={isEnabled}
+                isVeryCompact={layout.isVeryCompact}
+              />
+            ) : (
+              <NormalMatchOfferHero
+                stageHeight={layout.primaryHeroHeight}
+                active={isEnabled}
+                isVeryCompact={layout.isVeryCompact}
+              />
+            )}
+          </View>
         }
         title={card.title}
         subtitle={showSoonPill ? ' ' : card.subtitle}
@@ -583,19 +586,21 @@ function PassengerMatchModeCards({
         subtitleNumberOfLines={2}
         style={cardShellStyle}
         illustration={
-          isProxy ? (
-            <ProxyPickupHero
-              stageHeight={layout.primaryHeroHeight}
-              active={false}
-              isVeryCompact={layout.isVeryCompact}
-            />
-          ) : (
-            <TrustedNetworkHero
-              stageHeight={layout.primaryHeroHeight}
-              active={isEnabled}
-              isVeryCompact={layout.isVeryCompact}
-            />
-          )
+          <View style={!isEnabled && isScopeLight ? styles.disabledHeroIllustration : undefined}>
+            {isProxy ? (
+              <ProxyPickupHero
+                stageHeight={layout.primaryHeroHeight}
+                active={false}
+                isVeryCompact={layout.isVeryCompact}
+              />
+            ) : (
+              <TrustedNetworkHero
+                stageHeight={layout.primaryHeroHeight}
+                active={isEnabled}
+                isVeryCompact={layout.isVeryCompact}
+              />
+            )}
+          </View>
         }
         title={displayTitle}
         subtitle={showSoonPill ? ' ' : displaySubtitle ?? card.subtitle}
@@ -737,5 +742,8 @@ const styles = StyleSheet.create({
   driverPanelCtaPillTextVeryCompact: {
     fontSize: 7,
     lineHeight: 10,
+  },
+  disabledHeroIllustration: {
+    opacity: 0.55,
   },
 });

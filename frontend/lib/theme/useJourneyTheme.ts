@@ -83,6 +83,9 @@ export type JourneyChromeLightSurfaces = {
   trustedAddChipMutedText: TextStyle;
   dangerBtnText: TextStyle;
   qrPrimaryBtnText: TextStyle;
+  paxBottomCallLabel: TextStyle;
+  paxBottomChatBtnText: TextStyle;
+  paxBottomGuvenBtnText: TextStyle;
 };
 
 const JOURNEY_UI_DARK: JourneyUiColors = {
@@ -267,6 +270,9 @@ function buildJourneyChromeLightSurfaces(tokens: LhThemeTokens): JourneyChromeLi
     trustedAddChipMutedText: { color: tokens.text.muted },
     dangerBtnText: { color: tokens.status.error },
     qrPrimaryBtnText: { color: tokens.text.inverse, fontWeight: '800' },
+    paxBottomCallLabel: { color: tokens.text.primary },
+    paxBottomChatBtnText: { color: tokens.text.primary },
+    paxBottomGuvenBtnText: { color: tokens.text.primary },
   };
 }
 

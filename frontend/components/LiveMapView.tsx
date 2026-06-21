@@ -7663,7 +7663,7 @@ export default function LiveMapView({
                   ]}
                 >
                   <Animated.View style={{ opacity: callLabelBlink }}>
-                    <PremiumText variant="caption" style={styles.paxBottomCallLabel} numberOfLines={1}>
+                    <PremiumText variant="caption" style={[styles.paxBottomCallLabel, jLt?.paxBottomCallLabel]} numberOfLines={1}>
                       {callPromptLine}
                     </PremiumText>
                   </Animated.View>
@@ -7723,7 +7723,7 @@ export default function LiveMapView({
                             size={18}
                             color={ui.ctaIconLight}
                           />
-                          <PremiumText variant="caption" style={styles.paxBottomChatBtnText} numberOfLines={1}>
+                          <PremiumText variant="caption" style={[styles.paxBottomChatBtnText, jLt?.paxBottomChatBtnText]} numberOfLines={1}>
                             Sürücüye Yaz
                           </PremiumText>
                         </TouchableOpacity>
@@ -7770,7 +7770,7 @@ export default function LiveMapView({
                               />
                             </Animated.View>
                           )}
-                          <PremiumText variant="caption" style={styles.paxBottomGuvenBtnText}>
+                          <PremiumText variant="caption" style={[styles.paxBottomGuvenBtnText, jLt?.paxBottomGuvenBtnText]}>
                             {trustRequestPending ? 'Bekleniyor...' : 'Güven AL'}
                           </PremiumText>
                         </TouchableOpacity>
@@ -9672,6 +9672,7 @@ const styles = StyleSheet.create({
   paxBottomCallLabel: {
     fontWeight: '800',
     letterSpacing: 0.2,
+    color: 'rgba(243,248,255,0.92)',
   },
   paxBottomCallBtn: {
     width: 52,
@@ -9702,6 +9703,7 @@ const styles = StyleSheet.create({
   },
   paxBottomChatBtnText: {
     fontWeight: '800',
+    color: 'rgba(243,248,255,0.92)',
   },
   paxBottomGuvenBtn: {
     minWidth: 76,
@@ -9719,6 +9721,7 @@ const styles = StyleSheet.create({
   paxBottomGuvenBtnText: {
     fontWeight: '800',
     letterSpacing: 0.3,
+    color: 'rgba(243,248,255,0.92)',
   },
   paxBottomMainActions: {
     alignSelf: 'stretch',

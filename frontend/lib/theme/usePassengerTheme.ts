@@ -95,6 +95,37 @@ export type PassengerDashboardLightSurfaces = {
   matchLogoutBtn: ViewStyle;
   container: ViewStyle;
   tripShell: ViewStyle;
+  matchCockpitShell: ViewStyle;
+  searchingCockpitShell: ViewStyle;
+  matchPhaseStep: TextStyle;
+  destinationBox: ViewStyle;
+  destinationBoxText: TextStyle;
+  passengerRouteCtaLabel: TextStyle;
+  passengerIdleSendOfferBtn: ViewStyle;
+  passengerIdleSendOfferBtnText: TextStyle;
+};
+
+export type QuickMatchLightSurfaces = {
+  modalRoot: ViewStyle;
+  headerRow: ViewStyle;
+  headerIconOrb: ViewStyle;
+  guardianChip: ViewStyle;
+  guardianChipText: TextStyle;
+  headerTitle: TextStyle;
+  glassCard: ViewStyle;
+  statusChip: ViewStyle;
+  statusChipText: TextStyle;
+  routeLabel: TextStyle;
+  routeConnector: ViewStyle;
+  routeMetaText: TextStyle;
+  title: TextStyle;
+  secondaryBtn: ViewStyle;
+  secondaryBtnText: TextStyle;
+  cancelBtn: ViewStyle;
+  cancelBtnText: TextStyle;
+  inlineError: TextStyle;
+  dot: ViewStyle;
+  dotActive: ViewStyle;
 };
 
 export type PassengerRoutePickerLightSurfaces = {
@@ -127,6 +158,14 @@ export type PassengerRoutePickerLightSurfaces = {
   routeRecentSectionTitle: TextStyle;
   destinationSearchFlowHint: TextStyle;
   destinationHeroTitleStep: TextStyle;
+  pickupHeroTitle: TextStyle;
+  pickupRouteSubtitle: TextStyle;
+  routeRecentCard: ViewStyle;
+  routeRecentCardTitle: TextStyle;
+  routeRecentIconRing: ViewStyle;
+  routeRecentSourceBadge: ViewStyle;
+  routeRecentSourceBadgeText: TextStyle;
+  destinationMapSearchChipOverlay: ViewStyle;
   priceModalPayOptionCardCash: ViewStyle;
   priceOfferPaymentWarnCard: ViewStyle;
   priceOfferPaymentWarnTitle: TextStyle;
@@ -312,6 +351,82 @@ function buildPassengerDashboardLightSurfaces(tokens: LhThemeTokens): PassengerD
     },
     container: { backgroundColor: tokens.bg.canvas },
     tripShell: { backgroundColor: tokens.bg.canvas },
+    matchCockpitShell: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.borderColors.cockpitPanel,
+      borderTopColor: tokens.borderColors.cockpitPanelTop,
+      borderLeftColor: tokens.borderColors.cockpitPanelLeft,
+      shadowColor: tokens.shadow.ambient,
+      shadowOpacity: 0.12,
+      elevation: 6,
+    },
+    searchingCockpitShell: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.borderColors.cockpitPanel,
+      borderTopColor: tokens.borderColors.cockpitPanelTop,
+      borderLeftColor: tokens.borderColors.cockpitPanelLeft,
+      shadowColor: tokens.shadow.ambient,
+      shadowOpacity: 0.12,
+      elevation: 6,
+    },
+    matchPhaseStep: { color: tokens.accent.primary },
+    destinationBox: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    destinationBoxText: { color: tokens.text.primary },
+    passengerRouteCtaLabel: { color: tokens.text.muted },
+    passengerIdleSendOfferBtn: {
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.glowMid,
+    },
+    passengerIdleSendOfferBtnText: { color: tokens.text.inverse },
+  };
+}
+
+function buildQuickMatchLightSurfaces(tokens: LhThemeTokens): QuickMatchLightSurfaces {
+  return {
+    modalRoot: { backgroundColor: tokens.bg.canvas },
+    headerRow: { borderBottomColor: tokens.border.default },
+    headerIconOrb: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    guardianChip: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    guardianChipText: { color: tokens.accent.primary },
+    headerTitle: { color: tokens.text.primary },
+    glassCard: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+    },
+    statusChip: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    statusChipText: { color: tokens.accent.primary },
+    routeLabel: { color: tokens.text.primary },
+    routeConnector: { backgroundColor: tokens.border.default },
+    routeMetaText: { color: tokens.accent.primary },
+    title: { color: tokens.text.primary },
+    secondaryBtn: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    secondaryBtnText: { color: tokens.text.primary },
+    cancelBtn: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: 'rgba(248, 113, 113, 0.35)',
+    },
+    cancelBtnText: { color: tokens.status.error },
+    inlineError: { color: tokens.status.error },
+    dot: { backgroundColor: tokens.border.default },
+    dotActive: { backgroundColor: tokens.accent.primary },
   };
 }
 
@@ -374,8 +489,33 @@ function buildPassengerRoutePickerLightSurfaces(tokens: LhThemeTokens): Passenge
     routeRecentSectionTitle: { color: tokens.accent.primary },
     destinationSearchFlowHint: { color: tokens.text.muted },
     destinationHeroTitleStep: {
-      color: tokens.accent.primary,
-      textShadowColor: tokens.accent.glowMid,
+      color: tokens.text.primary,
+      textShadowColor: 'transparent',
+    },
+    pickupHeroTitle: {
+      color: tokens.text.primary,
+      textShadowColor: 'transparent',
+    },
+    pickupRouteSubtitle: { color: tokens.text.muted },
+    routeRecentCard: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.border.default,
+      borderTopColor: tokens.borderColors.cardTopCyan,
+      shadowColor: tokens.shadow.ambient,
+    },
+    routeRecentCardTitle: { color: tokens.text.primary },
+    routeRecentIconRing: {
+      backgroundColor: tokens.accent.glowLow,
+      borderColor: tokens.accent.glowMid,
+    },
+    routeRecentSourceBadge: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    routeRecentSourceBadgeText: { color: tokens.text.muted },
+    destinationMapSearchChipOverlay: {
+      backgroundColor: tokens.bg.elevated,
+      borderColor: tokens.accent.glowMid,
     },
     priceModalPayOptionCardCash: {
       backgroundColor: tokens.bg.glassMuted,
@@ -448,6 +588,11 @@ export function usePassengerTheme() {
     [isScopeLight, effectiveTokens],
   );
 
+  const quickMatchSurfaces = useMemo(
+    () => (isScopeLight ? buildQuickMatchLightSurfaces(effectiveTokens) : null),
+    [isScopeLight, effectiveTokens],
+  );
+
   return {
     tokens: effectiveTokens,
     isScopeLight,
@@ -458,5 +603,6 @@ export function usePassengerTheme() {
     offerCardSurfaces,
     dashboardSurfaces,
     routePickerSurfaces,
+    quickMatchSurfaces,
   };
 }

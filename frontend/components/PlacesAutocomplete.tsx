@@ -1251,8 +1251,8 @@ interface PlacesAutocompleteProps {
   city?: string;
   /** true: ilçe/mahalle popüler çipleri gösterme (hedef seçim modalı) */
   hidePopularChips?: boolean;
-  /** Hedef modalı: koyu cam / neon çerçeve */
-  visualVariant?: 'default' | 'tech';
+  /** Hedef modalı: koyu cam / neon çerçeve; lhs-daylight: açık LHS yüzey + modal düzeni */
+  visualVariant?: 'default' | 'tech' | 'lhs-daylight';
   /** Öneri listesi arama kutusunun üstünde (yukarı doğru açılır) */
   suggestionsFirst?: boolean;
   /** Daha fazla sonuç; şehir viewbox sınırı gevşetilir */
@@ -1302,17 +1302,19 @@ export default function PlacesAutocomplete({
   replayOnBiasChange = false,
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
-  const tech = visualVariant === 'tech';
+  const techDark = visualVariant === 'tech';
+  const lhsDaylight = visualVariant === 'lhs-daylight';
+  const modalLayout = techDark || lhsDaylight;
   const predictionsMaxHeight = Math.round(
     Math.max(
-      tech ? 120 : LAYOUT.predictionListMin,
+      modalLayout ? 120 : LAYOUT.predictionListMin,
       Math.min(
-        LAYOUT.predictionListMax + (tech ? 100 : 0) + predictionMaxHeightBonus,
-        Math.round(windowHeight * (tech ? 0.4 : LAYOUT.predictionMaxHeightRatio)) + predictionMaxHeightBonus,
+        LAYOUT.predictionListMax + (modalLayout ? 100 : 0) + predictionMaxHeightBonus,
+        Math.round(windowHeight * (modalLayout ? 0.4 : LAYOUT.predictionMaxHeightRatio)) + predictionMaxHeightBonus,
       ),
     ),
   );
-  const predictionBoxDims = tech
+  const predictionBoxDims = modalLayout
     ? {
         maxHeight: predictionsMaxHeight,
         minHeight: Math.min(172, Math.round(predictionsMaxHeight * 0.42)),
@@ -2866,32 +2868,32 @@ export default function PlacesAutocomplete({
       <Pressable
         style={[
           styles.predictionItem,
-          tech && styles.predictionItemTech,
+          techDark && styles.predictionItemTech,
           rowDisabled && styles.predictionItemDisabled,
           isSelecting && styles.predictionItemSelecting,
         ]}
         disabled={rowDisabled}
         onPress={() => void handleSelectPrediction(item)}
       >
-        <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
-          <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
+        <View style={[styles.iconContainer, techDark && styles.iconContainerTech]}>
+          <Ionicons name="location" size={22} color={techDark ? '#38BDF8' : '#3FA9F5'} />
         </View>
         <View style={styles.predictionTextContainer}>
           <Text
-            style={[styles.predictionMainText, tech && styles.predictionMainTextTech]}
+            style={[styles.predictionMainText, techDark && styles.predictionMainTextTech]}
             numberOfLines={2}
           >
             {formatted.main}
           </Text>
           <Text
-            style={[styles.predictionSecondaryText, tech && styles.predictionSecondaryTextTech]}
+            style={[styles.predictionSecondaryText, techDark && styles.predictionSecondaryTextTech]}
             numberOfLines={2}
           >
             {formatted.secondary}
           </Text>
           {item.isSilentRefinement ? (
             <Text
-              style={[styles.predictionRefineHint, tech && styles.predictionRefineHintTech]}
+              style={[styles.predictionRefineHint, techDark && styles.predictionRefineHintTech]}
               numberOfLines={1}
             >
               Konumu haritadan doğrulamanız önerilir
@@ -2900,16 +2902,16 @@ export default function PlacesAutocomplete({
         </View>
         {isSelecting ? (
           <View style={styles.predictionSelectingTrailing}>
-            <ActivityIndicator size="small" color={tech ? '#38BDF8' : '#3FA9F5'} />
+            <ActivityIndicator size="small" color={techDark ? '#38BDF8' : '#3FA9F5'} />
             <Text
-              style={[styles.predictionSelectingText, tech && styles.predictionSelectingTextTech]}
+              style={[styles.predictionSelectingText, techDark && styles.predictionSelectingTextTech]}
               numberOfLines={1}
             >
               Seçiliyor…
             </Text>
           </View>
         ) : (
-          <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
+          <Ionicons name="chevron-forward" size={18} color={techDark ? '#64748B' : '#CCC'} />
         )}
       </Pressable>
     );
@@ -2918,12 +2920,12 @@ export default function PlacesAutocomplete({
   const renderSearchLoadingPanel = () => (
     <View style={styles.searchLoadingPanel} pointerEvents="none">
       <View style={styles.searchLoadingHeader}>
-        <ActivityIndicator size="small" color={tech ? '#38BDF8' : '#3FA9F5'} />
+        <ActivityIndicator size="small" color={techDark ? '#38BDF8' : '#3FA9F5'} />
         <View style={styles.searchLoadingHeaderTextCol}>
-          <Text style={[styles.searchLoadingTitle, tech && styles.searchLoadingTitleTech]}>
+          <Text style={[styles.searchLoadingTitle, techDark && styles.searchLoadingTitleTech]}>
             Adresler aranıyor…
           </Text>
-          <Text style={[styles.searchLoadingSub, tech && styles.searchLoadingSubTech]}>
+          <Text style={[styles.searchLoadingSub, techDark && styles.searchLoadingSubTech]}>
             En iyi eşleşmeler birazdan listelenecek.
           </Text>
         </View>
@@ -2931,24 +2933,24 @@ export default function PlacesAutocomplete({
       {[0, 1].map((ix) => (
         <View
           key={`search-loading-skeleton-${ix}`}
-          style={[styles.searchLoadingSkeletonRow, tech && styles.searchLoadingSkeletonRowTech]}
+          style={[styles.searchLoadingSkeletonRow, techDark && styles.searchLoadingSkeletonRowTech]}
         >
           <View
-            style={[styles.searchLoadingSkeletonIcon, tech && styles.searchLoadingSkeletonIconTech]}
+            style={[styles.searchLoadingSkeletonIcon, techDark && styles.searchLoadingSkeletonIconTech]}
           />
           <View style={styles.searchLoadingSkeletonTextCol}>
             <View
               style={[
                 styles.searchLoadingSkeletonLine,
                 styles.searchLoadingSkeletonLineMain,
-                tech && styles.searchLoadingSkeletonLineTech,
+                techDark && styles.searchLoadingSkeletonLineTech,
               ]}
             />
             <View
               style={[
                 styles.searchLoadingSkeletonLine,
                 styles.searchLoadingSkeletonLineSub,
-                tech && styles.searchLoadingSkeletonLineTech,
+                techDark && styles.searchLoadingSkeletonLineTech,
               ]}
             />
           </View>
@@ -3058,28 +3060,28 @@ export default function PlacesAutocomplete({
     query.trim().length >= 2;
 
   return (
-    <View style={[styles.container, tech && suggestionsFirst && styles.containerTechSuggestionsFirst]}>
+    <View style={[styles.container, modalLayout && suggestionsFirst && styles.containerTechSuggestionsFirst]}>
       {/* Öneriler — hedef modalında üstte */}
-      {tech && suggestionsFirst && showPredictions && showSearchLoadingPanel ? (
+      {modalLayout && suggestionsFirst && showPredictions && showSearchLoadingPanel ? (
         <View
           style={[
             styles.predictionsContainer,
-            tech && styles.predictionsContainerTech,
-            tech && styles.predictionsAboveInput,
+            techDark && styles.predictionsContainerTech,
+            modalLayout && styles.predictionsAboveInput,
             predictionBoxDims,
           ]}
         >
           {renderSearchLoadingPanel()}
         </View>
       ) : null}
-      {tech && suggestionsFirst
+      {modalLayout && suggestionsFirst
         ? showPredictions &&
           predictions.length > 0 && (
             <View
               style={[
                 styles.predictionsContainer,
-                tech && styles.predictionsContainerTech,
-                tech && styles.predictionsAboveInput,
+                techDark && styles.predictionsContainerTech,
+                modalLayout && styles.predictionsAboveInput,
                 predictionBoxDims,
               ]}
             >
@@ -3090,26 +3092,26 @@ export default function PlacesAutocomplete({
                 nestedScrollEnabled
                 renderItem={({ item }) => renderPredictionRow(item)}
                 ItemSeparatorComponent={() => (
-                  <View style={[styles.separator, tech && styles.separatorTech]} />
+                  <View style={[styles.separator, techDark && styles.separatorTech]} />
                 )}
               />
               {predictionActionError ? (
                 <View
                   style={[
                     styles.predictionActionErrorBanner,
-                    tech && styles.predictionActionErrorBannerTech,
+                    techDark && styles.predictionActionErrorBannerTech,
                   ]}
                 >
                   <Ionicons
                     name="alert-circle"
                     size={18}
-                    color={tech ? '#FCA5A5' : '#DC2626'}
+                    color={techDark ? '#FCA5A5' : '#DC2626'}
                     style={styles.predictionActionErrorBannerIcon}
                   />
                   <Text
                     style={[
                       styles.predictionActionErrorBannerText,
-                      tech && styles.predictionActionErrorBannerTextTech,
+                      techDark && styles.predictionActionErrorBannerTextTech,
                     ]}
                     numberOfLines={3}
                   >
@@ -3125,20 +3127,26 @@ export default function PlacesAutocomplete({
       <View
         style={[
           styles.inputContainer,
-          tech && styles.inputContainerTech,
-          tech && inputSize === 'large' && styles.inputContainerTechLarge,
+          techDark && styles.inputContainerTech,
+          lhsDaylight && inputSize === 'large' && styles.inputContainerDaylightLarge,
+          techDark && inputSize === 'large' && styles.inputContainerTechLarge,
         ]}
       >
         <Ionicons
           name="search"
           size={inputSize === 'large' ? 22 : 20}
-          color={tech ? '#38BDF8' : '#3FA9F5'}
+          color={techDark ? '#38BDF8' : '#00D4AA'}
           style={styles.searchIcon}
         />
         <TextInput
-          style={[styles.input, tech && styles.inputTech, tech && inputSize === 'large' && styles.inputTechLarge]}
+          style={[
+            styles.input,
+            techDark && styles.inputTech,
+            lhsDaylight && inputSize === 'large' && styles.inputDaylightLarge,
+            techDark && inputSize === 'large' && styles.inputTechLarge,
+          ]}
           placeholder={placeholder}
-          placeholderTextColor={tech ? 'rgba(148, 163, 184, 0.95)' : '#999'}
+          placeholderTextColor={techDark ? 'rgba(148, 163, 184, 0.95)' : '#64748B'}
           value={query}
           onChangeText={(t) => {
             setPopularGeocodeError(null);
@@ -3152,29 +3160,29 @@ export default function PlacesAutocomplete({
         {loading && (
           <ActivityIndicator
             size="small"
-            color={tech ? '#38BDF8' : '#3FA9F5'}
+            color={techDark ? '#38BDF8' : '#3FA9F5'}
             style={styles.loader}
           />
         )}
         {query.length > 0 && !loading && (
           <TouchableOpacity onPress={clearInput} style={styles.clearButton}>
-            <Ionicons name="close-circle" size={20} color={tech ? '#94A3B8' : '#999'} />
+            <Ionicons name="close-circle" size={20} color={techDark ? '#94A3B8' : '#999'} />
           </TouchableOpacity>
         )}
       </View>
 
       {popularGeocodeError ? (
         <Text
-          style={[styles.geocodeInlineError, tech && styles.geocodeInlineErrorTech]}
+          style={[styles.geocodeInlineError, techDark && styles.geocodeInlineErrorTech]}
           numberOfLines={2}
         >
           {popularGeocodeError}
         </Text>
       ) : null}
 
-      {predictionActionError && !(tech && suggestionsFirst) ? (
+      {predictionActionError && !(modalLayout && suggestionsFirst) ? (
         <Text
-          style={[styles.geocodeInlineError, tech && styles.geocodeInlineErrorTech]}
+          style={[styles.geocodeInlineError, techDark && styles.geocodeInlineErrorTech]}
           numberOfLines={2}
         >
           {predictionActionError}
@@ -3192,11 +3200,11 @@ export default function PlacesAutocomplete({
           {compactMerkezEntries.exactCities.map((p) => (
             <TouchableOpacity
               key={`exact-${p.label}`}
-              style={[styles.compactMerkezChip, tech && styles.compactMerkezChipTech]}
+              style={[styles.compactMerkezChip, techDark && styles.compactMerkezChipTech]}
               onPress={() => handleQuickPick(p, 'merkez_chip')}
               activeOpacity={0.85}
             >
-              <Text style={[styles.compactMerkezChipText, tech && styles.compactMerkezChipTextTech]} numberOfLines={1}>
+              <Text style={[styles.compactMerkezChipText, techDark && styles.compactMerkezChipTextTech]} numberOfLines={1}>
                 {p.label}
               </Text>
             </TouchableOpacity>
@@ -3211,7 +3219,7 @@ export default function PlacesAutocomplete({
             return (
               <TouchableOpacity
                 key={`dist-${h.label}`}
-                style={[styles.compactMerkezChip, tech && styles.compactMerkezChipTech]}
+                style={[styles.compactMerkezChip, techDark && styles.compactMerkezChipTech]}
                 disabled={!ready}
                 onPress={() => handleQuickPick(districtPlace, 'merkez_chip')}
                 activeOpacity={0.85}
@@ -3220,12 +3228,12 @@ export default function PlacesAutocomplete({
                   {!ready ? (
                     <ActivityIndicator
                       size="small"
-                      color={tech ? '#94A3B8' : '#64748B'}
+                      color={techDark ? '#94A3B8' : '#64748B'}
                       style={styles.compactMerkezChipSpinner}
                     />
                   ) : null}
                   <Text
-                    style={[styles.compactMerkezChipText, tech && styles.compactMerkezChipTextTech]}
+                    style={[styles.compactMerkezChipText, techDark && styles.compactMerkezChipTextTech]}
                     numberOfLines={1}
                   >
                     {h.label}
@@ -3237,11 +3245,11 @@ export default function PlacesAutocomplete({
           {compactMerkezEntries.fallbackCities.map((p) => (
             <TouchableOpacity
               key={`fb-${p.label}`}
-              style={[styles.compactMerkezChip, tech && styles.compactMerkezChipTech]}
+              style={[styles.compactMerkezChip, techDark && styles.compactMerkezChipTech]}
               onPress={() => handleQuickPick(p, 'merkez_chip')}
               activeOpacity={0.85}
             >
-              <Text style={[styles.compactMerkezChipText, tech && styles.compactMerkezChipTextTech]} numberOfLines={1}>
+              <Text style={[styles.compactMerkezChipText, techDark && styles.compactMerkezChipTextTech]} numberOfLines={1}>
                 {p.label}
               </Text>
             </TouchableOpacity>
@@ -3250,17 +3258,17 @@ export default function PlacesAutocomplete({
       ) : null}
 
       {showQuickPicks ? (
-        <View style={[styles.quickPickWrap, tech && styles.quickPickWrapTech]}>
-          <Text style={[styles.quickPickTitle, tech && styles.quickPickTitleTech]}>Hızlı seçim</Text>
+        <View style={[styles.quickPickWrap, techDark && styles.quickPickWrapTech]}>
+          <Text style={[styles.quickPickTitle, techDark && styles.quickPickTitleTech]}>Hızlı seçim</Text>
           <View style={styles.quickPickGrid}>
             {quickPickList.map((qp) => (
               <TouchableOpacity
                 key={qp.label}
-                style={[styles.quickPickChip, tech && styles.quickPickChipTech]}
+                style={[styles.quickPickChip, techDark && styles.quickPickChipTech]}
                 activeOpacity={0.85}
                 onPress={() => handleQuickPick(qp)}
               >
-                <Text style={[styles.quickPickChipText, tech && styles.quickPickChipTextTech]} numberOfLines={2}>
+                <Text style={[styles.quickPickChipText, techDark && styles.quickPickChipTextTech]} numberOfLines={2}>
                   {qp.label}
                 </Text>
               </TouchableOpacity>
@@ -3288,11 +3296,11 @@ export default function PlacesAutocomplete({
       )}
 
       {/* Arama loading — varsayılan: input altında */}
-      {showSearchLoadingPanel && !(tech && suggestionsFirst) ? (
+      {showSearchLoadingPanel && !(modalLayout && suggestionsFirst) ? (
         <View
           style={[
             styles.predictionsContainer,
-            tech && styles.predictionsContainerTech,
+            techDark && styles.predictionsContainerTech,
             predictionBoxDims,
           ]}
         >
@@ -3301,11 +3309,11 @@ export default function PlacesAutocomplete({
       ) : null}
 
       {/* Öneriler — varsayılan: input altında */}
-      {showPredictions && predictions.length > 0 && !(tech && suggestionsFirst) && (
+      {showPredictions && predictions.length > 0 && !(modalLayout && suggestionsFirst) && (
         <View
           style={[
             styles.predictionsContainer,
-            tech && styles.predictionsContainerTech,
+            techDark && styles.predictionsContainerTech,
             predictionBoxDims,
           ]}
         >
@@ -3316,7 +3324,7 @@ export default function PlacesAutocomplete({
             nestedScrollEnabled
             renderItem={({ item }) => renderPredictionRow(item)}
             ItemSeparatorComponent={() => (
-              <View style={[styles.separator, tech && styles.separatorTech]} />
+              <View style={[styles.separator, techDark && styles.separatorTech]} />
             )}
           />
         </View>
@@ -3329,15 +3337,15 @@ export default function PlacesAutocomplete({
         !loading &&
         searchRoundDone &&
         completedSearchRequestIdRef.current === autocompleteRequestIdRef.current && (
-        <View style={[styles.noResultsContainer, tech && styles.noResultsContainerTech]}>
-          <Ionicons name="location-outline" size={48} color={tech ? '#475569' : '#DDD'} />
-          <Text style={[styles.noResultsText, tech && styles.noResultsTextTech]}>Sonuç bulunamadı</Text>
-          <Text style={[styles.noResultsHint, tech && styles.noResultsHintTech]}>
+        <View style={[styles.noResultsContainer, techDark && styles.noResultsContainerTech]}>
+          <Ionicons name="location-outline" size={48} color={techDark ? '#475569' : '#DDD'} />
+          <Text style={[styles.noResultsText, techDark && styles.noResultsTextTech]}>Sonuç bulunamadı</Text>
+          <Text style={[styles.noResultsHint, techDark && styles.noResultsHintTech]}>
             Daha açık yazın: mahalle, cadde/sokak ve şehir adıyla deneyin.{'\n'}
             Örn: Çankaya, Ankara
           </Text>
           {SHOW_PLACES_DIAG && searchDiag ? (
-            <Text style={[styles.noResultsDiag, tech && styles.noResultsDiagTech]} numberOfLines={2}>
+            <Text style={[styles.noResultsDiag, techDark && styles.noResultsDiagTech]} numberOfLines={2}>
               {`diag: ${searchDiag.code}${searchDiag.hint ? ` · ${searchDiag.hint}` : ''}`}
             </Text>
           ) : null}
@@ -3405,6 +3413,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     paddingVertical: Platform.OS === 'ios' ? 14 : 12,
+  },
+  inputContainerDaylightLarge: {
+    minHeight: 62,
+    borderRadius: 18,
+    paddingVertical: Platform.OS === 'android' ? 6 : 4,
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(15, 23, 42, 0.10)',
+  },
+  inputDaylightLarge: {
+    fontSize: 18,
+    fontWeight: '700',
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
+    color: 'rgba(13, 17, 23, 0.92)',
   },
   loader: {
     marginLeft: 8,
