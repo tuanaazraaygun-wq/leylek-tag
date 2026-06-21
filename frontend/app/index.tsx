@@ -1126,7 +1126,7 @@ class RuntimeBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error) {
-    console.error(`RuntimeBoundary(${this.props.name})`, error);
+    console.error(`RuntimeBoundary(${this.props.name})`, error.message, error.stack);
   }
 
   render() {
@@ -15519,7 +15519,10 @@ function DriverDashboard({
   // KYC Status - prop'tan al veya null
   const kycStatus = kycStatusProp;
   const setKycStatus = setKycStatusProp || (() => {});
-  
+
+  const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
+  const { chromeSurfaces: jLt } = useJourneyBannerTheme();
+
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [passengerLocation, setPassengerLocation] = useState<{latitude: number; longitude: number} | null>(null);
@@ -19241,8 +19244,6 @@ function DriverDashboard({
     activeTag &&
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
   );
-  const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
-  const { chromeSurfaces: jLt } = useJourneyBannerTheme();
 
   console.log('OFFER_RENDER_CONDITION', {
     driver_in_active_trip: driverInActiveTrip,
