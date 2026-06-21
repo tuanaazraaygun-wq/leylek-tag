@@ -282,7 +282,10 @@ export function useLiveMapChromeTheme() {
     [journey.chromeSurfaces, map.chromeSurfaces],
   );
 
-  const tokens = journey.isScopeLight ? journey.tokens : map.isScopeLight ? map.tokens : journey.tokens;
+  const tokens = useMemo(
+    () => (journey.isScopeLight ? journey.tokens : map.isScopeLight ? map.tokens : journey.tokens),
+    [journey.isScopeLight, map.isScopeLight, journey.tokens, map.tokens],
+  );
 
   return {
     tokens,
@@ -290,4 +293,9 @@ export function useLiveMapChromeTheme() {
     ui,
     chromeSurfaces,
   };
+}
+
+/** Active-trip banners (index.tsx) — same journey|map scope OR as LiveMap chrome. */
+export function useJourneyBannerTheme() {
+  return useLiveMapChromeTheme();
 }

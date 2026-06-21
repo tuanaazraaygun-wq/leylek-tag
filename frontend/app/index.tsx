@@ -190,7 +190,7 @@ import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/of
 import { normalizePassengerPaymentMethod } from '../lib/passengerFieldHelpers';
 import { usePassengerTheme } from '../lib/theme/usePassengerTheme';
 import { useDriverTheme } from '../lib/theme/useDriverTheme';
-import { useJourneyTheme } from '../lib/theme/useJourneyTheme';
+import { useJourneyBannerTheme } from '../lib/theme/useJourneyTheme';
 import { isReviewerDemoLoginPhone } from '../lib/demoReviewerAuth';
 import {
   publishTrustedInviteHubRefresh,
@@ -5739,7 +5739,7 @@ function PassengerOfferCard({
             disabled={accepting}
           >
             {accepting ? (
-              <ActivityIndicator size="small" color="rgba(243,248,255,0.94)" />
+              <ActivityIndicator size="small" color={ui.textSoft} />
             ) : (
               <>
                 <Ionicons name="checkmark" size={18} color="#08111F" />
@@ -7438,7 +7438,7 @@ function PassengerDashboard({
     dashboardSurfaces: dashLt,
     routePickerSurfaces: rpLt,
   } = usePassengerTheme();
-  const { chromeSurfaces: jLt } = useJourneyTheme('journey');
+  const { chromeSurfaces: jLt } = useJourneyBannerTheme();
   const priceModalSheetMaxHeight = Math.min(
     paxWindowHeight * 0.92,
     paxWindowHeight - insets.top - 8,
@@ -18879,7 +18879,7 @@ function DriverDashboard({
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
   );
   const { waitingShellSurfaces: dwsLt, ui: drvUi } = useDriverTheme();
-  const { chromeSurfaces: jLt } = useJourneyTheme('journey');
+  const { chromeSurfaces: jLt } = useJourneyBannerTheme();
 
   console.log('OFFER_RENDER_CONDITION', {
     driver_in_active_trip: driverInActiveTrip,
