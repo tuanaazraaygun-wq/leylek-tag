@@ -283,6 +283,7 @@ const DRIVER_RESUME_STATUSES = [
 ] as const;
 
 const MATCH_RESUME_UI_RESET_KEY = 'leylek_match_resume_ui_reset_v1';
+const BOOT_RESUME_SUBTITLE = 'Devam eden eşleşmeye bağlanılıyor...';
 
 /** QR modal kapanışı ile rating açılışını ayır — iOS çift Modal aynı frame'de dokunmayı yutmasın */
 function scheduleRatingModalAfterQrDismiss(openRating: () => void): void {
@@ -636,6 +637,28 @@ async function loadActiveTagForUserResume(
       : `${API_URL}/driver/active-tag?user_id=${enc}`;
   console.log('LOAD_ACTIVE_TAG_AFTER_RESUME', { userId, role, url });
   await fetch(url).catch((e) => console.warn('[resume] loadActiveTag (network)', e));
+}
+
+/** UI subtitle / spinner yalnızca gerçekten resumable tag varken (primary resume ile aynı kriter). */
+async function probeResumableActiveMatchSession(userId: string): Promise<boolean> {
+  const uid = String(userId || '').trim();
+  if (!uid) return false;
+  const enc = encodeURIComponent(uid);
+  try {
+    const [pr, dr] = await Promise.all([
+      fetch(`${API_URL}/passenger/active-tag?user_id=${enc}`),
+      fetch(`${API_URL}/driver/active-tag?user_id=${enc}`),
+    ]);
+    const pj = (await pr.json().catch(() => ({}))) as Record<string, unknown>;
+    const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
+    const pTag = pj?.tag as Record<string, unknown> | undefined;
+    const dTag = dj?.tag as Record<string, unknown> | undefined;
+    const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
+    const dOk = dTag ? _driverTagResumable(dj, dTag) : false;
+    return pOk || dOk;
+  } catch {
+    return false;
+  }
 }
 
 async function tryResumeActiveMatchSession(
@@ -1586,6 +1609,8 @@ export default function App() {
   }, [screen, user?.id, showSplash, reportPushRegisterDebugSurface]);
   const lastPushRegisterTimeRef = useRef<number>(0);
   const lastForegroundResumeTryRef = useRef<number>(0);
+  /** loadUser / PIN login resume bu oturumda yapıldı — role-select mount effect tekrar etmesin */
+  const sessionResumeProbedRef = useRef(false);
   const FOREGROUND_RESUME_MATCH_MS = 5000; // Ön plan: aktif eşleşme tekrar dene (throttle)
   const PUSH_REREGISTER_INTERVAL_MS = 15000; // Uygulama her ön plana geldiğinde en fazla 15 sn'de bir tekrar dene
   /** Splash çıkışında user'a bakılır; user deps ile effect sıfırlanıp timer iptal edilmesin diye ref */
@@ -1875,45 +1900,42 @@ export default function App() {
 
       if (!legalWasAccepted || isMainAdmin) return;
 
-      const activeStatuses = ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'];
       const uid = encodeURIComponent(parsedUser.id);
       const t = 6000;
 
       try {
-        const role = parsedUser.role;
-        if (role === 'passenger') {
-          const r = await fetchWithTimeout(
-            `${API_URL}/passenger/active-tag?user_id=${uid}`,
-            { timeoutMs: t }
-          );
-          if (!r?.ok) return;
-          const j = await r.json().catch(() => null);
-          const st = j?.tag?.status;
-          if (j?.success && j?.tag && st && activeStatuses.includes(st)) {
-            setScreen('dashboard');
+        const [pr, dr] = await Promise.all([
+          fetchWithTimeout(`${API_URL}/passenger/active-tag?user_id=${uid}`, { timeoutMs: t }),
+          fetchWithTimeout(`${API_URL}/driver/active-tag?user_id=${uid}`, { timeoutMs: t }),
+        ]);
+        const pj = pr?.ok ? ((await pr.json().catch(() => null)) as Record<string, unknown> | null) : null;
+        const dj = dr?.ok ? ((await dr.json().catch(() => null)) as Record<string, unknown> | null) : null;
+        const pTag = pj?.tag as Record<string, unknown> | undefined;
+        const dTag = dj?.tag as Record<string, unknown> | undefined;
+        const pOk = pTag && pj ? _passengerTagResumable(pj, pTag) : false;
+        const dOk = dTag && dj ? _driverTagResumable(dj, dTag) : false;
+        if (!pOk && !dOk) return;
+
+        let role: 'passenger' | 'driver' | null = null;
+        if (pOk && dOk) {
+          const ps = _normTagStatus(pTag!.status);
+          const ds = _normTagStatus(dTag!.status);
+          const pp = _resumePriorityForPassenger(ps);
+          const dp = _resumePriorityForDriver(ds);
+          if (dp > pp) role = 'driver';
+          else if (pp > dp) role = 'passenger';
+          else {
+            const lr = await AsyncStorage.getItem(`last_role_${parsedUser.id}`);
+            role = lr === 'driver' ? 'driver' : 'passenger';
           }
-        } else if (role === 'driver') {
-          const r = await fetchWithTimeout(
-            `${API_URL}/driver/active-tag?user_id=${uid}`,
-            { timeoutMs: t }
-          );
-          if (r?.ok) {
-            const j = await r.json().catch(() => null);
-            const st = j?.tag?.status;
-            if (j?.success && j?.tag && st && activeStatuses.includes(st)) {
-              setScreen('dashboard');
-              return;
-            }
-          }
-          const pd = await fetchWithTimeout(
-            `${API_URL}/driver/dispatch-pending-offer?user_id=${uid}`,
-            { timeoutMs: t }
-          );
-          if (!pd?.ok) return;
-          const pj = await pd.json().catch(() => null);
-          if (pj?.success && pj?.offer?.tag_id) {
-            setScreen('dashboard');
-          }
+        } else if (pOk) {
+          role = 'passenger';
+        } else if (dOk) {
+          role = 'driver';
+        }
+
+        if (role) {
+          setScreen('dashboard');
         }
       } catch (e) {
         console.warn('Active session restore (deferred):', e);
@@ -1990,7 +2012,11 @@ export default function App() {
         let resumeResult: TryResumeActiveMatchResult = { resumed: false };
         let driverLoginResume = false;
         if (!isMainAdmin) {
-          setBootSubtitle('Devam eden eşleşmeye bağlanılıyor...');
+          sessionResumeProbedRef.current = true;
+          const mightResume = await probeResumableActiveMatchSession(parsedUser.id);
+          if (mightResume) {
+            setBootSubtitle(BOOT_RESUME_SUBTITLE);
+          }
           try {
             resumeResult = await tryResumeActiveMatchSession(parsedUser, {
               saveUser,
@@ -2031,7 +2057,7 @@ export default function App() {
             setScreen('role-select');
           }
           if (legalWasAccepted && themeChoiceEnabled) {
-            void maybeNavigateToThemeChoice(parsedUser.id, setScreen);
+            await maybeNavigateToThemeChoice(parsedUser.id, setScreen);
           }
         }
 
@@ -2159,7 +2185,11 @@ export default function App() {
     }
 
     console.log('TAG_RESUME_AFTER_LOGIN_START', { userId: loggedInUser.id });
-    setBootSubtitle('Devam eden eşleşmeye bağlanılıyor...');
+    sessionResumeProbedRef.current = true;
+    const mightResume = await probeResumableActiveMatchSession(loggedInUser.id);
+    if (mightResume) {
+      setBootSubtitle(BOOT_RESUME_SUBTITLE);
+    }
     let resumeResult: TryResumeActiveMatchResult = { resumed: false };
     try {
       try {
@@ -2236,6 +2266,26 @@ export default function App() {
     }
   };
 
+  const landOnRoleSelectWithThemeChoice = useCallback(
+    async (userId: string) => {
+      sessionResumeProbedRef.current = true;
+      setScreen('role-select');
+      let legalOk = legalAccepted;
+      try {
+        legalOk = (await AsyncStorage.getItem('legal_accepted')) === 'true';
+      } catch {
+        /* keep legalAccepted state */
+      }
+      if (legalOk) {
+        setLegalAccepted(true);
+      }
+      if (legalOk && themeChoiceEnabled) {
+        await maybeNavigateToThemeChoice(userId, setScreen);
+      }
+    },
+    [legalAccepted, setScreen],
+  );
+
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
     await persistAccessToken(payload);
     await syncSupabaseSessionFromBackendResponse(payload as unknown as Record<string, unknown>); // Storage RLS: supabase_access_token + refresh
@@ -2285,6 +2335,7 @@ export default function App() {
         const cleanPhone = user.phone?.replace(/\D/g, '');
         const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
         if (!isMainAdmin) {
+          sessionResumeProbedRef.current = true;
           const resumeRes = await tryResumeActiveMatchSession(user as User, {
             saveUser,
             setUser,
@@ -2353,6 +2404,7 @@ export default function App() {
   /** Rol ekranına düşmüş olsalar bile aktif eşleşme varsa doğrudan panele al */
   useEffect(() => {
     if (screen !== 'role-select' || !user?.id) return;
+    if (sessionResumeProbedRef.current) return;
     const cleanPhone = user.phone?.replace(/\D/g, '') || '';
     const isMainAdmin =
       cleanPhone === '5326497412' ||
@@ -2466,6 +2518,7 @@ export default function App() {
     } catch {
       /* ignore */
     }
+    sessionResumeProbedRef.current = false;
     setUser(null);
     setScreen('login');
     setShowDestinationPicker(false);
@@ -3439,7 +3492,14 @@ export default function App() {
             appAlert(
               'Kayıt Başarılı',
               'Hesabınız hazır. PIN kodunuzu kimseyle paylaşmayın.',
-              [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
+              [
+                {
+                  text: 'Tamam',
+                  onPress: () => {
+                    void landOnRoleSelectWithThemeChoice(user!.id);
+                  },
+                },
+              ],
             );
           } else {
             appAlert('Hata', setPinData.detail || 'PIN ayarlanamadı');
@@ -3469,7 +3529,14 @@ export default function App() {
           appAlert(
             'Kayıt Başarılı',
             'Hesabınız oluşturuldu. PIN kodunuzu kimseyle paylaşmayın.',
-            [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
+            [
+              {
+                text: 'Tamam',
+                onPress: () => {
+                  void landOnRoleSelectWithThemeChoice(registerData.user.id);
+                },
+              },
+            ],
           );
         } else {
           appAlert('Hata', registerData.detail || 'Kayıt yapılamadı');
@@ -3639,11 +3706,16 @@ export default function App() {
             setShowAdminPanel(true);
             setScreen('role-select');
           } else {
-            setPostLoginTagResumePending(true);
+            const mightResume = savedUser.id
+              ? await probeResumableActiveMatchSession(savedUser.id)
+              : false;
+            if (mightResume) {
+              setPostLoginTagResumePending(true);
+            }
             try {
               const resumed = await completeLoginWithTagResumeFirst(savedUser);
               if (!resumed) {
-                setScreen('role-select');
+                await landOnRoleSelectWithThemeChoice(savedUser.id);
               }
             } finally {
               setPostLoginTagResumePending(false);
