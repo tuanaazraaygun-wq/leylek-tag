@@ -10,16 +10,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../hooks/useTheme';
 import { useSelectionMotion } from '../hooks/useSelectionMotion';
-import {
-  LDS_GRADIENT_GLASS_SHEEN_PANEL,
-  LDS_GRADIENT_GLASS_SHEEN_PANEL_LOCATIONS,
-  LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL,
-  LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL_LOCATIONS,
-  LDS_GRADIENT_SELECTION_GLOW_VERTICAL,
-  LDS_GRADIENT_SELECTION_GLOW_VERTICAL_LOCATIONS,
-} from '../tokens/gradient';
-import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../tokens/border';
 import { LDS_ILLUSTRATION } from '../tokens/illustration';
 import { LDS_RADIUS } from '../tokens/radius';
 
@@ -56,16 +48,30 @@ function PremiumSelectionCard({
   compactCopy = false,
   subtitleNumberOfLines = 1,
 }: PremiumSelectionCardProps) {
+  const { tokens } = useTheme();
+  const cardTokens = tokens.selectionCard;
+  const borders = tokens.borderColors;
+  const borderWidths = tokens.borderWidths;
+  const g = tokens.gradients;
   const motion = useSelectionMotion({ selected });
   const borderRadius = LDS_RADIUS.cardPrimary;
 
   const cardStyle = useMemo(
     () => [
       styles.card,
-      selected && styles.cardSelected,
+      {
+        backgroundColor: cardTokens.cardBackground,
+        borderColor: borders.card,
+        borderTopColor: borders.cardTopCyan,
+        borderLeftColor: borders.cardLeftCyan,
+        borderWidth: borderWidths.standard,
+      },
+      selected && {
+        backgroundColor: cardTokens.cardSelectedBackground,
+      },
       style,
     ],
-    [selected, style],
+    [borderWidths.standard, borders.card, borders.cardLeftCyan, borders.cardTopCyan, cardTokens.cardBackground, cardTokens.cardSelectedBackground, selected, style],
   );
 
   return (
@@ -85,8 +91,8 @@ function PremiumSelectionCard({
         ]}
       >
         <LinearGradient
-          colors={[...LDS_GRADIENT_GLASS_SHEEN_PANEL] as [string, string, ...string[]]}
-          locations={[...LDS_GRADIENT_GLASS_SHEEN_PANEL_LOCATIONS] as [number, number, ...number[]]}
+          colors={[...g.glassSheenPanel] as [string, string, ...string[]]}
+          locations={[...g.glassSheenPanelLocations] as [number, number, ...number[]]}
           start={{ x: 0.08, y: 0 }}
           end={{ x: 0.55, y: 0.95 }}
           pointerEvents="none"
@@ -101,8 +107,8 @@ function PremiumSelectionCard({
           ]}
         >
           <LinearGradient
-            colors={[...LDS_GRADIENT_SELECTION_GLOW_VERTICAL] as [string, string, ...string[]]}
-            locations={[...LDS_GRADIENT_SELECTION_GLOW_VERTICAL_LOCATIONS] as [number, number, ...number[]]}
+            colors={[...g.selectionGlowVertical] as [string, string, ...string[]]}
+            locations={[...g.selectionGlowVerticalLocations] as [number, number, ...number[]]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={StyleSheet.absoluteFillObject}
@@ -117,8 +123,8 @@ function PremiumSelectionCard({
           ]}
         >
           <LinearGradient
-            colors={[...LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL] as [string, string, ...string[]]}
-            locations={[...LDS_GRADIENT_SELECTION_GLOW_HORIZONTAL_LOCATIONS] as [number, number, ...number[]]}
+            colors={[...g.selectionGlowHorizontal] as [string, string, ...string[]]}
+            locations={[...g.selectionGlowHorizontalLocations] as [number, number, ...number[]]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={StyleSheet.absoluteFillObject}
@@ -132,6 +138,9 @@ function PremiumSelectionCard({
             {
               borderRadius: borderRadius - 1,
               opacity: motion.borderRingOpacity,
+              borderWidth: borderWidths.emphasis,
+              borderColor: borders.selected,
+              borderTopColor: borders.selectedTop,
             },
           ]}
         />
@@ -139,7 +148,11 @@ function PremiumSelectionCard({
         <View
           style={[
             styles.heroSlot,
-            selected && styles.heroSlotSelected,
+            {
+              backgroundColor: cardTokens.heroBackground,
+              borderBottomColor: cardTokens.heroBorderBottom,
+            },
+            selected && { backgroundColor: cardTokens.heroSelectedBackground },
             { height: heroHeight, minHeight: heroHeight },
           ]}
         >
@@ -194,42 +207,25 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     borderRadius: LDS_RADIUS.cardPrimary,
-    backgroundColor: 'rgba(16,26,43,0.87)',
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.card,
-    borderTopColor: LDS_BORDER_COLOR.cardTopCyan,
-    borderLeftColor: LDS_BORDER_COLOR.cardLeftCyan,
     overflow: 'hidden',
     position: 'relative',
-  },
-  cardSelected: {
-    backgroundColor: 'rgba(10,22,38,0.98)',
   },
   selectionGlowVertical: {
     ...StyleSheet.absoluteFillObject,
   },
   selectionGlowHorizontal: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.65,
   },
   borderRing: {
     ...StyleSheet.absoluteFillObject,
     margin: 0,
-    borderWidth: LDS_BORDER_WIDTH.emphasis,
-    borderColor: LDS_BORDER_COLOR.selected,
-    borderTopColor: LDS_BORDER_COLOR.selectedTop,
   },
   heroSlot: {
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(4,10,20,0.55)',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(34,211,238,0.1)',
     overflow: 'hidden',
-  },
-  heroSlotSelected: {
-    backgroundColor: 'rgba(34,211,238,0.05)',
   },
   copyBlock: {
     width: '100%',

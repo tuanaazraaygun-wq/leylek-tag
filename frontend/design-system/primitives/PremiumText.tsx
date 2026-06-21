@@ -5,7 +5,7 @@ import {
   type TextProps,
   type TextStyle,
 } from 'react-native';
-import { PREMIUM_TEXT_MUTED, PREMIUM_TEXT_SOFT } from '../tokens/color';
+import { useTheme } from '../../hooks/useTheme';
 import { LDS_TYPOGRAPHY, type LdsTypographyVariant } from '../tokens/typography';
 
 export type PremiumTextProps = TextProps & {
@@ -22,6 +22,7 @@ function PremiumText({
   children,
   ...rest
 }: PremiumTextProps) {
+  const { tokens } = useTheme();
   const token = LDS_TYPOGRAPHY[variant];
 
   return (
@@ -29,7 +30,7 @@ function PremiumText({
       {...rest}
       style={[
         token,
-        { color: muted ? PREMIUM_TEXT_MUTED : PREMIUM_TEXT_SOFT },
+        { color: muted ? tokens.text.muted : tokens.text.primary },
         style,
       ]}
     >
