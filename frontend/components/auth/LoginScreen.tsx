@@ -21,8 +21,8 @@ import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { LegalPage } from '../LegalPages';
 import { LoginBrandHeader } from './LoginBrandHeader';
-import { PREMIUM_AUTH_CYAN, premiumAuthStyles as pa } from './premiumAuthStyles';
-import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton } from './premiumAuthChrome';
+import { premiumAuthStyles as pa } from './premiumAuthStyles';
+import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton, useAuthTheme } from './premiumAuthChrome';
 import { tapButtonHaptic } from '../../utils/touchHaptics';
 
 export type LoginScreenProps = {
@@ -57,6 +57,7 @@ export function LoginScreen({
   styles,
 }: LoginScreenProps) {
   const [legalDoc, setLegalDoc] = useState<null | 'kvkk' | 'privacy'>(null);
+  const { tokens, lightSurfaces } = useAuthTheme();
   const { height: winH, width: winW } = useWindowDimensions();
   const isShort = winH < 560;
   const isCompact = winH < 660;
@@ -103,18 +104,18 @@ export function LoginScreen({
         <LoginBrandHeader usableWidth={columnW} isCompact={isCompact} isShort={isShort} theme="premium" />
 
         <PremiumGlassShell compactPadding={isShort}>
-          <Text style={pa.phoneLabel}>Telefon numaranız</Text>
-          <View style={pa.inputShell}>
-            <Ionicons name="call-outline" size={18} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 10 }} />
+          <Text style={[pa.phoneLabel, lightSurfaces?.phoneLabel]}>Telefon numaranız</Text>
+          <View style={[pa.inputShell, lightSurfaces?.inputShell]}>
+            <Ionicons name="call-outline" size={18} color={tokens.accent.primary} style={{ marginRight: 10 }} />
             <TextInput
-              style={pa.inputField}
+              style={[pa.inputField, lightSurfaces?.inputField]}
               placeholder="5XX XXX XX XX"
-              placeholderTextColor="rgba(148,163,184,0.78)"
+              placeholderTextColor={lightSurfaces?.placeholder ?? 'rgba(148,163,184,0.78)'}
               keyboardType="phone-pad"
               value={phone}
               onChangeText={setPhone}
               maxLength={11}
-              selectionColor={PREMIUM_AUTH_CYAN}
+              selectionColor={lightSurfaces?.selection ?? tokens.accent.primary}
               autoCorrect={false}
             />
           </View>
@@ -127,19 +128,28 @@ export function LoginScreen({
               accessibilityRole="checkbox"
               accessibilityState={{ checked: kvkkAccepted }}
             >
-              <View style={[pa.checkboxOuter, kvkkAccepted && pa.checkboxFilled]}>
-                {kvkkAccepted ? <Ionicons name="checkmark" size={14} color="#0F172A" /> : null}
+              <View
+                style={[
+                  pa.checkboxOuter,
+                  lightSurfaces?.checkboxOuter,
+                  kvkkAccepted && pa.checkboxFilled,
+                  kvkkAccepted && lightSurfaces?.checkboxFilled,
+                ]}
+              >
+                {kvkkAccepted ? (
+                  <Ionicons name="checkmark" size={14} color={lightSurfaces?.checkboxCheck ?? '#0F172A'} />
+                ) : null}
               </View>
             </TouchableOpacity>
             <Text style={pa.kvkkBlock}>
-              <Text onPress={() => setLegalDoc('kvkk')} style={pa.kvkkLink}>
+              <Text onPress={() => setLegalDoc('kvkk')} style={[pa.kvkkLink, lightSurfaces?.kvkkLink]}>
                 Aydınlatma Metni
               </Text>
-              <Text style={pa.kvkkPlain}> ve </Text>
-              <Text onPress={() => setLegalDoc('privacy')} style={pa.kvkkLink}>
+              <Text style={[pa.kvkkPlain, lightSurfaces?.kvkkPlain]}> ve </Text>
+              <Text onPress={() => setLegalDoc('privacy')} style={[pa.kvkkLink, lightSurfaces?.kvkkLink]}>
                 Gizlilik Politikası
               </Text>
-              <Text style={pa.kvkkPlain}>{`'nı okudum, anladım ve kabul ediyorum.`}</Text>
+              <Text style={[pa.kvkkPlain, lightSurfaces?.kvkkPlain]}>{`'nı okudum, anladım ve kabul ediyorum.`}</Text>
             </Text>
           </View>
 
@@ -154,21 +164,21 @@ export function LoginScreen({
           />
 
           <View style={pa.veyaRow}>
-            <View style={pa.veyaLine} />
-            <Text style={pa.veyaLabel}>veya</Text>
-            <View style={pa.veyaLine} />
+            <View style={[pa.veyaLine, lightSurfaces?.veyaLine]} />
+            <Text style={[pa.veyaLabel, lightSurfaces?.veyaLabel]}>veya</Text>
+            <View style={[pa.veyaLine, lightSurfaces?.veyaLine]} />
           </View>
 
           <TouchableOpacity
-            style={pa.outlineGlass}
+            style={[pa.outlineGlass, lightSurfaces?.outlineGlass]}
             onPress={() => {
               void tapButtonHaptic();
               onPressRegister();
             }}
             activeOpacity={0.92}
           >
-            <Ionicons name="person-add-outline" size={18} color={PREMIUM_AUTH_CYAN} />
-            <Text style={pa.outlineLabel}>Kayıt Ol</Text>
+            <Ionicons name="person-add-outline" size={18} color={tokens.accent.primary} />
+            <Text style={[pa.outlineLabel, lightSurfaces?.outlineLabel]}>Kayıt Ol</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -179,12 +189,12 @@ export function LoginScreen({
             }}
             activeOpacity={0.85}
           >
-            <Text style={pa.forgotText}>Şifremi Unuttum</Text>
+            <Text style={[pa.forgotText, lightSurfaces?.forgotText]}>Şifremi Unuttum</Text>
           </TouchableOpacity>
         </PremiumGlassShell>
 
         <TouchableOpacity
-          style={pa.outlineGlassWide}
+          style={[pa.outlineGlassWide, lightSurfaces?.outlineGlassWide]}
           onPress={() => {
             void tapButtonHaptic();
             onPressSupport();
@@ -193,8 +203,8 @@ export function LoginScreen({
           accessibilityRole="button"
           accessibilityLabel="Destek"
         >
-          <Ionicons name="headset-outline" size={20} color={PREMIUM_AUTH_CYAN} style={{ marginRight: 8 }} />
-          <Text style={pa.supportLabel}>Destek</Text>
+          <Ionicons name="headset-outline" size={20} color={tokens.accent.primary} style={{ marginRight: 8 }} />
+          <Text style={[pa.supportLabel, lightSurfaces?.supportLabel]}>Destek</Text>
         </TouchableOpacity>
 
         <View style={trustStyles.wrap} accessibilityRole="summary">
@@ -207,10 +217,14 @@ export function LoginScreen({
                 key={item.title}
                 variant="plain"
                 borderRadius={LDS_RADIUS.sm}
-                style={trustStyles.chip}
+                style={[trustStyles.chip, lightSurfaces?.trustChip]}
               >
-                <View style={trustStyles.chipIconWrap}>
-                  <Ionicons name={item.icon} size={12} color="rgba(148,163,184,0.78)" />
+                <View style={[trustStyles.chipIconWrap, lightSurfaces?.trustChipIconWrap]}>
+                  <Ionicons
+                    name={item.icon}
+                    size={12}
+                    color={lightSurfaces?.trustChipIcon ?? 'rgba(148,163,184,0.78)'}
+                  />
                 </View>
                 <View style={trustStyles.chipTextCol}>
                   <PremiumText variant="caption" muted style={trustStyles.chipTitle} numberOfLines={1}>
@@ -261,17 +275,18 @@ function SupportModalInner({
   openExternalLink: (url: string, title: string) => Promise<void>;
 }) {
   const router = useRouter();
+  const { tokens } = useAuthTheme();
   return (
     <View>
       <Text style={pa.modalTitle}>Destek</Text>
       <Text style={pa.modalBody}>Uygulama içi sorunlarınız için lütfen destek kanallarımızdan bize ulaşın.</Text>
       <Text style={pa.modalCompany}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
       <TouchableOpacity style={pa.modalLinkRow} onPress={() => void openExternalLink('mailto:info@karekodteknoloji.com', 'E-posta açılamadı')}>
-        <Ionicons name="mail-outline" size={16} color={PREMIUM_AUTH_CYAN} />
+        <Ionicons name="mail-outline" size={16} color={tokens.accent.primary} />
         <Text style={pa.modalLinkText}>info@karekodteknoloji.com</Text>
       </TouchableOpacity>
       <TouchableOpacity style={pa.modalLinkRow} onPress={() => void openExternalLink('tel:08503078029', 'Telefon açılamadı')}>
-        <Ionicons name="call-outline" size={16} color={PREMIUM_AUTH_CYAN} />
+        <Ionicons name="call-outline" size={16} color={tokens.accent.primary} />
         <Text style={pa.modalLinkText}>0850 307 80 29</Text>
       </TouchableOpacity>
       <View style={pa.modalLegalRow}>

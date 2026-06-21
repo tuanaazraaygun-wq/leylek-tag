@@ -16,3 +16,20 @@ export const lightThemeEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_LIGHT_THEME');
 
 /** B3-5 — settings hub Görünüm segment */
 export const themeSettingsEnabled = readBoolEnv('EXPO_PUBLIC_FEATURE_THEME_SETTINGS');
+
+/** B3-6a — comma list e.g. `auth` or `auth,role`; empty = no per-screen light surfaces */
+function parseLightThemeScreens(): ReadonlySet<string> {
+  const raw = process.env.EXPO_PUBLIC_FEATURE_LIGHT_THEME_SCREENS?.trim();
+  if (!raw) return new Set();
+  return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+}
+
+export const lightThemeScreens = parseLightThemeScreens();
+
+/** True when global light is on and this screen id is listed (or `*`). */
+export function isLightThemeScreenEnabled(screenId: string): boolean {
+  if (!lightThemeEnabled) return false;
+  if (lightThemeScreens.size === 0) return false;
+  if (lightThemeScreens.has('*')) return true;
+  return lightThemeScreens.has(screenId);
+}

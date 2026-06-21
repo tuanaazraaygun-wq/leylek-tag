@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,14 +11,115 @@ import {
   View,
   type StyleProp,
   type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CockpitBackground, GlassSurface } from '../../design-system/primitives';
-import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/border';
 import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
+import { useTheme } from '../../hooks/useTheme';
+import { isLightThemeScreenEnabled } from '../../lib/featureFlags';
+import { buildThemeTokens } from '../../lib/theme/buildTheme';
+import type { LhThemeTokens } from '../../lib/theme/types';
 import { premiumAuthStyles as pa } from './premiumAuthStyles';
+
+export type AuthLightSurfaces = {
+  root: ViewStyle;
+  phoneLabel: TextStyle;
+  otpHint: TextStyle;
+  inputShell: ViewStyle;
+  inputShellFocused: ViewStyle;
+  inputField: TextStyle;
+  otpInputField: TextStyle;
+  placeholder: string;
+  placeholderOtp: string;
+  selection: string;
+  accent: string;
+  checkboxOuter: ViewStyle;
+  checkboxFilled: ViewStyle;
+  checkboxCheck: string;
+  kvkkPlain: TextStyle;
+  kvkkLink: TextStyle;
+  veyaLine: ViewStyle;
+  veyaLabel: TextStyle;
+  outlineGlass: ViewStyle;
+  outlineLabel: TextStyle;
+  forgotText: TextStyle;
+  outlineGlassWide: ViewStyle;
+  supportLabel: TextStyle;
+  otpBackText: TextStyle;
+  trustChip: ViewStyle;
+  trustChipIconWrap: ViewStyle;
+  trustChipIcon: string;
+};
+
+function buildAuthLightSurfaces(tokens: LhThemeTokens): AuthLightSurfaces {
+  return {
+    root: { backgroundColor: tokens.bg.canvas },
+    phoneLabel: { color: tokens.text.primary },
+    otpHint: { color: tokens.text.muted },
+    inputShell: {
+      backgroundColor: tokens.bg.glassMuted,
+      borderColor: tokens.border.default,
+    },
+    inputShellFocused: {
+      borderColor: tokens.accent.glowHigh,
+    },
+    inputField: { color: tokens.text.primary },
+    otpInputField: { color: tokens.text.primary },
+    placeholder: tokens.text.muted,
+    placeholderOtp: tokens.text.muted,
+    selection: tokens.accent.primary,
+    accent: tokens.accent.primary,
+    checkboxOuter: { borderColor: tokens.accent.glowMid },
+    checkboxFilled: {
+      backgroundColor: tokens.accent.primary,
+      borderColor: tokens.accent.primary,
+    },
+    checkboxCheck: tokens.text.inverse,
+    kvkkPlain: { color: tokens.text.muted },
+    kvkkLink: { color: tokens.accent.secondary },
+    veyaLine: { backgroundColor: tokens.border.card },
+    veyaLabel: { color: tokens.text.muted },
+    outlineGlass: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.default,
+    },
+    outlineLabel: { color: tokens.text.primary },
+    forgotText: { color: tokens.text.muted },
+    outlineGlassWide: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.default,
+    },
+    supportLabel: { color: tokens.text.primary },
+    otpBackText: { color: tokens.text.muted },
+    trustChip: { backgroundColor: tokens.bg.glassMuted },
+    trustChipIconWrap: {
+      backgroundColor: tokens.bg.glass,
+      borderColor: tokens.border.card,
+    },
+    trustChipIcon: tokens.text.muted,
+  };
+}
+
+/** Auth shell theme — dark unless global + screen flags allow light on `auth`. */
+export function useAuthTheme() {
+  const { tokens, resolvedTheme } = useTheme();
+  const isAuthLight = isLightThemeScreenEnabled('auth') && resolvedTheme === 'light';
+
+  const effectiveTokens = useMemo(
+    () => (isAuthLight ? tokens : buildThemeTokens('dark')),
+    [isAuthLight, tokens],
+  );
+
+  const lightSurfaces = useMemo(
+    () => (isAuthLight ? buildAuthLightSurfaces(effectiveTokens) : null),
+    [isAuthLight, effectiveTokens],
+  );
+
+  return { tokens: effectiveTokens, isAuthLight, lightSurfaces };
+}
 
 /** LHIS kokpit zemin — login / OTP / register / forgot ortak shell. */
 export function PremiumAuthScreenShell({
@@ -30,6 +131,7 @@ export function PremiumAuthScreenShell({
 }) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
+  const { lightSurfaces } = useAuthTheme();
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
   const columnW = Math.min(400, winW - padH * 2);
   const isCompact = winH < 660;
@@ -42,7 +144,7 @@ export function PremiumAuthScreenShell({
   const scrollContentStyle = parentStyles.loginAuthScrollContent as Record<string, unknown>;
 
   return (
-    <View style={pa.root}>
+    <View style={[pa.root, lightSurfaces?.root]}>
       <CockpitBackground />
 
       <SafeAreaView style={pa.safe} edges={['top', 'left', 'right']}>
@@ -119,6 +221,7 @@ export function PremiumGradientCtaButton({
   /** Dokunmatik gövdesi için ek stil (ör. rol ekranı derin navy gölgesi) */
   touchableStyleOverrides?: Record<string, unknown>;
 }) {
+  const { tokens } = useAuthTheme();
   const muted = !!(disabled || busy);
   const grayInactive = !!(disabled && !busy);
 
@@ -139,15 +242,23 @@ export function PremiumGradientCtaButton({
       <View
         style={[
           ctaStyles.body,
-          grayInactive ? ctaStyles.bodyDisabled : ctaStyles.bodyActive,
+          {
+            backgroundColor: grayInactive
+              ? tokens.button.bodyDisabledBackground
+              : tokens.button.bodyActiveBackground,
+            borderWidth: grayInactive ? tokens.borderWidths.standard : tokens.borderWidths.emphasis,
+            borderColor: grayInactive ? tokens.borderColors.card : tokens.borderColors.selected,
+            borderTopColor: grayInactive ? tokens.borderColors.card : tokens.borderColors.selectedTop,
+            opacity: grayInactive ? tokens.button.bodyDisabledOpacity : 1,
+          },
           gradientStyleOverrides ?? null,
         ]}
       >
         {busy ? (
-          <ActivityIndicator color="#22D3EE" size="small" />
+          <ActivityIndicator color={tokens.accent.primary} size="small" />
         ) : (
           <>
-            <Text style={[pa.ctaText, labelStyle]}>{label}</Text>
+            <Text style={[pa.ctaText, { color: tokens.text.primary }, labelStyle]}>{label}</Text>
             {trailing ?? null}
           </>
         )}
@@ -175,17 +286,5 @@ const ctaStyles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: LDS_SPACING.xs,
-  },
-  bodyActive: {
-    backgroundColor: 'rgba(16,26,43,0.9)',
-    borderWidth: LDS_BORDER_WIDTH.emphasis,
-    borderColor: LDS_BORDER_COLOR.selected,
-    borderTopColor: LDS_BORDER_COLOR.selectedTop,
-  },
-  bodyDisabled: {
-    backgroundColor: 'rgba(8,17,31,0.55)',
-    borderWidth: LDS_BORDER_WIDTH.standard,
-    borderColor: LDS_BORDER_COLOR.card,
-    opacity: 0.72,
   },
 });
