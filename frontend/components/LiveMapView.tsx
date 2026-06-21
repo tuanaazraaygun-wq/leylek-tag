@@ -6222,55 +6222,8 @@ export default function LiveMapView({
     driverSelfVehicleKind,
   ]);
 
-  // Web fallback
-  if (Platform.OS === 'web' || !MapView) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.webFallback}>
-          <Ionicons name="map" size={64} color={themeColor} />
-          <Text style={styles.webFallbackText}>Harita sadece mobil uygulamada görüntülenebilir</Text>
-          {meetingDistance && (
-            <Text style={styles.distanceText}>
-              Buluşma: {meetingDistance.toFixed(1)} km • {meetingDuration} dk
-            </Text>
-          )}
-          {destinationDistance && (
-            <Text style={styles.destinationDistanceText}>
-              Hedefe: {destinationDistance.toFixed(1)} km • {destinationDuration} dk
-            </Text>
-          )}
-        </View>
-      </View>
-    );
-  }
-
-  /** Üst kart (~alış/hedef/yolcu satırları) + alt sheet yüksekliğine göre harita güvenli alanı */
-  const driverRideModernMapPadTop = Math.max(insets.top, 12) + 272;
-  const driverRideModernMapPadBottom = 262 + Math.max(insets.bottom, 12);
-  const driverRideModernLocateFabBottom = 268 + Math.max(insets.bottom, 10);
-  const driverTripTag = (driverYolcuyaGitCoordContext?.activeTag ?? null) as
-    | Record<string, unknown>
-    | null
-    | undefined;
-  const driverPickupAddr = String(
-    driverTripTag?.pickup_location ?? driverTripTag?.pickup_address ?? '',
-  ).trim();
-  const driverDropoffAddr = String(
-    driverTripTag?.dropoff_location ??
-      driverTripTag?.dropoff_address ??
-      driverTripTag?.destination ??
-      '',
-  ).trim();
-  const driverNearPickupForQr =
-    driverRideUiModern &&
-    !boardingConfirmed &&
-    meetingDistance != null &&
-    Number.isFinite(meetingDistance) &&
-    meetingDistance <= 1.2;
-  /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
-  const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
-  const driverMatrixNavChipGradientColors = ui.ctaGradient;
-  const driverMatrixNavChipIconColor = ui.accent;
+  const compactMatchedLayout =
+    IS_COMPACT_MATCHED_SCREEN && !driverNavImmersive && !driverRideUiModern;
 
   /** Dış harita hedefi — iç navigasyondan bağımsız; tag yedekleri offline senaryo için. */
   const driverExternalNavTarget = useMemo((): MapLatLng | null => {
@@ -6327,6 +6280,72 @@ export default function LiveMapView({
     },
     [driverExternalNavTarget],
   );
+
+  const classicMatchedMapPadding = useMemo(() => {
+    const topBase = compactMatchedLayout ? 96 : 108;
+    const bottomBase = compactMatchedLayout ? 168 : 184;
+    return {
+      top: topBase,
+      right: compactMatchedLayout ? 10 : 14,
+      bottom: bottomBase + (!isDriver ? Math.max(insets.bottom, 0) : 0),
+      left: compactMatchedLayout ? 10 : 14,
+    };
+  }, [compactMatchedLayout, insets.bottom, isDriver]);
+
+  const mapLoadingMessage = useMemo(() => {
+    const st = String(tagStatus || '').toLowerCase();
+    return st === 'in_progress' ? 'Yolculuk hazırlanıyor…' : 'Harita hazırlanıyor…';
+  }, [tagStatus]);
+
+  // Web fallback
+  if (Platform.OS === 'web' || !MapView) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.webFallback}>
+          <Ionicons name="map" size={64} color={themeColor} />
+          <Text style={styles.webFallbackText}>Harita sadece mobil uygulamada görüntülenebilir</Text>
+          {meetingDistance && (
+            <Text style={styles.distanceText}>
+              Buluşma: {meetingDistance.toFixed(1)} km • {meetingDuration} dk
+            </Text>
+          )}
+          {destinationDistance && (
+            <Text style={styles.destinationDistanceText}>
+              Hedefe: {destinationDistance.toFixed(1)} km • {destinationDuration} dk
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  /** Üst kart (~alış/hedef/yolcu satırları) + alt sheet yüksekliğine göre harita güvenli alanı */
+  const driverRideModernMapPadTop = Math.max(insets.top, 12) + 272;
+  const driverRideModernMapPadBottom = 262 + Math.max(insets.bottom, 12);
+  const driverRideModernLocateFabBottom = 268 + Math.max(insets.bottom, 10);
+  const driverTripTag = (driverYolcuyaGitCoordContext?.activeTag ?? null) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const driverPickupAddr = String(
+    driverTripTag?.pickup_location ?? driverTripTag?.pickup_address ?? '',
+  ).trim();
+  const driverDropoffAddr = String(
+    driverTripTag?.dropoff_location ??
+      driverTripTag?.dropoff_address ??
+      driverTripTag?.destination ??
+      '',
+  ).trim();
+  const driverNearPickupForQr =
+    driverRideUiModern &&
+    !boardingConfirmed &&
+    meetingDistance != null &&
+    Number.isFinite(meetingDistance) &&
+    meetingDistance <= 1.2;
+  /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
+  const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
+  const driverMatrixNavChipGradientColors = ui.ctaGradient;
+  const driverMatrixNavChipIconColor = ui.accent;
 
   const driverExternalMapsIconRow =
     isDriver && !driverNavImmersive ? (
@@ -6398,9 +6417,6 @@ export default function LiveMapView({
     destHasUiMetrics &&
     !destinationPolylineRoadReady;
 
-  const compactMatchedLayout =
-    IS_COMPACT_MATCHED_SCREEN && !driverNavImmersive && !driverRideUiModern;
-
   const matchedMeetingLegMode: MatchedRouteLegMode = showMeetingRouteCalculating
     ? 'calculating'
     : showMeetingRouteUnavailable
@@ -6432,24 +6448,8 @@ export default function LiveMapView({
 
   const driverNavImmersiveMapPaddingTopPx = Math.max(insets.top, 12) + 118;
 
-  const classicMatchedMapPadding = useMemo(() => {
-    const topBase = compactMatchedLayout ? 96 : 108;
-    const bottomBase = compactMatchedLayout ? 168 : 184;
-    return {
-      top: topBase,
-      right: compactMatchedLayout ? 10 : 14,
-      bottom: bottomBase + (!isDriver ? Math.max(insets.bottom, 0) : 0),
-      left: compactMatchedLayout ? 10 : 14,
-    };
-  }, [compactMatchedLayout, insets.bottom, isDriver]);
-
   const showMapLoadingOverlay =
     !driverRideUiModern && !driverNavImmersive && !mapTilesReady;
-
-  const mapLoadingMessage = useMemo(() => {
-    const st = String(tagStatus || '').toLowerCase();
-    return st === 'in_progress' ? 'Yolculuk hazırlanıyor…' : 'Harita hazırlanıyor…';
-  }, [tagStatus]);
 
   const routeValueStyle = [
     styles.routeValueModern,
