@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { useTheme } from '../hooks/useTheme';
+import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
@@ -35,6 +37,40 @@ export default function PassengerDriverForceEndReviewModal({
 }: PassengerDriverForceEndReviewModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const { isLight, tokens } = useTheme();
+  const isModalLight = lightThemeEnabled && isLight;
+
+  const lightStyles = useMemo(() => {
+    if (!isModalLight) return null;
+    const t = tokens;
+    return {
+      backdrop: { backgroundColor: t.shadow.modal },
+      iconOrb: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: 'rgba(217,119,6,0.32)',
+        borderTopColor: 'rgba(253,224,71,0.24)',
+      },
+      alertIconColor: t.status.warning,
+      guardianChip: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      chipIconColor: t.accent.secondary,
+      guardianChipText: { color: t.text.primary },
+      primaryBtn: {
+        backgroundColor: t.accent.primary,
+        borderColor: t.borderColors.selected,
+        borderTopColor: t.borderColors.selectedTop,
+      },
+      primaryBtnText: { color: t.text.inverse },
+      secondaryBtn: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      secondaryBtnText: { color: t.text.primary },
+    };
+  }, [isModalLight, tokens]);
 
   useEffect(() => {
     if (visible) {
@@ -70,7 +106,7 @@ export default function PassengerDriverForceEndReviewModal({
       onRequestClose={() => {}}
     >
       <View style={styles.overlay}>
-        <View style={[StyleSheet.absoluteFill, styles.backdrop]} />
+        <View style={[StyleSheet.absoluteFill, styles.backdrop, lightStyles?.backdrop]} />
         <Animated.View
           style={[
             styles.modalWrap,
@@ -82,14 +118,29 @@ export default function PassengerDriverForceEndReviewModal({
         >
           <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.modalContainer}>
             <View style={styles.iconContainer}>
-              <View style={styles.iconOrb}>
-                <Ionicons name="alert-circle-outline" size={32} color="rgba(253,224,71,0.92)" />
+              <View style={[styles.iconOrb, lightStyles?.iconOrb]}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={32}
+                  color={lightStyles?.alertIconColor ?? 'rgba(253,224,71,0.92)'}
+                />
               </View>
             </View>
 
-            <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-              <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.82)" />
-              <PremiumText variant="caption" style={styles.guardianChipText}>
+            <GlassSurface
+              variant="plain"
+              style={[styles.guardianChip, lightStyles?.guardianChip]}
+              borderRadius={LDS_RADIUS.full}
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={14}
+                color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.82)'}
+              />
+              <PremiumText
+                variant="caption"
+                style={[styles.guardianChipText, lightStyles?.guardianChipText]}
+              >
                 Bitiş onayı
               </PremiumText>
             </GlassSurface>
@@ -108,22 +159,26 @@ export default function PassengerDriverForceEndReviewModal({
 
             <View style={styles.buttonColumn}>
               <TouchableOpacity
-                style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                style={[styles.primaryBtn, lightStyles?.primaryBtn, submitting && styles.btnDisabled]}
                 onPress={() => void onConfirm()}
                 activeOpacity={0.88}
                 disabled={submitting}
               >
-                <PremiumText variant="body" style={styles.primaryBtnText}>
+                <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
                   {submitting ? 'Gönderiliyor…' : 'Onaylıyorum'}
                 </PremiumText>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+                style={[styles.secondaryBtn, lightStyles?.secondaryBtn, submitting && styles.btnDisabled]}
                 onPress={() => void onReject()}
                 activeOpacity={0.88}
                 disabled={submitting}
               >
-                <PremiumText variant="body" muted style={styles.secondaryBtnText}>
+                <PremiumText
+                  variant="body"
+                  muted={!isModalLight}
+                  style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+                >
                   {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
                 </PremiumText>
               </TouchableOpacity>

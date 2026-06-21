@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { useTheme } from '../hooks/useTheme';
+import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
@@ -47,6 +49,40 @@ export default function MutualTripEndReviewModal({
 }: MutualTripEndReviewModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const { isLight, tokens } = useTheme();
+  const isModalLight = lightThemeEnabled && isLight;
+
+  const lightStyles = useMemo(() => {
+    if (!isModalLight) return null;
+    const t = tokens;
+    return {
+      scrim: { backgroundColor: t.shadow.modal },
+      iconOrb: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      iconColor: t.accent.secondary,
+      guardianChip: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      chipIconColor: t.accent.secondary,
+      guardianChipText: { color: t.text.primary },
+      primaryBtn: {
+        backgroundColor: t.accent.primary,
+        borderColor: t.borderColors.selected,
+        borderTopColor: t.borderColors.selectedTop,
+      },
+      primaryBtnText: { color: t.text.inverse },
+      secondaryBtn: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      secondaryBtnText: { color: t.text.primary },
+    };
+  }, [isModalLight, tokens]);
 
   const bodyCopy = useMemo(() => resolveBodyCopy(requesterRole), [requesterRole]);
 
@@ -85,7 +121,7 @@ export default function MutualTripEndReviewModal({
     >
       <View style={styles.overlay}>
         <CockpitBackground showGrid={false} />
-        <View style={styles.scrim} pointerEvents="none" />
+        <View style={[styles.scrim, lightStyles?.scrim]} pointerEvents="none" />
         <Animated.View
           style={[
             styles.modalWrap,
@@ -97,14 +133,29 @@ export default function MutualTripEndReviewModal({
         >
           <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.modalContainer}>
             <View style={styles.iconContainer}>
-              <View style={styles.iconOrb}>
-                <Ionicons name="hand-left-outline" size={30} color="rgba(34,211,238,0.92)" />
+              <View style={[styles.iconOrb, lightStyles?.iconOrb]}>
+                <Ionicons
+                  name="hand-left-outline"
+                  size={30}
+                  color={lightStyles?.iconColor ?? 'rgba(34,211,238,0.92)'}
+                />
               </View>
             </View>
 
-            <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-              <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.82)" />
-              <PremiumText variant="caption" style={styles.guardianChipText}>
+            <GlassSurface
+              variant="plain"
+              style={[styles.guardianChip, lightStyles?.guardianChip]}
+              borderRadius={LDS_RADIUS.full}
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={14}
+                color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.82)'}
+              />
+              <PremiumText
+                variant="caption"
+                style={[styles.guardianChipText, lightStyles?.guardianChipText]}
+              >
                 Bitiş onayı
               </PremiumText>
             </GlassSurface>
@@ -123,22 +174,26 @@ export default function MutualTripEndReviewModal({
 
             <View style={styles.buttonColumn}>
               <TouchableOpacity
-                style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                style={[styles.primaryBtn, lightStyles?.primaryBtn, submitting && styles.btnDisabled]}
                 onPress={() => void onApprove()}
                 activeOpacity={0.88}
                 disabled={submitting}
               >
-                <PremiumText variant="body" style={styles.primaryBtnText}>
+                <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
                   {submitting ? 'Gönderiliyor…' : 'Onaylıyorum'}
                 </PremiumText>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+                style={[styles.secondaryBtn, lightStyles?.secondaryBtn, submitting && styles.btnDisabled]}
                 onPress={() => void onReject()}
                 activeOpacity={0.88}
                 disabled={submitting}
               >
-                <PremiumText variant="body" muted style={styles.secondaryBtnText}>
+                <PremiumText
+                  variant="body"
+                  muted={!isModalLight}
+                  style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+                >
                   {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
                 </PremiumText>
               </TouchableOpacity>

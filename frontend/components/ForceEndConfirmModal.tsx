@@ -2,7 +2,7 @@
  * ForceEndConfirmModal.tsx - Zorla bitir onay modalı
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/primitives';
+import { useTheme } from '../hooks/useTheme';
+import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_COLOR_ERROR, PREMIUM_AUTH_CYAN, PREMIUM_TEXT_SOFT } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -34,6 +36,50 @@ export default function ForceEndConfirmModal({
 }: ForceEndConfirmModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const { isLight, tokens } = useTheme();
+  const isModalLight = lightThemeEnabled && isLight;
+
+  const lightStyles = useMemo(() => {
+    if (!isModalLight) return null;
+    const t = tokens;
+    return {
+      backdrop: { backgroundColor: t.shadow.modal },
+      panel: {
+        backgroundColor: t.bg.elevated,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      iconShell: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      infoIconColor: t.accent.secondary,
+      guardianChip: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      chipIconColor: t.accent.secondary,
+      guardianChipText: { color: t.text.primary },
+      title: { color: t.text.primary },
+      riskPanel: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      cancelButton: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      cancelButtonText: { color: t.text.primary },
+      confirmButton: {
+        backgroundColor: 'rgba(220,38,38,0.08)',
+        borderColor: 'rgba(220,38,38,0.28)',
+        borderTopColor: 'rgba(220,38,38,0.18)',
+      },
+      confirmIconColor: t.status.error,
+      confirmButtonText: { color: t.status.error },
+    };
+  }, [isModalLight, tokens]);
 
   useEffect(() => {
     if (visible) {
@@ -73,7 +119,7 @@ export default function ForceEndConfirmModal({
     >
       <View style={styles.overlay}>
         <CockpitBackground />
-        <View style={[StyleSheet.absoluteFill, styles.backdrop]} />
+        <View style={[StyleSheet.absoluteFill, styles.backdrop, lightStyles?.backdrop]} />
 
         <TouchableOpacity
           style={styles.backdropTouchable}
@@ -90,23 +136,38 @@ export default function ForceEndConfirmModal({
             },
           ]}
         >
-          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={styles.panel}>
+          <GlassSurface variant="panel" borderRadius={LDS_RADIUS.xl} style={[styles.panel, lightStyles?.panel]}>
             <GlassSurface
               variant="plain"
               borderRadius={LDS_RADIUS.full}
-              style={styles.iconShell}
+              style={[styles.iconShell, lightStyles?.iconShell]}
             >
-              <Ionicons name="information-circle-outline" size={40} color={PREMIUM_AUTH_CYAN} />
+              <Ionicons
+                name="information-circle-outline"
+                size={40}
+                color={lightStyles?.infoIconColor ?? PREMIUM_AUTH_CYAN}
+              />
             </GlassSurface>
 
-            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.full} style={styles.guardianChip}>
-              <Ionicons name="shield-checkmark-outline" size={14} color="rgba(34,211,238,0.82)" />
-              <PremiumText variant="caption" style={styles.guardianChipText}>
+            <GlassSurface
+              variant="plain"
+              borderRadius={LDS_RADIUS.full}
+              style={[styles.guardianChip, lightStyles?.guardianChip]}
+            >
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={14}
+                color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.82)'}
+              />
+              <PremiumText
+                variant="caption"
+                style={[styles.guardianChipText, lightStyles?.guardianChipText]}
+              >
                 Bitiş onayı
               </PremiumText>
             </GlassSurface>
 
-            <PremiumText variant="title" style={styles.title}>
+            <PremiumText variant="title" style={[styles.title, lightStyles?.title]}>
               Zorla bitir
             </PremiumText>
 
@@ -117,7 +178,11 @@ export default function ForceEndConfirmModal({
               QR ile tamamlamak her zaman önceliklidir.
             </PremiumText>
 
-            <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.riskPanel}>
+            <GlassSurface
+              variant="plain"
+              borderRadius={LDS_RADIUS.md}
+              style={[styles.riskPanel, lightStyles?.riskPanel]}
+            >
               <PremiumText variant="caption" muted style={styles.riskPanelText}>
                 Bu işlem değerlendirme sonucunu etkileyebilir.
               </PremiumText>
@@ -129,8 +194,16 @@ export default function ForceEndConfirmModal({
                 onPress={onClose}
                 activeOpacity={0.88}
               >
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.cancelButton}>
-                  <PremiumText variant="body" muted style={styles.cancelButtonText}>
+                <GlassSurface
+                  variant="plain"
+                  borderRadius={LDS_RADIUS.md}
+                  style={[styles.cancelButton, lightStyles?.cancelButton]}
+                >
+                  <PremiumText
+                    variant="body"
+                    muted={!isModalLight}
+                    style={[styles.cancelButtonText, lightStyles?.cancelButtonText]}
+                  >
                     Vazgeç
                   </PremiumText>
                 </GlassSurface>
@@ -141,9 +214,17 @@ export default function ForceEndConfirmModal({
                 onPress={handleConfirm}
                 activeOpacity={0.88}
               >
-                <GlassSurface variant="plain" borderRadius={LDS_RADIUS.md} style={styles.confirmButton}>
-                  <Ionicons name="close-circle-outline" size={20} color="rgba(252,165,165,0.96)" />
-                  <PremiumText variant="body" style={styles.confirmButtonText}>
+                <GlassSurface
+                  variant="plain"
+                  borderRadius={LDS_RADIUS.md}
+                  style={[styles.confirmButton, lightStyles?.confirmButton]}
+                >
+                  <Ionicons
+                    name="close-circle-outline"
+                    size={20}
+                    color={lightStyles?.confirmIconColor ?? 'rgba(252,165,165,0.96)'}
+                  />
+                  <PremiumText variant="body" style={[styles.confirmButtonText, lightStyles?.confirmButtonText]}>
                     Yine de zorla bitir
                   </PremiumText>
                 </GlassSurface>

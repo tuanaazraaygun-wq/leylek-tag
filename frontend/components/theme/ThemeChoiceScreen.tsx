@@ -34,9 +34,8 @@ type ThemeChoiceOption = {
 };
 
 const OPTIONS: ThemeChoiceOption[] = [
-  { mode: 'dark', label: 'Karanlık Tema', caption: 'Koyu kokpit görünümü', accessibilityLabel: 'Karanlık tema' },
-  { mode: 'light', label: 'Aydınlık Tema', caption: 'Aydınlık görünüm', accessibilityLabel: 'Aydınlık tema' },
-  { mode: 'system', label: 'Sistem temasını kullan', caption: 'Cihazınla aynı', accessibilityLabel: 'Sistem teması' },
+  { mode: 'dark', label: 'Black', caption: 'Koyu kokpit görünümü', accessibilityLabel: 'Black tema' },
+  { mode: 'light', label: 'White', caption: 'Aydınlık premium görünüm', accessibilityLabel: 'White tema' },
 ];
 
 function previewResolved(mode: ThemeMode, systemScheme: ColorSchemeName | null | undefined): ResolvedTheme {
@@ -118,10 +117,10 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
 
           <View style={styles.header} accessibilityRole="header">
             <ThemedText tokens={tokens} variant="title">
-              LeylekTAG görünümünü seç
+              Hangi temayı kullanmak istersiniz?
             </ThemedText>
             <ThemedText tokens={tokens} variant="subtitle">
-              İstersen daha sonra ayarlardan değiştirebilirsin
+              Daha sonra Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.
             </ThemedText>
           </View>
 

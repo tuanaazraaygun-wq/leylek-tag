@@ -17,6 +17,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSurface, PremiumText } from '../design-system/primitives';
+import { useTheme } from '../hooks/useTheme';
+import { lightThemeEnabled } from '../lib/featureFlags';
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_COLOR_ERROR } from '../design-system/tokens/color';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
@@ -141,6 +143,8 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<AlertQueueItem[]>([]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { isLight, tokens } = useTheme();
+  const isAlertLight = lightThemeEnabled && isLight;
   const cardMax = Math.min(360, width - LDS_SPACING.xl);
 
   const enqueue = useCallback((item: AlertQueueItem) => {
@@ -171,6 +175,85 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
   const toneMeta = useMemo(() => toneAccentMeta(effectiveTone), [effectiveTone]);
 
   const titleColor = useMemo(() => titleColorForTone(effectiveTone), [effectiveTone]);
+
+  const lightStyles = useMemo(() => {
+    if (!isAlertLight) return null;
+    const t = tokens;
+    return {
+      overlay: { backgroundColor: t.shadow.modal },
+      toneIconOrb: { backgroundColor: t.bg.glassMuted },
+      guardianChip: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+        borderTopColor: t.borderColors.cardTopCyan,
+      },
+      chipIconColor: t.accent.secondary,
+      guardianChipText: { color: t.text.primary },
+      btnPrimaryTouchable: {
+        backgroundColor: t.accent.primary,
+        borderColor: t.borderColors.selected,
+        borderTopColor: t.borderColors.selectedTop,
+      },
+      btnPrimaryText: { color: t.text.inverse },
+      btnCancelTouchable: {
+        backgroundColor: t.bg.glassMuted,
+        borderColor: t.border.default,
+      },
+      btnCancelText: { color: t.text.primary },
+      btnDestructiveTouchable: {
+        backgroundColor: 'rgba(220,38,38,0.08)',
+        borderColor: 'rgba(220,38,38,0.28)',
+        borderTopColor: 'rgba(220,38,38,0.18)',
+      },
+      btnDestructiveText: { color: t.status.error },
+    };
+  }, [isAlertLight, tokens]);
+
+  const displayToneMeta = useMemo(() => {
+    if (!isAlertLight) return toneMeta;
+    const t = tokens;
+    switch (effectiveTone) {
+      case 'success':
+        return {
+          ...toneMeta,
+          subtleBorder: 'rgba(5,150,105,0.35)',
+          iconColor: t.status.success,
+        };
+      case 'warning':
+        return {
+          ...toneMeta,
+          subtleBorder: 'rgba(217,119,6,0.35)',
+          iconColor: t.status.warning,
+        };
+      case 'error':
+        return {
+          ...toneMeta,
+          subtleBorder: 'rgba(220,38,38,0.35)',
+          iconColor: t.status.error,
+        };
+      default:
+        return {
+          ...toneMeta,
+          subtleBorder: t.borderColors.cardTopCyan,
+          iconColor: t.accent.secondary,
+        };
+    }
+  }, [isAlertLight, toneMeta, effectiveTone, tokens]);
+
+  const displayTitleColor = useMemo(() => {
+    if (!isAlertLight) return titleColor;
+    const t = tokens;
+    switch (effectiveTone) {
+      case 'success':
+        return t.status.success;
+      case 'warning':
+        return t.status.warning;
+      case 'error':
+        return t.status.error;
+      default:
+        return t.text.primary;
+    }
+  }, [isAlertLight, titleColor, effectiveTone, tokens]);
 
   useEffect(() => {
     const ms = typeof autoDismissMs === 'number' && autoDismissMs > 0 ? autoDismissMs : 0;
@@ -215,7 +298,7 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
         }}
       >
         <Pressable
-          style={styles.overlay}
+          style={[styles.overlay, lightStyles?.overlay]}
           onPress={() => {
             if (cancelable) closeCurrent();
           }}
@@ -234,20 +317,37 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
             <GlassSurface
               variant="panel"
               borderRadius={LDS_RADIUS.xl}
-              style={[styles.card, { borderLeftColor: toneMeta.subtleBorder }]}
+              style={[styles.card, { borderLeftColor: displayToneMeta.subtleBorder }]}
             >
               <View style={styles.toneRow}>
-                <View style={[styles.toneIconOrb, { borderColor: toneMeta.subtleBorder }]}>
-                  <Ionicons name={toneMeta.iconName} size={22} color={toneMeta.iconColor} />
+                <View
+                  style={[
+                    styles.toneIconOrb,
+                    { borderColor: displayToneMeta.subtleBorder },
+                    lightStyles?.toneIconOrb,
+                  ]}
+                >
+                  <Ionicons name={displayToneMeta.iconName} size={22} color={displayToneMeta.iconColor} />
                 </View>
                 <View style={styles.titleCol}>
-                  <GlassSurface variant="plain" style={styles.guardianChip} borderRadius={LDS_RADIUS.full}>
-                    <Ionicons name="shield-checkmark-outline" size={13} color="rgba(34,211,238,0.82)" />
-                    <PremiumText variant="caption" style={styles.guardianChipText}>
-                      {toneMeta.chipLabel}
+                  <GlassSurface
+                    variant="plain"
+                    style={[styles.guardianChip, lightStyles?.guardianChip]}
+                    borderRadius={LDS_RADIUS.full}
+                  >
+                    <Ionicons
+                      name="shield-checkmark-outline"
+                      size={13}
+                      color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.82)'}
+                    />
+                    <PremiumText
+                      variant="caption"
+                      style={[styles.guardianChipText, lightStyles?.guardianChipText]}
+                    >
+                      {displayToneMeta.chipLabel}
                     </PremiumText>
                   </GlassSurface>
-                  <PremiumText variant="title" style={[styles.title, { color: titleColor }]}>
+                  <PremiumText variant="title" style={[styles.title, { color: displayTitleColor }]}>
                     {current.title}
                   </PremiumText>
                 </View>
@@ -274,8 +374,11 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                         style={[
                           styles.btnTouchable,
                           isPrimary && styles.btnPrimaryTouchable,
+                          isPrimary && lightStyles?.btnPrimaryTouchable,
                           isCancel && styles.btnCancelTouchable,
+                          isCancel && lightStyles?.btnCancelTouchable,
                           isDest && styles.btnDestructiveTouchable,
+                          isDest && lightStyles?.btnDestructiveTouchable,
                         ]}
                         onPress={async () => {
                           try {
@@ -287,11 +390,14 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
                       >
                         <PremiumText
                           variant="body"
-                          muted={isCancel}
+                          muted={isCancel && !isAlertLight}
                           style={[
                             styles.btnTextBase,
                             isPrimary && styles.btnPrimaryText,
+                            isPrimary && lightStyles?.btnPrimaryText,
+                            isCancel && lightStyles?.btnCancelText,
                             isDest && styles.btnDestructiveText,
+                            isDest && lightStyles?.btnDestructiveText,
                           ]}
                           numberOfLines={2}
                         >
