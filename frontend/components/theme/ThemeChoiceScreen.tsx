@@ -1,48 +1,52 @@
 /**
  * First-run theme choice — B3-3.
- * Preview is component-local; app theme unchanged until CTA (lightThemeEnabled may still force dark resolve).
+ * Black / White only; tap applies theme immediately; Continue marks one-time done.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Image,
   Pressable,
   StyleSheet,
   Text,
   View,
-  useColorScheme,
   useWindowDimensions,
-  type ColorSchemeName,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumGradientCtaButton } from '../auth/premiumAuthChrome';
 import { useTheme } from '../../hooks/useTheme';
 import { buildThemeTokens } from '../../lib/theme/buildTheme';
-import { completeThemeChoice } from '../../lib/theme/themeChoiceGate';
-import type { LhThemeTokens, ResolvedTheme, ThemeMode } from '../../lib/theme/types';
+import { finishThemeChoiceOnContinue } from '../../lib/theme/themeChoiceGate';
+import type { LhThemeTokens, ThemeMode } from '../../lib/theme/types';
 import { tapButtonHaptic } from '../../utils/touchHaptics';
 import * as Haptics from 'expo-haptics';
 
 const LOGO = require('../../assets/images/leylek-logo-premium.png');
 
+type FirstRunThemeMode = 'dark' | 'light';
+
 type ThemeChoiceOption = {
-  mode: ThemeMode;
+  mode: FirstRunThemeMode;
   label: string;
   caption: string;
   accessibilityLabel: string;
 };
 
 const OPTIONS: ThemeChoiceOption[] = [
-  { mode: 'dark', label: 'Black', caption: 'Koyu kokpit görünümü', accessibilityLabel: 'Black tema' },
-  { mode: 'light', label: 'White', caption: 'Aydınlık premium görünüm', accessibilityLabel: 'White tema' },
+  {
+    mode: 'dark',
+    label: 'Black',
+    caption: 'Premium gece kokpiti — varsayılan',
+    accessibilityLabel: 'Black tema',
+  },
+  {
+    mode: 'light',
+    label: 'White',
+    caption: 'Gündüz kullanım için aydınlık görünüm',
+    accessibilityLabel: 'White tema',
+  },
 ];
-
-function previewResolved(mode: ThemeMode, systemScheme: ColorSchemeName | null | undefined): ResolvedTheme {
-  if (mode === 'light') return 'light';
-  if (mode === 'dark') return 'dark';
-  return systemScheme === 'light' ? 'light' : 'dark';
-}
 
 async function themeCardHaptic(): Promise<void> {
   try {
@@ -60,32 +64,32 @@ export type ThemeChoiceScreenProps = {
 export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScreenProps) {
   const insets = useSafeAreaInsets();
   const { width: winW } = useWindowDimensions();
-  const deviceScheme = useColorScheme();
-  const { setTheme } = useTheme();
+  const { setTheme, tokens, themeMode } = useTheme();
 
-  const [selectedMode, setSelectedMode] = useState<ThemeMode>('dark');
-  const [busy, setBusy] = useState(false);
-
-  const previewTheme = useMemo(
-    () => previewResolved(selectedMode, deviceScheme),
-    [selectedMode, deviceScheme],
+  const [selectedMode, setSelectedMode] = useState<FirstRunThemeMode>(() =>
+    themeMode === 'light' ? 'light' : 'dark',
   );
-  const tokens = useMemo(() => buildThemeTokens(previewTheme), [previewTheme]);
+  const [busy, setBusy] = useState(false);
 
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
   const columnW = Math.min(400, winW - padH * 2);
 
-  const handleSelect = useCallback((mode: ThemeMode) => {
-    void themeCardHaptic();
-    setSelectedMode(mode);
-  }, []);
+  const handleSelect = useCallback(
+    (mode: FirstRunThemeMode) => {
+      void themeCardHaptic();
+      setSelectedMode(mode);
+      void setTheme(mode);
+    },
+    [setTheme],
+  );
 
   const handleContinue = useCallback(async () => {
     if (busy) return;
     setBusy(true);
     try {
       void tapButtonHaptic();
-      await completeThemeChoice(userId, selectedMode, setTheme);
+      await setTheme(selectedMode);
+      await finishThemeChoiceOnContinue(userId);
       onComplete();
     } finally {
       setBusy(false);
@@ -117,7 +121,7 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
 
           <View style={styles.header} accessibilityRole="header">
             <ThemedText tokens={tokens} variant="title">
-              Hangi temayı kullanmak istersiniz?
+              LeylekTAG'i Black tema ile gece, White tema ile gündüz rahat kullanabilirsiniz.
             </ThemedText>
             <ThemedText tokens={tokens} variant="subtitle">
               Daha sonra Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.
@@ -127,7 +131,7 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
           <View style={styles.cardList} accessibilityRole="radiogroup" accessibilityLabel="Tema seçenekleri">
             {OPTIONS.map((option) => {
               const selected = selectedMode === option.mode;
-              const optionPreview = buildThemeTokens(previewResolved(option.mode, deviceScheme));
+              const optionPreview = buildThemeTokens(option.mode);
               return (
                 <Pressable
                   key={option.mode}
@@ -173,10 +177,10 @@ export default function ThemeChoiceScreen({ userId, onComplete }: ThemeChoiceScr
 
           <View style={styles.ctaWrap}>
             <PremiumGradientCtaButton
-              label="Bu temayla devam et"
+              label="Devam et"
               busy={busy}
               onPress={() => void handleContinue()}
-              accessibilityLabel="Bu temayla devam et"
+              accessibilityLabel="Devam et"
             />
           </View>
         </View>
@@ -216,8 +220,8 @@ const styles = StyleSheet.create({
   column: { flex: 1, alignSelf: 'center', alignItems: 'stretch' },
   logo: { width: 80, height: 80, alignSelf: 'center', marginTop: 8, marginBottom: 16 },
   header: { marginBottom: 20, alignItems: 'center' },
-  titleText: { fontSize: 22, fontWeight: '700', textAlign: 'center', letterSpacing: 0.2 },
-  subtitleText: { fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  titleText: { fontSize: 20, fontWeight: '700', textAlign: 'center', letterSpacing: 0.2, lineHeight: 28 },
+  subtitleText: { fontSize: 14, textAlign: 'center', marginTop: 10, lineHeight: 20 },
   cardList: { gap: 12, flexGrow: 1 },
   card: {
     borderRadius: 18,

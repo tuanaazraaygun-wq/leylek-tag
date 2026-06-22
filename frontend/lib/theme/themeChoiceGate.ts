@@ -39,6 +39,24 @@ export async function maybeNavigateToThemeChoice(
   return true;
 }
 
+/** Post-auth landing — theme education first (once), else role-select. No role-select flash. */
+export async function navigateToPostAuthLanding(
+  userId: string | null | undefined,
+  setScreen: (screen: 'theme-choice' | 'role-select') => void,
+): Promise<void> {
+  if (userId && themeChoiceEnabled) {
+    const navigated = await maybeNavigateToThemeChoice(userId, setScreen);
+    if (navigated) return;
+  }
+  setScreen('role-select');
+}
+
+/** Continue CTA — theme already applied on card tap; persist one-time done flag only. */
+export async function finishThemeChoiceOnContinue(userId?: string | null | undefined): Promise<void> {
+  await markThemeChoiceDone(userId);
+}
+
+/** @deprecated Prefer tap-to-apply + finishThemeChoiceOnContinue on Continue. */
 export async function completeThemeChoice(
   userId: string | null | undefined,
   mode: ThemeMode,

@@ -13,8 +13,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
-import { themeChoiceEnabled } from '../lib/featureFlags';
-import { maybeNavigateToThemeChoice } from '../lib/theme/themeChoiceGate';
+import { navigateToPostAuthLanding } from '../lib/theme/themeChoiceGate';
 import ThemeChoiceScreen from '../components/theme/ThemeChoiceScreen';
 import LiveMapView from '../components/LiveMapView';
 import TestFlightDebugPanel from '../components/TestFlightDebugPanel';
@@ -2076,10 +2075,7 @@ export default function App() {
             setShowAdminPanel(true);
             setScreen('role-select');
           } else {
-            setScreen('role-select');
-          }
-          if (legalWasAccepted && themeChoiceEnabled) {
-            await maybeNavigateToThemeChoice(parsedUser.id, setScreen);
+            await navigateToPostAuthLanding(parsedUser.id, setScreen);
           }
         }
 
@@ -2288,24 +2284,22 @@ export default function App() {
     }
   };
 
+  /** OTP/KVKK login path — persisted session counts as legal accepted for post-auth routing. */
+  const markLoginLegalAccepted = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem('legal_accepted', 'true');
+    } catch {
+      /* ignore */
+    }
+    setLegalAccepted(true);
+  }, []);
+
   const landOnRoleSelectWithThemeChoice = useCallback(
     async (userId: string) => {
       sessionResumeProbedRef.current = true;
-      setScreen('role-select');
-      let legalOk = legalAccepted;
-      try {
-        legalOk = (await AsyncStorage.getItem('legal_accepted')) === 'true';
-      } catch {
-        /* keep legalAccepted state */
-      }
-      if (legalOk) {
-        setLegalAccepted(true);
-      }
-      if (legalOk && themeChoiceEnabled) {
-        await maybeNavigateToThemeChoice(userId, setScreen);
-      }
+      await navigateToPostAuthLanding(userId, setScreen);
     },
-    [legalAccepted, setScreen],
+    [setScreen],
   );
 
   const persistAccessTokenAndRefreshUser = async (payload: TokenPayload, userId?: string | null) => {
@@ -2416,10 +2410,7 @@ export default function App() {
       } catch (e) {
         console.warn('Legal accept restore:', e);
       }
-      if (themeChoiceEnabled) {
-        const navigated = await maybeNavigateToThemeChoice(user.id, setScreen);
-        if (navigated) return;
-      }
+      await navigateToPostAuthLanding(user.id, setScreen);
     }
   };
 
@@ -2792,6 +2783,7 @@ export default function App() {
           const savedUser = await saveUser(loggedUser);
 
           await persistAccessTokenAndRefreshUser(data as TokenPayload, loggedUser?.id);
+          await markLoginLegalAccepted();
 
           const sb = getSupabase();
           if (sb && __DEV__) {
@@ -2852,6 +2844,7 @@ export default function App() {
                 }
 
                 await afterAuthAccessTokenPersisted(registerData.user.id);
+                await markLoginLegalAccepted();
                 appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
                 ]);
@@ -2983,7 +2976,8 @@ export default function App() {
         console.log('USER_SAVED', data.user);
         await persistAccessTokenAndRefreshUser(data as TokenPayload, data.user?.id);
         await afterAuthAccessTokenPersisted(data.user?.id);
-        setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
+        await markLoginLegalAccepted();
+        await navigateToPostAuthLanding(data.user?.id, setScreen);
       } else {
         appAlert('Hata', data.detail || 'Kayıt oluşturulamadı');
       }
@@ -3514,6 +3508,7 @@ export default function App() {
             }
             await persistAccessTokenAndRefreshUser(setPinData as TokenPayload, user?.id);
             await afterAuthAccessTokenPersisted(user?.id);
+            await markLoginLegalAccepted();
             appAlert(
               'Kayıt Başarılı',
               'Hesabınız hazır. PIN kodunuzu kimseyle paylaşmayın.',
@@ -3551,6 +3546,7 @@ export default function App() {
           console.log('USER_SAVED', registerData.user);
           await persistAccessTokenAndRefreshUser(registerData as TokenPayload, registerData.user.id);
           await afterAuthAccessTokenPersisted(registerData.user.id);
+          await markLoginLegalAccepted();
           appAlert(
             'Kayıt Başarılı',
             'Hesabınız oluşturuldu. PIN kodunuzu kimseyle paylaşmayın.',
@@ -3721,6 +3717,7 @@ export default function App() {
           console.log('USER_SAVED', data.user);
           await persistAccessTokenAndRefreshUser(data as TokenPayload, savedUser?.id);
           await afterAuthAccessTokenPersisted(savedUser?.id);
+          await markLoginLegalAccepted();
           const cleanPhone = (savedUser.phone || phone || '').replace(/\D/g, '');
           const isMainAdmin =
             cleanPhone === '5326497412' ||
