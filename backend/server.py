@@ -600,10 +600,19 @@ def _muhabbet_room_peer_count(room: str) -> int:
 async def connect(sid, environ):
     logger.debug("SOCKET_CONNECTED sid=%s", _mask_log_sid(sid))
     _pi = (environ or {}).get("PATH_INFO") or ""
+    _qs = (environ or {}).get("QUERY_STRING") or ""
+    _transport = "unknown"
+    for _part in str(_qs).split("&"):
+        if _part.startswith("transport="):
+            _transport = _part.split("=", 1)[-1][:32] or "unknown"
+            break
+    _ua = str((environ or {}).get("HTTP_USER_AGENT") or "")[:80]
     logger.info(
-        "SOCKET_CONNECT sid=%s path_info=%s (nginx /socket.io/ → bu süreç olmalı; /api ile karıştırma)",
+        "SOCKET_CONNECT sid=%s transport=%s path_info=%s user_agent=%s",
         _mask_log_sid(sid),
+        _transport,
         _pi[:160],
+        _ua or "n/a",
     )
     logger.info("🔌 Socket bağlandı: %s", _mask_log_sid(sid))
     logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
@@ -737,14 +746,17 @@ async def register(sid, data):
     if not isinstance(data, dict):
         data = {}
     client_declares_uid = str(data.get("user_id") or "").strip()
+    token = (data.get("token") or "").strip()
+    role = data.get("role")
     logger.info(
-        "SOCKET_REGISTER_ATTEMPT sid=%s client_declares_user_id=%s role=%s",
+        "SOCKET_REGISTER_ATTEMPT sid=%s raw_user_id=%s has_token=%s role=%s",
         _mask_log_sid(sid),
         _mask_log_id(client_declares_uid) if client_declares_uid else None,
-        (data.get("role") if isinstance(data, dict) else None),
+        bool(token),
+        role,
     )
-    token = (data.get("token") or "").strip()
     if not token:
+        logger.warning("SOCKET_REGISTER_FAIL sid=%s reason=%s", _mask_log_sid(sid), "missing_token")
         logger.warning("Socket register reddedildi sid=%s: token yok", _mask_log_sid(sid))
         try:
             await sio.emit(
@@ -759,6 +771,7 @@ async def register(sid, data):
 
     authed_uid = verify_access_token(token)
     if not authed_uid:
+        logger.warning("SOCKET_REGISTER_FAIL sid=%s reason=%s", _mask_log_sid(sid), "invalid_token")
         logger.warning("Socket register reddedildi sid=%s: geçersiz token", _mask_log_sid(sid))
         try:
             await sio.emit(
@@ -771,7 +784,6 @@ async def register(sid, data):
         await sio.disconnect(sid)
         return
 
-    role = data.get("role")
     raw = str(authed_uid).strip()
     try:
         resolved_uid = await resolve_user_id(raw)
@@ -836,6 +848,12 @@ async def register(sid, data):
     except Exception:
         _rc = -1
     logger.info("SOCKET_JOIN_ROOM sid=%s room=%s room_member_count=%s", _mask_log_sid(sid), _mask_log_room(room_name), _rc)
+    logger.info(
+        "SOCKET_REGISTER_ACK sid=%s user_id=%s room=%s",
+        _mask_log_sid(sid),
+        _mask_log_id(resolved_uid),
+        _mask_log_room(room_name),
+    )
 
     _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
     logger.info(
@@ -3852,6 +3870,19 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         room = _normalize_user_room(str(resolved_uid or canonical_lo))
         sid_count = len(all_sids)
         room_member_count = _socketio_room_member_count(room)
+        _resolved_log_id = (
+            _mask_log_id(str(resolved_uid or canonical_lo).strip())
+            if (resolved_uid or canonical_lo)
+            else "n/a"
+        )
+        logger.info(
+            "TARGET_SID_COUNT event=%s user_id=%s sid_count=%s room=%s room_member_count=%s",
+            event_name,
+            _resolved_log_id,
+            sid_count,
+            _mask_log_room(room),
+            room_member_count,
+        )
         _resolve_ms = (time.monotonic() - _t_resolve) * 1000.0
         payload_dict = payload if isinstance(payload, dict) else {}
         call_id = payload_dict.get("call_id")
@@ -3909,20 +3940,12 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             ),
         )
         if room_member_count == 0 and sid_count == 0:
-            if offer_routine:
-                logger.debug(
-                    "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
-                    event_name,
-                    _mask_log_id(canonical_lo),
-                    _mask_log_room(room),
-                )
-            else:
-                logger.warning(
-                    "[socket_emit_user] sid_empty event=%s user=%s room=%s — yalnız oda denemesi",
-                    event_name,
-                    _mask_log_id(canonical_lo),
-                    _mask_log_room(room),
-                )
+            logger.warning(
+                "socket_emit_user sid_empty event=%s user_id=%s room=%s",
+                event_name,
+                _resolved_log_id,
+                _mask_log_room(room),
+            )
             _log_timing_safe(
                 "SOCKET_EMIT_NO_TARGET",
                 log_level=emit_timing_level,
@@ -3937,6 +3960,12 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         except Exception as em:
             logger.warning("%s emit room=%s err=%s", event_name, _mask_log_room(room), em)
         _emit_ms = (time.monotonic() - _t_emit) * 1000.0
+        logger.info(
+            "SOCKET_EMIT_DONE event=%s user_id=%s room=%s",
+            event_name,
+            _resolved_log_id,
+            _mask_log_room(room),
+        )
 
         if room_member_count == 0 and sid_count > 0:
             for sid in sorted(all_sids):
@@ -20334,10 +20363,22 @@ async def start_call(
             }
             if request.tag_id:
                 incoming_payload["tag_id"] = request.tag_id
+            logger.info(
+                "CALL_EMIT_PRE call_id=%s caller_id=%s receiver_id=%s tag_id=%s",
+                _short_log_id(call_id),
+                _mask_log_id(caller_resolved),
+                _mask_log_id(receiver_id),
+                _short_log_id(request.tag_id) if request.tag_id else "n/a",
+            )
             try:
                 _t_emit = time.monotonic()
                 await emit_socket_event_to_user(str(receiver_id).strip(), "incoming_call", incoming_payload)
                 _voice_emit_ms = (time.monotonic() - _t_emit) * 1000.0
+                logger.info(
+                    "CALL_EMIT_DONE call_id=%s receiver_id=%s",
+                    _short_log_id(call_id),
+                    _mask_log_id(receiver_id),
+                )
                 logger.info("📲 incoming_call → target_user_id=%s", _mask_log_id(receiver_id))
             except Exception as _ice2:
                 logger.warning(f"⚠️ incoming_call emit_socket_event_to_user: {_ice2}")
