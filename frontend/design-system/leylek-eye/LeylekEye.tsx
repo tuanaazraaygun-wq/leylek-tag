@@ -40,6 +40,7 @@ export type LeylekEyeProps = {
 
 const LeylekEyeSvg = function LeylekEyeSvg({
   viewSize,
+  themeVariant = 'dark',
   lookTranslateX,
   lookTranslateY,
   pupilExtraTranslateX,
@@ -47,19 +48,32 @@ const LeylekEyeSvg = function LeylekEyeSvg({
   eyelidLowerTranslateY,
 }: {
   viewSize: number;
+  themeVariant?: LeylekEyeThemeVariant;
   lookTranslateX: Animated.AnimatedInterpolation<number>;
   lookTranslateY: Animated.AnimatedInterpolation<number>;
   pupilExtraTranslateX: Animated.AnimatedInterpolation<number>;
   eyelidUpperTranslateY: Animated.AnimatedInterpolation<number>;
   eyelidLowerTranslateY: Animated.AnimatedInterpolation<number>;
 }) {
+  const isLight = themeVariant === 'light';
+
   return (
     <Svg width={viewSize} height={viewSize} viewBox="0 0 100 100">
       <Defs>
         <RadialGradient id="leylekSclera" cx="46%" cy="42%" rx="58%" ry="54%">
-          <Stop offset="0%" stopColor="#A8BDD0" />
-          <Stop offset="48%" stopColor="#7A94AA" />
-          <Stop offset="100%" stopColor="#4A6278" />
+          {isLight ? (
+            <>
+              <Stop offset="0%" stopColor="#D8E4EE" />
+              <Stop offset="48%" stopColor="#B8CAD8" />
+              <Stop offset="100%" stopColor="#8FA3B4" />
+            </>
+          ) : (
+            <>
+              <Stop offset="0%" stopColor="#A8BDD0" />
+              <Stop offset="48%" stopColor="#7A94AA" />
+              <Stop offset="100%" stopColor="#4A6278" />
+            </>
+          )}
         </RadialGradient>
         <RadialGradient id="leylekIris" cx="38%" cy="36%" rx="62%" ry="62%">
           <Stop offset="0%" stopColor="#38BDD4" />
@@ -69,12 +83,12 @@ const LeylekEyeSvg = function LeylekEyeSvg({
         </RadialGradient>
         <RadialGradient id="leylekIrisRing" cx="50%" cy="50%" rx="50%" ry="50%">
           <Stop offset="72%" stopColor="transparent" />
-          <Stop offset="88%" stopColor="rgba(6,78,96,0.55)" />
-          <Stop offset="100%" stopColor="rgba(4,52,64,0.75)" />
+          <Stop offset="88%" stopColor={isLight ? 'rgba(13,148,136,0.35)' : 'rgba(6,78,96,0.55)'} />
+          <Stop offset="100%" stopColor={isLight ? 'rgba(15,118,110,0.45)' : 'rgba(4,52,64,0.75)'} />
         </RadialGradient>
         <SvgLinearGradient id="leylekSocketShade" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor="rgba(8,17,31,0)" />
-          <Stop offset="100%" stopColor="rgba(8,17,31,0.35)" />
+          <Stop offset="0%" stopColor={isLight ? 'rgba(13,148,136,0)' : 'rgba(8,17,31,0)'} />
+          <Stop offset="100%" stopColor={isLight ? 'rgba(15,23,42,0.10)' : 'rgba(8,17,31,0.35)'} />
         </SvgLinearGradient>
       </Defs>
 
@@ -87,7 +101,7 @@ const LeylekEyeSvg = function LeylekEyeSvg({
         rx="44"
         ry="40"
         fill="none"
-        stroke="rgba(34,211,238,0.12)"
+        stroke={isLight ? 'rgba(13,148,136,0.18)' : 'rgba(34,211,238,0.12)'}
         strokeWidth="0.85"
       />
 
@@ -99,30 +113,37 @@ const LeylekEyeSvg = function LeylekEyeSvg({
       >
         <Circle cx="50" cy="51" r="20" fill="url(#leylekIris)" />
         <Circle cx="50" cy="51" r="20" fill="url(#leylekIrisRing)" />
-        <Circle cx="50" cy="51" r="20" fill="none" stroke="rgba(4,52,64,0.45)" strokeWidth="0.9" />
+        <Circle
+          cx="50"
+          cy="51"
+          r="20"
+          fill="none"
+          stroke={isLight ? 'rgba(15,118,110,0.32)' : 'rgba(4,52,64,0.45)'}
+          strokeWidth="0.9"
+        />
         <AnimatedG transform={[{ translateX: pupilExtraTranslateX }]}>
-          <Circle cx="50" cy="51" r="8.4" fill="#030810" />
-          <Ellipse cx="43.8" cy="44.8" rx="3.2" ry="2.1" fill="rgba(255,255,255,0.55)" />
+          <Circle cx="50" cy="51" r="8.4" fill={isLight ? '#0F172A' : '#030810'} />
+          <Ellipse cx="43.8" cy="44.8" rx="3.2" ry="2.1" fill={isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.55)'} />
         </AnimatedG>
-        <Ellipse cx="57.2" cy="57" rx="1.8" ry="1.1" fill="rgba(255,255,255,0.16)" />
+        <Ellipse cx="57.2" cy="57" rx="1.8" ry="1.1" fill={isLight ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.16)'} />
       </AnimatedG>
 
       <Path
         d="M 18 58 Q 50 66 82 58"
         fill="none"
-        stroke="rgba(34,211,238,0.06)"
+        stroke={isLight ? 'rgba(13,148,136,0.10)' : 'rgba(34,211,238,0.06)'}
         strokeWidth="0.65"
       />
 
       <AnimatedG transform={[{ translateY: eyelidUpperTranslateY }]}>
         <Path
           d="M 8 50 Q 50 10 92 50 Q 50 58 8 50 Z"
-          fill="rgba(8,17,31,0.94)"
+          fill={isLight ? 'rgba(248,250,252,0.96)' : 'rgba(8,17,31,0.94)'}
         />
         <Path
           d="M 8 50 Q 50 16 92 50"
           fill="none"
-          stroke="rgba(34,211,238,0.08)"
+          stroke={isLight ? 'rgba(13,148,136,0.12)' : 'rgba(34,211,238,0.08)'}
           strokeWidth="0.5"
         />
       </AnimatedG>
@@ -130,7 +151,7 @@ const LeylekEyeSvg = function LeylekEyeSvg({
       <AnimatedG transform={[{ translateY: eyelidLowerTranslateY }]}>
         <Path
           d="M 12 62 Q 50 72 88 62 L 88 100 L 12 100 Z"
-          fill="rgba(8,17,31,0.88)"
+          fill={isLight ? 'rgba(241,245,249,0.92)' : 'rgba(8,17,31,0.88)'}
         />
       </AnimatedG>
     </Svg>
@@ -174,6 +195,7 @@ const LeylekEye = forwardRef<LeylekEyeHandle, LeylekEyeProps>(function LeylekEye
     >
       <LeylekEyeSvg
         viewSize={viewSize}
+        themeVariant={themeVariant}
         lookTranslateX={motion.lookTranslateX}
         lookTranslateY={motion.lookTranslateY}
         pupilExtraTranslateX={motion.pupilExtraTranslateX}

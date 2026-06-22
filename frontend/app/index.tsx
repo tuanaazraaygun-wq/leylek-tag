@@ -81,6 +81,7 @@ import { useQuickMatchDriverSession } from '../hooks/useQuickMatchDriverSession'
 import type { QuickMatchAcceptResponse } from '../lib/quickMatchApi';
 import { useTrustedDirectDriverSession } from '../hooks/useTrustedDirectDriverSession';
 import LeylekEyeTrigger from '../components/superUx/LeylekEyeTrigger';
+import { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
 import { driverWaitingShellStyles as dws } from '../components/driver/driverWaitingShellStyles';
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
@@ -21413,8 +21414,10 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   passengerMatchGuardianSlot: {
-    minHeight: 0,
-    marginBottom: 0,
+    minHeight: LEYLEK_EYE_ROLE_SELECT_SIZE + 14,
+    marginBottom: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   passengerMatchPhaseBlock: {
     alignItems: 'center',

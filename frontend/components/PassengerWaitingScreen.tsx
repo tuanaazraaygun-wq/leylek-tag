@@ -40,6 +40,7 @@ import { CockpitBackground, GlassSurface, PremiumText } from '../design-system/p
 import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../design-system/tokens/border';
 import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
+import { LEYLEK_EYE_ROLE_SELECT_SIZE } from '../design-system/leylek-eye/LeylekEye';
 import { LDS_SPACING, ldsSnapSpacing } from '../design-system/tokens/spacing';
 import { LDS_TYPOGRAPHY } from '../design-system/tokens/typography';
 import { API_BASE_URL } from '../lib/backendConfig';
@@ -362,6 +363,8 @@ export default function PassengerWaitingScreen({
             </TouchableOpacity>
           </View>
 
+          <View style={styles.passengerWaitGuardianSlot} pointerEvents="none" />
+
           <View style={styles.phaseBlock}>
             <PremiumText variant="step" style={styles.phaseStep}>
               Eşleşme aranıyor
@@ -671,6 +674,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: LDS_SPACING.sm,
+  },
+  passengerWaitGuardianSlot: {
+    minHeight: LEYLEK_EYE_ROLE_SELECT_SIZE + 14,
+    marginBottom: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   navButton: {
     width: WAIT_NAV_ACTION_SIZE,

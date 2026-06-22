@@ -79,6 +79,19 @@ function roleSelectEyeTopExtra(winHeight: number): number {
 }
 /** Passenger Match Decision Cockpit — index.tsx guardian slot hizası (P-PM-2G). */
 const PASSENGER_MATCH_TOP_BAR_ACTION_SIZE = LDS_SPACING.xxl + LDS_SPACING.xs;
+/** Reserved guardian slot — matches passengerMatchGuardianSlot / passengerWaitGuardianSlot. */
+const PASSENGER_GUARDIAN_SLOT_HEIGHT = LEYLEK_EYE_ROLE_SELECT_SIZE + 14;
+/** Match decision cockpit — marginTop xs + shell paddingTop 8 + top bar + gap. */
+const PASSENGER_MATCH_HOME_PRE_SLOT_OFFSET =
+  LDS_SPACING.xs + 8 + PASSENGER_MATCH_TOP_BAR_ACTION_SIZE + LDS_SPACING.sm;
+/** Waiting cockpit — scroll xs pad + shell sm pad + top bar + gap. */
+const PASSENGER_WAITING_PRE_SLOT_OFFSET =
+  LDS_SPACING.xs + LDS_SPACING.sm + PASSENGER_MATCH_TOP_BAR_ACTION_SIZE + LDS_SPACING.sm;
+
+function passengerGuardianEyeTop(insetsTop: number, preSlotOffset: number): number {
+  const slotTop = insetsTop + preSlotOffset;
+  return slotTop + (PASSENGER_GUARDIAN_SLOT_HEIGHT - LEYLEK_EYE_ROLE_SELECT_SIZE) / 2;
+}
 const BOUNCE_DIP_PX = -6;
 const HINT_FADE_IN_MS = 280;
 const HINT_HOLD_MS = 2800;
@@ -97,8 +110,6 @@ const BUBBLE_MAX_W_LIGHT = 208;
 const PASSENGER_MATCHING_EYE_A11Y_LABEL = 'Leylek Zeka';
 /** Waiting cockpit — compact guardian eye (P-WAIT-1A, P1-UX-B-A: göz-only). */
 const LEYLEK_EYE_WATCHING_SIZE = LDS_SPACING.xxxl - LDS_SPACING.xxs;
-const PASSENGER_MATCHING_EYE_BOTTOM_PX = 72;
-const PASSENGER_MATCHING_EYE_LEFT_PX = 16;
 
 const ORB_ACCENT_CYAN = 'rgba(34, 211, 238, 0.96)';
 const ORB_TEXT_SOFT = 'rgba(224, 246, 255, 0.94)';
@@ -270,7 +281,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const bubbleTranslateY = useRef(new Animated.Value(0)).current;
   const bubbleBreath = useRef(new Animated.Value(0)).current;
   const cursorBlink = useRef(new Animated.Value(1)).current;
-  const chipPulse = useRef(new Animated.Value(1)).current;
 
   const showChrome = shouldShowLeylekZekaFab({
     pathname,
@@ -300,16 +310,15 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     return insets.top + roleSelectEyeTopExtra(winH);
   }, [insets.top, winH]);
 
-  const passengerMatchHomeEyeTop = useMemo(() => {
-    const slotCenter =
-      LDS_SPACING.xs +
-      LDS_SPACING.xs +
-      LDS_SPACING.xs +
-      PASSENGER_MATCH_TOP_BAR_ACTION_SIZE +
-      LDS_SPACING.sm +
-      (LDS_SPACING.xxxl + LDS_SPACING.xxs) / 2;
-    return insets.top + slotCenter - LEYLEK_EYE_ROLE_SELECT_SIZE / 2;
-  }, [insets.top]);
+  const passengerMatchHomeEyeTop = useMemo(
+    () => passengerGuardianEyeTop(insets.top, PASSENGER_MATCH_HOME_PRE_SLOT_OFFSET),
+    [insets.top],
+  );
+
+  const passengerMatchingEyeTop = useMemo(
+    () => passengerGuardianEyeTop(insets.top, PASSENGER_WAITING_PRE_SLOT_OFFSET),
+    [insets.top],
+  );
 
   const isPassengerMatchingChipMode = flowHint === 'passenger_matching';
   const isPassengerOfferWaitingMode = flowHint === 'passenger_offer_waiting';
@@ -335,14 +344,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       top: Math.min(topMax, Math.max(topMin, raw)),
     };
   }, [insets.top, winH]);
-
-  const passengerMatchingEyePos = useMemo(
-    () => ({
-      left: PASSENGER_MATCHING_EYE_LEFT_PX,
-      bottom: PASSENGER_MATCHING_EYE_BOTTOM_PX + insets.bottom,
-    }),
-    [insets.bottom],
-  );
 
   const fabGlowStyle = useMemo(() => {
     if (isLightFabChrome) {
@@ -816,32 +817,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   }, [bubbleBreath, flowHint, homeFlowScreen, reduceMotion, showFab]);
 
   useEffect(() => {
-    if (reduceMotion || !showFab || flowHint !== 'passenger_matching') {
-      chipPulse.setValue(1);
-      return;
-    }
-    chipPulse.setValue(1);
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(chipPulse, {
-          toValue: 0.7,
-          duration: 2200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(chipPulse, {
-          toValue: 1,
-          duration: 2200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    pulseLoop.start();
-    return () => pulseLoop.stop();
-  }, [chipPulse, flowHint, reduceMotion, showFab]);
-
-  useEffect(() => {
     if (reduceMotion || !showFab || suppressAmbientOrbChrome) {
       cursorBlink.setValue(1);
       return;
@@ -1030,41 +1005,21 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
             <View
               pointerEvents="box-none"
               style={[
-                styles.passengerWaitMapAnchor,
-                styles.passengerWatchMapAnchor,
-                styles.passengerMatchingEyeAnchor,
-                {
-                  left: passengerMatchingEyePos.left,
-                  bottom: passengerMatchingEyePos.bottom,
-                },
+                styles.centerAnchor,
+                styles.passengerMatchHomeEyeAnchor,
+                eyeThemeVariant === 'light' && styles.passengerMatchHomeEyeAnchorLight,
+                { top: passengerMatchingEyeTop },
               ]}
             >
-              <Pressable
+              <LeylekEye
+                size={guardianEyeSize}
+                chromeTone="subtle"
+                themeVariant={eyeThemeVariant}
+                motionProfile="guardian"
                 onPress={onOpen}
-                onPressIn={markInteraction}
-                style={({ pressed }) => [
-                  styles.passengerWatchGlassChip,
-                  styles.passengerWatchGlassChipEyeOnly,
-                  pressed && styles.passengerWatchChipPressed,
-                ]}
-                accessibilityRole="button"
+                reduceMotion={reduceMotion}
                 accessibilityLabel={PASSENGER_MATCHING_EYE_A11Y_LABEL}
-                accessibilityHint="Yardım sohbetini açmak için dokunun."
-              >
-                <Animated.View
-                  pointerEvents="none"
-                  style={[styles.passengerWatchEyeSlot, { opacity: chipPulse }]}
-                >
-                  <LeylekEye
-                    size={LEYLEK_EYE_WATCHING_SIZE}
-                    chromeTone="subtle"
-                    themeVariant={eyeThemeVariant}
-                    motionProfile="guardian"
-                    reduceMotion={reduceMotion}
-                    accessibilityLabel={PASSENGER_MATCHING_EYE_A11Y_LABEL}
-                  />
-                </Animated.View>
-              </Pressable>
+              />
             </View>
           ) : (
             <View
