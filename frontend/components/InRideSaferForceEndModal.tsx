@@ -26,7 +26,7 @@ export const IN_RIDE_FORCE_END_REASONS: { key: string; label: string }[] = [
   { key: 'in_ride_improper', label: 'Uygunsuz davranış' },
   { key: 'in_ride_security', label: 'Güvenlik sorunu' },
   { key: 'in_ride_wrong_party', label: 'Yanlış kişi / araç' },
-  { key: 'in_ride_payment_route', label: 'Ödeme / rota sorunu' },
+  { key: 'in_ride_payment_route', label: 'Katkı payı / rota sorunu' },
   { key: 'in_ride_other', label: 'Diğer' },
 ];
 

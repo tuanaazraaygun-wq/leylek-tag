@@ -12737,7 +12737,7 @@ function PassengerDashboard({
                   }
                   peerMapPinScale={1.04}
                   userName={user.name}
-                  otherUserName={displayFirstName(activeTag?.driver_name, 'Şoför')}
+                  otherUserName={displayFirstName(activeTag?.driver_name, 'Sürücü')}
                   otherUserId={activeTag?.driver_id}
                   userId={user.id}
                   tagId={activeTag?.id}
@@ -12907,7 +12907,7 @@ function PassengerDashboard({
                       );
                       const data = await response.json();
                       if (data.success) {
-                        appAlert('✅ İstek Gönderildi', 'Şoförün onayı bekleniyor...');
+                        appAlert('✅ İstek Gönderildi', 'Sürücünün onayı bekleniyor...');
                       } else {
                         appAlert('Hata', data.detail || 'İstek gönderilemedi');
                       }

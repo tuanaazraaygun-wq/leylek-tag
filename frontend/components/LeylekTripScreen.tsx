@@ -2814,7 +2814,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           );
           latestPaymentActionIdRef.current = null;
           void refreshSessionFromServer('payment_method_fail', { bypassDebounce: true });
-          const detMsg = muhabbetTripRestDetail(rest.json.detail, 'Ödeme tercihi kaydedilemedi.');
+          const detMsg = muhabbetTripRestDetail(rest.json.detail, 'Katkı yöntemi kaydedilemedi.');
           if (detMsg) Alert.alert('Muhabbet yolculuk', detMsg);
           console.log('[leylek_payment_timing]', JSON.stringify({ ms: Date.now() - t0, action: 'payment_method_set', ok: false }));
         } catch {
@@ -4025,7 +4025,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
           </View>
           <Text style={styles.resultTitle}>Yolculuk tamamlandı</Text>
           <Text style={styles.resultText}>
-            {isCard ? 'Kart ödeme altyapısı yakında burada açılacak.' : 'Ödeme taraflar arasında tamamlanır'}
+            {isCard ? 'Kart ödeme altyapısı yakında burada açılacak.' : 'Katkı payı mutabakatı taraflar arasında tamamlanır'}
           </Text>
           <Pressable style={({ pressed }) => [styles.resultButton, pressed && { opacity: 0.86 }]} onPress={() => router.replace(MUHABBET_SAFE_ROUTE)}>
             <Text style={styles.resultButtonText}>Sohbete dön</Text>

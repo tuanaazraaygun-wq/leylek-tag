@@ -1203,7 +1203,7 @@ export default function ListingsTab({
               </Text>
             </View>
             <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Ücret</Text>
+              <Text style={styles.priceLabel}>Katkı payı</Text>
               <Text style={styles.priceValue}>{priceStr}</Text>
             </View>
             <Text style={styles.metaLine}>

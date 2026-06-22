@@ -100,7 +100,7 @@ const THEIRS_BUBBLE_BORDER = 'rgba(15, 23, 42, 0.08)';
 const INFO_PRIVACY =
   'Mesajlar güvenlik ve destek amacıyla en fazla 90 gün saklanır; ardından otomatik silinir.';
 const INFO_SAFETY =
-  'Güzergâh, ücret ve buluşma noktasını netleştirmeden yolculuğa başlamayın. Taraflar arası anlaşma kullanıcıların sorumluluğundadır.';
+  'Güzergâh, katkı payı ve buluşma noktasını netleştirmeden yolculuğa başlamayın. Taraflar arası anlaşma kullanıcıların sorumluluğundadır.';
 
 /** Muhabbet mesaj satırı — id istemci UUID veya sunucu message_id; metin 90 güne kadar sunucuda. */
 export type OutMessageStatus = 'sending' | 'sent' | 'delivered' | 'seen' | 'failed';
@@ -3177,7 +3177,7 @@ export default function MuhabbetChatScreen({
             <View style={styles.matchBadge}>
               <Ionicons name="checkmark-circle" size={15} color="#fff" style={{ marginRight: 6 }} />
               <Text style={styles.matchBadgeTxt} numberOfLines={2}>
-                Teklif eşleşmesi tamam — güzergâh ve ücreti sohbette netleştirin
+                Teklif eşleşmesi tamam — güzergâh ve katkı payını sohbette netleştirin
               </Text>
             </View>
           </View>

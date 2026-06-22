@@ -212,7 +212,7 @@ export default function SettingsHubScreen() {
                   hubSurfaces={hubSurfaces}
                 />
               </SettingsHubCard>
-              <SettingsHubCard title="Ödeme bilgileri">
+              <SettingsHubCard title="Katkı payı / IBAN">
                 <SettingsHubRow
                   isFirst
                   icon="card-outline"
@@ -272,8 +272,8 @@ export default function SettingsHubScreen() {
             />
             <SettingsHubRow
               icon="document-text-outline"
-              label="Kullanım Şartları"
-              onPress={() => router.push('/terms' as any)}
+              label="Kullanıcı Sözleşmesi"
+              onPress={() => router.push('/terms-user' as any)}
               ui={ui}
               hubSurfaces={hubSurfaces}
             />

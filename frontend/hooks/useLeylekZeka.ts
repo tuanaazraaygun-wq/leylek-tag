@@ -126,7 +126,7 @@ function resolveComplaintCategory(text: string): { category: string; categoryLab
     return { category: 'platform_issue', categoryLabel: 'Platform veya uygulama sorunu' };
   }
   if (has('odeme', 'para', 'ucret')) {
-    return { category: 'payment_issue', categoryLabel: 'Ödeme sorunu' };
+    return { category: 'payment_issue', categoryLabel: 'Katkı payı sorunu' };
   }
   if (has('konum', 'adres', 'harita')) {
     return { category: 'location_issue', categoryLabel: 'Konum sorunu' };

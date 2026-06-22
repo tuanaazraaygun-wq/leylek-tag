@@ -548,7 +548,7 @@ export default function CreateListingModal({
     }
     if (suggestedBase != null) {
       const finalP = Math.max(0, Math.round(suggestedBase + priceDelta));
-      meta.push(`${listingScope === 'intercity' ? 'Öneri fiyat' : 'Ücret (taban±)'}: ${finalP} ₺`);
+      meta.push(`${listingScope === 'intercity' ? 'Öneri fiyat' : 'Katkı payı (taban±)'}: ${finalP} ₺`);
     }
     if (priceMeta?.distance_km != null) meta.push(`Mesafe: ~${priceMeta.distance_km} km`);
     const head = meta.join(' · ');
@@ -951,8 +951,8 @@ export default function CreateListingModal({
             ? data.detail
             : typeof data.error === 'string'
               ? data.error
-              : 'Ücret şu an hesaplanamadı. Bağlantını kontrol edip tekrar dene.';
-        Alert.alert('Ücret', msg);
+              : 'Katkı payı şu an hesaplanamadı. Bağlantını kontrol edip tekrar dene.';
+        Alert.alert('Katkı payı', msg);
         return;
       }
       if (listingScope === 'intercity' && (!res.ok || !data.success || !Number.isFinite(distanceKm) || distanceKm <= 0)) {
@@ -1006,7 +1006,7 @@ export default function CreateListingModal({
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert('Ücret', 'Bağlantı hatası. Tekrar deneyin.');
+      Alert.alert('Katkı payı', 'Bağlantı hatası. Tekrar deneyin.');
     } finally {
       setPriceCalcBusy(false);
     }
@@ -1395,7 +1395,7 @@ export default function CreateListingModal({
                   <Text style={styles.priceHuge}>{finalPriceInt} ₺</Text>
                   <Text style={styles.priceSub}>Yol paylaşımı öneri fiyatı</Text>
                   {priceMeta?.minimum_price_applied ? (
-                    <Text style={styles.priceMinimumNote}>Minimum ücret uygulandı</Text>
+                    <Text style={styles.priceMinimumNote}>Minimum katkı uygulandı</Text>
                   ) : null}
                   <View style={styles.stepRow}>
                     <TouchableOpacity

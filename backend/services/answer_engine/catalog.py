@@ -59,8 +59,8 @@ Yolcu talep yayınlar, sürücüler teklif gönderir; yolcu bir teklifi kabul ed
 
 Adımlar
 1) Önce rolünü netleştir (yolcu / sürücü ana akışı); menüler buna göre değişir.
-2) Yolcuysan: talep oluştur → kalkış/varış ve araç tipi (motor / otomobil) → ödeme ve fiyat özetini oku → yayınla → gelen kartlardan birine Kabul / Onay.
-3) Sürücüysen: müsait ol → uygun talebi aç → rota ve tutarı oku → teklif ekranında ücreti yaz → Gönder → yanıtı bekle.
+2) Yolcuysan: talep oluştur → kalkış/varış ve araç tipi (motor / otomobil) → katkı payı / masraf paylaşımı özetini oku → yayınla → gelen kartlardan birine Kabul / Onay.
+3) Sürücüysen: müsait ol → uygun talebi aç → rota ve tutarı oku → teklif ekranında katkı payını yaz → Gönder → yanıtı bekle.
 
 Dikkat
 Yanlış talep veya araç tipine teklif gönderme; göndermeden özeti bir kez daha oku.
@@ -75,8 +75,8 @@ Uygun talebi açarsın, tutarı netleştirip teklif ekranından gönderirsin; yo
 
 Adımlar
 1) Harita veya listeden talebi seç; kalkış–varış ve araç tipini (motor / otomobil) doğrula. Aracına uymuyorsa girme.
-2) Rota, süre, mesafe ve tutar satırlarını oku; ek ücret / ödeme notu varsa kontrol et.
-3) “Teklif ver / oluştur” ile düzenleme ekranına geç; net ücreti ve varsa bekleme süresini yaz; notu kısa tut.
+2) Rota, süre, mesafe ve tutar satırlarını oku; ek katkı payı / masraf paylaşımı notu varsa kontrol et.
+3) “Teklif ver / oluştur” ile düzenleme ekranına geç; net katkı payını ve varsa bekleme süresini yaz; notu kısa tut.
 4) Onay / Gönder ile ilet. Teklif beklemede kalır; red veya süre dolarsa listeden yeniden dene.
 
 Dikkat
@@ -93,8 +93,8 @@ Sürücüye doğrudan teklif yazmazsın. Talebi yayınlarsın; sürücüler tekl
 Adımlar
 1) “Talep oluştur” veya yolculuk başlat adımına gir.
 2) Haritada kalkış ve varışı seç; üstteki özet doğru mu bak.
-3) Motor veya otomobili işaretle; ödeme seçeneğini ve ücret satırını oku, sonra yayınla.
-4) Gelen kartlarda ücret, süre ve rotayı karşılaştır; uygun olana Kabul / Onay’a bas.
+3) Motor veya otomobili işaretle; katkı yöntemini ve katkı payı satırını oku, sonra yayınla.
+4) Gelen kartlarda katkı payı, süre ve rotayı karşılaştır; uygun olana Kabul / Onay’a bas.
 
 Dikkat
 Talep yayında değilse teklif gelmez; iptal veya yanlış ekrandaysan talep akışına dön.
@@ -244,12 +244,12 @@ Talebine gelen sürücü kartlarından birini seçip onaylarsın; sonra eşleşm
 
 Adımlar
 1) Talebin açık ve teklif listesinde olduğundan emin ol.
-2) Kartlarda ücret, süre ve rotayı karşılaştır; yalnızca en düşük fiyata göre seçme.
+2) Kartlarda katkı payı, süre ve rotayı karşılaştır; yalnızca en düşük katkı payına göre seçme.
 3) Özeti son kez oku; yanlış karta çift dokunma.
 4) Seçtiğin kartta Kabul / Onay’a bas; ekran buluşma / yolculuğa geçer.
 
 Dikkat
-İptal ve ücret kuralları ekranda yazdığı gibidir.
+İptal ve katkı payı kuralları ekranda yazdığı gibidir.
 
 Sonraki adım
 Buluşmayı mesajdan netleştir; ardından yolculuk adımlarını uygulamada izle."""
@@ -261,7 +261,7 @@ Uygun talebi açıp teklif yazıp gönderirsin. Eşleşme, yolcunun bu teklifi k
 
 Adımlar
 1) Harita veya listeden talebi aç; kalkış ve varışı doğrula.
-2) Ücret ve rota özetini oku; teklif ekranında tutarı netleştirip gönder.
+2) Katkı payı ve rota özetini oku; teklif ekranında tutarı netleştirip gönder.
 3) Yolcu kabul edene kadar bekle; kabul gelince yolculuk adımları başlar.
 
 Dikkat
@@ -284,7 +284,7 @@ Adımlar
 4) Ekranda talep kapandı veya yolculuk sonlandı bilgisi çıktıysa akış bitti sayılır.
 
 Dikkat
-Ücret, kesinti veya iade konularında ekrandaki güncel metin geçerlidir; burada sabit tutar veya ceza vaadi yoktur.
+Katkı payı, kesinti veya iade konularında ekrandaki güncel metin geçerlidir; burada sabit tutar veya ceza vaadi yoktur.
 
 Sonraki adım
 İptal seçeneği yoksa yanlış ekranda olabilirsin veya aşama ilerlemiş olabilir; doğru kartı seç veya destekten yardım iste."""
@@ -292,7 +292,7 @@ Sonraki adım
 HOW_IN_APP_MESSAGING_WORKS = """Uygulama içi mesaj / sohbet
 
 Özet
-Eşleşme veya yolculuk sırasında karşı taraf ile yazışmayı sohbet alanından yaparsın. Teklif ve ücret bu alanın dışında, ilgili talep/teklif ekranlarında yönetilir.
+Eşleşme veya yolculuk sırasında karşı taraf ile yazışmayı sohbet alanından yaparsın. Teklif ve katkı payı bu alanın dışında, ilgili talep/teklif ekranlarında yönetilir.
 
 Adımlar
 1) Aktif talep, teklif bekliyor veya yolculuk ekranına gir.
@@ -301,7 +301,7 @@ Adımlar
 4) Bildirimleri açık tutmak mesajı kaçırmayı azaltır.
 
 Dikkat
-Fiyat veya teklif değiştirmek için teklif ve talep akışını kullan; sohbet yazışma içindir.
+Katkı payı veya teklif değiştirmek için teklif ve talep akışını kullan; sohbet yazışma içindir.
 
 Sonraki adım
 Gönder çalışmıyorsa interneti kontrol et, doğru yolculuk kartında olduğundan emin ol; gerekirse uygulamayı yeniden başlat."""
