@@ -24,6 +24,10 @@ export type PassengerDriverForceEndReviewModalProps = {
   onReject: () => void | Promise<void>;
   /** Varsayılan: sürücü zorla bitirdi metni */
   title?: string;
+  /** Biniş öncesi bilgilendirme — onay/red yok, yalnızca Tamam */
+  informationalOnly?: boolean;
+  /** Bilgilendirme gövde metni (backend message) */
+  infoMessage?: string;
   /** true iken butonlar devre dışı — HTTP bitmeden kapanmaz */
   submitting?: boolean;
 };
@@ -33,6 +37,8 @@ export default function PassengerDriverForceEndReviewModal({
   onConfirm,
   onReject,
   title,
+  informationalOnly = false,
+  infoMessage,
   submitting = false,
 }: PassengerDriverForceEndReviewModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -93,7 +99,17 @@ export default function PassengerDriverForceEndReviewModal({
     }
   }, [visible, scaleAnim, opacityAnim]);
 
-  const eventLine = title?.trim() ? title.trim() : 'Sürücü eşleşmeyi zorla bitirdi';
+  const eventLine = title?.trim()
+    ? title.trim()
+    : informationalOnly
+      ? 'Eşleşme biniş onayından önce sonlandırıldı'
+      : 'Sürücü eşleşmeyi zorla bitirdi';
+
+  const bodyLine =
+    infoMessage?.trim() ||
+    (informationalOnly
+      ? 'Karşı taraf eşleşmeyi biniş QR kodu okutulmadan sonlandırdı. Onayınız gerekmez.'
+      : null);
 
   if (!visible) return null;
 
@@ -103,7 +119,9 @@ export default function PassengerDriverForceEndReviewModal({
       transparent
       animationType="none"
       statusBarTranslucent
-      onRequestClose={() => {}}
+      onRequestClose={() => {
+        if (informationalOnly) void onConfirm();
+      }}
     >
       <View style={styles.overlay}>
         <View style={[StyleSheet.absoluteFill, styles.backdrop, lightStyles?.backdrop]} />
@@ -120,7 +138,7 @@ export default function PassengerDriverForceEndReviewModal({
             <View style={styles.iconContainer}>
               <View style={[styles.iconOrb, lightStyles?.iconOrb]}>
                 <Ionicons
-                  name="alert-circle-outline"
+                  name={informationalOnly ? 'information-circle-outline' : 'alert-circle-outline'}
                   size={32}
                   color={lightStyles?.alertIconColor ?? 'rgba(253,224,71,0.92)'}
                 />
@@ -133,7 +151,7 @@ export default function PassengerDriverForceEndReviewModal({
               borderRadius={LDS_RADIUS.full}
             >
               <Ionicons
-                name="shield-checkmark-outline"
+                name={informationalOnly ? 'notifications-outline' : 'shield-checkmark-outline'}
                 size={14}
                 color={lightStyles?.chipIconColor ?? 'rgba(34,211,238,0.82)'}
               />
@@ -141,7 +159,7 @@ export default function PassengerDriverForceEndReviewModal({
                 variant="caption"
                 style={[styles.guardianChipText, lightStyles?.guardianChipText]}
               >
-                Bitiş onayı
+                {informationalOnly ? 'Bilgilendirme' : 'Bitiş onayı'}
               </PremiumText>
             </GlassSurface>
 
@@ -149,13 +167,23 @@ export default function PassengerDriverForceEndReviewModal({
               {eventLine}
             </PremiumText>
 
-            <PremiumText variant="title" style={styles.questionTitle}>
-              Bu bitişi onaylıyor musunuz?
-            </PremiumText>
+            {bodyLine ? (
+              <PremiumText variant="caption" muted style={styles.description}>
+                {bodyLine}
+              </PremiumText>
+            ) : null}
 
-            <PremiumText variant="caption" muted style={styles.description}>
-              Yanıtınız yolculuk kaydına işlenir. Lütfen durumu sakin şekilde değerlendirin.
-            </PremiumText>
+            {!informationalOnly ? (
+              <>
+                <PremiumText variant="title" style={styles.questionTitle}>
+                  Bu bitişi onaylıyor musunuz?
+                </PremiumText>
+
+                <PremiumText variant="caption" muted style={styles.description}>
+                  Yanıtınız yolculuk kaydına işlenir. Lütfen durumu sakin şekilde değerlendirin.
+                </PremiumText>
+              </>
+            ) : null}
 
             <View style={styles.buttonColumn}>
               <TouchableOpacity
@@ -165,23 +193,25 @@ export default function PassengerDriverForceEndReviewModal({
                 disabled={submitting}
               >
                 <PremiumText variant="body" style={[styles.primaryBtnText, lightStyles?.primaryBtnText]}>
-                  {submitting ? 'Gönderiliyor…' : 'Onaylıyorum'}
+                  {submitting ? 'Gönderiliyor…' : informationalOnly ? 'Tamam' : 'Onaylıyorum'}
                 </PremiumText>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.secondaryBtn, lightStyles?.secondaryBtn, submitting && styles.btnDisabled]}
-                onPress={() => void onReject()}
-                activeOpacity={0.88}
-                disabled={submitting}
-              >
-                <PremiumText
-                  variant="body"
-                  muted={!isModalLight}
-                  style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+              {!informationalOnly ? (
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, lightStyles?.secondaryBtn, submitting && styles.btnDisabled]}
+                  onPress={() => void onReject()}
+                  activeOpacity={0.88}
+                  disabled={submitting}
                 >
-                  {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
-                </PremiumText>
-              </TouchableOpacity>
+                  <PremiumText
+                    variant="body"
+                    muted={!isModalLight}
+                    style={[styles.secondaryBtnText, lightStyles?.secondaryBtnText]}
+                  >
+                    {submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}
+                  </PremiumText>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </GlassSurface>
         </Animated.View>

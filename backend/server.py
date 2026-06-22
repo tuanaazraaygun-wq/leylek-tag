@@ -1149,6 +1149,10 @@ async def force_end_trip(sid, data):
                     "new_points": result.get("new_points"),
                     "new_rating": result.get("new_rating"),
                     "idempotent": result.get("idempotent"),
+                    "immediate": result.get("immediate"),
+                    "pre_boarding": result.get("pre_boarding"),
+                    "message": result.get("message"),
+                    "should_rate": False if result.get("pre_boarding") else None,
                 },
                 room=sid,
             )
@@ -4258,6 +4262,187 @@ async def emit_trip_force_ended_to_party(
 
 
 FORCE_END_COUNTERPARTY_KIND = "force_end_counterparty"
+FORCE_END_PRE_BOARDING_END_TYPE = "force_pre_boarding"
+FORCE_END_PRE_BOARDING_MESSAGE = (
+    "Karşı taraf biniş QR okutulmadan eşleşmeyi sonlandırdı."
+)
+
+
+def _is_pre_boarding_tag(tag: dict) -> bool:
+    """Canonical pre-boarding: boarding QR not yet confirmed."""
+    if not isinstance(tag, dict):
+        return False
+    return not tag.get("boarding_confirmed_at")
+
+
+async def _apply_pre_boarding_force_end_immediate(
+    tid: str,
+    tag: dict,
+    resolved_ender: str,
+    et: str,
+    passenger_id: str,
+    driver_id: str,
+) -> dict:
+    """Biniş öncesi zorla bitir — anında terminalize; karşı taraf onayı beklenmez."""
+    _t_total = time.monotonic()
+    _db_ms = 0.0
+    _emit_ms = 0.0
+    now_iso = datetime.utcnow().isoformat()
+    prev_status = tag.get("status") or "matched"
+    prev_cancelled_at = tag.get("cancelled_at")
+    prev_ended_by = tag.get("ended_by")
+    prev_end_type = tag.get("end_type")
+    prev_end_request = tag.get("end_request")
+
+    end_request_payload = {
+        "kind": FORCE_END_COUNTERPARTY_KIND,
+        "status": "resolved",
+        "initiator_id": resolved_ender,
+        "initiator_type": et,
+        "requested_at": now_iso,
+        "resolved_at": now_iso,
+        "pre_boarding": True,
+        "immediate": True,
+    }
+    try:
+        _t_db = time.monotonic()
+        supabase.table("tags").update(
+            {
+                "status": "cancelled",
+                "cancelled_at": now_iso,
+                "ended_by": resolved_ender,
+                "end_type": FORCE_END_PRE_BOARDING_END_TYPE,
+                "end_request": end_request_payload,
+            }
+        ).eq("id", tid).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
+    except Exception as e:
+        logger.error(f"_apply_pre_boarding_force_end_immediate: tag güncellenemedi: {e}")
+        return {"success": False, "error": str(e)}
+
+    try:
+        _t_db = time.monotonic()
+        supabase.table("chat_messages").delete().eq("tag_id", tid).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
+    except Exception as chat_err:
+        logger.error(
+            "_apply_pre_boarding_force_end_immediate: sohbet silinemedi, rollback: %s",
+            chat_err,
+        )
+        try:
+            supabase.table("tags").update(
+                {
+                    "status": prev_status,
+                    "cancelled_at": prev_cancelled_at,
+                    "ended_by": prev_ended_by,
+                    "end_type": prev_end_type,
+                    "end_request": prev_end_request,
+                }
+            ).eq("id", tid).execute()
+        except Exception as rb_err:
+            logger.error(
+                "_apply_pre_boarding_force_end_immediate: rollback başarısız tag=%s err=%s",
+                tid,
+                rb_err,
+            )
+        return {"success": False, "error": "Sohbet silinemedi; yolculuk durumu geri alındı"}
+
+    invalidate_tag_cache(tid, passenger_id, driver_id)
+
+    ender_name = ""
+    try:
+        _t_db = time.monotonic()
+        _en = supabase.table("users").select("name").eq("id", resolved_ender).limit(1).execute()
+        _db_ms += (time.monotonic() - _t_db) * 1000.0
+        if _en.data:
+            ender_name = (str(_en.data[0].get("name") or "")).strip()
+    except Exception:
+        pass
+
+    payload_base = {
+        "tag_id": tid,
+        "ended_by": resolved_ender,
+        "ender_id": resolved_ender,
+        "ender_type": et,
+        "ender_name": ender_name,
+        "passenger_id": passenger_id,
+        "driver_id": driver_id,
+        "completed_at": now_iso,
+        "cancelled_at": now_iso,
+        "should_rate": False,
+        "force_end_resolved": True,
+        "pre_boarding": True,
+        "immediate": True,
+        "end_type": FORCE_END_PRE_BOARDING_END_TYPE,
+        "message": FORCE_END_PRE_BOARDING_MESSAGE,
+        "points_deducted": 0,
+        "new_points": None,
+        "new_rating": None,
+    }
+
+    counterparty_id = passenger_id if et == "driver" else driver_id
+    for uid in [passenger_id, driver_id]:
+        if not uid:
+            continue
+        try:
+            _t_emit = time.monotonic()
+            await emit_trip_force_ended_to_party(uid, dict(payload_base), "FORCE_END_EMIT_PRE_BOARDING", tid)
+            _emit_ms += (time.monotonic() - _t_emit) * 1000.0
+        except Exception as emit_err:
+            logger.warning("_apply_pre_boarding_force_end_immediate trip_force_ended: %s", emit_err)
+
+    if counterparty_id:
+        try:
+            _t_emit = time.monotonic()
+            await emit_socket_event_to_user(
+                counterparty_id,
+                "force_end_counterparty_prompt",
+                {
+                    "tag_id": tid,
+                    "initiator_id": resolved_ender,
+                    "initiator_type": et,
+                    "initiator_name": ender_name,
+                    "pre_boarding": True,
+                    "informational": True,
+                    "already_completed": True,
+                    "message": FORCE_END_PRE_BOARDING_MESSAGE,
+                },
+            )
+            _emit_ms += (time.monotonic() - _t_emit) * 1000.0
+        except Exception as prompt_err:
+            logger.warning(
+                "_apply_pre_boarding_force_end_immediate force_end_counterparty_prompt: %s",
+                prompt_err,
+            )
+
+    logger.info(
+        "✅ _apply_pre_boarding_force_end_immediate: tag=%s ender_type=%s ender=%s…",
+        tid,
+        et,
+        resolved_ender[:12],
+    )
+    _log_timing_safe(
+        "FORCE_END_TIMING",
+        phase="_apply_pre_boarding_force_end_immediate",
+        tag_id=_short_log_id(tid),
+        actor_id_masked=_mask_log_id(resolved_ender),
+        target_id_masked=_mask_log_id(counterparty_id),
+        db_ms=round(_db_ms, 2),
+        emit_ms=round(_emit_ms, 2),
+        push_ms=0.0,
+        total_ms=round((time.monotonic() - _t_total) * 1000.0, 2),
+    )
+    return {
+        "success": True,
+        "immediate": True,
+        "pre_boarding": True,
+        "message": FORCE_END_PRE_BOARDING_MESSAGE,
+        "new_points": None,
+        "new_rating": None,
+        "ender_type": et,
+        "passenger_id": passenger_id,
+        "driver_id": driver_id,
+    }
 
 
 async def resolve_force_end_counterparty(
@@ -4306,6 +4491,15 @@ async def resolve_force_end_counterparty(
         return {"success": True, "idempotent": True, "approved": approved, "message": "Yolculuk zaten sonlanmış"}
 
     req = tag.get("end_request")
+    if tag.get("end_type") == FORCE_END_PRE_BOARDING_END_TYPE or (
+        isinstance(req, dict) and req.get("pre_boarding")
+    ):
+        return {
+            "success": True,
+            "idempotent": True,
+            "approved": approved,
+            "message": "Biniş öncesi zorla bitir zaten tamamlandı",
+        }
     if not isinstance(req, dict) or req.get("kind") != FORCE_END_COUNTERPARTY_KIND:
         return {"success": False, "error": "Bekleyen zorla bitir onayı yok"}
 
@@ -4642,10 +4836,27 @@ async def apply_force_end_trip_and_notify(
     st = (tag.get("status") or "").lower()
     if st in ("completed", "cancelled"):
         logger.info(f"apply_force_end_trip: idempotent skip tag={tid} status={st}")
-        return {"success": True, "idempotent": True, "message": "Yolculuk zaten sonlanmış"}
+        pre_done = tag.get("end_type") == FORCE_END_PRE_BOARDING_END_TYPE
+        return {
+            "success": True,
+            "idempotent": True,
+            "immediate": pre_done,
+            "pre_boarding": pre_done,
+            "message": "Yolculuk zaten sonlanmış",
+        }
 
     if st not in ("matched", "in_progress"):
         return {"success": False, "error": "Aktif eşleşme yok (zorla bitirilemez)"}
+
+    if _is_pre_boarding_tag(tag):
+        return await _apply_pre_boarding_force_end_immediate(
+            tid,
+            tag,
+            resolved_ender,
+            et,
+            passenger_id,
+            driver_id,
+        )
 
     existing_er = tag.get("end_request")
     if isinstance(existing_er, dict) and str(existing_er.get("status") or "").lower() == "pending":
@@ -17844,13 +18055,19 @@ async def force_end_trip_http(
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "İşlem başarısız"))
 
-        msg = "Yolculuk zaten sonlanmış" if result.get("idempotent") else "Yolculuk zorla bitirildi."
+        if result.get("immediate") or result.get("pre_boarding"):
+            msg = result.get("message") or "Eşleşme biniş öncesi sonlandırıldı."
+        else:
+            msg = "Yolculuk zaten sonlanmış" if result.get("idempotent") else "Yolculuk zorla bitirildi."
         return {
             "success": True,
             "message": msg,
             "new_points": result.get("new_points"),
             "new_rating": result.get("new_rating"),
             "idempotent": result.get("idempotent"),
+            "immediate": result.get("immediate"),
+            "pre_boarding": result.get("pre_boarding"),
+            "should_rate": False if result.get("pre_boarding") else None,
         }
     except HTTPException:
         raise

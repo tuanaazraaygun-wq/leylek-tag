@@ -918,6 +918,27 @@ function forceEndCounterpartyRequestKey(
   return `${t}:${i}:${ts}`;
 }
 
+type ForceEndImmediateFlags = {
+  immediate?: boolean;
+  pre_boarding?: boolean;
+  should_rate?: boolean;
+  message?: string;
+  tag_id?: string;
+  ended_by?: string;
+  ender_id?: string;
+};
+
+function isPreBoardingForceEndImmediate(data?: ForceEndImmediateFlags | null): boolean {
+  return !!(data?.immediate || data?.pre_boarding);
+}
+
+function isForceEndInformationalPrompt(
+  data?: { pre_boarding?: boolean; informational?: boolean; already_completed?: boolean } | null,
+): boolean {
+  if (!data) return false;
+  return !!(data.pre_boarding || data.informational || data.already_completed);
+}
+
 /** Karşılıklı “Yolculuk Sonlandırma” legacy modal — force-end mavi kart / DB pending ile asla çakışmasın */
 function legacyTripEndModalVisible(
   showTripEndModal: boolean,
@@ -7753,6 +7774,8 @@ function PassengerDashboard({
     initiatorId: string;
     initiatorType: 'driver' | 'passenger';
     initiatorName: string;
+    informationalOnly?: boolean;
+    message?: string;
   } | null>(null);
   const [passengerForceEndReviewSubmitting, setPassengerForceEndReviewSubmitting] = useState(false);
   /** Aynı tag için zorla-bitir onay modalı yalnızca bir kez (poll/useEffect tekrar açmasın) */
@@ -8874,6 +8897,102 @@ function PassengerDashboard({
     [user.id],
   );
 
+  const finalizePassengerForceEnd = useCallback(
+    (data: Record<string, unknown>) => {
+      const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      armForceEndLock('passenger_force_end_finalize');
+      passengerPostForceEndRef.current = true;
+      resumeActiveTagPollAfterForceEndRef.current = true;
+      if (passengerCheckEndIntervalRef.current) {
+        clearInterval(passengerCheckEndIntervalRef.current);
+        passengerCheckEndIntervalRef.current = null;
+      }
+      try {
+        clearOffers();
+      } catch {
+        /* noop */
+      }
+      setMatchingInProgress(false);
+      setCurrentRequestId(null);
+      if (!ratingModalVisibleRef.current) {
+        setRatingModalData(null);
+      }
+      setPassengerDriverForceReview(null);
+      passengerForceEndModalHandledTagIdsRef.current.clear();
+      passengerForceEndLastRequestKeyRef.current = null;
+      setActiveTag(null);
+      setDestination(null);
+      callCheck('clearIncomingCall', clearIncomingCall);
+      clearIncomingCall();
+      setShowCallScreen(false);
+      setCallScreenData(null);
+      setPassengerChatVisible(false);
+      setPassengerEndTripModalVisible(false);
+      setPassengerForceEndConfirmVisible(false);
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
+      setFirstChatTapBanner(null);
+      setShowQRModal(false);
+      setShowPriceModal(false);
+      resetPriceOfferPaymentUi();
+      setPriceInfo(null);
+      setSelectedPrice(0);
+      pricePrefetchRef.current = null;
+      setPriceLoading(false);
+      clearPassengerTrustState();
+      if (!ratingModalVisibleRef.current) {
+        setScreen('role-select');
+      }
+      const enderId = String(
+        (data as { ended_by?: string; ender_id?: string }).ended_by ??
+          (data as { ender_id?: string }).ender_id ??
+          '',
+      ).trim();
+      const eid = enderId.toLowerCase();
+      const selfEnded = !!(user?.id && String(user.id).toLowerCase() === eid);
+      onShowTripEndedBanner?.('Eşleşme sonlandırıldı');
+      if (selfEnded) {
+        appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
+          variant: 'info',
+        });
+      }
+      isPollingActiveRef.current = true;
+    },
+    [
+      clearIncomingCall,
+      clearOffers,
+      clearPassengerTrustState,
+      onShowTripEndedBanner,
+      resetPriceOfferPaymentUi,
+      setScreen,
+      user?.id,
+    ],
+  );
+
+  const applyPassengerForceEndHttpResult = useCallback(
+    (
+      tagId: string,
+      userId: string,
+      apiResult: ForceEndImmediateFlags,
+      onPending: () => void,
+    ) => {
+      if (isPreBoardingForceEndImmediate(apiResult)) {
+        finalizePassengerForceEnd({
+          tag_id: tagId,
+          ender_id: userId,
+          ended_by: userId,
+          pre_boarding: true,
+          immediate: true,
+          should_rate: false,
+          message: apiResult.message,
+        });
+        return;
+      }
+      onPending();
+    },
+    [finalizePassengerForceEnd],
+  );
+
   const {
     socket: passengerSocket,
     isConnected: socketConnected,
@@ -9245,6 +9364,7 @@ function PassengerDashboard({
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
       const ini = String(data.initiator_id);
+      const informationalOnly = isForceEndInformationalPrompt(data);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
       console.log('FORCE_END_REQUEST_RECEIVED', {
         tagId: tid,
@@ -9280,6 +9400,8 @@ function PassengerDashboard({
         initiatorId: ini,
         initiatorType: data.initiator_type === 'passenger' ? 'passenger' : 'driver',
         initiatorName: displayFirstName(data.initiator_name, data.initiator_type === 'passenger' ? 'Yolcu' : 'Sürücü'),
+        informationalOnly,
+        message: typeof data.message === 'string' ? data.message : undefined,
       });
       console.log('FORCE_END_UI_OPEN', {
         tagId: tid,
@@ -9287,108 +9409,14 @@ function PassengerDashboard({
         requestKey,
         source: 'socket',
         screen: 'PassengerDashboard',
+        informationalOnly,
       });
     },
     // 🆕 ZORLA BİTİRME — tamamlandıktan sonra (yolcu onayı zaten alındı veya yolcu zorla bitirdi)
     onTripForceEnded: (data) => {
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
-      const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
-      console.log('PASSENGER_EXIT_REASON', {
-        source: 'onTripForceEnded',
-        reason: 'trip_force_ended_socket',
-        tagId: tid,
-        userId: user?.id ?? null,
-      });
-      console.log('MATCH_SCREEN_CLEAR', {
-        role: 'passenger',
-        source: 'onTripForceEnded',
-        tagId: tid,
-        nextScreen: 'role-select',
-      });
-      console.log('ACTIVE_TAG_RESET', {
-        role: 'passenger',
-        source: 'onTripForceEnded',
-        tagId: tid,
-      });
-      console.log('FORCE_END_FINALIZED', {
-        tagId: tid,
-        requestedBy: null,
-        requestKey: tid ? `${tid}::` : null,
-        source: 'socket',
-        screen: 'PassengerDashboard',
-        event: 'trip_force_ended',
-      });
-      console.log('FORCE_END_STATE_CLEARED', {
-        tagId: tid,
-        requestKey: passengerForceEndLastRequestKeyRef.current,
-        source: 'socket',
-        screen: 'PassengerDashboard',
-      });
-
-      armForceEndLock('passenger_socket_trip_force_ended');
-      passengerPostForceEndRef.current = true;
-      resumeActiveTagPollAfterForceEndRef.current = true;
-      console.log('FORCE_END_POST_STATE', {
-        activeTagCleared: true,
-        destinationCleared: true,
-        pollingWasActive: isPollingActiveRef.current,
-        forceEndLockMs: 5000,
-      });
-      // Do not clear pollingIntervalRef here: the user?.id effect will not re-run, so the
-      // interval would never restart. forceEndLockRef briefly blocks loadActiveTag instead.
-      if (passengerCheckEndIntervalRef.current) {
-        clearInterval(passengerCheckEndIntervalRef.current);
-        passengerCheckEndIntervalRef.current = null;
-      }
-      try {
-        clearOffers();
-      } catch {
-        /* noop */
-      }
-      setMatchingInProgress(false);
-      setCurrentRequestId(null);
-
-      if (!ratingModalVisibleRef.current) {
-        setRatingModalData(null);
-      }
-      setPassengerDriverForceReview(null);
-      passengerForceEndModalHandledTagIdsRef.current.clear();
-      passengerForceEndLastRequestKeyRef.current = null;
-      setActiveTag(null);
-      setDestination(null);
-      callCheck('clearIncomingCall', clearIncomingCall);
-      clearIncomingCall();
-      setShowCallScreen(false);
-      setCallScreenData(null);
-      setPassengerChatVisible(false);
-      setPassengerEndTripModalVisible(false);
-      setPassengerForceEndConfirmVisible(false);
-      setShowTripEndModal(false);
-      setTripEndRequesterType(null);
-      setFirstChatTapBanner(null);
-      setShowQRModal(false);
-      setShowPriceModal(false);
-      resetPriceOfferPaymentUi();
-      setPriceInfo(null);
-      setSelectedPrice(0);
-      pricePrefetchRef.current = null;
-      setPriceLoading(false);
-      clearPassengerTrustState();
-      if (!ratingModalVisibleRef.current) {
-        setScreen('role-select');
-      }
-
-      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
-      const eid = enderId.toLowerCase();
-      const selfEnded = !!(user?.id && String(user.id).toLowerCase() === eid);
-      onShowTripEndedBanner?.('Eşleşme sonlandırıldı');
-      if (selfEnded) {
-        appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
-          variant: 'info',
-        });
-      }
-      isPollingActiveRef.current = true;
+      finalizePassengerForceEnd(data as Record<string, unknown>);
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
     onShowRatingModal: (data) => {
@@ -12902,6 +12930,8 @@ function PassengerDashboard({
                         success?: boolean;
                         detail?: string;
                         message?: string;
+                        immediate?: boolean;
+                        pre_boarding?: boolean;
                       };
                       if (!response.ok || result.success === false) {
                         return {
@@ -12910,6 +12940,38 @@ function PassengerDashboard({
                             'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin veya destek ile iletişime geçin.',
                         };
                       }
+                      try {
+                        callCheck('passengerForceEndTrip', passengerForceEndTrip);
+                        passengerForceEndTrip({
+                          tag_id: activeTag.id,
+                          ender_id: user.id,
+                          ender_type: 'passenger',
+                          passenger_id: user.id,
+                          driver_id: activeTag.driver_id || '',
+                        });
+                      } catch (socketErr) {
+                        console.log('Socket force end hatası:', socketErr);
+                      }
+                      applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
+                        const nowIso = new Date().toISOString();
+                        setActiveTag((prev) =>
+                          prev && String(prev.id) === String(activeTag.id)
+                            ? {
+                                ...prev,
+                                end_request: {
+                                  kind: FORCE_END_COUNTERPARTY_KIND,
+                                  status: 'pending',
+                                  initiator_id: user.id,
+                                  initiator_type: 'passenger',
+                                  requested_at: nowIso,
+                                },
+                              }
+                            : prev,
+                        );
+                        onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                        void loadActiveTag();
+                      });
+                      return { ok: true };
                     } catch {
                       return {
                         ok: false,
@@ -12917,36 +12979,6 @@ function PassengerDashboard({
                           'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin.',
                       };
                     }
-                    try {
-                      callCheck('passengerForceEndTrip', passengerForceEndTrip);
-                      passengerForceEndTrip({
-                        tag_id: activeTag.id,
-                        ender_id: user.id,
-                        ender_type: 'passenger',
-                        passenger_id: user.id,
-                        driver_id: activeTag.driver_id || '',
-                      });
-                    } catch (socketErr) {
-                      console.log('Socket force end hatası:', socketErr);
-                    }
-                    const nowIso = new Date().toISOString();
-                    setActiveTag((prev) =>
-                      prev && String(prev.id) === String(activeTag.id)
-                        ? {
-                            ...prev,
-                            end_request: {
-                              kind: FORCE_END_COUNTERPARTY_KIND,
-                              status: 'pending',
-                              initiator_id: user.id,
-                              initiator_type: 'passenger',
-                              requested_at: nowIso,
-                            },
-                          }
-                        : prev,
-                    );
-                    onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
-                    void loadActiveTag();
-                    return { ok: true };
                   }}
                   onRequestTripEnd={async () => {
                     // Karşılıklı iptal isteği gönder - YOLCU
@@ -13082,49 +13114,53 @@ function PassengerDashboard({
                         `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`, 
                         { method: 'POST' }
                       );
-                      const result = await response.json();
+                      const result = (await response.json()) as {
+                        success?: boolean;
+                        detail?: string;
+                        message?: string;
+                        immediate?: boolean;
+                        pre_boarding?: boolean;
+                      };
                       console.log('🔥 Force end API yanıtı:', result);
                       if (!response.ok || result.success === false) {
-                        appAlert('Hata', (result as { detail?: string }).detail || (result as { message?: string }).message || 'İşlem başarısız');
+                        appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
                         return;
                       }
+                      try {
+                        callCheck('passengerForceEndTrip', passengerForceEndTrip);
+                        passengerForceEndTrip({
+                          tag_id: activeTag.id,
+                          ender_id: user.id,
+                          ender_type: 'passenger',
+                          passenger_id: user.id,
+                          driver_id: activeTag.driver_id || '',
+                        });
+                      } catch (socketErr) {
+                        console.log('Socket force end hatası:', socketErr);
+                      }
+                      applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
+                        const nowIso = new Date().toISOString();
+                        setActiveTag((prev) =>
+                          prev && String(prev.id) === String(activeTag.id)
+                            ? {
+                                ...prev,
+                                end_request: {
+                                  kind: FORCE_END_COUNTERPARTY_KIND,
+                                  status: 'pending',
+                                  initiator_id: user.id,
+                                  initiator_type: 'passenger',
+                                  requested_at: nowIso,
+                                },
+                              }
+                            : prev,
+                        );
+                        onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                        void loadActiveTag();
+                      });
                     } catch (err) {
                       console.log('Force end API hatası:', err);
                       appAlert('Hata', 'İşlem başarısız');
-                      return;
                     }
-                    
-                    try {
-                      callCheck('passengerForceEndTrip', passengerForceEndTrip);
-                      passengerForceEndTrip({
-                        tag_id: activeTag.id,
-                        ender_id: user.id,
-                        ender_type: 'passenger',
-                        passenger_id: user.id,
-                        driver_id: activeTag.driver_id || '',
-                      });
-                    } catch (socketErr) {
-                      console.log('Socket force end hatası:', socketErr);
-                    }
-
-                    const nowIso = new Date().toISOString();
-                    setActiveTag((prev) =>
-                      prev && String(prev.id) === String(activeTag.id)
-                        ? {
-                            ...prev,
-                            end_request: {
-                              kind: FORCE_END_COUNTERPARTY_KIND,
-                              status: 'pending',
-                              initiator_id: user.id,
-                              initiator_type: 'passenger',
-                              requested_at: nowIso,
-                            },
-                          }
-                        : prev,
-                    );
-
-                    onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
-                    void loadActiveTag();
                   }}
                   onShowQRModal={() => setShowQRModal(true)}
                   onShowBoardingScanModal={openPassengerBoardingScanManualEntry}
@@ -13137,14 +13173,26 @@ function PassengerDashboard({
                 <PassengerDriverForceEndReviewModal
                   visible={!!passengerDriverForceReview}
                   submitting={passengerForceEndReviewSubmitting}
+                  informationalOnly={!!passengerDriverForceReview?.informationalOnly}
+                  infoMessage={passengerDriverForceReview?.message}
                   title={
-                    passengerDriverForceReview?.initiatorType === 'passenger'
-                      ? 'Yolcu eşleşmeyi zorla bitirdi'
-                      : undefined
+                    passengerDriverForceReview?.informationalOnly
+                      ? passengerDriverForceReview?.initiatorType === 'passenger'
+                        ? 'Yolcu eşleşmeyi sonlandırdı'
+                        : 'Sürücü eşleşmeyi sonlandırdı'
+                      : passengerDriverForceReview?.initiatorType === 'passenger'
+                        ? 'Yolcu eşleşmeyi zorla bitirdi'
+                        : undefined
                   }
                   onConfirm={async () => {
                     if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
+                    if (passengerDriverForceReview.informationalOnly) {
+                      passengerForceEndModalHandledTagIdsRef.current.delete(tid);
+                      passengerForceEndLastRequestKeyRef.current = null;
+                      setPassengerDriverForceReview(null);
+                      return;
+                    }
                     console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
@@ -13393,9 +13441,15 @@ function PassengerDashboard({
                         `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`,
                         { method: 'POST' },
                       );
-                      const data = await response.json();
-                      if (!response.ok || data.success === false) {
-                        appAlert('Hata', data.detail || data.message || 'İşlem başarısız');
+                      const result = (await response.json()) as {
+                        success?: boolean;
+                        detail?: string;
+                        message?: string;
+                        immediate?: boolean;
+                        pre_boarding?: boolean;
+                      };
+                      if (!response.ok || result.success === false) {
+                        appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
                         return;
                       }
                       try {
@@ -13410,23 +13464,25 @@ function PassengerDashboard({
                       } catch (socketErr) {
                         console.log('Socket force end hatası:', socketErr);
                       }
-                      const nowIso = new Date().toISOString();
-                      setActiveTag((prev) =>
-                        prev && String(prev.id) === String(activeTag.id)
-                          ? {
-                              ...prev,
-                              end_request: {
-                                kind: FORCE_END_COUNTERPARTY_KIND,
-                                status: 'pending',
-                                initiator_id: user.id,
-                                initiator_type: 'passenger',
-                                requested_at: nowIso,
-                              },
-                            }
-                          : prev,
-                      );
-                      onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
-                      void loadActiveTag();
+                      applyPassengerForceEndHttpResult(activeTag.id, user.id, result, () => {
+                        const nowIso = new Date().toISOString();
+                        setActiveTag((prev) =>
+                          prev && String(prev.id) === String(activeTag.id)
+                            ? {
+                                ...prev,
+                                end_request: {
+                                  kind: FORCE_END_COUNTERPARTY_KIND,
+                                  status: 'pending',
+                                  initiator_id: user.id,
+                                  initiator_type: 'passenger',
+                                  requested_at: nowIso,
+                                },
+                              }
+                            : prev,
+                        );
+                        onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                        void loadActiveTag();
+                      });
                     } catch (error) {
                       appAlert('Hata', 'İşlem başarısız');
                     }
@@ -15713,6 +15769,8 @@ function DriverDashboard({
     initiatorId: string;
     initiatorType: 'driver' | 'passenger';
     initiatorName: string;
+    informationalOnly?: boolean;
+    message?: string;
   } | null>(null);
   const [driverForceEndReviewSubmitting, setDriverForceEndReviewSubmitting] = useState(false);
   const driverForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
@@ -16203,6 +16261,87 @@ function DriverDashboard({
     [user.id],
   );
 
+  const finalizeDriverForceEnd = useCallback(
+    (data: Record<string, unknown>) => {
+      const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      console.log('DRIVER_EXIT_REASON', {
+        source: 'finalizeDriverForceEnd',
+        reason: 'trip_force_ended',
+        tagId: tid,
+        userId: user?.id ?? null,
+      });
+      armForceEndLock('driver_force_end_finalize');
+      if (driverDataPollingIntervalRef.current) {
+        clearInterval(driverDataPollingIntervalRef.current);
+        driverDataPollingIntervalRef.current = null;
+      }
+      if (driverCheckEndIntervalRef.current) {
+        clearInterval(driverCheckEndIntervalRef.current);
+        driverCheckEndIntervalRef.current = null;
+      }
+      if (!ratingModalVisibleRef.current) {
+        setRatingModalData(null);
+      }
+      setDriverPassengerForceEndReview(null);
+      driverForceEndModalHandledTagIdsRef.current.clear();
+      driverForceEndLastRequestKeyRef.current = null;
+      setActiveTag(null);
+      setRequests([]);
+      driverClearIncomingCall();
+      setShowCallScreen(false);
+      setCallScreenData(null);
+      setDriverChatVisible(false);
+      setDriverEndTripModalVisible(false);
+      setDriverForceEndConfirmVisible(false);
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
+      setDriverFirstChatTapBanner(null);
+      setShowQRModal(false);
+      clearDriverTrustState();
+      if (!ratingModalVisibleRef.current) {
+        setScreen('role-select');
+      }
+      const enderId = String(
+        (data as { ended_by?: string; ender_id?: string }).ended_by ??
+          (data as { ender_id?: string }).ender_id ??
+          '',
+      ).trim();
+      const eid = enderId.toLowerCase();
+      const selfEnded = !!(user?.id && String(user.id).toLowerCase() === eid);
+      onShowTripEndedBanner?.('Eşleşme sonlandırıldı');
+      if (selfEnded) {
+        appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
+          variant: 'info',
+        });
+      }
+    },
+    [clearDriverTrustState, driverClearIncomingCall, onShowTripEndedBanner, setScreen, user?.id],
+  );
+
+  const applyDriverForceEndHttpResult = useCallback(
+    (
+      tagId: string,
+      userId: string,
+      apiResult: ForceEndImmediateFlags,
+      onPending: () => void,
+    ) => {
+      if (isPreBoardingForceEndImmediate(apiResult)) {
+        finalizeDriverForceEnd({
+          tag_id: tagId,
+          ender_id: userId,
+          ended_by: userId,
+          pre_boarding: true,
+          immediate: true,
+          should_rate: false,
+          message: apiResult.message,
+        });
+        return;
+      }
+      onPending();
+    },
+    [finalizeDriverForceEnd],
+  );
+
   const {
     isConnected: socketConnected,
     isRegistered: socketRegistered,
@@ -16663,6 +16802,7 @@ function DriverDashboard({
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
       const ini = String(data.initiator_id);
+      const informationalOnly = isForceEndInformationalPrompt(data);
       const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
       console.log('FORCE_END_REQUEST_RECEIVED', {
         tagId: tid,
@@ -16698,6 +16838,8 @@ function DriverDashboard({
         initiatorId: ini,
         initiatorType: data.initiator_type === 'passenger' ? 'passenger' : 'driver',
         initiatorName: displayFirstName(data.initiator_name, data.initiator_type === 'passenger' ? 'Yolcu' : 'Sürücü'),
+        informationalOnly,
+        message: typeof data.message === 'string' ? data.message : undefined,
       });
       console.log('FORCE_END_UI_OPEN', {
         tagId: tid,
@@ -16705,86 +16847,13 @@ function DriverDashboard({
         requestKey,
         source: 'socket',
         screen: 'DriverDashboard',
+        informationalOnly,
       });
     },
     onTripForceEnded: (data) => {
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
-      const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
-      console.log('DRIVER_EXIT_REASON', {
-        source: 'onTripForceEnded',
-        reason: 'trip_force_ended_socket',
-        tagId: tid,
-        userId: user?.id ?? null,
-      });
-      console.log('MATCH_SCREEN_CLEAR', {
-        role: 'driver',
-        source: 'onTripForceEnded',
-        tagId: tid,
-        nextScreen: 'role-select',
-      });
-      console.log('ACTIVE_TAG_RESET', {
-        role: 'driver',
-        source: 'onTripForceEnded',
-        tagId: tid,
-      });
-      console.log('FORCE_END_FINALIZED', {
-        tagId: tid,
-        requestedBy: null,
-        requestKey: tid ? `${tid}::` : null,
-        source: 'socket',
-        screen: 'DriverDashboard',
-        event: 'trip_force_ended',
-      });
-      console.log('FORCE_END_STATE_CLEARED', {
-        tagId: tid,
-        requestKey: driverForceEndLastRequestKeyRef.current,
-        source: 'socket',
-        screen: 'DriverDashboard',
-      });
-
-      armForceEndLock('driver_socket_trip_force_ended');
-      if (driverDataPollingIntervalRef.current) {
-        clearInterval(driverDataPollingIntervalRef.current);
-        driverDataPollingIntervalRef.current = null;
-      }
-      if (driverCheckEndIntervalRef.current) {
-        clearInterval(driverCheckEndIntervalRef.current);
-        driverCheckEndIntervalRef.current = null;
-      }
-
-      if (!ratingModalVisibleRef.current) {
-        setRatingModalData(null);
-      }
-      setDriverPassengerForceEndReview(null);
-      driverForceEndModalHandledTagIdsRef.current.clear();
-      driverForceEndLastRequestKeyRef.current = null;
-      setActiveTag(null);
-      setRequests([]);
-      driverClearIncomingCall();
-      setShowCallScreen(false);
-      setCallScreenData(null);
-      setDriverChatVisible(false);
-      setDriverEndTripModalVisible(false);
-      setDriverForceEndConfirmVisible(false);
-      setShowTripEndModal(false);
-      setTripEndRequesterType(null);
-      setDriverFirstChatTapBanner(null);
-      setShowQRModal(false);
-      clearDriverTrustState();
-      if (!ratingModalVisibleRef.current) {
-        setScreen('role-select');
-      }
-
-      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
-      const eid = enderId.toLowerCase();
-      const selfEnded = !!(user?.id && String(user.id).toLowerCase() === eid);
-      onShowTripEndedBanner?.('Eşleşme sonlandırıldı');
-      if (selfEnded) {
-        appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
-          variant: 'info',
-        });
-      }
+      finalizeDriverForceEnd(data as Record<string, unknown>);
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
     onShowRatingModal: (data) => {
@@ -19766,6 +19835,8 @@ function DriverDashboard({
                   success?: boolean;
                   detail?: string;
                   message?: string;
+                  immediate?: boolean;
+                  pre_boarding?: boolean;
                 };
                 if (!response.ok || result.success === false) {
                   return {
@@ -19774,6 +19845,37 @@ function DriverDashboard({
                       'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin veya destek ile iletişime geçin.',
                   };
                 }
+                try {
+                  driverForceEndTrip({
+                    tag_id: activeTag.id,
+                    ender_id: user.id,
+                    ender_type: 'driver',
+                    passenger_id: activeTag.passenger_id || '',
+                    driver_id: user.id,
+                  });
+                } catch (socketErr) {
+                  console.log('Socket force end hatası:', socketErr);
+                }
+                applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
+                  const nowIso = new Date().toISOString();
+                  setActiveTag((prev) =>
+                    prev && String(prev.id) === String(activeTag.id)
+                      ? {
+                          ...prev,
+                          end_request: {
+                            kind: FORCE_END_COUNTERPARTY_KIND,
+                            status: 'pending',
+                            initiator_id: user.id,
+                            initiator_type: 'driver',
+                            requested_at: nowIso,
+                          },
+                        }
+                      : prev,
+                  );
+                  onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                  void loadData();
+                });
+                return { ok: true };
               } catch {
                 return {
                   ok: false,
@@ -19781,35 +19883,6 @@ function DriverDashboard({
                     'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin.',
                 };
               }
-              try {
-                driverForceEndTrip({
-                  tag_id: activeTag.id,
-                  ender_id: user.id,
-                  ender_type: 'driver',
-                  passenger_id: activeTag.passenger_id || '',
-                  driver_id: user.id,
-                });
-              } catch (socketErr) {
-                console.log('Socket force end hatası:', socketErr);
-              }
-              const nowIso = new Date().toISOString();
-              setActiveTag((prev) =>
-                prev && String(prev.id) === String(activeTag.id)
-                  ? {
-                      ...prev,
-                      end_request: {
-                        kind: FORCE_END_COUNTERPARTY_KIND,
-                        status: 'pending',
-                        initiator_id: user.id,
-                        initiator_type: 'driver',
-                        requested_at: nowIso,
-                      },
-                    }
-                  : prev,
-              );
-              onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
-              void loadData();
-              return { ok: true };
             }}
             onForceEnd={async () => {
               console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
@@ -19828,48 +19901,52 @@ function DriverDashboard({
                   `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`,
                   { method: 'POST' },
                 );
-                const result = await response.json();
+                const result = (await response.json()) as {
+                  success?: boolean;
+                  detail?: string;
+                  message?: string;
+                  immediate?: boolean;
+                  pre_boarding?: boolean;
+                };
                 console.log('🔥 Force end API yanıtı:', result);
                 if (!response.ok || result.success === false) {
                   appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
                   return;
                 }
+                try {
+                  driverForceEndTrip({
+                    tag_id: activeTag.id,
+                    ender_id: user.id,
+                    ender_type: 'driver',
+                    passenger_id: activeTag.passenger_id || '',
+                    driver_id: user.id,
+                  });
+                } catch (socketErr) {
+                  console.log('Socket force end hatası:', socketErr);
+                }
+                applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
+                  const nowIso = new Date().toISOString();
+                  setActiveTag((prev) =>
+                    prev && String(prev.id) === String(activeTag.id)
+                      ? {
+                          ...prev,
+                          end_request: {
+                            kind: FORCE_END_COUNTERPARTY_KIND,
+                            status: 'pending',
+                            initiator_id: user.id,
+                            initiator_type: 'driver',
+                            requested_at: nowIso,
+                          },
+                        }
+                      : prev,
+                  );
+                  onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                  void loadData();
+                });
               } catch (err) {
                 console.log('Force end API hatası:', err);
                 appAlert('Hata', 'İşlem başarısız');
-                return;
               }
-
-              try {
-                driverForceEndTrip({
-                  tag_id: activeTag.id,
-                  ender_id: user.id,
-                  ender_type: 'driver',
-                  passenger_id: activeTag.passenger_id || '',
-                  driver_id: user.id,
-                });
-              } catch (socketErr) {
-                console.log('Socket force end hatası:', socketErr);
-              }
-
-              const nowIso = new Date().toISOString();
-              setActiveTag((prev) =>
-                prev && String(prev.id) === String(activeTag.id)
-                  ? {
-                      ...prev,
-                      end_request: {
-                        kind: FORCE_END_COUNTERPARTY_KIND,
-                        status: 'pending',
-                        initiator_id: user.id,
-                        initiator_type: 'driver',
-                        requested_at: nowIso,
-                      },
-                    }
-                  : prev,
-              );
-
-              onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
-              void loadData();
             }}
             onRequestTripEnd={async () => {
               // Karşılıklı iptal isteği gönder - ŞOFÖR
@@ -20111,9 +20188,15 @@ function DriverDashboard({
                   `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`,
                   { method: 'POST' },
                 );
-                const data = await response.json();
-                if (!response.ok || data.success === false) {
-                  appAlert('Hata', data.detail || data.message || 'İşlem başarısız');
+                const result = (await response.json()) as {
+                  success?: boolean;
+                  detail?: string;
+                  message?: string;
+                  immediate?: boolean;
+                  pre_boarding?: boolean;
+                };
+                if (!response.ok || result.success === false) {
+                  appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
                   return;
                 }
                 try {
@@ -20127,23 +20210,25 @@ function DriverDashboard({
                 } catch (socketErr) {
                   console.log('Socket force end hatası:', socketErr);
                 }
-                const nowIso = new Date().toISOString();
-                setActiveTag((prev) =>
-                  prev && String(prev.id) === String(activeTag.id)
-                    ? {
-                        ...prev,
-                        end_request: {
-                          kind: FORCE_END_COUNTERPARTY_KIND,
-                          status: 'pending',
-                          initiator_id: user.id,
-                          initiator_type: 'driver',
-                          requested_at: nowIso,
-                        },
-                      }
-                    : prev,
-                );
-                onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
-                void loadData();
+                applyDriverForceEndHttpResult(activeTag.id, user.id, result, () => {
+                  const nowIso = new Date().toISOString();
+                  setActiveTag((prev) =>
+                    prev && String(prev.id) === String(activeTag.id)
+                      ? {
+                          ...prev,
+                          end_request: {
+                            kind: FORCE_END_COUNTERPARTY_KIND,
+                            status: 'pending',
+                            initiator_id: user.id,
+                            initiator_type: 'driver',
+                            requested_at: nowIso,
+                          },
+                        }
+                      : prev,
+                  );
+                  onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                  void loadData();
+                });
               } catch (error) {
                 appAlert('Hata', 'İşlem başarısız');
               }
@@ -20413,14 +20498,26 @@ function DriverDashboard({
       <PassengerDriverForceEndReviewModal
         visible={!!driverPassengerForceEndReview}
         submitting={driverForceEndReviewSubmitting}
+        informationalOnly={!!driverPassengerForceEndReview?.informationalOnly}
+        infoMessage={driverPassengerForceEndReview?.message}
         title={
-          driverPassengerForceEndReview?.initiatorType === 'passenger'
-            ? 'Yolcu eşleşmeyi zorla bitirdi'
-            : undefined
+          driverPassengerForceEndReview?.informationalOnly
+            ? driverPassengerForceEndReview?.initiatorType === 'passenger'
+              ? 'Yolcu eşleşmeyi sonlandırdı'
+              : 'Sürücü eşleşmeyi sonlandırdı'
+            : driverPassengerForceEndReview?.initiatorType === 'passenger'
+              ? 'Yolcu eşleşmeyi zorla bitirdi'
+              : undefined
         }
         onConfirm={async () => {
           if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
+          if (driverPassengerForceEndReview.informationalOnly) {
+            driverForceEndModalHandledTagIdsRef.current.delete(tid);
+            driverForceEndLastRequestKeyRef.current = null;
+            setDriverPassengerForceEndReview(null);
+            return;
+          }
           console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
