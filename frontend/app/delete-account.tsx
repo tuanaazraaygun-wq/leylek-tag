@@ -266,7 +266,8 @@ export default function DeleteAccountScreen() {
             <PremiumText variant="caption" muted style={styles.infoText}>
               • Hesabınız hemen devre dışı bırakılacaktır{'\n'}
               • Kişisel verileriniz 30 gün içinde silinecektir{'\n'}
-              • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse) ürün ve güvenlik operasyonları kapsamında 7 güne kadar saklanabilir{'\n'}
+              • Muhabbet metin mesajları sunucuda en fazla 90 gün erişilebilir; ses mesajları en fazla 30 gün saklanabilir{'\n'}
+              • Süre sonunda erişim kapanır; kayıtlar güvenlik, destek ve sistem operasyonları kapsamında silinir, anonimleştirilir veya erişime kapatılır{'\n'}
               • Yasal zorunluluklar kapsamındaki veriler anonimleştirilecektir{'\n'}
               • Bu işlem geri alınamaz
             </PremiumText>

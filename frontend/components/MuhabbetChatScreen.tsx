@@ -98,7 +98,7 @@ const THEIRS_BUBBLE_BG = '#FFFFFF';
 const THEIRS_BUBBLE_BORDER = 'rgba(15, 23, 42, 0.08)';
 
 const INFO_PRIVACY =
-  'Mesajlar güvenlik ve destek amacıyla en fazla 90 gün saklanır; ardından otomatik silinir.';
+  'Muhabbet metin mesajları sunucuda en fazla 90 gün erişilebilir; ses mesajları en fazla 30 gün saklanabilir. Süre sonunda erişim kapanır.';
 const INFO_SAFETY =
   'Güzergâh, katkı payı ve buluşma noktasını netleştirmeden yolculuğa başlamayın. Taraflar arası anlaşma kullanıcıların sorumluluğundadır.';
 

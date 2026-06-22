@@ -3,196 +3,66 @@
  */
 
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useSettingsTheme } from '../lib/theme/useSettingsTheme';
+import { LegalDocumentReader, type LegalSection } from '../components/legal/LegalDocumentReader';
+import { LEGAL_DOC_LAST_UPDATED } from '../lib/legalUxCopy';
+
+const KVKK_SECTIONS: LegalSection[] = [
+  {
+    title: '1. Veri Sorumlusu',
+    body:
+      'Leylek Tag mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla KAREKOD TEKNOLOJİ VE YAZILIM A.Ş. tarafından işlenmektedir.',
+  },
+  {
+    title: '2. İşlenen Veriler',
+    body: '',
+    subsections: [
+      {
+        subtitle: 'Yolcu Kullanıcılar:',
+        body:
+          '• Ad, Soyad\n• Telefon numarası\n• Şehir bilgisi\n• Konum verisi (aktif kullanım sırasında)\n• Mesaj içerikleri\n• Yolculuk geçmişi',
+      },
+      {
+        subtitle: 'Sürücü Kullanıcılar (ek olarak):',
+        body:
+          '• Ehliyet görseli\n• Araç ön ve arka fotoğrafları (plaka dahil)\n• Plaka numarası\n• Araç bilgileri',
+      },
+      {
+        subtitle: 'Teknik Veriler:',
+        body:
+          "• IP adresi\n• Cihaz bilgisi\n• Push bildirim token'ı\n• Sistem log ve güvenlik kayıtları",
+      },
+    ],
+  },
+  {
+    title: '3. İşleme Amaçları',
+    body:
+      '• Kullanıcı kaydı ve kimlik doğrulama\n• Yolcu–sürücü eşleştirme\n• Sürücü/yolcu teklif sistemi\n• Leylek Teklifi / Muhabbet mesajlaşma hizmetleri\n• Sesli görüşme / VoIP hizmetleri\n• Sesli mesaj veya ses verisi özellikleri (varsa)\n• Güvenliğin sağlanması\n• Hukuki yükümlülüklerin yerine getirilmesi\n• Dolandırıcılığın önlenmesi\n• Topluluk alanının yönetimi',
+  },
+  {
+    title: '4. Saklama Süreleri',
+    body:
+      '• Hesap bilgileri: Üyelik süresince\n• Trip kayıtları: 5 yıl\n• Muhabbet metin mesajları: sunucuda en fazla 90 gün erişilebilir\n• Muhabbet ses mesajları (varsa): en fazla 30 gün saklanabilir\n• Ehliyet ve araç görselleri: Üyelik süresince\n• Log kayıtları: Mevzuat süresi boyunca\n\nSüre sonunda erişim kapanır; kayıtlar güvenlik, destek ve sistem operasyonları kapsamında silinir, anonimleştirilir veya erişime kapatılır.',
+  },
+  {
+    title: '5. Yurt Dışına Aktarım',
+    body:
+      'Altyapı hizmetleri (Supabase, Google Maps vb.) nedeniyle veriler yurt dışında bulunan sunucularda saklanabilir.',
+  },
+  {
+    title: '6. Haklarınız',
+    body:
+      'KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz. Destek hattı: 0850 307 80 29.',
+  },
+];
 
 export default function KVKKScreen() {
-  const router = useRouter();
-  const { legalRouteSurfaces: lt, legalUi } = useSettingsTheme('legal');
-
   return (
-    <SafeAreaView style={[styles.container, lt?.container]}>
-      <StatusBar barStyle={legalUi.statusBarStyle} backgroundColor={legalUi.statusBarBg} />
-      
-      {/* Header */}
-      <View style={[styles.header, lt?.header]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={legalUi.backIcon} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, lt?.headerTitle]}>KVKK Aydınlatma Metni</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.companyInfo, lt?.companyInfo]}>
-          <Text style={[styles.companyName, lt?.companyName]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <Text style={[styles.companyAddress, lt?.companyAddress]}>Meşrutiyet Mah. Konur Sk. Özsoy İş Hanı No: 25 İç Kapı No: 13 Çankaya / Ankara</Text>
-          <Text style={[styles.companyEmail, lt?.companyEmail]}>E-posta: info@karekodteknoloji.com</Text>
-          <Text style={[styles.companyEmail, lt?.companyEmail]}>Telefon: 0850 307 80 29</Text>
-        </View>
-
-        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>1. Veri Sorumlusu</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          Leylek Tag mobil uygulaması kapsamında kişisel verileriniz, 6698 sayılı KVKK uyarınca veri sorumlusu sıfatıyla KAREKOD TEKNOLOJİ VE YAZILIM A.Ş. tarafından işlenmektedir.
-        </Text>
-
-        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>2. İşlenen Veriler</Text>
-        <Text style={[styles.subTitle, lt?.subTitle]}>Yolcu Kullanıcılar:</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          • Ad, Soyad{"\n"}
-          • Telefon numarası{"\n"}
-          • Şehir bilgisi{"\n"}
-          • Konum verisi (aktif kullanım sırasında){"\n"}
-          • Mesaj içerikleri{"\n"}
-          • Yolculuk geçmişi
-        </Text>
-
-        <Text style={[styles.subTitle, lt?.subTitle]}>Sürücü Kullanıcılar (ek olarak):</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          • Ehliyet görseli{"\n"}
-          • Araç ön ve arka fotoğrafları (plaka dahil){"\n"}
-          • Plaka numarası{"\n"}
-          • Araç bilgileri
-        </Text>
-
-        <Text style={[styles.subTitle, lt?.subTitle]}>Teknik Veriler:</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          • IP adresi{"\n"}
-          • Cihaz bilgisi{"\n"}
-          • Push bildirim token{'\''}ı{"\n"}
-          • Sistem log ve güvenlik kayıtları
-        </Text>
-
-        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>3. İşleme Amaçları</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          • Kullanıcı kaydı ve kimlik doğrulama{"\n"}
-          • Yolcu–sürücü eşleştirme{"\n"}
-          • Sürücü/yolcu teklif sistemi{"\n"}
-          • Leylek Teklifi / Muhabbet mesajlaşma hizmetleri{"\n"}
-          • Sesli görüşme / VoIP hizmetleri{"\n"}
-          • Sesli mesaj veya ses verisi özellikleri (varsa){"\n"}
-          • Güvenliğin sağlanması{"\n"}
-          • Hukuki yükümlülüklerin yerine getirilmesi{"\n"}
-          • Dolandırıcılığın önlenmesi{"\n"}
-          • Topluluk alanının yönetimi
-        </Text>
-
-        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>4. Saklama Süreleri</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          • Hesap bilgileri: Üyelik süresince{"\n"}
-          • Trip kayıtları: 5 yıl{"\n"}
-          • Muhabbet mesajları ve ses verisi/ses kayıtları (özellik aktifse): 7 güne kadar{"\n"}
-          • Ehliyet ve araç görselleri: Üyelik süresince{"\n"}
-          • Log kayıtları: Mevzuat süresi boyunca
-        </Text>
-
-        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>5. Yurt Dışına Aktarım</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          Altyapı hizmetleri (Supabase, Google Maps vb.) nedeniyle veriler yurt dışında bulunan sunucularda saklanabilir.
-        </Text>
-
-        <Text style={[styles.sectionTitle, lt?.sectionTitle]}>6. Haklarınız</Text>
-        <Text style={[styles.paragraph, lt?.paragraph]}>
-          KVKK m.11 kapsamındaki haklarınızı info@karekodteknoloji.com adresine başvurarak kullanabilirsiniz. Destek hattı: 0850 307 80 29.
-        </Text>
-
-        <View style={[styles.footer, lt?.footer]}>
-          <Text style={[styles.footerText, lt?.footerText]}>Karekod Teknoloji ve Yazılım A.Ş.</Text>
-          <Text style={[styles.footerText, lt?.footerText]}>info@karekodteknoloji.com</Text>
-          <Text style={[styles.footerText, lt?.footerText]}>0850 307 80 29</Text>
-        </View>
-
-        <View style={{ height: 50 }} />
-      </ScrollView>
-    </SafeAreaView>
+    <LegalDocumentReader
+      title="KVKK Aydınlatma Metni"
+      subtitle="Kişisel verilerin işlenmesine ilişkin aydınlatma"
+      showCompanyMeta
+      lastUpdated={LEGAL_DOC_LAST_UPDATED}
+      sections={KVKK_SECTIONS}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a2e',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#16213e',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  companyInfo: {
-    backgroundColor: '#16213e',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  companyName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#E74C3C',
-    marginBottom: 8,
-  },
-  companyAddress: {
-    fontSize: 14,
-    color: '#ddd',
-    marginBottom: 4,
-  },
-  companyEmail: {
-    fontSize: 14,
-    color: '#3498db',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#E74C3C',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  subTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  paragraph: {
-    fontSize: 15,
-    color: '#ddd',
-    lineHeight: 24,
-  },
-  footer: {
-    marginTop: 40,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    alignItems: 'center',
-  },
-  footerText: {
-    color: '#888',
-    fontSize: 14,
-    marginBottom: 5,
-  },
-});

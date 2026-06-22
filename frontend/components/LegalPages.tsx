@@ -55,7 +55,7 @@ function getLocalLegalContent(type: LegalPageProps['type']): LocalLegalContent {
       content:
         `${MODAL_DRAFT_NOTICE}\n\n` +
         'LeylekTAG, kişisel verileri gönüllü yol paylaşımı, eşleşme, iletişim ve güvenlik amaçlarıyla işler.\n\n' +
-        'Konum verisi yalnızca talep ve yol paylaşımı akışı sırasında kullanılır. Muhabbet mesajları ürün ve güvenlik operasyonları kapsamında sınırlı süre saklanabilir.\n\n' +
+        'Konum verisi yalnızca talep ve yol paylaşımı akışı sırasında kullanılır. Muhabbet metin mesajları sunucuda en fazla 90 gün erişilebilir; ses mesajları en fazla 30 gün saklanabilir. Süre sonunda erişim kapanır; kayıtlar güvenlik, destek ve sistem operasyonları kapsamında silinir, anonimleştirilir veya erişime kapatılır.\n\n' +
         `Tam metin: uygulama içi Gizlilik Politikası sayfası.\n\nİletişim: ${LEGAL_COMPANY_META.email} · ${LEGAL_COMPANY_META.phone}`,
     };
   }
@@ -69,6 +69,7 @@ function getLocalLegalContent(type: LegalPageProps['type']): LocalLegalContent {
       `Veri sorumlusu: ${LEGAL_COMPANY_META.companyName}\n` +
       `${LEGAL_COMPANY_META.address}\n\n` +
       'Kişisel veriler; kayıt, eşleşme, teklif, iletişim, sürücü doğrulama, güvenlik ve yasal yükümlülükler kapsamında işlenir.\n\n' +
+      'Muhabbet metin mesajları sunucuda en fazla 90 gün erişilebilir; ses mesajları en fazla 30 gün saklanabilir. Süre sonunda erişim kapanır.\n\n' +
       'IBAN bilgisi yalnızca taraflar arası katkı payı iletimi için kullanılabilir; LeylekTAG platform tahsilatı yapmaz.\n\n' +
       `Tam metin: uygulama içi KVKK Aydınlatma Metni sayfası.\n\nBaşvuru: ${LEGAL_COMPANY_META.email}`,
   };
