@@ -1734,6 +1734,12 @@ function cappedRegionForPassengerMapFit(
   };
 }
 
+type LiveMapFitInstrLog = {
+  elapsedMs: number;
+  role: 'passenger' | 'driver';
+  reason: string;
+};
+
 /** Yolcu matched/trip: geçerli noktalar + cap’li region; ülke/dünya zoom-out yok */
 function applyPassengerMapFit(
   map: {
@@ -1743,6 +1749,7 @@ function applyPassengerMapFit(
   | undefined,
   endpoints: MapLatLng[],
   routePoly?: MapLatLng[] | null,
+  fitLog?: LiveMapFitInstrLog | null,
 ): boolean {
   if (!map) return false;
   const fitPts = passengerRouteFitCoords(endpoints, routePoly);
@@ -1750,6 +1757,10 @@ function applyPassengerMapFit(
   const padding = passengerMapEdgePadding();
   const capped = cappedRegionForPassengerMapFit(fitPts, padding);
   if (!capped) return false;
+  const coordinateCount = filterValidMapCoords(fitPts).length;
+  if (fitLog) {
+    console.log('[LiveMapView] fitToCoordinates', { ...fitLog, coordinateCount });
+  }
 
   if (
     fitPts.length >= 2 &&
@@ -2832,9 +2843,29 @@ export default function LiveMapView({
 
   const [mapTilesReady, setMapTilesReady] = useState(false);
   const mapReadyHandledRef = useRef(false);
+  /** RC-MAP-SLOW-DEVICE-LOAD-1B — matched-trip map load diagnostics (log-only). */
+  const mapInstrMountAtRef = useRef(Date.now());
+  const mapInstrFirstCoordsLoggedRef = useRef(false);
+  const mapInstrRouteMetricsLoggedRef = useRef(false);
+  const mapInstrElapsedMs = useCallback(
+    () => Date.now() - mapInstrMountAtRef.current,
+    [],
+  );
+  const logMapFit = useCallback(
+    (payload: { role: 'passenger' | 'driver'; coordinateCount: number; reason: string }) => {
+      console.log('[LiveMapView] fitToCoordinates', {
+        elapsedMs: mapInstrElapsedMs(),
+        ...payload,
+      });
+    },
+    [mapInstrElapsedMs],
+  );
   /** Matched/in_progress — onMapReady gecikmesi; overlay süresiz kalmamalı (QA-2B). */
   const MAP_TILES_READY_FALLBACK_MS = 1200;
   useEffect(() => {
+    mapInstrMountAtRef.current = Date.now();
+    mapInstrFirstCoordsLoggedRef.current = false;
+    mapInstrRouteMetricsLoggedRef.current = false;
     setMapTilesReady(false);
     mapReadyHandledRef.current = false;
   }, [tagId]);
@@ -3069,6 +3100,72 @@ export default function LiveMapView({
     const id = setTimeout(() => setPinTracks(false), 3800);
     return () => clearTimeout(id);
   }, [isDriver, navigationMode]);
+
+  useEffect(() => {
+    console.log('[LiveMapView] mount', {
+      role: isDriver ? 'driver' : 'passenger',
+      tagId: tagId ?? null,
+      isAndroid: Platform.OS === 'android',
+      isScopeLight,
+      hasUserLocation: !!(userLocation && isValidMapCoord(userLocation)),
+      hasOtherLocation: isValidRouteEndpoint(otherLocation),
+      hasDestination: !!(destinationLocation && isValidMapCoord(destinationLocation)),
+      driverNavActive: isDriver && navigationMode,
+      boardingConfirmed,
+    });
+  }, [tagId]);
+
+  useEffect(() => {
+    console.log('[LiveMapView] marker tracks state', {
+      pinTracks,
+      elapsedMs: mapInstrElapsedMs(),
+    });
+  }, [pinTracks, mapInstrElapsedMs]);
+
+  useEffect(() => {
+    if (mapInstrFirstCoordsLoggedRef.current) return;
+    const hasUser = !!(userLocation && isValidMapCoord(userLocation));
+    const hasOther = isValidRouteEndpoint(otherLocation);
+    const hasDest = !!(destinationLocation && isValidMapCoord(destinationLocation));
+    if (!hasUser && !hasOther && !hasDest) return;
+    mapInstrFirstCoordsLoggedRef.current = true;
+    console.log('[LiveMapView] first coordinates', {
+      elapsedMs: mapInstrElapsedMs(),
+      userLocation: hasUser,
+      otherLocation: hasOther,
+      destination: hasDest,
+    });
+  }, [
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    mapInstrElapsedMs,
+  ]);
+
+  useEffect(() => {
+    if (mapInstrRouteMetricsLoggedRef.current) return;
+    const hasPolyline = meetingRouteCoordinates.length >= 2;
+    const hasMetrics =
+      meetingDistance != null &&
+      meetingDuration != null &&
+      Number.isFinite(meetingDistance) &&
+      Number.isFinite(meetingDuration);
+    if (!hasPolyline && !hasMetrics) return;
+    mapInstrRouteMetricsLoggedRef.current = true;
+    console.log('[LiveMapView] route metrics ready', {
+      elapsedMs: mapInstrElapsedMs(),
+      hasPolyline,
+      coordinateCount: meetingRouteCoordinates.length,
+    });
+  }, [
+    meetingRouteCoordinates.length,
+    meetingDistance,
+    meetingDuration,
+    mapInstrElapsedMs,
+  ]);
 
   /** pickup: sürücü→yolcu | destination: yolcu konumu→varış (rota çizimi) */
   const [navigationStage, setNavigationStage] = useState<'pickup' | 'destination'>('pickup');
@@ -5257,7 +5354,11 @@ export default function LiveMapView({
         if (isValidMapCoord(anchor)) ep.push(anchor);
         if (isValidMapCoord(otherLocation)) ep.push(otherLocation);
         if (destinationLocation && isValidMapCoord(destinationLocation)) ep.push(destinationLocation);
-        if (applyPassengerMapFit(mapRef.current, ep, routeCoords)) {
+        if (applyPassengerMapFit(mapRef.current, ep, routeCoords, {
+          elapsedMs: mapInstrElapsedMs(),
+          role: 'passenger',
+          reason: 'passenger_nav_viewport',
+        })) {
           mapFitRef.current.initialDone = true;
         }
         return;
@@ -5296,6 +5397,11 @@ export default function LiveMapView({
       const edgePadding = navMeetingOnly
         ? { top: 260, right: 36, bottom: 300, left: 36 }
         : { top: 120, right: 50, bottom: 350, left: 50 };
+      logMapFit({
+        role: 'driver',
+        coordinateCount: coords.length,
+        reason: navMeetingOnly ? 'driver_meeting_only_preview' : 'driver_preview_viewport',
+      });
       try {
         mapRef.current.fitToCoordinates(coords, {
           edgePadding,
@@ -5318,6 +5424,8 @@ export default function LiveMapView({
       navDriverMapCoord?.latitude,
       navDriverMapCoord?.longitude,
       applyDriverActiveFollowViewport,
+      logMapFit,
+      mapInstrElapsedMs,
     ],
   );
 
@@ -5941,7 +6049,13 @@ export default function LiveMapView({
                   if (destinationLocation && isValidMapCoord(destinationLocation)) {
                     paxFitEp.push(destinationLocation);
                   }
-                  if (applyPassengerMapFit(mapRef.current, paxFitEp, polyPax)) {
+                  if (
+                    applyPassengerMapFit(mapRef.current, paxFitEp, polyPax, {
+                      elapsedMs: Date.now() - mapInstrMountAtRef.current,
+                      role: 'passenger',
+                      reason: 'passenger_osrm_route_fetch',
+                    })
+                  ) {
                     mapFitRef.current.initialDone = true;
                   }
                 }
@@ -6021,12 +6135,27 @@ export default function LiveMapView({
     applyDriverActiveFollowViewport,
   ]);
 
-  const handleMapReady = useCallback(() => {
-    if (mapReadyHandledRef.current) return;
-    mapReadyHandledRef.current = true;
-    setMapTilesReady(true);
-    onDriverNavMapReady();
-  }, [onDriverNavMapReady]);
+  const markMapReady = useCallback(
+    (source: 'onMapReady' | 'onMapLoaded' | 'fallback') => {
+      if (mapReadyHandledRef.current) return;
+      mapReadyHandledRef.current = true;
+      console.log('[LiveMapView] map ready', {
+        source,
+        elapsedMs: mapInstrElapsedMs(),
+      });
+      setMapTilesReady(true);
+      onDriverNavMapReady();
+    },
+    [onDriverNavMapReady, mapInstrElapsedMs],
+  );
+
+  const handleMapReadyFromReady = useCallback(() => {
+    markMapReady('onMapReady');
+  }, [markMapReady]);
+
+  const handleMapReadyFromLoaded = useCallback(() => {
+    markMapReady('onMapLoaded');
+  }, [markMapReady]);
 
   useEffect(() => {
     if (!tagId) return;
@@ -6034,14 +6163,11 @@ export default function LiveMapView({
     if (st !== 'matched' && st !== 'in_progress') return;
 
     const timer = setTimeout(() => {
-      if (mapReadyHandledRef.current) return;
-      mapReadyHandledRef.current = true;
-      setMapTilesReady(true);
-      onDriverNavMapReady();
+      markMapReady('fallback');
     }, MAP_TILES_READY_FALLBACK_MS);
 
     return () => clearTimeout(timer);
-  }, [tagId, tagStatus, onDriverNavMapReady]);
+  }, [tagId, tagStatus, markMapReady]);
 
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
@@ -6079,12 +6205,23 @@ export default function LiveMapView({
         endpointCount: filterValidMapCoords(endpoints).length,
         polylinePoints: routePoly?.length ?? 0,
       });
-      if (applyPassengerMapFit(map, endpoints, routePoly)) {
+      if (
+        applyPassengerMapFit(
+          map,
+          endpoints,
+          routePoly,
+          {
+            elapsedMs: mapInstrElapsedMs(),
+            role: 'passenger',
+            reason: 'passenger_initial_fit_effect',
+          },
+        )
+      ) {
         mapFitRef.current.initialDone = true;
       }
     }, 650);
     return () => clearTimeout(t);
-  }, [userLocation, otherLocation, destinationLocation, isDriver]);
+  }, [userLocation, otherLocation, destinationLocation, isDriver, mapInstrElapsedMs]);
 
   const driverNavRouteLayers = useMemo(() => {
     const navPos = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
@@ -6670,8 +6807,8 @@ export default function LiveMapView({
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           }}
-          onMapReady={handleMapReady}
-          onMapLoaded={Platform.OS === 'android' ? handleMapReady : undefined}
+          onMapReady={handleMapReadyFromReady}
+          onMapLoaded={Platform.OS === 'android' ? handleMapReadyFromLoaded : undefined}
           mapPadding={
             driverNavImmersive
               ? {
