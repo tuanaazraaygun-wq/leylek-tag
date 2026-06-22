@@ -32,6 +32,7 @@ import {
   combineAiTier,
   combineAiWarnings,
 } from '../lib/driverKycAiMock';
+import { LegalPage } from './LegalPages';
 
 // Türkiye'de popüler araç markaları ve modelleri
 const CAR_BRANDS: { [key: string]: string[] } = {
@@ -729,16 +730,221 @@ function EmptyPhotoAddCard({
   );
 }
 
-function KycTermsCheckbox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+type KycRoadmapStatus = 'done' | 'active' | 'upcoming' | 'future';
+
+function KycLegalCheckboxRow({
+  checked,
+  onToggle,
+  children,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <TouchableOpacity style={styles.termsRow} onPress={onToggle} activeOpacity={0.82}>
-      <View style={[styles.termsBox, checked && styles.termsBoxChecked]}>
-        {checked ? <Ionicons name="checkmark" size={16} color="#FFF" /> : null}
+    <View style={styles.termsRow}>
+      <TouchableOpacity
+        onPress={onToggle}
+        activeOpacity={0.82}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <View style={[styles.termsBox, checked && styles.termsBoxChecked]}>
+          {checked ? <Ionicons name="checkmark" size={16} color="#FFF" /> : null}
+        </View>
+      </TouchableOpacity>
+      <Text style={styles.termsText}>{children}</Text>
+    </View>
+  );
+}
+
+function KycLegalConsentGroup({
+  kvkkAcknowledged,
+  termsRulesAccepted,
+  onToggleKvkk,
+  onToggleTerms,
+  onOpenTerms,
+  onOpenKvkk,
+}: {
+  kvkkAcknowledged: boolean;
+  termsRulesAccepted: boolean;
+  onToggleKvkk: () => void;
+  onToggleTerms: () => void;
+  onOpenTerms: () => void;
+  onOpenKvkk: () => void;
+}) {
+  return (
+    <View style={styles.legalConsentGroup}>
+      <KycLegalCheckboxRow checked={kvkkAcknowledged} onToggle={onToggleKvkk}>
+        <Text style={styles.termsLink} onPress={onOpenKvkk}>
+          KVKK Aydınlatma Metni
+        </Text>
+        <Text>&apos;ni okudum ve anladım.</Text>
+      </KycLegalCheckboxRow>
+      <KycLegalCheckboxRow checked={termsRulesAccepted} onToggle={onToggleTerms}>
+        <Text style={styles.termsLink} onPress={onOpenTerms}>
+          Kullanım Şartları
+        </Text>
+        <Text> ve sürücü kurallarını okudum, kabul ediyorum.</Text>
+      </KycLegalCheckboxRow>
+    </View>
+  );
+}
+
+function KycIntroCard({ userName }: { userName: string }) {
+  const greeting = userName.trim() ? `${userName.trim()}, ` : '';
+  return (
+    <View style={styles.kycIntroCard}>
+      <LinearGradient
+        colors={['rgba(34,211,238,0.14)', 'rgba(16,26,43,0.92)', 'rgba(11,18,32,0.98)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.kycIntroGradient}
+      >
+        <View style={styles.kycIntroBadgeRow}>
+          <View style={styles.kycIntroBadge}>
+            <Ionicons name="shield-checkmark" size={14} color={KYC_P.cyan} />
+            <Text style={styles.kycIntroBadgeText}>Güven rozeti</Text>
+          </View>
+          <View style={styles.kycIntroBadgeMuted}>
+            <Text style={styles.kycIntroBadgeMutedText}>Gönüllü yol paylaşımı</Text>
+          </View>
+        </View>
+        <Text style={styles.kycIntroTitle}>Onaylı sürücü profili</Text>
+        <Text style={styles.kycIntroLead}>
+          {greeting}Telefon doğrulaman tamamlandı. Sürücü başvurusu için belge ve güven adımlarını tamamla.
+        </Text>
+        <Text style={styles.kycIntroBody}>
+          LeylekTAG bir taşıma şirketi veya taksi hizmeti değildir; güvenli yol paylaşımı ve kişi eşleştirme
+          platformudur. Kimlik doğrulama, profil güven rozeti ve topluluk güvenliği içindir — resmi devlet
+          onayı veya sabıka kaydı kontrolü yapılmaz.
+        </Text>
+      </LinearGradient>
+    </View>
+  );
+}
+
+function KycRoadmapPanel({
+  step,
+  isMotorKyc,
+  licenseDocReady,
+  vehicleDocReady,
+  kvkkAcknowledged,
+  termsRulesAccepted,
+}: {
+  step: number;
+  isMotorKyc: boolean;
+  licenseDocReady: boolean;
+  vehicleDocReady: boolean;
+  kvkkAcknowledged: boolean;
+  termsRulesAccepted: boolean;
+}) {
+  const vehicleLabel = isMotorKyc ? 'Motor / plaka bilgileri' : 'Araç / plaka / ruhsat bilgileri';
+
+  const resolveStatus = (id: string): KycRoadmapStatus => {
+    switch (id) {
+      case 'phone':
+        return 'done';
+      case 'identity':
+      case 'liveness':
+        return 'future';
+      case 'vehicle':
+        if (step > 1 && vehicleDocReady) return 'done';
+        if (step === 0 || step === 1) return 'active';
+        return 'upcoming';
+      case 'license':
+        if (step > 2 && licenseDocReady) return 'done';
+        if (step === 2) return 'active';
+        return 'upcoming';
+      case 'legal':
+        if (step === 4) return termsRulesAccepted ? 'done' : 'active';
+        return 'upcoming';
+      case 'kvkk':
+        if (step === 4) return kvkkAcknowledged ? 'done' : 'active';
+        return 'upcoming';
+      case 'review':
+        return 'upcoming';
+      default:
+        return 'upcoming';
+    }
+  };
+
+  const items: { id: string; label: string; hint?: string }[] = [
+    { id: 'phone', label: 'Telefon doğrulama' },
+    { id: 'identity', label: 'Kimlik doğrulama', hint: 'NFC/OCR destekli — yakında' },
+    { id: 'liveness', label: 'Canlı selfie / yüz eşleşmesi', hint: 'Yakında' },
+    { id: 'license', label: 'Ehliyet' },
+    { id: 'vehicle', label: vehicleLabel },
+    { id: 'legal', label: 'Sürücü sözleşmesi' },
+    { id: 'kvkk', label: 'KVKK Aydınlatma / gerekli izinler' },
+    { id: 'review', label: 'Manuel inceleme' },
+  ];
+
+  const statusIcon = (status: KycRoadmapStatus): { name: keyof typeof Ionicons.glyphMap; color: string } => {
+    if (status === 'done') return { name: 'checkmark-circle', color: 'rgba(110,231,183,0.92)' };
+    if (status === 'active') return { name: 'ellipse', color: KYC_P.cyan };
+    if (status === 'future') return { name: 'time-outline', color: 'rgba(186,201,222,0.55)' };
+    return { name: 'ellipse-outline', color: 'rgba(186,201,222,0.35)' };
+  };
+
+  return (
+    <View style={styles.kycRoadmapCard}>
+      <Text style={styles.kycRoadmapEyebrow}>Başvuru yol haritası</Text>
+      {items.map((item, idx) => {
+        const status = resolveStatus(item.id);
+        const icon = statusIcon(status);
+        const isLast = idx === items.length - 1;
+        return (
+          <View key={item.id} style={[styles.kycRoadmapRow, isLast && styles.kycRoadmapRowLast]}>
+            <View style={styles.kycRoadmapIconCol}>
+              <Ionicons name={icon.name} size={status === 'active' ? 12 : 18} color={icon.color} />
+              {!isLast ? <View style={styles.kycRoadmapConnector} /> : null}
+            </View>
+            <View style={styles.kycRoadmapTextCol}>
+              <Text
+                style={[
+                  styles.kycRoadmapLabel,
+                  status === 'done' && styles.kycRoadmapLabelDone,
+                  status === 'active' && styles.kycRoadmapLabelActive,
+                  status === 'future' && styles.kycRoadmapLabelFuture,
+                ]}
+              >
+                {item.label}
+                {status === 'done' ? ' ✓' : ''}
+              </Text>
+              {item.hint ? <Text style={styles.kycRoadmapHint}>{item.hint}</Text> : null}
+              {status === 'active' && item.id !== 'legal' && item.id !== 'kvkk' ? (
+                <Text style={styles.kycRoadmapActiveChip}>Bu adımdasın</Text>
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
+      <View style={styles.kycTrustLayersNote}>
+        <Ionicons name="layers-outline" size={15} color="rgba(34,211,238,0.75)" />
+        <Text style={styles.kycTrustLayersText}>
+          Kimlik NFC/OCR ve canlılık doğrulaması güven katmanları olarak sonraki sürümde eklenecektir; şu an
+          belge yükleme ve manuel inceleme geçerlidir.
+        </Text>
       </View>
-      <Text style={styles.termsText}>
-        Sürücü gider paylaşımı koşullarını ve KVKK aydınlatmasını okudum, kabul ediyorum.
-      </Text>
-    </TouchableOpacity>
+    </View>
+  );
+}
+
+function KycDriverResponsibilityNote() {
+  return (
+    <View style={styles.kycResponsibilityCard}>
+      <Ionicons name="information-circle-outline" size={20} color="rgba(34,211,238,0.85)" />
+      <View style={styles.kycResponsibilityTextCol}>
+        <Text style={styles.kycResponsibilityLine}>
+          Sürücü, paylaştığı belge ve bilgilerin doğruluğundan sorumludur.
+        </Text>
+        <Text style={styles.kycResponsibilityLine}>
+          LeylekTAG platform tahsilatı yapmaz; yol paylaşımı katkı payı taraflar arasındadır.
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -892,7 +1098,10 @@ export default function DriverKYCScreen({
   const [selfiePhoto, setSelfiePhoto] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState('');
-  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [kvkkAcknowledged, setKvkkAcknowledged] = useState(false);
+  const [termsRulesAccepted, setTermsRulesAccepted] = useState(false);
+  const termsAccepted = kvkkAcknowledged && termsRulesAccepted;
+  const [kycLegalDoc, setKycLegalDoc] = useState<null | 'kvkk' | 'terms'>(null);
   const [customBrandName, setCustomBrandName] = useState('');
   const [customModelName, setCustomModelName] = useState('');
   
@@ -1299,8 +1508,9 @@ export default function DriverKYCScreen({
       Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
-    if (!termsAccepted) {
-      const msg = 'Başvuruyu göndermek için sürücü koşullarını kabul etmelisiniz.';
+    if (!kvkkAcknowledged || !termsRulesAccepted) {
+      const msg =
+        'Başvuruyu göndermek için KVKK Aydınlatma Metni\'ni okumanız ve kullanım şartlarını kabul etmeniz gerekir.';
       Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
@@ -1442,19 +1652,15 @@ export default function DriverKYCScreen({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
         >
-          <View style={styles.infoCardPremium}>
-            <View style={styles.infoIconWrap}>
-              <Ionicons name="sparkles" size={22} color={KYC_P.cyan} />
-            </View>
-            <View style={styles.infoTextCol}>
-              <Text style={styles.infoTitlePremium}>AI destekli ön kontrol</Text>
-              <Text style={styles.infoBodyPremium}>
-                {isMotorKyc
-                  ? 'Belgeler güvenle işlenir; fotoğraflarda otomatik kalite kontrolü yapılır. Son onay ekiptedir.'
-                  : 'Plaka ve belge netliği taranır; bulanık veya eksik kadrajda uyarı verilir.'}
-              </Text>
-            </View>
-          </View>
+          <KycIntroCard userName={userName} />
+          <KycRoadmapPanel
+            step={step}
+            isMotorKyc={isMotorKyc}
+            licenseDocReady={licenseDocReady}
+            vehicleDocReady={vehicleDocReady}
+            kvkkAcknowledged={kvkkAcknowledged}
+            termsRulesAccepted={termsRulesAccepted}
+          />
 
           <View style={styles.progressTrack}>
             <View style={[styles.progressGlow, { width: `${((step + 1) / 5) * 100}%` }]} />
@@ -1688,9 +1894,14 @@ export default function DriverKYCScreen({
                     Ön kontrol özeti ve belgeleriniz güvenli biçimde inceleme kuyruğuna iletilecek. Son karar her
                     zaman admin ekibindedir.
                   </Text>
-                  <KycTermsCheckbox
-                    checked={termsAccepted}
-                    onToggle={() => setTermsAccepted((v) => !v)}
+                  <KycDriverResponsibilityNote />
+                  <KycLegalConsentGroup
+                    kvkkAcknowledged={kvkkAcknowledged}
+                    termsRulesAccepted={termsRulesAccepted}
+                    onToggleKvkk={() => setKvkkAcknowledged((v) => !v)}
+                    onToggleTerms={() => setTermsRulesAccepted((v) => !v)}
+                    onOpenTerms={() => setKycLegalDoc('terms')}
+                    onOpenKvkk={() => setKycLegalDoc('kvkk')}
                   />
                 </>
               )}
@@ -1919,12 +2130,17 @@ export default function DriverKYCScreen({
                   {vehicleAi ? <AiResultCard result={vehicleAi} subtitle="Motor görüntüsü analizi" /> : null}
                   {licenseAi ? <AiResultCard result={licenseAi} subtitle="Ehliyet görüntüsü analizi" /> : null}
                   <Text style={styles.stepHelp}>
-                    Selfie yalnızca admin incelemesi içindir. Ön kontrol özeti ve belgeler güvenli şekilde kuyruğa
-                    iletilir; son karar her zaman admin ekibindedir.
+                    Selfie yalnızca admin incelemesi içindir (canlılık doğrulaması değildir). Ön kontrol özeti ve
+                    belgeler güvenli şekilde kuyruğa iletilir; son karar her zaman admin ekibindedir.
                   </Text>
-                  <KycTermsCheckbox
-                    checked={termsAccepted}
-                    onToggle={() => setTermsAccepted((v) => !v)}
+                  <KycDriverResponsibilityNote />
+                  <KycLegalConsentGroup
+                    kvkkAcknowledged={kvkkAcknowledged}
+                    termsRulesAccepted={termsRulesAccepted}
+                    onToggleKvkk={() => setKvkkAcknowledged((v) => !v)}
+                    onToggleTerms={() => setTermsRulesAccepted((v) => !v)}
+                    onOpenTerms={() => setKycLegalDoc('terms')}
+                    onOpenKvkk={() => setKycLegalDoc('kvkk')}
                   />
                 </>
               )}
@@ -2048,6 +2264,9 @@ export default function DriverKYCScreen({
           />
         </SafeAreaView>
       </Modal>
+
+      <LegalPage type="kvkk" visible={kycLegalDoc === 'kvkk'} onClose={() => setKycLegalDoc(null)} />
+      <LegalPage type="terms" visible={kycLegalDoc === 'terms'} onClose={() => setKycLegalDoc(null)} />
     </SafeAreaView>
   );
 }
@@ -2187,6 +2406,189 @@ const styles = StyleSheet.create({
     color: KYC_P.textMd,
     lineHeight: 20,
   },
+  kycIntroCard: {
+    marginBottom: 14,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.22)',
+    shadowColor: '#010818',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  kycIntroGradient: {
+    padding: 18,
+  },
+  kycIntroBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  kycIntroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.28)',
+  },
+  kycIntroBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: KYC_P.cyan,
+    letterSpacing: 0.3,
+  },
+  kycIntroBadgeMuted: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+  },
+  kycIntroBadgeMutedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(186,201,222,0.72)',
+  },
+  kycIntroTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: KYC_P.textHi,
+    letterSpacing: -0.4,
+    marginBottom: 8,
+  },
+  kycIntroLead: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(243,248,255,0.9)',
+    lineHeight: 21,
+    marginBottom: 10,
+  },
+  kycIntroBody: {
+    fontSize: 13,
+    color: KYC_P.textMd,
+    lineHeight: 20,
+  },
+  kycRoadmapCard: {
+    backgroundColor: KYC_P.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: KYC_P.border,
+  },
+  kycRoadmapEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(34,211,238,0.75)',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 14,
+  },
+  kycRoadmapRow: {
+    flexDirection: 'row',
+    minHeight: 36,
+    marginBottom: 4,
+  },
+  kycRoadmapRowLast: {
+    marginBottom: 0,
+  },
+  kycRoadmapIconCol: {
+    width: 28,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  kycRoadmapConnector: {
+    flex: 1,
+    width: 2,
+    marginTop: 4,
+    marginBottom: 2,
+    backgroundColor: 'rgba(30,58,95,0.55)',
+    borderRadius: 1,
+  },
+  kycRoadmapTextCol: {
+    flex: 1,
+    paddingBottom: 10,
+  },
+  kycRoadmapLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(186,201,222,0.72)',
+    lineHeight: 20,
+  },
+  kycRoadmapLabelDone: {
+    color: 'rgba(186,201,222,0.88)',
+  },
+  kycRoadmapLabelActive: {
+    color: KYC_P.textHi,
+    fontWeight: '800',
+  },
+  kycRoadmapLabelFuture: {
+    color: 'rgba(186,201,222,0.58)',
+  },
+  kycRoadmapHint: {
+    marginTop: 3,
+    fontSize: 12,
+    color: 'rgba(186,201,222,0.52)',
+    fontStyle: 'italic',
+    lineHeight: 17,
+  },
+  kycRoadmapActiveChip: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    fontSize: 10,
+    fontWeight: '800',
+    color: KYC_P.cyan,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  kycTrustLayersNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(30,58,95,0.45)',
+  },
+  kycTrustLayersText: {
+    flex: 1,
+    fontSize: 12,
+    color: 'rgba(186,201,222,0.62)',
+    lineHeight: 18,
+  },
+  kycResponsibilityCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: 'rgba(16,26,43,0.72)',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.55)',
+  },
+  kycResponsibilityTextCol: {
+    flex: 1,
+    gap: 6,
+  },
+  kycResponsibilityLine: {
+    fontSize: 13,
+    color: KYC_P.textMd,
+    lineHeight: 19,
+  },
+  legalConsentGroup: {
+    gap: 14,
+    marginTop: 4,
+  },
   progressTrack: {
     height: 8,
     borderRadius: 999,
@@ -2301,6 +2703,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: KYC_P.textMd,
     lineHeight: 20,
+  },
+  termsLink: {
+    color: KYC_P.cyan,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   summaryTitle: {
     fontSize: 17,
