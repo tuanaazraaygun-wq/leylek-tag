@@ -106,7 +106,9 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
           <LinearGradient colors={consentHeaderGradient} style={styles.consentHeader}>
             <Ionicons name="shield-checkmark" size={40} color={legalUi.accent} />
             <Text style={[styles.consentTitle, lt?.consentTitle]}>Kullanım Onayı</Text>
-            <Text style={[styles.consentSubtitle, lt?.consentSubtitle]}>Devam etmek için aşağıdakileri onaylamanız gerekmektedir.</Text>
+            <Text style={[styles.consentSubtitle, lt?.consentSubtitle]}>
+              Devam etmek için aşağıdaki metinleri okumanız ve gerekli beyan/onayları vermeniz gerekmektedir.
+            </Text>
           </LinearGradient>
           
           <ScrollView style={styles.consentContent}>
@@ -121,7 +123,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               <View style={styles.consentTextContainer}>
                 <Text style={[styles.consentText, lt?.consentText]}>
                   <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowPrivacy(true)}>Gizlilik Politikası</Text>
-                  {"'nı okudum ve kabul ediyorum."}
+                  {"'nı okudum ve anladım."}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -153,7 +155,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               <View style={styles.consentTextContainer}>
                 <Text style={[styles.consentText, lt?.consentText]}>
                   <Text style={[styles.linkText, lt?.linkText]} onPress={() => setShowKvkk(true)}>KVKK Aydınlatma Metni</Text>
-                  {"'ni okudum, kişisel verilerimin işlenmesini onaylıyorum."}
+                  {"'ni okudum ve anladım."}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -168,7 +170,7 @@ export function LegalConsentModal({ visible, onAccept, onDecline }: LegalConsent
               </View>
               <View style={styles.consentTextContainer}>
                 <Text style={[styles.consentText, lt?.consentText]}>
-                  18 yaşından büyük olduğumu beyan ediyorum.
+                  18 yaşından büyük olduğumu beyan ederim.
                 </Text>
               </View>
             </TouchableOpacity>

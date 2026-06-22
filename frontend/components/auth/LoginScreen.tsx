@@ -20,6 +20,7 @@ import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
 import { LegalPage } from '../LegalPages';
+import { AuthLegalConsentBlock } from './AuthLegalConsentBlock';
 import { LoginBrandHeader } from './LoginBrandHeader';
 import { premiumAuthStyles as pa } from './premiumAuthStyles';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton, useAuthTheme } from './premiumAuthChrome';
@@ -56,7 +57,7 @@ export function LoginScreen({
   onPressSupport,
   styles,
 }: LoginScreenProps) {
-  const [legalDoc, setLegalDoc] = useState<null | 'kvkk' | 'privacy'>(null);
+  const [legalDoc, setLegalDoc] = useState<null | 'kvkk' | 'privacy' | 'terms'>(null);
   const { tokens, lightSurfaces } = useAuthTheme();
   const { height: winH, width: winW } = useWindowDimensions();
   const isShort = winH < 560;
@@ -64,7 +65,8 @@ export function LoginScreen({
   const padH = Math.min(22, Math.max(14, Math.round(winW * 0.045)));
   const columnW = Math.min(400, winW - padH * 2);
 
-  const blocked = !kvkkAccepted || phone.replace(/\D/g, '').length < 10;
+  const [loginLegalValid, setLoginLegalValid] = useState(kvkkAccepted);
+  const blocked = !loginLegalValid || phone.replace(/\D/g, '').length < 10;
 
   const trustItems = [
     {
@@ -120,38 +122,15 @@ export function LoginScreen({
             />
           </View>
 
-          <View style={pa.kvkkRow}>
-            <TouchableOpacity
-              onPress={() => setKvkkAccepted(!kvkkAccepted)}
-              activeOpacity={0.85}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: kvkkAccepted }}
-            >
-              <View
-                style={[
-                  pa.checkboxOuter,
-                  lightSurfaces?.checkboxOuter,
-                  kvkkAccepted && pa.checkboxFilled,
-                  kvkkAccepted && lightSurfaces?.checkboxFilled,
-                ]}
-              >
-                {kvkkAccepted ? (
-                  <Ionicons name="checkmark" size={14} color={lightSurfaces?.checkboxCheck ?? '#0F172A'} />
-                ) : null}
-              </View>
-            </TouchableOpacity>
-            <Text style={pa.kvkkBlock}>
-              <Text onPress={() => setLegalDoc('kvkk')} style={[pa.kvkkLink, lightSurfaces?.kvkkLink]}>
-                Aydınlatma Metni
-              </Text>
-              <Text style={[pa.kvkkPlain, lightSurfaces?.kvkkPlain]}> ve </Text>
-              <Text onPress={() => setLegalDoc('privacy')} style={[pa.kvkkLink, lightSurfaces?.kvkkLink]}>
-                Gizlilik Politikası
-              </Text>
-              <Text style={[pa.kvkkPlain, lightSurfaces?.kvkkPlain]}>{`'nı okudum, anladım ve kabul ediyorum.`}</Text>
-            </Text>
-          </View>
+          <AuthLegalConsentBlock
+            seedAccepted={kvkkAccepted}
+            lightSurfaces={lightSurfaces}
+            onOpenDoc={setLegalDoc}
+            onValidityChange={(valid) => {
+              setLoginLegalValid(valid);
+              setKvkkAccepted(valid);
+            }}
+          />
 
           <PremiumGradientCtaButton
             label="Devam et"
@@ -249,6 +228,7 @@ export function LoginScreen({
         }}
       />
       <LegalPage type="privacy" visible={legalDoc === 'privacy'} onClose={() => setLegalDoc((d) => (d === 'privacy' ? null : d))} />
+      <LegalPage type="terms" visible={legalDoc === 'terms'} onClose={() => setLegalDoc((d) => (d === 'terms' ? null : d))} />
 
       <Modal visible={showSupportModal} animationType="slide" transparent>
         <View style={pa.modalBackdrop}>

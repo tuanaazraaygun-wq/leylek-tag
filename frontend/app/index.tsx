@@ -107,10 +107,11 @@ import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { callAlertPrompt, isAlertPromptCallable } from '../lib/alertPrompt';
 import { callCheck } from '../lib/callCheck';
 import AdminPanel from '../components/AdminPanel';
-import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
 import SplashScreen from '../components/SplashScreen';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
+import { AuthLegalConsentBlock } from '../components/auth/AuthLegalConsentBlock';
+import { LegalPage } from '../components/LegalPages';
 import { OtpVerificationScreen } from '../components/auth/OtpVerificationScreen';
 import { RoleSelectScreen } from '../components/premium/RoleSelectScreen';
 import {
@@ -1244,6 +1245,8 @@ export default function App() {
   const [kvkkAccepted, setKvkkAccepted] = useState(false);
   const [showKVKKModal, setShowKVKKModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [registerLegalValid, setRegisterLegalValid] = useState(false);
+  const [registerLegalDoc, setRegisterLegalDoc] = useState<null | 'kvkk' | 'privacy' | 'terms'>(null);
   // Auth states
   const [phone, setPhone] = useState('');
   const [testLoginPassword, setTestLoginPassword] = useState('');
@@ -1557,15 +1560,6 @@ export default function App() {
   // Admin Panel state
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  
-  // Legal Consent state
-  const [showLegalConsent, setShowLegalConsent] = useState(false);
-  const [legalAccepted, setLegalAccepted] = useState(false);
-  
-  // Legal Pages (Gizlilik, Kullanım Şartları, KVKK)
-  const [showPrivacy, setShowPrivacy] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
-  const [showKvkk, setShowKvkk] = useState(false);
 
   // Push Notifications Hook - Expo Push ile (Firebase olmadan)
   const { registerPushToken, removePushToken, notification, reportPushRegisterDebugSurface } =
@@ -2079,12 +2073,6 @@ export default function App() {
           }
         }
 
-        if (!legalWasAccepted) {
-          setShowLegalConsent(true);
-        } else {
-          setLegalAccepted(true);
-        }
-
         setTimeout(() => {
           void (async () => {
             let uForBootstrap = parsedUser;
@@ -2127,15 +2115,6 @@ export default function App() {
     }
   };
   
-  // Legal consent red
-  const handleLegalDecline = async () => {
-    appAlert(
-      'Uyarı',
-      'Kullanım şartlarını kabul etmeden devam edemezsiniz.',
-      [{ text: 'Tamam' }]
-    );
-  };
-
   const saveUser = async (userData: User): Promise<User> => {
     const raw = await getPersistedUserRaw();
     const next = { ...(userData as unknown as Record<string, unknown>) };
@@ -2284,14 +2263,13 @@ export default function App() {
     }
   };
 
-  /** OTP/KVKK login path — persisted session counts as legal accepted for post-auth routing. */
+  /** OTP/login path — login checkbox consent persisted for session bootstrap gating. */
   const markLoginLegalAccepted = useCallback(async () => {
     try {
       await AsyncStorage.setItem('legal_accepted', 'true');
     } catch {
       /* ignore */
     }
-    setLegalAccepted(true);
   }, []);
 
   const landOnRoleSelectWithThemeChoice = useCallback(
@@ -2339,79 +2317,6 @@ export default function App() {
       }
       return merged as unknown as User;
     });
-  };
-
-  // Legal consent kabul (saveUser sonrası — aktif eşleşmede rol düzeltmesi için)
-  const handleLegalAccept = async () => {
-    await AsyncStorage.setItem('legal_accepted', 'true');
-    setLegalAccepted(true);
-    setShowLegalConsent(false);
-    if (user?.id) {
-      try {
-        const cleanPhone = user.phone?.replace(/\D/g, '');
-        const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
-        if (!isMainAdmin) {
-          sessionResumeProbedRef.current = true;
-          const resumeRes = await tryResumeActiveMatchSession(user as User, {
-            saveUser,
-            setUser,
-            setSelectedRole,
-            setScreen,
-          });
-          if (resumeRes.resumed) {
-            try {
-              if (user.id && resumeRes.role) {
-                await loadActiveTagForUserResume(user.id, resumeRes.role);
-              }
-            } catch (e) {
-              console.warn('[resume] loadActiveTagForUserResume (legal)', e);
-            }
-            registerPushToken(
-              user.id,
-              (ok) => {
-              console.log('[PUSH] after legal resume', ok ? 'token saved OK' : 'token save skipped or failed');
-            },
-              'legalResume'
-            );
-            return;
-          }
-        }
-        if (user.role === 'passenger') {
-          const r = await fetch(`${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(user.id)}`);
-          const j = await r.json();
-          const st = j.tag?.status;
-          if (
-            j.success &&
-            j.tag &&
-            st &&
-            ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
-          ) {
-            setScreen('dashboard');
-          }
-        } else if (user.role === 'driver') {
-          const r = await fetch(`${API_URL}/driver/active-tag?user_id=${encodeURIComponent(user.id)}`);
-          const j = await r.json();
-          const st = j.tag?.status;
-          if (
-            j.success &&
-            j.tag &&
-            st &&
-            ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
-          ) {
-            setScreen('dashboard');
-            return;
-          }
-          const pd = await fetch(
-            `${API_URL}/driver/dispatch-pending-offer?user_id=${encodeURIComponent(user.id)}`
-          );
-          const pj = await pd.json();
-          if (pj.success && pj.offer?.tag_id) setScreen('dashboard');
-        }
-      } catch (e) {
-        console.warn('Legal accept restore:', e);
-      }
-      await navigateToPostAuthLanding(user.id, setScreen);
-    }
   };
 
   /** Rol ekranına düşmüş olsalar bile aktif eşleşme varsa doğrudan panele al */
@@ -3161,7 +3066,8 @@ export default function App() {
     }
 
     const { columnW: regCol, isShort: regShort, isCompact: regCompact } = premiumAuthDims;
-    const canRegisterSubmit = !!(firstName && lastName && selectedCity && phone.length >= 10);
+    const canRegisterSubmit =
+      !!(firstName && lastName && selectedCity && phone.length >= 10 && registerLegalValid);
 
     return (
       <>
@@ -3263,6 +3169,13 @@ export default function App() {
             </View>
             <Text style={[pap.hintBelowInput, authLt?.hintBelowInput]}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
 
+            <AuthLegalConsentBlock
+              seedAccepted={kvkkAccepted}
+              lightSurfaces={authLt}
+              onOpenDoc={setRegisterLegalDoc}
+              onValidityChange={setRegisterLegalValid}
+            />
+
             <PremiumGradientCtaButton
               label="DEVAM ET"
               disabled={!canRegisterSubmit || loading}
@@ -3317,6 +3230,10 @@ export default function App() {
             </TouchableOpacity>
           </PremiumGlassShell>
         </PremiumAuthScreenShell>
+
+        <LegalPage type="kvkk" visible={registerLegalDoc === 'kvkk'} onClose={() => setRegisterLegalDoc(null)} />
+        <LegalPage type="privacy" visible={registerLegalDoc === 'privacy'} onClose={() => setRegisterLegalDoc(null)} />
+        <LegalPage type="terms" visible={registerLegalDoc === 'terms'} onClose={() => setRegisterLegalDoc(null)} />
 
         {/* Şehir Seçici Modal */}
         <Modal visible={showCityPicker} transparent={true} animationType="slide" onRequestClose={() => setShowCityPicker(false)}>
