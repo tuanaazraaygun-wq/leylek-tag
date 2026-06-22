@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export type DriverOfferSoundType = 'classic' | 'urgent';
 
 export const DEFAULT_DRIVER_OFFER_SOUND: DriverOfferSoundType = 'classic';
-export const DEFAULT_DRIVER_OFFER_VOLUME = 0.65;
+export const DEFAULT_DRIVER_OFFER_VOLUME = 0.9;
 
 const MIN_VOLUME = 0;
 const MAX_VOLUME = 1;

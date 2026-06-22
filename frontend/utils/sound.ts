@@ -61,7 +61,7 @@ async function playUri(uri: string, volume = 0.7): Promise<void> {
   }
 }
 
-/** Uygulama açılışında çağrılır; şu an ön yükleme yok (doğrudan URI yeterli). */
+/** UI / QR / match — standard ducking for mixed playback. */
 export async function loadSounds(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
@@ -70,6 +70,23 @@ export async function loadSounds(): Promise<void> {
       playsInSilentModeIOS: true,
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      interruptionModeAndroid: 1,
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Offer alert bursts — louder, no Android ducking (restored by loadSounds on UI tones). */
+async function loadOfferAlertAudioMode(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: false,
       playThroughEarpieceAndroid: false,
       interruptionModeAndroid: 1,
     });
@@ -314,7 +331,7 @@ export async function invalidateDriverOfferSoundCache(): Promise<void> {
   await unloadDriverNewOfferLuxuryTone();
 }
 
-/** RC-P0-2B — loop controller burst durdurma (QM ephemeral + normal cached pozisyon) */
+/** RC-P0-2B — loop controller burst durdurma (QM/TDM ephemeral + normal cached pozisyon) */
 export async function stopOfferAlertBurstPlayback(): Promise<void> {
   if (qmOpsAlertSound) {
     const qm = qmOpsAlertSound;
@@ -322,6 +339,16 @@ export async function stopOfferAlertBurstPlayback(): Promise<void> {
     try {
       await qm.stopAsync();
       await qm.unloadAsync();
+    } catch {
+      /* ignore */
+    }
+  }
+  if (tdmOpsAlertSound) {
+    const tdm = tdmOpsAlertSound;
+    tdmOpsAlertSound = null;
+    try {
+      await tdm.stopAsync();
+      await tdm.unloadAsync();
     } catch {
       /* ignore */
     }
@@ -341,7 +368,7 @@ export async function playDriverOfferAlertBurst(playMs = 2000): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
   try {
-    await loadSounds();
+    await loadOfferAlertAudioMode();
     await stopOfferAlertBurstPlayback();
     const userId = await resolveDriverOfferUserId();
     const kind = userId ? await getDriverOfferSoundPreference(userId) : DEFAULT_DRIVER_OFFER_SOUND;
@@ -362,23 +389,35 @@ export async function playDriverOfferAlertBurst(playMs = 2000): Promise<void> {
 }
 
 let qmOpsAlertSound: Audio.Sound | null = null;
+let tdmOpsAlertSound: Audio.Sound | null = null;
 
-const QUICK_MATCH_OPS_VOLUME = 0.62;
+const QUICK_MATCH_OPS_VOLUME = 0.9;
+const TRUSTED_DIRECT_OPS_VOLUME = 0.92;
 const QUICK_MATCH_OPS_SOUND_SOURCE = require('../assets/sounds/quick-match-driver-ops.wav');
+/** Future: frontend/assets/sounds/trusted-direct-driver-invite.wav */
+const TRUSTED_DIRECT_OPS_SOUND_SOURCE = require('../assets/sounds/driver-offer-urgent.wav');
 
-/** RC-P0-2B — Quick Match ops alarm burst (max playMs) */
-export async function playQuickMatchOfferAlertBurst(playMs = 2000): Promise<void> {
+async function playEphemeralOfferAlertBurst(
+  source: number,
+  volume: number,
+  slot: 'qm' | 'tdm',
+  playMs: number,
+): Promise<void> {
   if (Platform.OS === 'web') return;
   if (AppState.currentState !== 'active') return;
   try {
-    await loadSounds();
+    await loadOfferAlertAudioMode();
     await stopOfferAlertBurstPlayback();
-    const { sound } = await Audio.Sound.createAsync(QUICK_MATCH_OPS_SOUND_SOURCE, {
+    const { sound } = await Audio.Sound.createAsync(source, {
       shouldPlay: false,
-      volume: QUICK_MATCH_OPS_VOLUME,
+      volume,
       isLooping: false,
     });
-    qmOpsAlertSound = sound;
+    if (slot === 'qm') {
+      qmOpsAlertSound = sound;
+    } else {
+      tdmOpsAlertSound = sound;
+    }
     await sound.setPositionAsync(0);
     await sound.playAsync();
     await new Promise<void>((resolve) => {
@@ -388,16 +427,36 @@ export async function playQuickMatchOfferAlertBurst(playMs = 2000): Promise<void
           .then(() => sound.unloadAsync())
           .catch(() => {})
           .finally(() => {
-            if (qmOpsAlertSound === sound) {
+            if (slot === 'qm' && qmOpsAlertSound === sound) {
               qmOpsAlertSound = null;
+            }
+            if (slot === 'tdm' && tdmOpsAlertSound === sound) {
+              tdmOpsAlertSound = null;
             }
             resolve();
           });
       }, playMs);
     });
   } catch (e) {
-    if (__DEV__) console.warn('playQuickMatchOfferAlertBurst', e);
+    if (__DEV__) {
+      console.warn(slot === 'qm' ? 'playQuickMatchOfferAlertBurst' : 'playTrustedDirectOfferAlertBurst', e);
+    }
   }
+}
+
+/** RC-P0-2B — Quick Match ops alarm burst (max playMs) */
+export async function playQuickMatchOfferAlertBurst(playMs = 2000): Promise<void> {
+  await playEphemeralOfferAlertBurst(QUICK_MATCH_OPS_SOUND_SOURCE, QUICK_MATCH_OPS_VOLUME, 'qm', playMs);
+}
+
+/** Trusted Direct (Sürücülerim) — urgent tone until dedicated asset ships. */
+export async function playTrustedDirectOfferAlertBurst(playMs = 2000): Promise<void> {
+  await playEphemeralOfferAlertBurst(
+    TRUSTED_DIRECT_OPS_SOUND_SOURCE,
+    TRUSTED_DIRECT_OPS_VOLUME,
+    'tdm',
+    playMs,
+  );
 }
 
 /** Kabul / eşleşme — teklif alarm playback'ini durdur (chimed/baseline korunur) */

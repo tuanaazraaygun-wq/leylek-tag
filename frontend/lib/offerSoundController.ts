@@ -1,20 +1,23 @@
 /**
- * RC-P0-2B — Single global driver offer alarm loop (Normal + Quick Match).
+ * RC-P0-2B — Single global driver offer alarm loop (Normal + Quick Match + Trusted Direct).
  * 2s play → 6s pause while offer remains visible; foreground in-app only.
  */
 import { AppState, type AppStateStatus } from 'react-native';
 import {
   playDriverOfferAlertBurst,
   playQuickMatchOfferAlertBurst,
+  playTrustedDirectOfferAlertBurst,
   stopOfferAlertBurstPlayback,
 } from '../utils/sound';
 
-export type OfferSoundKind = 'normal' | 'quick_match';
+export type OfferSoundKind = 'normal' | 'quick_match' | 'trusted_direct';
 
 const PLAY_MS = 2000;
 const PAUSE_MS = 6000;
 
+/** trusted_direct > quick_match > normal (effect order still favors QM UI when both visible). */
 const KIND_PRIORITY: Record<OfferSoundKind, number> = {
+  trusted_direct: 3,
   quick_match: 2,
   normal: 1,
 };
@@ -68,6 +71,21 @@ class OfferSoundController {
     void stopOfferAlertBurstPlayback();
   }
 
+  /** Clears desired state and stops playback — use on dismiss/logout/unmount. */
+  stopAllOfferLoops(reason?: string): void {
+    this.lastDesired = { key: '', kind: 'normal', visible: false };
+    this.stopOfferLoop(reason ?? 'stop_all');
+  }
+
+  /** Stop only when the given key matches active or last desired loop. */
+  stopOfferLoopByKey(key: string, reason?: string): void {
+    const id = String(key || '').trim();
+    if (!id) return;
+    if (this.activeKey === id || this.lastDesired?.key === id) {
+      this.stopAllOfferLoops(reason ?? 'stop_by_key');
+    }
+  }
+
   syncOfferLoop(opts: {
     key: string | null;
     kind: OfferSoundKind | null;
@@ -119,6 +137,8 @@ class OfferSoundController {
     try {
       if (this.activeKind === 'quick_match') {
         await playQuickMatchOfferAlertBurst(PLAY_MS);
+      } else if (this.activeKind === 'trusted_direct') {
+        await playTrustedDirectOfferAlertBurst(PLAY_MS);
       } else {
         await playDriverOfferAlertBurst(PLAY_MS);
       }
@@ -141,8 +161,7 @@ class OfferSoundController {
   }
 
   destroy(): void {
-    this.stopOfferLoop('destroy');
-    this.lastDesired = null;
+    this.stopAllOfferLoops('destroy');
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;

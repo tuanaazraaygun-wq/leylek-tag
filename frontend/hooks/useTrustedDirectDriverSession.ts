@@ -10,6 +10,7 @@ import {
   type TrustedDirectApiResult,
   type TrustedDirectDriverInvitePublic,
 } from '../lib/trustedDirectApi';
+import { offerSoundController } from '../lib/offerSoundController';
 
 const MAX_POLL_BACKOFF_MS = 10000;
 
@@ -143,6 +144,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
       if (isHardPollStopCode(result.code)) {
         stopPolling();
         if (result.code === 'NOT_FOUND' || result.code === 'UNAVAILABLE') {
+          offerSoundController.stopAllOfferLoops('tdm_not_found');
           setInvite(null);
           setStatus('idle');
           setErrorMessage(null);
@@ -323,6 +325,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
 
     if (result.ok === false) {
       if (result.code === 'NOT_FOUND' || result.code === 'UNAVAILABLE') {
+        offerSoundController.stopAllOfferLoops('tdm_not_found');
         stopPolling();
         setInvite(null);
         setStatus('idle');
@@ -352,6 +355,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     generationRef.current += 1;
     const generation = generationRef.current;
 
+    offerSoundController.stopAllOfferLoops('tdm_accept');
     stopPolling();
     setIsAccepting(true);
     setErrorMessage(null);
@@ -397,6 +401,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
     generationRef.current += 1;
     const generation = generationRef.current;
 
+    offerSoundController.stopAllOfferLoops('tdm_decline');
     stopPolling();
     setIsDeclining(true);
     setErrorMessage(null);
@@ -433,6 +438,7 @@ export function useTrustedDirectDriverSession(options: UseTrustedDirectDriverSes
   }, [applyInvite, stopPolling]);
 
   const clear = useCallback(() => {
+    offerSoundController.stopAllOfferLoops('tdm_clear');
     generationRef.current += 1;
     stopPolling();
     setInvite(null);

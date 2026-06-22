@@ -199,7 +199,7 @@ import {
   trustedInviteEventMatchesTrip,
   type TrustedInviteSocketPayload,
 } from '../lib/trustedInviteRealtimeEvents';
-import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, notifyQuickMatchDriverOpsSoundFromInvite, resetQuickMatchDriverOpsSoundGate } from '../utils/sound';
+import { playMatchChimeSound, playPaymentConfirmedSound, playFeedbackErrorSound, playUiTapSound, playQrScanSuccessSound, unloadDriverNewOfferLuxuryTone, stopDriverOfferAlarmPlayback, notifyDriverNewOfferSoundFromRealtimeOffer, finalizeDriverOfferPollSound, resetQuickMatchDriverOpsSoundGate, resetDriverOfferSoundGate } from '../utils/sound';
 import { offerSoundController } from '../lib/offerSoundController';
 import {
   isActiveTripTagStatus,
@@ -2530,6 +2530,9 @@ export default function App() {
   ]);
 
   const logout = async () => {
+    offerSoundController.stopAllOfferLoops('logout');
+    resetQuickMatchDriverOpsSoundGate();
+    resetDriverOfferSoundGate();
     // Logout sırasında push token'ı sil
     if (user?.id) {
       await removePushToken(user.id);
@@ -15454,7 +15457,7 @@ function DriverDashboard({
   const driverPollOrderedIdsForSoundRef = useRef<string[]>([]);
 
   const stopDriverOfferAlarmLoop = useCallback((reason: string) => {
-    offerSoundController.stopOfferLoop(reason);
+    offerSoundController.stopAllOfferLoops(reason);
     void stopDriverOfferAlarmPlayback();
   }, []);
 
@@ -19100,27 +19103,42 @@ function DriverDashboard({
     .filter(Boolean)
     .join(',');
 
-  /** RC-P0-2B — tek global offer alarm döngüsü (QM > normal, görünürlük bazlı) */
+  /** RC-P0-2B/P0 — global offer alarm loop (QM > TDM > normal; visibility SSOT) */
   useEffect(() => {
-    if (quickMatchDriverSession.isRestoring) {
+    if (
+      quickMatchDriverSession.isRestoring ||
+      trustedDirectDriverSession.isRestoring
+    ) {
       offerSoundController.syncOfferLoop({ key: null, kind: null, visible: false });
       return;
     }
 
     const qmInviteId = String(quickMatchDriverSession.invite?.invite_id || '').trim();
-    const qmBaseline = quickMatchOpsResumeBaselineInviteIdRef.current;
     const qmPending =
       quickMatchDriverEnabled &&
       quickMatchOpsRestoreFinishedRef.current &&
       quickMatchDriverSession.status === 'pending' &&
-      !!qmInviteId &&
-      qmInviteId !== qmBaseline;
+      !!qmInviteId;
 
     if (qmPending) {
-      notifyQuickMatchDriverOpsSoundFromInvite(qmInviteId);
       offerSoundController.syncOfferLoop({
         key: `qm:${qmInviteId}`,
         kind: 'quick_match',
+        visible: true,
+      });
+      return;
+    }
+
+    const tdmInviteId = String(trustedDirectDriverSession.invite?.id || '').trim();
+    const tdmPending =
+      trustedDirectDriverEnabled &&
+      trustedDirectDriverSession.status === 'pending' &&
+      !!tdmInviteId;
+
+    if (tdmPending) {
+      offerSoundController.syncOfferLoop({
+        key: `tdm:${tdmInviteId}`,
+        kind: 'trusted_direct',
         visible: true,
       });
       return;
@@ -19135,7 +19153,6 @@ function DriverDashboard({
     const normalVisible = !driverTripBusy && requests.length > 0 && !!topTagId;
 
     if (normalVisible) {
-      notifyDriverNewOfferSoundFromRealtimeOffer(topTagId);
       offerSoundController.syncOfferLoop({
         key: `normal:${topTagId}`,
         kind: 'normal',
@@ -19150,6 +19167,10 @@ function DriverDashboard({
     quickMatchDriverSession.isRestoring,
     quickMatchDriverSession.status,
     quickMatchDriverSession.invite?.invite_id,
+    trustedDirectDriverEnabled,
+    trustedDirectDriverSession.isRestoring,
+    trustedDirectDriverSession.status,
+    trustedDirectDriverSession.invite?.id,
     activeTag?.status,
     activeTag?.id,
     requests.length,

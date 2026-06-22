@@ -144,7 +144,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
       if (isHardPollStopCode(result.code)) {
         stopPolling();
         if (result.code === 'NOT_FOUND') {
-          offerSoundController.stopOfferLoop('qm_not_found');
+          offerSoundController.stopAllOfferLoops('qm_not_found');
           setInvite(null);
           setStatus('idle');
           setErrorMessage(null);
@@ -319,7 +319,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
 
     if (result.ok === false) {
       if (result.code === 'NOT_FOUND') {
-        offerSoundController.stopOfferLoop('qm_not_found');
+        offerSoundController.stopAllOfferLoops('qm_not_found');
         stopPolling();
         setInvite(null);
         setStatus('idle');
@@ -349,7 +349,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
     generationRef.current += 1;
     const generation = generationRef.current;
 
-    offerSoundController.stopOfferLoop('qm_accept');
+    offerSoundController.stopAllOfferLoops('qm_accept');
     stopPolling();
     setIsAccepting(true);
     setErrorMessage(null);
@@ -395,7 +395,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
     generationRef.current += 1;
     const generation = generationRef.current;
 
-    offerSoundController.stopOfferLoop('qm_decline');
+    offerSoundController.stopAllOfferLoops('qm_decline');
     stopPolling();
     setIsDeclining(true);
     setErrorMessage(null);
@@ -432,7 +432,7 @@ export function useQuickMatchDriverSession(options: UseQuickMatchDriverSessionOp
   }, [applyInvite, stopPolling]);
 
   const clear = useCallback(() => {
-    offerSoundController.stopOfferLoop('qm_clear');
+    offerSoundController.stopAllOfferLoops('qm_clear');
     generationRef.current += 1;
     stopPolling();
     setInvite(null);
