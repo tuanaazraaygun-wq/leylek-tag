@@ -7983,7 +7983,7 @@ function PassengerDashboard({
         tripPaymentDetails.clear();
         appAlert(
           'Bilgi',
-          isTrusted ? TRUSTED_PAYMENT_PENDING_ALERT : 'Katkı onayı bekleniyor.',
+          isTrusted ? TRUSTED_PAYMENT_PENDING_ALERT : 'Katkı payı mutabakatı için sürücü onayı bekleniyor.',
         );
         if (isTrusted) {
           setShowQRModal(false);

@@ -17,6 +17,7 @@ import { LDS_ELEVATION } from '../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../design-system/tokens/radius';
 import { LDS_SPACING } from '../design-system/tokens/spacing';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
+import { PaymentLegalDisclaimer } from './legal/PaymentLegalDisclaimer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DISPUTE_NOTE_MAX = 500;
@@ -75,13 +76,13 @@ export default function TransferPaymentConfirmModal({
   if (!visible) return null;
 
   const isCash = paymentMethod === 'cash';
-  const phaseStep = isCash ? 'Nakit katkı onayı' : 'Katkı onayı';
+  const phaseStep = isCash ? 'Nakit katkı payı mutabakatı' : 'Katkı payı mutabakatı';
   const phaseCaption = isCash
-    ? 'Yolcunun nakit katkı bildirimini güvenli şekilde onayla.'
-    : 'Yolcunun katkı bildirimini güvenli şekilde onayla.';
+    ? 'Yolcunun nakit katkı payı bildirimini onaylayın. Mutabakat taraflar arasındadır; LeylekTAG tahsilat yapmaz.'
+    : 'Yolcunun katkı payı bildirimini onaylayın. Mutabakat taraflar arasındadır; LeylekTAG tahsilat yapmaz.';
   const questionText = isCash
-    ? 'Yol paylaşım katkısını nakit olarak aldınız mı?'
-    : 'Yol paylaşım katkısını aldınız mı?';
+    ? 'Yol paylaşım katkı payını nakit olarak aldınız mı?'
+    : 'Yol paylaşım katkı payını aldınız mı?';
   const nameLine = isCash
     ? passengerName?.trim()
       ? `${passengerName.trim()} nakit katkıyı ilettiğini bildirdi.`
@@ -138,6 +139,8 @@ export default function TransferPaymentConfirmModal({
                   {nameLine}
                 </PremiumText>
 
+                <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
+
                 <View style={styles.buttonColumn}>
                   <TouchableOpacity
                     style={[styles.primaryBtn, payLt?.primaryBtn, loading && styles.btnDisabled]}
@@ -146,7 +149,7 @@ export default function TransferPaymentConfirmModal({
                     disabled={loading}
                   >
                     <PremiumText variant="body" style={[styles.primaryBtnText, payLt?.primaryBtnText]}>
-                      {loading ? 'Gönderiliyor…' : 'Evet, katkıyı aldım'}
+                      {loading ? 'Gönderiliyor…' : 'Evet, katkı payını aldım'}
                     </PremiumText>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -156,7 +159,7 @@ export default function TransferPaymentConfirmModal({
                     disabled={loading}
                   >
                     <PremiumText variant="caption" style={[styles.disputeBtnText, payLt?.disputeBtnText]}>
-                      Hayır, katkı almadım / sorun bildir
+                      Hayır, katkı payını almadım / sorun bildir
                     </PremiumText>
                   </TouchableOpacity>
                 </View>
@@ -167,7 +170,7 @@ export default function TransferPaymentConfirmModal({
                   Sorun bildir
                 </PremiumText>
                 <PremiumText variant="caption" muted style={styles.description}>
-                  Katkı almadıysanız kısaca açıklayın. Destek ekibi inceleyecek.
+                  Katkı payını almadıysanız kısaca açıklayın. Destek ekibi inceleyecek.
                 </PremiumText>
                 <TextInput
                   style={[styles.noteInput, payLt?.noteInput]}

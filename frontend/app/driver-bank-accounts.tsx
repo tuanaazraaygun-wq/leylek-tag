@@ -27,6 +27,8 @@ import {
   type DriverBankAccountListItem,
 } from '../lib/driverBankApi';
 import { appAlert } from '../contexts/AppAlertContext';
+import { PaymentLegalDisclaimer } from '../components/legal/PaymentLegalDisclaimer';
+import { IBAN_OPTIONAL_NOTICE, IBAN_SHARING_NOTICE } from '../lib/legalUxCopy';
 
 type ScreenUser = {
   id?: string;
@@ -275,18 +277,23 @@ export default function DriverBankAccountsScreen() {
           <Ionicons name="arrow-back" size={20} color="#22D3EE" />
         </Pressable>
         <View style={styles.headerBody}>
-          <Text style={styles.title}>Ödeme bilgileri</Text>
-          <Text style={styles.subtitle}>IBAN hesabınızı yönetin</Text>
+          <Text style={styles.title}>Katkı payı bilgileri</Text>
+          <Text style={styles.subtitle}>IBAN bilginizi yönetin</Text>
         </View>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.infoCard}>
           <Ionicons name="information-circle-outline" size={18} color="#22D3EE" />
-          <Text style={styles.infoText}>
-            IBAN eklemek zorunlu değildir. Uygulama nakit akışıyla çalışmaya devam eder.
-          </Text>
+          <Text style={styles.infoText}>{IBAN_SHARING_NOTICE}</Text>
         </View>
+
+        <View style={styles.infoCard}>
+          <Ionicons name="wallet-outline" size={18} color="#22D3EE" />
+          <Text style={styles.infoText}>{IBAN_OPTIONAL_NOTICE}</Text>
+        </View>
+
+        <PaymentLegalDisclaimer compact />
 
         {!isDriver ? (
           <View style={styles.card}>
@@ -475,6 +482,7 @@ export default function DriverBankAccountsScreen() {
                         thumbColor={formIsDefault ? '#22D3EE' : '#94A3B8'}
                       />
                     </View>
+                    <PaymentLegalDisclaimer compact />
                   </ScrollView>
 
                   <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>

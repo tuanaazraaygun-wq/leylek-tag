@@ -19,6 +19,7 @@ import { LDS_SPACING } from '../design-system/tokens/spacing';
 import type { TripPaymentDetailsResponse } from '../lib/tripPaymentApi';
 import { appAlert } from '../contexts/AppAlertContext';
 import { useQrPaymentTrustTheme } from '../lib/theme/useQrPaymentTrustTheme';
+import { PaymentLegalDisclaimer } from './legal/PaymentLegalDisclaimer';
 
 export type DriverPaymentDetailsSheetMode = 'info' | 'trip_end';
 
@@ -189,6 +190,8 @@ export default function DriverPaymentDetailsSheet({
                 <PremiumText variant="caption" muted style={styles.hint}>
                   Yol paylaşım katkısını Havale/EFT ile ilettiyseniz bilgileri kontrol edip sürücüye gönderin.
                 </PremiumText>
+
+                <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
               </>
             ) : null}
           </ScrollView>
@@ -204,7 +207,7 @@ export default function DriverPaymentDetailsSheet({
               onPress={handlePrimary}
             >
               <PremiumText variant="body" style={[styles.primaryText, payLt?.primaryBtnText]}>
-                {mode === 'trip_end' ? 'Ödemeyi yaptım — devam et' : 'Tamam'}
+                {mode === 'trip_end' ? 'Katkı payını ilettim — devam et' : 'Tamam'}
               </PremiumText>
             </Pressable>
           </View>
