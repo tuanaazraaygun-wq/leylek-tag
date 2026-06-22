@@ -1,0 +1,111 @@
+import type { LegalDocumentGroup } from './legalDocumentTypes';
+import { LEGAL_ROUTES } from './routes';
+
+export const TRUST_CENTER_SUMMARY =
+  'LeylekTAG, gönüllü yol paylaşımı ve kişi eşleştirme için güven, iletişim ve eşleşme altyapısı sağlar.';
+
+export const TRUST_CENTER_DRAFT_BANNER =
+  'Aşağıdaki taslak belgeler nitelikli hukukçu incelemesi beklemektedir. Mevcut Gizlilik, KVKK ve Hesap Silme sayfaları ayrı sürümlerle yönetilmektedir.';
+
+export const LEGAL_DOCUMENT_GROUPS: LegalDocumentGroup[] = [
+  {
+    id: 'platform',
+    title: 'Platform ve hesap',
+    description: 'Genel kullanım, gizlilik ve veri koruma',
+    links: [
+      {
+        id: 'terms-user',
+        title: 'Kullanıcı Sözleşmesi',
+        description: 'Gönüllü yol paylaşımı platform koşulları',
+        route: LEGAL_ROUTES.termsUser,
+        icon: 'document-text-outline',
+        isDraft: true,
+      },
+      {
+        id: 'privacy',
+        title: 'Gizlilik Politikası',
+        description: 'Kişisel verilerin korunması',
+        route: LEGAL_ROUTES.privacy,
+        icon: 'lock-closed-outline',
+        isLegacy: true,
+      },
+      {
+        id: 'kvkk',
+        title: 'KVKK Aydınlatma Metni',
+        description: 'Veri sorumlusu bilgilendirmesi',
+        route: LEGAL_ROUTES.kvkk,
+        icon: 'information-circle-outline',
+        isLegacy: true,
+      },
+      {
+        id: 'terms',
+        title: 'Kullanım Şartları (mevcut)',
+        description: 'Önceki sürüm — yeni Kullanıcı Sözleşmesi ile değiştirilecek',
+        route: LEGAL_ROUTES.terms,
+        icon: 'time-outline',
+        isLegacy: true,
+      },
+      {
+        id: 'delete-account',
+        title: 'Hesap Silme Bilgilendirmesi',
+        description: 'Hesap ve veri silme süreci',
+        route: LEGAL_ROUTES.deleteAccount,
+        icon: 'trash-outline',
+        isLegacy: true,
+      },
+    ],
+  },
+  {
+    id: 'driver',
+    title: 'Sürücü ve doğrulama',
+    description: 'Gönüllü sürücü profili ve kimlik doğrulama',
+    links: [
+      {
+        id: 'terms-driver',
+        title: 'Sürücü Sözleşmesi',
+        description: 'Sürücü beyanları ve yükümlülükler',
+        route: LEGAL_ROUTES.termsDriver,
+        icon: 'car-outline',
+        isDraft: true,
+      },
+      {
+        id: 'identity-verification',
+        title: 'Kimlik Doğrulama Bilgilendirmesi',
+        description: 'Belge inceleme ve doğrulama süreci',
+        route: LEGAL_ROUTES.identityVerification,
+        icon: 'shield-checkmark-outline',
+        isDraft: true,
+      },
+    ],
+  },
+  {
+    id: 'contribution',
+    title: 'Katkı payı',
+    description: 'Masraf paylaşımı — platform tahsilat yapmaz',
+    links: [
+      {
+        id: 'contribution-iban',
+        title: 'Katkı Payı ve IBAN Bilgilendirmesi',
+        description: 'Nakit, havale ve taraflar arası mutabakat',
+        route: LEGAL_ROUTES.contributionIban,
+        icon: 'wallet-outline',
+        isDraft: true,
+      },
+    ],
+  },
+  {
+    id: 'community',
+    title: 'Topluluk',
+    description: 'İletişim ve güvenli yol paylaşımı standartları',
+    links: [
+      {
+        id: 'community-guidelines',
+        title: 'Topluluk Kuralları',
+        description: 'Muhabbet, teklif ve davranış kuralları',
+        route: LEGAL_ROUTES.communityGuidelines,
+        icon: 'people-outline',
+        isDraft: true,
+      },
+    ],
+  },
+];
