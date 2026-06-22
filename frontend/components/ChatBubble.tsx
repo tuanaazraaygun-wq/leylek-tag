@@ -1,5 +1,5 @@
 /**
- * ChatBubble.tsx — Anlık: Supabase Broadcast. Kalıcılık + ilk mesaj bildirimi: POST /chat/send-message.
+ * ChatBubble.tsx — REST-first matched trip chat; Supabase Broadcast optional accelerator.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -32,6 +32,8 @@ import { lightThemeEnabled } from '../lib/featureFlags';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MERGE_TS_WINDOW_MS = 5000;
 const ANDROID_KEYBOARD_HIDE_DEBOUNCE_MS = 180;
+/** REST poll while chat sheet open (ms) */
+const CHAT_REST_POLL_MS = 4000;
 
 interface Message {
   id: string;
@@ -166,6 +168,8 @@ export default function ChatBubble({
   const [isMinimized, setIsMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
+  /** REST history/send/poll succeeded at least once — release-safe fallback active */
+  const [restFallbackActive, setRestFallbackActive] = useState(false);
   const [lastMessageTime, setLastMessageTime] = useState(0); // 🆕 Spam koruması
   const [spamWarning, setSpamWarning] = useState(''); // 🆕 Uyarı mesajı
   const [keyboardPad, setKeyboardPad] = useState(0);
@@ -254,10 +258,57 @@ export default function ChatBubble({
     }, 100);
   }, []);
 
+  const fetchMessagesFromRest = useCallback(async (): Promise<{
+    ok: boolean;
+    rows: ApiChatRow[];
+  }> => {
+    if (!tagId) return { ok: false, rows: [] };
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/chat/messages?tag_id=${encodeURIComponent(tagId)}&limit=50`,
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        messages?: ApiChatRow[];
+      };
+      if (Array.isArray(json.messages)) {
+        return { ok: true, rows: json.messages };
+      }
+      return { ok: res.ok, rows: [] };
+    } catch {
+      return { ok: false, rows: [] };
+    }
+  }, [tagId]);
+
+  const applyRestRows = useCallback(
+    (rows: ApiChatRow[], scroll = false): number => {
+      const hydrated = rows
+        .map((row) => apiRowToMessage(row, userId, otherFirst))
+        .filter((m): m is Message => m != null);
+      if (hydrated.length === 0) return 0;
+      let added = 0;
+      setMessages((prev) => {
+        const before = prev.length;
+        const next = mergeMessages(prev, hydrated);
+        added = next.length - before;
+        return next;
+      });
+      if (scroll && added > 0) scrollToBottom(false);
+      return added;
+    },
+    [userId, otherFirst, scrollToBottom],
+  );
+
+  const headerStatusText = useMemo(() => {
+    if (isConnected) return 'Bağlı';
+    if (restFallbackActive) return 'Canlı değil · mesajlar yenileniyor';
+    return 'Bağlanıyor...';
+  }, [isConnected, restFallbackActive]);
+
   // ═══════════════════════════════════════════════════════════════
-  // SUPABASE REALTIME BROADCAST - DATABASE'E KAYDETMEZ!
+  // SUPABASE REALTIME BROADCAST (optional — REST remains source of truth)
   // ═══════════════════════════════════════════════════════════════
-  
+
   useEffect(() => {
     if (!tagId || !userId) return;
 
@@ -268,30 +319,21 @@ export default function ChatBubble({
       return;
     }
 
-    console.log('🔔 [ChatBubble] Realtime Broadcast başlatılıyor:', { tagId, userId, visible });
-    
-    // Broadcast channel oluştur - HER İKİ KULLANICI AYNI CHANNEL'A BAĞLANIR
+    console.log('[ChatBubble] realtime status', { phase: 'starting', tagId, userId });
+
     const channel = supabase.channel(`chat-broadcast-${tagId}`, {
       config: {
         broadcast: {
-          self: false, // Kendi mesajlarını alma
+          self: false,
         },
       },
     });
-    
-    // Mesaj dinle
+
     channel
       .on('broadcast', { event: 'new-message' }, (payload) => {
-        console.log('📩 [ChatBubble] Broadcast mesaj geldi:', payload);
-        
         const msg = payload.payload;
-        
-        // Kendi mesajımı tekrar ekleme
-        if (msg.senderId === userId) {
-          console.log('📩 [ChatBubble] Kendi mesajım, atlanıyor');
-          return;
-        }
-        
+        if (msg.senderId === userId) return;
+
         const newMessage: Message = {
           id: `msg-${Date.now()}-${Math.random()}`,
           text: msg.text,
@@ -301,32 +343,29 @@ export default function ChatBubble({
         };
 
         setMessages((prev) => mergeMessages(prev, [newMessage]));
-        
-        // 🆕 Mesaj geldiğinde titreşim
         Vibration.vibrate(200);
-        
-        // 🔥 Pencere kapalı veya minimized ise unread count artır
+
         if (!visible || isMinimized) {
-          setUnreadCount(prev => prev + 1);
+          setUnreadCount((prev) => prev + 1);
+        } else {
+          scrollToBottom(true);
         }
-        
-        scrollToBottom(true);
       })
-      .subscribe((status) => {
-        console.log('🔔 [ChatBubble] Broadcast subscription status:', status);
+      .subscribe((status, err) => {
+        console.log('[ChatBubble] realtime status', { status, error: err?.message ?? null });
         setIsConnected(status === 'SUBSCRIBED');
       });
-    
+
     channelRef.current = channel;
-    
+
     return () => {
-      console.log('🔔 [ChatBubble] Broadcast channel kapatılıyor');
       if (channelRef.current) {
         getSupabase()?.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      setIsConnected(false);
     };
-  }, [tagId, userId, isMinimized, visible, otherFirst, scrollToBottom]);
+  }, [tagId, userId, otherFirst, scrollToBottom, visible, isMinimized]);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -387,6 +426,7 @@ export default function ChatBubble({
     setIsMinimized(false);
     setUnreadCount(0);
     setSpamWarning('');
+    setRestFallbackActive(false);
     lastIncomingKeyRef.current = null;
     historyFetchTagRef.current = null;
   }, [tagId]);
@@ -399,30 +439,45 @@ export default function ChatBubble({
 
     let cancelled = false;
     void (async () => {
-      try {
-        const res = await fetch(
-          `${API_BASE_URL}/chat/messages?tag_id=${encodeURIComponent(tagId)}&limit=50`,
-        );
-        const json = (await res.json().catch(() => ({}))) as {
-          success?: boolean;
-          messages?: ApiChatRow[];
-        };
-        if (cancelled || !Array.isArray(json.messages)) return;
-        const hydrated = json.messages
-          .map((row) => apiRowToMessage(row, userId, otherFirst))
-          .filter((m): m is Message => m != null);
-        if (hydrated.length === 0) return;
-        setMessages((prev) => mergeMessages(prev, hydrated));
-        scrollToBottom(false);
-      } catch {
-        /* non-fatal — broadcast akışı devam eder */
+      const { ok, rows } = await fetchMessagesFromRest();
+      if (cancelled) return;
+      if (ok) setRestFallbackActive(true);
+      const added = applyRestRows(rows, true);
+      if (ok) {
+        console.log('[ChatBubble] polling sync count', { source: 'history', added, total: rows.length });
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [visible, tagId, userId, otherFirst, scrollToBottom]);
+  }, [visible, tagId, fetchMessagesFromRest, applyRestRows]);
+
+  useEffect(() => {
+    if (!visible || isMinimized || !tagId) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      const { ok, rows } = await fetchMessagesFromRest();
+      if (cancelled || !ok) return;
+      setRestFallbackActive(true);
+      const added = applyRestRows(rows, true);
+      console.log('[ChatBubble] polling sync count', {
+        source: 'poll',
+        added,
+        fetched: rows.length,
+      });
+    };
+
+    const intervalId = setInterval(() => {
+      void tick();
+    }, CHAT_REST_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [visible, isMinimized, tagId, fetchMessagesFromRest, applyRestRows]);
 
   useEffect(() => {
     const text = String(incomingMessage?.text || '').trim();
@@ -467,78 +522,53 @@ export default function ChatBubble({
   ]);
 
   // ═══════════════════════════════════════════════════════════════
-  // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
+  // MESAJ GÖNDER — REST source of truth; broadcast best-effort
   // ═══════════════════════════════════════════════════════════════
-  
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || !channelRef.current) return;
 
-    if (tripCommsLocked) {
-      setSpamWarning(BOARDING_COMMS_CLOSED_USER_MSG);
-      setTimeout(() => setSpamWarning(''), 5000);
-      return;
-    }
+  const sendMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim()) return;
 
-    const trimmedText = text.trim();
-    const now = Date.now();
-    
-    // 🆕 SPAM KORUMASI - 2 saniye bekleme
-    if (now - lastMessageTime < 2000) {
-      setSpamWarning('⏳ Çok hızlı! 2 saniye bekleyin.');
-      setTimeout(() => setSpamWarning(''), 2000);
-      return;
-    }
-    
-    // 🆕 KÜFÜR FİLTRESİ
-    if (containsBannedWord(trimmedText)) {
-      setSpamWarning('⚠️ Uygunsuz içerik tespit edildi!');
-      setTimeout(() => setSpamWarning(''), 3000);
-      return;
-    }
-    
-    setLastMessageTime(now);
-    setSpamWarning('');
-    
-    console.log('📤 [ChatBubble] Mesaj gönderiliyor (broadcast):', {
-      text: trimmedText,
-      tagId,
-      userId,
-      otherUserId,
-    });
-    
-    // 1. Lokal olarak ekle (anlık UI güncelleme)
-    const newMessage: Message = {
-      id: `msg-${Date.now()}-${Math.random()}`,
-      text: trimmedText,
-      sender: 'me',
-      timestamp: new Date(),
-      senderName: myFirst,
-    };
-    setMessages((prev) => mergeMessages(prev, [newMessage]));
-    setInputText('');
+      if (tripCommsLocked) {
+        setSpamWarning(BOARDING_COMMS_CLOSED_USER_MSG);
+        setTimeout(() => setSpamWarning(''), 5000);
+        return;
+      }
 
-    scrollToBottom(true);
-    
-    // 2. Broadcast ile gönder - DATABASE'E KAYDETMEZ!
-    try {
-      await channelRef.current.send({
-        type: 'broadcast',
-        event: 'new-message',
-        payload: {
-          text: trimmedText,
-          senderId: userId,
-          senderName: myFirst,
-          receiverId: otherUserId,
-          timestamp: new Date().toISOString(),
-        },
-      });
-      console.log('✅ [ChatBubble] Broadcast mesaj gönderildi!');
-    } catch (error) {
-      console.error('❌ [ChatBubble] Broadcast gönderme hatası:', error);
-    }
+      if (!tagId || !userId || !otherUserId) {
+        console.warn('[ChatBubble] rest send fail', { reason: 'missing_ids', tagId, userId, otherUserId });
+        return;
+      }
 
-    // Sunucuya kayıt (ilk mesajda push + socket; tekrarları sessiz)
-    if (tagId && userId && otherUserId) {
+      const trimmedText = text.trim();
+      const now = Date.now();
+
+      if (now - lastMessageTime < 2000) {
+        setSpamWarning('⏳ Çok hızlı! 2 saniye bekleyin.');
+        setTimeout(() => setSpamWarning(''), 2000);
+        return;
+      }
+
+      if (containsBannedWord(trimmedText)) {
+        setSpamWarning('⚠️ Uygunsuz içerik tespit edildi!');
+        setTimeout(() => setSpamWarning(''), 3000);
+        return;
+      }
+
+      setLastMessageTime(now);
+      setSpamWarning('');
+
+      const newMessage: Message = {
+        id: `msg-${Date.now()}-${Math.random()}`,
+        text: trimmedText,
+        sender: 'me',
+        timestamp: new Date(),
+        senderName: myFirst,
+      };
+      setMessages((prev) => mergeMessages(prev, [newMessage]));
+      setInputText('');
+      scrollToBottom(true);
+
       try {
         const res = await fetch(`${API_BASE_URL}/chat/send-message`, {
           method: 'POST',
@@ -556,8 +586,12 @@ export default function ChatBubble({
           detail?: string;
           error?: string;
         };
-        if (!res.ok || j.success === false) {
+        if (res.ok && j.success !== false) {
+          setRestFallbackActive(true);
+          console.log('[ChatBubble] rest send ok', { tagId, userId });
+        } else {
           const d = String(j.detail ?? j.error ?? '');
+          console.warn('[ChatBubble] rest send fail', { tagId, status: res.status, detail: d });
           if (d === BOARDING_COMM_CLOSED_CODE) {
             setMessages((prev) => prev.filter((m) => m.id !== newMessage.id));
             setSpamWarning(BOARDING_COMMS_CLOSED_USER_MSG);
@@ -565,10 +599,36 @@ export default function ChatBubble({
           }
         }
       } catch (e) {
-        console.warn('[ChatBubble] send-message API (non-fatal):', e);
+        console.warn('[ChatBubble] rest send fail', {
+          tagId,
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
-    }
-  }, [tagId, userId, otherUserId, isDriver, lastMessageTime, myFirst, tripCommsLocked]);
+
+      const ch = channelRef.current;
+      if (ch && isConnected) {
+        try {
+          await ch.send({
+            type: 'broadcast',
+            event: 'new-message',
+            payload: {
+              text: trimmedText,
+              senderId: userId,
+              senderName: myFirst,
+              receiverId: otherUserId,
+              timestamp: new Date().toISOString(),
+            },
+          });
+        } catch (error) {
+          console.warn('[ChatBubble] realtime status', {
+            phase: 'broadcast_send_failed',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    },
+    [tagId, userId, otherUserId, lastMessageTime, myFirst, tripCommsLocked, isConnected, scrollToBottom],
+  );
 
   // ═══════════════════════════════════════════════════════════════
   // ANİMASYONLAR
@@ -767,7 +827,7 @@ export default function ChatBubble({
                         },
                       ]}
                     >
-                      {isConnected ? 'Bağlı' : 'Bağlanıyor...'}
+                      {headerStatusText}
                     </Text>
                   </View>
                 </View>
