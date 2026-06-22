@@ -797,19 +797,20 @@ export function useTrustSessionController({
         if (!r) return;
 
         if (!r.success || !r.session) {
-          if (outboundTrustIdRef.current || trustOutgoingPendingRef.current) {
-            outboundTrustIdRef.current = null;
-            setTrustOutgoingPending(false);
+          try {
             console.log(
               '[TRUST]',
               JSON.stringify({
-                evt: 'TRUST_OUTGOING_PENDING_CLEAR',
+                evt: 'TRUST_REQUESTER_POLL_NO_SESSION_YET',
                 source: 'requester_outgoing_poll',
-                reason: 'no_session',
+                success: r?.success ?? null,
+                has_session: !!r?.session,
                 tag_id: tid,
                 role,
               }),
             );
+          } catch {
+            /* noop */
           }
           return;
         }

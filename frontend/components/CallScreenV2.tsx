@@ -20,6 +20,8 @@ import { agoraUidFromUserId } from '../lib/agoraUid';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 
+const CALLER_OUTBOUND_WAITING_TEXT = 'Çağrınız yapılıyor, lütfen bekleyin.';
+
 type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'ended';
 
 /** Ortak görüşme süresi (saniye) — iki taraf için aynı tavan */
@@ -209,7 +211,7 @@ export default function CallScreenV2({
       onJoinChannelSuccess: (_connection: RtcConnection) => {
         LOG('Kanala katılındı', { channelName, uid: myUid });
         if (mode === 'caller') {
-          setStatus('Aranıyor…');
+          setStatus(CALLER_OUTBOUND_WAITING_TEXT);
         } else {
           setStatus('Bağlanıyor…');
         }
@@ -243,7 +245,7 @@ export default function CallScreenV2({
   const startOutgoing = useCallback(async () => {
     LOG('Giden arama (Agora ses)');
     setPhase('outgoing');
-    setStatus('Aranıyor…');
+    setStatus(CALLER_OUTBOUND_WAITING_TEXT);
     try {
       InCallManager.start({ media: 'audio' });
       try {
@@ -637,7 +639,7 @@ export default function CallScreenV2({
     if (status === 'Reddedildi') {
       return { text: status, style: styles.subDanger };
     }
-    if (status === 'Aranıyor…' || status.startsWith('Aranıyor')) {
+    if (status === CALLER_OUTBOUND_WAITING_TEXT || status.startsWith('Çağrınız yapılıyor')) {
       return { text: status, style: styles.subRinging };
     }
     if (

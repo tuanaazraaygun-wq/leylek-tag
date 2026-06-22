@@ -11509,6 +11509,7 @@ function PassengerDashboard({
     if (!user?.id || !incomingCallData?.callId || !incomingCallData.channelName) return;
     if (trustVideoSession) return;
     if (String(incomingCallData.callerId) === String(user.id)) return;
+    if (showCallScreen && callScreenData?.mode === 'caller') return;
     if (
       showCallScreen &&
       callScreenData?.callId &&
@@ -11536,6 +11537,7 @@ function PassengerDashboard({
     user?.id,
     showCallScreen,
     callScreenData?.callId,
+    callScreenData?.mode,
     trustVideoSession,
   ]);
 
@@ -17173,6 +17175,7 @@ function DriverDashboard({
     if (!user?.id || !driverIncomingCallData?.callId || !driverIncomingCallData.channelName) return;
     if (trustVideoSession) return;
     if (String(driverIncomingCallData.callerId) === String(user.id)) return;
+    if (showCallScreen && callScreenData?.mode === 'caller') return;
     if (
       showCallScreen &&
       callScreenData?.callId &&
@@ -17200,6 +17203,7 @@ function DriverDashboard({
     user?.id,
     showCallScreen,
     callScreenData?.callId,
+    callScreenData?.mode,
     trustVideoSession,
   ]);
 
