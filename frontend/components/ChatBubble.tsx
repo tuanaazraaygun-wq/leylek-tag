@@ -250,13 +250,39 @@ export default function ChatBubble({
   const lastIncomingKeyRef = useRef<string | null>(null);
   const historyFetchTagRef = useRef<string | null>(null);
 
-  const suggestions = isDriver ? DRIVER_SUGGESTIONS : PASSENGER_SUGGESTIONS;
-
   const scrollToBottom = useCallback((animated = true) => {
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated });
     }, 100);
   }, []);
+
+  const visibleRef = useRef(visible);
+  const isMinimizedRef = useRef(isMinimized);
+  const otherFirstRef = useRef(otherFirst);
+  const userIdRef = useRef(userId);
+  const scrollToBottomRef = useRef(scrollToBottom);
+
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+
+  useEffect(() => {
+    isMinimizedRef.current = isMinimized;
+  }, [isMinimized]);
+
+  useEffect(() => {
+    otherFirstRef.current = otherFirst;
+  }, [otherFirst]);
+
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
+
+  useEffect(() => {
+    scrollToBottomRef.current = scrollToBottom;
+  }, [scrollToBottom]);
+
+  const suggestions = isDriver ? DRIVER_SUGGESTIONS : PASSENGER_SUGGESTIONS;
 
   const fetchMessagesFromRest = useCallback(async (): Promise<{
     ok: boolean;
@@ -332,23 +358,23 @@ export default function ChatBubble({
     channel
       .on('broadcast', { event: 'new-message' }, (payload) => {
         const msg = payload.payload;
-        if (msg.senderId === userId) return;
+        if (msg.senderId === userIdRef.current) return;
 
         const newMessage: Message = {
           id: `msg-${Date.now()}-${Math.random()}`,
           text: msg.text,
           sender: 'other',
           timestamp: new Date(msg.timestamp),
-          senderName: firstNameOnly(msg.senderName, otherFirst),
+          senderName: firstNameOnly(msg.senderName, otherFirstRef.current),
         };
 
         setMessages((prev) => mergeMessages(prev, [newMessage]));
         Vibration.vibrate(200);
 
-        if (!visible || isMinimized) {
+        if (!visibleRef.current || isMinimizedRef.current) {
           setUnreadCount((prev) => prev + 1);
         } else {
-          scrollToBottom(true);
+          scrollToBottomRef.current(true);
         }
       })
       .subscribe((status, err) => {
@@ -365,7 +391,7 @@ export default function ChatBubble({
       }
       setIsConnected(false);
     };
-  }, [tagId, userId, otherFirst, scrollToBottom, visible, isMinimized]);
+  }, [tagId, userId]);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -589,6 +615,27 @@ export default function ChatBubble({
         if (res.ok && j.success !== false) {
           setRestFallbackActive(true);
           console.log('[ChatBubble] rest send ok', { tagId, userId });
+          const ch = channelRef.current;
+          if (ch) {
+            try {
+              await ch.send({
+                type: 'broadcast',
+                event: 'new-message',
+                payload: {
+                  text: trimmedText,
+                  senderId: userId,
+                  senderName: myFirst,
+                  receiverId: otherUserId,
+                  timestamp: new Date().toISOString(),
+                },
+              });
+            } catch (error) {
+              console.warn('[ChatBubble] realtime status', {
+                phase: 'broadcast_send_failed',
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
         } else {
           const d = String(j.detail ?? j.error ?? '');
           console.warn('[ChatBubble] rest send fail', { tagId, status: res.status, detail: d });
@@ -604,30 +651,8 @@ export default function ChatBubble({
           error: e instanceof Error ? e.message : String(e),
         });
       }
-
-      const ch = channelRef.current;
-      if (ch && isConnected) {
-        try {
-          await ch.send({
-            type: 'broadcast',
-            event: 'new-message',
-            payload: {
-              text: trimmedText,
-              senderId: userId,
-              senderName: myFirst,
-              receiverId: otherUserId,
-              timestamp: new Date().toISOString(),
-            },
-          });
-        } catch (error) {
-          console.warn('[ChatBubble] realtime status', {
-            phase: 'broadcast_send_failed',
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
     },
-    [tagId, userId, otherUserId, lastMessageTime, myFirst, tripCommsLocked, isConnected, scrollToBottom],
+    [tagId, userId, otherUserId, lastMessageTime, myFirst, tripCommsLocked, scrollToBottom],
   );
 
   // ═══════════════════════════════════════════════════════════════
