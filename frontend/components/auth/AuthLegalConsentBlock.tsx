@@ -110,7 +110,7 @@ export function AuthLegalConsentBlock({
         lightSurfaces={lightSurfaces}
       >
         <Text onPress={() => onOpenDoc('terms')} style={link}>
-          Kullanım Şartları
+          Kullanıcı Sözleşmesi
         </Text>
         <Text style={plain}>&apos;nı okudum ve kabul ediyorum.</Text>
       </LegalCheckboxRow>

@@ -422,7 +422,7 @@ export default function QRTripEndModal({
 
     return (
       <View style={styles.paymentFooter}>
-        <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
+        <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
 
         {effectiveBookingPaymentMethod === 'cash' && (
           <TouchableOpacity
@@ -653,7 +653,7 @@ export default function QRTripEndModal({
                     </PremiumText>
                   </View>
                 ) : null}
-                <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
+                <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
               </View>
             ) : passengerStep === 'choose' ? (
               <View style={styles.choosePanel}>
@@ -704,7 +704,7 @@ export default function QRTripEndModal({
                     <Ionicons name="chevron-forward" size={20} color={payUi.chevron} />
                   </GlassSurface>
                 </TouchableOpacity>
-                <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
+                <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
               </View>
             ) : passengerStep === 'scan' ? (
               <View style={styles.cameraContainer}>

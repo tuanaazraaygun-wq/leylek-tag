@@ -293,7 +293,7 @@ export default function DriverBankAccountsScreen() {
           <Text style={styles.infoText}>{IBAN_OPTIONAL_NOTICE}</Text>
         </View>
 
-        <PaymentLegalDisclaimer compact />
+        <PaymentLegalDisclaimer compact showDetailLink />
 
         {!isDriver ? (
           <View style={styles.card}>
@@ -482,7 +482,7 @@ export default function DriverBankAccountsScreen() {
                         thumbColor={formIsDefault ? '#22D3EE' : '#94A3B8'}
                       />
                     </View>
-                    <PaymentLegalDisclaimer compact />
+                    <PaymentLegalDisclaimer compact showDetailLink />
                   </ScrollView>
 
                   <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>

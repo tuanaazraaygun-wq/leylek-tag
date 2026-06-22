@@ -110,8 +110,8 @@ import AdminPanel from '../components/AdminPanel';
 import SplashScreen from '../components/SplashScreen';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
-import { AuthLegalConsentBlock } from '../components/auth/AuthLegalConsentBlock';
-import { LegalPage } from '../components/LegalPages';
+import { AuthLegalConsentBlock, type AuthLegalDoc } from '../components/auth/AuthLegalConsentBlock';
+import { getAuthLegalDocRoute } from '../lib/legal/routes';
 import { OtpVerificationScreen } from '../components/auth/OtpVerificationScreen';
 import { RoleSelectScreen } from '../components/premium/RoleSelectScreen';
 import {
@@ -1246,7 +1246,12 @@ export default function App() {
   const [showKVKKModal, setShowKVKKModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [registerLegalValid, setRegisterLegalValid] = useState(false);
-  const [registerLegalDoc, setRegisterLegalDoc] = useState<null | 'kvkk' | 'privacy' | 'terms'>(null);
+  const openRegisterLegalDoc = useCallback(
+    (doc: AuthLegalDoc) => {
+      router.push(getAuthLegalDocRoute(doc) as never);
+    },
+    [router],
+  );
   // Auth states
   const [phone, setPhone] = useState('');
   const [testLoginPassword, setTestLoginPassword] = useState('');
@@ -3172,7 +3177,7 @@ export default function App() {
             <AuthLegalConsentBlock
               seedAccepted={kvkkAccepted}
               lightSurfaces={authLt}
-              onOpenDoc={setRegisterLegalDoc}
+              onOpenDoc={openRegisterLegalDoc}
               onValidityChange={setRegisterLegalValid}
             />
 
@@ -3230,10 +3235,6 @@ export default function App() {
             </TouchableOpacity>
           </PremiumGlassShell>
         </PremiumAuthScreenShell>
-
-        <LegalPage type="kvkk" visible={registerLegalDoc === 'kvkk'} onClose={() => setRegisterLegalDoc(null)} />
-        <LegalPage type="privacy" visible={registerLegalDoc === 'privacy'} onClose={() => setRegisterLegalDoc(null)} />
-        <LegalPage type="terms" visible={registerLegalDoc === 'terms'} onClose={() => setRegisterLegalDoc(null)} />
 
         {/* Şehir Seçici Modal */}
         <Modal visible={showCityPicker} transparent={true} animationType="slide" onRequestClose={() => setShowCityPicker(false)}>

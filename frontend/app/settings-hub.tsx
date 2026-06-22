@@ -257,6 +257,13 @@ export default function SettingsHubScreen() {
           <SettingsHubCard title="Yasal">
             <SettingsHubRow
               isFirst
+              icon="shield-checkmark-outline"
+              label="Yasal ve Güven Merkezi"
+              onPress={() => router.push('/trust-center' as any)}
+              ui={ui}
+              hubSurfaces={hubSurfaces}
+            />
+            <SettingsHubRow
               icon="lock-closed-outline"
               label="Gizlilik Politikası"
               onPress={() => router.push('/privacy' as any)}

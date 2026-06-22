@@ -191,7 +191,7 @@ export default function DriverPaymentDetailsSheet({
                   Yol paylaşım katkısını Havale/EFT ile ilettiyseniz bilgileri kontrol edip sürücüye gönderin.
                 </PremiumText>
 
-                <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
+                <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
               </>
             ) : null}
           </ScrollView>

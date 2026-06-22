@@ -22,6 +22,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { appAlert } from '../contexts/AppAlertContext';
 import * as ImagePicker from 'expo-image-picker';
 import { EncodingType, readAsStringAsync } from 'expo-file-system/legacy';
@@ -32,7 +33,6 @@ import {
   combineAiTier,
   combineAiWarnings,
 } from '../lib/driverKycAiMock';
-import { LegalPage } from './LegalPages';
 
 // Türkiye'de popüler araç markaları ve modelleri
 const CAR_BRANDS: { [key: string]: string[] } = {
@@ -764,15 +764,17 @@ function KycLegalConsentGroup({
   termsRulesAccepted,
   onToggleKvkk,
   onToggleTerms,
-  onOpenTerms,
   onOpenKvkk,
+  onOpenTermsDriver,
+  onOpenIdentityVerification,
 }: {
   kvkkAcknowledged: boolean;
   termsRulesAccepted: boolean;
   onToggleKvkk: () => void;
   onToggleTerms: () => void;
-  onOpenTerms: () => void;
   onOpenKvkk: () => void;
+  onOpenTermsDriver: () => void;
+  onOpenIdentityVerification: () => void;
 }) {
   return (
     <View style={styles.legalConsentGroup}>
@@ -783,11 +785,21 @@ function KycLegalConsentGroup({
         <Text>&apos;ni okudum ve anladım.</Text>
       </KycLegalCheckboxRow>
       <KycLegalCheckboxRow checked={termsRulesAccepted} onToggle={onToggleTerms}>
-        <Text style={styles.termsLink} onPress={onOpenTerms}>
-          Kullanım Şartları
+        <Text style={styles.termsLink} onPress={onOpenTermsDriver}>
+          Sürücü Sözleşmesi
         </Text>
         <Text> ve sürücü kurallarını okudum, kabul ediyorum.</Text>
       </KycLegalCheckboxRow>
+      <Pressable
+        onPress={onOpenIdentityVerification}
+        style={({ pressed }) => [styles.identityInfoLink, pressed && { opacity: 0.85 }]}
+        accessibilityRole="link"
+        accessibilityLabel="Kimlik doğrulama bilgilendirmesi"
+      >
+        <Ionicons name="information-circle-outline" size={16} color={KYC_P.cyan} />
+        <Text style={styles.termsLink}>Kimlik doğrulama bilgilendirmesi</Text>
+        <Ionicons name="chevron-forward" size={14} color={KYC_P.cyan} />
+      </Pressable>
     </View>
   );
 }
@@ -1101,7 +1113,10 @@ export default function DriverKYCScreen({
   const [kvkkAcknowledged, setKvkkAcknowledged] = useState(false);
   const [termsRulesAccepted, setTermsRulesAccepted] = useState(false);
   const termsAccepted = kvkkAcknowledged && termsRulesAccepted;
-  const [kycLegalDoc, setKycLegalDoc] = useState<null | 'kvkk' | 'terms'>(null);
+  const router = useRouter();
+  const openKycLegalRoute = (route: '/kvkk' | '/terms-driver' | '/identity-verification') => {
+    router.push(route as never);
+  };
   const [customBrandName, setCustomBrandName] = useState('');
   const [customModelName, setCustomModelName] = useState('');
   
@@ -1510,7 +1525,7 @@ export default function DriverKYCScreen({
     }
     if (!kvkkAcknowledged || !termsRulesAccepted) {
       const msg =
-        'Başvuruyu göndermek için KVKK Aydınlatma Metni\'ni okumanız ve kullanım şartlarını kabul etmeniz gerekir.';
+        'Başvuruyu göndermek için KVKK Aydınlatma Metni\'ni okumanız ve Sürücü Sözleşmesi\'ni kabul etmeniz gerekir.';
       Platform.OS === 'web' ? alert(msg) : appAlert('Hata', msg);
       return;
     }
@@ -1900,8 +1915,9 @@ export default function DriverKYCScreen({
                     termsRulesAccepted={termsRulesAccepted}
                     onToggleKvkk={() => setKvkkAcknowledged((v) => !v)}
                     onToggleTerms={() => setTermsRulesAccepted((v) => !v)}
-                    onOpenTerms={() => setKycLegalDoc('terms')}
-                    onOpenKvkk={() => setKycLegalDoc('kvkk')}
+                    onOpenKvkk={() => openKycLegalRoute('/kvkk')}
+                    onOpenTermsDriver={() => openKycLegalRoute('/terms-driver')}
+                    onOpenIdentityVerification={() => openKycLegalRoute('/identity-verification')}
                   />
                 </>
               )}
@@ -2139,8 +2155,9 @@ export default function DriverKYCScreen({
                     termsRulesAccepted={termsRulesAccepted}
                     onToggleKvkk={() => setKvkkAcknowledged((v) => !v)}
                     onToggleTerms={() => setTermsRulesAccepted((v) => !v)}
-                    onOpenTerms={() => setKycLegalDoc('terms')}
-                    onOpenKvkk={() => setKycLegalDoc('kvkk')}
+                    onOpenKvkk={() => openKycLegalRoute('/kvkk')}
+                    onOpenTermsDriver={() => openKycLegalRoute('/terms-driver')}
+                    onOpenIdentityVerification={() => openKycLegalRoute('/identity-verification')}
                   />
                 </>
               )}
@@ -2265,8 +2282,6 @@ export default function DriverKYCScreen({
         </SafeAreaView>
       </Modal>
 
-      <LegalPage type="kvkk" visible={kycLegalDoc === 'kvkk'} onClose={() => setKycLegalDoc(null)} />
-      <LegalPage type="terms" visible={kycLegalDoc === 'terms'} onClose={() => setKycLegalDoc(null)} />
     </SafeAreaView>
   );
 }
@@ -2588,6 +2603,13 @@ const styles = StyleSheet.create({
   legalConsentGroup: {
     gap: 14,
     marginTop: 4,
+  },
+  identityInfoLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+    paddingVertical: 4,
   },
   progressTrack: {
     height: 8,

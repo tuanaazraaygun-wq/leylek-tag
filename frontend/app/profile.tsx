@@ -250,6 +250,15 @@ export default function ProfileScreen() {
         {/* Yasal Bilgiler */}
         <View style={[styles.card, lt?.card]}>
           <Text style={[styles.cardTitle, lt?.cardTitle]}>Yasal Bilgiler</Text>
+
+          <TouchableOpacity
+            style={[styles.linkItem, lt?.linkItem]}
+            onPress={() => router.push('/trust-center' as any)}
+          >
+            <Ionicons name="shield-checkmark-outline" size={24} color={ui.accent} />
+            <Text style={[styles.linkText, lt?.linkText]}>Yasal ve Güven Merkezi</Text>
+            <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
+          </TouchableOpacity>
           
           <TouchableOpacity
             style={[styles.linkItem, lt?.linkItem]}

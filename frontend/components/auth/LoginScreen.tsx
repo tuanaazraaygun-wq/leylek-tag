@@ -19,12 +19,12 @@ import { LDS_BORDER_COLOR, LDS_BORDER_WIDTH } from '../../design-system/tokens/b
 import { LDS_ELEVATION } from '../../design-system/tokens/elevation';
 import { LDS_RADIUS } from '../../design-system/tokens/radius';
 import { LDS_SPACING } from '../../design-system/tokens/spacing';
-import { LegalPage } from '../LegalPages';
-import { AuthLegalConsentBlock } from './AuthLegalConsentBlock';
+import { AuthLegalConsentBlock, type AuthLegalDoc } from './AuthLegalConsentBlock';
 import { LoginBrandHeader } from './LoginBrandHeader';
 import { premiumAuthStyles as pa } from './premiumAuthStyles';
 import { PremiumAuthScreenShell, PremiumGlassShell, PremiumGradientCtaButton, useAuthTheme } from './premiumAuthChrome';
 import { tapButtonHaptic } from '../../utils/touchHaptics';
+import { getAuthLegalDocRoute } from '../../lib/legal/routes';
 
 export type LoginScreenProps = {
   phone: string;
@@ -57,7 +57,6 @@ export function LoginScreen({
   onPressSupport,
   styles,
 }: LoginScreenProps) {
-  const [legalDoc, setLegalDoc] = useState<null | 'kvkk' | 'privacy' | 'terms'>(null);
   const { tokens, lightSurfaces } = useAuthTheme();
   const { height: winH, width: winW } = useWindowDimensions();
   const isShort = winH < 560;
@@ -67,6 +66,11 @@ export function LoginScreen({
 
   const [loginLegalValid, setLoginLegalValid] = useState(kvkkAccepted);
   const blocked = !loginLegalValid || phone.replace(/\D/g, '').length < 10;
+  const router = useRouter();
+
+  const openLegalDoc = (doc: AuthLegalDoc) => {
+    router.push(getAuthLegalDocRoute(doc) as never);
+  };
 
   const trustItems = [
     {
@@ -125,7 +129,7 @@ export function LoginScreen({
           <AuthLegalConsentBlock
             seedAccepted={kvkkAccepted}
             lightSurfaces={lightSurfaces}
-            onOpenDoc={setLegalDoc}
+            onOpenDoc={openLegalDoc}
             onValidityChange={(valid) => {
               setLoginLegalValid(valid);
               setKvkkAccepted(valid);
@@ -219,17 +223,6 @@ export function LoginScreen({
         </View>
       </PremiumAuthScreenShell>
 
-      <LegalPage
-        type="kvkk"
-        visible={legalDoc === 'kvkk' || showKVKKModal}
-        onClose={() => {
-          setLegalDoc((d) => (d === 'kvkk' ? null : d));
-          setShowKVKKModal(false);
-        }}
-      />
-      <LegalPage type="privacy" visible={legalDoc === 'privacy'} onClose={() => setLegalDoc((d) => (d === 'privacy' ? null : d))} />
-      <LegalPage type="terms" visible={legalDoc === 'terms'} onClose={() => setLegalDoc((d) => (d === 'terms' ? null : d))} />
-
       <Modal visible={showSupportModal} animationType="slide" transparent>
         <View style={pa.modalBackdrop}>
           {Platform.OS === 'android' ? (
@@ -273,8 +266,8 @@ function SupportModalInner({
         <TouchableOpacity onPress={() => router.push('/privacy' as never)}>
           <Text style={pa.modalLegalLink}>Gizlilik</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/terms' as never)}>
-          <Text style={pa.modalLegalLink}>Şartlar</Text>
+        <TouchableOpacity onPress={() => router.push('/terms-user' as never)}>
+          <Text style={pa.modalLegalLink}>Kullanıcı Sözleşmesi</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/kvkk' as never)}>
           <Text style={pa.modalLegalLink}>KVKK</Text>

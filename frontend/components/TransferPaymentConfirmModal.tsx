@@ -139,7 +139,7 @@ export default function TransferPaymentConfirmModal({
                   {nameLine}
                 </PremiumText>
 
-                <PaymentLegalDisclaimer compact accentColor={payUi.accent} />
+                <PaymentLegalDisclaimer compact accentColor={payUi.accent} showDetailLink />
 
                 <View style={styles.buttonColumn}>
                   <TouchableOpacity
